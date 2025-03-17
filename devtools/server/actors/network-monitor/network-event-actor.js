@@ -55,7 +55,6 @@ const CONTENT_TYPE_REGEXP = /^content-type/i;
  *        - discardResponseBody: boolean
  *        - fromCache: boolean
  *        - fromServiceWorker: boolean
- *        - rawHeaders: string
  *        - timestamp: number
  * @param {nsIChannel} channel
  *        The channel related to this network event
@@ -93,6 +92,12 @@ class NetworkEventActor extends Actor {
       this._innerWindowId = null;
       this._isNavigationRequest = false;
 
+      this._request = {
+        cookies: [],
+        headers: [],
+        postData: {},
+        rawHeaders: "",
+      };
       this._resource = this._createResource(networkEventOptions, channel);
       return;
     }
@@ -110,7 +115,6 @@ class NetworkEventActor extends Actor {
       cookies,
       headers,
       postData: {},
-      rawHeaders: networkEventOptions.rawHeaders,
     };
 
     this._resource = this._createResource(networkEventOptions, channel);
@@ -206,8 +210,6 @@ class NetworkEventActor extends Actor {
       // This is used specifically in the browser toolbox console to distinguish privileged
       // resources from the parent process from those from the contet
       chromeContext: lazy.NetworkUtils.isChannelFromSystemPrincipal(channel),
-      fromCache: networkEventOptions.fromCache,
-      fromServiceWorker: networkEventOptions.fromServiceWorker,
       innerWindowId: this._innerWindowId,
       isNavigationRequest: this._isNavigationRequest,
       isFileRequest: channel instanceof Ci.nsIFileChannel,
@@ -432,6 +434,22 @@ class NetworkEventActor extends Actor {
   /** ****************************************************************
    * Listeners for new network event data coming from NetworkMonitor.
    ******************************************************************/
+
+  addCacheDetails({ fromCache, fromServiceWorker }) {
+    this._resource.fromCache = fromCache;
+    this._resource.fromServiceWorker = fromServiceWorker;
+    this._onEventUpdate("cacheDetails", { fromCache, fromServiceWorker });
+  }
+
+  addRawHeaders({ channel, rawHeaders }) {
+    this._request.rawHeaders = rawHeaders;
+
+    // For regular requests, some additional headers might only be available
+    // when rawHeaders are provided, so we update the request headers here.
+    const { headers } =
+      lazy.NetworkUtils.fetchRequestHeadersAndCookies(channel);
+    this._request.headers = headers;
+  }
 
   /**
    * Add network request POST data.

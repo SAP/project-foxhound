@@ -34,11 +34,14 @@ import mozilla.components.feature.tabs.WindowFeature
 import mozilla.components.service.glean.private.NoExtras
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.support.utils.ext.isLandscape
+import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.AddressToolbar
 import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Shopping
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.appstate.AppAction
@@ -51,6 +54,8 @@ import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeFragment
+import org.mozilla.fenix.messaging.FenixMessageSurfaceId
+import org.mozilla.fenix.messaging.MessagingFeature
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
 import org.mozilla.fenix.shopping.DefaultShoppingExperienceFeature
@@ -72,12 +77,17 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
     private val reviewQualityCheckFeature = ViewBoundFeatureWrapper<ReviewQualityCheckFeature>()
     private val translationsBinding = ViewBoundFeatureWrapper<TranslationsBinding>()
 
+    @VisibleForTesting
+    internal val messagingFeature = ViewBoundFeatureWrapper<MessagingFeature>()
+
     private var readerModeAvailable = false
     private var reviewQualityCheckAvailable = false
     private var translationsAvailable = false
 
     private var pwaOnboardingObserver: PwaOnboardingObserver? = null
 
+    @VisibleForTesting
+    internal var leadingAction: BrowserToolbar.Button? = null
     private var forwardAction: BrowserToolbar.TwoStateButton? = null
     private var backAction: BrowserToolbar.TwoStateButton? = null
     private var refreshAction: BrowserToolbar.TwoStateButton? = null
@@ -89,9 +99,8 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
 
         val context = requireContext()
         val components = context.components
-        val isTabletAndTabStripEnabled = context.settings().isTabletAndTabStripEnabled
 
-        if (!isTabletAndTabStripEnabled && context.settings().isSwipeToolbarToSwitchTabsEnabled) {
+        if (!context.isTabStripEnabled() && context.settings().isSwipeToolbarToSwitchTabsEnabled) {
             binding.gestureLayout.addGestureListener(
                 ToolbarGestureHandler(
                     activity = requireActivity(),
@@ -107,15 +116,14 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
             )
         }
 
-        if (!IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
-            val isPrivate = (activity as HomeActivity).browsingModeManager.mode.isPrivate
-            initLeadingAction(
-                context = context,
-                isPrivate = isPrivate,
-            )
-        }
-
-        updateToolbarActions(isTablet = resources.getBoolean(R.bool.tablet))
+        updateBrowserToolbarLeadingAndNavigationActions(
+            context = context,
+            redesignEnabled = IncompleteRedesignToolbarFeature(context.settings()).isEnabled,
+            isLandscape = context.isLandscape(),
+            isTablet = resources.getBoolean(R.bool.tablet),
+            isPrivate = (activity as HomeActivity).browsingModeManager.mode.isPrivate,
+            feltPrivateBrowsingEnabled = context.settings().feltPrivateBrowsingEnabled,
+        )
 
         val readerModeAction =
             BrowserToolbar.ToggleButton(
@@ -134,7 +142,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                     readerModeAvailable && !reviewQualityCheckAvailable
                 },
                 weight = { READER_MODE_WEIGHT },
-                selected = getCurrentTab()?.let {
+                selected = getSafeCurrentTab()?.let {
                     activity?.components?.core?.store?.state?.findTab(it.id)?.readerState?.active
                 } ?: false,
                 listener = browserToolbarInteractor::onReaderModePressed,
@@ -210,6 +218,22 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         )
 
         setTranslationFragmentResultListener()
+
+        setupMicrosurvey()
+    }
+
+    @VisibleForTesting
+    internal fun setupMicrosurvey(isMicrosurveyEnabled: Boolean = FeatureFlags.microsurveysEnabled) {
+        if (requireContext().settings().isExperimentationEnabled && isMicrosurveyEnabled) {
+            messagingFeature.set(
+                feature = MessagingFeature(
+                    appStore = requireComponents.appStore,
+                    surface = FenixMessageSurfaceId.MICROSURVEY,
+                ),
+                owner = viewLifecycleOwner,
+                view = binding.root,
+            )
+        }
     }
 
     private fun setTranslationFragmentResultListener() {
@@ -310,7 +334,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
     }
 
     private fun initReloadAction(context: Context) {
-        if (!IncompleteRedesignToolbarFeature(context.settings()).isEnabled || refreshAction != null) {
+        if (!IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
             return
         }
 
@@ -323,7 +347,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 primaryContentDescription = context.getString(R.string.browser_menu_refresh),
                 primaryImageTintResource = ThemeManager.resolveAttribute(R.attr.textPrimary, context),
                 isInPrimaryState = {
-                    getCurrentTab()?.content?.loading == false
+                    getSafeCurrentTab()?.content?.loading == false
                 },
                 secondaryImage = AppCompatResources.getDrawable(
                     context,
@@ -412,43 +436,138 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
     }
 
     // Adds a home button to BrowserToolbar or, if FeltPrivateBrowsing is enabled, a clear data button instead.
-    private fun initLeadingAction(
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    internal fun addLeadingAction(
         context: Context,
+        feltPrivateBrowsingEnabled: Boolean,
         isPrivate: Boolean,
     ) {
-        val leadingAction = if (isPrivate && context.settings().feltPrivateBrowsingEnabled) {
-            BrowserToolbar.Button(
-                imageDrawable = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_data_clearance_24,
-                )!!,
-                contentDescription = context.getString(R.string.browser_toolbar_erase),
-                iconTintColorResource = ThemeManager.resolveAttribute(R.attr.textPrimary, context),
-                listener = browserToolbarInteractor::onEraseButtonClicked,
+        if (leadingAction == null) {
+            leadingAction = if (isPrivate && feltPrivateBrowsingEnabled) {
+                BrowserToolbar.Button(
+                    imageDrawable = AppCompatResources.getDrawable(
+                        context,
+                        R.drawable.mozac_ic_data_clearance_24,
+                    )!!,
+                    contentDescription = context.getString(R.string.browser_toolbar_erase),
+                    iconTintColorResource = ThemeManager.resolveAttribute(R.attr.textPrimary, context),
+                    listener = browserToolbarInteractor::onEraseButtonClicked,
+                )
+            } else {
+                BrowserToolbar.Button(
+                    imageDrawable = AppCompatResources.getDrawable(
+                        context,
+                        R.drawable.mozac_ic_home_24,
+                    )!!,
+                    contentDescription = context.getString(R.string.browser_toolbar_home),
+                    iconTintColorResource = ThemeManager.resolveAttribute(R.attr.textPrimary, context),
+                    listener = browserToolbarInteractor::onHomeButtonClicked,
+                )
+            }.also {
+                browserToolbarView.view.addNavigationAction(it)
+            }
+        }
+    }
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    internal fun removeLeadingAction() {
+        leadingAction?.let {
+            browserToolbarView.view.removeNavigationAction(it)
+        }
+        leadingAction = null
+    }
+
+    /**
+     * This code takes care of the [BrowserToolbar] leading and navigation actions.
+     * The older design requires a HomeButton followed by navigation buttons for tablets.
+     * The newer design expects NavigationButtons and a HomeButton in landscape mode for phones and in both modes
+     * for tablets.
+     */
+    @VisibleForTesting
+    internal fun updateBrowserToolbarLeadingAndNavigationActions(
+        context: Context,
+        redesignEnabled: Boolean,
+        isLandscape: Boolean,
+        isTablet: Boolean,
+        isPrivate: Boolean,
+        feltPrivateBrowsingEnabled: Boolean,
+    ) {
+        if (redesignEnabled) {
+            updateAddressBarNavigationActions(
+                isLandscape = isLandscape,
+                isTablet = isTablet,
+                context = context,
+            )
+            updateAddressBarLeadingAction(
+                redesignEnabled = true,
+                isLandscape = isLandscape,
+                isTablet = isTablet,
+                isPrivate = isPrivate,
+                feltPrivateBrowsingEnabled = feltPrivateBrowsingEnabled,
+                context = context,
             )
         } else {
-            BrowserToolbar.Button(
-                imageDrawable = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_home_24,
-                )!!,
-                contentDescription = context.getString(R.string.browser_toolbar_home),
-                iconTintColorResource = ThemeManager.resolveAttribute(R.attr.textPrimary, context),
-                listener = browserToolbarInteractor::onHomeButtonClicked,
+            updateAddressBarLeadingAction(
+                redesignEnabled = false,
+                isLandscape = isLandscape,
+                isPrivate = isPrivate,
+                isTablet = isTablet,
+                feltPrivateBrowsingEnabled = feltPrivateBrowsingEnabled,
+                context = context,
             )
+            updateTabletToolbarActions(isTablet = isTablet)
         }
+        browserToolbarView.view.invalidateActions()
+    }
 
-        browserToolbarView.view.addNavigationAction(leadingAction)
+    @VisibleForTesting
+    internal fun updateAddressBarLeadingAction(
+        redesignEnabled: Boolean,
+        isLandscape: Boolean,
+        isTablet: Boolean,
+        isPrivate: Boolean,
+        feltPrivateBrowsingEnabled: Boolean,
+        context: Context,
+    ) {
+        if (!redesignEnabled || isLandscape || isTablet) {
+            addLeadingAction(
+                isPrivate = isPrivate,
+                feltPrivateBrowsingEnabled = feltPrivateBrowsingEnabled,
+                context = context,
+            )
+        } else {
+            removeLeadingAction()
+        }
+    }
+
+    @VisibleForTesting
+    internal fun updateAddressBarNavigationActions(
+        context: Context,
+        isLandscape: Boolean,
+        isTablet: Boolean,
+    ) {
+        if (isLandscape || isTablet) {
+            addNavigationActions(context)
+        } else {
+            removeNavigationActions()
+        }
     }
 
     override fun onUpdateToolbarForConfigurationChange(toolbar: BrowserToolbarView) {
         super.onUpdateToolbarForConfigurationChange(toolbar)
 
-        updateToolbarActions(isTablet = resources.getBoolean(R.bool.tablet))
+        updateBrowserToolbarLeadingAndNavigationActions(
+            context = requireContext(),
+            redesignEnabled = IncompleteRedesignToolbarFeature(requireContext().settings()).isEnabled,
+            isLandscape = requireContext().isLandscape(),
+            isTablet = resources.getBoolean(R.bool.tablet),
+            isPrivate = (activity as HomeActivity).browsingModeManager.mode.isPrivate,
+            feltPrivateBrowsingEnabled = requireContext().settings().feltPrivateBrowsingEnabled,
+        )
     }
 
     @VisibleForTesting
-    internal fun updateToolbarActions(isTablet: Boolean) {
+    internal fun updateTabletToolbarActions(isTablet: Boolean) {
         if (isTablet == this.isTablet) return
 
         if (isTablet) {
@@ -460,8 +579,8 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
         this.isTablet = isTablet
     }
 
-    @Suppress("LongMethod")
-    private fun addTabletActions(context: Context) {
+    @VisibleForTesting
+    internal fun addNavigationActions(context: Context) {
         val enableTint = ThemeManager.resolveAttribute(R.attr.textPrimary, context)
         val disableTint = ThemeManager.resolveAttribute(R.attr.textDisabled, context)
 
@@ -473,7 +592,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 )!!,
                 primaryContentDescription = context.getString(R.string.browser_menu_back),
                 primaryImageTintResource = enableTint,
-                isInPrimaryState = { getCurrentTab()?.content?.canGoBack ?: false },
+                isInPrimaryState = { getSafeCurrentTab()?.content?.canGoBack ?: false },
                 secondaryImageTintResource = disableTint,
                 disableInSecondaryState = true,
                 longClickListener = {
@@ -486,11 +605,9 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                         ToolbarMenu.Item.Back(viewHistory = false),
                     )
                 },
-            )
-        }
-
-        backAction?.let {
-            browserToolbarView.view.addNavigationAction(it)
+            ).also {
+                browserToolbarView.view.addNavigationAction(it)
+            }
         }
 
         if (forwardAction == null) {
@@ -501,7 +618,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 )!!,
                 primaryContentDescription = context.getString(R.string.browser_menu_forward),
                 primaryImageTintResource = enableTint,
-                isInPrimaryState = { getCurrentTab()?.content?.canGoForward ?: false },
+                isInPrimaryState = { getSafeCurrentTab()?.content?.canGoForward ?: false },
                 secondaryImageTintResource = disableTint,
                 disableInSecondaryState = true,
                 longClickListener = {
@@ -514,13 +631,17 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                         ToolbarMenu.Item.Forward(viewHistory = false),
                     )
                 },
-            )
+            ).also {
+                browserToolbarView.view.addNavigationAction(it)
+            }
         }
+    }
 
-        forwardAction?.let {
-            browserToolbarView.view.addNavigationAction(it)
-        }
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    internal fun addTabletActions(context: Context) {
+        addNavigationActions(context)
 
+        val enableTint = ThemeManager.resolveAttribute(R.attr.textPrimary, context)
         if (refreshAction == null) {
             refreshAction = BrowserToolbar.TwoStateButton(
                 primaryImage = AppCompatResources.getDrawable(
@@ -530,7 +651,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 primaryContentDescription = context.getString(R.string.browser_menu_refresh),
                 primaryImageTintResource = enableTint,
                 isInPrimaryState = {
-                    getCurrentTab()?.content?.loading == false
+                    getSafeCurrentTab()?.content?.loading == false
                 },
                 secondaryImage = AppCompatResources.getDrawable(
                     context,
@@ -552,28 +673,31 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                         )
                     }
                 },
-            )
+            ).also {
+                browserToolbarView.view.addNavigationAction(it)
+            }
         }
-
-        refreshAction?.let {
-            browserToolbarView.view.addNavigationAction(it)
-        }
-
-        browserToolbarView.view.invalidateActions()
     }
 
-    private fun removeTabletActions() {
+    @VisibleForTesting
+    internal fun removeNavigationActions() {
         forwardAction?.let {
             browserToolbarView.view.removeNavigationAction(it)
         }
+        forwardAction = null
         backAction?.let {
             browserToolbarView.view.removeNavigationAction(it)
         }
+        backAction = null
+    }
+
+    @VisibleForTesting
+    internal fun removeTabletActions() {
+        removeNavigationActions()
+
         refreshAction?.let {
             browserToolbarView.view.removeNavigationAction(it)
         }
-
-        browserToolbarView.view.invalidateActions()
     }
 
     override fun onStart() {
@@ -607,6 +731,10 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
     override fun onDestroyView() {
         super.onDestroyView()
         isTablet = false
+        leadingAction = null
+        forwardAction = null
+        backAction = null
+        refreshAction = null
     }
 
     private fun updateHistoryMetadata() {

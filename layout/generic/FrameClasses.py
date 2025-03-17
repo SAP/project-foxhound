@@ -15,13 +15,12 @@ LEAF = {"Leaf"}
 MATHML = {"MathML"}
 SVG = {"SVG"}
 BFC = {"BlockFormattingContext"}
+LINE_PARTICIPANT = {"LineParticipant"}
 
 BLOCK = COMMON | {"CanContainOverflowContainers"}
 
 REPLACED = COMMON | {"Replaced"}
 REPLACED_SIZING = REPLACED | {"ReplacedSizing"}
-REPLACED_WITH_BLOCK = REPLACED | {"ReplacedContainsBlock"}
-REPLACED_SIZING_WITH_BLOCK = REPLACED_SIZING | REPLACED_WITH_BLOCK
 
 TABLE = COMMON - {"SupportsCSSTransforms"}
 TABLE_PART = {"SupportsCSSTransforms", "TablePart"}
@@ -31,10 +30,10 @@ SVG_CONTENT = (COMMON - {"SupportsContainLayoutAndPaint"}) | SVG
 SVG_CONTAINER = SVG_CONTENT | {"SVGContainer"}
 
 # NOTE: Intentionally not including "COMMON" here.
-INLINE = {"BidiInlineContainer", "LineParticipant"}
-RUBY_CONTENT = {"LineParticipant"}
+INLINE = LINE_PARTICIPANT | {"BidiInlineContainer"}
+RUBY_CONTENT = LINE_PARTICIPANT
 # FIXME(bug 713387): Shouldn't be Replaced, probably.
-TEXT = COMMON | {"Replaced", "LineParticipant"} | LEAF
+TEXT = COMMON | LINE_PARTICIPANT | {"Replaced"} | LEAF
 
 # See FrameClass.py and GenerateFrameLists.py for implementation details.
 # The following is a list of all the frame classes, followed by the frame type,
@@ -46,40 +45,38 @@ TEXT = COMMON | {"Replaced", "LineParticipant"} | LEAF
 #
 # See bug 1555477 for some related discussion about the whole Type() set-up.
 FRAME_CLASSES = [
-    Frame("BRFrame", "Br", REPLACED | LEAF | {"LineParticipant"}),
+    Frame("BRFrame", "Br", REPLACED | LINE_PARTICIPANT | LEAF),
     Frame("nsBCTableCellFrame", "TableCell", TABLE_CELL),
     Frame("nsBackdropFrame", "Backdrop", COMMON | LEAF),
     Frame("nsBlockFrame", "Block", BLOCK),
     Frame("nsCanvasFrame", "Canvas", BLOCK),
-    # FIXME(emilio, bug 1866692): These don't have a block, wtf? Can we remove the "ReplacedContainsBlock" flag
-    Frame("nsCheckboxRadioFrame", "CheckboxRadio", REPLACED_WITH_BLOCK | LEAF),
-    Frame("nsColorControlFrame", "ColorControl", REPLACED_WITH_BLOCK | LEAF),
+    Frame("nsCheckboxRadioFrame", "CheckboxRadio", REPLACED | LEAF),
+    Frame("nsColorControlFrame", "ColorControl", REPLACED | LEAF),
     Frame("nsColumnSetFrame", "ColumnSet", COMMON),
     Frame("ColumnSetWrapperFrame", "ColumnSetWrapper", BLOCK | BFC),
-    Frame("nsComboboxControlFrame", "ComboboxControl", REPLACED_WITH_BLOCK | LEAF),
+    Frame("nsComboboxControlFrame", "ComboboxControl", REPLACED | LEAF),
     Frame("ComboboxLabelFrame", "Block", BLOCK),
     Frame("nsContinuingTextFrame", "Text", TEXT),
-    Frame("nsDateTimeControlFrame", "DateTimeControl", REPLACED_WITH_BLOCK),
+    Frame("nsDateTimeControlFrame", "DateTimeControl", REPLACED),
     Frame("nsFieldSetFrame", "FieldSet", BLOCK),
-    Frame("nsFileControlFrame", "Block", REPLACED_WITH_BLOCK | LEAF | BFC),
+    Frame("nsFileControlFrame", "FileControl", REPLACED | LEAF | BFC),
     Frame("FileControlLabelFrame", "Block", BLOCK | LEAF),
     Frame("nsFirstLetterFrame", "Letter", INLINE),
-    Frame("nsFloatingFirstLetterFrame", "Letter", INLINE - {"LineParticipant"}),
+    Frame("nsFloatingFirstLetterFrame", "Letter", INLINE - LINE_PARTICIPANT),
     Frame("nsFirstLineFrame", "Line", INLINE),
     Frame("nsFlexContainerFrame", "FlexContainer", BLOCK),
     Frame("nsIFrame", "None", COMMON),
-    Frame("nsGfxButtonControlFrame", "GfxButtonControl", REPLACED_WITH_BLOCK | LEAF),
+    Frame("nsGfxButtonControlFrame", "GfxButtonControl", REPLACED | LEAF),
     Frame("nsGridContainerFrame", "GridContainer", BLOCK),
-    Frame("nsHTMLButtonControlFrame", "HTMLButtonControl", REPLACED_WITH_BLOCK),
+    Frame("nsHTMLButtonControlFrame", "HTMLButtonControl", REPLACED),
     Frame("nsHTMLCanvasFrame", "HTMLCanvas", REPLACED_SIZING),
     Frame("nsHTMLFramesetBlankFrame", "None", COMMON | LEAF),
     Frame("nsHTMLFramesetBorderFrame", "None", COMMON | LEAF),
     Frame("nsHTMLFramesetFrame", "FrameSet", COMMON | LEAF),
-    Frame("nsHTMLScrollFrame", "Scroll", COMMON),
     Frame("nsImageControlFrame", "ImageControl", REPLACED_SIZING | LEAF),
     Frame("nsImageFrame", "Image", REPLACED_SIZING | {"LeafDynamic"}),
     Frame("nsInlineFrame", "Inline", INLINE),
-    Frame("nsListControlFrame", "ListControl", REPLACED_WITH_BLOCK),
+    Frame("nsListControlFrame", "ListControl", REPLACED),
     Frame("nsMathMLmathBlockFrame", "Block", BLOCK | MATHML | BFC),
     Frame("nsMathMLmathInlineFrame", "Inline", INLINE | MATHML),
     Frame("nsMathMLmencloseFrame", "None", MATHML_CONTAINER),
@@ -99,19 +96,20 @@ FRAME_CLASSES = [
     Frame("nsMathMLmunderoverFrame", "None", MATHML_CONTAINER),
     Frame("nsMathMLTokenFrame", "None", MATHML_CONTAINER),
     Frame("nsMenuPopupFrame", "MenuPopup", BLOCK),
-    Frame("nsMeterFrame", "Meter", REPLACED_WITH_BLOCK | LEAF),
-    Frame("nsNumberControlFrame", "TextInput", REPLACED_WITH_BLOCK | LEAF),
+    Frame("nsMeterFrame", "Meter", REPLACED | LEAF),
+    Frame("nsNumberControlFrame", "TextInput", REPLACED | LEAF),
     Frame("nsPageBreakFrame", "PageBreak", COMMON | LEAF),
     Frame("nsPageContentFrame", "PageContent", BLOCK),
     Frame("nsPageFrame", "Page", COMMON),
     Frame("nsPlaceholderFrame", "Placeholder", COMMON | LEAF),
-    Frame("nsProgressFrame", "Progress", REPLACED_WITH_BLOCK | LEAF),
-    Frame("nsRangeFrame", "Range", REPLACED_WITH_BLOCK | LEAF),
+    Frame("nsProgressFrame", "Progress", REPLACED | LEAF),
+    Frame("nsRangeFrame", "Range", REPLACED | LEAF),
     Frame("nsRubyBaseContainerFrame", "RubyBaseContainer", RUBY_CONTENT),
     Frame("nsRubyBaseFrame", "RubyBase", RUBY_CONTENT),
     Frame("nsRubyFrame", "Ruby", RUBY_CONTENT),
     Frame("nsRubyTextContainerFrame", "RubyTextContainer", {"None"}),
     Frame("nsRubyTextFrame", "RubyText", RUBY_CONTENT),
+    Frame("ScrollContainerFrame", "ScrollContainer", COMMON),
     Frame("SimpleXULLeafFrame", "SimpleXULLeaf", COMMON | LEAF),
     Frame("nsScrollbarButtonFrame", "SimpleXULLeaf", COMMON | LEAF),
     Frame("nsScrollbarFrame", "Scrollbar", COMMON),
@@ -120,7 +118,7 @@ FRAME_CLASSES = [
     Frame("nsPageSequenceFrame", "PageSequence", COMMON),
     Frame("nsSliderFrame", "Slider", COMMON),
     Frame("nsSplitterFrame", "SimpleXULLeaf", COMMON | LEAF),
-    Frame("nsSubDocumentFrame", "SubDocument", REPLACED_SIZING_WITH_BLOCK | LEAF),
+    Frame("nsSubDocumentFrame", "SubDocument", REPLACED_SIZING | LEAF),
     Frame("PrintedSheetFrame", "PrintedSheet", COMMON),
     Frame("SVGAFrame", "SVGA", SVG_CONTAINER),
     Frame("SVGClipPathFrame", "SVGClipPath", SVG_CONTAINER),
@@ -163,7 +161,7 @@ FRAME_CLASSES = [
     Frame("nsTableWrapperFrame", "TableWrapper", BLOCK),
     Frame("nsTableRowFrame", "TableRow", TABLE_PART),
     Frame("nsTableRowGroupFrame", "TableRowGroup", TABLE_PART),
-    Frame("nsTextControlFrame", "TextInput", REPLACED_WITH_BLOCK | LEAF),
+    Frame("nsTextControlFrame", "TextInput", REPLACED | LEAF),
     Frame("nsTextFrame", "Text", TEXT),
     Frame("nsTreeBodyFrame", "SimpleXULLeaf", COMMON | LEAF),
     Frame("nsVideoFrame", "HTMLVideo", REPLACED_SIZING),
@@ -187,7 +185,6 @@ FRAME_CLASSES = [
     AbstractFrame("nsIMathMLFrame"),
     AbstractFrame("nsIPercentBSizeObserver"),
     AbstractFrame("nsIPopupContainer"),
-    AbstractFrame("nsIScrollableFrame"),
     AbstractFrame("nsIScrollbarMediator"),
     AbstractFrame("nsISelectControlFrame"),
     AbstractFrame("nsIStatefulFrame"),

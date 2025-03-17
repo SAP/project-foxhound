@@ -35,6 +35,7 @@ import org.mozilla.fenix.Config
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.metrics.MozillaProductDetector
 import org.mozilla.fenix.components.settings.counterPreference
 import org.mozilla.fenix.components.settings.featureFlagPreference
@@ -862,20 +863,6 @@ class Settings(private val appContext: Context) : PreferencesHolder {
             return touchExplorationIsEnabled || switchServiceIsEnabled
         }
 
-    private val isTablet: Boolean
-        get() = appContext.resources.getBoolean(R.bool.tablet)
-
-    /**
-     * Indicates if the user has enabled the tab strip feature.
-     */
-    val isTabStripEnabled by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_tab_strip),
-        default = false,
-    )
-
-    val isTabletAndTabStripEnabled: Boolean
-        get() = isTablet && isTabStripEnabled
-
     var lastKnownMode: BrowsingMode = BrowsingMode.Normal
         get() {
             val lastKnownModeWasPrivate = preferences.getBoolean(
@@ -944,7 +931,7 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     val toolbarPosition: ToolbarPosition
-        get() = if (isTabletAndTabStripEnabled) {
+        get() = if (appContext.isTabStripEnabled()) {
             ToolbarPosition.TOP
         } else if (shouldUseBottomToolbar) {
             ToolbarPosition.BOTTOM
@@ -1594,9 +1581,9 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     /**
      * Indicates if the recent saved bookmarks functionality should be visible.
      */
-    var showRecentBookmarksFeature by lazyFeatureFlagPreference(
-        appContext.getPreferenceKey(R.string.pref_key_recent_bookmarks),
-        default = { homescreenSections[HomeScreenSection.RECENTLY_SAVED] == true },
+    var showBookmarksHomeFeature by lazyFeatureFlagPreference(
+        appContext.getPreferenceKey(R.string.pref_key_customization_bookmarks),
+        default = { homescreenSections[HomeScreenSection.BOOKMARKS] == true },
         featureFlag = true,
     )
 
@@ -2005,6 +1992,12 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     /**
+     * Indicates if the feature to close synced tabs is enabled.
+     */
+    val enableCloseSyncedTabs: Boolean
+        get() = FxNimbus.features.remoteTabManagement.value().closeTabsEnabled
+
+    /**
      * Returns the height of the bottom toolbar.
      *
      * The bottom toolbar can consist of a navigation bar,
@@ -2033,7 +2026,7 @@ class Settings(private val appContext: Context) : PreferencesHolder {
         val isToolbarAtTop = toolbarPosition == ToolbarPosition.TOP
         val toolbarHeight = appContext.resources.getDimensionPixelSize(R.dimen.browser_toolbar_height)
 
-        return if (isToolbarAtTop && includeTabStrip && isTabletAndTabStripEnabled) {
+        return if (isToolbarAtTop && includeTabStrip) {
             toolbarHeight + appContext.resources.getDimensionPixelSize(R.dimen.tab_strip_height)
         } else if (isToolbarAtTop) {
             toolbarHeight

@@ -88,22 +88,18 @@ export class ScreenshotsOverlay {
       cancelLabel,
       cancelAttributes,
       instructions,
-      downloadLabel,
       downloadAttributes,
-      copyLabel,
       copyAttributes,
     ] = lazy.overlayLocalization.formatMessagesSync([
       { id: "screenshots-cancel-button" },
       { id: "screenshots-component-cancel-button" },
       { id: "screenshots-instructions" },
-      { id: "screenshots-component-download-button-label" },
       {
-        id: "screenshots-component-download-button",
+        id: "screenshots-component-download-button-2",
         args: { shortcut: downloadShortcut },
       },
-      { id: "screenshots-component-copy-button-label" },
       {
-        id: "screenshots-component-copy-button",
+        id: "screenshots-component-copy-button-2",
         args: { shortcut: copyShorcut },
       },
     ]);
@@ -137,31 +133,31 @@ export class ScreenshotsOverlay {
               <div id="mover-topRight" class="mover-target direction-topRight" tabindex="0">
                 <div class="mover"></div>
               </div>
-              <div id="mover-left" class="mover-target direction-left">
-                <div class="mover"></div>
-              </div>
               <div id="mover-right" class="mover-target direction-right">
-                <div class="mover"></div>
-              </div>
-              <div id="mover-bottomLeft" class="mover-target direction-bottomLeft" tabindex="0">
-                <div class="mover"></div>
-              </div>
-              <div id="mover-bottom" class="mover-target direction-bottom">
                 <div class="mover"></div>
               </div>
               <div id="mover-bottomRight" class="mover-target direction-bottomRight" tabindex="0">
                 <div class="mover"></div>
               </div>
+              <div id="mover-bottom" class="mover-target direction-bottom">
+                <div class="mover"></div>
+              </div>
+              <div id="mover-bottomLeft" class="mover-target direction-bottomLeft" tabindex="0">
+                <div class="mover"></div>
+              </div>
+              <div id="mover-left" class="mover-target direction-left">
+                <div class="mover"></div>
+              </div>
               <div id="selection-size-container">
-                <span id="selection-size"></span>
+                <span id="selection-size" dir="ltr"></span>
               </div>
             </div>
           </div>
           <div id="buttons-container" hidden>
             <div class="buttons-wrapper">
               <button id="cancel" class="screenshots-button" title="${cancelAttributes.attributes[0].value}" aria-label="${cancelAttributes.attributes[1].value}"><img/></button>
-              <button id="copy" class="screenshots-button" title="${copyAttributes.attributes[0].value}" aria-label="${copyAttributes.attributes[1].value}"><img/><label>${copyLabel.value}</label></button>
-              <button id="download" class="screenshots-button primary" title="${downloadAttributes.attributes[0].value}" aria-label="${downloadAttributes.attributes[1].value}"><img/><label>${downloadLabel.value}</label></button>
+              <button id="copy" class="screenshots-button" title="${copyAttributes.attributes[0].value}" aria-label="${copyAttributes.attributes[1].value}"><img/><label>${copyAttributes.value}</label></button>
+              <button id="download" class="screenshots-button primary" title="${downloadAttributes.attributes[0].value}" aria-label="${downloadAttributes.attributes[1].value}"><img/><label>${downloadAttributes.value}</label></button>
             </div>
           </div>
         </div>
@@ -240,6 +236,12 @@ export class ScreenshotsOverlay {
 
     this.#setState(STATES.CROSSHAIRS);
 
+    this.selection = this.window.getSelection();
+    this.ranges = [];
+    for (let i = 0; i < this.selection.rangeCount; i++) {
+      this.ranges.push(this.selection.getRangeAt(i));
+    }
+
     this.#initialized = true;
   }
 
@@ -303,6 +305,10 @@ export class ScreenshotsOverlay {
     };
   }
 
+  focus() {
+    this.previewCancelButton.focus({ focusVisible: true });
+  }
+
   /**
    * Returns the x and y coordinates of the event relative to both the
    * viewport and the page.
@@ -316,7 +322,9 @@ export class ScreenshotsOverlay {
    *  }
    */
   getCoordinatesFromEvent(event) {
-    const { clientX, clientY, pageX, pageY } = event;
+    let { clientX, clientY, pageX, pageY } = event;
+    pageX -= this.windowDimensions.scrollMinX;
+    pageY -= this.windowDimensions.scrollMinY;
 
     return { clientX, clientY, pageX, pageY };
   }
@@ -340,6 +348,9 @@ export class ScreenshotsOverlay {
         break;
       case "keyup":
         this.handleKeyUp(event);
+        break;
+      case "selectionchange":
+        this.handleSelectionChange();
         break;
     }
   }
@@ -498,35 +509,50 @@ export class ScreenshotsOverlay {
    * @param {Event} event The keydown event
    */
   handleKeyDown(event) {
-    switch (event.key) {
-      case "ArrowLeft":
-        this.handleArrowLeftKeyDown(event);
+    if (event.key === "Escape") {
+      this.maybeCancelScreenshots();
+      return;
+    }
+
+    switch (this.#state) {
+      case STATES.CROSSHAIRS:
+        this.crosshairsKeyDown(event);
         break;
-      case "ArrowUp":
-        this.handleArrowUpKeyDown(event);
+      case STATES.DRAGGING:
+        this.draggingKeyDown(event);
         break;
-      case "ArrowRight":
-        this.handleArrowRightKeyDown(event);
+      case STATES.RESIZING:
+        this.resizingKeyDown(event);
         break;
-      case "ArrowDown":
-        this.handleArrowDownKeyDown(event);
+      case STATES.SELECTED:
+        this.selectedKeyDown(event);
         break;
-      case "Tab":
-        this.maybeLockFocus(event);
-        break;
-      case "Escape":
-        this.maybeCancelScreenshots();
-        break;
-      case this.copyKey.toLowerCase():
-        if (this.state === "selected" && this.getAccelKey(event)) {
-          event.preventDefault();
-          this.copySelectedRegion();
-        }
-        break;
-      case this.downloadKey.toLowerCase():
-        if (this.state === "selected" && this.getAccelKey(event)) {
-          event.preventDefault();
-          this.downloadSelectedRegion();
+    }
+  }
+
+  /**
+   * Handles when a keyup occurs in the screenshots component.
+   * All we need to do on keyup is set the state to selected.
+   * @param {Event} event The keydown event
+   */
+  handleKeyUp(event) {
+    switch (this.#state) {
+      case STATES.RESIZING:
+        switch (event.key) {
+          case "ArrowLeft":
+          case "ArrowUp":
+          case "ArrowRight":
+          case "ArrowDown":
+            switch (event.originalTarget.id) {
+              case "highlight":
+              case "mover-bottomLeft":
+              case "mover-bottomRight":
+              case "mover-topLeft":
+              case "mover-topRight":
+                this.#setState(STATES.SELECTED, { doNotMoveFocus: true });
+                break;
+            }
+            break;
         }
         break;
     }
@@ -545,6 +571,172 @@ export class ScreenshotsOverlay {
     return event.ctrlKey;
   }
 
+  crosshairsKeyDown(event) {
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowUp":
+      case "ArrowRight":
+      case "ArrowDown":
+        // Do nothing so we can prevent default below
+        break;
+      case "Tab":
+        this.maybeLockFocus(event);
+        return;
+      case "Enter":
+        if (this.handleKeyDownOnButton(event)) {
+          return;
+        }
+
+        if (this.hoverElementRegion.isRegionValid) {
+          this.draggingReadyStart();
+          this.draggingReadyDragEnd();
+          return;
+        }
+      // eslint-disable-next-line no-fallthrough
+      case " ": {
+        if (this.handleKeyDownOnButton(event)) {
+          return;
+        }
+
+        if (Services.appinfo.isWayland) {
+          return;
+        }
+
+        if (event.originalTarget === this.previewCancelButton) {
+          return;
+        }
+
+        // The left and top coordinates from cursorRegion are relative to
+        // the client window so we need to add the scroll offset of the page to
+        // get the correct coordinates.
+        let x = {};
+        let y = {};
+        this.window.windowUtils.getLastOverWindowPointerLocationInCSSPixels(
+          x,
+          y
+        );
+        this.crosshairsDragStart(
+          x.value + this.windowDimensions.scrollX,
+          y.value + this.windowDimensions.scrollY
+        );
+        this.#setState(STATES.DRAGGING);
+        break;
+      }
+    }
+  }
+
+  /**
+   * Handles a keydown event for the dragging state.
+   * @param {Event} event The keydown event
+   */
+  draggingKeyDown(event) {
+    switch (event.key) {
+      case "ArrowLeft":
+        this.handleArrowLeftKeyDown(event);
+        break;
+      case "ArrowUp":
+        this.handleArrowUpKeyDown(event);
+        break;
+      case "ArrowRight":
+        this.handleArrowRightKeyDown(event);
+        break;
+      case "ArrowDown":
+        this.handleArrowDownKeyDown(event);
+        break;
+      case "Enter":
+      case " ":
+        this.#setState(STATES.SELECTED);
+        return;
+      default:
+        return;
+    }
+
+    this.drawSelectionContainer();
+  }
+
+  /**
+   * Handles a keydown event for the resizing state.
+   * @param {Event} event The keydown event
+   */
+  resizingKeyDown(event) {
+    switch (event.key) {
+      case "ArrowLeft":
+        this.resizingArrowLeftKeyDown(event);
+        break;
+      case "ArrowUp":
+        this.resizingArrowUpKeyDown(event);
+        break;
+      case "ArrowRight":
+        this.resizingArrowRightKeyDown(event);
+        break;
+      case "ArrowDown":
+        this.resizingArrowDownKeyDown(event);
+        break;
+    }
+  }
+
+  selectedKeyDown(event) {
+    let isSelectionElement = event.originalTarget.closest(
+      "#selection-container"
+    );
+    switch (event.key) {
+      case "ArrowLeft":
+        if (isSelectionElement) {
+          this.resizingArrowLeftKeyDown(event);
+        }
+        break;
+      case "ArrowUp":
+        if (isSelectionElement) {
+          this.resizingArrowUpKeyDown(event);
+        }
+        break;
+      case "ArrowRight":
+        if (isSelectionElement) {
+          this.resizingArrowRightKeyDown(event);
+        }
+        break;
+      case "ArrowDown":
+        if (isSelectionElement) {
+          this.resizingArrowDownKeyDown(event);
+        }
+        break;
+      case "Tab":
+        this.maybeLockFocus(event);
+        break;
+      case "Enter":
+      case " ":
+        this.handleKeyDownOnButton(event);
+        break;
+      case this.copyKey.toLowerCase():
+        if (this.state === "selected" && this.getAccelKey(event)) {
+          this.copySelectedRegion();
+        }
+        break;
+      case this.downloadKey.toLowerCase():
+        if (this.state === "selected" && this.getAccelKey(event)) {
+          this.downloadSelectedRegion();
+        }
+        break;
+    }
+  }
+
+  /**
+   * Move the region or its left or right side to the left.
+   * Just the arrow key will move the region by 1px.
+   * Arrow key + shift will move the region by 10px.
+   * Arrow key + control/meta will move to the edge of the window.
+   * @param {Event} event The keydown event
+   */
+  resizingArrowLeftKeyDown(event) {
+    this.handleArrowLeftKeyDown(event);
+
+    if (this.#state !== STATES.RESIZING) {
+      this.#setState(STATES.RESIZING);
+    }
+
+    this.drawSelectionContainer();
+  }
+
   /**
    * Move the region or its left or right side to the left.
    * Just the arrow key will move the region by 1px.
@@ -553,6 +745,7 @@ export class ScreenshotsOverlay {
    * @param {Event} event The keydown event
    */
   handleArrowLeftKeyDown(event) {
+    let exponent = event.shiftKey ? 1 : 0;
     switch (event.originalTarget.id) {
       case "highlight":
         if (this.getAccelKey(event)) {
@@ -562,7 +755,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.right -= 10 ** event.shiftKey;
+        this.selectionRegion.right -= 10 ** exponent;
       // eslint-disable-next-line no-fallthrough
       case "mover-topLeft":
       case "mover-bottomLeft":
@@ -571,7 +764,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.left -= 10 ** event.shiftKey;
+        this.selectionRegion.left -= 10 ** exponent;
         this.scrollIfByEdge(
           this.selectionRegion.left,
           this.windowDimensions.scrollY + this.windowDimensions.clientHeight / 2
@@ -591,7 +784,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.right -= 10 ** event.shiftKey;
+        this.selectionRegion.right -= 10 ** exponent;
         if (this.selectionRegion.x1 >= this.selectionRegion.x2) {
           this.selectionRegion.sortCoords();
           if (event.originalTarget.id === "mover-topRight") {
@@ -601,15 +794,23 @@ export class ScreenshotsOverlay {
           }
         }
         break;
-      default:
-        return;
     }
+  }
+
+  /**
+   * Move the region or its top or bottom side upward.
+   * Just the arrow key will move the region by 1px.
+   * Arrow key + shift will move the region by 10px.
+   * Arrow key + control/meta will move to the edge of the window.
+   * @param {Event} event The keydown event
+   */
+  resizingArrowUpKeyDown(event) {
+    this.handleArrowUpKeyDown(event);
 
     if (this.#state !== STATES.RESIZING) {
       this.#setState(STATES.RESIZING);
     }
 
-    event.preventDefault();
     this.drawSelectionContainer();
   }
 
@@ -621,6 +822,7 @@ export class ScreenshotsOverlay {
    * @param {Event} event The keydown event
    */
   handleArrowUpKeyDown(event) {
+    let exponent = event.shiftKey ? 1 : 0;
     switch (event.originalTarget.id) {
       case "highlight":
         if (this.getAccelKey(event)) {
@@ -630,7 +832,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.bottom -= 10 ** event.shiftKey;
+        this.selectionRegion.bottom -= 10 ** exponent;
       // eslint-disable-next-line no-fallthrough
       case "mover-topLeft":
       case "mover-topRight":
@@ -639,7 +841,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.top -= 10 ** event.shiftKey;
+        this.selectionRegion.top -= 10 ** exponent;
         this.scrollIfByEdge(
           this.windowDimensions.scrollX + this.windowDimensions.clientWidth / 2,
           this.selectionRegion.top
@@ -659,7 +861,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.bottom -= 10 ** event.shiftKey;
+        this.selectionRegion.bottom -= 10 ** exponent;
         if (this.selectionRegion.y1 >= this.selectionRegion.y2) {
           this.selectionRegion.sortCoords();
           if (event.originalTarget.id === "mover-bottomLeft") {
@@ -669,15 +871,23 @@ export class ScreenshotsOverlay {
           }
         }
         break;
-      default:
-        return;
     }
+  }
+
+  /**
+   * Move the region or its left or right side to the right.
+   * Just the arrow key will move the region by 1px.
+   * Arrow key + shift will move the region by 10px.
+   * Arrow key + control/meta will move to the edge of the window.
+   * @param {Event} event The keydown event
+   */
+  resizingArrowRightKeyDown(event) {
+    this.handleArrowRightKeyDown(event);
 
     if (this.#state !== STATES.RESIZING) {
       this.#setState(STATES.RESIZING);
     }
 
-    event.preventDefault();
     this.drawSelectionContainer();
   }
 
@@ -689,6 +899,7 @@ export class ScreenshotsOverlay {
    * @param {Event} event The keydown event
    */
   handleArrowRightKeyDown(event) {
+    let exponent = event.shiftKey ? 1 : 0;
     switch (event.originalTarget.id) {
       case "highlight":
         if (this.getAccelKey(event)) {
@@ -699,7 +910,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.left += 10 ** event.shiftKey;
+        this.selectionRegion.left += 10 ** exponent;
       // eslint-disable-next-line no-fallthrough
       case "mover-topRight":
       case "mover-bottomRight":
@@ -709,7 +920,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.right += 10 ** event.shiftKey;
+        this.selectionRegion.right += 10 ** exponent;
         this.scrollIfByEdge(
           this.selectionRegion.right,
           this.windowDimensions.scrollY + this.windowDimensions.clientHeight / 2
@@ -730,7 +941,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.left += 10 ** event.shiftKey;
+        this.selectionRegion.left += 10 ** exponent;
         if (this.selectionRegion.x1 >= this.selectionRegion.x2) {
           this.selectionRegion.sortCoords();
           if (event.originalTarget.id === "mover-topLeft") {
@@ -740,16 +951,7 @@ export class ScreenshotsOverlay {
           }
         }
         break;
-      default:
-        return;
     }
-
-    if (this.#state !== STATES.RESIZING) {
-      this.#setState(STATES.RESIZING);
-    }
-
-    event.preventDefault();
-    this.drawSelectionContainer();
   }
 
   /**
@@ -759,7 +961,18 @@ export class ScreenshotsOverlay {
    * Arrow key + control/meta will move to the edge of the window.
    * @param {Event} event The keydown event
    */
+  resizingArrowDownKeyDown(event) {
+    this.handleArrowDownKeyDown(event);
+
+    if (this.#state !== STATES.RESIZING) {
+      this.#setState(STATES.RESIZING);
+    }
+
+    this.drawSelectionContainer();
+  }
+
   handleArrowDownKeyDown(event) {
+    let exponent = event.shiftKey ? 1 : 0;
     switch (event.originalTarget.id) {
       case "highlight":
         if (this.getAccelKey(event)) {
@@ -770,7 +983,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.top += 10 ** event.shiftKey;
+        this.selectionRegion.top += 10 ** exponent;
       // eslint-disable-next-line no-fallthrough
       case "mover-bottomLeft":
       case "mover-bottomRight":
@@ -780,7 +993,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.bottom += 10 ** event.shiftKey;
+        this.selectionRegion.bottom += 10 ** exponent;
         this.scrollIfByEdge(
           this.windowDimensions.scrollX + this.windowDimensions.clientWidth / 2,
           this.selectionRegion.bottom
@@ -801,7 +1014,7 @@ export class ScreenshotsOverlay {
           break;
         }
 
-        this.selectionRegion.top += 10 ** event.shiftKey;
+        this.selectionRegion.top += 10 ** exponent;
         if (this.selectionRegion.y1 >= this.selectionRegion.y2) {
           this.selectionRegion.sortCoords();
           if (event.originalTarget.id === "mover-topLeft") {
@@ -811,16 +1024,7 @@ export class ScreenshotsOverlay {
           }
         }
         break;
-      default:
-        return;
     }
-
-    if (this.#state !== STATES.RESIZING) {
-      this.#setState(STATES.RESIZING);
-    }
-
-    event.preventDefault();
-    this.drawSelectionContainer();
   }
 
   /**
@@ -829,27 +1033,37 @@ export class ScreenshotsOverlay {
    * @param {Event} event The keydown event
    */
   maybeLockFocus(event) {
-    if (this.#state !== STATES.SELECTED) {
-      return;
-    }
-
-    event.preventDefault();
-    if (event.originalTarget.id === "highlight" && event.shiftKey) {
-      this.downloadButton.focus({ focusVisible: true });
-    } else if (event.originalTarget.id === "download" && !event.shiftKey) {
-      this.highlightEl.focus({ focusVisible: true });
-    } else {
-      // The content document can listen for keydown events and prevent moving
-      // focus so we manually move focus to the next element here.
-      let direction = event.shiftKey
-        ? Services.focus.MOVEFOCUS_BACKWARD
-        : Services.focus.MOVEFOCUS_FORWARD;
-      Services.focus.moveFocus(
-        this.window,
-        null,
-        direction,
-        Services.focus.FLAG_BYKEY
-      );
+    switch (this.#state) {
+      case STATES.CROSSHAIRS:
+        if (event.shiftKey) {
+          this.#dispatchEvent("Screenshots:FocusPanel", {
+            direction: "backward",
+          });
+        } else {
+          this.#dispatchEvent("Screenshots:FocusPanel", {
+            direction: "forward",
+          });
+        }
+        break;
+      case STATES.SELECTED:
+        if (event.originalTarget.id === "highlight" && event.shiftKey) {
+          this.downloadButton.focus({ focusVisible: true });
+        } else if (event.originalTarget.id === "download" && !event.shiftKey) {
+          this.highlightEl.focus({ focusVisible: true });
+        } else {
+          // The content document can listen for keydown events and prevent moving
+          // focus so we manually move focus to the next element here.
+          let direction = event.shiftKey
+            ? Services.focus.MOVEFOCUS_BACKWARD
+            : Services.focus.MOVEFOCUS_FORWARD;
+          Services.focus.moveFocus(
+            this.window,
+            null,
+            direction,
+            Services.focus.FLAG_BYKEY
+          );
+        }
+        break;
     }
   }
 
@@ -866,27 +1080,39 @@ export class ScreenshotsOverlay {
   }
 
   /**
-   * Handles when a keydown occurs in the screenshots component.
-   * All we need to do on keyup is set the state to selected.
-   * @param {Event} event The keydown event
+   * We prevent all events in ScreenshotsComponentChild so we need to
+   * explicitly handle keydown events on buttons here.
+   *
+   * @param {KeyEvent} event The keydown event
    */
-  handleKeyUp(event) {
-    switch (event.key) {
-      case "ArrowLeft":
-      case "ArrowUp":
-      case "ArrowRight":
-      case "ArrowDown":
-        switch (event.originalTarget.id) {
-          case "highlight":
-          case "mover-bottomLeft":
-          case "mover-bottomRight":
-          case "mover-topLeft":
-          case "mover-topRight":
-            event.preventDefault();
-            this.#setState(STATES.SELECTED);
-            break;
-        }
+  handleKeyDownOnButton(event) {
+    switch (event.originalTarget) {
+      case this.cancelButton:
+      case this.previewCancelButton:
+        this.maybeCancelScreenshots();
         break;
+      case this.copyButton:
+        this.copySelectedRegion();
+        break;
+      case this.downloadButton:
+        this.downloadSelectedRegion();
+        break;
+      default:
+        return false;
+    }
+    return true;
+  }
+
+  /**
+   * All of the selection ranges were recorded at initialization. The ranges
+   * are removed when focus is set to the buttons so we add the selection
+   * ranges back so a selected region can be captured.
+   */
+  handleSelectionChange() {
+    if (this.ranges.length) {
+      for (let range of this.ranges) {
+        this.selection.addRange(range);
+      }
     }
   }
 
@@ -908,8 +1134,9 @@ export class ScreenshotsOverlay {
   /**
    * Set a new state for the overlay
    * @param {String} newState
+   * @param {Object} options (optional) Options for calling start of state method
    */
-  #setState(newState) {
+  #setState(newState, options = {}) {
     if (this.#state === STATES.SELECTED && newState === STATES.CROSSHAIRS) {
       this.#dispatchEvent("Screenshots:RecordEvent", {
         eventName: "started",
@@ -918,7 +1145,13 @@ export class ScreenshotsOverlay {
     }
     if (newState !== this.#state) {
       this.#dispatchEvent("Screenshots:OverlaySelection", {
-        hasSelection: newState == STATES.SELECTED,
+        hasSelection: [
+          STATES.DRAGGING_READY,
+          STATES.DRAGGING,
+          STATES.RESIZING,
+          STATES.SELECTED,
+        ].includes(newState),
+        overlayState: newState,
       });
     }
     this.#state = newState;
@@ -937,7 +1170,7 @@ export class ScreenshotsOverlay {
         break;
       }
       case STATES.SELECTED: {
-        this.selectedStart();
+        this.selectedStart(options);
         break;
       }
       case STATES.RESIZING: {
@@ -997,11 +1230,16 @@ export class ScreenshotsOverlay {
    * Hide the preview and hover element containers.
    * Draw the selection and buttons containers.
    */
-  selectedStart() {
+  selectedStart(options) {
+    this.selectionRegion.sortCoords();
     this.hidePreviewContainer();
     this.hideHoverElementContainer();
     this.drawSelectionContainer();
     this.drawButtonsContainer();
+
+    if (!options.doNotMoveFocus) {
+      this.setFocusToActionButton();
+    }
   }
 
   /**
@@ -1228,7 +1466,6 @@ export class ScreenshotsOverlay {
     if (this.hoverElementRegion.isRegionValid) {
       this.selectionRegion.dimensions = this.hoverElementRegion.dimensions;
       this.#setState(STATES.SELECTED);
-      this.setFocusToActionButton();
       this.#dispatchEvent("Screenshots:RecordEvent", {
         eventName: "selected",
         reason: "element",
@@ -1249,11 +1486,9 @@ export class ScreenshotsOverlay {
       right: pageX,
       bottom: pageY,
     };
-    this.selectionRegion.sortCoords();
     this.#setState(STATES.SELECTED);
     this.maybeRecordRegionSelected();
     this.#methodsUsed.region += 1;
-    this.setFocusToActionButton();
   }
 
   /**
@@ -1264,9 +1499,7 @@ export class ScreenshotsOverlay {
    */
   resizingDragEnd(pageX, pageY) {
     this.resizingDrag(pageX, pageY);
-    this.selectionRegion.sortCoords();
     this.#setState(STATES.SELECTED);
-    this.setFocusToActionButton();
     this.maybeRecordRegionSelected();
     if (this.#moverId === "highlight") {
       this.#methodsUsed.move += 1;
@@ -1325,8 +1558,9 @@ export class ScreenshotsOverlay {
    * Update the screenshots overlay container based on the window dimensions.
    */
   updateScreenshotsOverlayContainer() {
-    let { scrollWidth, scrollHeight } = this.windowDimensions.dimensions;
-    this.screenshotsContainer.style = `width:${scrollWidth}px;height:${scrollHeight}px;`;
+    let { scrollWidth, scrollHeight, scrollMinX } =
+      this.windowDimensions.dimensions;
+    this.screenshotsContainer.style = `left:${scrollMinX};width:${scrollWidth}px;height:${scrollHeight}px;`;
   }
 
   showScreenshotsOverlayContainer() {
@@ -1387,7 +1621,7 @@ export class ScreenshotsOverlay {
     let [selectionSizeTranslation] =
       lazy.overlayLocalization.formatMessagesSync([
         {
-          id: "screenshots-overlay-selection-region-size-2",
+          id: "screenshots-overlay-selection-region-size-3",
           args: {
             width: Math.floor(width * zoom),
             height: Math.floor(height * zoom),
@@ -1420,16 +1654,13 @@ export class ScreenshotsOverlay {
       right: boxRight,
       bottom: boxBottom,
     } = this.selectionRegion.dimensions;
-    let { clientWidth, clientHeight, scrollX, scrollY } =
+
+    let { clientWidth, clientHeight, scrollX, scrollY, scrollWidth } =
       this.windowDimensions.dimensions;
 
-    if (
-      boxTop > scrollY + clientHeight ||
-      boxBottom < scrollY ||
-      boxLeft > scrollX + clientWidth ||
-      boxRight < scrollX
-    ) {
-      // The box is offscreen so need to draw the buttons
+    if (!this.windowDimensions.isInViewport(this.selectionRegion.dimensions)) {
+      // The box is entirely offscreen so need to draw the buttons
+
       return;
     }
 
@@ -1445,12 +1676,32 @@ export class ScreenshotsOverlay {
       }
     }
 
-    if (boxRight < 300) {
-      this.buttonsContainer.style.left = `${boxLeft}px`;
-      this.buttonsContainer.style.right = "";
-    } else {
-      this.buttonsContainer.style.right = `calc(100% - ${boxRight}px)`;
+    if (!this.buttonsContainerRect) {
+      this.buttonsContainerRect = this.buttonsContainer.getBoundingClientRect();
+    }
+
+    let viewportLeft = scrollX;
+    let viewportRight = scrollX + clientWidth;
+
+    let left, right;
+    let isLTR = !Services.locale.isAppLocaleRTL;
+    if (isLTR) {
+      left = Math.max(
+        Math.min(viewportRight, boxRight),
+        viewportLeft + Math.ceil(this.buttonsContainerRect.width)
+      );
+      right = scrollWidth - left;
+
+      this.buttonsContainer.style.right = `${right}px`;
       this.buttonsContainer.style.left = "";
+    } else {
+      left = Math.min(
+        Math.max(viewportLeft, boxLeft),
+        viewportRight - Math.ceil(this.buttonsContainerRect.width)
+      );
+
+      this.buttonsContainer.style.left = `${left}px`;
+      this.buttonsContainer.style.right = "";
     }
 
     this.buttonsContainer.style.top = `${top}px`;
@@ -1462,6 +1713,10 @@ export class ScreenshotsOverlay {
 
   hideButtonsContainer() {
     this.buttonsContainer.hidden = true;
+  }
+
+  updateCursorRegion(left, top) {
+    this.cursorRegion = { left, top, right: left, bottom: top };
   }
 
   /**
@@ -1595,8 +1850,10 @@ export class ScreenshotsOverlay {
    *     scrollHeight: The height of the entire page
    *     scrollX: The X scroll offset of the viewport
    *     scrollY: The Y scroll offest of the viewport
-   *     scrollMinX: The X mininmun the viewport can scroll to
-   *     scrollMinY: The Y mininmun the viewport can scroll to
+   *     scrollMinX: The X minimum the viewport can scroll to
+   *     scrollMinY: The Y minimum the viewport can scroll to
+   *     scrollMaxX: The X maximum the viewport can scroll to
+   *     scrollMaxY: The Y maximum the viewport can scroll to
    *   }
    */
   getDimensionsFromWindow() {
@@ -1637,6 +1894,8 @@ export class ScreenshotsOverlay {
       scrollY,
       scrollMinX,
       scrollMinY,
+      scrollMaxX,
+      scrollMaxY,
     };
   }
 
@@ -1665,6 +1924,8 @@ export class ScreenshotsOverlay {
       scrollY,
       scrollMinX,
       scrollMinY,
+      scrollMaxX,
+      scrollMaxY,
     } = this.getDimensionsFromWindow();
     this.screenshotsContainer.toggleAttribute("resizing", false);
 
@@ -1677,6 +1938,8 @@ export class ScreenshotsOverlay {
       scrollY,
       scrollMinX,
       scrollMinY,
+      scrollMaxX,
+      scrollMaxY,
       devicePixelRatio: this.window.devicePixelRatio,
     };
 

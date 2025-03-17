@@ -68,7 +68,7 @@ class AudioEncoderTraits {
   using ConfigType = AudioEncoderConfig;
   using ConfigTypeInternal = AudioEncoderConfigInternal;
   using InputType = dom::AudioData;
-  using OutputConfigType = mozilla::dom::AudioDecoderConfigInternal;
+  using OutputConfigType = mozilla::dom::AudioDecoderConfig;
   using InputTypeInternal = mozilla::AudioData;
   using OutputType = EncodedAudioChunk;
   using OutputCallbackType = EncodedAudioChunkOutputCallback;
@@ -140,7 +140,7 @@ class VideoEncoderTraits {
   using ConfigTypeInternal = VideoEncoderConfigInternal;
   using InputType = dom::VideoFrame;
   using InputTypeInternal = mozilla::VideoData;
-  using OutputConfigType = mozilla::dom::VideoDecoderConfigInternal;
+  using OutputConfigType = mozilla::dom::VideoDecoderConfig;
   using OutputType = EncodedVideoChunk;
   using OutputCallbackType = EncodedVideoChunkOutputCallback;
   using MetadataType = EncodedVideoChunkMetadata;
@@ -152,9 +152,6 @@ class VideoEncoderTraits {
       const ConfigType& aConfig);
   static RefPtr<InputTypeInternal> CreateInputInternal(
       const InputType& aInput, const VideoEncoderEncodeOptions& aOptions);
-  static already_AddRefed<OutputConfigType> EncoderConfigToDecoderConfig(
-      nsIGlobalObject* aGlobal, const RefPtr<MediaRawData>& aData,
-      const ConfigTypeInternal& mOutputConfig);
 };
 
 }  // namespace dom

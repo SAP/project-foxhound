@@ -1034,7 +1034,8 @@ nsresult ContentChild::ProvideWindowCommon(
       MOZ_DIAGNOSTIC_ASSERT(!nsContentUtils::IsSpecialName(name));
 
       Unused << SendCreateWindowInDifferentProcess(
-          aTabOpener, parent, aChromeFlags, aCalledFromJS, aURI, features,
+          aTabOpener, parent, aChromeFlags, aCalledFromJS,
+          aOpenWindowInfo->GetIsTopLevelCreatedByWebContent(), aURI, features,
           aModifiers, name, triggeringPrincipal, csp, referrerInfo,
           aOpenWindowInfo->GetOriginAttributes());
 
@@ -1056,7 +1057,8 @@ nsresult ContentChild::ProvideWindowCommon(
 
   RefPtr<BrowsingContext> browsingContext = BrowsingContext::CreateDetached(
       nullptr, openerBC, nullptr, aName, BrowsingContext::Type::Content,
-      aIsPopupRequested);
+      {.isPopupRequested = aIsPopupRequested,
+       .topLevelCreatedByWebContent = true});
   MOZ_ALWAYS_SUCCEEDS(browsingContext->SetRemoteTabs(true));
   MOZ_ALWAYS_SUCCEEDS(browsingContext->SetRemoteSubframes(useRemoteSubframes));
   MOZ_ALWAYS_SUCCEEDS(browsingContext->SetOriginAttributes(
@@ -1181,9 +1183,11 @@ nsresult ContentChild::ProvideWindowCommon(
 
     if (aForceNoOpener || !parent) {
       MOZ_DIAGNOSTIC_ASSERT(!browsingContext->HadOriginalOpener());
+      MOZ_DIAGNOSTIC_ASSERT(browsingContext->GetTopLevelCreatedByWebContent());
       MOZ_DIAGNOSTIC_ASSERT(browsingContext->GetOpenerId() == 0);
     } else {
       MOZ_DIAGNOSTIC_ASSERT(browsingContext->HadOriginalOpener());
+      MOZ_DIAGNOSTIC_ASSERT(browsingContext->GetTopLevelCreatedByWebContent());
       MOZ_DIAGNOSTIC_ASSERT(browsingContext->GetOpenerId() == parent->Id());
     }
 
@@ -1236,8 +1240,9 @@ nsresult ContentChild::ProvideWindowCommon(
 
   SendCreateWindow(aTabOpener, parent, newChild, aChromeFlags, aCalledFromJS,
                    aOpenWindowInfo->GetIsForPrinting(),
-                   aOpenWindowInfo->GetIsForWindowDotPrint(), aURI, features,
-                   aModifiers, triggeringPrincipal, csp, referrerInfo,
+                   aOpenWindowInfo->GetIsForWindowDotPrint(),
+                   aOpenWindowInfo->GetIsTopLevelCreatedByWebContent(), aURI,
+                   features, aModifiers, triggeringPrincipal, csp, referrerInfo,
                    aOpenWindowInfo->GetOriginAttributes(), std::move(resolve),
                    std::move(reject));
 
@@ -2663,6 +2668,7 @@ mozilla::ipc::IPCResult ContentChild::RecvRemoteType(
 
   // Turn off Spectre mitigations in isolated web content processes.
   if (StaticPrefs::javascript_options_spectre_disable_for_isolated_content() &&
+      StaticPrefs::browser_opaqueResponseBlocking() &&
       (remoteTypePrefix == FISSION_WEB_REMOTE_TYPE ||
        remoteTypePrefix == SERVICEWORKER_REMOTE_TYPE ||
        remoteTypePrefix == WITH_COOP_COEP_REMOTE_TYPE ||
@@ -2781,6 +2787,20 @@ mozilla::ipc::IPCResult ContentChild::RecvNotifyProcessPriorityChanged(
       moz_set_max_dirty_page_modifier(4);
     } else if (mProcessPriority == hal::PROCESS_PRIORITY_BACKGROUND) {
       moz_set_max_dirty_page_modifier(-2);
+
+#if defined(MOZ_MEMORY)
+      if (StaticPrefs::dom_memory_memory_pressure_on_background() == 1) {
+        jemalloc_free_dirty_pages();
+      }
+#endif
+      if (StaticPrefs::dom_memory_memory_pressure_on_background() == 2) {
+        nsCOMPtr<nsIObserverService> obsServ = services::GetObserverService();
+        obsServ->NotifyObservers(nullptr, "memory-pressure", u"heap-minimize");
+      } else if (StaticPrefs::dom_memory_memory_pressure_on_background() == 3) {
+        nsCOMPtr<nsIObserverService> obsServ = services::GetObserverService();
+        obsServ->NotifyObservers(nullptr, "memory-pressure", u"low-memory");
+      }
+
     } else {
       moz_set_max_dirty_page_modifier(0);
     }
@@ -4443,14 +4463,6 @@ mozilla::ipc::IPCResult ContentChild::RecvDispatchBeforeUnloadToSubtree(
   } else {
     DispatchBeforeUnloadToSubtree(aStartingAt.get(), std::move(aResolver));
   }
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult ContentChild::RecvDecoderSupportedMimeTypes(
-    nsTArray<nsCString>&& aSupportedTypes) {
-#ifdef MOZ_WIDGET_ANDROID
-  AndroidDecoderModule::SetSupportedMimeTypes(std::move(aSupportedTypes));
-#endif
   return IPC_OK();
 }
 

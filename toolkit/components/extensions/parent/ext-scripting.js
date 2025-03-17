@@ -95,7 +95,8 @@ const execute = (context, details, kind, method) => {
   options.runAt = details.injectImmediately
     ? "document_start"
     : "document_idle";
-  options.matchAboutBlank = true;
+  options.world = details.world || "ISOLATED";
+  options.matchOriginAsFallback = true; // Also implies matchAboutBlank:true.
   options.wantReturnValue = true;
   // With this option set to `true`, we'll receive executeScript() results with
   // `frameId/result` properties and an `error` property will also be returned
@@ -333,7 +334,9 @@ this.scripting = class extends ExtensionAPI {
             script.excludeMatches ??= options.excludeMatches;
             script.js ??= options.jsPaths;
             script.matches ??= options.matches;
+            script.matchOriginAsFallback ??= options.matchOriginAsFallback;
             script.runAt ??= options.runAt;
+            script.world ??= options.world;
             script.persistAcrossSessions ??= options.persistAcrossSessions;
 
             ensureValidScriptParams(extension, script);

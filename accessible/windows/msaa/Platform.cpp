@@ -117,6 +117,7 @@ void a11y::PlatformTextChangeEvent(Accessible* aText, const nsAString& aStr,
   ia2AccessibleText::UpdateTextChangeData(aText->AsHyperTextBase(), aInsert,
                                           aStr, aStart, aLen);
   MsaaAccessible::FireWinEvent(aText, eventType);
+  uiaRawElmProvider::RaiseUiaEventForGeckoEvent(aText, eventType);
 }
 
 void a11y::PlatformShowHideEvent(Accessible* aTarget, Accessible*, bool aInsert,
@@ -129,6 +130,7 @@ void a11y::PlatformShowHideEvent(Accessible* aTarget, Accessible*, bool aInsert,
 void a11y::PlatformSelectionEvent(Accessible* aTarget, Accessible*,
                                   uint32_t aType) {
   MsaaAccessible::FireWinEvent(aTarget, aType);
+  uiaRawElmProvider::RaiseUiaEventForGeckoEvent(aTarget, aType);
 }
 
 static bool GetInstantiatorExecutable(const DWORD aPid,

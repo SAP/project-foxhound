@@ -17,7 +17,8 @@
 // META: variant=?56-60
 // META: variant=?61-65
 // META: variant=?66-70
-// META: variant=?71-last
+// META: variant=?71-75
+// META: variant=?76-last
 
 "use strict";
 
@@ -326,6 +327,34 @@ subsetTest(promise_test, async test => {
       { trustedBiddingSignalsKeys: ['hostname'],
         trustedBiddingSignalsURL: TRUSTED_BIDDING_SIGNALS_URL });
 }, 'Trusted bidding signals receives hostname field.');
+
+/////////////////////////////////////////////////////////////////////////////
+// Cross-origin trusted bidding signals tests
+/////////////////////////////////////////////////////////////////////////////
+
+subsetTest(promise_test, async test => {
+  await runTrustedBiddingSignalsTest(
+      test,
+      `trustedBiddingSignals === null &&
+       !('dataVersion' in browserSignals) &&
+       crossOriginTrustedBiddingSignals['${OTHER_ORIGIN1}']['num-value'] === 1 &&
+       browserSignals.crossOriginDataVersion === 4`,
+      { name: 'data-version',
+        trustedBiddingSignalsKeys: ['num-value', 'cors'],
+        trustedBiddingSignalsURL: CROSS_ORIGIN_TRUSTED_BIDDING_SIGNALS_URL });
+}, 'Basic cross-origin trusted bidding signals');
+
+subsetTest(promise_test, async test => {
+  await runTrustedBiddingSignalsTest(
+      test,
+      `trustedBiddingSignals === null &&
+       !('dataVersion' in browserSignals) &&
+       crossOriginTrustedBiddingSignals === null &&
+       !('crossOriginDataVersion' in browserSignals)`,
+      { name: 'data-version',
+        trustedBiddingSignalsKeys: ['num-value'],
+        trustedBiddingSignalsURL: CROSS_ORIGIN_TRUSTED_BIDDING_SIGNALS_URL });
+}, 'Cross-origin trusted bidding signals w/o CORS authorization');
 
 /////////////////////////////////////////////////////////////////////////////
 // Data-Version tests
@@ -939,3 +968,43 @@ subsetTest(promise_test, async test => {
   );
   runBasicFledgeTestExpectingWinner(test, uuid);
 }, 'Trusted bidding signals splits the request if the combined URL length exceeds the limit of small value.');
+
+/////////////////////////////////////////////////////////////////////////////
+// updateIfOlderThanMs tests
+//
+// NOTE: Due to the lack of mock time in wpt, these test just exercise the code
+// paths and ensure that no crash occurs -- they don't otherwise verify
+// behavior.
+/////////////////////////////////////////////////////////////////////////////
+
+subsetTest(promise_test, async test => {
+  await runTrustedBiddingSignalsTest(
+      test,
+      'true',
+      { name: 'use-update-if-older-than-ms',
+        trustedBiddingSignalsURL: TRUSTED_BIDDING_SIGNALS_URL });
+}, 'Trusted bidding signals response has updateIfOlderThanMs > 10 min.');
+
+subsetTest(promise_test, async test => {
+  await runTrustedBiddingSignalsTest(
+      test,
+      'true',
+      { name: 'use-update-if-older-than-ms-small',
+        trustedBiddingSignalsURL: TRUSTED_BIDDING_SIGNALS_URL });
+}, 'Trusted bidding signals response has updateIfOlderThanMs == 1 ms.');
+
+subsetTest(promise_test, async test => {
+  await runTrustedBiddingSignalsTest(
+      test,
+      'true',
+      { name: 'use-update-if-older-than-ms-zero',
+        trustedBiddingSignalsURL: TRUSTED_BIDDING_SIGNALS_URL });
+}, 'Trusted bidding signals response has updateIfOlderThanMs == 0 ms.');
+
+subsetTest(promise_test, async test => {
+  await runTrustedBiddingSignalsTest(
+      test,
+      'true',
+      { name: 'use-update-if-older-than-ms-negative',
+        trustedBiddingSignalsURL: TRUSTED_BIDDING_SIGNALS_URL });
+}, 'Trusted bidding signals response has updateIfOlderThanMs == -1 ms.');

@@ -455,14 +455,20 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                 cmd.append("--test-groups={}".format(path))
 
                 for key in mozharness_test_paths.keys():
+                    if "web-platform" not in key:
+                        self.info("Ignoring test_paths for {} harness".format(key))
+                        continue
                     paths = mozharness_test_paths.get(key, [])
-                    for path in paths:
-                        if not path.startswith("/"):
+                    for p in paths:
+                        if not p.startswith("/"):
                             # Assume this is a filesystem path rather than a test id
-                            path = os.path.relpath(path, "testing/web-platform")
+                            path = os.path.relpath(p, "testing/web-platform")
                             if ".." in path:
                                 self.fatal("Invalid WPT path: {}".format(path))
                             path = os.path.join(dirs["abs_wpttest_dir"], path)
+                        else:
+                            path = p
+
                         test_paths.add(path)
             else:
                 # As per WPT harness, the --run-by-dir flag is incompatible with
@@ -513,7 +519,16 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         for tag in c["exclude_tag"]:
             cmd.append(f"--exclude-tag={tag}")
 
-        cmd.extend(test_paths)
+        if mozinfo.info["os"] == "win":
+            # Because of a limit on the length of CLI command line string length in Windows, we
+            # should prefer to pass paths by a file instead.
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write("\n".join(test_paths).encode())
+                cmd.append(f"--include-file={tmp.name}")
+        else:
+            cmd.extend(test_paths)
 
         return cmd
 

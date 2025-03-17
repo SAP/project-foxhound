@@ -48,6 +48,7 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -86,7 +87,6 @@
 #include "nsJSEnvironment.h"
 #include "nsFocusManager.h"
 
-#include "nsIScrollableFrame.h"
 #include "nsStyleSheetService.h"
 #include "nsILoadContext.h"
 #include "mozilla/ThrottledEventQueue.h"
@@ -483,8 +483,7 @@ class nsDocumentShownDispatcher : public Runnable {
 
 //------------------------------------------------------------------
 already_AddRefed<nsIDocumentViewer> NS_NewDocumentViewer() {
-  RefPtr<nsDocumentViewer> viewer = new nsDocumentViewer();
-  return viewer.forget();
+  return MakeAndAddRef<nsDocumentViewer>();
 }
 
 void nsDocumentViewer::PrepareToStartLoad() {
@@ -779,13 +778,14 @@ nsresult nsDocumentViewer::InitPresentationStuff(bool aDoInitialReflow) {
   return NS_OK;
 }
 
-static nsPresContext* CreatePresContext(Document* aDocument,
-                                        nsPresContext::nsPresContextType aType,
-                                        nsView* aContainerView) {
-  if (aContainerView) {
-    return new nsPresContext(aDocument, aType);
-  }
-  return new nsRootPresContext(aDocument, aType);
+static already_AddRefed<nsPresContext> CreatePresContext(
+    Document* aDocument, nsPresContext::nsPresContextType aType,
+    nsView* aContainerView) {
+  RefPtr<nsPresContext> result = aContainerView
+                                     ? new nsPresContext(aDocument, aType)
+                                     : new nsRootPresContext(aDocument, aType);
+
+  return result.forget();
 }
 
 //-----------------------------------------------
@@ -1253,8 +1253,7 @@ nsDocumentViewer::DispatchBeforeUnload() {
   // Now, fire an BeforeUnload event to the document and see if it's ok
   // to unload...
   nsPresContext* presContext = mDocument->GetPresContext();
-  RefPtr<BeforeUnloadEvent> event =
-      new BeforeUnloadEvent(mDocument, presContext, nullptr);
+  auto event = MakeRefPtr<BeforeUnloadEvent>(mDocument, presContext, nullptr);
   event->InitEvent(u"beforeunload"_ns, false, true);
 
   // Dispatching to |window|, but using |document| as the target.
@@ -2093,8 +2092,7 @@ nsDocumentViewer::Show() {
 
   // Notify observers that a new page has been shown. This will get run
   // from the event loop after we actually draw the page.
-  RefPtr<nsDocumentShownDispatcher> event =
-      new nsDocumentShownDispatcher(document);
+  auto event = MakeRefPtr<nsDocumentShownDispatcher>(document);
   document->Dispatch(event.forget());
 
   return NS_OK;
@@ -2426,7 +2424,7 @@ NS_IMETHODIMP nsDocumentViewer::CopyLinkLocation() {
   NS_ENSURE_SUCCESS(rv, rv);
 
   // copy the href onto the clipboard
-  return clipboard->CopyString(locationText);
+  return clipboard->CopyString(locationText, mDocument->GetWindowContext());
 }
 
 NS_IMETHODIMP nsDocumentViewer::CopyImage(int32_t aCopyFlags) {
@@ -2436,7 +2434,8 @@ NS_IMETHODIMP nsDocumentViewer::CopyImage(int32_t aCopyFlags) {
   NS_ENSURE_TRUE(node, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsILoadContext> loadContext(mContainer);
-  return nsCopySupport::ImageCopy(node, loadContext, aCopyFlags);
+  return nsCopySupport::ImageCopy(node, loadContext, aCopyFlags,
+                                  mDocument->GetWindowContext());
 }
 
 NS_IMETHODIMP nsDocumentViewer::GetCopyable(bool* aCopyable) {
@@ -2886,10 +2885,10 @@ nsDocumentViewer::Print(nsIPrintSettings* aPrintSettings,
   // earlier in this function.
   // TODO(dholbert) Do we need to bother with this stack-owned local RefPtr?
   // (Is there an edge case where it's needed to keep the nsPrintJob alive?)
-  RefPtr<nsPrintJob> printJob =
-      new nsPrintJob(*this, *mContainer, *mDocument,
-                     float(AppUnitsPerCSSInch()) /
-                         float(mDeviceContext->AppUnitsPerDevPixel()));
+  auto printJob =
+      MakeRefPtr<nsPrintJob>(*this, *mContainer, *mDocument,
+                             float(AppUnitsPerCSSInch()) /
+                                 float(mDeviceContext->AppUnitsPerDevPixel()));
   mPrintJob = printJob;
 
   nsresult rv = printJob->Print(*mDocument, aPrintSettings, aRemotePrintJob,
@@ -2929,10 +2928,10 @@ nsDocumentViewer::PrintPreview(nsIPrintSettings* aPrintSettings,
   // in this function.
   // TODO(dholbert) Do we need to bother with this stack-owned local RefPtr?
   // (Is there an edge case where it's needed to keep the nsPrintJob alive?)
-  RefPtr<nsPrintJob> printJob =
-      new nsPrintJob(*this, *mContainer, *doc,
-                     float(AppUnitsPerCSSInch()) /
-                         float(mDeviceContext->AppUnitsPerDevPixel()));
+  auto printJob =
+      MakeRefPtr<nsPrintJob>(*this, *mContainer, *doc,
+                             float(AppUnitsPerCSSInch()) /
+                                 float(mDeviceContext->AppUnitsPerDevPixel()));
   mPrintJob = printJob;
 
   nsresult rv = printJob->PrintPreview(
@@ -2955,18 +2954,19 @@ static const nsIFrame* GetTargetPageFrame(int32_t aTargetPageNum,
 }
 
 // Calculate the scroll position where the center of |aFrame| is positioned at
-// the center of |aScrollable|'s scroll port for the print preview.
+// the center of |aScrollContainerFrame|'s scroll port for the print preview.
 // So what we do for that is;
 // 1) Calculate the position of the center of |aFrame| in the print preview
 //    coordinates.
 // 2) Reduce the half height of the scroll port from the result of 1.
-static nscoord ScrollPositionForFrame(const nsIFrame* aFrame,
-                                      nsIScrollableFrame* aScrollable,
-                                      float aPreviewScale) {
+static nscoord ScrollPositionForFrame(
+    const nsIFrame* aFrame, ScrollContainerFrame* aScrollContainerFrame,
+    float aPreviewScale) {
   // Note that even if the computed scroll position is out of the range of
-  // the scroll port, it gets clamped in nsIScrollableFrame::ScrollTo.
+  // the scroll port, it gets clamped in ScrollContainerFrame::ScrollTo.
   return nscoord(aPreviewScale * aFrame->GetRect().Center().y -
-                 float(aScrollable->GetScrollPortRect().height) / 2.0f);
+                 float(aScrollContainerFrame->GetScrollPortRect().height) /
+                     2.0f);
 }
 
 //----------------------------------------------------------------------
@@ -2975,8 +2975,10 @@ nsDocumentViewer::PrintPreviewScrollToPage(int16_t aType, int32_t aPageNum) {
   if (!GetIsPrintPreview() || mPrintJob->GetIsCreatingPrintPreview())
     return NS_ERROR_FAILURE;
 
-  nsIScrollableFrame* sf = mPresShell->GetRootScrollFrameAsScrollable();
-  if (!sf) return NS_OK;
+  ScrollContainerFrame* sf = mPresShell->GetRootScrollContainerFrame();
+  if (!sf) {
+    return NS_OK;
+  }
 
   auto [seqFrame, sheetCount] = mPrintJob->GetSeqFrameAndCountSheets();
   Unused << sheetCount;
@@ -3049,7 +3051,7 @@ nsDocumentViewer::GetCurrentSheetFrameAndNumber() const {
     return {nullptr, 0};
   }
 
-  nsIScrollableFrame* sf = mPresShell->GetRootScrollFrameAsScrollable();
+  ScrollContainerFrame* sf = mPresShell->GetRootScrollContainerFrame();
   if (!sf) {
     // No scrollable contents, returns 1 even if there are multiple sheets.
     return {seqFrame->PrincipalChildList().FirstChild(), 1};
@@ -3371,8 +3373,7 @@ NS_IMETHODIMP nsDocumentViewer::SetPrintSettingsForSubdocument(
       return NS_ERROR_NOT_AVAILABLE;
     }
 
-    RefPtr<nsDeviceContextSpecProxy> devspec =
-        new nsDeviceContextSpecProxy(aRemotePrintJob);
+    auto devspec = MakeRefPtr<nsDeviceContextSpecProxy>(aRemotePrintJob);
     nsresult rv = devspec->Init(aPrintSettings, /* aIsPrintPreview = */ true);
     NS_ENSURE_SUCCESS(rv, rv);
 

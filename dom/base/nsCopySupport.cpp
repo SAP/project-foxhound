@@ -245,7 +245,7 @@ static nsresult CreateTransferable(
   NS_ENSURE_TRUE(aTransferable, NS_ERROR_NULL_POINTER);
 
   aTransferable->Init(aDocument.GetLoadContext());
-  aTransferable->SetRequestingPrincipal(aDocument.NodePrincipal());
+  aTransferable->SetDataPrincipal(aDocument.NodePrincipal());
   if (aEncodedDocumentWithContext.mUnicodeEncodingIsTextHTML) {
     // Set up a format converter so that clipboard flavor queries work.
     // This converter isn't really used for conversions.
@@ -332,7 +332,8 @@ static nsresult PutToClipboard(
   rv = CreateTransferable(aEncodedDocumentWithContext, aDocument, transferable);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = clipboard->SetData(transferable, nullptr, aClipboardID);
+  rv = clipboard->SetData(transferable, nullptr, aClipboardID,
+                          aDocument.GetWindowContext());
   NS_ENSURE_SUCCESS(rv, rv);
 
   return rv;
@@ -455,9 +456,9 @@ nsresult nsCopySupport::GetContents(const nsACString& aMimeType,
   return docEncoder->EncodeToString(outdata);
 }
 
-nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
-                                  nsILoadContext* aLoadContext,
-                                  int32_t aCopyFlags) {
+nsresult nsCopySupport::ImageCopy(
+    nsIImageLoadingContent* aImageElement, nsILoadContext* aLoadContext,
+    int32_t aCopyFlags, mozilla::dom::WindowContext* aSettingWindowContext) {
   nsresult rv;
 
   nsCOMPtr<nsINode> imageNode = do_QueryInterface(aImageElement, &rv);
@@ -467,7 +468,7 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
   nsCOMPtr<nsITransferable> trans(do_CreateInstance(kCTransferableCID, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
   trans->Init(aLoadContext);
-  trans->SetRequestingPrincipal(imageNode->NodePrincipal());
+  trans->SetDataPrincipal(imageNode->NodePrincipal());
 
   if (aCopyFlags & nsIDocumentViewerEdit::COPY_IMAGE_TEXT) {
     // get the location from the element
@@ -527,11 +528,13 @@ nsresult nsCopySupport::ImageCopy(nsIImageLoadingContent* aImageElement,
   // check whether the system supports the selection clipboard or not.
   if (clipboard->IsClipboardTypeSupported(nsIClipboard::kSelectionClipboard)) {
     // put the transferable on the clipboard
-    rv = clipboard->SetData(trans, nullptr, nsIClipboard::kSelectionClipboard);
+    rv = clipboard->SetData(trans, nullptr, nsIClipboard::kSelectionClipboard,
+                            aSettingWindowContext);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  return clipboard->SetData(trans, nullptr, nsIClipboard::kGlobalClipboard);
+  return clipboard->SetData(trans, nullptr, nsIClipboard::kGlobalClipboard,
+                            aSettingWindowContext);
 }
 
 static nsresult AppendString(nsITransferable* aTransferable,
@@ -928,7 +931,12 @@ bool nsCopySupport::FireClipboardEvent(EventMessage aEventMessage,
       NS_ENSURE_TRUE(transferable, false);
 
       // put the transferable on the clipboard
-      nsresult rv = clipboard->SetData(transferable, nullptr, aClipboardType);
+      WindowContext* settingWindowContext = nullptr;
+      if (aPresShell && aPresShell->GetDocument()) {
+        settingWindowContext = aPresShell->GetDocument()->GetWindowContext();
+      }
+      nsresult rv = clipboard->SetData(transferable, nullptr, aClipboardType,
+                                       settingWindowContext);
       if (NS_FAILED(rv)) {
         return false;
       }

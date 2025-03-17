@@ -11,7 +11,6 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_devtools.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPrefs_ui.h"

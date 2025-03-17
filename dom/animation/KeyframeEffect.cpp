@@ -23,6 +23,7 @@
 #include "mozilla/KeyframeUtils.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_gfx.h"
@@ -36,7 +37,6 @@
 #include "nsDOMMutationObserver.h"  // For nsAutoAnimationMutationBatch
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
-#include "nsIScrollableFrame.h"
 #include "nsPresContextInlines.h"
 #include "nsRefreshDriver.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
@@ -608,8 +608,9 @@ void KeyframeEffect::ComposeStyleRule(StyleAnimationValueMap& aAnimationValues,
                          &aComputedTiming, mEffectOptions.mIterationComposite);
 }
 
-void KeyframeEffect::ComposeStyle(StyleAnimationValueMap& aComposeResult,
-                                  const nsCSSPropertyIDSet& aPropertiesToSkip) {
+void KeyframeEffect::ComposeStyle(
+    StyleAnimationValueMap& aComposeResult,
+    const InvertibleAnimatedPropertyIDSet& aPropertiesToSkip) {
   ComputedTiming computedTiming = GetComputedTiming();
 
   // If the progress is null, we don't have fill data for the current
@@ -783,9 +784,6 @@ static KeyframeEffectParams KeyframeEffectParamsFromUnion(
   const KeyframeEffectOptions& options =
       KeyframeEffectOptionsFromUnion(aOptions);
 
-  // If dom.animations-api.compositing.enabled is turned off,
-  // iterationComposite and composite are the default value 'replace' in the
-  // dictionary.
   result.mIterationComposite = options.mIterationComposite;
   result.mComposite = options.mComposite;
 
@@ -1271,8 +1269,6 @@ void KeyframeEffect::GetKeyframes(JSContext* aCx, nsTArray<JSObject*>& aResult,
       keyframe.mTimingFunction.ref().AppendToString(keyframeDict.mEasing);
     }  // else if null, leave easing as its default "linear".
 
-    // With the pref off (i.e. dom.animations-api.compositing.enabled:false),
-    // the dictionary-to-JS conversion will skip this member entirely.
     keyframeDict.mComposite = keyframe.mComposite;
 
     JS::Rooted<JS::Value> keyframeJSValue(aCx);
@@ -1520,18 +1516,18 @@ bool KeyframeEffect::CanThrottleOverflowChangesInScrollable(
     return true;
   }
 
-  // If the nearest scrollable ancestor has overflow:hidden,
+  // If the nearest scroll container ancestor has overflow:hidden,
   // we don't care about overflow.
-  nsIScrollableFrame* scrollable =
-      nsLayoutUtils::GetNearestScrollableFrame(&aFrame);
-  if (!scrollable) {
+  ScrollContainerFrame* scrollContainerFrame =
+      nsLayoutUtils::GetNearestScrollContainerFrame(&aFrame);
+  if (!scrollContainerFrame) {
     return true;
   }
 
-  ScrollStyles ss = scrollable->GetScrollStyles();
+  ScrollStyles ss = scrollContainerFrame->GetScrollStyles();
   if (ss.mVertical == StyleOverflow::Hidden &&
       ss.mHorizontal == StyleOverflow::Hidden &&
-      scrollable->GetLogicalScrollPosition() == nsPoint(0, 0)) {
+      scrollContainerFrame->GetLogicalScrollPosition() == nsPoint(0, 0)) {
     return true;
   }
 
@@ -1652,8 +1648,8 @@ bool KeyframeEffect::ShouldBlockAsyncTransformAnimations(
   // transform-related animations on the main thread (where we have the
   // !important rule).
   nsCSSPropertyIDSet blockedProperties =
-      effectSet->PropertiesWithImportantRules().Intersect(
-          effectSet->PropertiesForAnimationsLevel());
+      effectSet->PropertiesForAnimationsLevel().Intersect(
+          effectSet->PropertiesWithImportantRules());
   if (blockedProperties.Intersects(aPropertySet)) {
     aPerformanceWarning =
         AnimationPerformanceWarning::Type::TransformIsBlockedByImportantRules;

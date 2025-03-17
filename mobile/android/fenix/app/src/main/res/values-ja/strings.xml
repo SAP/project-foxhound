@@ -51,12 +51,20 @@
 
     <!-- Home - Recently saved bookmarks -->
     <!-- Title for the home screen section with recently saved bookmarks. -->
-    <string name="recently_saved_title">最近保存</string>
+    <string name="recently_saved_title" moz:removedIn="127" tools:ignore="UnusedResources">最近保存</string>
     <!-- Content description for the button which navigates the user to show all of their saved bookmarks. -->
-    <string name="recently_saved_show_all_content_description_2">保存したブックマークをすべて表示します</string>
+    <string name="recently_saved_show_all_content_description_2" moz:removedIn="127" tools:ignore="UnusedResources">保存したブックマークをすべて表示します</string>
 
     <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
-    <string name="recently_saved_menu_item_remove">削除</string>
+    <string name="recently_saved_menu_item_remove" moz:removedIn="127" tools:ignore="UnusedResources">削除</string>
+
+    <!-- Home - Bookmarks -->
+    <!-- Title for the home screen section with bookmarks. -->
+    <string name="home_bookmarks_title">ブックマーク</string>
+    <!-- Content description for the button which navigates the user to show all of their bookmarks. -->
+    <string name="home_bookmarks_show_all_content_description">すべてのブックマークを表示</string>
+    <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
+    <string name="home_bookmarks_menu_item_remove">削除</string>
 
     <!-- About content. The first parameter is the name of the application. (For example: Fenix) -->
     <string name="about_content">%1$s は Mozilla の製品です。</string>
@@ -147,8 +155,8 @@
     <!-- Shortcut action to open new private tab -->
     <string name="home_screen_shortcut_open_new_private_tab_2">新しいプライベートタブ</string>
 
-    <!-- Shortcut action to open Passwords screens -->
-    <string name="home_screen_shortcut_open_password_screen">パスワードのショートカット</string>
+    <!-- Shortcut action to open Passwords screen -->
+    <string name="home_screen_shortcut_passwords">パスワード</string>
 
     <!-- Recent Tabs -->
     <!-- Header text for jumping back into the recent tab in the home screen -->
@@ -189,14 +197,14 @@
     <string name="browser_menu_refresh">更新</string>
     <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
     <string name="browser_menu_stop">中止</string>
-    <!-- Browser menu button that opens the addon manager -->
-    <string name="browser_menu_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">アドオン</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">拡張機能</string>
+    <!-- Browser menu button that opens the extensions manager -->
+    <string name="browser_menu_manage_extensions">拡張機能を管理</string>
+    <!-- Browser menu button that opens AMO in a tab -->
+    <string name="browser_menu_discover_more_extensions">拡張機能を探す</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">アカウント情報</string>
-    <!-- Text displayed when there are no add-ons to be shown -->
-    <string name="no_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">アドオンがありません</string>
     <!-- Browser menu button that sends a user to help articles -->
     <string name="browser_menu_help">ヘルプ</string>
     <!-- Browser menu button that sends a to a the what's new article -->
@@ -211,18 +219,24 @@
     <string name="browser_menu_open_in_regular_tab">通常タブで開く</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen">ホーム画面に追加</string>
-    <!-- Browser menu toggle that installs a Progressive Web App shortcut to the site on the device home screen. -->
-    <string name="browser_menu_install_on_homescreen" moz:removedIn="126" tools:ignore="UnusedResources">インストール</string>
+    <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
+    <string name="browser_menu_add_to_homescreen_2">ホーム画面に追加...</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">再同期</string>
     <!-- Browser menu button that opens the find in page menu -->
     <string name="browser_menu_find_in_page">ページ内検索</string>
+    <!-- Browser menu button that opens the find in page menu -->
+    <string name="browser_menu_find_in_page_2">ページ内を検索...</string>
     <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
     <string name="browser_menu_translations">ページを翻訳</string>
+    <!-- Browser menu button that saves the current tab to a collection -->
+    <string name="browser_menu_save_to_collection">コレクションに保存...</string>
     <!-- Browser menu button that saves the current tab to a collection -->
     <string name="browser_menu_save_to_collection_2">コレクションに保存</string>
     <!-- Browser menu button that open a share menu to share the current site -->
     <string name="browser_menu_share">共有</string>
+    <!-- Browser menu button that open a share menu to share the current site -->
+    <string name="browser_menu_share_2">共有...</string>
     <!-- Browser menu button shown in custom tabs that opens the current tab in Fenix
         The first parameter is the name of the app defined in app_name (for example: Fenix) -->
     <string name="browser_menu_open_in_fenix">%1$s で開く</string>
@@ -252,9 +266,47 @@
     <string name="browser_menu_customize_home_1">ホームページをカスタマイズ</string>
 
     <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
-    <string name="browser_menu_sign_in" tools:ignore="UnusedResources">ログイン</string>
-    <!-- Browser menu caption label for the "Sign in" browser menu item described in browser_menu_sign_in -->
-    <string name="browser_menu_sign_in_caption" tools:ignore="UnusedResources">パスワード、タブなどを同期します</string>
+    <string name="browser_menu_sign_in">ログイン</string>
+    <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
+    <string name="browser_menu_sign_in_caption">パスワード、タブなどを同期します</string>
+
+    <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
+    <string name="browser_menu_sign_back_in_to_sync">ログインして Sync に戻る</string>
+    <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
+    <string name="browser_menu_syncing_paused_caption">同期を一時停止中</string>
+    <!-- Browser menu label that creates a private tab -->
+    <string name="browser_menu_new_private_tab">新しいプライベートタブ</string>
+    <!-- Browser menu label that navigates to the Password screen -->
+    <string name="browser_menu_passwords">パスワード</string>
+
+    <!-- Browser menu label that navigates to the SUMO page for the Firefox for Android release notes.
+         The first parameter is the name of the app defined in app_name (for example: Fenix)-->
+    <string name="browser_menu_new_in_firefox">%1$s の新着情報</string>
+    <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
+    <string name="browser_menu_switch_to_desktop_site">PC 版サイトに切り替える</string>
+    <!-- Browser menu label that navigates to the page tools sub-menu -->
+    <string name="browser_menu_tools">ツール</string>
+    <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
+         bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen -->
+    <string name="browser_menu_save">保存</string>
+
+    <!-- Browser menu label that bookmarks the currently visited page -->
+    <string name="browser_menu_bookmark_this_page">このページをブックマーク</string>
+    <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
+    <string name="browser_menu_edit_bookmark">ブックマークを編集</string>
+    <!-- Browser menu label that the saves the currently visited page as a PDF -->
+    <string name="browser_menu_save_as_pdf">PDF として保存...</string>
+    <!-- Browser menu label for turning ON reader view of the current visited page -->
+    <string name="browser_menu_turn_on_reader_view">リーダービューで開く</string>
+    <!-- Browser menu label for turning OFF reader view of the current visited page -->
+    <string name="browser_menu_turn_off_reader_view">リーダービューを閉じる</string>
+    <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+    <string name="browser_menu_translate_page">ページを翻訳...</string>
+    <!-- Browser menu label that is displayed when the current page has been translated by the translation feature.
+         The first parameter is the name of the language that page was translated to (e.g. English). -->
+    <string name="browser_menu_translated_to">%1$s に翻訳しました</string>
+    <!-- Browser menu label for the print feature -->
+    <string name="browser_menu_print">印刷...</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -353,8 +405,6 @@
     <!-- Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments. -->
     <!-- Description for learning more about our privacy notice. -->
     <string name="juno_onboarding_privacy_notice_text">Firefox のプライバシー通知</string>
-    <!-- Description for learning more about our privacy notice. -->
-    <string name="juno_onboarding_privacy_notice_text_2" moz:removedIn="125" tools:ignore="UnusedResources">詳細はプライバシー通知をご覧ください</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_title_nimbus_2">私たちはあなたの安全を守りたいと願っています</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments.
@@ -548,7 +598,9 @@
     <!-- Preference category for account information -->
     <string name="preferences_category_account">アカウント</string>
     <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar">ツールバー</string>
+    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">ツールバー</string>
+    <!-- Preference for changing where the AddressBar is positioned -->
+    <string name="preferences_toolbar_2">アドレスバーの配置</string>
     <!-- Preference for changing default theme to dark or light mode -->
     <string name="preferences_theme">テーマ</string>
     <!-- Preference for customizing the home screen -->
@@ -565,6 +617,10 @@
     <string name="preferences_account_sync_error">再接続して同期を再開</string>
     <!-- Preference for language -->
     <string name="preferences_language">言語</string>
+    <!-- Preference for translation -->
+    <string name="preferences_translation" moz:removedIn="127" tools:ignore="UnusedResources">翻訳</string>
+    <!-- Preference for translations -->
+    <string name="preferences_translations">翻訳</string>
     <!-- Preference for data choices -->
     <string name="preferences_data_choices">データの選択</string>
     <!-- Preference for data collection -->
@@ -616,13 +672,8 @@
     <!-- Message to indicate users that we are quitting the application to apply the changes -->
     <string name="quit_application">変更を適用するためアプリケーションを終了します...</string>
 
-    <!-- Preference for add_ons -->
-    <string name="preferences_addons" moz:removedIn="126" tools:ignore="UnusedResources">アドオン</string>
-
     <!-- Preference for extensions -->
     <string name="preferences_extensions">拡張機能</string>
-    <!-- Preference for installing a local add-on -->
-    <string name="preferences_install_local_addon" moz:removedIn="126" tools:ignore="UnusedResources">ファイルからアドオンをインストール</string>
     <!-- Preference for installing a local extension -->
     <string name="preferences_install_local_extension">ファイルから拡張機能をインストール</string>
     <!-- Preference for notifications -->
@@ -633,9 +684,21 @@
     <!-- Summary for notification preference indicating notifications are not allowed -->
     <string name="notifications_not_allowed_summary">許可されていません</string>
 
+    <!-- Add-on Permissions -->
+    <!-- The title of the required permissions section from addon's permissions screen -->
+    <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">必須</string>
+    <!-- The title of the optional permissions section from addon's permissions screen -->
+    <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">任意</string>
+    <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
+    <string name="addons_permissions_allow_for_all_sites" tools:ignore="UnusedResources">すべてのサイトで許可する</string>
+
+    <!-- The subtitle for the allow for all sites preference toggle -->
+    <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">この拡張機能を信頼する場合は、すべてのウェブサイトに対して権限を与えられます。</string>
+
+    <!-- The text shown when an extension does not require permissions -->
+    <string name="addons_does_not_require_permissions">この拡張機能は権限を必要としません。</string>
+
     <!-- Add-on Preferences -->
-    <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
-    <string name="preferences_customize_amo_collection" moz:removedIn="126" tools:ignore="UnusedResources">カスタムアドオンコレクション</string>
     <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
     <string name="preferences_customize_extension_collection">カスタム拡張機能コレクション</string>
     <!-- Button caption to confirm the add-on collection configuration -->
@@ -646,8 +709,6 @@
     <string name="customize_addon_collection_hint">コレクション名</string>
     <!-- Hint displayed on input field for custom collection user ID-->
     <string name="customize_addon_collection_user_hint">コレクションの所有者 (ユーザーID)</string>
-    <!-- Toast shown after confirming the custom add-on collection configuration -->
-    <string name="toast_customize_addon_collection_done" moz:removedIn="126" tools:ignore="UnusedResources">アドオンコレクションが変更されました。変更を適用するためにアプリケーションを終了しています…</string>
 
     <!-- Toast shown after confirming the custom extension collection configuration -->
     <string name="toast_customize_extension_collection_done">拡張機能コレクションが変更されました。変更を適用するためにアプリケーションを終了しています…</string>
@@ -656,7 +717,9 @@
     <!-- Header text for jumping back into the recent tab in customize the home screen -->
     <string name="customize_toggle_jump_back_in">以前表示したタブ</string>
     <!-- Title for the customize home screen section with recently saved bookmarks. -->
-    <string name="customize_toggle_recent_bookmarks">最近追加したブックマーク</string>
+    <string name="customize_toggle_recent_bookmarks" moz:removedIn="127" tools:ignore="UnusedResources">最近追加したブックマーク</string>
+    <!-- Title for the customize home screen section with bookmarks. -->
+    <string name="customize_toggle_bookmarks">ブックマーク</string>
     <!-- Title for the customize home screen section with recently visited. Recently visited is
     a section where users see a list of tabs that they have visited in the past few days -->
     <string name="customize_toggle_recently_visited">最近訪れたサイト</string>
@@ -704,36 +767,23 @@
     <string name="wallpapers_onboarding_dialog_explore_more_button_text">他の壁紙を探す</string>
 
     <!-- Add-ons general availability nimbus message-->
-    <!-- Title of the Nimbus message for add-ons general availability-->
-    <string name="addon_ga_message_title" moz:removedIn="126" tools:ignore="UnusedResources">新しいアドオンが利用可能になりました</string>
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">新しい拡張機能が利用可能になりました</string>
     <!-- Body of the Nimbus message for add-ons general availability. 'Firefox' intentionally hardcoded here-->
     <string name="addon_ga_message_body" tools:ignore="UnusedResources">あなただけの Firefox にカスタマイズできる 100 以上の新しい拡張機能を確認してください。</string>
-    <!-- Button text of the Nimbus message for add-ons general availability. -->
-    <string name="addon_ga_message_button" moz:removedIn="126" tools:ignore="UnusedResources">アドオンを探す</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">拡張機能を探す</string>
 
     <!-- Extension process crash dialog to user -->
-    <!-- Title of a dialog shown to the user when enough errors have occurred with addons and they need to be temporarily disabled -->
-    <string name="addon_process_crash_dialog_title" moz:removedIn="126" tools:ignore="UnusedResources">アドオンは一時的に無効化されています</string>
-
     <!-- Title of the extension crash dialog shown to the user when enough errors have occurred with extensions and they need to be temporarily disabled -->
     <string name="extension_process_crash_dialog_title">拡張機能は一時的に無効化されています</string>
-    <!-- The first parameter is the application name. This is a message shown to the user when too many errors have occurred with the addons process and they have been disabled. The user can decide if they would like to continue trying to start add-ons or if they'd rather continue without them. -->
-    <string name="addon_process_crash_dialog_message" moz:removedIn="126" tools:ignore="UnusedResources">システムを不安定にしている 1 つ以上のアドオンが動作を停止しました。 %1$s によるアドオンの再起動が失敗しました。\n\nアドオンは現在のセッション中に再起動されません。\n\nアドオンを削除または無効にすると、この問題が解決される可能性があります。</string>
     <!-- This is a message shown to the user when too many errors have occurred with the extensions process and they have been disabled.
     The user can decide if they would like to continue trying to start extensions or if they'd rather continue without them.
     The first parameter is the application name. -->
     <string name="extension_process_crash_dialog_message">システムを不安定にしている 1 個以上の拡張機能が動作を停止しました。 %1$s による拡張機能の再起動が失敗しました。\n\n拡張機能は現在のセッション中に再起動されません。\n\n拡張機能を削除または無効にすることで、この問題を解決できるかもしれません。</string>
-    <!-- This will cause the add-ons to try restarting but the dialog will reappear if it is unsuccessful again -->
-    <string name="addon_process_crash_dialog_retry_button_text" moz:removedIn="126" tools:ignore="UnusedResources">アドオンを再起動してみてください</string>
     <!-- Button text on the extension crash dialog to prompt the user to try restarting the extensions but the dialog will reappear if it is unsuccessful again -->
     <string name="extension_process_crash_dialog_retry_button_text" tools:ignore="UnusedResources">拡張機能を再起動してみてください</string>
-    <!-- The user will continue with all add-ons disabled -->
-    <string name="addon_process_crash_dialog_disable_addons_button_text" moz:removedIn="126" tools:ignore="UnusedResources">アドオンを無効にして続ける</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to continue with all extensions disabled. -->
     <string name="extension_process_crash_dialog_disable_extensions_button_text">拡張機能を無効にして続ける</string>
@@ -751,8 +801,6 @@
     <string name="preferences_sync_history">表示履歴</string>
     <!-- Preference for syncing bookmarks -->
     <string name="preferences_sync_bookmarks">ブックマーク</string>
-    <!-- Preference for syncing logins -->
-    <string name="preferences_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報</string>
     <!-- Preference for syncing passwords -->
     <string name="preferences_sync_logins_2">パスワード</string>
     <!-- Preference for syncing tabs -->
@@ -779,8 +827,6 @@
         and the third is the device model. -->
     <string name="default_device_name_2">%2$s %3$s 上の %1$s</string>
 
-    <!-- Preference for syncing credit cards -->
-    <string name="preferences_sync_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">クレジットカード情報</string>
     <!-- Preference for syncing payment methods -->
     <string name="preferences_sync_credit_cards_2">支払い方法</string>
     <!-- Preference for syncing addresses -->
@@ -796,6 +842,14 @@
     <string name="fxa_tab_received_notification_name">受信したタブ</string>
     <!-- %s is the device name -->
     <string name="fxa_tab_received_from_notification_name">%s からのタブ</string>
+
+    <!-- Close Synced Tabs -->
+    <!-- The title for a notification shown when the user closes tabs that are currently
+    open on this device from another device that's signed in to the same Mozilla account.
+    %1$s is a placeholder for the app name; %2$d is the number of tabs closed.  -->
+    <string name="fxa_tabs_closed_notification_title">%1$s のタブを %2$d 個閉じました</string>
+    <!-- The body for a "closed synced tabs" notification. -->
+    <string name="fxa_tabs_closed_text">最近閉じたタブを表示</string>
 
     <!-- Advanced Preferences -->
     <!-- Preference for tracking protection exceptions -->
@@ -856,9 +910,14 @@
     <!-- Preference for using the dynamic toolbar -->
     <string name="preference_gestures_dynamic_toolbar">スクロール時にツールバーを隠す</string>
     <!-- Preference for switching tabs by swiping horizontally on the toolbar -->
-    <string name="preference_gestures_swipe_toolbar_switch_tabs">ツールバーの横スワイプでタブ切り替え</string>
+    <string name="preference_gestures_swipe_toolbar_switch_tabs" moz:removedIn="129" tools:ignore="UnusedResources">ツールバーの横スワイプでタブ切り替え</string>
     <!-- Preference for showing the opened tabs by swiping up on the toolbar-->
     <string name="preference_gestures_swipe_toolbar_show_tabs">ツールバーの上スワイプでタブ表示</string>
+
+    <!-- Preference for using the dynamic toolbars -->
+    <string name="preference_gestures_dynamic_toolbar_2">スクロール時にアドレスバーとツールバーを隠す</string>
+    <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
+    <string name="preference_gestures_swipe_toolbar_switch_tabs_2">アドレスバーの横スワイプでタブを切り替える</string>
 
     <!-- Library -->
     <!-- Option in Library to open Downloads page -->
@@ -1375,6 +1434,22 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">プライベートタブを閉じる</string>
 
+    <!-- Microsuverys -->
+    <!-- Text shown in prompt for printing microsurvey. "sec" It's an abrevation for "second". -->
+    <string name="microsurvey_prompt_printing_title" tools:ignore="UnusedResources">Firefox の印刷機能の改善にご協力ください。時間はかかりません。</string>
+    <!-- Text shown in prompt for printing microsurvey. 'Firefox' intentionally hardcoded here--> --&gt;
+    <string name="microsurvey_survey_printing_title" tools:ignore="UnusedResources">Firefox での印刷にどの程度満足していますか？</string>
+    <!-- Text for option one, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources">どちらでもない</string>
+    <!-- Text for option two, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_1" tools:ignore="UnusedResources">非常に不満</string>
+    <!-- Text for option three, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_2" tools:ignore="UnusedResources">不満</string>
+    <!-- Text for option four, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_3" tools:ignore="UnusedResources">満足</string>
+    <!-- Text for option five, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_4" tools:ignore="UnusedResources">とても満足</string>
+
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
     <string name="notification_erase_title_android_14">プライベートタブを閉じますか？</string>
     <string name="notification_erase_text_android_14">プライベートタブを閉じるには、この通知をタップまたはスワイプしてください。</string>
@@ -1450,10 +1525,6 @@
     <string name="qr_scanner_dialog_invalid_ok">OK</string>
     <!-- Tab collection deletion prompt dialog message. Placeholder will be replaced with the collection name -->
     <string name="tab_collection_dialog_message">本当に %1$s を削除してもよろしいですか？</string>
-    <!-- Collection and tab deletion prompt dialog message. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_message">このタブを削除するとコレクション全体が削除されます。新しいコレクションはいつでも作成できます。</string>
-    <!-- Collection and tab deletion prompt dialog title. Placeholder will be replaced with the collection name. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_title">%1$s のコレクションを削除しますか？</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">削除</string>
     <!-- Text displayed in a notification when the user enters full screen mode -->
@@ -1736,11 +1807,7 @@
     <string name="add_to_homescreen_description_2">このウェブサイトを端末のホーム画面に簡単な操作で追加できます。アプリのような感覚で素早くアクセスして閲覧しましょう。</string>
 
     <!-- Preference for managing the settings for logins and passwords in Fenix -->
-    <string name="preferences_passwords_logins_and_passwords" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報とパスワード</string>
-    <!-- Preference for managing the settings for logins and passwords in Fenix -->
     <string name="preferences_passwords_logins_and_passwords_2">パスワード</string>
-    <!-- Preference for managing the saving of logins and passwords in Fenix -->
-    <string name="preferences_passwords_save_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報を保存する</string>
     <!-- Preference for managing the saving of logins and passwords in Fenix -->
     <string name="preferences_passwords_save_logins_2">パスワードを保存</string>
     <!-- Preference option for asking to save passwords in Fenix -->
@@ -1757,46 +1824,27 @@
     <!-- Description for the preference for autofilling logins from Fenix in other apps (e.g. autofilling the Twitter app) -->
     <string name="preferences_android_autofill_description">端末上の他のアプリにユーザー名とパスワードを入力します。</string>
 
-    <!-- Preference option for adding a login -->
-    <string name="preferences_logins_add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報を追加</string>
-
     <!-- Preference option for adding a password -->
     <string name="preferences_logins_add_login_2">パスワードを追加</string>
 
     <!-- Preference for syncing saved passwords in Fenix -->
-    <string name="preferences_passwords_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報を同期</string>
-    <!-- Preference for syncing saved passwords in Fenix -->
     <string name="preferences_passwords_sync_logins_2">パスワードを同期</string>
-    <!-- Preference for syncing saved logins in Fenix, when not signed in-->
-    <string name="preferences_passwords_sync_logins_across_devices" moz:RemovedIn="125" tools:ignore="UnusedResources">端末間でログイン情報を同期します</string>
     <!-- Preference for syncing saved passwords in Fenix, when not signed in-->
     <string name="preferences_passwords_sync_logins_across_devices_2">端末間でパスワードを同期</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">保存されたログイン情報</string>
     <!-- Preference to access list of saved passwords -->
     <string name="preferences_passwords_saved_logins_2">保存されたパスワード</string>
     <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
-    <string name="preferences_passwords_saved_logins_description_empty_text" moz:RemovedIn="125" tools:ignore="UnusedResources">端末に保存または %s と同期したログイン情報がここに表示されます。</string>
-    <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
     <string name="preferences_passwords_saved_logins_description_empty_text_2">%s に保存または同期したパスワードがこのリストに表示されます。保存されたすべてのパスワードは暗号化されます。</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins_description_empty_learn_more_link" moz:RemovedIn="125" tools:ignore="UnusedResources">Sync についての詳細情報。</string>
     <!-- Clickable text for opening an external link for more information about Sync. -->
     <string name="preferences_passwords_saved_logins_description_empty_learn_more_link_2">Sync についての詳細情報</string>
     <!-- Preference to access list of login exceptions that we never save logins for -->
     <string name="preferences_passwords_exceptions">例外</string>
-    <!-- Empty description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description_empty" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報が保存されないサイトがここに表示されます。</string>
     <!-- Empty description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_empty_2">%s は、このリストに表示されているサイトのパスワードを保存しません。</string>
-    <!-- Description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description" moz:RemovedIn="125" tools:ignore="UnusedResources">これらのサイトではログイン情報が保存されません。</string>
     <!-- Description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_2">%s はこれらのサイトのパスワードを保存しません。</string>
     <!-- Text on button to remove all saved login exceptions -->
     <string name="preferences_passwords_exceptions_remove_all">すべての例外を削除</string>
-    <!-- Hint for search box in logins list -->
-    <string name="preferences_passwords_saved_logins_search" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報を検索</string>
     <!-- Hint for search box in passwords list -->
     <string name="preferences_passwords_saved_logins_search_2">パスワードを検索</string>
     <!-- The header for the site that a login is for -->
@@ -1825,16 +1873,10 @@
     <string name="saved_login_reveal_password">パスワードを表示</string>
     <!-- Content Description (for screenreaders etc) read for the button to hide a password in logins -->
     <string name="saved_login_hide_password">パスワードを隠す</string>
-    <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their logins -->
-    <string name="logins_biometric_prompt_message" moz:RemovedIn="125" tools:ignore="UnusedResources">ロック解除して保存されたログイン情報を表示します</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their passwords -->
     <string name="logins_biometric_prompt_message_2">保存されたパスワードを表示するにはロック解除してください</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報とパスワードの保護</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_title_2">保存されたパスワードを保護してください</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">端末のロックパターンや PIN、パスワードを設定して、保存されたログイン情報とパスワードを他人の不正なアクセスから保護しましょう。</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_message_2">端末のロックパターンや PIN、パスワードを設定して、保存されたパスワードを他人の不正なアクセスから保護しましょう。</string>
     <!-- Negative button to ignore warning dialog if users have no device authentication set up -->
@@ -1853,8 +1895,6 @@
     <string name="saved_logins_sort_strategy_alphabetically">名前 (昇順)</string>
     <!-- Saved logins sorting strategy menu item -by last used- (if selected, it will sort saved logins by last used) -->
     <string name="saved_logins_sort_strategy_last_used">最終使用日時</string>
-    <!-- Content description (not visible, for screen readers etc.): Sort saved logins dropdown menu chevron icon -->
-    <string name="saved_logins_menu_dropdown_chevron_icon_content_description" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報メニューの並べ替え</string>
 
     <!-- Content description (not visible, for screen readers etc.) -->
     <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">パスワードを並べ替えます</string>
@@ -1864,29 +1904,19 @@
     <string name="preferences_autofill">自動入力</string>
     <!-- Preference and title for managing the settings for addresses -->
     <string name="preferences_addresses">所在地フォーム</string>
-    <!-- Preference and title for managing the settings for credit cards -->
-    <string name="preferences_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">クレジットカード</string>
 
     <!-- Preference and title for managing the settings for payment methods -->
     <string name="preferences_credit_cards_2">支払い方法</string>
     <!-- Preference for saving and autofilling credit cards -->
-    <string name="preferences_credit_cards_save_and_autofill_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">カード情報を保存して自動入力する</string>
-    <!-- Preference for saving and autofilling credit cards -->
     <string name="preferences_credit_cards_save_and_autofill_cards_2">支払い方法を保存して入力する</string>
-    <!-- Preference summary for saving and autofilling credit card data -->
-    <string name="preferences_credit_cards_save_and_autofill_cards_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">データは暗号化されています</string>
     <!-- Preference summary for saving and autofilling payment method data. Parameter will be replaced by app name. -->
     <string name="preferences_credit_cards_save_and_autofill_cards_summary_2">%s は保存したすべての支払い方法を暗号化します</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is not signed into sync -->
     <string name="preferences_credit_cards_sync_cards_across_devices">端末間でカード情報を同期する</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is signed into sync -->
     <string name="preferences_credit_cards_sync_cards">クレジットカード情報を同期</string>
-    <!-- Preference option for adding a credit card -->
-    <string name="preferences_credit_cards_add_credit_card" moz:RemovedIn="125" tools:ignore="UnusedResources">クレジットカードを追加</string>
     <!-- Preference option for adding a card -->
     <string name="preferences_credit_cards_add_credit_card_2">カード情報を追加</string>
-    <!-- Preference option for managing saved credit cards -->
-    <string name="preferences_credit_cards_manage_saved_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">保存したカードを管理</string>
     <!-- Preference option for managing saved cards -->
     <string name="preferences_credit_cards_manage_saved_cards_2">カード情報を管理</string>
     <!-- Preference option for adding an address -->
@@ -1894,12 +1924,8 @@
     <!-- Preference option for managing saved addresses -->
     <string name="preferences_addresses_manage_addresses">アドレスの管理</string>
 
-    <!-- Preference for saving and autofilling addresses -->
-    <string name="preferences_addresses_save_and_autofill_addresses" moz:RemovedIn="125" tools:ignore="UnusedResources">アドレスを保存して自動入力する</string>
     <!-- Preference for saving and filling addresses -->
     <string name="preferences_addresses_save_and_autofill_addresses_2">住所を保存して入力する</string>
-    <!-- Preference summary for saving and autofilling address data -->
-    <string name="preferences_addresses_save_and_autofill_addresses_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">カード番号、メールアドレス、配送先などの情報を含める</string>
 
     <!-- Preference summary for saving and filling address data -->
     <string name="preferences_addresses_save_and_autofill_addresses_summary_2">電話番号とメールアドレスを含みます</string>
@@ -1924,8 +1950,6 @@
     <!-- The text for the "Delete card" button for deleting a credit card -->
     <string name="credit_cards_delete_card_button">カードを削除</string>
     <!-- The text for the confirmation message of "Delete card" dialog -->
-    <string name="credit_cards_delete_dialog_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">本当にこのクレジットカード情報を削除してもよろしいですか？</string>
-    <!-- The text for the confirmation message of "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_confirmation_2">カード情報を削除しますか？</string>
     <!-- The text for the positive button on "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_button">削除</string>
@@ -1939,24 +1963,15 @@
     <!-- Title of the "Saved cards" screen -->
     <string name="credit_cards_saved_cards">保存したカード</string>
 
-    <!-- Error message for credit card number validation -->
-    <string name="credit_cards_number_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">有効なクレジットカード番号を入力してください</string>
-
     <!-- Error message for card number validation -->
     <string name="credit_cards_number_validation_error_message_2">正しいカード番号を入力してください</string>
-    <!-- Error message for credit card name on card validation -->
-    <string name="credit_cards_name_on_card_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">このフィールドは入力必須です</string>
     <!-- Error message for card name on card validation -->
     <string name="credit_cards_name_on_card_validation_error_message_2">名前を追加してください</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their saved credit cards -->
     <string name="credit_cards_biometric_prompt_message">保存されたカード情報を表示するにはロック解除してください</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">クレジットカード情報の保護</string>
 
     <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_title_2">保存された支払い方法を保護してください</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">端末のロックパターンや PIN、パスワードを設定して、保存されたクレジットカード情報とパスワードを他人の不正なアクセスから保護しましょう。</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_message_3">端末のロックパターンや PIN、パスワードを設定して、保存された支払い方法を他人の不正なアクセスから保護しましょう。</string>
     <!-- Positive button to send users to set up a pin of warning dialog if users have no device authentication set up -->
@@ -1966,9 +1981,6 @@
     <!-- Title of PIN verification dialog to direct users to re-enter their device credentials to access their credit cards -->
     <string name="credit_cards_biometric_prompt_message_pin">端末のロック解除</string>
 
-    <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored credit card information -->
-    <string name="credit_cards_biometric_prompt_unlock_message" moz:RemovedIn="125" tools:ignore="UnusedResources">ロックを解除して保存したクレジットカード情報を使用します</string>
-
     <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored payment method information -->
     <string name="credit_cards_biometric_prompt_unlock_message_2">保存された支払い方法を使用するにはロック解除してください</string>
     <!-- Title of the "Add address" screen -->
@@ -1977,12 +1989,6 @@
     <string name="addresses_edit_address">住所の編集</string>
     <!-- Title of the "Manage addresses" screen -->
     <string name="addresses_manage_addresses">アドレスの管理</string>
-    <!-- The header for the first name of an address -->
-    <string name="addresses_first_name" moz:removedIn="125" tools:ignore="UnusedResources">名</string>
-    <!-- The header for the middle name of an address -->
-    <string name="addresses_middle_name" moz:removedIn="125" tools:ignore="UnusedResources">ミドルネーム</string>
-    <!-- The header for the last name of an address -->
-    <string name="addresses_last_name" moz:removedIn="125" tools:ignore="UnusedResources">姓</string>
     <!-- The header for the name of an address. Name represents a person's full name, typically made up of a first, middle and last name, e.g. John Joe Doe. -->
     <string name="addresses_name">氏名</string>
     <!-- The header for the street address of an address -->
@@ -2008,8 +2014,6 @@
     <!-- The text for the "Delete address" button for deleting an address -->
     <string name="addressess_delete_address_button">アドレスを削除</string>
 
-    <!-- The title for the "Delete address" confirmation dialog -->
-    <string name="addressess_confirm_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">本当にこの住所を削除してもよろしいですか？</string>
     <!-- The title for the "Delete address" confirmation dialog -->
     <string name="addressess_confirm_dialog_message_2">このアドレスを削除しますか？</string>
     <!-- The text for the positive button on "Delete address" dialog -->
@@ -2108,8 +2112,6 @@
     <string name="login_menu_delete_button">削除</string>
     <!-- Login overflow menu edit button -->
     <string name="login_menu_edit_button">編集</string>
-    <!-- Message in delete confirmation dialog for logins -->
-    <string name="login_deletion_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">このログイン情報を削除してもよろしいですか？</string>
     <!-- Message in delete confirmation dialog for password -->
     <string name="login_deletion_confirmation_2">本当にこのパスワードを削除してもよろしいですか？</string>
     <!-- Positive action of a dialog asking to delete  -->
@@ -2117,40 +2119,22 @@
 
     <!-- Negative action of a dialog asking to delete login -->
     <string name="dialog_delete_negative">キャンセル</string>
-    <!--  The saved login options menu description. -->
-    <string name="login_options_menu" moz:RemovedIn="125" tools:ignore="UnusedResources">ログインオプション</string>
     <!--  The saved password options menu description. -->
     <string name="login_options_menu_2">パスワードのオプション</string>
-    <!--  The editable text field for a login's web address. -->
-    <string name="saved_login_hostname_description" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報のウェブアドレスの編集可能なテキストフィールド。</string>
     <!--  The editable text field for a website address. -->
     <string name="saved_login_hostname_description_3">ウェブサイトのアドレスの編集可能なテキストフィールド。</string>
-    <!--  The editable text field for a login's username. -->
-    <string name="saved_login_username_description" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報のユーザー名の編集可能なテキストフィールド。</string>
     <!--  The editable text field for a username. -->
     <string name="saved_login_username_description_3">ユーザー名の編集可能なテキストフィールド。</string>
     <!--  The editable text field for a login's password. -->
-    <string name="saved_login_password_description" moz:RemovedIn="125" tools:ignore="UnusedResources">ログイン情報のパスワードの編集可能なテキストフィールド。</string>
-    <!--  The editable text field for a login's password. -->
     <string name="saved_login_password_description_2">パスワードの編集可能なテキストフィールド。</string>
-    <!--  The button description to save changes to an edited login. -->
-    <string name="save_changes_to_login" moz:RemovedIn="125" tools:ignore="UnusedResources">変更を保存してログインします。</string>
     <!--  The button description to save changes to an edited password. -->
     <string name="save_changes_to_login_2">変更を保存します。</string>
-    <!--  The page title for editing a saved login. -->
-    <string name="edit" moz:RemovedIn="125" tools:ignore="UnusedResources">編集</string>
     <!--  The page title for editing a saved password. -->
     <string name="edit_2">パスワードを編集</string>
-    <!--  The page title for adding new login. -->
-    <string name="add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">新しいログイン情報の追加</string>
     <!--  The page title for adding new password. -->
     <string name="add_login_2">パスワードを追加</string>
-    <!--  The error message in add/edit login view when password field is blank. -->
-    <string name="saved_login_password_required" moz:RemovedIn="125" tools:ignore="UnusedResources">パスワードが必要です</string>
     <!--  Error text displayed underneath the password field when it is in an error case. -->
     <string name="saved_login_password_required_2">パスワードを入力してください</string>
-    <!--  The error message in add login view when username field is blank. -->
-    <string name="saved_login_username_required" moz:RemovedIn="125" tools:ignore="UnusedResources">ユーザー名は必須です</string>
     <!--  The error message in add login view when username field is blank. -->
     <string name="saved_login_username_required_2">ユーザー名を入力してください</string>
     <!--  The error message in add login view when hostname field is blank. -->
@@ -2497,10 +2481,14 @@
     <string name="translations_bottom_sheet_translate_from">翻訳元</string>
     <!-- Label for the dropdown to select which language to translate to on the translations dialog. Usually the translate to language selected will be the user's preferred language. -->
     <string name="translations_bottom_sheet_translate_to">翻訳先</string>
+    <!-- Label for the dropdown to select which language to translate from on the translations dialog when the page language is not supported. This selection is to allow the user to select another language, in case we automatically detected the page language incorrectly. -->
+    <string name="translations_bottom_sheet_translate_from_unsupported_language">別の翻訳元言語を試す</string>
     <!-- Button text on the translations dialog to dismiss the dialog and return to the browser. -->
     <string name="translations_bottom_sheet_negative_button">後で</string>
     <!-- Button text on the translations dialog to restore the translated website back to the original untranslated version. -->
     <string name="translations_bottom_sheet_negative_button_restore">元の言語で表示</string>
+    <!-- Accessibility announcement (not visible, for screen readers etc.) for the translations dialog after restore button was pressed that indicates the original untranslated page was loaded. -->
+    <string name="translations_bottom_sheet_restore_accessibility_announcement">翻訳されていない元のページが読み込まれました</string>
     <!-- Button text on the translations dialog when a translation error appears, used to dismiss the dialog and return to the browser. -->
     <string name="translations_bottom_sheet_negative_button_error">完了</string>
     <!-- Button text on the translations dialog to begin a translation of the website. -->
@@ -2519,8 +2507,6 @@
     <string name="translation_error_could_not_load_languages_warning_text">言語を読み込めませんでした。インターネット接続を確認して、もう一度試してください。</string>
     <!-- The title of the warning card informs the user that a language is not supported. The first parameter is the name of the language that is not supported. -->
     <string name="translation_error_language_not_supported_warning_text">申し訳ありませんが、%1$s はまだサポートされていません。</string>
-    <!-- Button text on the warning card when a language is not supported. The link will take the user to a page to a support page about translations. -->
-    <string name="translation_error_language_not_supported_learn_more">詳細情報</string>
 
     <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
     <string name="translation_in_progress_snackbar">翻訳中…</string>
@@ -2535,7 +2521,7 @@
 
     <!-- Translations options dialog -->
     <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
-    <string name="translation_option_bottom_sheet_title">翻訳オプション</string>
+    <string name="translation_option_bottom_sheet_title_heading">翻訳オプション</string>
     <!-- Toggle switch label that allows a user to set the setting if they would like the browser to always offer or suggest translations when available. -->
     <string name="translation_option_bottom_sheet_always_translate">常に翻訳機能を提供する</string>
     <!-- Toggle switch label that allows a user to set if they would like a given language to automatically translate or not. The first parameter is the language name, for example, "Spanish". -->
@@ -2552,6 +2538,12 @@
     <string name="translation_option_bottom_sheet_translation_settings">翻訳設定</string>
     <!-- Button text for the button that will take the user to a website to learn more about how translations works in the given app. The first parameter is the name of the application, for example, "Fenix". -->
     <string name="translation_option_bottom_sheet_about_translations">%1$s の翻訳機能について</string>
+
+    <!-- Content description (not visible, for screen readers etc.) for closing the translations bottom sheet. -->
+    <string name="translation_option_bottom_sheet_close_content_description">翻訳シートを閉じる</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred at page settings. -->
+    <string name="translation_option_bottom_sheet_error_warning_text">一部の設定が一時的に利用できません。</string>
 
     <!-- Translation settings dialog -->
     <!-- Title of the translation settings dialog that allows a user to set their preferred translation settings. -->
@@ -2576,6 +2568,9 @@
     <!-- Screen header presenting the automatic translation preference feature. It will appear under the toolbar. -->
     <string name="automatic_translation_header_preference">設定で「常に翻訳する」言語と「翻訳しない」言語を選択します。</string>
 
+    <!-- The title of the warning card informs the user that the system could not load languages for translation settings. -->
+    <string name="automatic_translation_error_warning_text">言語を読み込めませんでした。後でもう一度ご確認ください。</string>
+
     <!-- Automatic translation options preference screen -->
     <!-- Preference option for offering to translate. Radio button title text.-->
     <string name="automatic_translation_option_offer_to_translate_title_preference">翻訳を通知する (既定)</string>
@@ -2598,6 +2593,8 @@
     <!-- Content description (not visible, for screen readers etc.): For a never-translated site list item that is selected.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_item_list_content_description_preference">%1$s を削除します</string>
+    <!-- The title of the warning card informs the user that an error has occurred at the never translate sites list. -->
+    <string name="never_translate_site_error_warning_text">サイトを読み込めませんでした。後でもう一度ご確認ください。</string>
     <!-- The Delete site dialogue title will appear when the user clicks on a list item.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_dialog_title_preference">%1$s を削除しますか？</string>
@@ -2624,8 +2621,10 @@
     <string name="download_languages_language_item_preference">%1$s (%2$s)</string>
     <!-- The subhead of the download language preference screen will appear above the items that were not downloaded. -->
     <string name="download_language_header_preference">言語をダウンロード</string>
-    <!-- All languages list item. When the user presses this item, they can download or delete all languages. -->
+    <!-- All languages list item. When the user presses this item, they can download all languages. -->
     <string name="download_language_all_languages_item_preference">すべての言語</string>
+    <!-- All languages list item. When the user presses this item, they can delete all languages that were downloaded. -->
+    <string name="download_language_all_languages_item_preference_to_delete">すべての言語を削除</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">削除</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress. -->
@@ -2633,7 +2632,16 @@
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">ダウンロード</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that is selected. -->
-    <string name="download_languages_item_content_description_selected_state">選択済み</string>
+    <string name="download_languages_item_content_description_selected_state" moz:removedIn="127" tools:ignore="UnusedResources">選択済み</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred when fetching the list of languages. -->
+    <string name="download_languages_fetch_error_warning_text">言語を読み込めませんでした。後でもう一度ご確認ください。</string>
+    <!-- The title of the warning card informs the user that an error has occurred at downloading a language.
+      The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_error_warning_text"><![CDATA[<b>%1$s</b> をダウンロードできませんでした。もう一度試してください。]]></string>
+    <!-- The title of the warning card informs the user that an error has occurred at deleting a language.
+          The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_delete_error_warning_text"><![CDATA[<b>%1$s</b> を削除できませんでした。もう一度試してください。]]></string>
 
     <!-- Title for the dialog used by the translations feature to confirm deleting a language.
     The dialog will be presented when the user requests deletion of a language.
@@ -2660,7 +2668,7 @@
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation. -->
     <string name="download_language_file_dialog_message_all_languages">翻訳のプライバシー保つため、言語の一部をキャッシュにダウンロードします。</string>
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation without mentioning the cache. -->
-    <string name="download_language_file_dialog_message_all_languages_no_cache">翻訳のプライバシーを保つため、言語の一部をダウンロードします。</string>
+    <string name="download_language_file_dialog_message_all_languages_no_cache" moz:removedIn="129" tools:ignore="UnusedResources">翻訳のプライバシーを保つため、言語の一部をダウンロードします。</string>
     <!-- Checkbox label text on the data saving mode warning dialog used by the translations feature. This checkbox allows users to ignore the data usage warnings. -->
     <string name="download_language_file_dialog_checkbox_text">常にデータ節約モードでダウンロードする</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to confirm they wish to continue and download the language file. -->
@@ -2675,12 +2683,19 @@
     <string name="debug_drawer_title">デバッグツール</string>
     <!-- Content description (not visible, for screen readers etc.): Navigate back within the debug drawer. -->
     <string name="debug_drawer_back_button_content_description">前のページへ戻ります</string>
+
+    <!-- Content description (not visible, for screen readers etc.): Open debug drawer. -->
+    <string name="debug_drawer_fab_content_description">デバッグパネルを開く</string>
+
+    <!-- Debug drawer tabs tools -->
     <!-- The title of the Tab Tools feature in the Debug Drawer. -->
     <string name="debug_drawer_tab_tools_title">タブツール</string>
     <!-- The title of the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_title">タブ数</string>
     <!-- The active tab count category in the tab count section in Tab Tools. -->
-    <string name="debug_drawer_tab_tools_tab_count_normal">使用中</string>
+    <string name="debug_drawer_tab_tools_tab_count_normal" moz:removedIn="127" tools:ignore="UnusedResources">使用中</string>
+    <!-- The active tab count category in the tab count section in Tab Tools. -->
+    <string name="debug_drawer_tab_tools_tab_count_active">使用中</string>
     <!-- The inactive tab count category in the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_inactive">休止中</string>
     <!-- The private tab count category in the tab count section in Tab Tools. -->
@@ -2691,10 +2706,78 @@
     <string name="debug_drawer_tab_tools_tab_creation_tool_title">タブ作成ツール</string>
     <!-- The label of the text field in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_text_field_label">作成するタブの数</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is empty -->
+    <string name="debug_drawer_tab_tools_tab_quantity_empty_error">テキストフィールドが空です</string>
+    <!-- The error message of the text field in the tab creation tool when the text field has characters other than digits -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_digits_error">正の整数を入力してください</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a zero -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_zero_error">0 より大きい数字を入力してください</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a
+        quantity greater than the max tabs. The first parameter is the maximum number of tabs
+        that can be generated in one operation.-->
+    <string name="debug_drawer_tab_tools_tab_quantity_exceed_max_error">1 回の操作で生成できるタブの上限 (%1$s 個) に達しました</string>
     <!-- The button text to add tabs to the active tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_active">使用中のタブに追加</string>
     <!-- The button text to add tabs to the inactive tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_inactive">休止中のタブに追加</string>
     <!-- The button text to add tabs to the private tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_private">プライベートタブに追加</string>
+
+    <!-- Micro survey -->
+
+    <!-- Microsurvey -->
+    <!-- Prompt view -->
+    <!-- The microsurvey prompt title. Note: The word "Firefox" should NOT be translated -->
+    <string name="micro_survey_prompt_title" tools:ignore="UnusedResources">Firefox の改善にご協力ください。時間はかかりません。</string>
+    <!-- The continue button label -->
+    <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">続ける</string>
+    <!-- Survey view -->
+    <!-- The survey header -->
+    <string name="micro_survey_survey_header" moz:removedIn="129" tools:ignore="UnusedResources">このアンケートにご回答ください</string>
+    <!-- The survey header -->
+    <string name="micro_survey_survey_header_2">アンケートにご回答ください</string>
+    <!-- The privacy notice link -->
+    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">プライバシー通知</string>
+    <!-- The privacy notice link -->
+    <string name="micro_survey_privacy_notice_2">プライバシー通知</string>
+    <!-- The submit button label text -->
+    <string name="micro_survey_submit_button_label">送信</string>
+    <!-- The close button label text -->
+    <string name="micro_survey_close_button_label" moz:removedIn="128" tools:ignore="UnusedResources">閉じる</string>
+    <!-- The survey completion header -->
+    <string name="micro_survey_survey_header_confirmation" tools:ignore="UnusedResources">回答完了</string>
+    <!-- The survey completion confirmation text -->
+    <string name="micro_survey_feedback_confirmation">フィードバックのご提供ありがとうございます。</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_1" tools:ignore="UnusedResources">とても満足</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_2" tools:ignore="UnusedResources">満足</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_3" tools:ignore="UnusedResources">どちらでもない</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_4" tools:ignore="UnusedResources">不満</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_5" tools:ignore="UnusedResources">非常に不満</string>
+
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_6" tools:ignore="UnusedResources">使わない</string>
+    <!-- Text shown in prompt for homepage microsurvey. 'Firefox' intentionally hardcoded here- -->
+    <string name="microsurvey_prompt_homepage_title" tools:ignore="UnusedResources">Firefox ホームページにどの程度満足していますか？</string>
+    <!-- Accessibility -->
+    <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
+    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources">アンケートを開く</string>
+    <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
+    <string name="microsurvey_close_handle_content_description" tools:ignore="UnusedResources">アンケートを閉じる</string>
+    <!-- Content description for "X" button that is closing microsurvey. -->
+    <string name="microsurvey_close_button_content_description" tools:ignore="UnusedResources">閉じる</string>
+
+    <!-- Debug drawer logins -->
+    <!-- The title of the Logins feature in the Debug Drawer. -->
+    <string name="debug_drawer_logins_title">ログイン情報</string>
+    <!-- The title of the logins section in the Logins feature, where the parameter will be the site domain  -->
+    <string name="debug_drawer_logins_current_domain_label">現在のドメイン: %s</string>
+    <!-- The label for a button to add a new fake login for the current domain in the Logins feature. -->
+    <string name="debug_drawer_logins_add_login_button">このドメインの疑似ログイン情報を追加</string>
+    <!-- Content description for delete button where parameter will be the username of the login -->
+    <string name="debug_drawer_logins_delete_login_button_content_description">ユーザー名 %s のログイン情報を削除します</string>
 </resources>

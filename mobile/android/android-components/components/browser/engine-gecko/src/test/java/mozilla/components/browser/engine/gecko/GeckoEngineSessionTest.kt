@@ -349,7 +349,7 @@ class GeckoEngineSessionTest {
         val observer: EngineSession.Observer = mock()
         engineSession.register(observer)
 
-        val response = WebResponse.Builder("https://download.mozilla.org/image.png")
+        val response = WebResponse.Builder("https://download.mozilla.org/image%20name.png")
             .addHeader(Headers.Names.CONTENT_TYPE, "image/png")
             .addHeader(Headers.Names.CONTENT_LENGTH, "42")
             .skipConfirmation(true)
@@ -362,8 +362,8 @@ class GeckoEngineSessionTest {
         contentDelegate.value.onExternalResponse(mock(), response)
 
         verify(observer).onExternalResource(
-            url = eq("https://download.mozilla.org/image.png"),
-            fileName = eq("image.png"),
+            url = eq("https://download.mozilla.org/image%20name.png"),
+            fileName = eq("image name.png"),
             contentLength = eq(42),
             contentType = eq("image/png"),
             cookie = eq(null),
@@ -2553,25 +2553,6 @@ class GeckoEngineSessionTest {
     }
 
     @Test
-    fun `WHEN session onProductUrlChange is successful THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        val delegate = engineSession.createContentDelegate()
-        var productUrlStatus = false
-        engineSession.register(
-            object : EngineSession.Observer {
-                override fun onProductUrlChange(isProductUrl: Boolean) {
-                    productUrlStatus = isProductUrl
-                }
-            },
-        )
-
-        delegate.onProductUrl(geckoSession)
-
-        assertTrue(productUrlStatus)
-        assertEquals(true, productUrlStatus)
-    }
-
-    @Test
     fun `WHEN session requestProductAnalysis is successful with analysis object THEN notify of completion`() {
         val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
         var onResultCalled = false
@@ -3363,7 +3344,7 @@ class GeckoEngineSessionTest {
         var formData = false
         engineSession.register(
             object : EngineSession.Observer {
-                override fun onCheckForFormData(containsFormData: Boolean) {
+                override fun onCheckForFormData(containsFormData: Boolean, adjustPriority: Boolean) {
                     formData = true
                 }
             },
@@ -4361,7 +4342,7 @@ class GeckoEngineSessionTest {
             mockLoadRequest("sample:about", triggeredByRedirect = true),
         )
 
-        assertEquals(geckoResult!!, GeckoResult.fromValue(AllowOrDeny.ALLOW))
+        assertEquals(geckoResult!!, GeckoResult.allow())
     }
 
     @Test

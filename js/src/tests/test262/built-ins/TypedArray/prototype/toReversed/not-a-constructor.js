@@ -1,3 +1,4 @@
+// |reftest| shell-option(--enable-float16array)
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -29,7 +30,7 @@ assert.sameValue(
 
 assert.throws(TypeError, () => {
   new TypedArray.prototype.toReversed();
-}, '`new TypedArray.prototype.toReversed()` throws TypeError');
+});
 
 
 reportCompare(0, 0);

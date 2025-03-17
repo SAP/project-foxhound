@@ -32,6 +32,10 @@ class TestFocusApplication : FocusApplication() {
     }
 
     override fun initializeNimbus() = Unit
+    override fun initializeTelemetry() = Unit
+    override fun finishSetupMegazord() = Unit
+
+    override fun initializeWebExtensionSupport() = Unit
 }
 
 /**
@@ -49,6 +53,13 @@ class EmptyFocusApplication : FocusApplication() {
 class FakeEngine : Engine {
     override val version: EngineVersion
         get() = throw NotImplementedError("Not needed for test")
+
+    override fun isTranslationsEngineSupported(
+        onSuccess: (Boolean) -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        // do nothing
+    }
 
     override fun createView(context: Context, attrs: AttributeSet?): EngineView =
         throw UnsupportedOperationException()

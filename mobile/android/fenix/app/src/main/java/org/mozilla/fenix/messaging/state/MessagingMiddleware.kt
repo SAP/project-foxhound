@@ -16,6 +16,7 @@ import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.ConsumeMe
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.Evaluate
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MessageClicked
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MessageDismissed
+import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MicrosurveyAction
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.Restore
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.UpdateMessageToShow
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.UpdateMessages
@@ -58,11 +59,28 @@ class MessagingMiddleware(
 
             is MessageDismissed -> onMessageDismissed(context, action.message)
 
+            is MicrosurveyAction.Completed -> {
+                onMicrosurveyCompleted(context, action.message, action.answer)
+            }
+
             else -> {
                 // no-op
             }
         }
         next(action)
+    }
+
+    private fun onMicrosurveyCompleted(
+        context: AppStoreMiddlewareContext,
+        message: Message,
+        answer: String,
+    ) {
+        val newMessages = removeMessage(context, message = message)
+        context.store.dispatch(UpdateMessages(newMessages))
+        consumeMessageToShowIfNeeded(context, message)
+        coroutineScope.launch {
+            controller.onMicrosurveyCompleted(message, answer)
+        }
     }
 
     private fun onMessagedDisplayed(
@@ -135,8 +153,15 @@ class MessagingMiddleware(
             context.store.dispatch(UpdateMessageToShow(updatedMessage))
         }
         val oldMessageIndex = context.state.messaging.messages.indexOfFirst { it.id == updatedMessage.id }
-        val newList = context.state.messaging.messages.toMutableList()
-        newList[oldMessageIndex] = updatedMessage
-        return newList
+
+        return if (oldMessageIndex != -1) {
+            val newList = context.state.messaging.messages.toMutableList()
+            newList[oldMessageIndex] = updatedMessage
+            newList
+        } else {
+            // No need to update the message, it was removed. This is due to a race condition, see:
+            // https://bugzilla.mozilla.org/show_bug.cgi?id=1897485
+            context.state.messaging.messages
+        }
     }
 }

@@ -23,7 +23,10 @@ remote.jar:
   content/shared/MobileTabBrowser.sys.mjs (shared/MobileTabBrowser.sys.mjs)
   content/shared/Navigate.sys.mjs (shared/Navigate.sys.mjs)
   content/shared/NavigationManager.sys.mjs (shared/NavigationManager.sys.mjs)
+  content/shared/NetworkRequest.sys.mjs (shared/NetworkRequest.sys.mjs)
+  content/shared/NetworkResponse.sys.mjs (shared/NetworkResponse.sys.mjs)
   content/shared/PDF.sys.mjs (shared/PDF.sys.mjs)
+  content/shared/Permissions.sys.mjs (shared/Permissions.sys.mjs)
   content/shared/Prompt.sys.mjs (shared/Prompt.sys.mjs)
   content/shared/Realm.sys.mjs (shared/Realm.sys.mjs)
   content/shared/RecommendedPreferences.sys.mjs (shared/RecommendedPreferences.sys.mjs)
@@ -69,6 +72,7 @@ remote.jar:
   content/shared/messagehandler/transports/RootTransport.sys.mjs (shared/messagehandler/transports/RootTransport.sys.mjs)
 
   # shared modules (WebDriver HTTP / BiDi only)
+  content/shared/webdriver/Accessibility.sys.mjs (shared/webdriver/Accessibility.sys.mjs)
   content/shared/webdriver/Actions.sys.mjs (shared/webdriver/Actions.sys.mjs)
   content/shared/webdriver/Assert.sys.mjs (shared/webdriver/Assert.sys.mjs)
   content/shared/webdriver/Capabilities.sys.mjs (shared/webdriver/Capabilities.sys.mjs)
@@ -78,6 +82,7 @@ remote.jar:
   content/shared/webdriver/NodeCache.sys.mjs (shared/webdriver/NodeCache.sys.mjs)
   content/shared/webdriver/Session.sys.mjs (shared/webdriver/Session.sys.mjs)
   content/shared/webdriver/URLPattern.sys.mjs (shared/webdriver/URLPattern.sys.mjs)
+  content/shared/webdriver/UserPromptHandler.sys.mjs (shared/webdriver/UserPromptHandler.sys.mjs)
   content/shared/webdriver/process-actors/WebDriverProcessDataChild.sys.mjs (shared/webdriver/process-actors/WebDriverProcessDataChild.sys.mjs)
   content/shared/webdriver/process-actors/WebDriverProcessDataParent.sys.mjs (shared/webdriver/process-actors/WebDriverProcessDataParent.sys.mjs)
 

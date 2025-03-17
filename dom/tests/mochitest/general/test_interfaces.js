@@ -73,6 +73,7 @@ let wasmGlobalInterfaces = [
   { name: "Function", insecureContext: true, nightly: true },
   { name: "Exception", insecureContext: true },
   { name: "Tag", insecureContext: true },
+  { name: "JSTag", insecureContext: true, earlyBetaOrEarlier: true },
   { name: "compile", insecureContext: true },
   { name: "compileStreaming", insecureContext: true },
   { name: "instantiate", insecureContext: true },
@@ -256,7 +257,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ClipboardEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ClipboardItem", earlyBetaOrEarlier: true },
+  { name: "ClipboardItem" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CloseEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -320,7 +321,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPageRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "CSSPropertyRule", insecureContext: true, nightly: true },
+  { name: "CSSPropertyRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPseudoElement", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -328,7 +329,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSRuleList", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "CSSStartingStyleRule", insecureContext: true, disabled: true },
+  { name: "CSSStartingStyleRule", insecureContext: true, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSStyleDeclaration", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

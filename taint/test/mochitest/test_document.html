@@ -8,11 +8,11 @@
     <script>
 
       function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted");
+          ok(str.taint.length > 0, "Check tainted: " + str + " Taint: " + JSON.stringify(str.taint));
       }
 
       function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted");
+          ok(str.taint.length == 0, "Check untainted: " + str);
       }
 
       add_task(async function test_document_static() {

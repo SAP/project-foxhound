@@ -93,7 +93,7 @@ from manifestparser.filters import chunk_by_slice, failures, pathprefix, tags
 from manifestparser.util import normsep
 from mozlog import commandline
 from mozprofile import Profile
-from mozprofile.cli import parse_preferences
+from mozprofile.cli import parse_key_value, parse_preferences
 from mozrunner.utils import get_stack_fixer_function
 
 # --------------------------------------------------------------
@@ -1511,6 +1511,8 @@ class XPCShellTests(object):
         for key, value in self.http3Server.ports().items():
             self.env[key] = value
         self.env["MOZHTTP3_ECH"] = self.http3Server.echConfig()
+        self.env["MOZ_HTTP3_SERVER_PATH"] = http3ServerPath
+        self.env["MOZ_HTTP3_CERT_DB_PATH"] = dbPath
 
     def shutdownHttp3Server(self):
         if self.http3Server is None:
@@ -1573,9 +1575,8 @@ class XPCShellTests(object):
 
         self.mozInfo["condprof"] = options.get("conditionedProfile", False)
 
-        self.mozInfo["msix"] = options.get(
-            "app_binary"
-        ) is not None and "WindowsApps" in options.get("app_binary", "")
+        if options.get("variant", ""):
+            self.mozInfo["msix"] = options["variant"] == "msix"
 
         self.mozInfo["is_ubuntu"] = "Ubuntu" in platform.version()
 
@@ -1786,6 +1787,14 @@ class XPCShellTests(object):
         self.crashAsPass = options.get("crashAsPass")
         self.conditionedProfile = options.get("conditionedProfile")
         self.repeat = options.get("repeat", 0)
+        self.variant = options.get("variant", "")
+
+        if self.variant == "msix":
+            self.appPath = options.get("msixAppPath")
+            self.xrePath = options.get("msixXrePath")
+            self.app_binary = options.get("msix_app_binary")
+            self.threadCount = 2
+            self.xpcshell = None
 
         self.testCount = 0
         self.passCount = 0
@@ -1848,6 +1857,13 @@ class XPCShellTests(object):
 
         # buildEnvironment() needs mozInfo, so we call it after mozInfo is initialized.
         self.buildEnvironment()
+        extraEnv = parse_key_value(options.get("extraEnv") or [], context="--setenv")
+        for k, v in extraEnv:
+            if k in self.env:
+                self.log.info(
+                    "Using environment variable %s instead of %s." % (v, self.env[k])
+                )
+            self.env[k] = v
 
         # The appDirKey is a optional entry in either the default or individual test
         # sections that defines a relative application directory for test runs. If
@@ -2022,7 +2038,7 @@ class XPCShellTests(object):
                 sequential_tests = []
                 self.env["MOZ_CHAOSMODE"] = "0xfb"
                 # chaosmode runs really slow, allow tests extra time to pass
-                self.harness_timeout = self.harness_timeout * 2
+                kwargs["harness_timeout"] = self.harness_timeout * 2
                 for i in range(VERIFY_REPEAT):
                     self.testCount += 1
                     test = testClass(
@@ -2032,7 +2048,7 @@ class XPCShellTests(object):
                 status = self.runTestList(
                     tests_queue, sequential_tests, testClass, mobileArgs, **kwargs
                 )
-                self.harness_timeout = self.harness_timeout / 2
+                kwargs["harness_timeout"] = self.harness_timeout
                 return status
 
             steps = [

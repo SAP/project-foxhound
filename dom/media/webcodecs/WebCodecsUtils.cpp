@@ -156,6 +156,33 @@ Result<Ok, nsresult> CloneBuffer(
   return Ok();
 }
 
+Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraDataFromArrayBuffer(
+    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer) {
+  RefPtr<MediaByteBuffer> data = MakeRefPtr<MediaByteBuffer>();
+  if (!AppendTypedArrayDataTo(aBuffer, *data)) {
+    return Err(NS_ERROR_OUT_OF_MEMORY);
+  }
+  return data->Length() > 0 ? data : nullptr;
+}
+
+bool CopyExtradataToDescription(
+    JSContext* aCx, Span<const uint8_t>& aSrc,
+    OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aDest) {
+  MOZ_ASSERT(!aSrc.IsEmpty());
+
+  MOZ_ASSERT(aCx);
+
+  size_t lengthBytes = aSrc.Length();
+  UniquePtr<uint8_t[], JS::FreePolicy> extradata(new uint8_t[lengthBytes]);
+
+  PodCopy(extradata.get(), aSrc.Elements(), lengthBytes);
+
+  JS::Rooted<JSObject*> data(aCx, JS::NewArrayBufferWithContents(
+                                      aCx, lengthBytes, std::move(extradata)));
+  JS::Rooted<JS::Value> value(aCx, JS::ObjectValue(*data));
+  return aDest.Init(aCx, value);
+}
+
 /*
  * The following are utilities to convert between VideoColorSpace values to
  * gfx's values.
@@ -575,15 +602,6 @@ nsCString ConfigToString(const VideoDecoderConfig& aConfig) {
   auto internal = VideoDecoderConfigInternal::Create(aConfig);
 
   return internal->ToString();
-}
-
-Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraDataFromArrayBuffer(
-    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer) {
-  RefPtr<MediaByteBuffer> data = MakeRefPtr<MediaByteBuffer>();
-  if (!AppendTypedArrayDataTo(aBuffer, *data)) {
-    return Err(NS_ERROR_OUT_OF_MEMORY);
-  }
-  return data->Length() > 0 ? data : nullptr;
 }
 
 bool IsSupportedVideoCodec(const nsAString& aCodec) {

@@ -644,16 +644,16 @@ gfxMatrix SVGPatternFrame::ConstructCTM(const SVGAnimatedViewBox& aViewBox,
     // If we're dealing with an SVG target only retrieve the context once.
     // Calling the nsIFrame* variant of GetAnimValue would look it up on
     // every call.
-    viewportWidth =
-        GetLengthValue(SVGPatternElement::ATTR_WIDTH)->GetAnimValue(ctx);
-    viewportHeight =
-        GetLengthValue(SVGPatternElement::ATTR_HEIGHT)->GetAnimValue(ctx);
+    viewportWidth = GetLengthValue(SVGPatternElement::ATTR_WIDTH)
+                        ->GetAnimValueWithZoom(ctx);
+    viewportHeight = GetLengthValue(SVGPatternElement::ATTR_HEIGHT)
+                         ->GetAnimValueWithZoom(ctx);
   } else {
     // No SVG target, call the nsIFrame* variant of GetAnimValue.
-    viewportWidth =
-        GetLengthValue(SVGPatternElement::ATTR_WIDTH)->GetAnimValue(aTarget);
-    viewportHeight =
-        GetLengthValue(SVGPatternElement::ATTR_HEIGHT)->GetAnimValue(aTarget);
+    viewportWidth = GetLengthValue(SVGPatternElement::ATTR_WIDTH)
+                        ->GetAnimValueWithZoom(aTarget);
+    viewportHeight = GetLengthValue(SVGPatternElement::ATTR_HEIGHT)
+                         ->GetAnimValueWithZoom(aTarget);
   }
 
   if (viewportWidth <= 0.0f || viewportHeight <= 0.0f) {
@@ -688,13 +688,9 @@ already_AddRefed<gfxPattern> SVGPatternFrame::GetPaintServerPattern(
     return nullptr;
   }
 
-  RefPtr<gfxPattern> pattern = new gfxPattern(surface, pMatrix);
-
-  if (!pattern) {
-    return nullptr;
-  }
-
+  auto pattern = MakeRefPtr<gfxPattern>(surface, pMatrix);
   pattern->SetExtend(ExtendMode::REPEAT);
+
   return pattern.forget();
 }
 

@@ -376,7 +376,6 @@ fn test_get_default_device_id_with_inout_type() {
 #[test]
 fn test_convert_channel_layout() {
     let pairs = [
-        (vec![kAudioObjectUnknown], vec![mixer::Channel::Silence]),
         (
             vec![kAudioChannelLabel_Mono],
             vec![mixer::Channel::FrontCenter],
@@ -398,7 +397,7 @@ fn test_convert_channel_layout() {
             vec![
                 mixer::Channel::FrontLeft,
                 mixer::Channel::FrontRight,
-                mixer::Channel::Silence,
+                mixer::Channel::Discrete,
             ],
         ),
         (
@@ -1124,11 +1123,107 @@ fn test_get_channel_count_of_unknwon_type() {
 
     fn test_channel_count(scope: Scope) {
         if let Some(device) = test_get_default_device(scope.clone()) {
-            assert!(get_channel_count(device, DeviceType::UNKNOWN).is_err());
+            assert!(run_serially_forward_panics(|| get_channel_count(
+                device,
+                DeviceType::UNKNOWN
+            )
+            .is_err()));
         } else {
             panic!("Panic by default: No device for {:?}.", scope);
         }
     }
+}
+
+fn is_vpio(id: AudioObjectID) -> bool {
+    debug_assert_running_serially();
+    get_device_global_uid(id)
+        .map(|uid| uid.into_string())
+        .map(|uid| uid.contains(VOICEPROCESSING_AGGREGATE_DEVICE_NAME))
+        .unwrap_or(false)
+}
+
+fn get_nonvpio_input_channel_counts() -> Vec<u32> {
+    debug_assert_running_serially();
+    get_devices()
+        .into_iter()
+        .filter(|&id| !is_vpio(id))
+        .filter_map(|id| get_channel_count(id, DeviceType::INPUT).ok())
+        .collect()
+}
+
+#[test]
+#[ignore]
+fn test_get_channel_count_of_input_devices_with_vpio() {
+    let non_vpio_channel_counts =
+        run_serially_forward_panics(|| get_nonvpio_input_channel_counts());
+
+    let queue = Queue::new_with_target(
+        "test_get_channel_count_of_input_devices_with_vpio",
+        get_serial_queue_singleton(),
+    );
+    let mut shared = SharedVoiceProcessingUnitManager::new(queue.clone());
+    let _vpio = queue.run_sync(|| shared.take_or_create()).unwrap().unwrap();
+
+    let vpio_channel_counts = run_serially_forward_panics(|| get_nonvpio_input_channel_counts());
+    assert_eq!(non_vpio_channel_counts, vpio_channel_counts);
+}
+
+#[test]
+#[ignore]
+fn test_get_channel_count_of_input_devices_with_aggregate_device_and_vpio() {
+    let input_device = test_get_default_device(Scope::Input);
+    let output_device = test_get_default_device(Scope::Output);
+    if input_device.is_none() || output_device.is_none() || input_device == output_device {
+        println!("No input or output device to create an aggregate device.");
+        return;
+    }
+
+    #[derive(Default)]
+    struct State {
+        aggr: Option<AggregateDevice>,
+        vpio_mgr: Option<SharedVoiceProcessingUnitManager>,
+        vpio: Option<OwningHandle<VoiceProcessingUnit>>,
+    }
+    impl Drop for State {
+        fn drop(&mut self) {
+            let mut aggr = self.aggr.take();
+            let mut vpio = self.vpio.take();
+            run_serially_forward_panics(move || {
+                aggr.take();
+                vpio.take();
+            });
+        }
+    }
+    let state = Arc::new(Mutex::new(State::default()));
+
+    // Set up an AggregateDevice with input and output.
+    let initial_channel_counts = run_serially_forward_panics(|| get_nonvpio_input_channel_counts());
+    let s1 = state.clone();
+    let aggr_channel_counts = run_serially_forward_panics(|| {
+        let mut state = s1.lock().unwrap();
+        state.aggr =
+            Some(AggregateDevice::new(input_device.unwrap(), output_device.unwrap()).unwrap());
+
+        get_nonvpio_input_channel_counts()
+    });
+    assert_eq!(initial_channel_counts.len() + 1, aggr_channel_counts.len());
+
+    let queue = Queue::new_with_target(
+        "test_get_channel_count_of_input_devices_with_aggregate_device_and_vpio",
+        get_serial_queue_singleton(),
+    );
+    {
+        let mut s = state.lock().unwrap();
+        s.vpio_mgr = Some(SharedVoiceProcessingUnitManager::new(queue.clone()));
+    }
+    let s2 = state.clone();
+    let aggr_vpio_channel_counts = run_serially_forward_panics(|| {
+        let mut state = s2.lock().unwrap();
+        state.vpio = state.vpio_mgr.as_mut().map(|m| m.take_or_create().unwrap());
+
+        get_nonvpio_input_channel_counts()
+    });
+    assert_eq!(aggr_channel_counts, aggr_vpio_channel_counts);
 }
 
 // get_range_of_sample_rates
@@ -1182,7 +1277,8 @@ fn test_get_device_presentation_latency() {
     fn test_get_device_presentation_latencies_in_scope(scope: Scope) {
         if let Some(device) = test_get_default_device(scope.clone()) {
             // TODO: The latencies very from devices to devices. Check nothing here.
-            let latency = run_serially(|| get_fixed_latency(device, scope.clone().into()));
+            let latency =
+                run_serially_forward_panics(|| get_fixed_latency(device, scope.clone().into()));
             println!(
                 "present latency on the device {} in scope {:?}: {}",
                 device, scope, latency
@@ -1198,7 +1294,7 @@ fn test_get_device_presentation_latency() {
 #[test]
 fn test_get_device_group_id() {
     if let Some(device) = test_get_default_device(Scope::Input) {
-        match run_serially(|| get_device_group_id(device, DeviceType::INPUT)) {
+        match run_serially_forward_panics(|| get_device_group_id(device, DeviceType::INPUT)) {
             Ok(id) => println!("input group id: {:?}", id),
             Err(e) => println!("No input group id. Error: {}", e),
         }
@@ -1207,7 +1303,7 @@ fn test_get_device_group_id() {
     }
 
     if let Some(device) = test_get_default_device(Scope::Output) {
-        match run_serially(|| get_device_group_id(device, DeviceType::OUTPUT)) {
+        match run_serially_forward_panics(|| get_device_group_id(device, DeviceType::OUTPUT)) {
             Ok(id) => println!("output group id: {:?}", id),
             Err(e) => println!("No output group id. Error: {}", e),
         }
@@ -1230,8 +1326,10 @@ fn test_get_same_group_id_for_builtin_device_pairs() {
     let mut input_group_ids = HashMap::<u32, String>::new();
     let input_devices = test_get_devices_in_scope(Scope::Input);
     for device in input_devices.iter() {
-        match run_serially(|| get_device_source(*device, DeviceType::INPUT)) {
-            Ok(source) => match run_serially(|| get_device_group_id(*device, DeviceType::INPUT)) {
+        match run_serially_forward_panics(|| get_device_source(*device, DeviceType::INPUT)) {
+            Ok(source) => match run_serially_forward_panics(|| {
+                get_device_group_id(*device, DeviceType::INPUT)
+            }) {
                 Ok(id) => assert!(input_group_ids
                     .insert(source, id.into_string().unwrap())
                     .is_none()),
@@ -1246,8 +1344,10 @@ fn test_get_same_group_id_for_builtin_device_pairs() {
     let mut output_group_ids = HashMap::<u32, String>::new();
     let output_devices = test_get_devices_in_scope(Scope::Output);
     for device in output_devices.iter() {
-        match run_serially(|| get_device_source(*device, DeviceType::OUTPUT)) {
-            Ok(source) => match run_serially(|| get_device_group_id(*device, DeviceType::OUTPUT)) {
+        match run_serially_forward_panics(|| get_device_source(*device, DeviceType::OUTPUT)) {
+            Ok(source) => match run_serially_forward_panics(|| {
+                get_device_group_id(*device, DeviceType::OUTPUT)
+            }) {
                 Ok(id) => assert!(output_group_ids
                     .insert(source, id.into_string().unwrap())
                     .is_none()),
@@ -1287,14 +1387,16 @@ fn test_get_device_group_id_by_unknown_device() {
 #[test]
 fn test_get_device_label() {
     if let Some(device) = test_get_default_device(Scope::Input) {
-        let name = run_serially(|| get_device_label(device, DeviceType::INPUT)).unwrap();
+        let name =
+            run_serially_forward_panics(|| get_device_label(device, DeviceType::INPUT)).unwrap();
         println!("input device label: {}", name.into_string());
     } else {
         println!("No input device.");
     }
 
     if let Some(device) = test_get_default_device(Scope::Output) {
-        let name = run_serially(|| get_device_label(device, DeviceType::OUTPUT)).unwrap();
+        let name =
+            run_serially_forward_panics(|| get_device_label(device, DeviceType::OUTPUT)).unwrap();
         println!("output device label: {}", name.into_string());
     } else {
         println!("No output device.");
@@ -1317,14 +1419,14 @@ fn test_get_device_label_by_unknown_device() {
 fn test_get_device_global_uid() {
     // Input device.
     if let Some(input) = test_get_default_device(Scope::Input) {
-        let uid = run_serially(|| get_device_global_uid(input)).unwrap();
+        let uid = run_serially_forward_panics(|| get_device_global_uid(input)).unwrap();
         let uid = uid.into_string();
         assert!(!uid.is_empty());
     }
 
     // Output device.
     if let Some(output) = test_get_default_device(Scope::Output) {
-        let uid = run_serially(|| get_device_global_uid(output)).unwrap();
+        let uid = run_serially_forward_panics(|| get_device_global_uid(output)).unwrap();
         let uid = uid.into_string();
         assert!(!uid.is_empty());
     }
@@ -1334,7 +1436,7 @@ fn test_get_device_global_uid() {
 #[should_panic]
 fn test_get_device_global_uid_by_unknwon_device() {
     // Unknown device.
-    assert!(get_device_global_uid(kAudioObjectUnknown).is_err());
+    assert!(run_serially_forward_panics(|| get_device_global_uid(kAudioObjectUnknown)).is_err());
 }
 
 // create_cubeb_device_info
@@ -1382,7 +1484,9 @@ fn test_create_cubeb_device_info() {
         let dev_types = [DeviceType::INPUT, DeviceType::OUTPUT];
         let mut results = VecDeque::new();
         for dev_type in dev_types.iter() {
-            results.push_back(run_serially(|| create_cubeb_device_info(id, *dev_type)));
+            results.push_back(run_serially_forward_panics(|| {
+                create_cubeb_device_info(id, *dev_type)
+            }));
         }
         results
     }
@@ -1442,9 +1546,11 @@ fn test_create_device_info_with_unknown_type() {
 
     fn test_create_device_info_with_unknown_type_by_scope(scope: Scope) {
         if let Some(device) = test_get_default_device(scope.clone()) {
-            assert!(
-                run_serially(|| create_cubeb_device_info(device, DeviceType::UNKNOWN)).is_err()
-            );
+            assert!(run_serially_forward_panics(|| create_cubeb_device_info(
+                device,
+                DeviceType::UNKNOWN
+            ))
+            .is_err());
         }
     }
 }
@@ -1476,7 +1582,7 @@ fn test_create_device_from_hwdev_with_inout_type() {
     fn test_create_device_from_hwdev_with_inout_type_by_scope(scope: Scope) {
         if let Some(device) = test_get_default_device(scope.clone()) {
             // Get a kAudioHardwareUnknownPropertyError in get_channel_count actually.
-            assert!(run_serially(|| create_cubeb_device_info(
+            assert!(run_serially_forward_panics(|| create_cubeb_device_info(
                 device,
                 DeviceType::INPUT | DeviceType::OUTPUT
             ))
@@ -1493,10 +1599,13 @@ fn test_create_device_from_hwdev_with_inout_type() {
 fn test_get_devices_of_type() {
     use std::collections::HashSet;
 
-    let all_devices =
-        run_serially(|| audiounit_get_devices_of_type(DeviceType::INPUT | DeviceType::OUTPUT));
-    let input_devices = run_serially(|| audiounit_get_devices_of_type(DeviceType::INPUT));
-    let output_devices = run_serially(|| audiounit_get_devices_of_type(DeviceType::OUTPUT));
+    let all_devices = run_serially_forward_panics(|| {
+        audiounit_get_devices_of_type(DeviceType::INPUT | DeviceType::OUTPUT)
+    });
+    let input_devices =
+        run_serially_forward_panics(|| audiounit_get_devices_of_type(DeviceType::INPUT));
+    let output_devices =
+        run_serially_forward_panics(|| audiounit_get_devices_of_type(DeviceType::OUTPUT));
 
     let mut expected_all = test_get_all_devices(DeviceFilter::ExcludeCubebAggregateAndVPIO);
     expected_all.sort();

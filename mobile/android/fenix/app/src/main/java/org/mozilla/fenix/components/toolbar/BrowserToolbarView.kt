@@ -6,13 +6,13 @@ package org.mozilla.fenix.components.toolbar
 
 import android.content.Context
 import android.graphics.Color
+import android.net.Uri
 import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.LayoutRes
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -29,6 +29,7 @@ import mozilla.components.concept.toolbar.ScrollableToolbar
 import mozilla.components.support.ktx.util.URLStringUtils
 import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
 import org.mozilla.fenix.customtabs.CustomTabToolbarIntegration
 import org.mozilla.fenix.customtabs.CustomTabToolbarMenu
@@ -43,7 +44,7 @@ import mozilla.components.ui.widgets.behavior.ViewPosition as MozacToolbarPositi
 
 @SuppressWarnings("LargeClass", "LongParameterList")
 class BrowserToolbarView(
-    context: Context,
+    private val context: Context,
     container: ViewGroup,
     private val settings: Settings,
     private val interactor: BrowserToolbarInteractor,
@@ -68,7 +69,7 @@ class BrowserToolbarView(
     var view: BrowserToolbar = layout
         .findViewById(R.id.toolbar)
 
-    private val tabStripView: ComposeView by lazy { layout.findViewById(R.id.tabStripView) }
+    private val isNavBarEnabled = IncompleteRedesignToolbarFeature(context.settings()).isEnabled
 
     val toolbarIntegration: ToolbarIntegration
     val menuToolbar: ToolbarMenu
@@ -82,8 +83,8 @@ class BrowserToolbarView(
         container.addView(layout)
         val isCustomTabSession = customTabSession != null
 
-        if (shouldShowTabStrip()) {
-            tabStripView.apply {
+        if (toolbarLayout == R.layout.component_browser_top_toolbar_with_tab_strip) {
+            layout.findViewById<ComposeView>(R.id.tabStripView).apply {
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
                 setContent {
                     tabStripContent()
@@ -103,24 +104,13 @@ class BrowserToolbarView(
 
         with(context) {
             val isPinningSupported = components.useCases.webAppUseCases.isPinningSupported()
-            val searchUrlBackground = if (IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
-                R.drawable.search_url_background
-            } else {
-                R.drawable.search_old_url_background
-            }
-
             layout.elevation = resources.getDimension(R.dimen.browser_fragment_toolbar_elevation)
 
             view.apply {
                 setToolbarBehavior()
 
                 if (!isCustomTabSession) {
-                    display.setUrlBackground(
-                        AppCompatResources.getDrawable(
-                            context,
-                            searchUrlBackground,
-                        ),
-                    )
+                    display.setUrlBackground(getDrawable(R.drawable.search_url_background))
                 }
 
                 display.onUrlClicked = {
@@ -145,12 +135,14 @@ class BrowserToolbarView(
                     context,
                     ThemeManager.resolveAttribute(R.attr.borderPrimary, context),
                 )
-                val pageActionSeparatorColor = ContextCompat.getColor(
-                    context,
-                    ThemeManager.resolveAttribute(R.attr.borderToolbarDivider, context),
-                )
 
-                display.urlFormatter = { url -> URLStringUtils.toDisplayUrl(url) }
+                display.urlFormatter = { url ->
+                    if (isNavBarEnabled) {
+                        Uri.parse(url.toString()).host ?: url
+                    } else {
+                        URLStringUtils.toDisplayUrl(url)
+                    }
+                }
 
                 display.colors = display.colors.copy(
                     text = primaryTextColor,
@@ -164,7 +156,6 @@ class BrowserToolbarView(
                         context,
                         R.color.fx_mobile_icon_color_information,
                     ),
-                    pageActionSeparator = pageActionSeparatorColor,
                 )
 
                 display.hint = context.getString(R.string.search_hint)
@@ -211,8 +202,6 @@ class BrowserToolbarView(
                     isPrivate = customTabSession.content.private,
                 )
             } else {
-                val isNavBarEnabled = IncompleteRedesignToolbarFeature(context.settings()).isEnabled
-
                 DefaultToolbarIntegration(
                     this,
                     view,
@@ -322,5 +311,5 @@ class BrowserToolbarView(
     }
 
     private fun shouldShowTabStrip() =
-        customTabSession == null && settings.isTabletAndTabStripEnabled
+        customTabSession == null && context.isTabStripEnabled()
 }

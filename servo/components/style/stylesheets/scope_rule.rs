@@ -6,6 +6,8 @@
 //!
 //! [scope]: https://drafts.csswg.org/css-cascade-6/#scoped-styles
 
+use crate::applicable_declarations::ScopeProximity;
+use crate::dom::TElement;
 use crate::parser::ParserContext;
 use crate::selector_parser::{SelectorImpl, SelectorParser};
 use crate::shared_lock::{
@@ -15,8 +17,13 @@ use crate::str::CssStringWriter;
 use crate::stylesheets::CssRules;
 use cssparser::{Parser, SourceLocation, ToCss};
 #[cfg(feature = "gecko")]
-use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalSizeOf, MallocUnconditionalShallowSizeOf};
-use selectors::parser::{ParseRelative, SelectorList};
+use malloc_size_of::{
+    MallocSizeOfOps, MallocUnconditionalShallowSizeOf, MallocUnconditionalSizeOf,
+};
+use selectors::context::MatchingContext;
+use selectors::matching::matches_selector;
+use selectors::parser::{AncestorHashes, ParseRelative, Selector, SelectorList};
+use selectors::OpaqueElement;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
 use style_traits::CssWriter;
@@ -90,8 +97,14 @@ pub struct ScopeBounds {
 impl ScopeBounds {
     #[cfg(feature = "gecko")]
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
-        fn bound_size_of(bound: &Option<SelectorList<SelectorImpl>>, ops: &mut MallocSizeOfOps) -> usize {
-            bound.as_ref().map(|list| list.unconditional_size_of(ops)).unwrap_or(0)
+        fn bound_size_of(
+            bound: &Option<SelectorList<SelectorImpl>>,
+            ops: &mut MallocSizeOfOps,
+        ) -> usize {
+            bound
+                .as_ref()
+                .map(|list| list.unconditional_size_of(ops))
+                .unwrap_or(0)
         }
         bound_size_of(&self.start, ops) + bound_size_of(&self.end, ops)
     }
@@ -101,39 +114,40 @@ fn parse_scope<'a>(
     context: &ParserContext,
     input: &mut Parser<'a, '_>,
     in_style_rule: bool,
-    for_end: bool
+    for_end: bool,
 ) -> Option<SelectorList<SelectorImpl>> {
-    input.try_parse(|input| {
-        if for_end {
-            input.expect_ident_matching("to")?;
-        }
-        input.expect_parenthesis_block()?;
-        input.parse_nested_block(|input| {
-            if input.is_exhausted() {
-                return Ok(None);
+    input
+        .try_parse(|input| {
+            if for_end {
+                input.expect_ident_matching("to")?;
             }
-            let selector_parser = SelectorParser {
-                stylesheet_origin: context.stylesheet_origin,
-                namespaces: &context.namespaces,
-                url_data: context.url_data,
-                for_supports_rule: false,
-            };
-            let parse_relative = if for_end {
-                ParseRelative::ForScope
-            } else if in_style_rule {
-                ParseRelative::ForNesting
-            } else {
-                ParseRelative::No
-            };
-            Ok(Some(SelectorList::parse_forgiving(
-                &selector_parser,
-                input,
-                parse_relative,
-            )?))
+            input.expect_parenthesis_block()?;
+            input.parse_nested_block(|input| {
+                if input.is_exhausted() {
+                    return Ok(None);
+                }
+                let selector_parser = SelectorParser {
+                    stylesheet_origin: context.stylesheet_origin,
+                    namespaces: &context.namespaces,
+                    url_data: context.url_data,
+                    for_supports_rule: false,
+                };
+                let parse_relative = if for_end {
+                    ParseRelative::ForScope
+                } else if in_style_rule {
+                    ParseRelative::ForNesting
+                } else {
+                    ParseRelative::No
+                };
+                Ok(Some(SelectorList::parse_forgiving(
+                    &selector_parser,
+                    input,
+                    parse_relative,
+                )?))
+            })
         })
-    })
-    .ok()
-    .flatten()
+        .ok()
+        .flatten()
 }
 
 impl ScopeBounds {
@@ -143,19 +157,155 @@ impl ScopeBounds {
         input: &mut Parser<'a, '_>,
         in_style_rule: bool,
     ) -> Self {
-        let start = parse_scope(
-            context,
-            input,
-            in_style_rule,
-            false
-        );
+        let start = parse_scope(context, input, in_style_rule, false);
 
-        let end = parse_scope(
-            context,
-            input,
-            in_style_rule,
-            true
-        );
+        let end = parse_scope(context, input, in_style_rule, true);
         Self { start, end }
     }
+}
+
+/// Types of implicit scope root.
+#[derive(Debug, Clone, MallocSizeOf)]
+pub enum ImplicitScopeRoot {
+    /// This implicit scope root is in the light tree.
+    InLightTree(OpaqueElement),
+    /// This implicit scope root is in the shadow tree.
+    InShadowTree(OpaqueElement),
+    /// This implicit scope root is the shadow host of the stylesheet-containing shadow tree.
+    ShadowHost(OpaqueElement),
+    /// The implicit scope root is in a constructed stylesheet - the scope root the element
+    /// under consideration's shadow root (If one exists).
+    Constructed,
+}
+
+impl ImplicitScopeRoot {
+    /// Return true if this matches the shadow host.
+    pub fn matches_shadow_host(&self) -> bool {
+        match self {
+            Self::InLightTree(..) | Self::InShadowTree(..) => false,
+            Self::ShadowHost(..) | Self::Constructed => true,
+        }
+    }
+
+    /// Return the scope root element, given the element to be styled.
+    pub fn element(&self, current_host: Option<OpaqueElement>) -> Option<OpaqueElement> {
+        match self {
+            Self::InLightTree(e) | Self::InShadowTree(e) | Self::ShadowHost(e) => Some(*e),
+            Self::Constructed => current_host,
+        }
+    }
+}
+
+/// Target of this scope.
+pub enum ScopeTarget<'a> {
+    /// Target matches an element matching the specified selector list.
+    Selector(&'a SelectorList<SelectorImpl>, &'a [AncestorHashes]),
+    /// Target matches only the specified element.
+    Element(OpaqueElement),
+}
+
+impl<'a> ScopeTarget<'a> {
+    /// Check if the given element is the scope.
+    pub fn check<E: TElement>(
+        &self,
+        element: E,
+        scope: Option<OpaqueElement>,
+        context: &mut MatchingContext<E::Impl>,
+    ) -> bool {
+        match self {
+            Self::Selector(list, hashes_list) => {
+                context.nest_for_scope_condition(scope, |context| {
+                    for (selector, hashes) in list.slice().iter().zip(hashes_list.iter()) {
+                        if matches_selector(selector, 0, Some(hashes), &element, context) {
+                            return true;
+                        }
+                    }
+                    false
+                })
+            },
+            Self::Element(e) => element.opaque() == *e,
+        }
+    }
+}
+
+/// A scope root candidate.
+#[derive(Clone, Copy, Debug)]
+pub struct ScopeRootCandidate {
+    /// This candidate's scope root.
+    pub root: OpaqueElement,
+    /// Ancestor hop from the element under consideration to this scope root.
+    pub proximity: ScopeProximity,
+}
+
+/// Collect potential scope roots for a given element and its scope target.
+/// The check may not pass the ceiling, if specified.
+pub fn collect_scope_roots<E>(
+    element: E,
+    ceiling: Option<OpaqueElement>,
+    context: &mut MatchingContext<E::Impl>,
+    target: &ScopeTarget,
+    matches_shadow_host: bool,
+) -> Vec<ScopeRootCandidate>
+where
+    E: TElement,
+{
+    let mut result = vec![];
+    let mut parent = Some(element);
+    let mut proximity = 0usize;
+    while let Some(p) = parent {
+        if ceiling == Some(p.opaque()) {
+            break;
+        }
+        if target.check(p, ceiling, context) {
+            result.push(ScopeRootCandidate {
+                root: p.opaque(),
+                proximity: ScopeProximity::new(proximity),
+            });
+            // Note that we can't really break here - we need to consider
+            // ALL scope roots to figure out whch one didn't end.
+        }
+        parent = p.parent_element();
+        proximity += 1;
+        // We we got to the top of the shadow tree - keep going
+        // if we may match the shadow host.
+        if parent.is_none() && matches_shadow_host {
+            parent = p.containing_shadow_host();
+        }
+    }
+    result
+}
+
+/// Given the scope-end selector, check if the element is outside of the scope.
+/// That is, check if any ancestor to the root matches the scope-end selector.
+pub fn element_is_outside_of_scope<E>(
+    selector: &Selector<E::Impl>,
+    hashes: &AncestorHashes,
+    element: E,
+    root: OpaqueElement,
+    context: &mut MatchingContext<E::Impl>,
+    root_may_be_shadow_host: bool,
+) -> bool
+where
+    E: TElement,
+{
+    let mut parent = Some(element);
+    context.nest_for_scope_condition(Some(root), |context| {
+        while let Some(p) = parent {
+            if matches_selector(selector, 0, Some(hashes), &p, context) {
+                return true;
+            }
+            if p.opaque() == root {
+                // Reached the top, not lying outside of scope.
+                break;
+            }
+            parent = p.parent_element();
+            if parent.is_none() && root_may_be_shadow_host {
+                if let Some(host) = p.containing_shadow_host() {
+                    // Pretty much an edge case where user specified scope-start and -end of :host
+                    return host.opaque() == root;
+                }
+            }
+        }
+        return false;
+    })
 }

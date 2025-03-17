@@ -53,7 +53,7 @@
   justify-content: center;
   position: sticky;
   top: 0;
-  left: 0;
+  inset-inline: 0;
   width: 100vw;
   height: 100vh;
   background-color: rgba(0, 0, 0, 0.7);
@@ -72,6 +72,11 @@
   background-color: var(--in-content-page-background);
   color: var(--in-content-text-color);
   border-radius: 4px;
+}
+
+#selection-size {
+  border: var(--border-width) solid var(--in-content-border-color);
+  box-shadow: var(--shadow-30);
 }
 
 .buttons-wrapper,
@@ -107,7 +112,7 @@
   border-color: #fff;
   color: #fff;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     background-color: var(--in-content-button-background);
     color: var(--in-content-button-text-color);
     border-color: var(--in-content-button-border-color);
@@ -118,7 +123,7 @@
   background-color: #fff;
   color: #000;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     background-color: var(--in-content-button-background-hover);
     color: var(--in-content-button-text-color-hover);
     border-color: var(--in-content-button-border-color-hover);
@@ -154,7 +159,7 @@
   width: 64px;
   height: 64px;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     display: none;
   }
 }
@@ -208,7 +213,7 @@
   padding: 20px;
   width: 400px;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     color: CanvasText;
     background-color: Canvas;
   }
@@ -351,7 +356,7 @@
   width: 16px;
   pointer-events: none;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     background-color: ButtonText;
   }
 }

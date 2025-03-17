@@ -155,10 +155,6 @@ open class DefaultToolbarMenu(
             },
         )
 
-        registerForIsBookmarkedUpdates()
-
-        registerForScreenReaderUpdates()
-
         BrowserMenuItemToolbar(listOf(back, forward, share, refresh), isSticky = true)
     }
 
@@ -230,6 +226,14 @@ open class DefaultToolbarMenu(
         primaryTextColor(),
     ) {
         onItemTapped.invoke(ToolbarMenu.Item.Downloads)
+    }
+
+    private val passwordsItem = BrowserMenuImageText(
+        context.getString(R.string.preferences_sync_logins_2),
+        R.drawable.mozac_ic_login_24,
+        primaryTextColor(),
+    ) {
+        onItemTapped.invoke(ToolbarMenu.Item.Passwords)
     }
 
     private val extensionsItem = WebExtensionPlaceholderMenuItem(
@@ -409,6 +413,7 @@ open class DefaultToolbarMenu(
                 bookmarksItem,
                 historyItem,
                 downloadsItem,
+                passwordsItem,
                 extensionsItem,
                 syncMenuItem(),
                 BrowserMenuDivider(),
@@ -430,6 +435,9 @@ open class DefaultToolbarMenu(
                 if (shouldUseBottomToolbar) BrowserMenuDivider() else null,
                 if (shouldUseBottomToolbar && shouldShowMenuToolbar) menuToolbar else null,
             )
+
+        registerForIsBookmarkedUpdates()
+        registerForScreenReaderUpdates()
 
         menuItems
     }

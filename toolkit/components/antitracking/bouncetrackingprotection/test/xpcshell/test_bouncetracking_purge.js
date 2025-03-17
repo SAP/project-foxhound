@@ -6,6 +6,9 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 const { SiteDataTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SiteDataTestUtils.sys.mjs"
 );
+const { PermissionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/PermissionTestUtils.sys.mjs"
+);
 
 let btp;
 let bounceTrackingGracePeriodSec;
@@ -28,7 +31,7 @@ function maybeFixupIpv6(host) {
  * @param {string} host
  */
 async function addStateForHost(host) {
-  info(`adding state for host ${host}`);
+  info(`Populating cookies and indexedDB for host ${host}`);
   SiteDataTestUtils.addToCookies({ host });
   await SiteDataTestUtils.addToIndexedDB(`https://${maybeFixupIpv6(host)}`);
 }
@@ -138,6 +141,36 @@ add_task(async function test_purge() {
       message: "Should purge after grace period.",
       shouldPurge: true,
     },
+    // Don't purge if the site is allowlisted.
+    // Allowlist via "trackingprotection" permission (ETP toggle).
+    "example2.net": {
+      bounceTime: timestampOutsideGracePeriodFiveSeconds,
+      userActivationTime: null,
+      allowListedPerm: "trackingprotection",
+      message:
+        "Should not purge after grace period if allowlisted via 'trackingprotection' permission.",
+      shouldPurge: false,
+    },
+    // Allowlist via "cookie" permission
+    "example3.net": {
+      bounceTime: timestampOutsideGracePeriodFiveSeconds,
+      userActivationTime: null,
+      allowListedPerm: "cookie",
+      permissionState: Services.perms.ALLOW_ACTION,
+      message:
+        "Should not purge after grace period if allowlisted via 'cookie' permission.",
+      shouldPurge: false,
+    },
+    // "cookie" permission but not allowlisted (deny action).
+    "example4.net": {
+      bounceTime: timestampOutsideGracePeriodFiveSeconds,
+      userActivationTime: null,
+      allowListedPerm: "cookie",
+      permissionState: Services.perms.DENY_ACTION,
+      message:
+        "Should get purged outside of grace period with a 'cookie' DENY permission.",
+      shouldPurge: true,
+    },
     // Also ensure that clear data calls with IP sites succeed.
     "1.2.3.4": {
       bounceTime: timestampOutsideGracePeriodThreeDays,
@@ -191,15 +224,45 @@ add_task(async function test_purge() {
 
   let expectedBounceTrackerHosts = [];
   let expectedUserActivationHosts = [];
+  let allowListedHosts = [];
 
   let expiredUserActivationHosts = [];
   let expectedPurgedHosts = [];
 
   // This would normally happen over time while browsing.
   let initPromises = Object.entries(TEST_TRACKERS).map(
-    async ([siteHost, { bounceTime, userActivationTime, shouldPurge }]) => {
+    async ([
+      siteHost,
+      {
+        message,
+        bounceTime,
+        userActivationTime,
+        allowListedPerm,
+        permissionState = Services.perms.ALLOW_ACTION,
+        shouldPurge,
+      },
+    ]) => {
+      info(`Initializing state for test ${siteHost}: ${message}`);
+
       // Add site state so we can later assert it has been purged.
       await addStateForHost(siteHost);
+
+      // Add allowlist entry if needed.
+      if (allowListedPerm == "trackingprotection") {
+        PermissionTestUtils.add(
+          `https://${siteHost}`,
+          "trackingprotection",
+          permissionState
+        );
+        allowListedHosts.push(siteHost);
+      } else if (allowListedPerm == "cookie") {
+        PermissionTestUtils.add(
+          `https://${siteHost}`,
+          "cookie",
+          permissionState
+        );
+        allowListedHosts.push(siteHost);
+      }
 
       if (bounceTime != null) {
         if (userActivationTime != null) {
@@ -210,7 +273,7 @@ add_task(async function test_purge() {
 
         expectedBounceTrackerHosts.push(siteHost);
 
-        // Convert bounceTime timestamp to nanoseconds (PRTime).
+        // Convert bounceTime timestamp to microseconds (PRTime).
         info(
           `Adding bounce. siteHost: ${siteHost}, bounceTime: ${bounceTime} ms`
         );
@@ -232,7 +295,7 @@ add_task(async function test_purge() {
           expiredUserActivationHosts.push(siteHost);
         }
 
-        // Convert userActivationTime timestamp to nanoseconds (PRTime).
+        // Convert userActivationTime timestamp to microseconds (PRTime).
         info(
           `Adding user interaction. siteHost: ${siteHost}, userActivationTime: ${userActivationTime} ms`
         );
@@ -250,12 +313,18 @@ add_task(async function test_purge() {
     "Check that bounce and user activation data has been correctly recorded."
   );
   Assert.deepEqual(
-    btp.testGetBounceTrackerCandidateHosts({}).sort(),
+    btp
+      .testGetBounceTrackerCandidateHosts({})
+      .map(entry => entry.siteHost)
+      .sort(),
     expectedBounceTrackerHosts.sort(),
     "Has added bounce tracker hosts."
   );
   Assert.deepEqual(
-    btp.testGetUserActivationHosts({}).sort(),
+    btp
+      .testGetUserActivationHosts({})
+      .map(entry => entry.siteHost)
+      .sort(),
     expectedUserActivationHosts.sort(),
     "Has added user activation hosts."
   );
@@ -269,17 +338,29 @@ add_task(async function test_purge() {
     "Should have purged all expected hosts."
   );
 
+  // After the purge only the bounce trackers that have not been purged should
+  // remain in the candidate map. Additionally the allowlisted hosts should be
+  // removed from the candidate map.
   let expectedBounceTrackerHostsAfterPurge = expectedBounceTrackerHosts
-    .filter(host => !expectedPurgedHosts.includes(host))
+    .filter(
+      host =>
+        !expectedPurgedHosts.includes(host) && !allowListedHosts.includes(host)
+    )
     .sort();
   Assert.deepEqual(
-    btp.testGetBounceTrackerCandidateHosts({}).sort(),
+    btp
+      .testGetBounceTrackerCandidateHosts({})
+      .map(entry => entry.siteHost)
+      .sort(),
     expectedBounceTrackerHostsAfterPurge.sort(),
     "After purge the bounce tracker candidate host set should be updated correctly."
   );
 
   Assert.deepEqual(
-    btp.testGetUserActivationHosts({}).sort(),
+    btp
+      .testGetUserActivationHosts({})
+      .map(entry => entry.siteHost)
+      .sort(),
     expiredUserActivationHosts.sort(),
     "After purge any expired user activation records should have been removed"
   );
@@ -302,6 +383,7 @@ add_task(async function test_purge() {
   btp.clearAll();
   assertEmpty();
 
-  info("Clean up site data.");
+  info("Clean up site data and permissions.");
   await SiteDataTestUtils.clear();
+  Services.perms.removeAll();
 });

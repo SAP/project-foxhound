@@ -188,27 +188,14 @@ config = {
             "options": ["--suite=reftest", "--topsrcdir=tests/reftest/tests"],
             "tests": ["tests/reftest/tests/layout/reftests/reftest.list"],
         },
-        "reftest-no-accel": {
-            "options": [
-                "--suite=reftest",
-                "--setpref=layers.acceleration.disabled=true",
-                "--topsrcdir=tests/reftest/tests",
-            ],
-            "tests": ["tests/reftest/tests/layout/reftests/reftest.list"],
-        },
     },
     "all_xpcshell_suites": {
         "xpcshell": {
             "options": [
                 "--xpcshell=%(abs_app_dir)s/" + XPCSHELL_NAME,
-            ],
-            "tests": [],
-        },
-        "xpcshell-msix": {
-            "options": [
-                "--app-binary=%(binary_path)s",
-                "--app-path=%(install_dir)s",
-                "--xre-path=%(install_dir)s",
+                "--msix-app-binary=%(binary_path)s",
+                "--msix-app-path=%(install_dir)s",
+                "--msix-xre-path=%(install_dir)s",
             ],
             "tests": [],
         },
@@ -324,6 +311,18 @@ config = {
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": True,
             "enabled": True,
+        },
+        {
+            "name": "ensure proper graphics driver",
+            "cmd": [
+                "powershell",
+                "-command",
+                'if (-Not ((Get-CimInstance win32_VideoController).InstalledDisplayDrivers | Out-String).contains("nvgrid")) { echo "Missing nvgrid driver: " + (Get-CimInstance win32_VideoController).InstalledDisplayDrivers; exit 4; }',
+            ],
+            "architectures": ["32bit", "64bit"],
+            "halt_on_failure": True,
+            "enabled": True if REQUIRE_GPU else False,
+            "fatal_exit_code": 4,
         },
     ],
     "vcs_output_timeout": 1000,

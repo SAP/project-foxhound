@@ -86,8 +86,7 @@ def Libxul(name, output_category=None):
 
     Libxul_defines()
 
-    if CONFIG["MOZ_NEEDS_LIBATOMIC"]:
-        OS_LIBS += ["atomic"]
+    OS_LIBS += CONFIG["LIBATOMIC_LIBS"]
 
     # TouchBar-related classes are only available in the 10.12.2 SDK and later.
     # We need to weak link these classes until we've upgraded our SDK to at
@@ -140,6 +139,7 @@ if CONFIG["OS_ARCH"] == "WINNT" and CONFIG["CC_TYPE"] not in ("clang", "gcc"):
 
 DIRS += [
     "build",
+    "buildid_reader",
     "gtest",
 ]
 
@@ -413,3 +413,7 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
     GeneratedFile(
         "buildid.cpp", script="gen_buildid.py", inputs=["!build/%s.list" % libxul_list]
     )
+
+    EXPORTS += [
+        "buildid_section.h",
+    ]

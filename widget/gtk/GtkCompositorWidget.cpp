@@ -141,15 +141,12 @@ bool GtkCompositorWidget::SetEGLNativeWindowSize(
 }
 
 LayoutDeviceIntRegion GtkCompositorWidget::GetTransparentRegion() {
-  // We need to clear target buffer alpha values of popup windows as
-  // SW-WR paints with alpha blending (see Bug 1674473).
-  if (!mWidget || mWidget->IsPopup()) {
-    return LayoutDeviceIntRect(LayoutDeviceIntPoint(0, 0), GetClientSize());
+  LayoutDeviceIntRegion fullRegion(
+      LayoutDeviceIntRect(LayoutDeviceIntPoint(), GetClientSize()));
+  if (mWidget) {
+    fullRegion.SubOut(mWidget->GetOpaqueRegion());
   }
-
-  // Clear background of titlebar area to render titlebar
-  // transparent corners correctly.
-  return mWidget->GetTitlebarRect();
+  return fullRegion;
 }
 
 #ifdef MOZ_WAYLAND

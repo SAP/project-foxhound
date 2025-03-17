@@ -87,6 +87,8 @@ trivial_to_resolved_value!(crate::color::AbsoluteColor);
 trivial_to_resolved_value!(crate::values::generics::color::ColorMixFlags);
 trivial_to_resolved_value!(crate::Atom);
 trivial_to_resolved_value!(crate::values::AtomIdent);
+trivial_to_resolved_value!(crate::custom_properties::VariableValue);
+trivial_to_resolved_value!(crate::stylesheets::UrlExtraData);
 trivial_to_resolved_value!(app_units::Au);
 trivial_to_resolved_value!(computed::url::ComputedUrl);
 #[cfg(feature = "gecko")]
@@ -166,6 +168,25 @@ where
     T: ToResolvedValue,
 {
     type ResolvedValue = Vec<<T as ToResolvedValue>::ResolvedValue>;
+
+    #[inline]
+    fn to_resolved_value(self, context: &Context) -> Self::ResolvedValue {
+        self.into_iter()
+            .map(|item| item.to_resolved_value(context))
+            .collect()
+    }
+
+    #[inline]
+    fn from_resolved_value(resolved: Self::ResolvedValue) -> Self {
+        resolved.into_iter().map(T::from_resolved_value).collect()
+    }
+}
+
+impl<T> ToResolvedValue for thin_vec::ThinVec<T>
+where
+    T: ToResolvedValue,
+{
+    type ResolvedValue = thin_vec::ThinVec<<T as ToResolvedValue>::ResolvedValue>;
 
     #[inline]
     fn to_resolved_value(self, context: &Context) -> Self::ResolvedValue {

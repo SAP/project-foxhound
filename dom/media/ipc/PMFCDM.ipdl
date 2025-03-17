@@ -46,6 +46,7 @@ struct MFCDMKeyExpiration {
 // For GetCapabilities()
 struct MFCDMMediaCapability {
   nsString contentType;
+  CryptoScheme[] encryptionSchemes;
   nsString robustness;
 };
 
@@ -55,7 +56,6 @@ struct MFCDMCapabilitiesIPDL {
   MFCDMMediaCapability[] audioCapabilities;
   MFCDMMediaCapability[] videoCapabilities;
   SessionType[] sessionTypes;
-  CryptoScheme[] encryptionSchemes;
   Requirement distinctiveID;
   Requirement persistentState;
   bool? isHDCP22Compatible;
@@ -100,6 +100,7 @@ union MFCDMSessionResult {
 struct MFCDMCapabilitiesRequest {
   nsString keySystem;
   bool isHardwareDecryption;
+  bool isPrivateBrowsing;
 };
 
 [ManualDealloc]

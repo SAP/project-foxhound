@@ -536,6 +536,7 @@ Debugger::Debugger(JSContext* cx, NativeObject* dbg)
       exclusiveDebuggerOnEval(false),
       inspectNativeCallArguments(false),
       collectCoverageInfo(false),
+      shouldAvoidSideEffects(false),
       observedGCs(cx->zone()),
       allocationsLog(cx),
       trackingAllocationSites(false),
@@ -1047,6 +1048,12 @@ NativeResumeMode DebugAPI::slowPathOnNativeCall(JSContext* cx,
   }
 
   return NativeResumeMode::Continue;
+}
+
+/* static */
+bool DebugAPI::slowPathShouldAvoidSideEffects(JSContext* cx) {
+  return DebuggerExists(
+      cx->global(), [=](Debugger* dbg) { return dbg->shouldAvoidSideEffects; });
 }
 
 /*
@@ -4187,6 +4194,8 @@ struct MOZ_STACK_CLASS Debugger::CallData {
   bool setOnEnterFrame();
   bool getOnNativeCall();
   bool setOnNativeCall();
+  bool getShouldAvoidSideEffects();
+  bool setShouldAvoidSideEffects();
   bool getOnNewGlobalObject();
   bool setOnNewGlobalObject();
   bool getOnNewPromise();
@@ -4405,6 +4414,22 @@ bool Debugger::CallData::setOnNativeCall() {
   return true;
 }
 
+bool Debugger::CallData::getShouldAvoidSideEffects() {
+  args.rval().setBoolean(dbg->shouldAvoidSideEffects);
+  return true;
+}
+
+bool Debugger::CallData::setShouldAvoidSideEffects() {
+  if (!args.requireAtLeast(cx, "Debugger.set shouldAvoidSideEffects", 1)) {
+    return false;
+  }
+
+  dbg->shouldAvoidSideEffects = ToBoolean(args[0]);
+
+  args.rval().setUndefined();
+  return true;
+}
+
 bool Debugger::CallData::getOnNewGlobalObject() {
   return getHookImpl(cx, args, *dbg, OnNewGlobalObject);
 }
@@ -4605,6 +4630,11 @@ GlobalObject* Debugger::unwrapDebuggeeArgument(JSContext* cx, const Value& v) {
   obj = CheckedUnwrapDynamic(obj, cx, /* stopAtWindowProxy = */ false);
   if (!obj) {
     ReportAccessDenied(cx);
+    return nullptr;
+  }
+
+  if (JS_IsDeadWrapper(obj)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_DEAD_OBJECT);
     return nullptr;
   }
 
@@ -6518,6 +6548,8 @@ const JSPropertySpec Debugger::properties[] = {
     JS_DEBUG_PSGS("onPromiseSettled", getOnPromiseSettled, setOnPromiseSettled),
     JS_DEBUG_PSGS("onEnterFrame", getOnEnterFrame, setOnEnterFrame),
     JS_DEBUG_PSGS("onNativeCall", getOnNativeCall, setOnNativeCall),
+    JS_DEBUG_PSGS("shouldAvoidSideEffects", getShouldAvoidSideEffects,
+                  setShouldAvoidSideEffects),
     JS_DEBUG_PSGS("onNewGlobalObject", getOnNewGlobalObject,
                   setOnNewGlobalObject),
     JS_DEBUG_PSGS("uncaughtExceptionHook", getUncaughtExceptionHook,
@@ -7257,6 +7289,10 @@ JS_PUBLIC_API bool FireOnGarbageCollectionHook(
   }
 
   return true;
+}
+
+bool ShouldAvoidSideEffects(JSContext* cx) {
+  return DebugAPI::shouldAvoidSideEffects(cx);
 }
 
 }  // namespace dbg

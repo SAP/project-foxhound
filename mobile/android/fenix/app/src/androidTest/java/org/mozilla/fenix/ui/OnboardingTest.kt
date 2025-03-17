@@ -1,9 +1,12 @@
 package org.mozilla.fenix.ui
 
+import android.os.Build
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.AppAndSystemHelper.dismissSetAsDefaultBrowserOnboardingDialog
+import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithCondition
 import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithLauncherIntent
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestSetup
@@ -20,9 +23,13 @@ class OnboardingTest : TestSetup() {
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2122321
     @Test
     fun verifyFirstOnboardingCardItemsTest() {
-        runWithLauncherIntent(activityTestRule) {
-            homeScreen {
-                verifyFirstOnboardingCard(activityTestRule)
+        // Run UI test only on devices with Android version lower than 10
+        // because on Android 10 and above, the default browser dialog is shown and the first onboarding card is skipped
+        runWithCondition(Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            runWithLauncherIntent(activityTestRule) {
+                homeScreen {
+                    verifyFirstOnboardingCard(activityTestRule)
+                }
             }
         }
     }
@@ -31,15 +38,19 @@ class OnboardingTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyFirstOnboardingCardItemsFunctionalityTest() {
-        runWithLauncherIntent(activityTestRule) {
-            homeScreen {
-                clickDefaultCardNotNowOnboardingButton(activityTestRule)
-                verifySecondOnboardingCard(activityTestRule)
-                swipeSecondOnboardingCardToRight()
-            }.clickSetAsDefaultBrowserOnboardingButton(activityTestRule) {
-                verifyAndroidDefaultAppsMenuAppears()
-            }.goBackToOnboardingScreen {
-                verifySecondOnboardingCard(activityTestRule)
+        // Run UI test only on devices with Android version lower than 10
+        // because on Android 10 and above, the default browser dialog is shown and the first onboarding card is skipped
+        runWithCondition(Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            runWithLauncherIntent(activityTestRule) {
+                homeScreen {
+                    clickDefaultCardNotNowOnboardingButton(activityTestRule)
+                    verifySecondOnboardingCard(activityTestRule)
+                    swipeSecondOnboardingCardToRight()
+                }.clickSetAsDefaultBrowserOnboardingButton(activityTestRule) {
+                    verifyAndroidDefaultAppsMenuAppears()
+                }.goBackToOnboardingScreen {
+                    verifySecondOnboardingCard(activityTestRule)
+                }
             }
         }
     }
@@ -49,7 +60,12 @@ class OnboardingTest : TestSetup() {
     fun verifySecondOnboardingCardItemsTest() {
         runWithLauncherIntent(activityTestRule) {
             homeScreen {
-                clickDefaultCardNotNowOnboardingButton(activityTestRule)
+                // Check if the device is running on Android version lower than 10
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    // If true, click the "Not Now" button from the first onboarding card
+                    clickDefaultCardNotNowOnboardingButton(activityTestRule)
+                }
+                dismissSetAsDefaultBrowserOnboardingDialog()
                 verifySecondOnboardingCard(activityTestRule)
             }
         }
@@ -61,7 +77,12 @@ class OnboardingTest : TestSetup() {
     fun verifyThirdOnboardingCardSignInFunctionalityTest() {
         runWithLauncherIntent(activityTestRule) {
             homeScreen {
-                clickDefaultCardNotNowOnboardingButton(activityTestRule)
+                // Check if the device is running on Android version lower than 10
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    // If true, click the "Not Now" button from the first onboarding card
+                    clickDefaultCardNotNowOnboardingButton(activityTestRule)
+                }
+                dismissSetAsDefaultBrowserOnboardingDialog()
                 verifySecondOnboardingCard(activityTestRule)
                 clickAddSearchWidgetNotNowOnboardingButton(activityTestRule)
                 verifyThirdOnboardingCard(activityTestRule)

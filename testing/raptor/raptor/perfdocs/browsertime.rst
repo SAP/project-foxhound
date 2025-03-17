@@ -6,7 +6,7 @@ Raptor Browsertime
    :depth: 2
    :local:
 
-Browsertime is a harness for running performance tests, similar to Mozilla's Raptor testing framework. Browsertime is written in Node.js and uses Selenium WebDriver to drive multiple browsers including Chrome, Chrome for Android, Firefox, and Firefox for Android and GeckoView-based vehicles.
+Browsertime is a harness for running performance tests, similar to Mozilla's Raptor testing framework. Browsertime is written in Node.js and uses Selenium WebDriver to drive multiple browsers including Safari, Safari Technology Preview, Chrome, Chrome for Android, Firefox, and Firefox for Android and GeckoView-based vehicles.
 
 Source code:
 
@@ -126,6 +126,26 @@ Or for Raptor-Browsertime (use ``chrome`` for desktop, and ``chrome-m`` for mobi
 
   ./mach raptor -t amazon --app chrome --browsertime-chromedriver <PATH/TO/CHROMEDRIVER>
 
+Running on Safari Technology Preview
+------------------------------------
+
+Safari Technology Preview comes bundled with an appropriate ``safaridriver`` binary, and browsertime (via selenium) automatically launches this.
+
+You will need to have installed the most up to date application version either by updating an existing installation on your MacOS or downloading it from https://developer.apple.com/safari/resources/ and ensure you download the one appropriate to your MacOS version
+
+You can launch vanilla Browsertime with Safari Technology Preview as follows:
+
+::
+
+  ./mach browsertime https://www.sitespeed.io -b safari --safari.useTechnologyPreview
+
+
+Or with Raptor-Browsertime
+
+::
+
+  ./mach raptor -t speedometer3 --app safari-tp --binary "/Applications/Safari Technology Preview.app/Contents/MacOS/Safari Technology Preview"
+
 Running Page-load tests with third party WebExtensions
 ------------------------------------------------------
 Page-load tests can also be executed on both Firefox Desktop and Firefox for Android builds with a set of popular
@@ -202,7 +222,7 @@ To run this test on try and get a compare view link, run the following
 More Examples
 -------------
 
-`Browsertime docs <https://github.com/sitespeedio/browsertime/tree/main/docs/examples>`_
+`Browsertime docs <https://www.sitespeed.io/documentation/sitespeed.io/scripting/>`_
 
 Passing Additional Arguments to Browsertime
 -------------------------------------------

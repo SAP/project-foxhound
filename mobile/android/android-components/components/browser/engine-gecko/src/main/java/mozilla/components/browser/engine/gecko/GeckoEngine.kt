@@ -47,6 +47,7 @@ import mozilla.components.concept.engine.translate.Language
 import mozilla.components.concept.engine.translate.LanguageModel
 import mozilla.components.concept.engine.translate.LanguageSetting
 import mozilla.components.concept.engine.translate.ModelManagementOptions
+import mozilla.components.concept.engine.translate.ModelState
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationSupport
 import mozilla.components.concept.engine.translate.TranslationsRuntime
@@ -341,11 +342,19 @@ class GeckoEngine(
         this.webExtensionDelegate = webExtensionDelegate
 
         val promptDelegate = object : WebExtensionController.PromptDelegate {
-            override fun onInstallPrompt(ext: org.mozilla.geckoview.WebExtension): GeckoResult<AllowOrDeny> {
-                val extension = GeckoWebExtension(ext, runtime)
+            override fun onInstallPrompt(
+                ext: org.mozilla.geckoview.WebExtension,
+                permissions: Array<out String>,
+                origins: Array<out String>,
+            ): GeckoResult<AllowOrDeny>? {
                 val result = GeckoResult<AllowOrDeny>()
 
-                webExtensionDelegate.onInstallPermissionRequest(extension) { allow ->
+                webExtensionDelegate.onInstallPermissionRequest(
+                    GeckoWebExtension(ext, runtime),
+                    // We pass both permissions and origins as a single list of
+                    // permissions to be shown to the user.
+                    permissions.toList() + origins.toList(),
+                ) { allow ->
                     if (allow) result.complete(AllowOrDeny.ALLOW) else result.complete(AllowOrDeny.DENY)
                 }
 
@@ -362,6 +371,8 @@ class GeckoEngine(
                 webExtensionDelegate.onUpdatePermissionRequest(
                     GeckoWebExtension(current, runtime),
                     GeckoWebExtension(updated, runtime),
+                    // We pass both permissions and origins as a single list of
+                    // permissions to be shown to the user.
                     newPermissions.toList() + newOrigins.toList(),
                 ) { allow ->
                     if (allow) result.complete(AllowOrDeny.ALLOW) else result.complete(AllowOrDeny.DENY)
@@ -425,6 +436,10 @@ class GeckoEngine(
                     extension.toSafeWebExtension(),
                     exception as WebExtensionInstallException,
                 )
+            }
+
+            override fun onOptionalPermissionsChanged(extension: org.mozilla.geckoview.WebExtension) {
+                webExtensionDelegate.onOptionalPermissionsChanged(GeckoWebExtension(extension, runtime))
             }
         }
 
@@ -792,13 +807,14 @@ class GeckoEngine(
         TranslationsController.RuntimeTranslation.listModelDownloadStates().then(
             {
                 if (it != null) {
-                    var listOfModels = mutableListOf<LanguageModel>()
+                    val listOfModels = mutableListOf<LanguageModel>()
                     for (each in it) {
-                        var language = each.language?.let {
+                        val language = each.language?.let {
                                 language ->
                             Language(language.code, each.language?.localizedDisplayName)
                         }
-                        var model = LanguageModel(language, each.isDownloaded, each.size)
+                        val status = if (each.isDownloaded) ModelState.DOWNLOADED else ModelState.NOT_DOWNLOADED
+                        val model = LanguageModel(language, status, each.size)
                         listOfModels.add(model)
                     }
                     onSuccess(listOfModels)

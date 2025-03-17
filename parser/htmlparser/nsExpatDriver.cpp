@@ -170,6 +170,7 @@ static void Driver_HandleCharacterData(rlbox_sandbox_expat& aSandbox,
                                        tainted_expat<int> aLength) {
   nsExpatDriver* driver = static_cast<nsExpatDriver*>(aSandbox.sandbox_storage);
   MOZ_ASSERT(driver);
+
   // aData is not null terminated; even with bad length we will not span beyond
   // sandbox boundary
   uint32_t length =

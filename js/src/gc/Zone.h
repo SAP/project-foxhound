@@ -25,6 +25,7 @@
 #include "gc/FindSCCs.h"
 #include "gc/GCMarker.h"
 #include "gc/NurseryAwareHashMap.h"
+#include "gc/Policy.h"
 #include "gc/Pretenuring.h"
 #include "gc/Statistics.h"
 #include "gc/ZoneAllocator.h"
@@ -66,6 +67,23 @@ class ZoneAllCellIter;
 
 template <typename T>
 class ZoneCellIter;
+
+#ifdef JS_GC_ZEAL
+
+class MissingAllocSites {
+ public:
+  using SiteMap = JS::GCHashMap<uint32_t, UniquePtr<AllocSite>,
+                                DefaultHasher<uint32_t>, SystemAllocPolicy>;
+
+  using ScriptMap = JS::GCHashMap<WeakHeapPtr<JSScript*>, SiteMap,
+                                  StableCellHasher<WeakHeapPtr<JSScript*>>,
+                                  SystemAllocPolicy>;
+  WeakCache<ScriptMap> scriptMap;
+
+  explicit MissingAllocSites(JS::Zone* zone) : scriptMap(zone) {}
+};
+
+#endif  // JS_GC_ZEAL
 
 }  // namespace gc
 
@@ -218,14 +236,17 @@ class HashAndLength {
 
 static_assert(HashAndLength::staticChecks());
 
+// AtomCacheHashTable is a medium-capacity, low-overhead cache for matching
+// strings to previously-added JSAtoms.
+// This cache is very similar to a typical CPU memory cache. We use the low bits
+// of the hash as an index into a table of sets of entries. Cache eviction
+// follows a "least recently added" policy.
+// All of the operations here are designed to be low-cost and efficient for
+// modern CPU architectures. Failed lookups should incur at most one CPU memory
+// cache miss and successful lookups should incur at most three (depending on
+// whether or not the underlying chararacter buffers are already in the cache).
 class AtomCacheHashTable {
  public:
-  MOZ_ALWAYS_INLINE AtomCacheHashTable() { clear(); }
-
-  MOZ_ALWAYS_INLINE void clear() {
-    mEntries.fill({HashAndLength{HashAndLength::unsetValue()}, nullptr});
-  }
-
   static MOZ_ALWAYS_INLINE constexpr uint32_t computeIndexFromHash(
       const HashNumber hash) {
     // Simply use the low bits of the hash value as the cache index.
@@ -238,29 +259,37 @@ class AtomCacheHashTable {
 
     const uint32_t index = computeIndexFromHash(lookup.hash);
 
-    JSAtom* const atom = mEntries[index].mAtom;
+    const EntrySet& entrySet = mEntrySets[index];
+    for (const Entry& entry : entrySet.mEntries) {
+      JSAtom* const atom = entry.mAtom;
 
-    if (!mEntries[index].mHashAndLength.isEqual(lookup.hash, lookup.length)) {
-      return nullptr;
+      if (!entry.mHashAndLength.isEqual(lookup.hash, lookup.length)) {
+        continue;
+      }
+
+      // This is annotated with MOZ_UNLIKELY because it virtually never happens
+      // that, after matching the hash and the length, the string isn't a match.
+      if (MOZ_UNLIKELY(!lookup.StringsMatch(*atom))) {
+        continue;
+      }
+
+      return atom;
     }
 
-    // This is annotated with MOZ_UNLIKELY because it virtually never happens
-    // that, after matching the hash and the length, the string isn't a match.
-    if (MOZ_UNLIKELY(!lookup.StringsMatch(*atom))) {
-      return nullptr;
-    }
-
-    return atom;
+    return nullptr;
   }
 
   MOZ_ALWAYS_INLINE void add(const HashNumber hash, JSAtom* atom) {
     const uint32_t index = computeIndexFromHash(hash);
 
-    mEntries[index].set(hash, atom->length(), atom);
+    mEntrySets[index].add(hash, atom->length(), atom);
   }
 
  private:
   struct Entry {
+    MOZ_ALWAYS_INLINE Entry()
+        : mHashAndLength(HashAndLength::unsetValue()), mAtom(nullptr) {}
+
     MOZ_ALWAYS_INLINE void set(const HashNumber hash, const uint32_t length,
                                JSAtom* const atom) {
       mHashAndLength.set(hash, length);
@@ -276,11 +305,41 @@ class AtomCacheHashTable {
     JSAtom* mAtom;
   };
 
+  static_assert(sizeof(Entry) <= 16);
+
+  // EntrySet represents a bundling of all of the Entry's that are mapped to the
+  // same index.
+  // NOTE/TODO: Since we have a tendency to use the entirety of this structure
+  // together, it would be really nice to mark this class with alignas(64) to
+  // ensure that the entire thing ends up on a single (hardware) cache line but
+  // we can't do that because AtomCacheHashTable is allocated with js::UniquePtr
+  // which doesn't support alignments greater than 8. In practice, on my Windows
+  // machine at least, I am seeing that these objects *are* 64-byte aligned, but
+  // it would be nice to guarantee that this will be the case.
+  struct EntrySet {
+    MOZ_ALWAYS_INLINE void add(const HashNumber hash, const uint32_t length,
+                               JSAtom* const atom) {
+      MOZ_ASSERT(mEntries[0].mAtom != atom);
+      MOZ_ASSERT(mEntries[1].mAtom != atom);
+      MOZ_ASSERT(mEntries[2].mAtom != atom);
+      MOZ_ASSERT(mEntries[3].mAtom != atom);
+      mEntries[3] = mEntries[2];
+      mEntries[2] = mEntries[1];
+      mEntries[1] = mEntries[0];
+      mEntries[0].set(hash, length, atom);
+    }
+
+    std::array<Entry, 4> mEntries;
+  };
+
+  static_assert(sizeof(EntrySet) <= 64,
+                "EntrySet will not fit in a cache line");
+
   // This value was picked empirically based on performance testing using SP2
-  // and SP3. 4k was better than 2k but 8k was not much better than 4k.
-  static constexpr uint32_t sSize = 4 * 1024;
+  // and SP3. 2k was better than 1k but 4k was not much better than 2k.
+  static constexpr uint32_t sSize = 2 * 1024;
   static_assert(mozilla::IsPowerOfTwo(sSize));
-  std::array<Entry, sSize> mEntries;
+  std::array<EntrySet, sSize> mEntrySets;
 };
 
 }  // namespace js
@@ -483,6 +542,11 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   js::MainThreadOrGCTaskData<ObjectVector> objectsWithWeakPointers;
 
  public:
+#ifdef JS_GC_ZEAL
+  // Must come after weakCaches_ above.
+  js::UniquePtr<js::gc::MissingAllocSites> missingSites;
+#endif  // JS_GC_ZEAL
+
   static JS::Zone* from(ZoneAllocator* zoneAlloc) {
     return static_cast<Zone*>(zoneAlloc);
   }
@@ -715,14 +779,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     }
   }
 
-  void afterAddDelegate(JSObject* wrapper) {
-    if (needsIncrementalBarrier()) {
-      afterAddDelegateInternal(wrapper);
-    }
-  }
-
   void beforeClearDelegateInternal(JSObject* wrapper, JSObject* delegate);
-  void afterAddDelegateInternal(JSObject* wrapper);
   js::gc::EphemeronEdgeTable& gcEphemeronEdges() {
     return gcEphemeronEdges_.ref();
   }

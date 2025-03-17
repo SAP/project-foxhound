@@ -27,15 +27,13 @@ const uint32_t STEREO = 2;
  * to allow the requested to be resampled and returned.
  *
  * Input data buffering makes use of the AudioRingBuffer. The capacity of the
- * buffer is initially 100ms of float audio and it is pre-allocated at the
- * constructor. Should the input data grow beyond that, the input buffer is
- * re-allocated on the fly. In addition to that, due to special feature of
+ * buffer is initially 100ms of audio and it is pre-allocated during
+ * SetSampleFormat(). Should the input data grow beyond that, the input buffer
+ * is re-allocated on the fly. In addition to that, due to special feature of
  * AudioRingBuffer, no extra copies take place when the input data is fed to the
  * resampler.
  *
- * The sample format must be set before using any method. If the provided sample
- * format is of type short the pre-allocated capacity of the input buffer
- * becomes 200ms of short audio.
+ * The sample format must be set before using any method.
  *
  * The DynamicResampler is not thread-safe, so all the methods appart from the
  * constructor must be called on the same thread.
@@ -47,16 +45,15 @@ class DynamicResampler final {
    * The channel count will be set to stereo. Memory allocation will take
    * place. The input buffer is non-interleaved.
    */
-  DynamicResampler(
-      uint32_t aInRate, uint32_t aOutRate,
-      media::TimeUnit aPreBufferDuration = media::TimeUnit::Zero());
+  DynamicResampler(uint32_t aInRate, uint32_t aOutRate,
+                   uint32_t aInputPreBufferFrameCount = 0);
   ~DynamicResampler();
 
   /**
    * Set the sample format type to float or short.
    */
   void SetSampleFormat(AudioSampleFormat aFormat);
-  uint32_t GetOutRate() const { return mOutRate; }
+  uint32_t GetInRate() const { return mInRate; }
   uint32_t GetChannels() const { return mChannels; }
 
   /**
@@ -81,16 +78,16 @@ class DynamicResampler final {
 
   /**
    * Prepends existing input data with a silent pre-buffer if not already done.
-   * Data will be prepended so that after resampling aOutFrames worth of output
-   * data, the buffering level will be as close as possible to
-   * mPreBufferDuration, which is the desired buffering level.
+   * Data will be prepended so that after resampling aDuration of data,
+   * the buffering level will be as close as possible to
+   * mInputPreBufferFrameCount, which is the desired buffering level.
    */
   void EnsurePreBuffer(media::TimeUnit aDuration);
 
   /**
-   * Set the duration that should be used for pre-buffering.
+   * Set the number of frames that should be used for input pre-buffering.
    */
-  void SetPreBufferDuration(media::TimeUnit aDuration);
+  void SetInputPreBufferFrameCount(uint32_t aInputPreBufferFrameCount);
 
   /*
    * Resample as much frames as needed from the internal input buffer to the
@@ -114,14 +111,14 @@ class DynamicResampler final {
 
   /**
    * Update the output rate or/and the channel count. If a value is not updated
-   * compared to the current one nothing happens. Changing the `aOutRate`
+   * compared to the current one nothing happens. Changing the `aInRate`
    * results in recalculation in the resampler. Changing `aChannels` results in
    * the reallocation of the internal input buffer with the exception of
    * changes between mono to stereo and vice versa where no reallocation takes
    * place. A stereo internal input buffer is always maintained even if the
    * sound is mono.
    */
-  void UpdateResampler(uint32_t aOutRate, uint32_t aChannels);
+  void UpdateResampler(uint32_t aInRate, uint32_t aChannels);
 
  private:
   template <typename T>
@@ -150,62 +147,90 @@ class DynamicResampler final {
     MOZ_ASSERT(aChannelIndex < mInternalInBuffer.Length());
     MOZ_ASSERT(aOutFrames);
 
+    uint32_t outFramesNeeded = aOutFrames;
+    T* nextOutFrame = aOutBuffer;
     if (mInRate == mOutRate) {
+      if (!mResamplerIsBypassed) {
+        uint32_t latency = speex_resampler_get_input_latency(mResampler);
+        mInternalInBuffer[aChannelIndex].ReadNoCopy(
+            [&](const Span<const T>& aInBuffer) -> uint32_t {
+              // Although unlikely with the sample rates used with this class,
+              // the resampler input latency may temporarily be higher than
+              // indicated, after a change in resampling rate that reduces the
+              // indicated latency. The resampler's "magic" samples cause
+              // this. All frames in the resampler are extracted when
+              // `latency` output frames have been extracted.
+              uint32_t outFramesResampled = std::min(outFramesNeeded, latency);
+              uint32_t inFrames = aInBuffer.Length();
+              ResampleInternal(aInBuffer.Elements(), &inFrames, nextOutFrame,
+                               &outFramesResampled, aChannelIndex);
+              nextOutFrame += outFramesResampled;
+              outFramesNeeded -= outFramesResampled;
+              if (outFramesResampled == latency) {
+                mResamplerIsBypassed = true;
+                // The last `latency` frames of input to the resampler will not
+                // be extracted from the resampler. Leave them in
+                // mInternalInBuffer to be copied directly to nextOutFrame.
+                MOZ_ASSERT(inFrames >= latency);
+                return inFrames - latency;
+              }
+              return inFrames;
+            });
+      }
       bool underrun = false;
       if (uint32_t buffered = mInternalInBuffer[aChannelIndex].AvailableRead();
-          buffered < aOutFrames) {
+          buffered < outFramesNeeded) {
         underrun = true;
         mIsPreBufferSet = false;
-        mInternalInBuffer[aChannelIndex].WriteSilence(aOutFrames - buffered);
+        mInternalInBuffer[aChannelIndex].WriteSilence(outFramesNeeded -
+                                                      buffered);
       }
-      DebugOnly<uint32_t> numFramesRead =
-          mInternalInBuffer[aChannelIndex].Read(Span(aOutBuffer, aOutFrames));
-      MOZ_ASSERT(numFramesRead == aOutFrames);
+      DebugOnly<uint32_t> numFramesRead = mInternalInBuffer[aChannelIndex].Read(
+          Span(nextOutFrame, outFramesNeeded));
+      MOZ_ASSERT(numFramesRead == outFramesNeeded);
       // Workaround to avoid discontinuity when the speex resampler operates
       // again. Feed it with the last 20 frames to warm up the internal memory
       // of the resampler and then skip memory equals to resampler's input
       // latency.
       mInputTail[aChannelIndex].StoreTail<T>(aOutBuffer, aOutFrames);
       if (aChannelIndex == 0 && !mIsWarmingUp) {
-        mInputStreamFile.Write(aOutBuffer, aOutFrames);
-        mOutputStreamFile.Write(aOutBuffer, aOutFrames);
+        mInputStreamFile.Write(nextOutFrame, outFramesNeeded);
+        mOutputStreamFile.Write(nextOutFrame, outFramesNeeded);
       }
       return underrun;
     }
 
-    uint32_t totalOutFramesNeeded = aOutFrames;
-    auto resample = [&] {
-      mInternalInBuffer[aChannelIndex].ReadNoCopy(
-          [&](const Span<const T>& aInBuffer) -> uint32_t {
-            if (!totalOutFramesNeeded) {
-              return 0;
-            }
-            uint32_t outFramesResampled = totalOutFramesNeeded;
-            uint32_t inFrames = aInBuffer.Length();
-            ResampleInternal(aInBuffer.data(), &inFrames, aOutBuffer,
-                             &outFramesResampled, aChannelIndex);
-            aOutBuffer += outFramesResampled;
-            totalOutFramesNeeded -= outFramesResampled;
-            mInputTail[aChannelIndex].StoreTail<T>(aInBuffer.To(inFrames));
-            return inFrames;
-          });
+    auto resample = [&](const T* aInBuffer, uint32_t aInLength) -> uint32_t {
+      uint32_t outFramesResampled = outFramesNeeded;
+      uint32_t inFrames = aInLength;
+      ResampleInternal(aInBuffer, &inFrames, nextOutFrame, &outFramesResampled,
+                       aChannelIndex);
+      nextOutFrame += outFramesResampled;
+      outFramesNeeded -= outFramesResampled;
+      mInputTail[aChannelIndex].StoreTail<T>(aInBuffer, inFrames);
+      return inFrames;
     };
 
-    resample();
+    MOZ_ASSERT(!mResamplerIsBypassed);
+    mInternalInBuffer[aChannelIndex].ReadNoCopy(
+        [&](const Span<const T>& aInBuffer) -> uint32_t {
+          if (!outFramesNeeded) {
+            return 0;
+          }
+          return resample(aInBuffer.Elements(), aInBuffer.Length());
+        });
 
-    if (totalOutFramesNeeded == 0) {
+    if (outFramesNeeded == 0) {
       return false;
     }
 
-    while (totalOutFramesNeeded > 0) {
+    while (outFramesNeeded > 0) {
       MOZ_ASSERT(mInternalInBuffer[aChannelIndex].AvailableRead() == 0);
       // Round up.
       uint32_t totalInFramesNeeded =
-          ((CheckedUint32(totalOutFramesNeeded) * mInRate + mOutRate - 1) /
-           mOutRate)
+          ((CheckedUint32(outFramesNeeded) * mInRate + mOutRate - 1) / mOutRate)
               .value();
-      mInternalInBuffer[aChannelIndex].WriteSilence(totalInFramesNeeded);
-      resample();
+      resample(nullptr, totalInFramesNeeded);
     }
     mIsPreBufferSet = false;
     return true;
@@ -219,33 +244,14 @@ class DynamicResampler final {
     MOZ_ASSERT(mChannels);
     MOZ_ASSERT(aChannelIndex < mChannels);
     MOZ_ASSERT(aChannelIndex < mInternalInBuffer.Length());
-    EnsureInputBufferDuration(media::TimeUnit(
-        CheckedInt64(mInternalInBuffer[aChannelIndex].AvailableRead()) +
-            aInFrames,
-        mInRate));
+    EnsureInputBufferSizeInFrames(
+        mInternalInBuffer[aChannelIndex].AvailableRead() + aInFrames);
     mInternalInBuffer[aChannelIndex].Write(Span(aInBuffer, aInFrames));
   }
 
   void WarmUpResampler(bool aSkipLatency);
 
-  media::TimeUnit CalculateInputBufferDuration() const {
-    // Pre-allocate something big, twice the pre-buffer, or at least 100ms.
-    return std::max(mPreBufferDuration * 2, media::TimeUnit::FromSeconds(0.1));
-  }
-
-  bool EnsureInputBufferDuration(media::TimeUnit aDuration) {
-    if (aDuration <= mSetBufferDuration) {
-      // Buffer size is sufficient.
-      return true;
-    }
-
-    // 5 second cap.
-    const media::TimeUnit cap = media::TimeUnit::FromSeconds(5);
-    if (mSetBufferDuration == cap) {
-      // Already at the cap.
-      return false;
-    }
-
+  bool EnsureInputBufferSizeInFrames(uint32_t aSizeInFrames) {
     uint32_t sampleSize = 0;
     if (mSampleFormat == AUDIO_FORMAT_FLOAT32) {
       sampleSize = sizeof(float);
@@ -258,53 +264,66 @@ class DynamicResampler final {
       return true;
     }
 
-    // As a backoff strategy, at least double the previous size.
-    media::TimeUnit duration = mSetBufferDuration * 2;
-
-    if (aDuration > duration) {
-      // A larger buffer than the normal backoff strategy provides is needed, or
-      // this is the first time setting the buffer size. Round up to the nearest
-      // 100ms, some jitter is expected.
-      duration = aDuration.ToBase<media::TimeUnit::CeilingPolicy>(10);
+    uint32_t sizeInFrames = InFramesBufferSize();
+    if (aSizeInFrames <= sizeInFrames) {
+      // Buffer size is sufficient.
+      return true;  // no reallocation necessary
     }
 
-    duration = std::min(cap, duration);
+    // 5 second cap.
+    const uint32_t cap = 5 * mInRate;
+    if (sizeInFrames >= cap) {
+      // Already at the cap.
+      return false;
+    }
+
+    // As a backoff strategy, at least double the previous size.
+    sizeInFrames *= 2;
+
+    if (aSizeInFrames > sizeInFrames) {
+      // A larger buffer than the normal backoff strategy provides is needed, or
+      // this is the first time setting the buffer size. Add another 50ms, as
+      // some jitter is expected.
+      sizeInFrames = aSizeInFrames + mInRate / 20;
+    }
+
+    // mInputPreBufferFrameCount is an indication of the desired average
+    // buffering.  Provide for at least twice this.
+    sizeInFrames = std::max(sizeInFrames, mInputPreBufferFrameCount * 2);
+
+    sizeInFrames = std::min(cap, sizeInFrames);
 
     bool success = true;
     for (auto& b : mInternalInBuffer) {
-      success = success &&
-                b.SetLengthBytes(sampleSize * duration.ToTicksAtRate(mInRate));
+      success = success && b.EnsureLengthBytes(sampleSize * sizeInFrames);
     }
 
     if (success) {
       // All buffers have the new size.
-      mSetBufferDuration = duration;
       return true;
     }
 
-    const uint32_t sizeInFrames =
-        static_cast<uint32_t>(mSetBufferDuration.ToTicksAtRate(mInRate));
     // Allocating an input buffer failed. We stick with the old buffer size.
     NS_WARNING(nsPrintfCString("Failed to allocate a buffer of %u bytes (%u "
                                "frames). Expect glitches.",
                                sampleSize * sizeInFrames, sizeInFrames)
                    .get());
-    for (auto& b : mInternalInBuffer) {
-      MOZ_ALWAYS_TRUE(b.SetLengthBytes(sampleSize * sizeInFrames));
-    }
     return false;
   }
 
  public:
-  const uint32_t mInRate;
+  const uint32_t mOutRate;
 
  private:
   bool mIsPreBufferSet = false;
   bool mIsWarmingUp = false;
-  media::TimeUnit mPreBufferDuration;
-  media::TimeUnit mSetBufferDuration = media::TimeUnit::Zero();
+  // The resampler can be bypassed when the input and output rates match and
+  // any frames buffered in the resampler have been extracted.  This initial
+  // value is reset on construction by UpdateResampler() if the rates differ.
+  bool mResamplerIsBypassed = true;
+  uint32_t mInputPreBufferFrameCount;
   uint32_t mChannels = 0;
-  uint32_t mOutRate;
+  uint32_t mInRate;
 
   AutoTArray<AudioRingBuffer, STEREO> mInternalInBuffer;
 
@@ -324,16 +343,16 @@ class DynamicResampler final {
     }
     template <typename T>
     void StoreTail(const T* aInBuffer, uint32_t aInFrames) {
-      if (aInFrames >= MAXSIZE) {
-        PodCopy(Buffer<T>(), aInBuffer + aInFrames - MAXSIZE, MAXSIZE);
-        mSize = MAXSIZE;
+      const T* inBuffer = aInBuffer;
+      mSize = std::min(aInFrames, MAXSIZE);
+      if (inBuffer) {
+        PodCopy(Buffer<T>(), inBuffer + aInFrames - mSize, mSize);
       } else {
-        PodCopy(Buffer<T>(), aInBuffer, aInFrames);
-        mSize = aInFrames;
+        std::fill_n(Buffer<T>(), mSize, static_cast<T>(0));
       }
     }
     uint32_t Length() { return mSize; }
-    static const uint32_t MAXSIZE = 20;
+    static constexpr uint32_t MAXSIZE = 20;
 
    private:
     float mBuffer[MAXSIZE] = {};

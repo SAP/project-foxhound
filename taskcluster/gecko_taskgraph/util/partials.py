@@ -27,6 +27,7 @@ BALROG_PLATFORM_MAP = {
     "linux": ["Linux_x86-gcc3"],
     "linux32": ["Linux_x86-gcc3"],
     "linux64": ["Linux_x86_64-gcc3"],
+    "linux64-aarch64": ["Linux_aarch64-gcc3"],
     "linux64-asan-reporter": ["Linux_x86_64-gcc3-asan"],
     "macosx64": [
         "Darwin_x86_64-gcc3-u-i386-x86_64",
@@ -51,6 +52,7 @@ FTP_PLATFORM_MAP = {
     "Darwin_aarch64-gcc3": "mac",
     "Linux_x86-gcc3": "linux-i686",
     "Linux_x86_64-gcc3": "linux-x86_64",
+    "Linux_aarch64-gcc3": "linux-aarch64",
     "Linux_x86_64-gcc3-asan": "linux-x86_64-asan-reporter",
     "WINNT_x86_64-msvc-x64-asan": "win64-asan-reporter",
     "WINNT_x86-msvc": "win32",
@@ -76,8 +78,6 @@ def get_balrog_platform_name(platform):
 
 def _sanitize_platform(platform):
     platform = get_balrog_platform_name(platform)
-    if platform not in BALROG_PLATFORM_MAP:
-        return platform
     return BALROG_PLATFORM_MAP[platform][0]
 
 

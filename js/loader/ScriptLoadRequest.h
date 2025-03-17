@@ -24,7 +24,6 @@
 #include "LoadedScript.h"
 #include "ScriptKind.h"
 #include "ScriptFetchOptions.h"
-#include "nsIScriptElement.h"
 
 class nsICacheInfoChannel;
 
@@ -124,6 +123,7 @@ class ScriptLoadRequest : public nsISupports,
     Fetching,
     Compiling,
     LoadingImports,
+    CancelingImports,
     Ready,
     Canceled
   };
@@ -139,6 +139,7 @@ class ScriptLoadRequest : public nsISupports,
   bool IsFetching() const { return mState == State::Fetching; }
   bool IsCompiling() const { return mState == State::Compiling; }
   bool IsLoadingImports() const { return mState == State::LoadingImports; }
+  bool IsCancelingImports() const { return mState == State::CancelingImports; }
   bool IsCanceled() const { return mState == State::Canceled; }
 
   bool IsPendingFetchingError() const {
@@ -180,9 +181,33 @@ class ScriptLoadRequest : public nsISupports,
 
   void SetPendingFetchingError();
 
-  void MarkForBytecodeEncoding(JSScript* aScript);
+  bool PassedConditionForBytecodeEncoding() const {
+    return mBytecodeEncodingPlan == BytecodeEncodingPlan::PassedCondition ||
+           mBytecodeEncodingPlan == BytecodeEncodingPlan::MarkedForEncode;
+  }
 
-  bool IsMarkedForBytecodeEncoding() const;
+  void MarkSkippedBytecodeEncoding() {
+    MOZ_ASSERT(mBytecodeEncodingPlan == BytecodeEncodingPlan::Uninitialized);
+    mBytecodeEncodingPlan = BytecodeEncodingPlan::Skipped;
+  }
+
+  void MarkPassedConditionForBytecodeEncoding() {
+    MOZ_ASSERT(mBytecodeEncodingPlan == BytecodeEncodingPlan::Uninitialized);
+    mBytecodeEncodingPlan = BytecodeEncodingPlan::PassedCondition;
+  }
+
+  bool IsMarkedForBytecodeEncoding() const {
+    return mBytecodeEncodingPlan == BytecodeEncodingPlan::MarkedForEncode;
+  }
+
+ protected:
+  void MarkForBytecodeEncoding() {
+    MOZ_ASSERT(mBytecodeEncodingPlan == BytecodeEncodingPlan::PassedCondition);
+    mBytecodeEncodingPlan = BytecodeEncodingPlan::MarkedForEncode;
+  }
+
+ public:
+  void MarkScriptForBytecodeEncoding(JSScript* aScript);
 
   mozilla::CORSMode CORSMode() const { return mFetchOptions->mCORSMode; }
 
@@ -216,6 +241,23 @@ class ScriptLoadRequest : public nsISupports,
   State mState;           // Are we still waiting for a load to complete?
   bool mFetchSourceOnly;  // Request source, not cached bytecode.
 
+  enum class BytecodeEncodingPlan : uint8_t {
+    // This is not yet considered for encoding.
+    Uninitialized,
+
+    // This is marked for skipping the encoding.
+    Skipped,
+
+    // This fits the condition for the encoding (e.g. file size, fetch count).
+    PassedCondition,
+
+    // This is marked for encoding, with setting sufficient input,
+    // e.g. mScriptForBytecodeEncoding for script.
+    MarkedForEncode,
+  };
+  BytecodeEncodingPlan mBytecodeEncodingPlan =
+      BytecodeEncodingPlan::Uninitialized;
+
   // The referrer policy used for the initial fetch and for fetching any
   // imported modules
   enum mozilla::dom::ReferrerPolicy mReferrerPolicy;
@@ -245,10 +287,9 @@ class ScriptLoadRequest : public nsISupports,
   RefPtr<LoadedScript> mLoadedScript;
 
   // Holds the top-level JSScript that corresponds to the current source, once
-  // it is parsed, and planned to be saved in the bytecode cache.
+  // it is parsed, and marked to be saved in the bytecode cache.
   //
   // NOTE: This field is not used for ModuleLoadRequest.
-  //       See ModuleLoadRequest::mIsMarkedForBytecodeEncoding.
   JS::Heap<JSScript*> mScriptForBytecodeEncoding;
 
   // Holds the Cache information, which is used to register the bytecode

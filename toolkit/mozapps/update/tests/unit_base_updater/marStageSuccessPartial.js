@@ -26,11 +26,11 @@ async function run_test() {
   runUpdate(STATE_SUCCEEDED, true, 0, true);
   await checkPostUpdateAppLog();
   checkAppBundleModTime();
-  standardInit();
+  await testPostUpdateProcessing();
   checkPostUpdateRunningFile(true);
   checkFilesAfterUpdateSuccess(getApplyDirFile, false, true);
   checkUpdateLogContents(LOG_REPLACE_SUCCESS, false, true, true);
   await waitForUpdateXMLFiles();
-  checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
+  await checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
   checkCallbackLog();
 }

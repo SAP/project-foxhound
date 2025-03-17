@@ -195,14 +195,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
         aAppearance == StyleAppearance::Menulist ||
         aAppearance == StyleAppearance::MenulistButton) {
       aState->active &= aState->inHover;
-    } else if (aAppearance == StyleAppearance::Treetwisty ||
-               aAppearance == StyleAppearance::Treetwistyopen) {
-      if (nsTreeBodyFrame* treeBodyFrame = do_QueryFrame(aFrame)) {
-        const mozilla::AtomArray& atoms =
-            treeBodyFrame->GetPropertyArrayForCurrentDrawingItem();
-        aState->selected = atoms.Contains(nsGkAtoms::selected);
-        aState->inHover = atoms.Contains(nsGkAtoms::hover);
-      }
     }
 
     if (IsFrameContentNodeInNamespace(aFrame, kNameSpaceID_XUL)) {
@@ -292,6 +284,7 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       break;
     }
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
       aGtkWidgetType = MOZ_GTK_ENTRY;
       break;
@@ -299,16 +292,7 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       aGtkWidgetType = MOZ_GTK_TEXT_VIEW;
       break;
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
       aGtkWidgetType = MOZ_GTK_TREEVIEW;
-      break;
-    case StyleAppearance::Treetwisty:
-      aGtkWidgetType = MOZ_GTK_TREEVIEW_EXPANDER;
-      if (aWidgetFlags) *aWidgetFlags = GTK_EXPANDER_COLLAPSED;
-      break;
-    case StyleAppearance::Treetwistyopen:
-      aGtkWidgetType = MOZ_GTK_TREEVIEW_EXPANDER;
-      if (aWidgetFlags) *aWidgetFlags = GTK_EXPANDER_EXPANDED;
       break;
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Menulist:
@@ -1091,6 +1075,7 @@ LayoutDeviceIntSize nsNativeThemeGTK::GetMinimumWidgetSize(
       result.height += border.TopBottom();
     } break;
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield: {
       gint contentHeight = 0;
       gint borderPaddingHeight = 0;
@@ -1135,12 +1120,6 @@ LayoutDeviceIntSize nsNativeThemeGTK::GetMinimumWidgetSize(
       result.width = 14;
       result.height = 13;
       break;
-    case StyleAppearance::Treetwisty:
-    case StyleAppearance::Treetwistyopen: {
-      gint expander_size;
-      moz_gtk_get_treeview_expander_size(&expander_size);
-      result.width = result.height = expander_size;
-    } break;
     default:
       break;
   }
@@ -1243,12 +1222,6 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::ButtonArrowNext:
     case StyleAppearance::ButtonArrowPrevious:
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
-      // case StyleAppearance::Treeitem:
-    case StyleAppearance::Treetwisty:
-      // case StyleAppearance::Treeline:
-      // case StyleAppearance::Treeheader:
-    case StyleAppearance::Treetwistyopen:
     case StyleAppearance::ProgressBar:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::Tab:
@@ -1262,6 +1235,7 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::SpinnerDownbutton:
     case StyleAppearance::SpinnerTextfield:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Range:
@@ -1315,6 +1289,7 @@ bool nsNativeThemeGTK::ThemeDrawsFocusForWidget(nsIFrame* aFrame,
     case StyleAppearance::Textarea:
     case StyleAppearance::Textfield:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
       return true;
     default:
       return false;

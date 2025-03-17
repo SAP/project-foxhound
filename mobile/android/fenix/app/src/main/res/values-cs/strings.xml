@@ -157,8 +157,6 @@
 
     <!-- Shortcut action to open Passwords screen -->
     <string name="home_screen_shortcut_passwords">Hesla</string>
-    <!-- Shortcut action to open Passwords screen -->
-    <string name="home_screen_shortcut_open_password_screen" moz:removedIn="126" tools:ignore="UnusedResources">Zkratka k heslům</string>
 
     <!-- Recent Tabs -->
     <!-- Header text for jumping back into the recent tab in the home screen -->
@@ -200,14 +198,14 @@
     <string name="browser_menu_refresh">Obnoví načtenou stránku</string>
     <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
     <string name="browser_menu_stop">Zastaví načítání stránky</string>
-    <!-- Browser menu button that opens the addon manager -->
-    <string name="browser_menu_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Doplňky</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">Rozšíření</string>
+    <!-- Browser menu button that opens the extensions manager -->
+    <string name="browser_menu_manage_extensions">Správa rozšíření</string>
+    <!-- Browser menu button that opens AMO in a tab -->
+    <string name="browser_menu_discover_more_extensions">Objevit další rozšíření</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">Informace o účtu</string>
-    <!-- Text displayed when there are no add-ons to be shown -->
-    <string name="no_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Žádné doplňky</string>
     <!-- Browser menu button that sends a user to help articles -->
     <string name="browser_menu_help">Nápověda</string>
     <!-- Browser menu button that sends a to a the what's new article -->
@@ -222,8 +220,8 @@
     <string name="browser_menu_open_in_regular_tab">Otevřít v běžném panelu</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen">Přidat na plochu</string>
-    <!-- Browser menu toggle that installs a Progressive Web App shortcut to the site on the device home screen. -->
-    <string name="browser_menu_install_on_homescreen" moz:removedIn="126" tools:ignore="UnusedResources">Nainstalovat</string>
+    <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
+    <string name="browser_menu_add_to_homescreen_2">Přidat na domovskou obrazovku…</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">Synchronizovat znovu</string>
     <!-- Browser menu button that opens the find in page menu -->
@@ -233,9 +231,13 @@
     <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
     <string name="browser_menu_translations">Přeložit stránku</string>
     <!-- Browser menu button that saves the current tab to a collection -->
+    <string name="browser_menu_save_to_collection">Uložit do sbírky…</string>
+    <!-- Browser menu button that saves the current tab to a collection -->
     <string name="browser_menu_save_to_collection_2">Uložit do sbírky</string>
     <!-- Browser menu button that open a share menu to share the current site -->
     <string name="browser_menu_share">Sdílet</string>
+    <!-- Browser menu button that open a share menu to share the current site -->
+    <string name="browser_menu_share_2">Sdílet…</string>
     <!-- Browser menu button shown in custom tabs that opens the current tab in Fenix
         The first parameter is the name of the app defined in app_name (for example: Fenix) -->
     <string name="browser_menu_open_in_fenix">Otevřít v aplikaci %1$s</string>
@@ -289,6 +291,24 @@
     <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
          bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen -->
     <string name="browser_menu_save">Uložit</string>
+
+    <!-- Browser menu label that bookmarks the currently visited page -->
+    <string name="browser_menu_bookmark_this_page">Přidat stránku do záložek</string>
+    <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
+    <string name="browser_menu_edit_bookmark">Upravit záložku</string>
+    <!-- Browser menu label that the saves the currently visited page as a PDF -->
+    <string name="browser_menu_save_as_pdf">Uložit jako PDF…</string>
+    <!-- Browser menu label for turning ON reader view of the current visited page -->
+    <string name="browser_menu_turn_on_reader_view">Zapnout zobrazení čtečky</string>
+    <!-- Browser menu label for turning OFF reader view of the current visited page -->
+    <string name="browser_menu_turn_off_reader_view">Vypnout zobrazení čtečky</string>
+    <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+    <string name="browser_menu_translate_page">Přeložit stránku…</string>
+    <!-- Browser menu label that is displayed when the current page has been translated by the translation feature.
+         The first parameter is the name of the language that page was translated to (e.g. English). -->
+    <string name="browser_menu_translated_to">Přeloženo do jazyka %1$s</string>
+    <!-- Browser menu label for the print feature -->
+    <string name="browser_menu_print">Tisk…</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -387,8 +407,6 @@
     <!-- Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments. -->
     <!-- Description for learning more about our privacy notice. -->
     <string name="juno_onboarding_privacy_notice_text">Zásady ochrany osobních údajů</string>
-    <!-- Description for learning more about our privacy notice. -->
-    <string name="juno_onboarding_privacy_notice_text_2" moz:removedIn="125" tools:ignore="UnusedResources">Další informace naleznete v našich oznámeních o ochraně osobních údajů</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_title_nimbus_2">Rádi vás udržujeme v bezpečí</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments.
@@ -576,7 +594,9 @@
     <!-- Preference category for account information -->
     <string name="preferences_category_account">Účet</string>
     <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar">Nástrojová lišta</string>
+    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">Nástrojová lišta</string>
+    <!-- Preference for changing where the AddressBar is positioned -->
+    <string name="preferences_toolbar_2">Umístění adresního řádku</string>
     <!-- Preference for changing default theme to dark or light mode -->
     <string name="preferences_theme">Vzhled</string>
     <!-- Preference for customizing the home screen -->
@@ -594,7 +614,9 @@
     <!-- Preference for language -->
     <string name="preferences_language">Jazyk</string>
     <!-- Preference for translation -->
-    <string name="preferences_translation">Překladač</string>
+    <string name="preferences_translation" moz:removedIn="127" tools:ignore="UnusedResources">Překladač</string>
+    <!-- Preference for translations -->
+    <string name="preferences_translations">Překlady</string>
     <!-- Preference for data choices -->
     <string name="preferences_data_choices">Možnosti hlášení</string>
     <!-- Preference for data collection -->
@@ -646,13 +668,8 @@
     <!-- Message to indicate users that we are quitting the application to apply the changes -->
     <string name="quit_application">Ukončování aplikace pro použití změn…</string>
 
-    <!-- Preference for add_ons -->
-    <string name="preferences_addons" moz:removedIn="126" tools:ignore="UnusedResources">Doplňky</string>
-
     <!-- Preference for extensions -->
     <string name="preferences_extensions">Rozšíření</string>
-    <!-- Preference for installing a local add-on -->
-    <string name="preferences_install_local_addon" moz:removedIn="126" tools:ignore="UnusedResources">Nainstalovat doplněk ze souboru</string>
     <!-- Preference for installing a local extension -->
     <string name="preferences_install_local_extension">Nainstalovat rozšíření ze souboru</string>
     <!-- Preference for notifications -->
@@ -668,18 +685,15 @@
     <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">Vyžadováno</string>
     <!-- The title of the optional permissions section from addon's permissions screen -->
     <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">Volitelné</string>
-    <!-- The title of the section with websites that have permissions granted from addon's permissions screen -->
-    <string name="addons_permissions_heading_read_and_change_website_data" tools:ignore="UnusedResources">Čtení a změna údajů webových stránek</string>
-    <!-- The description of the icon that can delete one of the websites displayed  -->
-    <string name="addons_permissions_icon_description_delete_website" tools:ignore="UnusedResources">Smazat webovou stránku</string>
     <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
     <string name="addons_permissions_allow_for_all_sites" tools:ignore="UnusedResources">Povolit pro všechny stránky</string>
     <!-- The subtitle for the allow for all sites preference toggle -->
     <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">Pokud tomuto rozšíření důvěřujete, můžete mu udělit povolení pro každou webovou stránku.</string>
 
+    <!-- The text shown when an extension does not require permissions -->
+    <string name="addons_does_not_require_permissions">Toto rozšíření nevyžaduje žádná oprávnění.</string>
+
     <!-- Add-on Preferences -->
-    <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
-    <string name="preferences_customize_amo_collection" moz:removedIn="126" tools:ignore="UnusedResources">Vlastní sbírka doplňků</string>
     <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
     <string name="preferences_customize_extension_collection">Vlastní sbírka rozšíření</string>
     <!-- Button caption to confirm the add-on collection configuration -->
@@ -690,8 +704,6 @@
     <string name="customize_addon_collection_hint">Název sbírky</string>
     <!-- Hint displayed on input field for custom collection user ID-->
     <string name="customize_addon_collection_user_hint">Vlastník sbírky (ID uživatele)</string>
-    <!-- Toast shown after confirming the custom add-on collection configuration -->
-    <string name="toast_customize_addon_collection_done" moz:removedIn="126" tools:ignore="UnusedResources">Nastavení sbírky změněno. Pro aplikování změn se nyní aplikace ukončí…</string>
 
     <!-- Toast shown after confirming the custom extension collection configuration -->
     <string name="toast_customize_extension_collection_done">Nastavení sbírky změněno. Pro aplikování změn se nyní aplikace ukončí…</string>
@@ -750,35 +762,23 @@
     <string name="wallpapers_onboarding_dialog_explore_more_button_text">Podívejte se na další tapety</string>
 
     <!-- Add-ons general availability nimbus message-->
-    <!-- Title of the Nimbus message for add-ons general availability-->
-    <string name="addon_ga_message_title" moz:removedIn="126" tools:ignore="UnusedResources">Nové doplňky jsou nyní k dispozici</string>
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">Nové rozšíření jsou nyní k dispozici</string>
     <!-- Body of the Nimbus message for add-ons general availability. 'Firefox' intentionally hardcoded here-->
     <string name="addon_ga_message_body" tools:ignore="UnusedResources">Podívejte se na více než 100 nových rozšíření, která vám umožní přizpůsobit Firefox svým představám.</string>
-    <!-- Button text of the Nimbus message for add-ons general availability. -->
-    <string name="addon_ga_message_button" moz:removedIn="126" tools:ignore="UnusedResources">Prozkoumejte doplňky</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">Prozkoumat rozšíření</string>
 
     <!-- Extension process crash dialog to user -->
-    <!-- Title of a dialog shown to the user when enough errors have occurred with addons and they need to be temporarily disabled -->
-    <string name="addon_process_crash_dialog_title" moz:removedIn="126" tools:ignore="UnusedResources">Doplňky jsou dočasně zakázány.</string>
     <!-- Title of the extension crash dialog shown to the user when enough errors have occurred with extensions and they need to be temporarily disabled -->
     <string name="extension_process_crash_dialog_title">Rozšíření jsou dočasně zakázána</string>
-    <!-- The first parameter is the application name. This is a message shown to the user when too many errors have occurred with the addons process and they have been disabled. The user can decide if they would like to continue trying to start add-ons or if they'd rather continue without them. -->
-    <string name="addon_process_crash_dialog_message" moz:removedIn="126" tools:ignore="UnusedResources">Jeden nebo více doplňků přestalo fungovat a systém se tak stal nestabilním. %1$s se neúspěšně pokusil restartovat doplňky.\n\nDoplňky nebudou restartovány během vaší aktuální relace.\n\nOdstranění nebo zakázání doplňků může tento problém vyřešit.</string>
     <!-- This is a message shown to the user when too many errors have occurred with the extensions process and they have been disabled.
     The user can decide if they would like to continue trying to start extensions or if they'd rather continue without them.
     The first parameter is the application name. -->
     <string name="extension_process_crash_dialog_message">Jedno nebo více rozšíření přestalo fungovat a systém se tak stal nestabilním. %1$s se neúspěšně pokusil restartovat rozšíření.\n\nRozšíření nebudou restartovány během vaší aktuální relace.\n\nOdstranění nebo zakázání rozšíření může tento problém vyřešit.</string>
-    <!-- This will cause the add-ons to try restarting but the dialog will reappear if it is unsuccessful again -->
-    <string name="addon_process_crash_dialog_retry_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Zkuste restartovat doplňky</string>
     <!-- Button text on the extension crash dialog to prompt the user to try restarting the extensions but the dialog will reappear if it is unsuccessful again -->
     <string name="extension_process_crash_dialog_retry_button_text" tools:ignore="UnusedResources">Vyzkoušet restartovat rozšíření</string>
-    <!-- The user will continue with all add-ons disabled -->
-    <string name="addon_process_crash_dialog_disable_addons_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Pokračovat s vypnutými doplňky</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to continue with all extensions disabled. -->
     <string name="extension_process_crash_dialog_disable_extensions_button_text">Pokračovat se zakázanými rozšířeními</string>
@@ -796,8 +796,6 @@
     <string name="preferences_sync_history">Historii</string>
     <!-- Preference for syncing bookmarks -->
     <string name="preferences_sync_bookmarks">Záložky</string>
-    <!-- Preference for syncing logins -->
-    <string name="preferences_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Přihlašovací údaje</string>
     <!-- Preference for syncing passwords -->
     <string name="preferences_sync_logins_2">Hesla</string>
     <!-- Preference for syncing tabs -->
@@ -825,8 +823,6 @@
         and the third is the device model. -->
     <string name="default_device_name_2">%1$s na %2$s %3$s</string>
 
-    <!-- Preference for syncing credit cards -->
-    <string name="preferences_sync_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Platební karty</string>
     <!-- Preference for syncing payment methods -->
     <string name="preferences_sync_credit_cards_2">Platební metody</string>
     <!-- Preference for syncing addresses -->
@@ -841,6 +837,14 @@
     <string name="fxa_tab_received_notification_name">Přijatý panel</string>
     <!-- %s is the device name -->
     <string name="fxa_tab_received_from_notification_name">Panel z %s</string>
+
+    <!-- Close Synced Tabs -->
+    <!-- The title for a notification shown when the user closes tabs that are currently
+    open on this device from another device that's signed in to the same Mozilla account.
+    %1$s is a placeholder for the app name; %2$d is the number of tabs closed.  -->
+    <string name="fxa_tabs_closed_notification_title">V aplikaci %1$s bylo zavřeno %2$d panelů</string>
+    <!-- The body for a "closed synced tabs" notification. -->
+    <string name="fxa_tabs_closed_text">Zobrazení nedávno zavřených panelů</string>
 
     <!-- Advanced Preferences -->
     <!-- Preference for tracking protection exceptions -->
@@ -901,10 +905,15 @@
     <!-- Preference for using the dynamic toolbar -->
     <string name="preference_gestures_dynamic_toolbar">Skrýt nástrojovou lištu při posouvání</string>
     <!-- Preference for switching tabs by swiping horizontally on the toolbar -->
-    <string name="preference_gestures_swipe_toolbar_switch_tabs">Přepínat panely posunutím nástrojové lišty do stran</string>
+    <string name="preference_gestures_swipe_toolbar_switch_tabs" moz:removedIn="129" tools:ignore="UnusedResources">Přepínat panely posunutím nástrojové lišty do stran</string>
 
     <!-- Preference for showing the opened tabs by swiping up on the toolbar-->
     <string name="preference_gestures_swipe_toolbar_show_tabs">Zobrazit panely vytažením nástrojové lišty nahoru</string>
+
+    <!-- Preference for using the dynamic toolbars -->
+    <string name="preference_gestures_dynamic_toolbar_2">Posouváním skrýt adresní řádek a lištu</string>
+    <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
+    <string name="preference_gestures_swipe_toolbar_switch_tabs_2">Panely přepínat přejetím adresního řádku do stran</string>
 
     <!-- Library -->
     <!-- Option in Library to open Downloads page -->
@@ -1423,6 +1432,26 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">Zavřít anonymní panely</string>
 
+
+    <!-- Microsuverys -->
+    <!-- Text shown in prompt for printing microsurvey. "sec" It's an abrevation for "second". -->
+    <string name="microsurvey_prompt_printing_title" tools:ignore="UnusedResources">Pomozte nám vylepšit tisk z Firefoxu. Zabere to jenom chvilku</string>
+    <!-- Text shown in prompt for printing microsurvey. 'Firefox' intentionally hardcoded here--> --&gt;
+    <string name="microsurvey_survey_printing_title" tools:ignore="UnusedResources">Jak jste spokojeni s tiskem ve Firefoxu?</string>
+    <!-- Text for option one, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources">Neutrální</string>
+    <!-- Text for option two, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_1" tools:ignore="UnusedResources">Velmi nespokojený/á</string>
+    <!-- Text for option three, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_2" tools:ignore="UnusedResources">Nespokojený/á</string>
+
+
+    <!-- Text for option four, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_3" tools:ignore="UnusedResources">Spokojený/á</string>
+    <!-- Text for option five, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_4" tools:ignore="UnusedResources">Velmi spokojený/á</string>
+
+
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
     <string name="notification_erase_title_android_14">Zavřít anonymní panely?</string>
 
@@ -1499,10 +1528,6 @@
     <string name="qr_scanner_dialog_invalid_ok">OK</string>
     <!-- Tab collection deletion prompt dialog message. Placeholder will be replaced with the collection name -->
     <string name="tab_collection_dialog_message">Opravdu chcete odstranit sbírku „%1$s“?</string>
-    <!-- Collection and tab deletion prompt dialog message. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_message">Odstraněním tohoto panelu smažete celou sbírku. Novou sbírku si můžete kdykoliv znovu vytvořit.</string>
-    <!-- Collection and tab deletion prompt dialog title. Placeholder will be replaced with the collection name. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_title">Smazat %1$s?</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">Odstranit</string>
 
@@ -1783,11 +1808,7 @@
     <string name="add_to_homescreen_description_2">Tuto stránku si můžete snadno přidat na domovskou obrazovku svého zařízení. Budete k ní mít okamžitý přístup a prohlížení bude rychlejší se zážitkem jako v aplikaci.</string>
 
     <!-- Preference for managing the settings for logins and passwords in Fenix -->
-    <string name="preferences_passwords_logins_and_passwords" moz:RemovedIn="125" tools:ignore="UnusedResources">Přihlašovací údaje</string>
-    <!-- Preference for managing the settings for logins and passwords in Fenix -->
     <string name="preferences_passwords_logins_and_passwords_2">Hesla</string>
-    <!-- Preference for managing the saving of logins and passwords in Fenix -->
-    <string name="preferences_passwords_save_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Ukládat přihlašovací údaje</string>
     <!-- Preference for managing the saving of logins and passwords in Fenix -->
     <string name="preferences_passwords_save_logins_2">Ukládání hesel</string>
     <!-- Preference option for asking to save passwords in Fenix -->
@@ -1803,46 +1824,27 @@
     <!-- Description for the preference for autofilling logins from Fenix in other apps (e.g. autofilling the Twitter app) -->
     <string name="preferences_android_autofill_description">Vyplňování a ukládání uživatelských jmen a hesel v dalších aplikacích na vašem zařízení.</string>
 
-    <!-- Preference option for adding a login -->
-    <string name="preferences_logins_add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Přidat přihlašovací údaje</string>
-
     <!-- Preference option for adding a password -->
     <string name="preferences_logins_add_login_2">Přidat heslo</string>
 
     <!-- Preference for syncing saved passwords in Fenix -->
-    <string name="preferences_passwords_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Synchronizovat přihlašovací údaje</string>
-    <!-- Preference for syncing saved passwords in Fenix -->
     <string name="preferences_passwords_sync_logins_2">Synchronizovat hesla</string>
-    <!-- Preference for syncing saved logins in Fenix, when not signed in-->
-    <string name="preferences_passwords_sync_logins_across_devices" moz:RemovedIn="125" tools:ignore="UnusedResources">Synchronizovat přihlašovací údaje mezi zařízeními</string>
     <!-- Preference for syncing saved passwords in Fenix, when not signed in-->
     <string name="preferences_passwords_sync_logins_across_devices_2">Synchronizovat hesla napříč zařízeními</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Uložené přihlašovací údaje</string>
     <!-- Preference to access list of saved passwords -->
     <string name="preferences_passwords_saved_logins_2">Uložená hesla</string>
     <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
-    <string name="preferences_passwords_saved_logins_description_empty_text" moz:RemovedIn="125" tools:ignore="UnusedResources">Uložené nebo synchronizované údaje aplikace %s se zobrazí tady.</string>
-    <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
     <string name="preferences_passwords_saved_logins_description_empty_text_2">Hesla, která uložíte nebo synchronizujete s aplikací %s, budou uvedena zde. Všechna uložená hesla jsou šifrována.</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins_description_empty_learn_more_link" moz:RemovedIn="125" tools:ignore="UnusedResources">Zjistit více o službě Sync.</string>
     <!-- Clickable text for opening an external link for more information about Sync. -->
     <string name="preferences_passwords_saved_logins_description_empty_learn_more_link_2">Další informace o synchronizaci</string>
     <!-- Preference to access list of login exceptions that we never save logins for -->
     <string name="preferences_passwords_exceptions">Výjimky</string>
-    <!-- Empty description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description_empty" moz:RemovedIn="125" tools:ignore="UnusedResources">Tady se zobrazí přihlašovací údaje, které se nebudou ukládat.</string>
     <!-- Empty description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_empty_2">Aplikace %s nebude nikdy ukládat hesla pro stránky uvedené v tomto seznamu.</string>
-    <!-- Description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Pro následující servery se nebudou přihlašovací údaje ukládat.</string>
     <!-- Description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_2">Aplikace %s nebude nikdy ukládat hesla pro tyto stránky.</string>
     <!-- Text on button to remove all saved login exceptions -->
     <string name="preferences_passwords_exceptions_remove_all">Odebrat všechny výjimky</string>
-    <!-- Hint for search box in logins list -->
-    <string name="preferences_passwords_saved_logins_search" moz:RemovedIn="125" tools:ignore="UnusedResources">Hledat přihlašovací údaje</string>
     <!-- Hint for search box in passwords list -->
     <string name="preferences_passwords_saved_logins_search_2">Hledat v heslech</string>
     <!-- The header for the site that a login is for -->
@@ -1871,16 +1873,10 @@
     <string name="saved_login_reveal_password">Zobrazit heslo</string>
     <!-- Content Description (for screenreaders etc) read for the button to hide a password in logins -->
     <string name="saved_login_hide_password">Skrýt heslo</string>
-    <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their logins -->
-    <string name="logins_biometric_prompt_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Odemknout pro zobrazení přihlašovacích údajů</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their passwords -->
     <string name="logins_biometric_prompt_message_2">Pro zobrazení uložených hesel odemkněte</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Zabezpečte své přihlašovací údaje a hesla</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_title_2">Zabezpečte svá uložená hesla</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Nastavte si gesto, PIN nebo heslo zámku obrazovky, který ochrání vaše uložené přihlašovací údaje, pokud by se vaše zařízení dostalo do ruky někomu jinému.</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_message_2">Nastavte si gesto, PIN nebo heslo zámku obrazovky, který ochrání vaše uložená hesla, pokud by se vaše zařízení dostalo do ruky někomu jinému.</string>
     <!-- Negative button to ignore warning dialog if users have no device authentication set up -->
@@ -1900,9 +1896,6 @@
     <!-- Saved logins sorting strategy menu item -by last used- (if selected, it will sort saved logins by last used) -->
     <string name="saved_logins_sort_strategy_last_used">Naposledy použito</string>
 
-    <!-- Content description (not visible, for screen readers etc.): Sort saved logins dropdown menu chevron icon -->
-    <string name="saved_logins_menu_dropdown_chevron_icon_content_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Seřadit podle</string>
-
     <!-- Content description (not visible, for screen readers etc.) -->
     <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Nabídka pro řazení hesel</string>
 
@@ -1911,41 +1904,27 @@
     <string name="preferences_autofill">Automatické vyplňování</string>
     <!-- Preference and title for managing the settings for addresses -->
     <string name="preferences_addresses">Adresy</string>
-    <!-- Preference and title for managing the settings for credit cards -->
-    <string name="preferences_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Platební karty</string>
     <!-- Preference and title for managing the settings for payment methods -->
     <string name="preferences_credit_cards_2">Platební metody</string>
     <!-- Preference for saving and autofilling credit cards -->
-    <string name="preferences_credit_cards_save_and_autofill_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Ukládat a automaticky vyplňovat karty</string>
-    <!-- Preference for saving and autofilling credit cards -->
     <string name="preferences_credit_cards_save_and_autofill_cards_2">Uložení a vyplnění platebních metod</string>
-    <!-- Preference summary for saving and autofilling credit card data -->
-    <string name="preferences_credit_cards_save_and_autofill_cards_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Data jsou šifrována</string>
     <!-- Preference summary for saving and autofilling payment method data. Parameter will be replaced by app name. -->
     <string name="preferences_credit_cards_save_and_autofill_cards_summary_2">%s šifruje všechny vaše uložené platební metody</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is not signed into sync -->
     <string name="preferences_credit_cards_sync_cards_across_devices">Synchronizovat karty napříč zařízeními</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is signed into sync -->
     <string name="preferences_credit_cards_sync_cards">Synchronizovat platební karty</string>
-    <!-- Preference option for adding a credit card -->
-    <string name="preferences_credit_cards_add_credit_card" moz:RemovedIn="125" tools:ignore="UnusedResources">Přidat platební kartu</string>
 
     <!-- Preference option for adding a card -->
     <string name="preferences_credit_cards_add_credit_card_2">Přidat kartu</string>
-    <!-- Preference option for managing saved credit cards -->
-    <string name="preferences_credit_cards_manage_saved_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Správa uložených karet</string>
     <!-- Preference option for managing saved cards -->
     <string name="preferences_credit_cards_manage_saved_cards_2">Spravovat karty</string>
     <!-- Preference option for adding an address -->
     <string name="preferences_addresses_add_address">Přidat adresu</string>
     <!-- Preference option for managing saved addresses -->
     <string name="preferences_addresses_manage_addresses">Správa adres</string>
-    <!-- Preference for saving and autofilling addresses -->
-    <string name="preferences_addresses_save_and_autofill_addresses" moz:RemovedIn="125" tools:ignore="UnusedResources">Ukládat a automaticky vyplňovat adresy</string>
     <!-- Preference for saving and filling addresses -->
     <string name="preferences_addresses_save_and_autofill_addresses_2">Ukládat a vyplňovat adresy</string>
-    <!-- Preference summary for saving and autofilling address data -->
-    <string name="preferences_addresses_save_and_autofill_addresses_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Zahrnuje informace jako čísla a e-mailové a doručovací adresy</string>
 
     <!-- Preference summary for saving and filling address data -->
     <string name="preferences_addresses_save_and_autofill_addresses_summary_2">Zahrnuje telefonní čísla a e-mailové adresy</string>
@@ -1969,8 +1948,6 @@
     <!-- The text for the "Delete card" button for deleting a credit card -->
     <string name="credit_cards_delete_card_button">Odstranit kartu</string>
     <!-- The text for the confirmation message of "Delete card" dialog -->
-    <string name="credit_cards_delete_dialog_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Opravdu chcete tuto platební kartu smazat?</string>
-    <!-- The text for the confirmation message of "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_confirmation_2">Odstranit kartu?</string>
     <!-- The text for the positive button on "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_button">Smazat</string>
@@ -1984,23 +1961,14 @@
     <!-- Title of the "Saved cards" screen -->
     <string name="credit_cards_saved_cards">Uložené karty</string>
 
-    <!-- Error message for credit card number validation -->
-    <string name="credit_cards_number_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Zadejte prosím platné číslo platební karty</string>
-
     <!-- Error message for card number validation -->
     <string name="credit_cards_number_validation_error_message_2">Zadejte platné číslo karty</string>
-    <!-- Error message for credit card name on card validation -->
-    <string name="credit_cards_name_on_card_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Vyplňte prosím toto pole</string>
     <!-- Error message for card name on card validation -->
     <string name="credit_cards_name_on_card_validation_error_message_2">Zadejte jméno</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their saved credit cards -->
     <string name="credit_cards_biometric_prompt_message">Odemknout pro zobrazení uložených karet</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Zabezpečte své platební karty</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_title_2">Zabezpečte vaše uložené platební metody</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Nastavte si gesto, PIN nebo heslo zámku obrazovky, který ochrání vaše uložené platební karty, pokud by se vaše zařízení dostalo do ruky někomu jinému.</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_message_3">Nastavením vzoru zámku zařízení, kódu PIN nebo hesla ochráníte uložené platební metody před přístupem, pokud má vaše zařízení někdo jiný.</string>
     <!-- Positive button to send users to set up a pin of warning dialog if users have no device authentication set up -->
@@ -2010,9 +1978,6 @@
     <!-- Title of PIN verification dialog to direct users to re-enter their device credentials to access their credit cards -->
     <string name="credit_cards_biometric_prompt_message_pin">Odemkněte zařízení</string>
 
-    <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored credit card information -->
-    <string name="credit_cards_biometric_prompt_unlock_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Odemkněte pro použití informací o platební kartě</string>
-
     <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored payment method information -->
     <string name="credit_cards_biometric_prompt_unlock_message_2">Odemknout pro použití uložených způsobů platby</string>
     <!-- Title of the "Add address" screen -->
@@ -2021,12 +1986,6 @@
     <string name="addresses_edit_address">Upravit adresu</string>
     <!-- Title of the "Manage addresses" screen -->
     <string name="addresses_manage_addresses">Správa adres</string>
-    <!-- The header for the first name of an address -->
-    <string name="addresses_first_name" moz:removedIn="125" tools:ignore="UnusedResources">Křestní jméno</string>
-    <!-- The header for the middle name of an address -->
-    <string name="addresses_middle_name" moz:removedIn="125" tools:ignore="UnusedResources">Prostřední jméno</string>
-    <!-- The header for the last name of an address -->
-    <string name="addresses_last_name" moz:removedIn="125" tools:ignore="UnusedResources">Příjmení</string>
     <!-- The header for the name of an address. Name represents a person's full name, typically made up of a first, middle and last name, e.g. John Joe Doe. -->
     <string name="addresses_name">Název</string>
     <!-- The header for the street address of an address -->
@@ -2052,8 +2011,6 @@
 
     <!-- The text for the "Delete address" button for deleting an address -->
     <string name="addressess_delete_address_button">Smazat adresu</string>
-    <!-- The title for the "Delete address" confirmation dialog -->
-    <string name="addressess_confirm_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Opravdu chcete tuto adresu smazat?</string>
     <!-- The title for the "Delete address" confirmation dialog -->
     <string name="addressess_confirm_dialog_message_2">Smazat tuto adresu?</string>
     <!-- The text for the positive button on "Delete address" dialog -->
@@ -2154,48 +2111,28 @@
     <string name="login_menu_delete_button">Odstranit</string>
     <!-- Login overflow menu edit button -->
     <string name="login_menu_edit_button">Upravit</string>
-    <!-- Message in delete confirmation dialog for logins -->
-    <string name="login_deletion_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Opravdu chcete tyto přihlašovací údaje odstranit?</string>
     <!-- Message in delete confirmation dialog for password -->
     <string name="login_deletion_confirmation_2">Opravdu chcete smazat toto heslo?</string>
     <!-- Positive action of a dialog asking to delete  -->
     <string name="dialog_delete_positive">Odstranit</string>
     <!-- Negative action of a dialog asking to delete login -->
     <string name="dialog_delete_negative">Zrušit</string>
-    <!--  The saved login options menu description. -->
-    <string name="login_options_menu" moz:RemovedIn="125" tools:ignore="UnusedResources">Možnosti přihlášení</string>
     <!--  The saved password options menu description. -->
     <string name="login_options_menu_2">Možnosti hesel</string>
-    <!--  The editable text field for a login's web address. -->
-    <string name="saved_login_hostname_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Textové pole pro webovou adresu pro přihlašovací údaje.</string>
     <!--  The editable text field for a website address. -->
     <string name="saved_login_hostname_description_3">Upravitelné textové pole pro adresu webové stránky.</string>
-    <!--  The editable text field for a login's username. -->
-    <string name="saved_login_username_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Textové pole pro uživatelské jméno z přihlašovacích údajů.</string>
     <!--  The editable text field for a username. -->
     <string name="saved_login_username_description_3">Upravitelné textové pole pro uživatelské jméno.</string>
     <!--  The editable text field for a login's password. -->
-    <string name="saved_login_password_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Textové pole pro heslo z přihlašovacích údajů.</string>
-    <!--  The editable text field for a login's password. -->
     <string name="saved_login_password_description_2">Upravitelné textové pole pro heslo.</string>
-    <!--  The button description to save changes to an edited login. -->
-    <string name="save_changes_to_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Uložit změny přihlašovacích údajů.</string>
     <!--  The button description to save changes to an edited password. -->
     <string name="save_changes_to_login_2">Uložit změny.</string>
-    <!--  The page title for editing a saved login. -->
-    <string name="edit" moz:RemovedIn="125" tools:ignore="UnusedResources">Upravit</string>
     <!--  The page title for editing a saved password. -->
     <string name="edit_2">Upravit heslo</string>
-    <!--  The page title for adding new login. -->
-    <string name="add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Přidat nové přihlašovací údaje</string>
     <!--  The page title for adding new password. -->
     <string name="add_login_2">Přidat heslo</string>
-    <!--  The error message in add/edit login view when password field is blank. -->
-    <string name="saved_login_password_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Je vyžadováno heslo</string>
     <!--  Error text displayed underneath the password field when it is in an error case. -->
     <string name="saved_login_password_required_2">Zadejte heslo</string>
-    <!--  The error message in add login view when username field is blank. -->
-    <string name="saved_login_username_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Uživatelské je povinné</string>
     <!--  The error message in add login view when username field is blank. -->
     <string name="saved_login_username_required_2">Zadejte uživatelské jméno</string>
     <!--  The error message in add login view when hostname field is blank. -->
@@ -2565,8 +2502,6 @@
     <string name="translation_error_could_not_load_languages_warning_text">Nelze načíst jazyky. Zkontrolujte připojení k internetu a zkuste to znovu.</string>
     <!-- The title of the warning card informs the user that a language is not supported. The first parameter is the name of the language that is not supported. -->
     <string name="translation_error_language_not_supported_warning_text">Je nám líto, ale jazyk %1$s zatím není podporován.</string>
-    <!-- Button text on the warning card when a language is not supported. The link will take the user to a page to a support page about translations. -->
-    <string name="translation_error_language_not_supported_learn_more" moz:removedIn="126" tools:ignore="UnusedResources">Zjistit více</string>
 
 
     <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
@@ -2579,8 +2514,6 @@
 
 
     <!-- Translations options dialog -->
-    <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
-    <string name="translation_option_bottom_sheet_title" moz:removedIn="126" tools:ignore="UnusedResources">Možnosti překladu</string>
     <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
     <string name="translation_option_bottom_sheet_title_heading">Nastavení překladu</string>
     <!-- Toggle switch label that allows a user to set the setting if they would like the browser to always offer or suggest translations when available. -->
@@ -2602,6 +2535,9 @@
 
     <!-- Content description (not visible, for screen readers etc.) for closing the translations bottom sheet. -->
     <string name="translation_option_bottom_sheet_close_content_description">Zavřít Překlady</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred at page settings. -->
+    <string name="translation_option_bottom_sheet_error_warning_text">Některá nastavení jsou dočasně nedostupná.</string>
 
     <!-- Translation settings dialog -->
     <!-- Title of the translation settings dialog that allows a user to set their preferred translation settings. -->
@@ -2626,6 +2562,9 @@
     <!-- Screen header presenting the automatic translation preference feature. It will appear under the toolbar. -->
     <string name="automatic_translation_header_preference">Vyberte jazyk, u kterého chcete spravovat předvolby „vždy překládat“ a „nikdy nepřekládat“.</string>
 
+    <!-- The title of the warning card informs the user that the system could not load languages for translation settings. -->
+    <string name="automatic_translation_error_warning_text">Nelze načíst jazyky. Zkuste to prosím později.</string>
+
     <!-- Automatic translation options preference screen -->
     <!-- Preference option for offering to translate. Radio button title text.-->
     <string name="automatic_translation_option_offer_to_translate_title_preference">Nabídnout překlad (výchozí)</string>
@@ -2649,6 +2588,8 @@
     <!-- Content description (not visible, for screen readers etc.): For a never-translated site list item that is selected.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_item_list_content_description_preference">Odebrat %1$s</string>
+    <!-- The title of the warning card informs the user that an error has occurred at the never translate sites list. -->
+    <string name="never_translate_site_error_warning_text">Nelze načíst stránky. Zkuste to prosím později.</string>
     <!-- The Delete site dialogue title will appear when the user clicks on a list item.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_dialog_title_preference">Smazat %1$s?</string>
@@ -2674,8 +2615,10 @@
     <string name="download_languages_language_item_preference">%1$s (%2$s)</string>
     <!-- The subhead of the download language preference screen will appear above the items that were not downloaded. -->
     <string name="download_language_header_preference">Stažení jazyků</string>
-    <!-- All languages list item. When the user presses this item, they can download or delete all languages. -->
+    <!-- All languages list item. When the user presses this item, they can download all languages. -->
     <string name="download_language_all_languages_item_preference">Všechny jazyky</string>
+    <!-- All languages list item. When the user presses this item, they can delete all languages that were downloaded. -->
+    <string name="download_language_all_languages_item_preference_to_delete">Smazat všechny jazyky</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">Smazat</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress. -->
@@ -2683,7 +2626,17 @@
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">Stáhnout</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that is selected. -->
-    <string name="download_languages_item_content_description_selected_state">Vybráno</string>
+    <string name="download_languages_item_content_description_selected_state" moz:removedIn="127" tools:ignore="UnusedResources">Vybráno</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred when fetching the list of languages. -->
+    <string name="download_languages_fetch_error_warning_text">Nelze načíst jazyky. Zkuste to prosím později.</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred at downloading a language.
+      The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_error_warning_text"><![CDATA[Jazyk <b>%1$s</b> se nepodařilo stáhnout. Zkuste to znovu.]]></string>
+    <!-- The title of the warning card informs the user that an error has occurred at deleting a language.
+          The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_delete_error_warning_text"><![CDATA[Jazyk <b>%1$s</b> se nepodařilo smazat. Zkuste to znovu.]]></string>
 
     <!-- Title for the dialog used by the translations feature to confirm deleting a language.
     The dialog will be presented when the user requests deletion of a language.
@@ -2711,7 +2664,7 @@
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation. -->
     <string name="download_language_file_dialog_message_all_languages">Částečné jazyky stahujeme do mezipaměti, aby překlady zůstaly soukromé.</string>
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation without mentioning the cache. -->
-    <string name="download_language_file_dialog_message_all_languages_no_cache">Stahujeme částečné jazyky, aby překlady zůstaly soukromé.</string>
+    <string name="download_language_file_dialog_message_all_languages_no_cache" moz:removedIn="129" tools:ignore="UnusedResources">Stahujeme částečné jazyky, aby překlady zůstaly soukromé.</string>
     <!-- Checkbox label text on the data saving mode warning dialog used by the translations feature. This checkbox allows users to ignore the data usage warnings. -->
     <string name="download_language_file_dialog_checkbox_text">V režimu úspory dat vždy stahovat</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to confirm they wish to continue and download the language file. -->
@@ -2727,13 +2680,18 @@
     <!-- Content description (not visible, for screen readers etc.): Navigate back within the debug drawer. -->
     <string name="debug_drawer_back_button_content_description">Návrat zpět</string>
 
+    <!-- Content description (not visible, for screen readers etc.): Open debug drawer. -->
+    <string name="debug_drawer_fab_content_description">Otevřít ladicí panel</string>
+
     <!-- Debug drawer tabs tools -->
     <!-- The title of the Tab Tools feature in the Debug Drawer. -->
     <string name="debug_drawer_tab_tools_title">Nástroje pro panely</string>
     <!-- The title of the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_title">Počet panelů</string>
     <!-- The active tab count category in the tab count section in Tab Tools. -->
-    <string name="debug_drawer_tab_tools_tab_count_normal">Aktivní</string>
+    <string name="debug_drawer_tab_tools_tab_count_normal" moz:removedIn="127" tools:ignore="UnusedResources">Aktivní</string>
+    <!-- The active tab count category in the tab count section in Tab Tools. -->
+    <string name="debug_drawer_tab_tools_tab_count_active">Aktivní</string>
     <!-- The inactive tab count category in the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_inactive">Neaktivní</string>
     <!-- The private tab count category in the tab count section in Tab Tools. -->
@@ -2744,6 +2702,16 @@
     <string name="debug_drawer_tab_tools_tab_creation_tool_title">Nástroj na vytváření panelů</string>
     <!-- The label of the text field in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_text_field_label">Počet panelů, které chcete vytvořit</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is empty -->
+    <string name="debug_drawer_tab_tools_tab_quantity_empty_error">Textové pole je prázdné</string>
+    <!-- The error message of the text field in the tab creation tool when the text field has characters other than digits -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_digits_error">Zadejte prosím pouze kladná celá čísla</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a zero -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_zero_error">Zadejte prosím číslo větší než nula</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a
+        quantity greater than the max tabs. The first parameter is the maximum number of tabs
+        that can be generated in one operation.-->
+    <string name="debug_drawer_tab_tools_tab_quantity_exceed_max_error">Byl překročen maximální počet panelů (%1$s), které mohou být vygenerovány v jedné operaci</string>
     <!-- The button text to add tabs to the active tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_active">Přidat mezi aktivní panely</string>
     <!-- The button text to add tabs to the inactive tab group in the tab creation tool. -->
@@ -2753,18 +2721,29 @@
 
     <!-- Micro survey -->
 
+    <!-- Microsurvey -->
+    <!-- Prompt view -->
+    <!-- The microsurvey prompt title. Note: The word "Firefox" should NOT be translated -->
+    <string name="micro_survey_prompt_title" tools:ignore="UnusedResources">Pomozte nám vylepšit Firefox. Zabere to jen minutku.</string>
     <!-- The continue button label -->
     <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Pokračovat</string>
+    <!-- Survey view -->
     <!-- The survey header -->
-    <string name="micro_survey_survey_header">Vyplňte tento průzkum</string>
+    <string name="micro_survey_survey_header" moz:removedIn="129" tools:ignore="UnusedResources">Vyplňte tento průzkum</string>
+    <!-- The survey header -->
+    <string name="micro_survey_survey_header_2">Vyplňte prosím dotazník</string>
     <!-- The privacy notice link -->
-    <string name="micro_survey_privacy_notice">Zásady ochrany osobních údajů</string>
+    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">Zásady ochrany osobních údajů</string>
+    <!-- The privacy notice link -->
+    <string name="micro_survey_privacy_notice_2">Zásady ochrany osobních údajů</string>
     <!-- The submit button label text -->
-    <string name="micro_survey_submit_button_label" tools:ignore="UnusedResources">Odeslat</string>
+    <string name="micro_survey_submit_button_label">Odeslat</string>
     <!-- The close button label text -->
-    <string name="micro_survey_close_button_label">Zavřít</string>
+    <string name="micro_survey_close_button_label" moz:removedIn="128" tools:ignore="UnusedResources">Zavřít</string>
+    <!-- The survey completion header -->
+    <string name="micro_survey_survey_header_confirmation" tools:ignore="UnusedResources">Průzkum dokončen</string>
     <!-- The survey completion confirmation text -->
-    <string name="micro_survey_feedback_confirmation" tools:ignore="UnusedResources">Děkujeme za vaši zpětnou vazbu!</string>
+    <string name="micro_survey_feedback_confirmation">Děkujeme za vaši zpětnou vazbu!</string>
     <!-- Option for likert scale -->
     <string name="likert_scale_option_1" tools:ignore="UnusedResources">Velmi spokojený</string>
     <!-- Option for likert scale -->
@@ -2775,6 +2754,18 @@
     <string name="likert_scale_option_4" tools:ignore="UnusedResources">Nespokojený</string>
     <!-- Option for likert scale -->
     <string name="likert_scale_option_5" tools:ignore="UnusedResources">Velmi nespokojený</string>
+
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_6" tools:ignore="UnusedResources">Nepoužívám</string>
+    <!-- Text shown in prompt for homepage microsurvey. 'Firefox' intentionally hardcoded here- -->
+    <string name="microsurvey_prompt_homepage_title" tools:ignore="UnusedResources">Jak jste spokojeni se svou domovskou stránkou Firefoxu?</string>
+    <!-- Accessibility -->
+    <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
+    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources">Otevře průzkum</string>
+    <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
+    <string name="microsurvey_close_handle_content_description" tools:ignore="UnusedResources">Zavře průzkum</string>
+    <!-- Content description for "X" button that is closing microsurvey. -->
+    <string name="microsurvey_close_button_content_description" tools:ignore="UnusedResources">Zavřít</string>
 
     <!-- Debug drawer logins -->
     <!-- The title of the Logins feature in the Debug Drawer. -->

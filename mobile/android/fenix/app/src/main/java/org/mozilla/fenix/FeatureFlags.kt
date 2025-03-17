@@ -50,7 +50,7 @@ object FeatureFlags {
     /**
      * Enables compose on the tabs tray items.
      */
-    val composeTabsTray = Config.channel.isNightlyOrDebug || Config.channel.isBeta
+    const val composeTabsTray = true
 
     /**
      * Enables compose on the top sites.
@@ -87,4 +87,9 @@ object FeatureFlags {
      * Enables the menu redesign.
      */
     const val menuRedesignEnabled = false
+
+    /**
+     * Enables microsurveys.
+     */
+    val microsurveysEnabled = Config.channel.isDebug
 }

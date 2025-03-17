@@ -65,7 +65,8 @@ from taskgraph.util.taskcluster import find_task_id, get_artifact_url, list_arti
 
 from mozbuild.artifact_builds import JOB_CHOICES
 from mozbuild.artifact_cache import ArtifactCache
-from mozbuild.util import FileAvoidWrite, ensureParentDir, mkdir
+from mozbuild.dirutils import ensureParentDir, mkdir
+from mozbuild.util import FileAvoidWrite
 
 # Number of candidate pushheads to cache per parent changeset.
 NUM_PUSHHEADS_TO_QUERY_PER_PARENT = 50
@@ -101,6 +102,7 @@ class ArtifactJob(object):
     # The list below list should be updated when we have new ESRs.
     esr_candidate_trees = [
         "releases/mozilla-esr115",
+        "releases/mozilla-esr128",
     ]
     try_tree = "try"
 
@@ -151,14 +153,19 @@ class ArtifactJob(object):
     #   prepended.
     #
     # The entries in the archive, suitably renamed, will be extracted into `dist`.
-    _extra_archives = {
-        ".xpt_artifacts.zip": {
-            "description": "XPT Artifacts",
-            "src_prefix": "",
-            "dest_prefix": "xpt_artifacts",
-        },
-    }
-    _extra_archive_suffixes = tuple(sorted(_extra_archives.keys()))
+    @property
+    def _extra_archives(self):
+        return {
+            ".xpt_artifacts.zip": {
+                "description": "XPT Artifacts",
+                "src_prefix": "",
+                "dest_prefix": "xpt_artifacts",
+            },
+        }
+
+    @property
+    def _extra_archive_suffixes(self):
+        return tuple(sorted(self._extra_archives.keys()))
 
     def __init__(
         self,
@@ -213,7 +220,7 @@ class ArtifactJob(object):
                 self._symbols_archive_suffix
             ):
                 yield name
-            elif name.endswith(ArtifactJob._extra_archive_suffixes):
+            elif name.endswith(self._extra_archive_suffixes):
                 yield name
             else:
                 self.log(
@@ -247,7 +254,7 @@ class ArtifactJob(object):
             self._symbols_archive_suffix
         ):
             return self.process_symbols_archive(filename, processed_filename)
-        if filename.endswith(ArtifactJob._extra_archive_suffixes):
+        if filename.endswith(self._extra_archive_suffixes):
             return self.process_extra_archive(filename, processed_filename)
         return self.process_package_artifact(filename, processed_filename)
 
@@ -401,7 +408,7 @@ class ArtifactJob(object):
                 writer.add(destpath.encode("utf-8"), entry)
 
     def process_extra_archive(self, filename, processed_filename):
-        for suffix, extra_archive in ArtifactJob._extra_archives.items():
+        for suffix, extra_archive in self._extra_archives.items():
             if filename.endswith(suffix):
                 self.log(
                     logging.INFO,
@@ -555,7 +562,6 @@ class LinuxArtifactJob(ArtifactJob):
         "{product}/{product}-bin",
         "{product}/minidump-analyzer",
         "{product}/pingsender",
-        "{product}/platform.ini",
         "{product}/plugin-container",
         "{product}/updater",
         "{product}/glxtest",
@@ -657,19 +663,26 @@ class MacArtifactJob(ArtifactJob):
                 "nmhproxy",
                 "pingsender",
                 "plugin-container.app/Contents/MacOS/plugin-container",
-                "updater.app/Contents/Frameworks/UpdateSettings.framework/UpdateSettings",
                 "updater.app/Contents/MacOS/org.mozilla.updater",
                 # 'xpcshell',
                 "XUL",
             ],
         ),
-        (
-            "Contents/Frameworks",
-            [
-                "ChannelPrefs.framework/ChannelPrefs",
-            ],
-        ),
     )
+
+    @property
+    def _extra_archives(self):
+        extra_archives = super()._extra_archives
+        extra_archives.update(
+            {
+                ".update_framework_artifacts.zip": {
+                    "description": "Update-related macOS Framework Artifacts",
+                    "src_prefix": "",
+                    "dest_prefix": "update_framework_artifacts",
+                },
+            }
+        )
+        return extra_archives
 
     @property
     def paths_no_keep_path(self):
@@ -732,7 +745,6 @@ class MacArtifactJob(ArtifactJob):
                         "gmp-clearkey/0.1/libclearkey.dylib",
                         # 'gmp-fake/1.0/libfake.dylib',
                         # 'gmp-fakeopenh264/1.0/libfakeopenh264.dylib',
-                        "platform.ini",
                     ],
                 )
             ]
@@ -784,7 +796,6 @@ class WinArtifactJob(ArtifactJob):
 
     _package_artifact_patterns = {
         "{product}/dependentlibs.list",
-        "{product}/platform.ini",
         "{product}/**/*.dll",
         "{product}/*.exe",
         "{product}/*.tlb",
@@ -861,6 +872,7 @@ class ThunderbirdMixin(object):
     # The list below list should be updated when we have new ESRs.
     esr_candidate_trees = [
         "releases/comm-esr115",
+        "releases/comm-esr128",
     ]
 
 
@@ -1275,8 +1287,8 @@ class Artifacts(object):
         zeroes = "0" * 40
 
         hashes = []
-        for hg_hash in hg_hash_list.splitlines():
-            hg_hash = hg_hash.strip()
+        for hg_hash_unstripped in hg_hash_list.splitlines():
+            hg_hash = hg_hash_unstripped.strip()
             if not hg_hash or hg_hash == zeroes:
                 continue
             hashes.append(hg_hash)
@@ -1388,8 +1400,8 @@ https://firefox-source-docs.mozilla.org/contributing/vcs/mercurial_bundles.html
             if candidate_pushheads:
                 break
         count = 0
-        for rev in last_revs:
-            rev = rev.rstrip()
+        for rev_unstripped in last_revs:
+            rev = rev_unstripped.rstrip()
             if not rev:
                 continue
             if rev not in candidate_pushheads:

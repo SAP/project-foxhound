@@ -12,6 +12,7 @@
 class VirtualizedList extends HTMLElement {
   lineHeight = 64;
   #lineCount = 0;
+  #oldScrollTop = 0;
 
   get lineCount() {
     return this.#lineCount;
@@ -35,12 +36,17 @@ class VirtualizedList extends HTMLElement {
     }
   }
 
+  #linesContainerWrapper;
   #container;
 
   connectedCallback() {
-    this.#container = this.ownerDocument.createElement("ul");
+    this.#linesContainerWrapper = this.ownerDocument.createElement("div");
+    this.#linesContainerWrapper.role = "list";
+    this.#container = this.ownerDocument.createElement("span");
     this.#container.classList.add("lines-container");
-    this.appendChild(this.#container);
+    this.#container.role = "none";
+    this.#linesContainerWrapper.appendChild(this.#container);
+    this.appendChild(this.#linesContainerWrapper);
 
     this.#rebuildVisibleLines();
     this.addEventListener("scroll", () => this.#rebuildVisibleLines());
@@ -82,7 +88,9 @@ class VirtualizedList extends HTMLElement {
       return;
     }
 
-    this.#container.style.height = `${this.lineHeight * this.lineCount}px`;
+    this.#linesContainerWrapper.style.height = `${
+      this.lineHeight * this.lineCount
+    }px`;
 
     let firstLineIndex = Math.floor(this.scrollTop / this.lineHeight);
     let visibleLineCount = Math.ceil(this.clientHeight / this.lineHeight);
@@ -115,12 +123,18 @@ class VirtualizedList extends HTMLElement {
           continue;
         }
 
+        child.role = "listitem";
         child.style.top = `${index * this.lineHeight}px`;
         child.dataset.index = index;
 
         if (previousChild) {
           previousChild.after(child);
         } else if (this.#container.firstElementChild?.offsetTop > top) {
+          this.#container.firstElementChild.before(child);
+        } else if (
+          this.#container.firstElementChild &&
+          this.#oldScrollTop > this.scrollTop
+        ) {
           this.#container.firstElementChild.before(child);
         } else {
           this.#container.appendChild(child);
@@ -129,6 +143,7 @@ class VirtualizedList extends HTMLElement {
       previousChild = child;
     }
 
+    this.#oldScrollTop = this.scrollTop;
     this.updateLineSelection(false);
   }
 }

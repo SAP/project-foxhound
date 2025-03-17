@@ -925,6 +925,8 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // |op| must be JSOp::Typeof or JSOp::TypeofExpr.
   [[nodiscard]] bool emitTypeof(UnaryNode* typeofNode, JSOp op);
 
+  [[nodiscard]] bool tryEmitTypeofEq(ListNode* node, bool* emitted);
+
   [[nodiscard]] bool emitUnary(UnaryNode* unaryNode);
   [[nodiscard]] bool emitRightAssociative(ListNode* node);
   [[nodiscard]] bool emitLeftAssociative(ListNode* node);
@@ -1069,7 +1071,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   [[nodiscard]] js::UniquePtr<ImmutableScriptData> createImmutableScriptData();
 
-#ifdef ENABLE_DECORATORS
+#if defined(ENABLE_DECORATORS) || defined(ENABLE_EXPLICIT_RESOURCE_MANAGEMENT)
   [[nodiscard]] bool emitCheckIsCallable();
 #endif
 

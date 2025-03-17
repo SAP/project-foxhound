@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from redo import retry
 from taskgraph.parameters import Parameters
-from taskgraph.target_tasks import _target_task, get_method
+from taskgraph.target_tasks import get_method, register_target_task
 from taskgraph.util.taskcluster import find_task_id
 
 from gecko_taskgraph import GECKO, try_option_syntax
@@ -43,7 +43,7 @@ UNCOMMON_TRY_TASK_LABELS = [
     r"linux-",  # hide all linux32 tasks by default - bug 1599197
     r"linux1804-32",  # hide linux32 tests - bug 1599197
     # Test tasks
-    r"web-platform-tests.*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
+    r"web-platform-tests(?!-webgpu).*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
     r"-ccov",
     r"-profiling-",  # talos/raptor profiling jobs are run too often
     r"-32-.*-webgpu",  # webgpu gets little benefit from these tests.
@@ -396,7 +396,7 @@ def _try_option_syntax(full_task_graph, parameters, graph_config):
     return target_tasks_labels
 
 
-@_target_task("try_tasks")
+@register_target_task("try_tasks")
 def target_tasks_try(full_task_graph, parameters, graph_config):
     try_mode = parameters["try_mode"]
     if try_mode == "try_task_config":
@@ -408,13 +408,13 @@ def target_tasks_try(full_task_graph, parameters, graph_config):
     return []
 
 
-@_target_task("try_select_tasks")
+@register_target_task("try_select_tasks")
 def target_tasks_try_select(full_task_graph, parameters, graph_config):
     tasks = target_tasks_try_select_uncommon(full_task_graph, parameters, graph_config)
     return [l for l in tasks if filter_by_uncommon_try_tasks(l)]
 
 
-@_target_task("try_select_tasks_uncommon")
+@register_target_task("try_select_tasks_uncommon")
 def target_tasks_try_select_uncommon(full_task_graph, parameters, graph_config):
     from gecko_taskgraph.decision import PER_PROJECT_PARAMETERS
 
@@ -440,7 +440,7 @@ def target_tasks_try_select_uncommon(full_task_graph, parameters, graph_config):
     return sorted(tasks)
 
 
-@_target_task("try_auto")
+@register_target_task("try_auto")
 def target_tasks_try_auto(full_task_graph, parameters, graph_config):
     """Target the tasks which have indicated they should be run on autoland
     (rather than try) via the `run_on_projects` attributes.
@@ -471,7 +471,7 @@ def target_tasks_try_auto(full_task_graph, parameters, graph_config):
     ]
 
 
-@_target_task("default")
+@register_target_task("default")
 def target_tasks_default(full_task_graph, parameters, graph_config):
     """Target the tasks which have indicated they should be run on this project
     via the `run_on_projects` attributes."""
@@ -484,7 +484,7 @@ def target_tasks_default(full_task_graph, parameters, graph_config):
     ]
 
 
-@_target_task("autoland_tasks")
+@register_target_task("autoland_tasks")
 def target_tasks_autoland(full_task_graph, parameters, graph_config):
     """In addition to doing the filtering by project that the 'default'
     filter does, also remove any tests running against shippable builds
@@ -510,7 +510,7 @@ def target_tasks_autoland(full_task_graph, parameters, graph_config):
     return [l for l in filtered_for_project if filter(full_task_graph[l])]
 
 
-@_target_task("mozilla_central_tasks")
+@register_target_task("mozilla_central_tasks")
 def target_tasks_mozilla_central(full_task_graph, parameters, graph_config):
     """In addition to doing the filtering by project that the 'default'
     filter does, also remove any tests running against regular (aka not shippable,
@@ -550,7 +550,7 @@ def target_tasks_mozilla_central(full_task_graph, parameters, graph_config):
     return [l for l in filtered_for_project if filter(full_task_graph[l])]
 
 
-@_target_task("graphics_tasks")
+@register_target_task("graphics_tasks")
 def target_tasks_graphics(full_task_graph, parameters, graph_config):
     """In addition to doing the filtering by project that the 'default'
     filter does, also remove artifact builds because we have csets on
@@ -568,7 +568,7 @@ def target_tasks_graphics(full_task_graph, parameters, graph_config):
     return [l for l in filtered_for_project if filter(full_task_graph[l])]
 
 
-@_target_task("mozilla_beta_tasks")
+@register_target_task("mozilla_beta_tasks")
 def target_tasks_mozilla_beta(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a promotable beta or release build
     of desktop, plus android CI. The candidates build process involves a pipeline
@@ -581,7 +581,7 @@ def target_tasks_mozilla_beta(full_task_graph, parameters, graph_config):
     ]
 
 
-@_target_task("mozilla_release_tasks")
+@register_target_task("mozilla_release_tasks")
 def target_tasks_mozilla_release(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a promotable beta or release build
     of desktop, plus android CI. The candidates build process involves a pipeline
@@ -594,8 +594,8 @@ def target_tasks_mozilla_release(full_task_graph, parameters, graph_config):
     ]
 
 
-@_target_task("mozilla_esr115_tasks")
-def target_tasks_mozilla_esr115(full_task_graph, parameters, graph_config):
+@register_target_task("mozilla_esr128_tasks")
+def target_tasks_mozilla_esr128(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a promotable beta or release build
     of desktop, without android CI. The candidates build process involves a pipeline
     of builds and signing, but does not include beetmover or balrog jobs."""
@@ -609,7 +609,7 @@ def target_tasks_mozilla_esr115(full_task_graph, parameters, graph_config):
 
         platform = task.attributes.get("build_platform")
 
-        # Android is not built on esr115.
+        # Android is not built on esr.
         if platform and "android" in platform:
             return False
 
@@ -618,7 +618,7 @@ def target_tasks_mozilla_esr115(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("promote_desktop")
+@register_target_task("promote_desktop")
 def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
     """Select the superset of tasks required to promote a beta or release build
     of a desktop product. This should include all non-android
@@ -642,7 +642,7 @@ def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("push_desktop")
+@register_target_task("push_desktop")
 def target_tasks_push_desktop(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to push a build of desktop to cdns.
     Previous build deps will be optimized out via action task."""
@@ -668,7 +668,7 @@ def target_tasks_push_desktop(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("ship_desktop")
+@register_target_task("ship_desktop")
 def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to ship desktop.
     Previous build deps will be optimized out via action task."""
@@ -709,7 +709,22 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("pine_tasks")
+@register_target_task("cypress_tasks")
+def target_tasks_cypress(full_task_graph, parameters, graph_config):
+    filtered_for_project = target_tasks_default(
+        full_task_graph, parameters, graph_config
+    )
+
+    def filter(task):
+        # bug 1899403: no need for android tasks
+        if "android" in task.attributes.get("build_platform", ""):
+            return False
+        return True
+
+    return [l for l in filtered_for_project if filter(full_task_graph[l])]
+
+
+@register_target_task("pine_tasks")
 def target_tasks_pine(full_task_graph, parameters, graph_config):
     """Bug 1879960 - no reftests or wpt needed"""
     filtered_for_project = target_tasks_default(
@@ -717,6 +732,8 @@ def target_tasks_pine(full_task_graph, parameters, graph_config):
     )
 
     def filter(task):
+        if "android" in task.attributes.get("build_platform", ""):
+            return False
         suite = task.attributes.get("unittest_suite", "")
         if "reftest" in suite or "web-platform" in suite:
             return False
@@ -725,7 +742,7 @@ def target_tasks_pine(full_task_graph, parameters, graph_config):
     return [l for l in filtered_for_project if filter(full_task_graph[l])]
 
 
-@_target_task("larch_tasks")
+@register_target_task("larch_tasks")
 def target_tasks_larch(full_task_graph, parameters, graph_config):
     """Bug 1879213 - only run necessary tasks on larch"""
     filtered_for_project = target_tasks_default(
@@ -749,7 +766,7 @@ def target_tasks_larch(full_task_graph, parameters, graph_config):
     return [l for l in filtered_for_project if filter(full_task_graph[l])]
 
 
-@_target_task("kaios_tasks")
+@register_target_task("kaios_tasks")
 def target_tasks_kaios(full_task_graph, parameters, graph_config):
     """The set of tasks to run for kaios integration"""
 
@@ -760,7 +777,7 @@ def target_tasks_kaios(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("custom-car_perf_testing")
+@register_target_task("custom-car_perf_testing")
 def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_config):
     """Select tasks required for running daily performance tests for custom chromium-as-release."""
 
@@ -787,7 +804,7 @@ def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_conf
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("general_perf_testing")
+@register_target_task("general_perf_testing")
 def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config):
     """
     Select tasks required for running performance tests 3 times a week.
@@ -814,6 +831,10 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         # Desktop selection
         if accept_raptor_desktop_build(platform):
             # Select some browsertime tasks as desktop smoke-tests
+            if "responsiveness" in try_name and "chrome" in try_name:
+                # Disabled chrome responsiveness tests temporarily in bug 1898351
+                # due to frequent failures
+                return False
             if "browsertime" in try_name:
                 if "chrome" in try_name:
                     if "tp6" in try_name and "essential" not in try_name:
@@ -835,6 +856,8 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         elif accept_raptor_android_build(platform):
             if "hw-s21" in platform and "speedometer3" not in try_name:
                 return False
+            if "chrome-m" in try_name and "essential" in try_name:
+                return True
             if "chrome-m" in try_name and (
                 ("ebay" in try_name and "live" not in try_name)
                 or (
@@ -910,7 +933,7 @@ def make_desktop_nightly_filter(platforms):
     return filter
 
 
-@_target_task("sp-perftests")
+@register_target_task("sp-perftests")
 def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
     def filter(task):
         platform = task.attributes.get("test_platform")
@@ -934,7 +957,7 @@ def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("nightly_linux")
+@register_target_task("nightly_linux")
 def target_tasks_nightly_linux(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of linux. The
     nightly build process involves a pipeline of builds, signing,
@@ -945,7 +968,7 @@ def target_tasks_nightly_linux(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
-@_target_task("nightly_macosx")
+@register_target_task("nightly_macosx")
 def target_tasks_nightly_macosx(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of macosx. The
     nightly build process involves a pipeline of builds, signing,
@@ -954,7 +977,7 @@ def target_tasks_nightly_macosx(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
-@_target_task("nightly_win32")
+@register_target_task("nightly_win32")
 def target_tasks_nightly_win32(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of win32 and win64.
     The nightly build process involves a pipeline of builds, signing,
@@ -963,7 +986,7 @@ def target_tasks_nightly_win32(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
-@_target_task("nightly_win64")
+@register_target_task("nightly_win64")
 def target_tasks_nightly_win64(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of win32 and win64.
     The nightly build process involves a pipeline of builds, signing,
@@ -972,7 +995,7 @@ def target_tasks_nightly_win64(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
-@_target_task("nightly_win64_aarch64")
+@register_target_task("nightly_win64_aarch64")
 def target_tasks_nightly_win64_aarch64(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of win32 and win64.
     The nightly build process involves a pipeline of builds, signing,
@@ -981,7 +1004,7 @@ def target_tasks_nightly_win64_aarch64(full_task_graph, parameters, graph_config
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
-@_target_task("nightly_asan")
+@register_target_task("nightly_asan")
 def target_tasks_nightly_asan(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of asan. The
     nightly build process involves a pipeline of builds, signing,
@@ -992,7 +1015,7 @@ def target_tasks_nightly_asan(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
-@_target_task("daily_releases")
+@register_target_task("daily_releases")
 def target_tasks_daily_releases(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to identify if we should release.
     If we determine that we should the task will communicate to ship-it to
@@ -1004,22 +1027,23 @@ def target_tasks_daily_releases(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("nightly_desktop")
+@register_target_task("nightly_desktop")
 def target_tasks_nightly_desktop(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of linux, mac,
     windows."""
-    index_path = (
-        f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
-        f"{parameters['head_rev']}.taskgraph.decision-nightly-desktop"
-    )
-    if os.environ.get("MOZ_AUTOMATION") and retry(
-        index_exists,
-        args=(index_path,),
-        kwargs={
-            "reason": "to avoid triggering multiple nightlies off the same revision",
-        },
-    ):
-        return []
+    for platform in ("desktop", "all"):
+        index_path = (
+            f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
+            f"{parameters['head_rev']}.taskgraph.decision-nightly-{platform}"
+        )
+        if os.environ.get("MOZ_AUTOMATION") and retry(
+            index_exists,
+            args=(index_path,),
+            kwargs={
+                "reason": "to avoid triggering multiple nightlies off the same revision",
+            },
+        ):
+            return []
 
     # Tasks that aren't platform specific
     release_filter = make_desktop_nightly_filter({None})
@@ -1042,7 +1066,7 @@ def target_tasks_nightly_desktop(full_task_graph, parameters, graph_config):
     )
 
 
-@_target_task("nightly_all")
+@register_target_task("nightly_all")
 def target_tasks_nightly_all(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of firefox desktop and android"""
     index_path = (
@@ -1065,12 +1089,13 @@ def target_tasks_nightly_all(full_task_graph, parameters, graph_config):
 
 
 # Run Searchfox analysis once daily.
-@_target_task("searchfox_index")
+@register_target_task("searchfox_index")
 def target_tasks_searchfox(full_task_graph, parameters, graph_config):
     """Select tasks required for indexing Firefox for Searchfox web site each day"""
     return [
         "searchfox-linux64-searchfox/debug",
         "searchfox-macosx64-searchfox/debug",
+        "searchfox-macosx64-aarch64-searchfox/debug",
         "searchfox-win64-searchfox/debug",
         "searchfox-android-armv7-searchfox/debug",
         "searchfox-ios-searchfox/debug",
@@ -1081,7 +1106,7 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
 
 
 # Run build linux64-plain-clang-trunk/opt on mozilla-central/beta with perf tests
-@_target_task("linux64_clang_trunk_perf")
+@register_target_task("linux64_clang_trunk_perf")
 def target_tasks_build_linux64_clang_trunk_perf(
     full_task_graph, parameters, graph_config
 ):
@@ -1097,19 +1122,19 @@ def target_tasks_build_linux64_clang_trunk_perf(
 
 
 # Run Updatebot's cron job 4 times daily.
-@_target_task("updatebot_cron")
+@register_target_task("updatebot_cron")
 def target_tasks_updatebot_cron(full_task_graph, parameters, graph_config):
     """Select tasks required to run Updatebot's cron job"""
     return ["updatebot-cron"]
 
 
-@_target_task("customv8_update")
+@register_target_task("customv8_update")
 def target_tasks_customv8_update(full_task_graph, parameters, graph_config):
     """Select tasks required for building latest d8/v8 version."""
     return ["toolchain-linux64-custom-v8"]
 
 
-@_target_task("file_update")
+@register_target_task("file_update")
 def target_tasks_file_update(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to perform nightly in-tree file updates"""
 
@@ -1120,7 +1145,7 @@ def target_tasks_file_update(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("l10n_bump")
+@register_target_task("l10n_bump")
 def target_tasks_l10n_bump(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to perform l10n bumping."""
 
@@ -1131,7 +1156,7 @@ def target_tasks_l10n_bump(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("merge_automation")
+@register_target_task("merge_automation")
 def target_tasks_merge_automation(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to perform repository merges."""
 
@@ -1142,7 +1167,7 @@ def target_tasks_merge_automation(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("scriptworker_canary")
+@register_target_task("scriptworker_canary")
 def target_tasks_scriptworker_canary(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to run scriptworker canaries."""
 
@@ -1153,7 +1178,7 @@ def target_tasks_scriptworker_canary(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("cron_bouncer_check")
+@register_target_task("cron_bouncer_check")
 def target_tasks_bouncer_check(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to perform bouncer version verification."""
 
@@ -1166,7 +1191,7 @@ def target_tasks_bouncer_check(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("staging_release_builds")
+@register_target_task("staging_release_builds")
 def target_tasks_staging_release(full_task_graph, parameters, graph_config):
     """
     Select all builds that are part of releases.
@@ -1190,7 +1215,7 @@ def target_tasks_staging_release(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("release_simulation")
+@register_target_task("release_simulation")
 def target_tasks_release_simulation(full_task_graph, parameters, graph_config):
     """
     Select builds that would run on push on a release branch.
@@ -1199,7 +1224,7 @@ def target_tasks_release_simulation(full_task_graph, parameters, graph_config):
         "nightly": "mozilla-central",
         "beta": "mozilla-beta",
         "release": "mozilla-release",
-        "esr115": "mozilla-esr115",
+        "esr128": "mozilla-esr128",
     }
     target_project = project_by_release.get(parameters["release_type"])
     if target_project is None:
@@ -1227,7 +1252,7 @@ def target_tasks_release_simulation(full_task_graph, parameters, graph_config):
     ]
 
 
-@_target_task("codereview")
+@register_target_task("codereview")
 def target_tasks_codereview(full_task_graph, parameters, graph_config):
     """Select all code review tasks needed to produce a report"""
 
@@ -1245,13 +1270,13 @@ def target_tasks_codereview(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("nothing")
+@register_target_task("nothing")
 def target_tasks_nothing(full_task_graph, parameters, graph_config):
     """Select nothing, for DONTBUILD pushes"""
     return []
 
 
-@_target_task("daily_beta_perf")
+@register_target_task("daily_beta_perf")
 def target_tasks_daily_beta_perf(full_task_graph, parameters, graph_config):
     """
     Select performance tests on the beta branch to be run daily
@@ -1353,7 +1378,7 @@ def target_tasks_daily_beta_perf(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("weekly_release_perf")
+@register_target_task("weekly_release_perf")
 def target_tasks_weekly_release_perf(full_task_graph, parameters, graph_config):
     """
     Select performance tests on the release branch to be run weekly
@@ -1421,7 +1446,7 @@ def target_tasks_weekly_release_perf(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("raptor_tp6m")
+@register_target_task("raptor_tp6m")
 def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
     """
     Select tasks required for running raptor cold page-load tests on fenix and refbrow
@@ -1448,7 +1473,7 @@ def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("backfill_all_browsertime")
+@register_target_task("backfill_all_browsertime")
 def target_tasks_backfill_all_browsertime(full_task_graph, parameters, graph_config):
     """
     Search for revisions that contains patches that were reviewed by perftest reviewers
@@ -1516,7 +1541,7 @@ def target_tasks_backfill_all_browsertime(full_task_graph, parameters, graph_con
     return []
 
 
-@_target_task("condprof")
+@register_target_task("condprof")
 def target_tasks_condprof(full_task_graph, parameters, graph_config):
     """
     Select tasks required for building conditioned profiles.
@@ -1527,7 +1552,7 @@ def target_tasks_condprof(full_task_graph, parameters, graph_config):
                 yield name
 
 
-@_target_task("system_symbols")
+@register_target_task("system_symbols")
 def target_tasks_system_symbols(full_task_graph, parameters, graph_config):
     """
     Select tasks for scraping and uploading system symbols.
@@ -1541,7 +1566,7 @@ def target_tasks_system_symbols(full_task_graph, parameters, graph_config):
             yield name
 
 
-@_target_task("perftest")
+@register_target_task("perftest")
 def target_tasks_perftest(full_task_graph, parameters, graph_config):
     """
     Select perftest tasks we want to run daily
@@ -1553,7 +1578,7 @@ def target_tasks_perftest(full_task_graph, parameters, graph_config):
             yield name
 
 
-@_target_task("perftest-on-autoland")
+@register_target_task("perftest-on-autoland")
 def target_tasks_perftest_autoland(full_task_graph, parameters, graph_config):
     """
     Select perftest tasks we want to run daily
@@ -1567,7 +1592,7 @@ def target_tasks_perftest_autoland(full_task_graph, parameters, graph_config):
             yield name
 
 
-@_target_task("l10n-cross-channel")
+@register_target_task("l10n-cross-channel")
 def target_tasks_l10n_cross_channel(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to run l10n cross-channel."""
 
@@ -1577,7 +1602,7 @@ def target_tasks_l10n_cross_channel(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("eslint-build")
+@register_target_task("eslint-build")
 def target_tasks_eslint_build(full_task_graph, parameters, graph_config):
     """Select the task to run additional ESLint rules which require a build."""
 
@@ -1588,7 +1613,7 @@ def target_tasks_eslint_build(full_task_graph, parameters, graph_config):
             yield name
 
 
-@_target_task("holly_tasks")
+@register_target_task("holly_tasks")
 def target_tasks_holly(full_task_graph, parameters, graph_config):
     """Bug 1814661: only run updatebot tasks on holly"""
 
@@ -1598,7 +1623,7 @@ def target_tasks_holly(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("snap_upstream_tests")
+@register_target_task("snap_upstream_tests")
 def target_tasks_snap_upstream_tests(full_task_graph, parameters, graph_config):
     """
     Select tasks for testing Snap package built as upstream. Omit -try because
@@ -1609,9 +1634,13 @@ def target_tasks_snap_upstream_tests(full_task_graph, parameters, graph_config):
             yield name
 
 
-@_target_task("nightly-android")
+@register_target_task("nightly-android")
 def target_tasks_nightly_android(full_task_graph, parameters, graph_config):
     def filter(task, parameters):
+        # bug 1899553: don't automatically schedule uploads to google play
+        if task.kind == "push-bundle":
+            return False
+
         # geckoview
         if task.attributes.get("shipping_product") == "fennec" and task.kind in (
             "beetmover-geckoview",
@@ -1629,27 +1658,28 @@ def target_tasks_nightly_android(full_task_graph, parameters, graph_config):
             "focus-nightly-firebase",
         )
 
-    index_path = (
-        f"{graph_config['trust-domain']}.v2.{parameters['project']}.branch."
-        f"{parameters['head_ref']}.revision.{parameters['head_rev']}.taskgraph.decision-nightly-android"
-    )
-    if os.environ.get("MOZ_AUTOMATION") and retry(
-        index_exists,
-        args=(index_path,),
-        kwargs={
-            "reason": "to avoid triggering multiple nightlies off the same revision",
-        },
-    ):
-        return []
+    for platform in ("android", "all"):
+        index_path = (
+            f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
+            f"{parameters['head_rev']}.taskgraph.decision-nightly-{platform}"
+        )
+        if os.environ.get("MOZ_AUTOMATION") and retry(
+            index_exists,
+            args=(index_path,),
+            kwargs={
+                "reason": "to avoid triggering multiple nightlies off the same revision",
+            },
+        ):
+            return []
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
-@_target_task("android-l10n-import")
+@register_target_task("android-l10n-import")
 def target_tasks_android_l10n_import(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if l == "android-l10n-import"]
 
 
-@_target_task("android-l10n-sync")
+@register_target_task("android-l10n-sync")
 def target_tasks_android_l10n_sync(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if l == "android-l10n-sync"]

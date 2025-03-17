@@ -210,7 +210,11 @@ void nsContainerFrame::SafelyDestroyFrameListProp(
   // delete the property -- that's why we fetch the property again before
   // removing each frame rather than fetching it once and iterating the list.
   while (nsFrameList* frameList = GetProperty(aProp)) {
-    nsIFrame* frame = frameList->RemoveFirstChild();
+    // Note: Similar to nsFrameList::DestroyFrames(), we remove the frames in
+    // reverse order to avoid unnecessary updates to the first-continuation and
+    // first-in-flow cache. If we delete them from front to back, updating the
+    // cache has a O(n^2) time complexity.
+    nsIFrame* frame = frameList->RemoveLastChild();
     if (MOZ_LIKELY(frame)) {
       frame->Destroy(aContext);
     } else {
@@ -783,7 +787,7 @@ void nsContainerFrame::SyncFrameViewAfterReflow(nsPresContext* aPresContext,
   if (!(aFlags & ReflowChildFlags::NoSizeView)) {
     nsViewManager* vm = aView->GetViewManager();
 
-    vm->ResizeView(aView, aInkOverflowArea, true);
+    vm->ResizeView(aView, aInkOverflowArea);
   }
 }
 
@@ -959,9 +963,6 @@ void nsContainerFrame::PositionChildViews(nsIFrame* aFrame) {
   // Currently only nsMenuFrame has a popupList and during layout will adjust
   // the view manually to position the popup.
   for (const auto& [list, listID] : aFrame->ChildLists()) {
-    if (listID == FrameChildListID::Popup) {
-      continue;
-    }
     for (nsIFrame* childFrame : list) {
       // Position the frame's view (if it has one) otherwise recursively
       // process its children

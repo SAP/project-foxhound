@@ -1,5 +1,9 @@
 "use strict";
 
+const { ManageAddresses } = ChromeUtils.importESModule(
+  "chrome://formautofill/content/manageDialog.mjs"
+);
+
 const { OSKeyStore } = ChromeUtils.importESModule(
   "resource://gre/modules/OSKeyStore.sys.mjs"
 );
@@ -19,6 +23,27 @@ const { AutofillDoorhanger, AddressEditDoorhanger, AddressSaveDoorhanger } =
 const { FormAutofillNameUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs"
 );
+
+const { FormAutofillUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
+);
+
+let { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
+// Always pretend OS Auth is enabled in this dir.
+if (
+  gTestPath.includes("browser/creditCard") &&
+  OSKeyStoreTestUtils.canTestOSKeyStoreLogin() &&
+  OSKeyStore.canReauth()
+) {
+  info("Stubbing out getOSAuthEnabled so it always returns true");
+  sinon.stub(FormAutofillUtils, "getOSAuthEnabled").returns(true);
+  registerCleanupFunction(() => {
+    sinon.restore();
+  });
+}
 
 const MANAGE_ADDRESSES_DIALOG_URL =
   "chrome://formautofill/content/manageAddresses.xhtml";
@@ -822,7 +847,7 @@ async function removeAllRecords() {
 async function waitForFocusAndFormReady(win) {
   return Promise.all([
     new Promise(resolve => waitForFocus(resolve, win)),
-    BrowserTestUtils.waitForEvent(win, "FormReady"),
+    BrowserTestUtils.waitForEvent(win, "FormReadyForTests"),
   ]);
 }
 
@@ -855,9 +880,12 @@ async function testDialog(url, testFn, arg = undefined) {
       "cc-number": await OSKeyStore.decrypt(arg.record["cc-number-encrypted"]),
     });
   }
-  let win = window.openDialog(url, null, "width=600,height=600", arg);
+  const win = window.openDialog(url, null, "width=600,height=600", {
+    ...arg,
+    l10nStrings: ManageAddresses.getAddressL10nStrings(),
+  });
   await waitForFocusAndFormReady(win);
-  let unloadPromise = BrowserTestUtils.waitForEvent(win, "unload");
+  const unloadPromise = BrowserTestUtils.waitForEvent(win, "unload");
   await testFn(win);
   return unloadPromise;
 }

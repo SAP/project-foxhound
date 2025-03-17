@@ -30,6 +30,7 @@ import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.base.crash.Breadcrumb
+import mozilla.components.feature.accounts.push.CloseTabsUseCases
 import mozilla.components.feature.downloads.ui.DownloadCancelDialogFragment
 import mozilla.components.feature.tabs.tabstray.TabsFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
@@ -181,6 +182,9 @@ class TabsTrayFragment : AppCompatDialogFragment() {
             navigationInteractor = navigationInteractor,
             profiler = requireComponents.core.engine.profiler,
             tabsUseCases = requireComponents.useCases.tabsUseCases,
+            closeSyncedTabsUseCases = CloseTabsUseCases(
+                requireComponents.backgroundServices.syncedTabsCommands,
+            ),
             bookmarksUseCase = requireComponents.useCases.bookmarksUseCases,
             ioDispatcher = Dispatchers.IO,
             collectionStorage = requireComponents.core.tabCollectionStorage,
@@ -275,6 +279,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
                         onInactiveTabClick = tabsTrayInteractor::onInactiveTabClicked,
                         onInactiveTabClose = tabsTrayInteractor::onInactiveTabClosed,
                         onSyncedTabClick = tabsTrayInteractor::onSyncedTabClicked,
+                        onSyncedTabClose = tabsTrayInteractor::onSyncedTabClosed,
                         onSaveToCollectionClick = tabsTrayInteractor::onAddSelectedTabsToCollectionClicked,
                         onShareSelectedTabsClick = tabsTrayInteractor::onShareSelectedTabs,
                         onShareAllTabsClick = {
@@ -307,6 +312,23 @@ class TabsTrayFragment : AppCompatDialogFragment() {
                             requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
                         },
                         onMove = tabsTrayInteractor::onTabsMove,
+                        shouldShowInactiveTabsCFR = {
+                            requireContext().settings().shouldShowInactiveTabsOnboardingPopup &&
+                                requireContext().settings().canShowCfr
+                        },
+                        onInactiveTabsCFRShown = {
+                            TabsTray.inactiveTabsCfrVisible.record(NoExtras())
+                        },
+                        onInactiveTabsCFRClick = {
+                            requireContext().settings().shouldShowInactiveTabsOnboardingPopup = false
+                            navigationInteractor.onTabSettingsClicked()
+                            TabsTray.inactiveTabsCfrSettings.record(NoExtras())
+                            onTabsTrayDismissed()
+                        },
+                        onInactiveTabsCFRDismiss = {
+                            requireContext().settings().shouldShowInactiveTabsOnboardingPopup = false
+                            TabsTray.inactiveTabsCfrDismissed.record(NoExtras())
+                        },
                     )
                 }
             }
@@ -552,6 +574,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
                 context = requireContext(),
                 navController = findNavController(),
                 storage = requireComponents.backgroundServices.syncedTabsStorage,
+                commands = requireComponents.backgroundServices.syncedTabsCommands,
                 accountManager = requireComponents.backgroundServices.accountManager,
                 lifecycleOwner = this,
             ),

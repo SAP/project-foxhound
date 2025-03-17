@@ -131,7 +131,7 @@ class BrowserParent final : public PBrowserParent,
 
   const TabId GetTabId() const { return mTabId; }
 
-  ContentParent* Manager() const { return mManager; }
+  ContentParent* Manager() const;
 
   CanonicalBrowsingContext* GetBrowsingContext() { return mBrowsingContext; }
 
@@ -383,12 +383,9 @@ class BrowserParent final : public PBrowserParent,
       nsTArray<nsCString>&& aDisabledCommands);
 
   mozilla::ipc::IPCResult RecvSetCursor(
-      const nsCursor& aValue, const bool& aHasCustomCursor,
-      Maybe<BigBuffer>&& aCursorData, const uint32_t& aWidth,
-      const uint32_t& aHeight, const float& aResolutionX,
-      const float& aResolutionY, const uint32_t& aStride,
-      const gfx::SurfaceFormat& aFormat, const uint32_t& aHotspotX,
-      const uint32_t& aHotspotY, const bool& aForce);
+      const nsCursor& aValue, Maybe<IPCImage>&& aCustomCursor,
+      const float& aResolutionX, const float& aResolutionY,
+      const uint32_t& aHotspotX, const uint32_t& aHotspotY, const bool& aForce);
 
   mozilla::ipc::IPCResult RecvSetLinkStatus(const nsString& aStatus);
 
@@ -423,9 +420,9 @@ class BrowserParent final : public PBrowserParent,
       const nsString& aTitle, const nsString& aInitialColor,
       const nsTArray<nsString>& aDefaultColors);
 
-  PVsyncParent* AllocPVsyncParent();
+  already_AddRefed<PVsyncParent> AllocPVsyncParent();
 
-  bool DeallocPVsyncParent(PVsyncParent* aActor);
+  mozilla::ipc::IPCResult RecvPVsyncConstructor(PVsyncParent* aActor) override;
 
 #ifdef ACCESSIBILITY
   PDocAccessibleParent* AllocPDocAccessibleParent(
@@ -855,10 +852,8 @@ class BrowserParent final : public PBrowserParent,
  private:
   TabId mTabId;
 
-  RefPtr<ContentParent> mManager;
   // The root browsing context loaded in this BrowserParent.
   RefPtr<CanonicalBrowsingContext> mBrowsingContext;
-  nsCOMPtr<nsILoadContext> mLoadContext;
   RefPtr<Element> mFrameElement;
   nsCOMPtr<nsIBrowserDOMWindow> mBrowserDOMWindow;
   // We keep a strong reference to the frameloader after we've sent the
@@ -941,8 +936,6 @@ class BrowserParent final : public PBrowserParent,
   nsIWidget::Cursor mCursor;
 
   nsTArray<nsString> mVerifyDropLinks;
-
-  RefPtr<VsyncParent> mVsyncParent;
 
 #ifdef DEBUG
   int32_t mActiveSupressDisplayportCount = 0;

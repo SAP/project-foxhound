@@ -84,14 +84,14 @@ class HomeSettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        requirePreference<SwitchPreference>(R.string.pref_key_recent_bookmarks).apply {
-            isChecked = context.settings().showRecentBookmarksFeature
+        requirePreference<SwitchPreference>(R.string.pref_key_customization_bookmarks).apply {
+            isChecked = context.settings().showBookmarksHomeFeature
             onPreferenceChangeListener = object : SharedPreferenceUpdater() {
                 override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
                     CustomizeHome.preferenceToggled.record(
                         CustomizeHome.PreferenceToggledExtra(
                             newValue as Boolean,
-                            "recently_saved",
+                            "bookmarks",
                         ),
                     )
 

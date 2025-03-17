@@ -18,6 +18,7 @@ import mozilla.components.concept.sync.DeviceCapability
 import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.OAuthScopedKey
 import mozilla.components.concept.sync.SyncAuthInfo
+import mozilla.components.concept.sync.UserData
 import mozilla.appservices.fxaclient.DeviceCapability as RustDeviceCapability
 import mozilla.appservices.fxaclient.DevicePushSubscription as RustDevicePushSubscription
 import mozilla.appservices.sync15.DeviceType as RustDeviceType
@@ -106,6 +107,20 @@ fun Profile.into(): mozilla.components.concept.sync.Profile {
     )
 }
 
+/**
+ * Converts the android-components defined [UserData] type into
+ * the application-services one, so consumers of android-components
+ * do not have to know about application services.
+ */
+fun UserData.into(): mozilla.appservices.fxaclient.UserData {
+    return mozilla.appservices.fxaclient.UserData(
+        sessionToken,
+        uid,
+        email,
+        verified,
+    )
+}
+
 internal fun RustDeviceType.into(): DeviceType {
     return when (this) {
         RustDeviceType.DESKTOP -> DeviceType.DESKTOP
@@ -139,6 +154,7 @@ fun DeviceType.into(): RustDeviceType {
 fun DeviceCapability.into(): RustDeviceCapability {
     return when (this) {
         DeviceCapability.SEND_TAB -> RustDeviceCapability.SEND_TAB
+        DeviceCapability.CLOSE_TABS -> RustDeviceCapability.CLOSE_TABS
     }
 }
 
@@ -149,6 +165,7 @@ fun DeviceCapability.into(): RustDeviceCapability {
 fun RustDeviceCapability.into(): DeviceCapability {
     return when (this) {
         RustDeviceCapability.SEND_TAB -> DeviceCapability.SEND_TAB
+        RustDeviceCapability.CLOSE_TABS -> DeviceCapability.CLOSE_TABS
     }
 }
 
@@ -240,6 +257,7 @@ fun AccountEvent.into(): mozilla.components.concept.sync.AccountEvent {
 fun IncomingDeviceCommand.into(): mozilla.components.concept.sync.DeviceCommandIncoming {
     return when (this) {
         is IncomingDeviceCommand.TabReceived -> this.into()
+        is IncomingDeviceCommand.TabsClosed -> this.into()
     }
 }
 
@@ -247,5 +265,12 @@ fun IncomingDeviceCommand.TabReceived.into(): mozilla.components.concept.sync.De
     return mozilla.components.concept.sync.DeviceCommandIncoming.TabReceived(
         from = this.sender?.into(),
         entries = this.payload.entries.map { it.into() },
+    )
+}
+
+fun IncomingDeviceCommand.TabsClosed.into(): mozilla.components.concept.sync.DeviceCommandIncoming.TabsClosed {
+    return mozilla.components.concept.sync.DeviceCommandIncoming.TabsClosed(
+        from = this.sender?.into(),
+        urls = this.payload.urls,
     )
 }

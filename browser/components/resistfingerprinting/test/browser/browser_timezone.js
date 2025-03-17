@@ -1,6 +1,7 @@
 /**
  * Bug 1330890 - A test case for verifying Date() object of javascript will use
- *               UTC timezone after fingerprinting resistance is enabled.
+ *               Atlantic/Reykjavik timezone (GMT and "real" equivalent to UTC)
+ *               after fingerprinting resistance is enabled.
  */
 
 async function verifySpoofed() {
@@ -16,13 +17,15 @@ async function verifySpoofed() {
   // Running in content:
   function test() {
     let date = new Date();
+    const TZ_NAME = "Atlantic/Reykjavik";
+    const TZ_SUFFIX = "Greenwich Mean Time";
     ok(
-      date.toString().endsWith("(Coordinated Universal Time)"),
-      "The date toString() is in UTC timezone."
+      date.toString().endsWith(`(${TZ_SUFFIX})`),
+      `The date toString() is in ${TZ_NAME} timezone.`
     );
     ok(
-      date.toTimeString().endsWith("(Coordinated Universal Time)"),
-      "The date toTimeString() is in UTC timezone."
+      date.toTimeString().endsWith(`(${TZ_SUFFIX})`),
+      `The date toTimeString() is in ${TZ_NAME} timezone.`
     );
     let dateTimeFormat = Intl.DateTimeFormat("en-US", {
       dateStyle: "full",
@@ -30,12 +33,12 @@ async function verifySpoofed() {
     });
     is(
       dateTimeFormat.resolvedOptions().timeZone,
-      "UTC",
-      "The Intl.DateTimeFormat is in UTC timezone."
+      TZ_NAME,
+      `The Intl.DateTimeFormat is in ${TZ_NAME} timezone.`
     );
     ok(
-      dateTimeFormat.format(date).endsWith("Coordinated Universal Time"),
-      "The Intl.DateTimeFormat is formatting with the UTC timezone."
+      dateTimeFormat.format(date).endsWith(TZ_SUFFIX),
+      `The Intl.DateTimeFormat is formatting with the ${TZ_NAME} timezone.`
     );
     is(
       date.getFullYear(),
@@ -61,8 +64,8 @@ async function verifySpoofed() {
     let lastModified = new Date(
       doc.lastModified.replace(/(\d{2})\/(\d{2})\/(\d{4})/, "$3-$1-$2")
     );
-    // Use ceil to account for the time passed to run the other statements
-    let offset = Math.ceil((lastModified - new Date()) / 1000);
+    // Allow up to one minute of difference for the time to run the test.
+    let offset = Math.floor((new Date() - lastModified) / (60 * 1000));
     is(offset, 0, "document.lastModified does not leak the timezone.");
   }
 

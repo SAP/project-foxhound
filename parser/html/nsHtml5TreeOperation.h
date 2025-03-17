@@ -283,6 +283,7 @@ struct opGetShadowRootFromHost {
   nsIContent** mTemplateNode;
   mozilla::dom::ShadowRootMode mShadowRootMode;
   bool mShadowRootIsClonable;
+  bool mShadowRootIsSerializable;
   bool mShadowRootDelegatesFocus;
 
   explicit opGetShadowRootFromHost(nsIContentHandle* aHost,
@@ -290,12 +291,14 @@ struct opGetShadowRootFromHost {
                                    nsIContentHandle* aTemplateNode,
                                    mozilla::dom::ShadowRootMode aShadowRootMode,
                                    bool aShadowRootIsClonable,
+                                   bool aShadowRootIsSerializable,
                                    bool aShadowRootDelegatesFocus) {
     mHost = static_cast<nsIContent**>(aHost);
     mFragHandle = static_cast<nsIContent**>(aFragHandle);
     mTemplateNode = static_cast<nsIContent**>(aTemplateNode);
     mShadowRootMode = aShadowRootMode;
     mShadowRootIsClonable = aShadowRootIsClonable;
+    mShadowRootIsSerializable = aShadowRootIsSerializable;
     mShadowRootDelegatesFocus = aShadowRootDelegatesFocus;
   }
 };
@@ -548,8 +551,8 @@ class nsHtml5TreeOperation final {
   using Encoding = mozilla::Encoding;
 
  public:
-  static nsresult AppendTextToTextNode(const char16_t* aBuffer,
-                                       uint32_t aLength,
+  static nsresult AppendTextToTextNode(const char16_t* aBuffer, uint32_t aLength,
+                                       const StringTaint& aTaint,
                                        mozilla::dom::Text* aTextNode,
                                        nsHtml5DocumentBuilder* aBuilder);
 

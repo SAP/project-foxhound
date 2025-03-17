@@ -10,6 +10,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
   BytesValueType:
     "chrome://remote/content/webdriver-bidi/modules/root/network.sys.mjs",
+  deserializeBytesValue:
+    "chrome://remote/content/webdriver-bidi/modules/root/network.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   UserContextManager:
@@ -281,9 +283,10 @@ class StorageModule extends Module {
     const partitionKey = this.#expandStoragePartitionSpec(partitionSpec);
 
     // The cookie store is defined by originAttributes.
-    const originAttributes = this.#getOriginAttributes(partitionKey);
+    const originAttributes = this.#getOriginAttributes(partitionKey, domain);
 
-    const deserializedValue = this.#deserializeProtocolBytes(value);
+    // The cookie value is a network.BytesValue.
+    const deserializedValue = lazy.deserializeBytesValue(value);
 
     // The XPCOM interface requires to be specified if a cookie is session.
     const isSession = expiry === null;
@@ -314,7 +317,9 @@ class StorageModule extends Module {
       throw new lazy.error.UnableToSetCookieError(e);
     }
 
-    return { partitionKey: this.#formatPartitionKey(partitionKey) };
+    return {
+      partitionKey: this.#formatPartitionKey(partitionKey, originAttributes),
+    };
   }
 
   #assertCookie(cookie) {
@@ -571,7 +576,7 @@ class StorageModule extends Module {
           break;
 
         case "value":
-          deserializedValue = this.#deserializeProtocolBytes(value);
+          deserializedValue = lazy.deserializeBytesValue(value);
           break;
 
         default:
@@ -582,21 +587,6 @@ class StorageModule extends Module {
     }
 
     return deserializedFilter;
-  }
-
-  /**
-   * Deserialize the value to string, since platform API
-   * returns cookie's value as a string.
-   */
-  #deserializeProtocolBytes(cookieValue) {
-    const { type, value } = cookieValue;
-
-    if (type === lazy.BytesValueType.String) {
-      return value;
-    }
-
-    // For type === BytesValueType.Base64.
-    return atob(value);
   }
 
   /**
@@ -653,12 +643,23 @@ class StorageModule extends Module {
   /**
    * Prepare the partition key in the right format for returning to a client.
    */
-  #formatPartitionKey(partitionKey) {
+  #formatPartitionKey(partitionKey, originAttributes) {
     if ("userContext" in partitionKey) {
       // Exchange platform id for Webdriver BiDi id for the user context to return it to the client.
       partitionKey.userContext = lazy.UserContextManager.getIdByInternalId(
         partitionKey.userContext
       );
+    }
+
+    // If sourceOrigin matches the cookie domain we don't set the partitionKey
+    // in the setCookie command. In that case we should also remove sourceOrigin
+    // from the returned partitionKey.
+    if (
+      originAttributes &&
+      "sourceOrigin" in partitionKey &&
+      originAttributes.partitionKey === ""
+    ) {
+      delete partitionKey.sourceOrigin;
     }
 
     // This key is not used for partitioning and was required to only filter out third-party cookies.
@@ -724,13 +725,38 @@ class StorageModule extends Module {
   /**
    * Prepare the data in the required for platform API format.
    */
-  #getOriginAttributes(partitionKey) {
+  #getOriginAttributes(partitionKey, domain) {
     const originAttributes = {};
 
     if (partitionKey.sourceOrigin) {
-      originAttributes.partitionKey = ChromeUtils.getPartitionKeyFromURL(
-        partitionKey.sourceOrigin
-      );
+      if (
+        "isThirdPartyURI" in partitionKey &&
+        domain &&
+        !this.#shouldIncludePartitionedCookies() &&
+        partitionKey.sourceOrigin !== "about:"
+      ) {
+        // This is a workaround until CHIPS support is enabled (see Bug 1898253).
+        // It handles the "context" type partitioning of the `setCookie` command
+        // (when domain is provided) and if partitioned cookies are disabled,
+        // but ignore `about` pаges.
+        const principal =
+          Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+            partitionKey.sourceOrigin
+          );
+
+        // Do not set partition key if the cookie domain matches the `sourceOrigin`.
+        if (principal.host.endsWith(domain)) {
+          originAttributes.partitionKey = "";
+        } else {
+          originAttributes.partitionKey = ChromeUtils.getPartitionKeyFromURL(
+            partitionKey.sourceOrigin
+          );
+        }
+      } else {
+        originAttributes.partitionKey = ChromeUtils.getPartitionKeyFromURL(
+          partitionKey.sourceOrigin
+        );
+      }
     }
     if ("userContext" in partitionKey) {
       originAttributes.userContextId = partitionKey.userContext;

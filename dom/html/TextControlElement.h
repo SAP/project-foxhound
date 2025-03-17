@@ -31,7 +31,7 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   TextControlElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo,
                      dom::FromParser aFromParser, FormControlType aType)
       : nsGenericHTMLFormControlElementWithState(std::move(aNodeInfo),
-                                                 aFromParser, aType){};
+                                                 aFromParser, aType) {};
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
@@ -76,7 +76,8 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
    * Get the cols attribute (if textarea) or a default
    * @return the number of columns to use
    */
-  virtual int32_t GetCols() = 0;
+  virtual Maybe<int32_t> GetCols() = 0;
+  int32_t GetColsOrDefault() { return GetCols().valueOr(DEFAULT_COLS); }
 
   /**
    * Get the column index to wrap at, or -1 if we shouldn't wrap
@@ -166,6 +167,16 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   virtual void GetPreviewValue(nsAString& aValue) = 0;
 
   /**
+   * Enable preview or autofilled state for the text control.
+   */
+  virtual void SetAutofillState(const nsAString& aState) = 0;
+
+  /**
+   * Get the current preview or autofilled state for the text control.
+   */
+  virtual void GetAutofillState(nsAString& aState) = 0;
+
+  /**
    * Enable preview for text control.
    */
   virtual void EnablePreview() = 0;
@@ -206,10 +217,10 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   MOZ_CAN_RUN_SCRIPT virtual nsresult SetValueFromSetRangeText(
       const nsAString& aValue) = 0;
 
-  static const int32_t DEFAULT_COLS = 20;
-  static const int32_t DEFAULT_ROWS = 1;
-  static const int32_t DEFAULT_ROWS_TEXTAREA = 2;
-  static const int32_t DEFAULT_UNDO_CAP = 1000;
+  inline static constexpr int32_t DEFAULT_COLS = 20;
+  inline static constexpr int32_t DEFAULT_ROWS = 1;
+  inline static constexpr int32_t DEFAULT_ROWS_TEXTAREA = 2;
+  inline static constexpr int32_t DEFAULT_UNDO_CAP = 1000;
 
   // wrap can be one of these three values.
   typedef enum {

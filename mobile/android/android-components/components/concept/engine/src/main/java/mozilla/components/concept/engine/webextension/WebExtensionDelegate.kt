@@ -49,6 +49,13 @@ interface WebExtensionDelegate {
     fun onReady(extension: WebExtension) = Unit
 
     /**
+     * Invoked when optional permissions for a web extension have changed.
+     *
+     * @param extension The [WebExtension] for which permissions have changed.
+     */
+    fun onOptionalPermissionsChanged(extension: WebExtension) = Unit
+
+    /**
      * Invoked when a web extension in private browsing allowed is set.
      *
      * @param extension the modified [WebExtension] instance.
@@ -106,15 +113,15 @@ interface WebExtensionDelegate {
     /**
      * Invoked during installation of a [WebExtension] to confirm the required permissions.
      *
-     * @param extension the extension being installed. The required permissions can be
-     * accessed using [WebExtension.getMetadata] and [Metadata.permissions].
-     * @param onPermissionsGranted A callback to indicate whether the user has granted the [extension] permissions
-     * @return whether or not installation should process i.e. the permissions have been
-     * granted.
+     * @param extension the extension being installed. The required permissions can be accessed using
+     * [WebExtension.getMetadata] and [Metadata.requiredPermissions]/[Metadata.requiredOrigins]/.
+     * @param onPermissionsGranted A callback to indicate whether the user has granted the [extension] permissions.
+     * @return whether or not installation should process i.e. the permissions have been granted.
      */
     fun onInstallPermissionRequest(
         extension: WebExtension,
-        onPermissionsGranted: ((Boolean) -> Unit),
+        permissions: List<String>,
+        onPermissionsGranted: (Boolean) -> Unit,
     ) = Unit
 
     /**

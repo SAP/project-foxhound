@@ -396,8 +396,10 @@ nsLineLayout::PerSpanData* nsLineLayout::NewPerSpanData() {
   psd->mFrame = nullptr;
   psd->mFirstFrame = nullptr;
   psd->mLastFrame = nullptr;
+  psd->mReflowInput = nullptr;
   psd->mContainsFloat = false;
   psd->mHasNonemptyContent = false;
+  psd->mBaseline = nullptr;
 
 #ifdef DEBUG
   outerLineLayout->mSpansAllocated++;
@@ -3271,7 +3273,6 @@ void nsLineLayout::TextAlignLine(nsLineBox* aLine, bool aIsLastLine) {
       }
 
       case StyleTextAlign::Start:
-      case StyleTextAlign::Char:
         // Default alignment is to start edge so do nothing, except to apply
         // any "reverse-hang" amount resulting from reversed-direction trailing
         // space.

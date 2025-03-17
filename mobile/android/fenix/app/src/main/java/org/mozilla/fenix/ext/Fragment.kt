@@ -6,6 +6,8 @@ package org.mozilla.fenix.ext
 
 import android.app.Activity
 import android.content.Intent
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
@@ -18,9 +20,12 @@ import androidx.navigation.NavDirections
 import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import mozilla.components.concept.base.crash.Breadcrumb
+import mozilla.components.support.utils.ext.isLandscape
 import org.mozilla.fenix.NavHostActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
+import org.mozilla.fenix.components.toolbar.ToolbarPosition
+import org.mozilla.fenix.components.toolbar.navbar.ToolbarContainerView
 
 /**
  * Get the requireComponents of this application.
@@ -148,4 +153,80 @@ fun Fragment.registerForActivityResult(
             onFailure(result)
         }
     }
+}
+
+/**
+ *  Checks whether the current fragment is running on a tablet.
+ */
+fun Fragment.isTablet(): Boolean {
+    return resources.getBoolean(R.bool.tablet)
+}
+
+/**
+ *
+ * Manages the state of the NavBar upon an orientation change.
+ *
+ * @param parent The top level [ViewGroup] of the fragment, which will be hosting toolbar/navbar container.
+ * @param toolbarView [View] responsible for showing the AddressBar.
+ * @param bottomToolbarContainerView The [ToolbarContainerView] hosting the NavBar.
+ * @param reinitializeNavBar lambda for re-initializing the NavBar inside the host [Fragment].
+ */
+fun Fragment.updateNavBarForConfigurationChange(
+    parent: ViewGroup,
+    toolbarView: View,
+    bottomToolbarContainerView: ToolbarContainerView?,
+    reinitializeNavBar: () -> Unit,
+) {
+    if (requireContext().isLandscape()) {
+        // In landscape mode we want to remove the navigation bar.
+        parent.removeView(bottomToolbarContainerView)
+
+        // If address bar was positioned at bottom and we have removed the toolbar container, we are adding address bar
+        // back.
+        val isToolbarAtBottom = requireComponents.settings.toolbarPosition == ToolbarPosition.BOTTOM
+
+        // Toolbar already having a parent is an edge case, but it could happen if configurationChange is called after
+        // onCreateView with the same orientation. Caught it on a foldable emulator while going from single screen
+        // portrait mode to landscape tablet, back and forth.
+        val hasParent = toolbarView.parent != null
+        if (isToolbarAtBottom && !hasParent) {
+            parent.addView(toolbarView)
+        }
+    } else {
+        // Already having a bottomContainer after switching back to portrait mode will happen when address bar is
+        // positioned at bottom and also as an edge case if configurationChange is called after onCreateView with the
+        // same orientation. Caught it on a foldable emulator while going from single screen portrait mode to landscape
+        // table, back and forth.
+        bottomToolbarContainerView?.let {
+            parent.removeView(it)
+        }
+
+        reinitializeNavBar()
+    }
+}
+
+/**
+ *
+ * Manages the state of the microsurvey prompt on orientation change.
+ *
+ * @param parent The top level [ViewGroup] of the fragment, which will be hosting the [bottomToolbarContainerView].
+ * @param bottomToolbarContainerView The [ToolbarContainerView] hosting the microsurvey prompt.
+ * @param reinitializeMicrosurveyPrompt lambda for re-initializing the microsurvey prompt inside the host [Fragment].
+ */
+fun Fragment.updateMicrosurveyPromptForConfigurationChange(
+    parent: ViewGroup,
+    bottomToolbarContainerView: ToolbarContainerView?,
+    reinitializeMicrosurveyPrompt: () -> Unit,
+) {
+    if (!requireContext().isLandscape()) {
+        // Already having a bottomContainer after switching back to portrait mode will happen when address bar is
+        // positioned at bottom and also as an edge case if configurationChange is called after onCreateView with the
+        // same orientation. Observed on a foldable emulator while going from single screen portrait mode to landscape
+        // tablet, back and forth.
+        bottomToolbarContainerView?.let {
+            parent.removeView(it)
+        }
+    }
+
+    reinitializeMicrosurveyPrompt()
 }

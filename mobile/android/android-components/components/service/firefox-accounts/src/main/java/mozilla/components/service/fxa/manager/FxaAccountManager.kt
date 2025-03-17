@@ -8,9 +8,11 @@ import android.content.Context
 import androidx.annotation.GuardedBy
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.LifecycleOwner
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.appservices.fxaclient.FxaStateCheckerEvent
 import mozilla.appservices.fxaclient.FxaStateCheckerState
@@ -26,6 +28,7 @@ import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
 import mozilla.components.concept.sync.ServiceResult
+import mozilla.components.concept.sync.UserData
 import mozilla.components.service.fxa.AccessTokenUnexpectedlyWithoutKey
 import mozilla.components.service.fxa.AccountManagerException
 import mozilla.components.service.fxa.AccountOnDisk
@@ -344,11 +347,14 @@ open class FxaAccountManager(
      * @param pairingUrl Optional pairing URL in case a pairing flow is being initiated.
      * @param entrypoint an enum representing the feature entrypoint requesting the URL.
      * the entrypoint is used in telemetry.
+     * @param authScopes The oAuth scopes being requested, if none are provided
+     * we default to the scopes provided when constructing [FxaAccountManager]
      * @return An authentication url which is to be presented to the user.
      */
     suspend fun beginAuthentication(
         pairingUrl: String? = null,
         entrypoint: FxAEntryPoint,
+        authScopes: Set<String> = scopes,
     ): String? = withContext(coroutineContext) {
         // It's possible that at this point authentication is considered to be "in-progress".
         // For example, if user started authentication flow, but cancelled it (closing a custom tab)
@@ -357,9 +363,9 @@ open class FxaAccountManager(
         processQueue(Event.Progress.CancelAuth)
 
         val event = if (pairingUrl != null) {
-            Event.Account.BeginPairingFlow(pairingUrl, entrypoint)
+            Event.Account.BeginPairingFlow(pairingUrl, entrypoint, authScopes)
         } else {
-            Event.Account.BeginEmailFlow(entrypoint)
+            Event.Account.BeginEmailFlow(entrypoint, authScopes)
         }
 
         // Process the event, then use the new state to check the result of the operation
@@ -372,6 +378,16 @@ open class FxaAccountManager(
                 logger.warn("beginAuthentication: error processing next state ($state)")
             }
         }
+    }
+
+    /**
+     * Sets the user's data received from the web content.
+     * **NOTE**: This is only useful for applications that are user agents, that
+     *           require the user's session token, and thus isn't a part of the state machine
+     * @param userData: The user's data as given by the web channel, including the session token
+     */
+    suspend fun setUserData(userData: UserData) = withContext(coroutineContext) {
+        account.setUserData(userData)
     }
 
     /**
@@ -590,10 +606,10 @@ open class FxaAccountManager(
                 } else {
                     null
                 }
-                val entrypoint = if (via is Event.Account.BeginEmailFlow) {
-                    via.entrypoint
+                val (entrypoint, authScopes) = if (via is Event.Account.BeginEmailFlow) {
+                    Pair(via.entrypoint, via.scopes)
                 } else if (via is Event.Account.BeginPairingFlow) {
-                    via.entrypoint
+                    Pair(via.entrypoint, via.scopes)
                 } else {
                     // This should be impossible, both `BeginPairingFlow` and `BeginEmailFlow`
                     // have a required `entrypoint` and we are matching against only instances
@@ -601,7 +617,7 @@ open class FxaAccountManager(
                     throw IllegalStateException("BeginningAuthentication with a flow that is neither email nor pairing")
                 }
                 val result = withRetries(logger, MAX_NETWORK_RETRIES) {
-                    pairingUrl.asAuthFlowUrl(account, scopes, entrypoint = entrypoint)
+                    pairingUrl.asAuthFlowUrl(account, authScopes, entrypoint = entrypoint)
                 }
                 when (result) {
                     is Result.Success -> {
@@ -933,6 +949,62 @@ open class FxaAccountManager(
 
         override fun onError(error: Exception?) {
             accountManager.syncStatusObserverRegistry.notifyObservers { onError(error) }
+        }
+    }
+
+    /**
+     * Hook this up to the secret debug menu to simulate a network error
+     *
+     * Typical usage is:
+     *   - `adb logcat | grep fxa_client`
+     *   - Trigger this via the secret debug menu item.
+     *   - Watch the logs.  You should see the client perform a call to `get_profile', see a
+     *     network error, then recover.
+     *     - Note: the logs will be more clear once we switch the code to using the app-services state
+     *       machine.
+     *   - Check the UI, it should be in an authenticated state.
+     */
+    public fun simulateNetworkError() {
+        account.simulateNetworkError()
+        CoroutineScope(coroutineContext).launch {
+            refreshProfile(true)
+        }
+    }
+
+    /**
+     * Hook this up to the secret debug menu to simulate a temporary auth error
+     *
+     * Typical usage is:
+     *   - `adb logcat | grep fxa_client`
+     *   - Trigger this via the secret debug menu item.
+     *   - Watch the logs.  You should see the client perform a call to `get_profile', see an
+     *     auth error, then recover.
+     *   - Check the UI, it should be in an authenticated state.
+     */
+    public fun simulateTemporaryAuthTokenIssue() {
+        account.simulateTemporaryAuthTokenIssue()
+        SyncAuthInfoCache(context).clear()
+        CoroutineScope(coroutineContext).launch {
+            refreshProfile(true)
+        }
+    }
+
+    /**
+     * Hook this up to the secret debug menu to simulate an unrecoverable auth error
+     *
+     * Typical usage is:
+     *   - `adb logcat | grep fxa_client`
+     *   - Trigger this via the secret debug menu item.
+     *   - Initiaite a sync, or perform some other action that requires authentication.
+     *   - Watch the logs.  You should see the client perform a call to `get_profile', see an
+     *     auth error, then fail to recover.
+     *   - Check the UI, it should be in an authentication problems state.
+     */
+    public fun simulatePermanentAuthTokenIssue() {
+        account.simulatePermanentAuthTokenIssue()
+        SyncAuthInfoCache(context).clear()
+        CoroutineScope(coroutineContext).launch {
+            refreshProfile(true)
         }
     }
 }

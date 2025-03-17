@@ -227,7 +227,7 @@ class TestEmitterBasic(unittest.TestCase):
     def test_debug_flags(self):
         reader = self.reader(
             "compile-flags",
-            extra_substs={"MOZ_DEBUG_FLAGS": "-g", "MOZ_DEBUG_SYMBOLS": "1"},
+            extra_substs={"MOZ_DEBUG_FLAGS": ["-g"], "MOZ_DEBUG_SYMBOLS": "1"},
         )
         sources, ldflags, lib, flags = self.read_topsrcdir(reader)
         self.assertIsInstance(flags, ComputedFlags)
@@ -236,7 +236,7 @@ class TestEmitterBasic(unittest.TestCase):
     def test_disable_debug_flags(self):
         reader = self.reader(
             "compile-flags",
-            extra_substs={"MOZ_DEBUG_FLAGS": "-g", "MOZ_DEBUG_SYMBOLS": ""},
+            extra_substs={"MOZ_DEBUG_FLAGS": ["-g"], "MOZ_DEBUG_SYMBOLS": ""},
         )
         sources, ldflags, lib, flags = self.read_topsrcdir(reader)
         self.assertIsInstance(flags, ComputedFlags)
@@ -277,7 +277,7 @@ class TestEmitterBasic(unittest.TestCase):
             "link-flags",
             extra_substs={
                 "OS_ARCH": "WINNT",
-                "GNU_CC": "",
+                "CC_TYPE": "clang-cl",
                 "MOZ_OPTIMIZE": "1",
                 "MOZ_DEBUG_LDFLAGS": ["-DEBUG"],
                 "MOZ_DEBUG_SYMBOLS": "1",
@@ -295,7 +295,7 @@ class TestEmitterBasic(unittest.TestCase):
             "link-flags",
             extra_substs={
                 "OS_ARCH": "WINNT",
-                "GNU_CC": "",
+                "CC_TYPE": "clang-cl",
                 "MOZ_DMD": "1",
                 "MOZ_DEBUG_LDFLAGS": ["-DEBUG"],
                 "MOZ_DEBUG_SYMBOLS": "1",
@@ -366,7 +366,12 @@ class TestEmitterBasic(unittest.TestCase):
 
     def test_host_rtl_flag(self):
         reader = self.reader(
-            "host-compile-flags", extra_substs={"OS_ARCH": "WINNT", "MOZ_DEBUG": "1"}
+            "host-compile-flags",
+            extra_substs={
+                "OS_ARCH": "WINNT",
+                "MOZ_DEBUG": "1",
+                "CC_TYPE": "clang-cl",
+            },
         )
         sources, ldflags, flags, lib, target_flags = self.read_topsrcdir(reader)
         self.assertIsInstance(flags, ComputedFlags)
@@ -779,6 +784,22 @@ class TestEmitterBasic(unittest.TestCase):
                 "!/dist/bin/foo/dist-subdir.prog",
                 "!/final/target/final-target.prog",
                 "!not-installed.prog",
+            ],
+        )
+
+    def test_shared_lib_paths(self):
+        """Various moz.build settings that change the destination of SHARED_LIBRARY
+        should be accurately reflected in Program.output_path."""
+        reader = self.reader("shared-lib-paths")
+        objs = self.read_topsrcdir(reader)
+        prog_paths = [o.output_path for o in objs if isinstance(o, SharedLibrary)]
+        self.assertEqual(
+            prog_paths,
+            [
+                "!/dist/bin/libdist-bin.so",
+                "!/dist/bin/foo/libdist-subdir.so",
+                "!/final/target/libfinal-target.so",
+                "!libnot-installed.so",
             ],
         )
 

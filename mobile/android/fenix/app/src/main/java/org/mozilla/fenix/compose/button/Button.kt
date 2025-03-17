@@ -232,7 +232,7 @@ fun DestructiveButton(
     text: String,
     modifier: Modifier = Modifier.fillMaxWidth(),
     enabled: Boolean = true,
-    textColor: Color = FirefoxTheme.colors.textWarningButton,
+    textColor: Color = FirefoxTheme.colors.textCriticalButton,
     backgroundColor: Color = FirefoxTheme.colors.actionSecondary,
     icon: Painter? = null,
     iconModifier: Modifier = Modifier,
@@ -246,7 +246,7 @@ fun DestructiveButton(
         enabled = enabled,
         icon = icon,
         iconModifier = iconModifier,
-        tint = FirefoxTheme.colors.iconWarningButton,
+        tint = FirefoxTheme.colors.iconCriticalButton,
         onClick = onClick,
     )
 }

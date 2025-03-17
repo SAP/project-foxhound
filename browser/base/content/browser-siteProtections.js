@@ -1377,7 +1377,6 @@ var gProtectionsHandler = {
       let wrapper = document.getElementById("template-protections-popup");
       this._protectionsPopup = wrapper.content.firstElementChild;
       wrapper.replaceWith(wrapper.content);
-      window.ensureCustomElements("moz-support-link");
 
       this.maybeSetMilestoneCounterText();
 
@@ -1591,8 +1590,6 @@ var gProtectionsHandler = {
 
     // Add an observer to observe that the history has been cleared.
     Services.obs.addObserver(this, "browser:purge-session-history");
-
-    window.ensureCustomElements("moz-button-group", "moz-toggle");
   },
 
   uninit() {
@@ -2601,14 +2598,14 @@ var gProtectionsHandler = {
   _createHeroElement(doc, message) {
     const messageEl = this._createElement(doc, "div");
     messageEl.setAttribute("id", "protections-popup-message");
-    messageEl.classList.add("whatsNew-hero-message");
+    messageEl.classList.add("protections-hero-message");
     const wrapperEl = this._createElement(doc, "div");
-    wrapperEl.classList.add("whatsNew-message-body");
+    wrapperEl.classList.add("protections-popup-message-body");
     messageEl.appendChild(wrapperEl);
 
     wrapperEl.appendChild(
       this._createElement(doc, "h2", {
-        classList: "whatsNew-message-title",
+        classList: "protections-popup-message-title",
         content: message.content.title,
       })
     );

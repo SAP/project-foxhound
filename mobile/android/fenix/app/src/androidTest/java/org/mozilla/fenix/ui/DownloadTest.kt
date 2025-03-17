@@ -4,7 +4,9 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
+import androidx.test.espresso.intent.rule.IntentsRule
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
@@ -14,7 +16,7 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper.deleteDownloadedFileOnStorag
 import org.mozilla.fenix.helpers.AppAndSystemHelper.setNetworkEnabled
 import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_APPS_PHOTOS
 import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_DOCS
-import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
@@ -38,11 +40,18 @@ import org.mozilla.fenix.ui.robots.notificationShade
  **/
 class DownloadTest : TestSetup() {
     /* Remote test page managed by Mozilla Mobile QA team at https://github.com/mozilla-mobile/testapp */
-    private val downloadTestPage = "https://storage.googleapis.com/mobile_test_assets/test_app/downloads.html"
+    private val downloadTestPage =
+        "https://storage.googleapis.com/mobile_test_assets/test_app/downloads.html"
     private var downloadFile: String = ""
 
     @get:Rule
-    val activityTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides()
+    val activityTestRule =
+        AndroidComposeTestRule(
+            HomeActivityTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
+
+    @get:Rule
+    val intentsTestRule = IntentsRule()
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243844
     @Test
@@ -57,6 +66,7 @@ class DownloadTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2299405
+    @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1900733")
     @Test
     fun verifyTheDownloadFailedNotificationsTest() {
         downloadRobot {
@@ -98,7 +108,6 @@ class DownloadTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/451563
-    @Ignore("Failing: Bug https://bugzilla.mozilla.org/show_bug.cgi?id=1813521")
     @SmokeTest
     @Test
     fun pauseResumeCancelDownloadTest() {
@@ -118,8 +127,8 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            verifyEmptyDownloadsList()
+        }.openDownloadsManager() {
+            verifyEmptyDownloadsList(activityTestRule)
         }
     }
 
@@ -132,9 +141,9 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            verifyDownloadedFileName("web_icon.png")
-            openDownloadedFile("web_icon.png")
+        }.openDownloadsManager() {
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, "web_icon.png")
+            clickDownloadedItem(activityTestRule, "web_icon.png")
             verifyPhotosAppOpens()
             mDevice.pressBack()
         }
@@ -148,13 +157,13 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            verifyDownloadedFileName("smallZip.zip")
-            deleteDownloadedItem("smallZip.zip")
+        }.openDownloadsManager() {
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, "smallZip.zip")
+            deleteDownloadedItem(activityTestRule, "smallZip.zip")
             clickSnackbarButton("UNDO")
-            verifyDownloadedFileName("smallZip.zip")
-            deleteDownloadedItem("smallZip.zip")
-            verifyEmptyDownloadsList()
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, "smallZip.zip")
+            deleteDownloadedItem(activityTestRule, "smallZip.zip")
+            verifyEmptyDownloadsList(activityTestRule)
         }
     }
 
@@ -175,21 +184,21 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            verifyDownloadedFileName(firstDownloadedFile)
-            verifyDownloadedFileName(secondDownloadedFile)
-            longClickDownloadedItem(firstDownloadedFile)
-            selectDownloadedItem(secondDownloadedFile)
+        }.openDownloadsManager() {
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, firstDownloadedFile)
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, secondDownloadedFile)
+            longClickDownloadedItem(activityTestRule, firstDownloadedFile)
+            clickDownloadedItem(activityTestRule, secondDownloadedFile)
             openMultiSelectMoreOptionsMenu()
             clickMultiSelectRemoveButton()
             clickSnackbarButton("UNDO")
-            verifyDownloadedFileName(firstDownloadedFile)
-            verifyDownloadedFileName(secondDownloadedFile)
-            longClickDownloadedItem(firstDownloadedFile)
-            selectDownloadedItem(secondDownloadedFile)
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, firstDownloadedFile)
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, secondDownloadedFile)
+            longClickDownloadedItem(activityTestRule, firstDownloadedFile)
+            clickDownloadedItem(activityTestRule, secondDownloadedFile)
             openMultiSelectMoreOptionsMenu()
             clickMultiSelectRemoveButton()
-            verifyEmptyDownloadsList()
+            verifyEmptyDownloadsList(activityTestRule)
         }
     }
 
@@ -202,14 +211,13 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            waitForDownloadsListToExist()
-            verifyDownloadedFileName("smallZip.zip")
+        }.openDownloadsManager() {
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, "smallZip.zip")
             deleteDownloadedFileOnStorage("smallZip.zip")
         }.exitDownloadsManagerToBrowser {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            verifyEmptyDownloadsList()
+        }.openDownloadsManager() {
+            verifyEmptyDownloadsList(activityTestRule)
             exitMenu()
         }
 
@@ -219,9 +227,8 @@ class DownloadTest : TestSetup() {
         }
         browserScreen {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            waitForDownloadsListToExist()
-            verifyDownloadedFileName("smallZip.zip")
+        }.openDownloadsManager() {
+            verifyDownloadedFileExistsInDownloadsList(activityTestRule, "smallZip.zip")
         }
     }
 
@@ -248,13 +255,12 @@ class DownloadTest : TestSetup() {
     fun notificationCanBeDismissedIfDownloadIsInterruptedTest() {
         downloadRobot {
             openPageAndDownloadFile(url = downloadTestPage.toUri(), downloadFile = "1GB.zip")
+            setNetworkEnabled(enabled = false)
+            verifyDownloadFailedPrompt("1GB.zip")
         }
-
-        setNetworkEnabled(enabled = false)
 
         browserScreen {
         }.openNotificationShade {
-            expandNotificationMessage()
             verifySystemNotificationExists("Download failed")
             swipeDownloadNotification("Left", true)
             verifySystemNotificationDoesNotExist("Firefox Fenix")
@@ -275,7 +281,7 @@ class DownloadTest : TestSetup() {
             openPageAndDownloadFile(url = downloadTestPage.toUri(), downloadFile = "3GB.zip")
         }
         browserScreen {
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
         browserScreen {
@@ -295,7 +301,7 @@ class DownloadTest : TestSetup() {
             openPageAndDownloadFile(url = downloadTestPage.toUri(), downloadFile = "3GB.zip")
         }
         browserScreen {
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
         browserScreen {

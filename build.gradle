@@ -72,7 +72,40 @@ def getRustVersionFor(packageName) {
     return version
 }
 
+def now() {
+    Instant now = Instant.now();
+    return now.getEpochSecond() + now.getNano() / 1_000_000_000L;
+}
+
 allprojects {
+    def shouldPrintBuildStatus =
+            System.getenv("MACH") && !System.getenv("NO_BUILDSTATUS_MESSAGES")
+
+    if (shouldPrintBuildStatus) {
+        // Adding new line before each line to make sure they're dumped as a separate line.
+        // Add profile marker to the start of the project evaluation
+        project.beforeEvaluate {
+            println "\nBUILDSTATUS ${now()} START_gradle:evaluate-project ${project.name}"
+        }
+
+        // Add profile marker to the end of the project evaluation
+        project.afterEvaluate {
+            println "\nBUILDSTATUS ${now()} END_gradle:evaluate-project ${project.name}"
+        }
+
+        tasks.configureEach { task ->
+            // Add profile marker to the start of the gradle task
+            task.doFirst {
+                println "\nBUILDSTATUS ${now()} START_gradle-task ${project.name}:${task.name}"
+            }
+
+            // Add profile marker to the end of the gradle task
+            task.doLast {
+                println "\nBUILDSTATUS ${now()} END_gradle-task ${project.name}:${task.name}"
+            }
+        }
+    }
+
     // Expose the per-object-directory configuration to all projects.
     ext {
         mozconfig = gradle.mozconfig
@@ -116,7 +149,7 @@ allprojects {
     // Use the semanticdb-javac and semanticdb-kotlinc plugins to generate semanticdb files for Searchfox
     if (mozconfig.substs.ENABLE_MOZSEARCH_PLUGIN || mozconfig.substs.DOWNLOAD_ALL_GRADLE_DEPENDENCIES) {
         def targetRoot = new File(topobjdir, "mozsearch_java_index")
-        def semanticdbJavacVersion = "com.sourcegraph:semanticdb-javac:0.9.6"
+        def semanticdbJavacVersion = "com.sourcegraph:semanticdb-javac:0.9.10"
         def semanticdbKotlincVersion = "com.sourcegraph:semanticdb-kotlinc:0.4.0"
 
         afterEvaluate {

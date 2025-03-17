@@ -9,15 +9,16 @@
 #include <gif_lib.h>
 #endif
 #include <jxl/codestream_header.h>
-#include <string.h>
 
+#include <cstring>
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include "lib/extras/size_constraints.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/sanitizers.h"
+#include "lib/jxl/base/rect.h"
+#include "lib/jxl/base/sanitizers.h"
 
 namespace jxl {
 namespace extras {
@@ -139,7 +140,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
 
   if (gif->ImageCount > 1) {
     ppf->info.have_animation = JXL_TRUE;
-    // Delays in GIF are specified in 100ths of a second.
+    // Delays in GIF are specified in censiseconds.
     ppf->info.animation.tps_numerator = 100;
     ppf->info.animation.tps_denominator = 1;
   }

@@ -734,6 +734,10 @@ home-prefs-highlights-option-saved-to-pocket =
 home-prefs-recent-activity-header =
     .label = Recent activity
 home-prefs-recent-activity-description = A selection of recent sites and content
+home-prefs-weather-header =
+  .label = Weather
+home-prefs-weather-description = Today’s forecast at a glance
+home-prefs-weather-learn-more-link = Learn more
 
 # Variables:
 #   $num (number) - Number of rows displayed
@@ -1036,6 +1040,9 @@ forms-saved-passwords =
 forms-primary-pw-use =
     .label = Use a Primary Password
     .accesskey = U
+# This operation requires the user to authenticate with the operating system (device sign-in)
+forms-os-reauth =
+    .label = Require device sign in to fill and manage passwords
 forms-primary-pw-learn-more-link = Learn more
 # This string uses the former name of the Primary Password feature
 # ("Master Password" in English) so that the preferences can be found
@@ -1072,6 +1079,13 @@ primary-password-os-auth-dialog-message-win = To create a Primary Password, ente
 primary-password-os-auth-dialog-message-macosx = create a Primary Password
 master-password-os-auth-dialog-caption = { -brand-full-name }
 
+# The macOS string is preceded by the operating system with "Firefox is trying to ".
+autofill-creditcard-os-dialog-message = { PLATFORM () ->
+    [macos] change the settings for payment methods
+    *[other] { -brand-short-name } is trying to change the settings for payment methods. Use your device sign in to allow this.
+}
+autofill-creditcard-os-auth-dialog-caption = { -brand-full-name }
+
 ## Privacy section - Autofill
 
 pane-privacy-autofill-header = Autofill
@@ -1085,12 +1099,9 @@ autofill-payment-methods-checkbox-submessage = Includes credit and debit cards
     .accesskey = I
 autofill-saved-payment-methods-button = Saved payment methods
     .accesskey = v
-autofill-reauth-checkbox = { PLATFORM() ->
-            [macos] Require macOS authentication to fill and edit payment methods.
-            [windows] Require Windows authentication to fill and edit payment methods.
-            [linux] Require Linux authentication to fill and edit payment methods.
-           *[other] Require authentication to fill and edit payment methods.
-        }
+
+# This operation requires the user to authenticate with the operating system (device sign-in)
+autofill-reauth-payment-methods-checkbox = Require device sign in to fill and manage payment methods
     .accesskey = o
 
 ## Privacy Section - History
@@ -1463,6 +1474,16 @@ privacy-segmentation-radio-off =
 
 privacy-segmentation-radio-on =
     .label = Show detailed information
+
+## Privacy Section - Website Advertising Preferences
+
+website-advertising-header = Website Advertising Preferences
+
+website-advertising-private-attribution =
+    .label = Allow websites to perform privacy-preserving ad measurement
+    .accesskey = a
+
+website-advertising-private-attribution-description = This helps sites understand how their ads perform without collecting data about you.
 
 ## Privacy Section - Security
 ##

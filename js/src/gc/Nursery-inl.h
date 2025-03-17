@@ -40,8 +40,7 @@ inline bool js::Nursery::shouldTenure(gc::Cell* cell) {
 }
 
 inline bool js::Nursery::inCollectedRegion(gc::Cell* cell) const {
-  gc::ChunkBase* chunk = gc::detail::GetCellChunkBase(cell);
-  return chunk->getKind() == gc::ChunkKind::NurseryFromSpace;
+  return gc::InCollectedNurseryRegion(cell);
 }
 
 inline bool js::Nursery::inCollectedRegion(void* ptr) const {
@@ -162,10 +161,12 @@ inline void* js::Nursery::tryAllocateCell(gc::AllocSite* site, size_t size,
   // Update the allocation site. This code is also inlined in
   // MacroAssembler::updateAllocSite.
   uint32_t allocCount = site->incAllocCount();
-  if (allocCount == 1) {
+  if (allocCount == gc::NormalSiteAttentionThreshold) {
     pretenuringNursery.insertIntoAllocatedList(site);
   }
-  MOZ_ASSERT_IF(site->isNormal(), site->isInAllocatedList());
+  MOZ_ASSERT_IF(
+      site->isNormal() && allocCount >= gc::NormalSiteAttentionThreshold,
+      site->isInAllocatedList());
 
   gc::gcprobes::NurseryAlloc(cell, kind);
   return cell;

@@ -53,7 +53,7 @@ features:
           {
             "top-sites": true,
             "jump-back-in": true,
-            "recently-saved": true,
+            "bookmarks": true,
             "recent-explorations": true,
             "pocket": true,
             "pocket-sponsored-stories": true,
@@ -64,7 +64,7 @@ features:
           "sections-enabled": {
             "top-sites": true,
             "jump-back-in": true,
-            "recently-saved": true,
+            "bookmarks": true,
             "recent-explorations": true,
             "pocket": true,
           }
@@ -248,6 +248,7 @@ features:
 
   glean:
     description: "A feature that provides server-side configurations for Glean metrics (aka Server Knobs)."
+    allow-coenrollment: true
     variables:
       metrics-enabled:
         description: "A map of metric base-identifiers to booleans representing the state of the 'enabled' flag for that metric."
@@ -257,6 +258,10 @@ features:
         description: "Enables precise event timestamps for Glean events"
         type: Boolean
         default: false
+      delay-ping-lifetime-io:
+        description: "Glean will delay io for ping lifetime metrics"
+        type: Boolean
+        default: true
 
   splash-screen:
     description: "A feature that extends splash screen duration, allowing additional data fetching time for the app's initial run."
@@ -435,6 +440,20 @@ features:
         value:
           enabled: true
 
+  remote-tab-management:
+    description: >
+      Features that let users manage tabs on other devices that are
+      connected to the same Mozilla account.
+    variables:
+      close-tabs-enabled:
+        description: >
+          Whether the feature to close synced tabs is enabled. When enabled,
+          this device will allow other devices to close tabs that are open on this device, and
+          show a "close" button for tabs that are currently open on other supported devices
+          in the synced tabs tray.
+        type: Boolean
+        default: false
+
 types:
   objects: {}
 
@@ -444,8 +463,8 @@ types:
       variants:
         top-sites:
           description: The frecency and pinned sites.
-        recently-saved:
-          description: The sites the user has bookmarked recently.
+        bookmarks:
+          description: The sites the user has bookmarked.
         jump-back-in:
           description: The tabs the user was looking immediately before being interrupted.
         recent-explorations:

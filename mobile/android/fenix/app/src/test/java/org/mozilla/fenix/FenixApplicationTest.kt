@@ -33,12 +33,12 @@ import org.mozilla.fenix.GleanMetrics.Addons
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.GleanMetrics.Preferences
 import org.mozilla.fenix.GleanMetrics.SearchDefaultEngine
-import org.mozilla.fenix.GleanMetrics.TabStrip
 import org.mozilla.fenix.GleanMetrics.TopSites
 import org.mozilla.fenix.components.metrics.MozillaProductDetector
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(FenixRobolectricTestRunner::class)
@@ -139,7 +139,7 @@ class FenixApplicationTest {
         every { settings.shouldUseLightTheme } returns true
         every { settings.signedInFxaAccount } returns true
         every { settings.showRecentTabsFeature } returns true
-        every { settings.showRecentBookmarksFeature } returns true
+        every { settings.showBookmarksHomeFeature } returns true
         every { settings.showTopSitesFeature } returns true
         every { settings.historyMetadataUIFeature } returns true
         every { settings.showPocketRecommendationsFeature } returns true
@@ -148,7 +148,6 @@ class FenixApplicationTest {
         every { application.getDeviceTotalRAM() } returns 7L
         every { settings.inactiveTabsAreEnabled } returns true
         every { application.isDeviceRamAboveThreshold } returns true
-        every { settings.isTabletAndTabStripEnabled } returns true
 
         assertTrue(settings.contileContextId.isEmpty())
         assertNull(TopSites.contextId.testGetValue())
@@ -198,7 +197,6 @@ class FenixApplicationTest {
         assertEquals(true, Metrics.defaultWallpaper.testGetValue())
         assertEquals(true, Metrics.ramMoreThanThreshold.testGetValue())
         assertEquals(7L, Metrics.deviceTotalRam.testGetValue())
-        assertEquals(true, TabStrip.enabled.testGetValue())
 
         val contextId = TopSites.contextId.testGetValue()!!.toString()
 
@@ -218,12 +216,30 @@ class FenixApplicationTest {
     }
 
     @Test
+    @Config(sdk = [28])
+    fun `GIVEN the current etp mode is custom WHEN tracking the etp metric THEN track also the cookies option on SDK 28`() {
+        val settings: Settings = mockk(relaxed = true) {
+            every { shouldUseTrackingProtection } returns true
+            every { useCustomTrackingProtection } returns true
+            every { blockCookiesSelectionInCustomTrackingProtection } returns "Test"
+        }
+
+        application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector)
+
+        assertEquals("Test", Preferences.etpCustomCookiesSelection.testGetValue())
+    }
+
+    @Test
     fun `GIVEN the current etp mode is custom WHEN tracking the etp metric THEN track also the cookies option`() {
         val settings: Settings = mockk(relaxed = true) {
             every { shouldUseTrackingProtection } returns true
             every { useCustomTrackingProtection } returns true
             every { blockCookiesSelectionInCustomTrackingProtection } returns "Test"
         }
+
+        val packageManager: PackageManager = testContext.packageManager
+        shadowOf(packageManager)
+            .setInstallSourceInfo(testContext.packageName, "initiating.package", "installing.package")
 
         application.setStartupMetrics(browserStore, settings, browsersCache, mozillaProductDetector)
 

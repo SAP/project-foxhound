@@ -47,6 +47,7 @@ import org.mozilla.fenix.GleanMetrics.Addons
 import org.mozilla.fenix.GleanMetrics.CookieBanners
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
+import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
@@ -158,6 +159,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 updateProfilerUI(it)
             },
         )
+
+        findPreference<Preference>(
+            getPreferenceKey(R.string.pref_key_translation),
+        )?.isVisible = FxNimbus.features.translations.value().globalSettingsEnabled
     }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -313,6 +318,11 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             resources.getString(R.string.pref_key_language) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToLocaleSettingsFragment()
+            }
+
+            resources.getString(R.string.pref_key_translation) -> {
+                Translations.action.record(Translations.ActionExtra("global_settings_from_preferences"))
+                SettingsFragmentDirections.actionSettingsFragmentToTranslationsSettingsFragment()
             }
 
             /* Privacy and security preferences */

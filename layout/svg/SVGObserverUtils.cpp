@@ -920,9 +920,9 @@ SVGFilterObserverList::SVGFilterObserverList(Span<const StyleFilter> aFilters,
       }
     }
 
-    RefPtr<SVGFilterObserver> observer =
-        new SVGFilterObserver(filterURL, aFilteredElement, this);
-    mObservers.AppendElement(observer);
+    auto observer =
+        MakeRefPtr<SVGFilterObserver>(filterURL, aFilteredElement, this);
+    mObservers.AppendElement(std::move(observer));
   }
 }
 
@@ -1026,9 +1026,9 @@ SVGMaskObserverList::SVGMaskObserverList(nsIFrame* aFrame) : mFrame(aFrame) {
     //
     // And, an URL may refer to an SVG mask resource if it consists of
     // a fragment.
-    SVGPaintingProperty* prop = new SVGPaintingProperty(
+    auto prop = MakeRefPtr<SVGPaintingProperty>(
         hasRef ? maskUri.get() : nullptr, aFrame, false);
-    mProperties.AppendElement(prop);
+    mProperties.AppendElement(std::move(prop));
   }
 }
 
@@ -1676,8 +1676,7 @@ Element* SVGObserverUtils::GetAndObserveBackgroundImage(nsIFrame* aFrame,
       aFrame->GetContent()
           ->OwnerDoc()
           ->ReferrerInfoForInternalCSSAndSVGResources();
-  RefPtr<URLAndReferrerInfo> url =
-      new URLAndReferrerInfo(targetURI, referrerInfo);
+  auto url = MakeRefPtr<URLAndReferrerInfo>(targetURI, referrerInfo);
 
   return static_cast<SVGMozElementObserver*>(
              hashtable
@@ -1770,6 +1769,22 @@ void SVGObserverUtils::UpdateEffects(nsIFrame* aFrame) {
   }
 }
 
+bool SVGObserverUtils::SelfOrAncestorHasRenderingObservers(
+    const nsIFrame* aFrame) {
+  nsIContent* content = aFrame->GetContent();
+  while (content) {
+    if (content->HasDirectRenderingObservers()) {
+      return true;
+    }
+    const auto* frame = content->GetPrimaryFrame();
+    if (frame && frame->IsRenderingObserverContainer()) {
+      break;
+    }
+    content = content->GetFlattenedTreeParent();
+  }
+  return false;
+}
+
 void SVGObserverUtils::AddRenderingObserver(Element* aElement,
                                             SVGRenderingObserver* aObserver) {
   SVGRenderingObserverSet* observers = GetObserverSet(aElement);
@@ -1783,7 +1798,7 @@ void SVGObserverUtils::AddRenderingObserver(Element* aElement,
                           nsINode::DeleteProperty<SVGRenderingObserverSet>,
                           /* aTransfer = */ true);
   }
-  aElement->SetHasRenderingObservers(true);
+  aElement->SetHasDirectRenderingObservers(true);
   observers->Add(aObserver);
 }
 
@@ -1796,7 +1811,7 @@ void SVGObserverUtils::RemoveRenderingObserver(
     observers->Remove(aObserver);
     if (observers->IsEmpty()) {
       aElement->RemoveProperty(nsGkAtoms::renderingobserverset);
-      aElement->SetHasRenderingObservers(false);
+      aElement->SetHasDirectRenderingObservers(false);
     }
   }
 }
@@ -1806,7 +1821,7 @@ void SVGObserverUtils::RemoveAllRenderingObservers(Element* aElement) {
   if (observers) {
     observers->RemoveAll();
     aElement->RemoveProperty(nsGkAtoms::renderingobserverset);
-    aElement->SetHasRenderingObservers(false);
+    aElement->SetHasDirectRenderingObservers(false);
   }
 }
 
@@ -1854,7 +1869,7 @@ void SVGObserverUtils::InvalidateDirectRenderingObservers(
     frame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
   }
 
-  if (aElement->HasRenderingObservers()) {
+  if (aElement->HasDirectRenderingObservers()) {
     SVGRenderingObserverSet* observers = GetObserverSet(aElement);
     if (observers) {
       if (aFlags & INVALIDATE_REFLOW) {

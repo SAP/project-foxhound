@@ -534,10 +534,10 @@ add_task(async function test_rollout_experiment_no_conflict() {
 
   await ExperimentFakes.enrollmentHelper(experiment, {
     manager,
-  }).enrollmentPromise;
+  });
   await ExperimentFakes.enrollmentHelper(rollout, {
     manager,
-  }).enrollmentPromise;
+  });
 
   Assert.ok(
     manager.store.get(experiment.slug).active,
@@ -670,7 +670,6 @@ add_task(async function enroll_in_reference_aw_experiment() {
   Assert.ok(prefValue.length < 3498, "Make sure we don't bloat the prefs");
 
   manager.unenroll(recipe.slug, "enroll_in_reference_aw_experiment:cleanup");
-  manager.store._deleteForTests("aboutwelcome");
 
   await assertEmptyStore(manager.store);
 });
@@ -756,6 +755,7 @@ add_task(async function test_rollout_unenroll_conflict() {
   );
   Assert.ok(enrollStub.calledOnce, "Should call enroll as expected");
 
+  manager.unenroll(rollout.slug, "test-cleanup");
   await assertEmptyStore(manager.store);
 
   sandbox.restore();
@@ -804,7 +804,7 @@ add_task(async function test_forceEnroll() {
   const manager = loader.manager;
 
   sinon
-    .stub(loader.remoteSettingsClient, "get")
+    .stub(loader.remoteSettingsClients.experiments, "get")
     .resolves([experiment1, experiment2, rollout1, rollout2]);
   sinon.stub(loader, "setTimer");
 
@@ -838,7 +838,6 @@ add_task(async function test_forceEnroll() {
 
     for (const { slug } of expected) {
       manager.unenroll(`optin-${slug}`);
-      manager.store._deleteForTests(`optin-${slug}`);
     }
   }
 
@@ -855,10 +854,9 @@ add_task(async function test_featureIds_is_stored() {
 
   await manager.onStartup();
 
-  const { enrollmentPromise, doExperimentCleanup } =
-    ExperimentFakes.enrollmentHelper(recipe, { manager });
-
-  await enrollmentPromise;
+  const doExperimentCleanup = await ExperimentFakes.enrollmentHelper(recipe, {
+    manager,
+  });
 
   Assert.ok(manager.store.addEnrollment.calledOnce, "experiment is stored");
   let [enrollment] = manager.store.addEnrollment.firstCall.args;
@@ -869,7 +867,7 @@ add_task(async function test_featureIds_is_stored() {
     "Has expected value"
   );
 
-  await doExperimentCleanup();
+  doExperimentCleanup();
 
   await assertEmptyStore(manager.store);
 });
@@ -880,17 +878,18 @@ add_task(async function experiment_and_rollout_enroll_and_cleanup() {
 
   await manager.onStartup();
 
-  let rolloutCleanup = await ExperimentFakes.enrollWithRollout(
+  let doRolloutCleanup = await ExperimentFakes.enrollWithFeatureConfig(
     {
       featureId: "aboutwelcome",
       value: { enabled: true },
     },
     {
       manager,
+      isRollout: true,
     }
   );
 
-  let experimentCleanup = await ExperimentFakes.enrollWithFeatureConfig(
+  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig(
     {
       featureId: "aboutwelcome",
       value: { enabled: true },
@@ -907,7 +906,7 @@ add_task(async function experiment_and_rollout_enroll_and_cleanup() {
     )
   );
 
-  await experimentCleanup();
+  doExperimentCleanup();
 
   Assert.ok(
     !Services.prefs.getBoolPref(
@@ -921,7 +920,7 @@ add_task(async function experiment_and_rollout_enroll_and_cleanup() {
     )
   );
 
-  await rolloutCleanup();
+  doRolloutCleanup();
 
   Assert.ok(
     !Services.prefs.getBoolPref(

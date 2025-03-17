@@ -386,6 +386,30 @@ class Selection final : public nsSupportsWeakReference,
     return mStyledRanges.mRanges[0].mRange->Collapsed();
   }
 
+  // Returns whether both normal range and cross-shadow-boundary
+  // range are collapsed.
+  //
+  // If StaticPrefs::dom_shadowdom_selection_across_boundary_enabled is
+  // disabled, this method always returns result as nsRange::IsCollapsed.
+  bool AreNormalAndCrossShadowBoundaryRangesCollapsed() const {
+    if (!IsCollapsed()) {
+      return false;
+    }
+
+    size_t cnt = mStyledRanges.Length();
+    if (cnt == 0) {
+      return true;
+    }
+
+    AbstractRange* range = mStyledRanges.mRanges[0].mRange;
+    MOZ_ASSERT_IF(
+        range->MayCrossShadowBoundary(),
+        !range->AsDynamicRange()->CrossShadowBoundaryRangeCollapsed());
+    // Returns false if nsRange::mCrossBoundaryRange exists,
+    // true otherwise.
+    return !range->MayCrossShadowBoundary();
+  }
+
   // *JS() methods are mapped to Selection.*().
   // They may move focus only when the range represents normal selection.
   // These methods shouldn't be used by non-JS callers.
@@ -795,6 +819,8 @@ class Selection final : public nsSupportsWeakReference,
   MOZ_CAN_RUN_SCRIPT void NotifySelectionListeners(bool aCalledByJS);
   MOZ_CAN_RUN_SCRIPT void NotifySelectionListeners();
 
+  bool ChangesDuringBatching() const { return mChangesDuringBatching; }
+
   friend struct AutoUserInitiated;
   struct MOZ_RAII AutoUserInitiated {
     explicit AutoUserInitiated(Selection& aSelectionRef)
@@ -1066,6 +1092,16 @@ class Selection final : public nsSupportsWeakReference,
    * true if AutoCopyListner::OnSelectionChange() should be called.
    */
   bool mNotifyAutoCopy;
+
+  /**
+   * Indicates that this selection has changed during a batch change and
+   * `NotifySelectionListener()` should be called after batching ends.
+   *
+   * See `nsFrameSelection::StartBatchChanges()` and `::EndBatchChanges()`.
+   *
+   * This flag is set and reset in `NotifySelectionListener()`.
+   */
+  bool mChangesDuringBatching = false;
 };
 
 // Stack-class to turn on/off selection batching.

@@ -142,8 +142,10 @@ def set_worker_type(config, tasks):
                 if task[
                     "virtualization"
                 ] == "virtual-with-gpu" and test_platform.startswith("windows1"):
-                    # add in `--requires-gpu` to the mozharness options
-                    task["mozharness"]["extra-options"].append("--requires-gpu")
+                    # some unittests can run on hardware, no need for --requires-gpu
+                    if not test_platform.startswith("windows11-64-2009-hw-ref"):
+                        # add in `--requires-gpu` to the mozharness options
+                        task["mozharness"]["extra-options"].append("--requires-gpu")
 
             # now we have the right platform set the worker type accordingly
             task["worker-type"] = win_worker_type_platform[task["virtualization"]]
@@ -171,7 +173,10 @@ def set_worker_type(config, tasks):
             task["worker-type"] = "t-linux-kvm"
         elif test_platform.startswith("linux") or test_platform.startswith("android"):
             if "wayland" in test_platform:
-                task["worker-type"] = "t-linux-wayland"
+                if task["instance-size"].startswith("xlarge"):
+                    task["worker-type"] = "t-linux-xlarge-wayland"
+                else:
+                    task["worker-type"] = "t-linux-wayland"
             elif task.get("suite", "") in ["talos", "raptor"] and not task[
                 "build-platform"
             ].startswith("linux64-ccov"):
@@ -187,7 +192,7 @@ def set_worker_type(config, tasks):
 @transforms.add
 def set_wayland_env(config, tasks):
     for task in tasks:
-        if task["worker-type"] != "t-linux-wayland":
+        if "wayland" not in task["test-platform"]:
             yield task
             continue
 

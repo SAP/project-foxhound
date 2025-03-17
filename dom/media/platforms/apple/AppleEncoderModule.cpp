@@ -8,6 +8,7 @@
 
 #include "AppleVTEncoder.h"
 #include "VideoUtils.h"
+#include "AppleUtils.h"
 
 namespace mozilla {
 
@@ -25,6 +26,11 @@ bool AppleEncoderModule::SupportsCodec(CodecType aCodec) const {
 
 bool AppleEncoderModule::Supports(const EncoderConfig& aConfig) const {
   if (!CanLikelyEncode(aConfig)) {
+    return false;
+  }
+  // Only two temporal layers supported, and only from 11.3 and more recent
+  if (aConfig.mScalabilityMode == ScalabilityMode::L1T3 ||
+      (aConfig.mScalabilityMode != ScalabilityMode::None && !OSSupportsSVC())) {
     return false;
   }
   return aConfig.mCodec == CodecType::H264;

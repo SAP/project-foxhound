@@ -108,8 +108,6 @@ ChromeUtils.defineESModuleGetters(this, {
   UIState: "resource://services-sync/UIState.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderQuickActions:
-    "resource:///modules/UrlbarProviderQuickActions.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
@@ -264,7 +262,7 @@ function init_all() {
         return;
       }
       let mainWindow = window.browsingContext.topChromeWindow;
-      mainWindow.BrowserOpenAddonsMgr();
+      mainWindow.BrowserAddonUI.openAddonsMgr();
     });
 
     document.dispatchEvent(
@@ -575,8 +573,9 @@ async function confirmRestartPrompt(
       break;
   }
 
-  let buttonIndex = Services.prompt.confirmEx(
-    window,
+  let button = await Services.prompt.asyncConfirmEx(
+    window.browsingContext,
+    Ci.nsIPrompt.MODAL_TYPE_CONTENT,
     title,
     msg,
     buttonFlags,
@@ -586,6 +585,8 @@ async function confirmRestartPrompt(
     null,
     {}
   );
+
+  let buttonIndex = button.get("buttonNumClicked");
 
   // If we have the second confirmation dialog for restart, see if the user
   // cancels out at that point.

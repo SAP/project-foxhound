@@ -26,11 +26,11 @@
     <!-- Warning background -->
     <color name="fx_mobile_layer_color_warning" tools:ignore="UnusedResources">@color/photonYellow70A77</color>
     <!-- Confirmation background -->
-    <color name="fx_mobile_layer_color_confirmation" tools:ignore="UnusedResources">@color/photonGreen80</color>
+    <color name="fx_mobile_layer_color_success" tools:ignore="UnusedResources">@color/photonGreen80</color>
     <!-- Error background -->
-    <color name="fx_mobile_layer_color_error" tools:ignore="UnusedResources">@color/photonPink80</color>
+    <color name="fx_mobile_layer_color_critical" tools:ignore="UnusedResources">@color/photonPink80</color>
     <!-- Info background -->
-    <color name="fx_mobile_layer_color_info" tools:ignore="UnusedResources">@color/photonBlue50A80</color>
+    <color name="fx_mobile_layer_color_information" tools:ignore="UnusedResources">@color/photonBlue50</color>
     <!-- Search -->
     <color name="fx_mobile_layer_color_search">@color/photonDarkGrey80</color>
 
@@ -40,7 +40,7 @@
     <!-- Primary button in a disabled state-->
     <color name="fx_mobile_action_color_primary_disabled" tools:ignore="UnusedResources">@color/photonViolet60A50</color>
     <!-- Secondary button -->
-    <color name="fx_mobile_action_color_secondary">@color/photonLightGrey30</color>
+    <color name="fx_mobile_action_color_secondary">@color/photonDarkGrey05</color>
     <!-- Filter -->
     <color name="fx_mobile_action_color_tertiary" tools:ignore="UnusedResources">@color/photonDarkGrey10</color>
     <!-- Chip -->
@@ -48,11 +48,11 @@
     <!-- Warning button -->
     <color name="fx_mobile_action_color_warning" tools:ignore="UnusedResources">@color/photonYellow40A41</color>
     <!-- Confirmation button -->
-    <color name="fx_mobile_action_color_confirmation" tools:ignore="UnusedResources">@color/photonGreen70</color>
+    <color name="fx_mobile_action_color_success" tools:ignore="UnusedResources">@color/photonGreen70</color>
     <!-- Error button -->
-    <color name="fx_mobile_action_color_error" tools:ignore="UnusedResources">@color/photonPink70A69</color>
+    <color name="fx_mobile_action_color_critical" tools:ignore="UnusedResources">@color/photonPink70A69</color>
     <!-- Info button -->
-    <color name="fx_mobile_action_color_info" tools:ignore="UnusedResources">@color/photonBlue30</color>
+    <color name="fx_mobile_action_color_information" tools:ignore="UnusedResources">@color/photonBlue60</color>
     <!-- Checkbox default, Radio button default -->
     <color name="fx_mobile_action_color_form_default" tools:ignore="UnusedResources">@color/photonLightGrey05</color>
     <!-- Checkbox selected, Radio button selected -->
@@ -78,9 +78,9 @@
     <!-- Disabled text -->
     <color name="fx_mobile_text_color_disabled">@color/photonLightGrey05A40</color>
     <!-- Warning text -->
-    <color name="fx_mobile_text_color_warning">@color/photonRed20</color>
+    <color name="fx_mobile_text_color_critical">@color/photonRed20</color>
     <!-- Warning text on Secondary button -->
-    <color name="fx_mobile_text_color_warning_button">@color/photonRed70</color>
+    <color name="fx_mobile_text_color_critical_button">@color/photonRed20</color>
     <!-- Small heading, Text link -->
     <color name="fx_mobile_text_color_accent">@color/photonViolet20</color>
     <!-- Small heading, Text link -->
@@ -94,7 +94,7 @@
     <!-- Action Primary disabled text -->
     <color name="fx_mobile_text_color_action_primary_disabled" tools:ignore="UnusedResources">@color/photonLightGrey05A40</color>
     <!-- Action Secondary text -->
-    <color name="fx_mobile_text_color_action_secondary">@color/photonDarkGrey90</color>
+    <color name="fx_mobile_text_color_action_secondary">@color/photonLightGrey05</color>
     <!-- Action Tertiary text -->
     <color name="fx_mobile_text_color_action_tertiary" tools:ignore="UnusedResources">@color/photonLightGrey05</color>
     <!-- Action Tertiary Active text -->
@@ -117,9 +117,9 @@
     <color name="fx_mobile_icon_color_information">@color/photonBlue30</color>
     <!-- Icon button -->
     <color name="fx_mobile_icon_color_button" tools:ignore="UnusedResources">@color/photonLightGrey05</color>
-    <color name="fx_mobile_icon_color_warning" tools:ignore="UnusedResources">@color/photonRed20</color>
+    <color name="fx_mobile_icon_color_critical" tools:ignore="UnusedResources">@color/photonRed20</color>
     <!-- Warning icon on Secondary button -->
-    <color name="fx_mobile_icon_color_warning_button">@color/photonRed70</color>
+    <color name="fx_mobile_icon_color_critical_button">@color/photonRed20</color>
     <color name="fx_mobile_icon_color_accent_violet">@color/photonViolet20</color>
     <color name="fx_mobile_icon_color_accent_blue">@color/photonBlue20</color>
     <color name="fx_mobile_icon_color_accent_pink">@color/photonPink20</color>
@@ -128,7 +128,7 @@
     <!-- Action Primary Icon -->
     <color name="fx_mobile_icon_color_action_primary" tools:ignore="UnusedResources">@color/photonLightGrey05</color>
     <!-- Action Secondary Icon -->
-    <color name="fx_mobile_icon_color_action_secondary">@color/photonDarkGrey90</color>
+    <color name="fx_mobile_icon_color_action_secondary">@color/photonLightGrey05</color>
     <!-- Action Tertiary Icon -->
     <color name="fx_mobile_icon_color_action_tertiary" tools:ignore="UnusedResources">@color/photonLightGrey05</color>
     <!-- Reader, ETP Shield -->
@@ -149,7 +149,7 @@
     <!-- Form parts -->
     <color name="fx_mobile_border_color_disabled" tools:ignore="UnusedResources">@color/photonLightGrey05A40</color>
     <!-- Form parts -->
-    <color name="fx_mobile_border_color_warning" tools:ignore="UnusedResources">@color/photonRed40</color>
+    <color name="fx_mobile_border_color_critical" tools:ignore="UnusedResources">@color/photonRed20</color>
     <!-- Toolbar divider -->
     <color name="fx_mobile_border_color_toolbar_divider">@color/photonDarkGrey60</color>
 

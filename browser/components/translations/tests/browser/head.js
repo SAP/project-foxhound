@@ -56,6 +56,12 @@ function click(element, message) {
   });
 }
 
+function focusElementAndSynthesizeKey(element, key) {
+  assertVisibility({ visible: { element } });
+  element.focus();
+  EventUtils.synthesizeKey(key);
+}
+
 /**
  * Get all elements that match the l10n id.
  *
@@ -297,6 +303,20 @@ class SharedTranslationsTestUtils {
   }
 
   /**
+   * Asserts that the given element has the expected L10nId.
+   *
+   * @param {Element} element - The element to assert against.
+   * @param {string} l10nId - The expected localization id.
+   */
+  static _assertL10nId(element, l10nId) {
+    is(
+      element.getAttribute("data-l10n-id"),
+      l10nId,
+      `The element ${element.id} should have L10n Id ${l10nId}.`
+    );
+  }
+
+  /**
    * Asserts that the mainViewId of the panel matches the given string.
    *
    * @param {FullPageTranslationsPanel | SelectTranslationsPanel} panel
@@ -366,6 +386,28 @@ class SharedTranslationsTestUtils {
     }
 
     assertVisibility({ hidden, visible });
+  }
+
+  /**
+   * Asserts that the given elements are focusable in order
+   * via the tab key, starting with the first element already
+   * focused and ending back on that same first element.
+   *
+   * @param {Element[]} elements - The focusable elements.
+   */
+  static _assertTabIndexOrder(elements) {
+    const activeElementAtStart = document.activeElement;
+
+    if (elements.length) {
+      elements[0].focus();
+      elements.push(elements[0]);
+    }
+    for (const element of elements) {
+      SharedTranslationsTestUtils._assertHasFocus(element);
+      EventUtils.synthesizeKey("KEY_Tab");
+    }
+
+    activeElementAtStart.focus();
   }
 
   /**
@@ -696,11 +738,7 @@ class FullPageTranslationsTestUtils {
    */
   static #assertPanelHeaderL10nId(l10nId) {
     const { header } = FullPageTranslationsPanel.elements;
-    is(
-      header.getAttribute("data-l10n-id"),
-      l10nId,
-      "The translations panel header should match the expected data-l10n-id"
-    );
+    SharedTranslationsTestUtils._assertL10nId(header, l10nId);
   }
 
   /**
@@ -710,11 +748,7 @@ class FullPageTranslationsTestUtils {
    */
   static #assertPanelErrorL10nId(l10nId) {
     const { errorMessage } = FullPageTranslationsPanel.elements;
-    is(
-      errorMessage.getAttribute("data-l10n-id"),
-      l10nId,
-      "The translations panel error message should match the expected data-l10n-id"
-    );
+    SharedTranslationsTestUtils._assertL10nId(errorMessage, l10nId);
   }
 
   /**
@@ -727,6 +761,13 @@ class FullPageTranslationsTestUtils {
       FullPageTranslationsPanel,
       expectedId
     );
+
+    const panelView = document.getElementById(expectedId);
+    const label = document.getElementById(
+      panelView.getAttribute("aria-labelledby")
+    );
+    ok(label, "The a11y label for the panel view can be found.");
+    assertVisibility({ visible: { label } });
   }
 
   /**
@@ -1111,7 +1152,7 @@ class FullPageTranslationsTestUtils {
   static async #clickSettingsMenuItemByL10nId(l10nId) {
     info(`Toggling the "${l10nId}" settings menu item.`);
     click(getByL10nId(l10nId), `Clicking the "${l10nId}" settings menu item.`);
-    await closeSettingsMenuIfOpen();
+    await closeFullPagePanelSettingsMenuIfOpen();
   }
 
   /**
@@ -1363,10 +1404,21 @@ class SelectTranslationsTestUtils {
    * @param {Function} runInPage - A content-exposed function to run within the context of the page.
    * @param {object} options - Options for how to open the context menu and what properties to assert about the translate-selection item.
    *
-   * The following options will only work when testing SELECT_TEST_PAGE_URL.
-   *
    * @param {boolean} options.expectMenuItemVisible - Whether the select-translations menu item should be present in the context menu.
    * @param {boolean} options.expectedTargetLanguage - The expected target language to be shown in the context menu.
+   *
+   * The following options will work on all test pages that have an <h1> element.
+   *
+   * @param {boolean} options.selectH1 - Selects the first H1 element of the page.
+   * @param {boolean} options.openAtH1 - Opens the context menu at the first H1 element of the page.
+   *
+   * The following options will work only in the PDF_TEST_PAGE_URL.
+   *
+   * @param {boolean} options.selectPdfSpan - Selects the first span of text on the first page of a pdf.
+   * @param {boolean} options.openAtPdfSpan - Opens the context menu at the first span of text on the first page of a pdf.
+   *
+   * The following options will only work when testing SELECT_TEST_PAGE_URL.
+   *
    * @param {boolean} options.selectFrenchSection - Selects the section of French text.
    * @param {boolean} options.selectEnglishSection - Selects the section of English text.
    * @param {boolean} options.selectSpanishSection - Selects the section of Spanish text.
@@ -1380,8 +1432,9 @@ class SelectTranslationsTestUtils {
    * @param {boolean} options.openAtEnglishSentence - Opens the context menu at an English sentence.
    * @param {boolean} options.openAtSpanishSentence - Opens the context menu at a Spanish sentence.
    * @param {boolean} options.openAtFrenchHyperlink - Opens the context menu at a hyperlinked French text.
-   * @param {boolean} options.openAtEnglishHyperlink - Opens the context menu at an hyperlinked English text.
+   * @param {boolean} options.openAtEnglishHyperlink - Opens the context menu at a hyperlinked English text.
    * @param {boolean} options.openAtSpanishHyperlink - Opens the context menu at a hyperlinked Spanish text.
+   * @param {boolean} options.openAtURLHyperlink - Opens the context menu at a hyperlinked URL text.
    * @param {string} [message] - A message to log to info.
    * @throws Throws an error if the properties of the translate-selection item do not match the expected options.
    */
@@ -1390,12 +1443,16 @@ class SelectTranslationsTestUtils {
     {
       expectMenuItemVisible,
       expectedTargetLanguage,
+      selectH1,
+      selectPdfSpan,
       selectFrenchSection,
       selectEnglishSection,
       selectSpanishSection,
       selectFrenchSentence,
       selectEnglishSentence,
       selectSpanishSentence,
+      openAtH1,
+      openAtPdfSpan,
       openAtFrenchSection,
       openAtEnglishSection,
       openAtSpanishSection,
@@ -1405,6 +1462,7 @@ class SelectTranslationsTestUtils {
       openAtFrenchHyperlink,
       openAtEnglishHyperlink,
       openAtSpanishHyperlink,
+      openAtURLHyperlink,
     },
     message
   ) {
@@ -1419,12 +1477,16 @@ class SelectTranslationsTestUtils {
     await SelectTranslationsTestUtils.openContextMenu(runInPage, {
       expectMenuItemVisible,
       expectedTargetLanguage,
+      selectH1,
+      selectPdfSpan,
       selectFrenchSection,
       selectEnglishSection,
       selectSpanishSection,
       selectFrenchSentence,
       selectEnglishSentence,
       selectSpanishSentence,
+      openAtH1,
+      openAtPdfSpan,
       openAtFrenchSection,
       openAtEnglishSection,
       openAtSpanishSection,
@@ -1434,6 +1496,7 @@ class SelectTranslationsTestUtils {
       openAtFrenchHyperlink,
       openAtEnglishHyperlink,
       openAtSpanishHyperlink,
+      openAtURLHyperlink,
     });
 
     const menuItem = maybeGetById(
@@ -1501,21 +1564,6 @@ class SelectTranslationsTestUtils {
   }
 
   /**
-   * Elements that should always be visible in the SelectTranslationsPanel.
-   */
-  static #alwaysPresentElements = {
-    betaIcon: true,
-    copyButton: true,
-    doneButton: true,
-    fromLabel: true,
-    fromMenuList: true,
-    header: true,
-    toLabel: true,
-    toMenuList: true,
-    textArea: true,
-  };
-
-  /**
    * Asserts that for each provided expectation, the visible state of the corresponding
    * element in FullPageTranslationsPanel.elements both exists and matches the visibility expectation.
    *
@@ -1526,7 +1574,31 @@ class SelectTranslationsTestUtils {
     SharedTranslationsTestUtils._assertPanelElementVisibility(
       SelectTranslationsPanel.elements,
       {
-        ...SelectTranslationsTestUtils.#alwaysPresentElements,
+        betaIcon: false,
+        cancelButton: false,
+        copyButton: false,
+        doneButtonPrimary: false,
+        doneButtonSecondary: false,
+        fromLabel: false,
+        fromMenuList: false,
+        fromMenuPopup: false,
+        header: false,
+        initFailureContent: false,
+        initFailureMessageBar: false,
+        mainContent: false,
+        settingsButton: false,
+        textArea: false,
+        toLabel: false,
+        toMenuList: false,
+        toMenuPopup: false,
+        translateButton: false,
+        translateFullPageButton: false,
+        translationFailureMessageBar: false,
+        tryAgainButton: false,
+        tryAnotherSourceMenuList: false,
+        tryAnotherSourceMenuPopup: false,
+        unsupportedLanguageContent: false,
+        unsupportedLanguageMessageBar: false,
         // Overwrite any of the above defaults with the passed in expectations.
         ...expectations,
       }
@@ -1534,26 +1606,181 @@ class SelectTranslationsTestUtils {
   }
 
   /**
+   * Waits for the panel's translation state to reach the given phase,
+   * if it is not currently in that phase already.
+   *
+   * @param {string} phase - The phase of the panel's translation state to wait for.
+   */
+  static async waitForPanelState(phase) {
+    const currentPhase = SelectTranslationsPanel.phase();
+    if (currentPhase !== phase) {
+      info(
+        `Waiting for SelectTranslationsPanel to change state from "${currentPhase}" to "${phase}"`
+      );
+      await BrowserTestUtils.waitForEvent(
+        document,
+        "SelectTranslationsPanelStateChanged",
+        false,
+        event => event.detail.phase === phase
+      );
+    }
+  }
+
+  /**
    * Asserts that the SelectTranslationsPanel UI matches the expected
    * state when the panel has completed its translation.
    */
-  static assertPanelViewTranslated() {
-    const { textArea } = SelectTranslationsPanel.elements;
+  static async assertPanelViewTranslated() {
+    const {
+      copyButton,
+      doneButtonPrimary,
+      fromMenuList,
+      settingsButton,
+      textArea,
+      toMenuList,
+      translateFullPageButton,
+    } = SelectTranslationsPanel.elements;
+    const sameLanguageSelected = fromMenuList.value === toMenuList.value;
+    await SelectTranslationsTestUtils.waitForPanelState("translated");
     ok(
       !textArea.classList.contains("translating"),
       "The textarea should not have the translating class."
     );
+    const isFullPageTranslationsRestrictedForPage =
+      TranslationsParent.isFullPageTranslationsRestrictedForPage(gBrowser);
     SelectTranslationsTestUtils.#assertPanelElementVisibility({
-      ...SelectTranslationsTestUtils.#alwaysPresentElements,
+      betaIcon: true,
+      copyButton: true,
+      doneButtonPrimary: true,
+      fromLabel: true,
+      fromMenuList: true,
+      header: true,
+      mainContent: true,
+      settingsButton: true,
+      textArea: true,
+      toLabel: true,
+      toMenuList: true,
+      translateFullPageButton: !isFullPageTranslationsRestrictedForPage,
     });
     SelectTranslationsTestUtils.#assertConditionalUIEnabled({
-      textArea: true,
       copyButton: true,
-      translateFullPageButton: true,
+      doneButtonPrimary: true,
+      textArea: true,
+      translateFullPageButton:
+        !sameLanguageSelected && !isFullPageTranslationsRestrictedForPage,
     });
+
+    await waitForCondition(
+      () =>
+        !copyButton.classList.contains("copied") &&
+        copyButton.getAttribute("data-l10n-id") ===
+          "select-translations-panel-copy-button",
+      "Waiting for copy button to match the not-copied state."
+    );
+
     SelectTranslationsTestUtils.#assertPanelHasTranslatedText();
     SelectTranslationsTestUtils.#assertPanelTextAreaHeight();
-    SelectTranslationsTestUtils.#assertPanelTextAreaOverflow();
+    await SelectTranslationsTestUtils.#assertPanelTextAreaOverflow();
+
+    let footerButtons;
+    if (sameLanguageSelected || isFullPageTranslationsRestrictedForPage) {
+      footerButtons = [copyButton, doneButtonPrimary];
+    } else {
+      footerButtons =
+        AppConstants.platform === "win"
+          ? [copyButton, doneButtonPrimary, translateFullPageButton]
+          : [copyButton, translateFullPageButton, doneButtonPrimary];
+    }
+
+    SharedTranslationsTestUtils._assertTabIndexOrder([
+      settingsButton,
+      fromMenuList,
+      toMenuList,
+      textArea,
+      ...footerButtons,
+    ]);
+  }
+
+  /**
+   * Asserts that the SelectTranslationsPanel UI matches the expected
+   * state when the language lists fail to initialize upon opening the panel.
+   */
+  static async assertPanelViewInitFailure() {
+    const {
+      cancelButton,
+      initFailureMessageBar,
+      settingsButton,
+      tryAgainButton,
+    } = SelectTranslationsPanel.elements;
+    await SelectTranslationsTestUtils.waitForPanelState("init-failure");
+    SelectTranslationsTestUtils.#assertPanelElementVisibility({
+      header: true,
+      betaIcon: true,
+      cancelButton: true,
+      initFailureContent: true,
+      initFailureMessageBar: true,
+      settingsButton: true,
+      tryAgainButton: true,
+    });
+    SharedTranslationsTestUtils._assertTabIndexOrder([
+      settingsButton,
+      ...(AppConstants.platform === "win"
+        ? [tryAgainButton, cancelButton]
+        : [cancelButton, tryAgainButton]),
+    ]);
+    SharedTranslationsTestUtils._assertHasFocus(tryAgainButton);
+    const ariaDescribedBy = tryAgainButton.getAttribute("aria-describedby");
+    ok(ariaDescribedBy.includes(initFailureMessageBar.id));
+  }
+
+  /**
+   * Asserts that the SelectTranslationsPanel UI matches the expected
+   * state when a translation has failed to complete.
+   */
+  static async assertPanelViewTranslationFailure() {
+    const {
+      cancelButton,
+      fromMenuList,
+      settingsButton,
+      toMenuList,
+      translationFailureMessageBar,
+      tryAgainButton,
+    } = SelectTranslationsPanel.elements;
+    await SelectTranslationsTestUtils.waitForPanelState("translation-failure");
+    SelectTranslationsTestUtils.#assertPanelElementVisibility({
+      header: true,
+      betaIcon: true,
+      cancelButton: true,
+      fromLabel: true,
+      fromMenuList: true,
+      mainContent: true,
+      settingsButton: true,
+      toLabel: true,
+      toMenuList: true,
+      translationFailureMessageBar: true,
+      tryAgainButton: true,
+    });
+    is(
+      document.activeElement,
+      tryAgainButton,
+      "The try-again button should have focus."
+    );
+    is(
+      translationFailureMessageBar.getAttribute("role"),
+      "alert",
+      "The translation failure message bar is an alert."
+    );
+    SharedTranslationsTestUtils._assertTabIndexOrder([
+      settingsButton,
+      fromMenuList,
+      toMenuList,
+      ...(AppConstants.platform === "win"
+        ? [tryAgainButton, cancelButton]
+        : [cancelButton, tryAgainButton]),
+    ]);
+    SharedTranslationsTestUtils._assertHasFocus(tryAgainButton);
+    const ariaDescribedBy = tryAgainButton.getAttribute("aria-describedby");
+    ok(ariaDescribedBy.includes(translationFailureMessageBar.id));
   }
 
   static #assertPanelTextAreaDirection(langTag = null) {
@@ -1571,21 +1798,68 @@ class SelectTranslationsTestUtils {
   }
 
   /**
+   * Asserts that the SelectTranslationsPanel UI matches the expected
+   * state when the panel has completed its translation.
+   */
+  static async assertPanelViewUnsupportedLanguage() {
+    await SelectTranslationsTestUtils.waitForPanelState("unsupported");
+    const {
+      doneButtonSecondary,
+      settingsButton,
+      translateButton,
+      tryAnotherSourceMenuList,
+      unsupportedLanguageMessageBar,
+    } = SelectTranslationsPanel.elements;
+    SelectTranslationsTestUtils.#assertPanelElementVisibility({
+      betaIcon: true,
+      doneButtonSecondary: true,
+      header: true,
+      settingsButton: true,
+      translateButton: true,
+      tryAnotherSourceMenuList: true,
+      unsupportedLanguageContent: true,
+      unsupportedLanguageMessageBar: true,
+    });
+    SelectTranslationsTestUtils.#assertConditionalUIEnabled({
+      doneButtonSecondary: true,
+      translateButton: false,
+    });
+    ok(
+      translateButton.disabled,
+      "The translate button should be disabled when first shown."
+    );
+    SharedTranslationsTestUtils._assertL10nId(
+      unsupportedLanguageMessageBar,
+      "select-translations-panel-unsupported-language-message-known"
+    );
+    SharedTranslationsTestUtils._assertHasFocus(tryAnotherSourceMenuList);
+    SharedTranslationsTestUtils._assertTabIndexOrder([
+      settingsButton,
+      tryAnotherSourceMenuList,
+      doneButtonSecondary,
+    ]);
+  }
+
+  /**
    * Asserts that the SelectTranslationsPanel translated text area is
    * both scrollable and scrolled to the top.
    */
-  static #assertPanelTextAreaOverflow() {
+  static async #assertPanelTextAreaOverflow() {
     const { textArea } = SelectTranslationsPanel.elements;
-    is(
-      textArea.style.overflow,
-      "auto",
-      "The translated-text area should be scrollable."
-    );
+    if (textArea.style.overflow !== "auto") {
+      await BrowserTestUtils.waitForMutationCondition(
+        textArea,
+        { attributes: true, attributeFilter: ["style"] },
+        () => textArea.style.overflow === "auto"
+      );
+    }
     if (textArea.scrollHeight > textArea.clientHeight) {
-      is(
-        textArea.scrollTop,
-        0,
-        "The translated-text area should be scrolled to the top."
+      info("Ensuring that the textarea is scrolled to the top.");
+      await waitForCondition(() => textArea.scrollTop === 0);
+
+      info("Ensuring that the textarea cursor is at the beginning.");
+      await waitForCondition(
+        () => textArea.selectionStart === 0 && textArea.selectionEnd === 0
       );
     }
   }
@@ -1619,77 +1893,30 @@ class SelectTranslationsTestUtils {
    * Asserts that the SelectTranslationsPanel UI matches the expected
    * state when the panel is actively translating text.
    */
-  static assertPanelViewActivelyTranslating() {
+  static async assertPanelViewActivelyTranslating() {
     const { textArea } = SelectTranslationsPanel.elements;
+    const isFullPageTranslationsRestrictedForPage =
+      TranslationsParent.isFullPageTranslationsRestrictedForPage(gBrowser);
+    await SelectTranslationsTestUtils.waitForPanelState("translating");
     ok(
       textArea.classList.contains("translating"),
       "The textarea should have the translating class."
     );
     SelectTranslationsTestUtils.#assertPanelElementVisibility({
-      ...SelectTranslationsTestUtils.#alwaysPresentElements,
+      betaIcon: true,
+      copyButton: true,
+      doneButtonPrimary: true,
+      fromLabel: true,
+      fromMenuList: true,
+      header: true,
+      mainContent: true,
+      settingsButton: true,
+      textArea: true,
+      toLabel: true,
+      toMenuList: true,
+      translateFullPageButton: !isFullPageTranslationsRestrictedForPage,
     });
     SelectTranslationsTestUtils.#assertPanelHasTranslatingPlaceholder();
-  }
-
-  /**
-   * Asserts that the SelectTranslationsPanel UI matches the expected
-   * state when no from-language is selected in the panel.
-   */
-  static async assertPanelViewNoFromLangSelected() {
-    const { textArea } = SelectTranslationsPanel.elements;
-    ok(
-      !textArea.classList.contains("translating"),
-      "The textarea should not have the translating class."
-    );
-    SelectTranslationsTestUtils.#assertPanelElementVisibility({
-      ...SelectTranslationsTestUtils.#alwaysPresentElements,
-    });
-    await SelectTranslationsTestUtils.#assertPanelHasIdlePlaceholder();
-    SelectTranslationsTestUtils.#assertConditionalUIEnabled({
-      textArea: false,
-      copyButton: false,
-      translateFullPageButton: false,
-    });
-    SelectTranslationsTestUtils.assertSelectedFromLanguage(null);
-  }
-
-  /**
-   * Asserts that the SelectTranslationsPanel UI matches the expected
-   * state when no to-language is selected in the panel.
-   */
-  static async assertPanelViewNoToLangSelected() {
-    const { textArea } = SelectTranslationsPanel.elements;
-    ok(
-      !textArea.classList.contains("translating"),
-      "The textarea should not have the translating class."
-    );
-    SelectTranslationsTestUtils.#assertPanelElementVisibility({
-      ...SelectTranslationsTestUtils.#alwaysPresentElements,
-    });
-    SelectTranslationsTestUtils.assertSelectedToLanguage(null);
-    SelectTranslationsTestUtils.#assertConditionalUIEnabled({
-      textArea: false,
-      copyButton: false,
-      translateFullPageButton: false,
-    });
-    await SelectTranslationsTestUtils.#assertPanelHasIdlePlaceholder();
-  }
-
-  /**
-   * Asserts that the SelectTranslationsPanel UI contains the
-   * idle placeholder text.
-   */
-  static async #assertPanelHasIdlePlaceholder() {
-    const { textArea } = SelectTranslationsPanel.elements;
-    const expected = await document.l10n.formatValue(
-      "select-translations-panel-idle-placeholder-text"
-    );
-    is(
-      textArea.value,
-      expected,
-      "Translated text area should be the idle placeholder."
-    );
-    SelectTranslationsTestUtils.#assertPanelTextAreaDirection();
   }
 
   /**
@@ -1697,10 +1924,13 @@ class SelectTranslationsTestUtils {
    * translating placeholder text.
    */
   static async #assertPanelHasTranslatingPlaceholder() {
-    const { textArea } = SelectTranslationsPanel.elements;
+    const { textArea, fromMenuList, toMenuList } =
+      SelectTranslationsPanel.elements;
     const expected = await document.l10n.formatValue(
       "select-translations-panel-translating-placeholder-text"
     );
+    const isFullPageTranslationsRestrictedForPage =
+      TranslationsParent.isFullPageTranslationsRestrictedForPage(gBrowser);
     is(
       textArea.value,
       expected,
@@ -1710,7 +1940,10 @@ class SelectTranslationsTestUtils {
     SelectTranslationsTestUtils.#assertConditionalUIEnabled({
       textArea: true,
       copyButton: false,
-      translateFullPageButton: true,
+      doneButtonPrimary: true,
+      translateFullPageButton:
+        fromMenuList.value !== toMenuList.value &&
+        !isFullPageTranslationsRestrictedForPage,
     });
   }
 
@@ -1723,6 +1956,27 @@ class SelectTranslationsTestUtils {
       SelectTranslationsPanel.elements;
     const fromLanguage = fromMenuList.value;
     const toLanguage = toMenuList.value;
+    const isFullPageTranslationsRestrictedForPage =
+      TranslationsParent.isFullPageTranslationsRestrictedForPage(gBrowser);
+
+    SelectTranslationsTestUtils.#assertPanelTextAreaDirection(toLanguage);
+    SelectTranslationsTestUtils.#assertConditionalUIEnabled({
+      textArea: true,
+      copyButton: true,
+      doneButtonPrimary: true,
+      translateFullPageButton:
+        fromLanguage !== toLanguage && !isFullPageTranslationsRestrictedForPage,
+    });
+
+    if (fromLanguage === toLanguage) {
+      is(
+        SelectTranslationsPanel.getSourceText(),
+        SelectTranslationsPanel.getTranslatedText(),
+        "The source text should passthrough as the translated text."
+      );
+      return;
+    }
+
     const translatedSuffix = ` [${fromLanguage} to ${toLanguage}]`;
     ok(
       textArea.value.endsWith(translatedSuffix),
@@ -1734,45 +1988,32 @@ class SelectTranslationsTestUtils {
         translatedSuffix.length,
       "Expected translated text length to correspond to the source text length."
     );
-    SelectTranslationsTestUtils.#assertPanelTextAreaDirection(toLanguage);
-    SelectTranslationsTestUtils.#assertConditionalUIEnabled({
-      textArea: true,
-      copyButton: true,
-      translateFullPageButton: true,
-    });
   }
 
   /**
    * Asserts the enabled state of action buttons in the SelectTranslationsPanel.
    *
-   * @param {boolean} expectEnabled - Whether the buttons should be enabled (true) or not (false).
+   * @param {Record<string, boolean>} enabledStates
+   *  - An object that maps whether each element should be enabled (true) or disabled (false).
    */
-  static #assertConditionalUIEnabled({
-    copyButton: copyButtonEnabled,
-    translateFullPageButton: translateFullPageButtonEnabled,
-    textArea: textAreaEnabled,
-  }) {
-    const { copyButton, translateFullPageButton, textArea } =
-      SelectTranslationsPanel.elements;
-    is(
-      copyButton.disabled,
-      !copyButtonEnabled,
-      `The copy button should be ${copyButtonEnabled ? "enabled" : "disabled"}.`
-    );
-    is(
-      translateFullPageButton.disabled,
-      !translateFullPageButtonEnabled,
-      `The translate-full-page button should be ${
-        translateFullPageButtonEnabled ? "enabled" : "disabled"
-      }.`
-    );
-    is(
-      textArea.disabled,
-      !textAreaEnabled,
-      `The translated-text area should be ${
-        textAreaEnabled ? "enabled" : "disabled"
-      }.`
-    );
+  static #assertConditionalUIEnabled(enabledStates) {
+    const elements = SelectTranslationsPanel.elements;
+
+    for (const [elementName, expectEnabled] of Object.entries(enabledStates)) {
+      const element = elements[elementName];
+      if (!element) {
+        throw new Error(
+          `SelectTranslationsPanel element '${elementName}' not found.`
+        );
+      }
+      is(
+        element.disabled,
+        !expectEnabled,
+        `The element '${elementName} should be ${
+          expectEnabled ? "enabled" : "disabled"
+        }.`
+      );
+    }
   }
 
   /**
@@ -1820,14 +2061,233 @@ class SelectTranslationsTestUtils {
    */
   static async clickDoneButton() {
     logAction();
-    const { doneButton } = SelectTranslationsPanel.elements;
-    assertVisibility({ visible: { doneButton } });
+    const { doneButtonPrimary, doneButtonSecondary } =
+      SelectTranslationsPanel.elements;
+    let visibleDoneButton;
+    let hiddenDoneButton;
+    if (BrowserTestUtils.isVisible(doneButtonPrimary)) {
+      visibleDoneButton = doneButtonPrimary;
+      hiddenDoneButton = doneButtonSecondary;
+    } else if (BrowserTestUtils.isVisible(doneButtonSecondary)) {
+      visibleDoneButton = doneButtonSecondary;
+      hiddenDoneButton = doneButtonPrimary;
+    } else {
+      throw new Error(
+        "Expected either the primary or secondary done button to be visible."
+      );
+    }
+    assertVisibility({
+      visible: { visibleDoneButton },
+      hidden: { hiddenDoneButton },
+    });
     await SelectTranslationsTestUtils.waitForPanelPopupEvent(
       "popuphidden",
       () => {
-        click(doneButton, "Clicking the done button");
+        click(visibleDoneButton, "Clicking the done button");
       }
     );
+  }
+
+  /**
+   * Simulates clicking the cancel button and waits for the panel to close.
+   */
+  static async clickCancelButton() {
+    logAction();
+    const { cancelButton } = SelectTranslationsPanel.elements;
+    assertVisibility({ visible: { cancelButton } });
+    await SelectTranslationsTestUtils.waitForPanelPopupEvent(
+      "popuphidden",
+      () => {
+        click(cancelButton, "Clicking the cancel button");
+      }
+    );
+  }
+
+  /**
+   * Simulates clicking the copy button and asserts that all relevant states are correctly updated.
+   */
+  static async clickCopyButton() {
+    logAction();
+    const { copyButton } = SelectTranslationsPanel.elements;
+
+    assertVisibility({ visible: { copyButton } });
+    is(
+      SelectTranslationsPanel.phase(),
+      "translated",
+      'The copy button should only be clickable in the "translated" phase'
+    );
+
+    click(copyButton, "Clicking the copy button");
+    await waitForCondition(
+      () =>
+        copyButton.classList.contains("copied") &&
+        copyButton.getAttribute("data-l10n-id") ===
+          "select-translations-panel-copy-button-copied",
+      "Waiting for copy button to match the copied state."
+    );
+
+    const copiedText = SpecialPowers.getClipboardData("text/plain");
+    is(
+      // Because of differences in the clipboard code on Windows, we are going
+      // to explicitly sanitize carriage returns here when checking equality.
+      copiedText.replaceAll("\r", ""),
+      SelectTranslationsPanel.getTranslatedText().replaceAll("\r", ""),
+      "The clipboard should contain the translated text."
+    );
+  }
+
+  /**
+   * Simulates clicking the Translate button in the SelectTranslationsPanel,
+   * then waits for any pending translation effects, based on the provided options.
+   *
+   * @param {object} config
+   * @param {Function} [config.downloadHandler]
+   *  - The function handle expected downloads, resolveDownloads() or rejectDownloads()
+   *    Leave as null to test more granularly, such as testing opening the loading view,
+   *    or allowing for the automatic downloading of files.
+   * @param {boolean} [config.pivotTranslation]
+   *  - True if the expected translation is a pivot translation, otherwise false.
+   *    Affects the number of expected downloads.
+   * @param {Function} [config.viewAssertion]
+   *  - An optional callback function to execute for asserting the panel UI state.
+   */
+  static async clickTranslateButton({
+    downloadHandler,
+    pivotTranslation,
+    viewAssertion,
+  }) {
+    logAction();
+    const {
+      doneButtonSecondary,
+      settingsButton,
+      translateButton,
+      tryAnotherSourceMenuList,
+    } = SelectTranslationsPanel.elements;
+    assertVisibility({ visible: { doneButtonPrimary: translateButton } });
+
+    ok(!translateButton.disabled, "The translate button should be enabled.");
+    SharedTranslationsTestUtils._assertTabIndexOrder([
+      settingsButton,
+      tryAnotherSourceMenuList,
+      ...(AppConstants.platform === "win"
+        ? [translateButton, doneButtonSecondary]
+        : [doneButtonSecondary, translateButton]),
+    ]);
+
+    const translatablePhasePromise =
+      SelectTranslationsTestUtils.waitForPanelState("translatable");
+    click(translateButton);
+    await translatablePhasePromise;
+
+    if (downloadHandler) {
+      await this.handleDownloads({ downloadHandler, pivotTranslation });
+    }
+    if (viewAssertion) {
+      await viewAssertion();
+    }
+  }
+
+  /**
+   * Simulates clicking the translate-full-page button.
+   */
+  static async clickTranslateFullPageButton() {
+    logAction();
+    const { translateFullPageButton } = SelectTranslationsPanel.elements;
+    assertVisibility({ visible: { translateFullPageButton } });
+    click(translateFullPageButton);
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
+      { button: true, circleArrows: false, locale: true, icon: true },
+      "The icon presents the locale."
+    );
+  }
+
+  /**
+   * Simulates clicking the try-again button.
+   *
+   * @param {object} config
+   * @param {Function} [config.downloadHandler]
+   *  - The function handle expected downloads, resolveDownloads() or rejectDownloads()
+   *    Leave as null to test more granularly, such as testing opening the loading view,
+   *    or allowing for the automatic downloading of files.
+   * @param {boolean} [config.pivotTranslation]
+   *  - True if the expected translation is a pivot translation, otherwise false.
+   *    Affects the number of expected downloads.
+   * @param {Function} [config.viewAssertion]
+   *  - An optional callback function to execute for asserting the panel UI state.
+   */
+  static async clickTryAgainButton({
+    downloadHandler,
+    pivotTranslation,
+    viewAssertion,
+  } = {}) {
+    logAction();
+    const { tryAgainButton } = SelectTranslationsPanel.elements;
+    assertVisibility({ visible: { tryAgainButton } });
+
+    const translatablePhasePromise = downloadHandler
+      ? SelectTranslationsTestUtils.waitForPanelState("translatable")
+      : Promise.resolve();
+
+    if (SelectTranslationsPanel.phase() === "init-failure") {
+      // The try-again button reopens the panel from the "init-failure" phase.
+      await SelectTranslationsTestUtils.waitForPanelPopupEvent(
+        "popupshown",
+        () => click(tryAgainButton, "Clicking the try-again button")
+      );
+    } else {
+      // Otherwise the try-again button just attempts to re-translate.
+      click(tryAgainButton, "Clicking the try-again button");
+    }
+
+    if (downloadHandler) {
+      await translatablePhasePromise;
+      await this.handleDownloads({ downloadHandler, pivotTranslation });
+    }
+
+    if (viewAssertion) {
+      await viewAssertion();
+    }
+  }
+
+  /**
+   * Opens the SelectTranslationsPanel settings menu.
+   * Requires that the translations panel is already open.
+   */
+  static async openPanelSettingsMenu() {
+    logAction();
+    const { settingsButton } = SelectTranslationsPanel.elements;
+    assertVisibility({ visible: { settingsButton } });
+    await SharedTranslationsTestUtils._waitForPopupEvent(
+      "select-translations-panel-settings-menupopup",
+      "popupshown",
+      () => click(settingsButton, "Opening the settings menu")
+    );
+    const settingsPageMenuItem = document.getElementById(
+      "select-translations-panel-open-settings-page-menuitem"
+    );
+    const aboutTranslationsMenuItem = document.getElementById(
+      "select-translations-panel-about-translations-menuitem"
+    );
+
+    assertVisibility({
+      visible: {
+        settingsPageMenuItem,
+        aboutTranslationsMenuItem,
+      },
+    });
+  }
+
+  /**
+   * Clicks the SelectTranslationsPanel settings menu item
+   * that leads to the Translations Settings in about:preferences.
+   */
+  static clickTranslationsSettingsPageMenuItem() {
+    logAction();
+    const settingsPageMenuItem = document.getElementById(
+      "select-translations-panel-open-settings-page-menuitem"
+    );
+    assertVisibility({ visible: { settingsPageMenuItem } });
+    click(settingsPageMenuItem);
   }
 
   /**
@@ -1835,6 +2295,19 @@ class SelectTranslationsTestUtils {
    *
    * @param {Function} runInPage - A content-exposed function to run within the context of the page.
    * @param {object} options - Options for opening the context menu.
+   *
+   * @param {boolean} options.expectMenuItemVisible - Whether the select-translations menu item should be present in the context menu.
+   * @param {boolean} options.expectedTargetLanguage - The expected target language to be shown in the context menu.
+   *
+   * The following options will work on all test pages that have an <h1> element.
+   *
+   * @param {boolean} options.selectH1 - Selects the first H1 element of the page.
+   * @param {boolean} options.openAtH1 - Opens the context menu at the first H1 element of the page.
+   *
+   * The following options will work only in the PDF_TEST_PAGE_URL.
+   *
+   * @param {boolean} options.selectPdfSpan - Selects the first span of text on the first page of a pdf.
+   * @param {boolean} options.openAtPdfSpan - Opens the context menu at the first span of text on the first page of a pdf.
    *
    * The following options will only work when testing SELECT_TEST_PAGE_URL.
    *
@@ -1851,8 +2324,9 @@ class SelectTranslationsTestUtils {
    * @param {boolean} options.openAtEnglishSentence - Opens the context menu at an English sentence.
    * @param {boolean} options.openAtSpanishSentence - Opens the context menu at a Spanish sentence.
    * @param {boolean} options.openAtFrenchHyperlink - Opens the context menu at a hyperlinked French text.
-   * @param {boolean} options.openAtEnglishHyperlink - Opens the context menu at an hyperlinked English text.
+   * @param {boolean} options.openAtEnglishHyperlink - Opens the context menu at a hyperlinked English text.
    * @param {boolean} options.openAtSpanishHyperlink - Opens the context menu at a hyperlinked Spanish text.
+   * @param {boolean} options.openAtURLHyperlink - Opens the context menu at a hyperlinked URL text.
    * @throws Throws an error if no valid option was provided for opening the menu.
    */
   static async openContextMenu(runInPage, options) {
@@ -1868,8 +2342,8 @@ class SelectTranslationsTestUtils {
             const selectorFunction =
               TranslationsTest.getSelectors()[data.selectorFunctionName];
             if (typeof selectorFunction === "function") {
-              const paragraph = selectorFunction();
-              TranslationsTest.selectContentElement(paragraph);
+              const element = await selectorFunction();
+              TranslationsTest.selectContentElement(element);
             }
           },
           { selectorFunctionName }
@@ -1877,6 +2351,8 @@ class SelectTranslationsTestUtils {
       }
     };
 
+    await maybeSelectContentFrom("H1");
+    await maybeSelectContentFrom("PdfSpan");
     await maybeSelectContentFrom("FrenchSection");
     await maybeSelectContentFrom("EnglishSection");
     await maybeSelectContentFrom("SpanishSection");
@@ -1898,7 +2374,7 @@ class SelectTranslationsTestUtils {
                 const selectorFunction =
                   TranslationsTest.getSelectors()[data.selectorFunctionName];
                 if (typeof selectorFunction === "function") {
-                  const element = selectorFunction();
+                  const element = await selectorFunction();
                   await TranslationsTest.rightClickContentElement(element);
                 }
               },
@@ -1909,6 +2385,8 @@ class SelectTranslationsTestUtils {
       }
     };
 
+    await maybeOpenContextMenuAt("H1");
+    await maybeOpenContextMenuAt("PdfSpan");
     await maybeOpenContextMenuAt("FrenchSection");
     await maybeOpenContextMenuAt("EnglishSection");
     await maybeOpenContextMenuAt("SpanishSection");
@@ -1918,6 +2396,7 @@ class SelectTranslationsTestUtils {
     await maybeOpenContextMenuAt("FrenchHyperlink");
     await maybeOpenContextMenuAt("EnglishHyperlink");
     await maybeOpenContextMenuAt("SpanishHyperlink");
+    await maybeOpenContextMenuAt("URLHyperlink");
   }
 
   /**
@@ -1931,27 +2410,9 @@ class SelectTranslationsTestUtils {
    * @returns {Promise<void>}
    */
   static async handleDownloads({ downloadHandler, pivotTranslation }) {
-    const { textArea } = SelectTranslationsPanel.elements;
-
     if (downloadHandler) {
-      if (textArea.style.overflow !== "hidden") {
-        await BrowserTestUtils.waitForMutationCondition(
-          textArea,
-          { attributes: true, attributeFilter: ["style"] },
-          () => textArea.style.overflow === "hidden"
-        );
-      }
-
       await SelectTranslationsTestUtils.assertPanelViewActivelyTranslating();
       await downloadHandler(pivotTranslation ? 2 : 1);
-    }
-
-    if (textArea.style.overflow === "hidden") {
-      await BrowserTestUtils.waitForMutationCondition(
-        textArea,
-        { attributes: true, attributeFilter: ["style"] },
-        () => textArea.style.overflow === "auto"
-      );
     }
   }
 
@@ -1965,6 +2426,7 @@ class SelectTranslationsTestUtils {
    * @returns {Promise<void>}
    */
   static async changeSelectedFromLanguage(langTags, options) {
+    logAction(langTags);
     const { fromMenuList, fromMenuPopup } = SelectTranslationsPanel.elements;
     const { openDropdownMenu } = options;
 
@@ -1980,6 +2442,28 @@ class SelectTranslationsTestUtils {
   }
 
   /**
+   * Change the selected language in the try-another-source-language dropdown.
+   *
+   * @param {string} langTag - A BCP-47 language tag.
+   */
+  static async changeSelectedTryAnotherSourceLanguage(langTag) {
+    logAction(langTag);
+    const { tryAnotherSourceMenuList, translateButton } =
+      SelectTranslationsPanel.elements;
+    await SelectTranslationsTestUtils.#changeSelectedLanguageDirectly(
+      [langTag],
+      { menuList: tryAnotherSourceMenuList },
+      {
+        onChangeLanguage: () =>
+          ok(
+            !translateButton.disabled,
+            "The translate button should be enabled after selecting a language."
+          ),
+      }
+    );
+  }
+
+  /**
    * Switches the selected to-language to the provided language tag.
    *
    * @param {string[]} langTags - An array of BCP-47 language tags.
@@ -1991,6 +2475,7 @@ class SelectTranslationsTestUtils {
    * @returns {Promise<void>}
    */
   static async changeSelectedToLanguage(langTags, options) {
+    logAction(langTags);
     const { toMenuList, toMenuPopup } = SelectTranslationsPanel.elements;
     const { openDropdownMenu } = options;
 
@@ -2019,6 +2504,7 @@ class SelectTranslationsTestUtils {
    */
   static async #changeSelectedLanguageDirectly(langTags, elements, options) {
     const { menuList } = elements;
+    const { textArea } = SelectTranslationsPanel.elements;
     const { onChangeLanguage, downloadHandler } = options;
 
     for (const langTag of langTags) {
@@ -2028,14 +2514,23 @@ class SelectTranslationsTestUtils {
         () => menuList.value === langTag
       );
 
+      menuList.focus();
       menuList.value = langTag;
       menuList.dispatchEvent(new Event("command"));
       await menuListUpdated;
     }
 
-    if (downloadHandler) {
-      menuList.focus();
+    // Either of these events should trigger a translation after the selected
+    // language has been changed directly.
+    if (Math.random() < 0.5) {
+      info("Attempting to trigger translation via text-area focus.");
+      textArea.focus();
+    } else {
+      info("Attempting to trigger translation via pressing Enter.");
       EventUtils.synthesizeKey("KEY_Enter");
+    }
+
+    if (downloadHandler) {
       await SelectTranslationsTestUtils.handleDownloads(options);
     }
 
@@ -2112,8 +2607,9 @@ class SelectTranslationsTestUtils {
    * @param {boolean} options.openAtEnglishSentence - Opens the context menu at an English sentence.
    * @param {boolean} options.openAtSpanishSentence - Opens the context menu at a Spanish sentence.
    * @param {boolean} options.openAtFrenchHyperlink - Opens the context menu at a hyperlinked French text.
-   * @param {boolean} options.openAtEnglishHyperlink - Opens the context menu at an hyperlinked English text.
+   * @param {boolean} options.openAtEnglishHyperlink - Opens the context menu at a hyperlinked English text.
    * @param {boolean} options.openAtSpanishHyperlink - Opens the context menu at a hyperlinked Spanish text.
+   * @param {boolean} options.openAtURLHyperlink - Opens the context menu at a hyperlinked URL text.
    * @param {Function} [options.onOpenPanel] - An optional callback function to execute after the panel opens.
    * @param {string|null} [message] - An optional message to log to info.
    * @throws Throws an error if the context menu could not be opened with the provided options.
@@ -2157,6 +2653,25 @@ class SelectTranslationsTestUtils {
     }
     if (expectedToLanguage !== undefined) {
       SelectTranslationsTestUtils.assertSelectedToLanguage(expectedToLanguage);
+    }
+
+    const { panel } = SelectTranslationsPanel.elements;
+
+    const documentRoleElement = panel.querySelector('[role="document"]');
+    ok(documentRoleElement, "The document-role element can be found.");
+
+    const ariaDescription = document.getElementById(
+      documentRoleElement.getAttribute("aria-describedby")
+    );
+    ok(ariaDescription, "The a11y description for the panel can be found.");
+
+    const ariaLabelIds = documentRoleElement
+      .getAttribute("aria-labelledby")
+      .split(" ");
+    for (const id of ariaLabelIds) {
+      const ariaLabel = document.getElementById(id);
+      ok(ariaLabel, `The a11y label element '${id}' can be found.`);
+      assertVisibility({ visible: { ariaLabel } });
     }
   }
 

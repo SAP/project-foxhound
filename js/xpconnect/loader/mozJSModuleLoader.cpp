@@ -788,9 +788,9 @@ class ScriptReaderRunnable final : public nsIRunnable,
     mRv = aRv;
 
     RefPtr<dom::MainThreadStopSyncLoopRunnable> runnable =
-        new dom::MainThreadStopSyncLoopRunnable(
-            mWorkerPrivate, std::move(mSyncLoopTarget), mRv);
-    MOZ_ALWAYS_TRUE(runnable->Dispatch());
+        new dom::MainThreadStopSyncLoopRunnable(std::move(mSyncLoopTarget),
+                                                mRv);
+    MOZ_ALWAYS_TRUE(runnable->Dispatch(mWorkerPrivate));
 
     mWorkerPrivate = nullptr;
     mSyncLoopTarget = nullptr;
@@ -1505,7 +1505,7 @@ nsresult mozJSModuleLoader::GetLoadedJSAndESModules(
 #ifdef STARTUP_RECORDER_ENABLED
 void mozJSModuleLoader::RecordImportStack(JSContext* aCx,
                                           const nsACString& aLocation) {
-  if (!Preferences::GetBool("browser.startup.record", false)) {
+  if (!StaticPrefs::browser_startup_record()) {
     return;
   }
 
@@ -1515,7 +1515,7 @@ void mozJSModuleLoader::RecordImportStack(JSContext* aCx,
 
 void mozJSModuleLoader::RecordImportStack(
     JSContext* aCx, JS::loader::ModuleLoadRequest* aRequest) {
-  if (!Preferences::GetBool("browser.startup.record", false)) {
+  if (!StaticPrefs::browser_startup_record()) {
     return;
   }
 

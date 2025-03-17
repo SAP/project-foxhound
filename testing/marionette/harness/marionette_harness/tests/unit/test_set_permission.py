@@ -10,7 +10,6 @@ class TestSetPermission(MarionetteTestCase):
     def setUp(self):
         super().setUp()
         test_empty = self.marionette.absolute_url("empty.html")
-        self.marionette.set_pref("marionette.setpermission.enabled", True)
         self.marionette.navigate(test_empty)
 
     def query_permission(self, descriptor):
@@ -48,3 +47,7 @@ class TestSetPermission(MarionetteTestCase):
         self.assertEqual(
             self.query_permission({"name": "midi", "sysex": True}), "prompt"
         )
+
+    def test_storage_access(self):
+        self.marionette.set_permission({"name": "storage-access"}, "granted")
+        self.assertEqual(self.query_permission({"name": "storage-access"}), "granted")

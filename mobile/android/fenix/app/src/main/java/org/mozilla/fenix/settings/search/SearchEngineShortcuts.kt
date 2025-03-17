@@ -198,13 +198,13 @@ private fun SearchItem(
                         menuItems = listOf(
                             MenuItem(
                                 stringResource(R.string.search_engine_edit),
-                                color = FirefoxTheme.colors.textWarning,
+                                color = FirefoxTheme.colors.textCritical,
                             ) {
                                 onEditEngineClicked(engine)
                             },
                             MenuItem(
                                 stringResource(R.string.search_engine_delete),
-                                color = FirefoxTheme.colors.textWarning,
+                                color = FirefoxTheme.colors.textCritical,
                             ) {
                                 onDeleteEngineClicked(engine)
                             },
@@ -268,7 +268,7 @@ private fun SearchEngineShortcutsPreview() {
                 initialState = BrowserState(
                     search = SearchState(
                         regionSearchEngines = generateFakeEnginesList(),
-                        disabledSearchEngineIds = listOf("8", "9"),
+                        disabledSearchEngineIds = listOf("7", "8"),
                     ),
                 ),
             ),
@@ -288,13 +288,12 @@ private fun generateFakeEnginesList(): List<SearchEngine> {
         generateFakeEngines("1", "Google"),
         generateFakeEngines("2", "Bing"),
         generateFakeEngines("3", "Bing"),
-        generateFakeEngines("4", "Amazon.com"),
-        generateFakeEngines("5", "DuckDuckGo"),
-        generateFakeEngines("6", "Qwant"),
-        generateFakeEngines("7", "eBay"),
-        generateFakeEngines("8", "Reddit"),
-        generateFakeEngines("9", "YouTube"),
-        generateFakeEngines("10", "Yandex", SearchEngine.Type.CUSTOM),
+        generateFakeEngines("4", "DuckDuckGo"),
+        generateFakeEngines("5", "Qwant"),
+        generateFakeEngines("6", "eBay"),
+        generateFakeEngines("7", "Reddit"),
+        generateFakeEngines("8", "YouTube"),
+        generateFakeEngines("9", "Yandex", SearchEngine.Type.CUSTOM),
     )
 }
 

@@ -71,8 +71,9 @@ already_AddRefed<URL> URL::Constructor(nsISupports* aParent,
                                        const nsACString& aURL, nsIURI* aBase,
                                        ErrorResult& aRv) {
 
-  // Taintfox: add taint operation
+  // Foxhound: copy string to allow propagating taint information
   nsAutoCString urlStr(aURL);
+  urlStr.AssignTaint(aURL.Taint());
   MarkTaintOperation(urlStr, "URL");
 
   nsCOMPtr<nsIURI> uri;
@@ -80,7 +81,7 @@ already_AddRefed<URL> URL::Constructor(nsISupports* aParent,
   if (NS_FAILED(rv)) {
     // No need to warn in this case. It's common to use the URL constructor
     // to determine if a URL is valid and an exception will be propagated.
-    aRv.ThrowTypeError<MSG_INVALID_URL>(urlStr);
+    aRv.ThrowTypeError<MSG_INVALID_URL>(aURL);
     return nullptr;
   }
 

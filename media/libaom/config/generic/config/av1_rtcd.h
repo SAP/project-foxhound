@@ -166,7 +166,7 @@ bool av1_cnn_predict_c(const float **input, int in_width, int in_height, int in_
 void av1_compute_stats_c(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, int use_downsampled_wiener_stats);
 #define av1_compute_stats av1_compute_stats_c
 
-void av1_compute_stats_highbd_c(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
+void av1_compute_stats_highbd_c(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
 #define av1_compute_stats_highbd av1_compute_stats_highbd_c
 
 void av1_convolve_2d_scale_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int x_step_qn, const int subpel_y_qn, const int y_step_qn, ConvolveParams *conv_params);
@@ -531,6 +531,12 @@ void av1_quantize_lp_c(const int16_t *coeff_ptr, intptr_t n_coeffs, const int16_
 
 void av1_resize_and_extend_frame_c(const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CONFIG *dst, const InterpFilter filter, const int phase, const int num_planes);
 #define av1_resize_and_extend_frame av1_resize_and_extend_frame_c
+
+void av1_resize_horz_dir_c(const uint8_t *const input, int in_stride, uint8_t *intbuf, int height, int filteredlength, int width2);
+#define av1_resize_horz_dir av1_resize_horz_dir_c
+
+bool av1_resize_vert_dir_c(uint8_t *intbuf, uint8_t *output, int out_stride, int height, int height2, int width2, int start_col);
+#define av1_resize_vert_dir av1_resize_vert_dir_c
 
 void av1_round_shift_array_c(int32_t *arr, int size, int bit);
 #define av1_round_shift_array av1_round_shift_array_c

@@ -126,8 +126,7 @@ class IconHandler {
       this.#maybeQueueIdle();
     }
     return URL.createObjectURL(
-      new Blob([iconData.buffer]),
-      iconRecord.attachment.mimetype
+      new Blob([iconData.buffer], { type: iconRecord.attachment.mimetype })
     );
   }
 
@@ -175,8 +174,9 @@ class IconHandler {
         await engine.maybeUpdateIconURL(
           record.engineIdentifiers,
           URL.createObjectURL(
-            new Blob([iconData.buffer]),
-            record.attachment.mimetype
+            new Blob([iconData.buffer], {
+              type: record.attachment.mimetype,
+            })
           )
         );
       }
@@ -453,7 +453,10 @@ export class AppProvidedSearchEngine extends SearchEngine {
       this.#blobURLPromise = null;
     }
     this.#blobURLPromise = Promise.resolve(blobURL);
-    lazy.SearchUtils.notifyAction(this, lazy.SearchUtils.MODIFIED_TYPE.CHANGED);
+    lazy.SearchUtils.notifyAction(
+      this,
+      lazy.SearchUtils.MODIFIED_TYPE.ICON_CHANGED
+    );
   }
 
   /**
@@ -491,6 +494,10 @@ export class AppProvidedSearchEngine extends SearchEngine {
 
     if (engineConfig.telemetrySuffix) {
       this._telemetryId += `-${engineConfig.telemetrySuffix}`;
+    }
+
+    if (engineConfig.clickUrl) {
+      this.clickUrl = engineConfig.clickUrl;
     }
 
     this._name = engineConfig.name.trim();

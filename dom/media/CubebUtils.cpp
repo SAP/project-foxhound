@@ -14,6 +14,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Components.h"
+#include "mozilla/SharedThreadPool.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
@@ -186,6 +187,43 @@ static const uint32_t CUBEB_NORMAL_LATENCY_MS = 100;
 static const uint32_t CUBEB_NORMAL_LATENCY_FRAMES = 1024;
 
 namespace CubebUtils {
+nsCString ProcessingParamsToString(cubeb_input_processing_params aParams) {
+  if (aParams == CUBEB_INPUT_PROCESSING_PARAM_NONE) {
+    return "NONE"_ns;
+  }
+  nsCString str;
+  for (auto p : {CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION,
+                 CUBEB_INPUT_PROCESSING_PARAM_AUTOMATIC_GAIN_CONTROL,
+                 CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION,
+                 CUBEB_INPUT_PROCESSING_PARAM_VOICE_ISOLATION}) {
+    if (!(aParams & p)) {
+      continue;
+    }
+    if (!str.IsEmpty()) {
+      str.Append(" | ");
+    }
+    str.Append([&p] {
+      switch (p) {
+        case CUBEB_INPUT_PROCESSING_PARAM_NONE:
+          // Handled above.
+          MOZ_CRASH(
+              "NONE is the absence of a param, thus not for logging here.");
+        case CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION:
+          return "AEC";
+        case CUBEB_INPUT_PROCESSING_PARAM_AUTOMATIC_GAIN_CONTROL:
+          return "AGC";
+        case CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION:
+          return "NS";
+        case CUBEB_INPUT_PROCESSING_PARAM_VOICE_ISOLATION:
+          return "VOICE";
+      }
+      MOZ_ASSERT_UNREACHABLE("Unexpected input processing param");
+      return "<Unknown input processing param>";
+    }());
+  }
+  return str;
+}
+
 RefPtr<CubebHandle> GetCubebUnlocked();
 
 void GetPrefAndSetString(const char* aPref, StaticAutoPtr<char>& aStorage) {
@@ -765,6 +803,14 @@ bool SandboxEnabled() {
 #endif
 }
 
+already_AddRefed<SharedThreadPool> GetCubebOperationThread() {
+  RefPtr<SharedThreadPool> pool = SharedThreadPool::Get("CubebOperation"_ns, 1);
+  const uint32_t kIdleThreadTimeoutMs = 2000;
+  pool->SetIdleThreadMaximumTimeout(
+      PR_MillisecondsToInterval(kIdleThreadTimeoutMs));
+  return pool.forget();
+}
+
 uint32_t MaxNumberOfChannels() {
   RefPtr<CubebHandle> handle = GetCubeb();
   uint32_t maxNumberOfChannels;
@@ -812,13 +858,16 @@ long datacb(cubeb_stream*, void*, const void*, void* out_buffer, long nframes) {
 
 void statecb(cubeb_stream*, void*, cubeb_state) {}
 
-bool EstimatedRoundTripLatencyDefaultDevices(double* aMean, double* aStdDev) {
+bool EstimatedLatencyDefaultDevices(double* aMean, double* aStdDev,
+                                    Side aSide) {
   RefPtr<CubebHandle> handle = GetCubeb();
   if (!handle) {
     MOZ_LOG(gCubebLog, LogLevel::Error, ("No cubeb context, bailing."));
     return false;
   }
-  nsTArray<double> roundtripLatencies;
+  bool includeInput = aSide & Side::Input;
+  bool includeOutput = aSide & Side::Output;
+  nsTArray<double> latencies;
   // Create a cubeb stream with the correct latency and default input/output
   // devices (mono/stereo channels). Wait for two seconds, get the latency a few
   // times.
@@ -878,8 +927,10 @@ bool EstimatedRoundTripLatencyDefaultDevices(double* aMean, double* aStdDev) {
       continue;
     }
 
-    double roundTrip = static_cast<double>(outputLatency + inputLatency) / rate;
-    roundtripLatencies.AppendElement(roundTrip);
+    double latency = static_cast<double>((includeInput ? inputLatency : 0) +
+                                         (includeOutput ? outputLatency : 0)) /
+                     rate;
+    latencies.AppendElement(latency);
   }
   rv = cubeb_stream_stop(stm);
   if (rv != CUBEB_OK) {
@@ -889,22 +940,22 @@ bool EstimatedRoundTripLatencyDefaultDevices(double* aMean, double* aStdDev) {
   *aMean = 0.0;
   *aStdDev = 0.0;
   double variance = 0.0;
-  for (uint32_t i = 0; i < roundtripLatencies.Length(); i++) {
-    *aMean += roundtripLatencies[i];
+  for (uint32_t i = 0; i < latencies.Length(); i++) {
+    *aMean += latencies[i];
   }
 
-  *aMean /= roundtripLatencies.Length();
+  *aMean /= latencies.Length();
 
-  for (uint32_t i = 0; i < roundtripLatencies.Length(); i++) {
-    variance += pow(roundtripLatencies[i] - *aMean, 2.);
+  for (uint32_t i = 0; i < latencies.Length(); i++) {
+    variance += pow(latencies[i] - *aMean, 2.);
   }
-  variance /= roundtripLatencies.Length();
+  variance /= latencies.Length();
 
   *aStdDev = sqrt(variance);
 
   MOZ_LOG(gCubebLog, LogLevel::Debug,
-          ("Default device roundtrip latency in seconds %lf (stddev: %lf)",
-           *aMean, *aStdDev));
+          ("Default devices latency in seconds %lf (stddev: %lf)", *aMean,
+           *aStdDev));
 
   cubeb_stream_destroy(stm);
 

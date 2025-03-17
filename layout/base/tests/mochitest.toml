@@ -177,8 +177,6 @@ support-files = [
   "bug977003_inner_2.html",
   "bug977003_inner_3.html",
   "bug977003_inner_4.html",
-  "bug977003_inner_5.html",
-  "bug977003_inner_6.html",
 ]
 
 ["test_bug990340.html"]
@@ -247,6 +245,7 @@ support-files = ["file_dynamic_toolbar_max_height.html"]
 ["test_emulate_color_scheme.html"]
 
 ["test_event_target_radius.html"]
+support-files = ["helper_bug1733509.html"]
 skip-if = ["xorigin"] # JavaScript error: resource://specialpowers/SpecialPowersChild.sys.mjs, line 73: SecurityError: Permission denied to access property "windowUtils" on cross-origin object
 
 ["test_frame_reconstruction_body_table.html"]
@@ -501,6 +500,8 @@ support-files = [
   "bug1670531-3.html",
   "bug1670531-3-ref.html",
   "bug1670531-4.html",
+  "bug1893673.html",
+  "bug1893673-ref.html",
   "collapse-selection-into-editing-host-during-blur-of-input.html",
   "collapse-selection-into-editing-host-during-blur-of-input-ref.html",
   "image_rgrg-256x256.png",
@@ -558,6 +559,8 @@ support-files = [
   "bug1518339-2-ref.html",
   "bug1529492-1.html",
   "bug1529492-1-ref.html",
+  "bug1896051.html",
+  "bug1896051-ref.html",
   "chrome/blue-32x32.png",
 ]
 

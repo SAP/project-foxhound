@@ -342,6 +342,9 @@ support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js
 run-if = ["os == 'win'"] # Only Windows 1809+ supports pen input synthesis
 support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js"]
 
+["test_click_hold_context_menus.html"]
+skip-if = ["os == 'mac'"]
+
 ["test_click_on_reframed_generated_text.html"]
 
 ["test_click_on_restyled_element.html"]
@@ -502,6 +505,8 @@ skip-if = ["os == 'android'"] # timeout
 ["test_text_event_in_content.html"]
 
 ["test_unbound_before_in_active_chain.html"]
+
+["test_unicode_input_on_windows_with_emulation.html"]
 
 ["test_use_conflated_keypress_event_model_on_newer_Office_Online_Server.html"]
 

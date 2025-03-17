@@ -3,14 +3,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* stylelint-disable max-nesting-depth */
 :root {
+  color-scheme: light;
   --newtab-background-color: #F9F9FB;
   --newtab-background-color-secondary: #FFF;
   --newtab-text-primary-color: rgb(21, 20, 26);
-  --newtab-primary-action-background: rgb(0, 97, 224);
+  --newtab-contextual-text-primary-color: light-dark(var(--newtab-text-primary-color), rgb(251, 251, 254));
+  --newtab-primary-action-background: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
   --newtab-primary-action-background-pocket: rgb(0, 128, 120);
   --newtab-text-secondary-color: color-mix(in srgb, var(--newtab-text-primary-color) 70%, transparent);
+  --newtab-contextual-text-secondary-color: color-mix(in srgb, var(--newtab-contextual-text-primary-color) 70%, transparent);
+  --newtab-weather-background-color: light-dark(rgba(255, 255, 255, 70%), rgba(35, 34, 43, 70%));
   --newtab-element-hover-color: color-mix(in srgb, var(--newtab-background-color) 90%, #000);
   --newtab-element-active-color: color-mix(in srgb, var(--newtab-background-color) 80%, #000);
+  --newtab-button-background: var(--button-background-color);
+  --newtab-button-focus-background: var(--newtab-button-background);
+  --newtab-button-focus-border: var(--focus-outline-color);
+  --newtab-button-hover-background: var(--button-background-color-hover);
+  --newtab-button-active-background: var(--button-background-color-active);
+  --newtab-button-text: var(--button-text-color);
+  --newtab-button-static-background: light-dark(#F0F0F4, #2B2A33);
+  --newtab-button-static-focus-background: var(--newtab-button-static-background);
+  --newtab-button-static-hover-background: light-dark(#E0E0E6, #52525E);
+  --newtab-button-static-active-background: light-dark(#CFCFD8, #5B5B66);
   --newtab-element-secondary-color: color-mix(in srgb, currentColor 5%, transparent);
   --newtab-element-secondary-hover-color: color-mix(in srgb, currentColor 12%, transparent);
   --newtab-element-secondary-active-color: color-mix(in srgb, currentColor 25%, transparent);
@@ -21,7 +35,7 @@
   --newtab-primary-action-background-dimmed: color-mix(in srgb, var(--newtab-primary-action-background) 25%, transparent);
   --newtab-primary-action-background-pocket-dimmed: color-mix(in srgb, var(--newtab-primary-action-background-pocket) 25%, transparent);
   --newtab-border-color: color-mix(in srgb, var(--newtab-background-color) 75%, #000);
-  --newtab-wordmark-color: #20123A;
+  --newtab-wordmark-color: light-dark(#20123A, rgb(251, 251, 254));
   --newtab-status-success: #058B00;
   --newtab-status-error: #D70022;
   --newtab-inner-box-shadow-color: rgba(0, 0, 0, 0.1);
@@ -31,10 +45,11 @@
   --newtab-button-secondary-color: inherit;
 }
 :root[lwt-newtab-brighttext] {
+  color-scheme: dark;
   --newtab-background-color: #2B2A33;
   --newtab-background-color-secondary: rgb(66, 65, 77);
   --newtab-text-primary-color: rgb(251, 251, 254);
-  --newtab-primary-action-background: rgb(0, 221, 255);
+  --newtab-contextual-text-primary-color: light-dark(rgb(21, 20, 26), var(--newtab-text-primary-color));
   --newtab-primary-action-background-pocket: rgb(0, 221, 255);
   --newtab-primary-action-background-pocket-dimmed: color-mix(in srgb, var(--newtab-primary-action-background) 25%, transparent);
   --newtab-primary-element-hover-color: color-mix(in srgb, var(--newtab-primary-action-background) 55%, #FFF);
@@ -46,7 +61,6 @@
   --newtab-element-secondary-active-color: color-mix(in srgb, currentColor 30%, transparent);
   --newtab-border-color: color-mix(in srgb, var(--newtab-background-color) 75%, #FFF);
   --newtab-primary-element-text-color: rgb(43, 42, 51);
-  --newtab-wordmark-color: rgb(251, 251, 254);
   --newtab-status-success: #7C6;
 }
 
@@ -61,7 +75,7 @@
   background-size: 16px;
   -moz-context-properties: fill;
   display: inline-block;
-  color: var(--newtab-text-primary-color);
+  color: var(--icon-color);
   fill: currentColor;
   height: 16px;
   vertical-align: middle;
@@ -110,6 +124,9 @@
 }
 .icon.icon-info {
   background-image: url("chrome://global/skin/icons/info.svg");
+}
+.icon.icon-info-critical {
+  background-image: url("chrome://activity-stream/content/data/content/assets/glyph-info-critical-16.svg");
 }
 .icon.icon-help {
   background-image: url("chrome://global/skin/icons/help.svg");
@@ -190,6 +207,9 @@
 }
 .icon.icon-webextension {
   background-image: url("chrome://activity-stream/content/data/content/assets/glyph-webextension-16.svg");
+}
+.icon.icon-weather {
+  background-image: url("chrome://browser/skin/weather/sunny.svg");
 }
 .icon.icon-highlights {
   background-image: url("chrome://global/skin/icons/highlights.svg");

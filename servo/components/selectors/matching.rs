@@ -9,7 +9,8 @@ use crate::attr::{
 use crate::bloom::{BloomFilter, BLOOM_HASH_MASK};
 use crate::kleene_value::KleeneValue;
 use crate::parser::{
-    AncestorHashes, Combinator, Component, LocalName, NthSelectorData, RelativeSelectorMatchHint,
+    AncestorHashes, Combinator, Component, FeaturelessHostMatches, LocalName, NthSelectorData,
+    RelativeSelectorMatchHint,
 };
 use crate::parser::{
     NonTSPseudoClass, RelativeSelector, Selector, SelectorImpl, SelectorIter, SelectorList,
@@ -362,12 +363,7 @@ where
 
     let iter = selector.iter_from(selector.len() - from_offset);
     debug_assert!(
-        iter.clone().next().is_some() ||
-            (from_offset != selector.len() &&
-                matches!(
-                    selector.combinator_at_parse_order(from_offset),
-                    Combinator::SlotAssignment | Combinator::PseudoElement
-                )),
+        iter.clone().next().is_some() || from_offset != selector.len(),
         "Got the math wrong: {:?} | {:?} | {} {}",
         selector,
         selector.iter_raw_match_order().as_slice(),
@@ -797,11 +793,24 @@ where
             // Since we know that the parent is a shadow root, we necessarily
             // are in a shadow tree of the host, and the next selector will only
             // match if the selector is a featureless :host selector.
-            if !selector.clone().is_featureless_host_selector() {
+            let matches_featureless_host = selector.clone().is_featureless_host_selector();
+            if matches_featureless_host.intersects(FeaturelessHostMatches::FOR_HOST) {
+                // May not match the inner selector, but we can't really call that here.
+                return element.containing_shadow_host()
+            } else if matches_featureless_host.intersects(FeaturelessHostMatches::FOR_SCOPE) {
+                let host = element.containing_shadow_host();
+                // If this element's shadow host matches the `:scope` element, we should
+                // treat the `:scope` selector as featureless.
+                // See https://github.com/w3c/csswg-drafts/issues/9025.
+                if context.scope_element.is_some() &&
+                    context.scope_element.clone() == host.clone().map(|e| e.opaque())
+                {
+                    return host;
+                }
+                return None;
+            } else {
                 return None;
             }
-
-            element.containing_shadow_host()
         },
         Combinator::Part => host_for_part(element, context),
         Combinator::SlotAssignment => assigned_slot(element, context),
@@ -1199,7 +1208,7 @@ where
         Component::Host(ref selector) => {
             return matches_host(element, selector.as_ref(), &mut context.shared, rightmost);
         },
-        Component::ParentSelector | Component::Scope => match context.shared.scope_element {
+        Component::ParentSelector | Component::Scope | Component::ImplicitScope => match context.shared.scope_element {
             Some(ref scope_element) => element.opaque() == *scope_element,
             None => element.is_root(),
         },

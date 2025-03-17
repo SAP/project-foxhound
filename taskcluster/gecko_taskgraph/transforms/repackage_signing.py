@@ -21,7 +21,7 @@ repackage_signing_description_schema = Schema(
         Optional("label"): str,
         Optional("attributes"): task_description_schema["attributes"],
         Optional("dependencies"): task_description_schema["dependencies"],
-        Optional("job-from"): task_description_schema["job-from"],
+        Optional("task-from"): task_description_schema["task-from"],
         Optional("treeherder"): task_description_schema["treeherder"],
         Optional("shipping-product"): task_description_schema["shipping-product"],
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
@@ -29,10 +29,10 @@ repackage_signing_description_schema = Schema(
 )
 
 SIGNING_FORMATS = {
-    "target.installer.exe": ["autograph_authenticode_sha2_stub"],
-    "target.stub-installer.exe": ["autograph_authenticode_sha2_stub"],
-    "target.installer.msi": ["autograph_authenticode_sha2"],
-    "target.installer.msix": ["autograph_authenticode_sha2"],
+    "target.installer.exe": ["autograph_authenticode_202404_stub"],
+    "target.stub-installer.exe": ["autograph_authenticode_202404_stub"],
+    "target.installer.msi": ["autograph_authenticode_202404"],
+    "target.installer.msix": ["autograph_authenticode_202404"],
 }
 
 transforms = TransformSequence()

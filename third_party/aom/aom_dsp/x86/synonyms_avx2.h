@@ -53,17 +53,6 @@ static INLINE __m256i yy_set2_epi16(int16_t a, int16_t b) {
   return _mm256_setr_epi16(a, b, a, b, a, b, a, b, a, b, a, b, a, b, a, b);
 }
 
-// The _mm256_set1_epi64x() intrinsic is undefined for some Visual Studio
-// compilers. The following function is equivalent to _mm256_set1_epi64x()
-// acting on a 32-bit integer.
-static INLINE __m256i yy_set1_64_from_32i(int32_t a) {
-#if defined(_MSC_VER) && defined(_M_IX86) && _MSC_VER < 1900
-  return _mm256_set_epi32(0, a, 0, a, 0, a, 0, a);
-#else
-  return _mm256_set1_epi64x((uint32_t)a);
-#endif
-}
-
 // Some compilers don't have _mm256_set_m128i defined in immintrin.h. We
 // therefore define an equivalent function using a different intrinsic.
 // ([ hi ], [ lo ]) -> [ hi ][ lo ]

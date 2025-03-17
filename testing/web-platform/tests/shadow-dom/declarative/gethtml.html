@@ -12,7 +12,7 @@
 <script>
 function testElementType(allowsShadowDom, elementType, runGetHTMLOnShadowRoot,
       lightDOMContent, declarativeShadowDom, mode, delegatesFocus,
-      serializable, clonable) {
+      serializable, clonable, emptyShadowTree) {
   const t = test(t => {
     // Create and attach element
     let wrapper;
@@ -29,7 +29,6 @@ function testElementType(allowsShadowDom, elementType, runGetHTMLOnShadowRoot,
     }
 
     let shadowRoot;
-    const isOpen = mode === 'open';
     let initDict = {mode: mode, delegatesFocus: delegatesFocus, clonable};
     let expectedSerializable = null;
     switch (serializable) {
@@ -47,12 +46,8 @@ function testElementType(allowsShadowDom, elementType, runGetHTMLOnShadowRoot,
           `shadowrootmode=${mode}${delegatesAttr}${serializableAttr}` +
           `${clonableAttr}>`;
       wrapper.setHTMLUnsafe(html);
-      if (isOpen) {
-        shadowRoot = wrapper.firstElementChild.shadowRoot;
-      } else {
-        // For closed shadow root, we rely on the behavior of attachShadow to return it to us
-        shadowRoot = wrapper.firstElementChild.attachShadow(initDict);
-      }
+      // Get hold of the declarative shadow root in a way that works when its mode is "closed"
+      shadowRoot = wrapper.firstElementChild.attachShadow(initDict);
     } else {
       // Imperative shadow dom
       const element = document.createElement(elementType);
@@ -68,32 +63,26 @@ function testElementType(allowsShadowDom, elementType, runGetHTMLOnShadowRoot,
 
     if (allowsShadowDom) {
       const correctShadowHtml = `<template shadowrootmode="${mode}"` +
-          `${delegatesAttr}${serializableAttr}${clonableAttr}><slot></slot>` +
-          `</template>`;
+          `${delegatesAttr}${serializableAttr}${clonableAttr}>` +
+          (emptyShadowTree ? `` : `<slot></slot>`) + `</template>`;
       const correctHtml = `<${elementType}>${correctShadowHtml}` +
           `${lightDOMContent}</${elementType}>`;
       assert_equals(shadowRoot.mode,mode);
       assert_equals(shadowRoot.delegatesFocus,delegatesFocus);
       assert_equals(shadowRoot.serializable,expectedSerializable);
       assert_equals(shadowRoot.clonable,clonable);
-      shadowRoot.appendChild(document.createElement('slot'));
+      if (!emptyShadowTree) {
+        shadowRoot.appendChild(document.createElement('slot'));
+      }
       const emptyElement = `<${elementType}>${lightDOMContent}</${elementType}>`;
-      if (isOpen) {
-        if (expectedSerializable) {
-          assert_equals(wrapper.getHTML({serializableShadowRoots: true}),
-              correctHtml);
-          assert_equals(wrapper.firstElementChild.getHTML({
-              serializableShadowRoots: true}),
-              `${correctShadowHtml}${lightDOMContent}`);
-        } else {
-          assert_equals(wrapper.getHTML({serializableShadowRoots: true}), emptyElement);
-        }
-      } else {
-        // Closed shadow roots should not be returned unless shadowRoots specifically contains the shadow root:
+      if (expectedSerializable) {
         assert_equals(wrapper.getHTML({serializableShadowRoots: true}),
-            emptyElement);
-        assert_equals(wrapper.getHTML({serializableShadowRoots: true,
-            shadowRoots: []}), emptyElement);
+            correctHtml);
+        assert_equals(wrapper.firstElementChild.getHTML({
+            serializableShadowRoots: true}),
+            `${correctShadowHtml}${lightDOMContent}`);
+      } else {
+        assert_equals(wrapper.getHTML({serializableShadowRoots: true}), emptyElement);
       }
       // If we provide the shadow root, serialize it, regardless of serializableShadowRoots.
       assert_equals(wrapper.getHTML({serializableShadowRoots: true, shadowRoots:
@@ -117,7 +106,8 @@ function testElementType(allowsShadowDom, elementType, runGetHTMLOnShadowRoot,
       `<${elementType}>${lightDOMContent}${allowsShadowDom ?
       `, with ${declarativeShadowDom ? 'declarative' : 'imperative'} shadow, ` +
       `mode=${mode}, delegatesFocus=${delegatesFocus}, ` +
-      `serializable=${serializable}, clonable=${clonable}.` : ''}`);
+      `serializable=${serializable}, clonable=${clonable},` : ''}` +
+      ` with${emptyShadowTree ? `out` : ``} shadow tree contents.`);
 }
 
 function runAllTests() {
@@ -133,9 +123,12 @@ function runAllTests() {
               for (const clonable of [false, true]) {
                 for (const mode of ['open', 'closed']) {
                   for (const serializable of [undefined, 'false', 'true']) {
-                    testElementType(true, elementName, runGetHTMLOnShadowRoot,
-                        lightDOMContent, declarativeShadowDom, mode,
-                        delegatesFocus, serializable, clonable);
+                    for (const emptyShadowTree of [false, true]) {
+                      testElementType(true, elementName, runGetHTMLOnShadowRoot,
+                          lightDOMContent, declarativeShadowDom, mode,
+                          delegatesFocus, serializable, clonable,
+                          emptyShadowTree);
+                    }
                   }
                 }
               }

@@ -62,7 +62,11 @@ MediaKeySession::MediaKeySession(nsPIDOMWindowInner* aParent, MediaKeys* aKeys,
       mUninitialized(true),
       mKeyStatusMap(new MediaKeyStatusMap(aParent)),
       mExpiration(JS::GenericNaN()),
-      mHardwareDecryption(aHardwareDecryption) {
+      mHardwareDecryption(aHardwareDecryption),
+      mIsPrivateBrowsing(
+          aParent->GetExtantDoc() &&
+          aParent->GetExtantDoc()->NodePrincipal()->GetPrivateBrowsingId() >
+              0) {
   EME_LOG("MediaKeySession[%p,''] ctor", this);
 
   MOZ_ASSERT(aParent);
@@ -250,8 +254,8 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
   // cdm implementation value does not support initDataType as an
   // Initialization Data Type, return a promise rejected with a
   // NotSupportedError. String comparison is case-sensitive.
-  MediaKeySystemAccess::KeySystemSupportsInitDataType(mKeySystem, aInitDataType,
-                                                      mHardwareDecryption)
+  MediaKeySystemAccess::KeySystemSupportsInitDataType(
+      mKeySystem, aInitDataType, mHardwareDecryption, mIsPrivateBrowsing)
       ->Then(GetMainThreadSerialEventTarget(), __func__,
              [self = RefPtr<MediaKeySession>{this}, this,
               initDataType = nsString{aInitDataType},
@@ -277,6 +281,14 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
 void MediaKeySession::CompleteGenerateRequest(const nsString& aInitDataType,
                                               nsTArray<uint8_t>& aData,
                                               DetailedPromise* aPromise) {
+  if (!mKeys->GetCDMProxy()) {
+    EME_LOG("MediaKeySession[%p,'%s'] GenerateRequest() null CDMProxy", this,
+            NS_ConvertUTF16toUTF8(mSessionId).get());
+    aPromise->MaybeRejectWithInvalidStateError(
+        "MediaKeySession.GenerateRequest() lost reference to CDM");
+    return;
+  }
+
   // Let init data be a copy of the contents of the initData parameter.
   // Note: Handled by the CopyArrayBufferViewOrArrayBufferData call above.
 

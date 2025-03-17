@@ -38,7 +38,10 @@ Contents for search-config (archived)
 .. toctree::
    :maxdepth: 2
 
+   SearchServiceHighlevelOverviewArchive
    SearchEngineConfigurationArchive
+   SearchConfigurationSchemaArchive
+   SearchEnginesArchive
 
 API Reference
 -------------

@@ -20,12 +20,29 @@ bool FFmpegEncoderModule<V>::Supports(const EncoderConfig& aConfig) const {
   if (!CanLikelyEncode(aConfig)) {
     return false;
   }
-  return SupportsCodec(aConfig.mCodec) != AV_CODEC_ID_NONE;
+  // We only support L1T2 and L1T3 ScalabilityMode in VPX and AV1 encoders via
+  // libvpx and libaom for now.
+  if ((aConfig.mScalabilityMode != ScalabilityMode::None)) {
+    if (aConfig.mCodec == CodecType::AV1) {
+      // libaom only supports SVC in CBR mode.
+      if (aConfig.mBitrateMode != BitrateMode::Constant) {
+        return false;
+      }
+    } else if (aConfig.mCodec != CodecType::VP8 &&
+               aConfig.mCodec != CodecType::VP9) {
+      return false;
+    }
+  }
+  return SupportsCodec(aConfig.mCodec);
 }
 
 template <int V>
 bool FFmpegEncoderModule<V>::SupportsCodec(CodecType aCodec) const {
-  return GetFFmpegEncoderCodecId<V>(aCodec) != AV_CODEC_ID_NONE;
+  AVCodecID id = GetFFmpegEncoderCodecId<V>(aCodec);
+  if (id == AV_CODEC_ID_NONE) {
+    return false;
+  }
+  return !!FFmpegDataEncoder<V>::FindEncoderWithPreference(mLib, id);
 }
 
 template <int V>

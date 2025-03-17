@@ -42,7 +42,7 @@ add_task(async function test_multistage_zeroOnboarding_experimentAPI() {
     ["div.onboardingContainer", "main.AW_STEP1"]
   );
 
-  await doExperimentCleanup();
+  doExperimentCleanup();
 });
 
 /**
@@ -256,7 +256,7 @@ add_task(async function test_multistage_aboutwelcome_experimentAPI() {
     1
   );
 
-  await doExperimentCleanup();
+  doExperimentCleanup();
 });
 
 /* Test multistage custom backdrop
@@ -307,7 +307,7 @@ add_task(async function test_multistage_aboutwelcome_backdrop() {
     [`div.outer-wrapper.onboardingContainer[style*='${TEST_BACKDROP}']`]
   );
 
-  await doExperimentCleanup();
+  doExperimentCleanup();
 });
 
 add_task(async function test_multistage_aboutwelcome_utm_term() {
@@ -380,54 +380,5 @@ add_task(async function test_multistage_aboutwelcome_utm_term() {
     BrowserTestUtils.removeTab(tab);
   });
 
-  await doExperimentCleanup();
-});
-
-add_task(async function test_multistage_aboutwelcome_newtab_urlbar_focus() {
-  const sandbox = sinon.createSandbox();
-
-  const TEST_CONTENT = [
-    {
-      id: "TEST_SCREEN",
-      content: {
-        position: "split",
-        logo: {},
-        title: "Test newtab url focus",
-        primary_button: {
-          label: "Next",
-          action: {
-            navigate: true,
-          },
-        },
-      },
-    },
-  ];
-  await setAboutWelcomePref(true);
-  await ExperimentAPI.ready();
-  await pushPrefs(["browser.aboutwelcome.newtabUrlBarFocus", true]);
-
-  const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
-    featureId: "aboutwelcome",
-    value: {
-      id: "my-mochitest-experiment",
-      screens: TEST_CONTENT,
-    },
-  });
-
-  const tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:welcome",
-    true
-  );
-  const browser = tab.linkedBrowser;
-  let focused = BrowserTestUtils.waitForEvent(gURLBar.inputField, "focus");
-  await onButtonClick(browser, "button.primary");
-  await focused;
-  Assert.ok(gURLBar.focused, "focus should be on url bar");
-
-  registerCleanupFunction(() => {
-    BrowserTestUtils.removeTab(tab);
-    sandbox.restore();
-  });
-  await doExperimentCleanup();
+  doExperimentCleanup();
 });

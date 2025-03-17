@@ -26,7 +26,6 @@
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/PushEventBinding.h"
 #include "mozilla/dom/PushMessageDataBinding.h"
-#include "mozilla/dom/PushUtil.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/ServiceWorkerOp.h"
@@ -1100,6 +1099,16 @@ already_AddRefed<mozilla::dom::Blob> PushMessageData::Blob(ErrorResult& aRv) {
     }
   }
   return nullptr;
+}
+
+void PushMessageData::Bytes(JSContext* cx, JS::MutableHandle<JSObject*> aRetval,
+                            ErrorResult& aRv) {
+  uint8_t* data = GetContentsCopy();
+  if (data) {
+    UniquePtr<uint8_t[], JS::FreePolicy> dataPtr(data);
+    BodyUtil::ConsumeBytes(cx, aRetval, mBytes.Length(), std::move(dataPtr),
+                           aRv);
+  }
 }
 
 nsresult PushMessageData::EnsureDecodedText() {

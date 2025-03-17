@@ -29,9 +29,9 @@ val logger = Logger("Addon")
  *
  * @property id The unique ID of this add-on.
  * @property author Information about the add-on author.
- * @property downloadUrl The (absolute) URL to download the latest version of the add-on file.
+ * @property downloadUrl The (absolute) URL to download the latest version of the add-on.
  * @property version The add-on version e.g "1.23.0".
- * @property permissions List of the add-on permissions for this File.
+ * @property permissions A single list with all the API and origin permissions for this add-on.
  * @property optionalPermissions Optional permissions requested or granted to this add-on.
  * @property optionalOrigins Optional origin permissions requested or granted to this add-on.
  * @property translatableName A map containing the different translations for the add-on name,
@@ -126,6 +126,19 @@ data class Addon(
     ) : Parcelable
 
     /**
+     * Localized permission from [Permission]
+     *
+     * @property localizedName The localized name of the permission to show in the UI.
+     * @property permission The [Permission] that was localized.
+     */
+    @SuppressLint("ParcelCreator")
+    @Parcelize
+    data class LocalizedPermission(
+        val localizedName: String,
+        val permission: Permission,
+    ) : Parcelable
+
+    /**
      * Returns a list of id resources per each item on the [Addon.permissions] list.
      * Holds the state of the installed web extension of this add-on.
      *
@@ -213,6 +226,14 @@ data class Addon(
      */
     fun translatePermissions(context: Context): List<String> {
         return localizePermissions(permissions, context)
+    }
+
+    /**
+     * Returns a [LocalizedPermission] list of the optional permissions.
+     * @param context Context for resource lookup
+     */
+    fun translateOptionalPermissions(context: Context): List<LocalizedPermission> {
+        return localizeOptionalPermissions(optionalPermissions, context)
     }
 
     /**
@@ -334,6 +355,49 @@ data class Addon(
         }
 
         /**
+         * Takes a list of optional permissions and returns the list of [LocalizedPermission].
+         *
+         * @param optionalPermissions The list of optional permissions
+         * @param context The context for resource lookup
+         */
+        fun localizeOptionalPermissions(
+            optionalPermissions: List<Permission>,
+            context: Context,
+        ): List<LocalizedPermission> {
+            var allUrlAccessPermissionFound = false
+            val notFoundPermissions = mutableListOf<Permission>()
+            val localizedURLAccessPermissions = mutableListOf<LocalizedPermission>()
+
+            val localizedOptionalPermissions: List<LocalizedPermission> = optionalPermissions.mapNotNull {
+                val resourceId = permissionToTranslation[it.name]
+                if (resourceId != null) {
+                    if (resourceId.isAllURLsPermission()) allUrlAccessPermissionFound = true
+                    LocalizedPermission(context.getString(resourceId), it)
+                } else {
+                    notFoundPermissions.add(it)
+                    null
+                }
+            }
+
+            if (!allUrlAccessPermissionFound && notFoundPermissions.isNotEmpty()) {
+                notFoundPermissions.mapNotNullTo(localizedURLAccessPermissions) { permission ->
+                    when (val localizedResourceId = localizeURLAccessPermission(permission.name)) {
+                        null -> {
+                            // Hide if we can't find a string resource to localize the permission
+                            null
+                        }
+                        else -> {
+                            val localizedName = context.getString(localizedResourceId)
+                            LocalizedPermission(localizedName, permission)
+                        }
+                    }
+                }
+            }
+
+            return localizedOptionalPermissions + localizedURLAccessPermissions
+        }
+
+        /**
          * Creates an [Addon] object from a [WebExtension] one. The resulting object might have an installed state when
          * the second method's argument is used.
          *
@@ -344,8 +408,7 @@ data class Addon(
             val metadata = extension.getMetadata()
             val name = metadata?.name ?: extension.id
             val description = metadata?.description ?: extension.id
-            val permissions = metadata?.permissions.orEmpty() +
-                metadata?.hostPermissions.orEmpty()
+            val permissions = metadata?.requiredPermissions.orEmpty() + metadata?.requiredOrigins.orEmpty()
             val averageRating = metadata?.averageRating ?: 0f
             val reviewCount = metadata?.reviewCount ?: 0
             val homepageUrl = metadata?.homepageUrl.orEmpty()
@@ -372,12 +435,15 @@ data class Addon(
                 )
             } ?: emptyList()
 
-            val optionalOrigins = metadata?.optionalOrigins?.map { origin ->
+            val allOrigins = metadata?.optionalOrigins?.toMutableSet() ?: mutableSetOf()
+            allOrigins.addAll(grantedOptionalOrigins)
+
+            val optionalOrigins = allOrigins.map { origin ->
                 Permission(
                     name = origin,
                     granted = grantedOptionalOrigins.contains(origin),
                 )
-            } ?: emptyList()
+            }
 
             return Addon(
                 id = extension.id,
@@ -515,6 +581,14 @@ data class Addon(
 
         private fun Int.isAllURLsPermission(): Boolean {
             return this == R.string.mozac_feature_addons_permissions_all_urls_description
+        }
+
+        /**
+         * Check if a permission is considered [Int.isAllURLsPermission] based on the name
+         */
+        fun Permission.isAllURLsPermission(): Boolean {
+            return permissionToTranslation[name]?.isAllURLsPermission()
+                ?: (localizeURLAccessPermission(name)?.isAllURLsPermission() == true)
         }
 
         internal fun localizeURLAccessPermission(urlAccess: String): Int? {

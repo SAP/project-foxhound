@@ -2,6 +2,8 @@
  * Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+@file:Suppress("ktlint:standard:no-wildcard-imports")
+
 package org.mozilla.geckoview.test
 
 import android.os.Handler
@@ -22,7 +24,6 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.ContentDelegate
 import org.mozilla.geckoview.GeckoSession.HistoryDelegate
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
-import org.mozilla.geckoview.GeckoSession.PermissionDelegate
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.GeckoSession.ScrollDelegate
@@ -1114,11 +1115,7 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     @Test(expected = AssertionError::class)
     @NullDelegate(NavigationDelegate::class)
     fun delegateDuringNextWait_throwOnNullDelegate() {
-        mainSession.delegateDuringNextWait(object : NavigationDelegate {
-            @Suppress("OVERRIDE_DEPRECATION")
-            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>) {
-            }
-        })
+        mainSession.delegateDuringNextWait(object : NavigationDelegate {})
     }
 
     @Test fun wrapSession() {
@@ -2029,9 +2026,6 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     @IgnoreCrash
     @Test
     fun contentCrashIgnored() {
-        // TODO: Bug 1673953
-        assumeThat(sessionRule.env.isFission, equalTo(false))
-
         // TODO: bug 1710940
         assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
 

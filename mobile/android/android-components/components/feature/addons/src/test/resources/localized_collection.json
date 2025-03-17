@@ -19,12 +19,8 @@
         ],
         "average_daily_users": 5060298,
         "categories": {
-          "android": [
-            "security-privacy"
-          ],
-          "firefox": [
-            "privacy-security"
-          ]
+          "android": ["security-privacy"],
+          "firefox": ["privacy-security"]
         },
         "contributions_url": "",
         "created": "2015-04-25T07:26:22Z",
@@ -84,7 +80,7 @@
             "name": "GNU General Public License, version 3.0",
             "url": "http://www.gnu.org/licenses/gpl-3.0.html"
           },
-          "release_notes": "<a href=\"https://outgoing.prod.mozaws.net/v1/a24fd1d9a1598d49cdc2cdc6d3ecd435971254320856ac32db39b0c4d9f5e126/https%3A//github.com/gorhill/uBlock/releases/tag/1.33.2\" rel=\"nofollow\">Complete release notes</a>.\n\n<b>Closed as fixed:</b>\n\n<ul><li><a href=\"https://outgoing.prod.mozaws.net/v1/0e94bcfacc284b39a3164377711e52b9ded21cda0d40494a43fd0052d8816860/https%3A//github.com/uBlockOrigin/uBlock-issues/issues/1480\" rel=\"nofollow\">After downgrading to 1.32.4, uBO is broken</a></li><li><a href=\"https://outgoing.prod.mozaws.net/v1/88ab9531e629dc0a259dbe61b357b13316fa1a9c2f5c93f9208de5937b84a497/https%3A//github.com/uBlockOrigin/uBlock-issues/issues/1478\" rel=\"nofollow\">Whitelisting a site on Chromium Edge still blocks resources fetched by service worker</a></li></ul>\n<a href=\"https://outgoing.prod.mozaws.net/v1/35c6fcff904629a7392564335b09eb1fe5f661f9cd3a6a30534b2c49612c1b5e/https%3A//github.com/gorhill/uBlock/compare/1.33.0...1.33.2\" rel=\"nofollow\">Commits history since 1.33.0</a>.",
+          "release_notes": "<a href=\"https://outgoing.prod.mozaws.net/v1/a24fd1d9a1598d49cdc2cdc6d3ecd435971254320856ac32db39b0c4d9f5e126/https%3A//github.com/gorhill/uBlock/releases/tag/1.33.2\" rel=\"nofollow\">Complete release notes</a>.\n\n<b>Closed as fixed:</b>\n\n<ul><li><a href=\"https://outgoing.prod.mozaws.net/v1/0e94bcfacc284b39a3164377711e52b9ded21cda0d40494a43fd0052d8816860/https%3A//github.com/uBlockOrigin/uBlock-issues/issues/1480\" rel=\"nofollow\">After downgrading to 1.32.4, uBO is broken</a></li><li><a href=\"https://outgoing.prod.mozaws.net/v1/88ab9531e629dc0a259dbe61b357b13316fa1a9c2f5c93f9208de5937b84a497/https%3A//github.com/uBlockOrigin/uBlock-issues/issues/1478\" rel=\"nofollow\">Allowlisting a site on Chromium Edge still blocks resources fetched by service worker</a></li></ul>\n<a href=\"https://outgoing.prod.mozaws.net/v1/35c6fcff904629a7392564335b09eb1fe5f661f9cd3a6a30534b2c49612c1b5e/https%3A//github.com/gorhill/uBlock/compare/1.33.0...1.33.2\" rel=\"nofollow\">Commits history since 1.33.0</a>.",
           "reviewed": null,
           "version": "1.33.2"
         },
@@ -110,93 +106,54 @@
           {
             "id": 238546,
             "caption": "The popup panel: default mode",
-            "image_size": [
-              1011,
-              758
-            ],
+            "image_size": [1011, 758],
             "image_url": "https://addons.cdn.mozilla.net/user-media/previews/full/238/238546.png?modified=1590420038",
-            "thumbnail_size": [
-              640,
-              480
-            ],
+            "thumbnail_size": [640, 480],
             "thumbnail_url": "https://addons.cdn.mozilla.net/user-media/previews/thumbs/238/238546.png?modified=1590420038"
           },
           {
             "id": 238548,
             "caption": "The dashboard: stock filter lists",
-            "image_size": [
-              1011,
-              758
-            ],
+            "image_size": [1011, 758],
             "image_url": "https://addons.cdn.mozilla.net/user-media/previews/full/238/238548.png?modified=1590420038",
-            "thumbnail_size": [
-              640,
-              480
-            ],
+            "thumbnail_size": [640, 480],
             "thumbnail_url": "https://addons.cdn.mozilla.net/user-media/previews/thumbs/238/238548.png?modified=1590420038"
           },
           {
             "id": 238547,
             "caption": "The popup panel: default-deny mode",
-            "image_size": [
-              1011,
-              758
-            ],
+            "image_size": [1011, 758],
             "image_url": "https://addons.cdn.mozilla.net/user-media/previews/full/238/238547.png?modified=1590420038",
-            "thumbnail_size": [
-              640,
-              480
-            ],
+            "thumbnail_size": [640, 480],
             "thumbnail_url": "https://addons.cdn.mozilla.net/user-media/previews/thumbs/238/238547.png?modified=1590420038"
           },
           {
             "id": 238549,
             "caption": "The dashboard: settings",
-            "image_size": [
-              1011,
-              758
-            ],
+            "image_size": [1011, 758],
             "image_url": "https://addons.cdn.mozilla.net/user-media/previews/full/238/238549.png?modified=1590420038",
-            "thumbnail_size": [
-              640,
-              480
-            ],
+            "thumbnail_size": [640, 480],
             "thumbnail_url": "https://addons.cdn.mozilla.net/user-media/previews/thumbs/238/238549.png?modified=1590420038"
           },
           {
             "id": 238552,
             "caption": "The popup panel in Firefox Preview: default mode with more blocking options revealed",
-            "image_size": [
-              970,
-              1800
-            ],
+            "image_size": [970, 1800],
             "image_url": "https://addons.cdn.mozilla.net/user-media/previews/full/238/238552.png?modified=1590420044",
-            "thumbnail_size": [
-              259,
-              480
-            ],
+            "thumbnail_size": [259, 480],
             "thumbnail_url": "https://addons.cdn.mozilla.net/user-media/previews/thumbs/238/238552.png?modified=1590420044"
           },
           {
             "id": 230370,
             "caption": "The unified logger tells you all that uBO is seeing and doing",
-            "image_size": [
-              800,
-              600
-            ],
+            "image_size": [800, 600],
             "image_url": "https://addons.cdn.mozilla.net/user-media/previews/full/230/230370.png?modified=1590420038",
-            "thumbnail_size": [
-              640,
-              480
-            ],
+            "thumbnail_size": [640, 480],
             "thumbnail_url": "https://addons.cdn.mozilla.net/user-media/previews/thumbs/230/230370.png?modified=1590420038"
           }
         ],
         "promoted": {
-          "apps": [
-            "firefox",
-            "android"
-          ],
+          "apps": ["firefox", "android"],
           "category": "recommended"
         },
         "ratings": {

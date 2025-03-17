@@ -20,11 +20,11 @@ origin:
 
   # Human-readable identifier for this version/release
   # Generally "version NNN", "tag SSS", "bookmark SSS"
-  release: 879d14159441796c92f3bbba7f8965e1bcf320ca (Tue Apr 02 21:57:54 2024 +0000).
+  release: a7ef80c44bfb34b08254194b1ab72d4e93ff4b07 (Wed May 29 23:21:38 2024 +0000).
 
   # Revision to pull in
   # Must be a long or short commit SHA (long preferred)
-  revision: 879d14159441796c92f3bbba7f8965e1bcf320ca
+  revision: a7ef80c44bfb34b08254194b1ab72d4e93ff4b07
 
   # The package's license, where possible using the mnemonic from
   # https://spdx.org/licenses/
@@ -56,5 +56,4 @@ vendoring:
       cwd: '{yaml_dir}'
 
   patches:
-    - 0001-errno.patch
-    - 0002-mmloadusi64.patch
+    - mmloadusi64.patch

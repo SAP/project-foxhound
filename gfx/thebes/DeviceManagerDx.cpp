@@ -264,7 +264,7 @@ void DeviceManagerDx::UpdateMonitorInfo() {
   bool systemHdrEnabled = false;
   std::set<HMONITOR> hdrMonitors;
 
-  for (const auto& desc : GetOutputDescs()) {
+  for (const auto desc : EnumerateOutputs()) {
     if (ColorSpaceIsHDR(desc)) {
       systemHdrEnabled = true;
       hdrMonitors.emplace(desc.Monitor);
@@ -277,72 +277,6 @@ void DeviceManagerDx::UpdateMonitorInfo() {
     mHdrMonitors.swap(hdrMonitors);
     mUpdateMonitorInfoRunnable = nullptr;
   }
-}
-
-std::vector<DXGI_OUTPUT_DESC1> DeviceManagerDx::GetOutputDescs() {
-  std::vector<DXGI_OUTPUT_DESC1> outputDescs;
-
-  nsModuleHandle dxgiModule(LoadLibrarySystem32(L"dxgi.dll"));
-  decltype(CreateDXGIFactory1)* createDXGIFactory1 =
-      (decltype(CreateDXGIFactory1)*)GetProcAddress(dxgiModule,
-                                                    "CreateDXGIFactory1");
-  if (!createDXGIFactory1) {
-    return outputDescs;
-  }
-
-  RefPtr<IDXGIFactory1> dxgiFactory;
-  HRESULT hr =
-      createDXGIFactory1(__uuidof(IDXGIFactory1), getter_AddRefs(dxgiFactory));
-  if (FAILED(hr)) {
-    gfxCriticalNoteOnce << "Failed to create DXGI factory: " << gfx::hexa(hr);
-    return outputDescs;
-  }
-
-  for (UINT adapterIndex = 0;; adapterIndex++) {
-    RefPtr<IDXGIAdapter> adapter;
-    hr = dxgiFactory->EnumAdapters(adapterIndex, getter_AddRefs(adapter));
-    if (hr == DXGI_ERROR_NOT_FOUND) {
-      break;
-    }
-    if (FAILED(hr)) {
-      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-      gfxCriticalNoteOnce << "Failed to enumerate DXGI adapter: "
-                          << gfx::hexa(hr);
-      break;
-    }
-
-    for (UINT outputIndex = 0;; ++outputIndex) {
-      RefPtr<IDXGIOutput> output;
-      hr = adapter->EnumOutputs(outputIndex, getter_AddRefs(output));
-      if (hr == DXGI_ERROR_NOT_FOUND) {
-        break;
-      }
-      if (FAILED(hr)) {
-        MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-        gfxCriticalNoteOnce << "Failed to enumulate DXGI output: "
-                            << gfx::hexa(hr);
-        break;
-      }
-
-      RefPtr<IDXGIOutput6> output6;
-      hr = output->QueryInterface(__uuidof(IDXGIOutput6),
-                                  getter_AddRefs(output6));
-      if (FAILED(hr)) {
-        continue;
-      }
-
-      DXGI_OUTPUT_DESC1 desc;
-      if (FAILED(output6->GetDesc1(&desc))) {
-        MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-        gfxCriticalNoteOnce << "Failed to get DXGI output descriptor";
-        continue;
-      }
-
-      outputDescs.push_back(std::move(desc));
-    }
-  }
-
-  return outputDescs;
 }
 
 bool DeviceManagerDx::SystemHDREnabled() {
@@ -704,7 +638,7 @@ void DeviceManagerDx::CreateContentDevicesLocked() {
 
   // We should have been assigned a DeviceStatus from the parent process,
   // GPU process, or the same process if using in-process compositing.
-  MOZ_ASSERT(mDeviceStatus);
+  MOZ_RELEASE_ASSERT(mDeviceStatus);
 
   if (CreateContentDevice() == FeatureStatus::CrashedInHandler) {
     DisableD3D11AfterCrash();
@@ -1106,33 +1040,31 @@ RefPtr<ID3D11Device> DeviceManagerDx::CreateDecoderDevice(
 
   bool isAMD = mDeviceStatus->adapter().VendorId == 0x1002;
   bool reuseDevice = false;
-  if (!aFlags.contains(DeviceFlag::disableDeviceReuse)) {
-    if (gfxVars::ReuseDecoderDevice()) {
-      reuseDevice = true;
-    } else if (isAMD) {
-      reuseDevice = true;
-      gfxCriticalNoteOnce << "Always have to reuse decoder device on AMD";
+  if (gfxVars::ReuseDecoderDevice()) {
+    reuseDevice = true;
+  } else if (isAMD) {
+    reuseDevice = true;
+    gfxCriticalNoteOnce << "Always have to reuse decoder device on AMD";
+  }
+
+  if (reuseDevice) {
+    // Use mCompositorDevice for decoder device only for hardware WebRender.
+    if (aFlags.contains(DeviceFlag::isHardwareWebRenderInUse) &&
+        mCompositorDevice && mCompositorDeviceSupportsVideo &&
+        !mDecoderDevice) {
+      mDecoderDevice = mCompositorDevice;
+
+      RefPtr<ID3D10Multithread> multi;
+      mDecoderDevice->QueryInterface(__uuidof(ID3D10Multithread),
+                                     getter_AddRefs(multi));
+      if (multi) {
+        MOZ_ASSERT(multi->GetMultithreadProtected());
+      }
     }
 
-    if (reuseDevice) {
-      // Use mCompositorDevice for decoder device only for hardware WebRender.
-      if (aFlags.contains(DeviceFlag::isHardwareWebRenderInUse) &&
-          mCompositorDevice && mCompositorDeviceSupportsVideo &&
-          !mDecoderDevice) {
-        mDecoderDevice = mCompositorDevice;
-
-        RefPtr<ID3D10Multithread> multi;
-        mDecoderDevice->QueryInterface(__uuidof(ID3D10Multithread),
-                                       getter_AddRefs(multi));
-        if (multi) {
-          MOZ_ASSERT(multi->GetMultithreadProtected());
-        }
-      }
-
-      if (mDecoderDevice) {
-        RefPtr<ID3D11Device> dev = mDecoderDevice;
-        return dev.forget();
-      }
+    if (mDecoderDevice) {
+      RefPtr<ID3D11Device> dev = mDecoderDevice;
+      return dev.forget();
     }
   }
 

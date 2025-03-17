@@ -32,10 +32,10 @@ import mozilla.components.ui.widgets.withCenterAlignedButtons
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Collections
+import org.mozilla.fenix.GleanMetrics.HomeBookmarks
 import org.mozilla.fenix.GleanMetrics.HomeScreen
 import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.GleanMetrics.Pocket
-import org.mozilla.fenix.GleanMetrics.RecentBookmarks
 import org.mozilla.fenix.GleanMetrics.RecentTabs
 import org.mozilla.fenix.GleanMetrics.TopSites
 import org.mozilla.fenix.HomeActivity
@@ -247,7 +247,13 @@ class DefaultSessionControlController(
     ) {
         Collections.tabRemoved.record(NoExtras())
 
-        if (collection.tabs.size == 1) {
+        // collection tabs hold a reference to the initial collection that could have changed since
+        val updatedCollection =
+            tabCollectionStorage.cachedTabCollections.firstOrNull {
+                it.id == collection.id
+            }
+
+        if (updatedCollection?.tabs?.size == 1) {
             removeCollectionWithUndo(collection)
         } else {
             viewLifecycleScope.launch {
@@ -551,6 +557,6 @@ class DefaultSessionControlController(
             RecentTabs.sectionVisible.set(true)
         }
 
-        RecentBookmarks.recentBookmarksCount.set(state.recentBookmarks.size.toLong())
+        HomeBookmarks.bookmarksCount.set(state.bookmarks.size.toLong())
     }
 }

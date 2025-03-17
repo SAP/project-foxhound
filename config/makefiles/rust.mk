@@ -265,7 +265,7 @@ endif
 ifndef RUSTC_BOOTSTRAP
 RUSTC_BOOTSTRAP := mozglue_static,qcms
 ifdef MOZ_RUST_SIMD
-RUSTC_BOOTSTRAP := $(RUSTC_BOOTSTRAP),encoding_rs,packed_simd
+RUSTC_BOOTSTRAP := $(RUSTC_BOOTSTRAP),encoding_rs,any_all_workaround
 endif
 export RUSTC_BOOTSTRAP
 endif
@@ -344,7 +344,7 @@ endif
 #
 #   $(call CARGO_BUILD)
 define CARGO_BUILD
-$(call RUN_CARGO,rustc$(if $(BUILDSTATUS), --timings))
+$(call RUN_CARGO,rustc$(if $(BUILDSTATUS), --timings)$(if $(findstring k,$(filter-out --%, $(MAKEFLAGS))), --keep-going))
 endef
 
 cargo_host_linker_env_var := CARGO_TARGET_$(call varize,$(RUST_HOST_TARGET))_LINKER

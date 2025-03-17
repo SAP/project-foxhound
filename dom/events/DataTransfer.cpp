@@ -909,7 +909,7 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
   // from another origin or from the OS.
   if (mMode == Mode::ReadWrite) {
     if (nsCOMPtr<nsIGlobalObject> global = GetGlobal()) {
-      transferable->SetRequestingPrincipal(global->PrincipalOrNull());
+      transferable->SetDataPrincipal(global->PrincipalOrNull());
     }
   }
 
@@ -1068,8 +1068,8 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
             nsCOMPtr<nsIInputStream> inputStream;
             storageStream->NewInputStream(0, getter_AddRefs(inputStream));
 
-            RefPtr<nsStringBuffer> stringBuffer =
-                nsStringBuffer::Alloc(totalCustomLength);
+            RefPtr<StringBuffer> stringBuffer =
+                StringBuffer::Alloc(totalCustomLength);
 
             // Subtract off the null terminator when reading.
             totalCustomLength--;
@@ -1083,7 +1083,7 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
               static_cast<char*>(stringBuffer->Data())[amountRead] = 0;
 
               nsCString str;
-              stringBuffer->ToString(totalCustomLength, str);
+              str.Assign(stringBuffer, totalCustomLength);
               nsCOMPtr<nsISupportsCString> strSupports(
                   do_CreateInstance(NS_SUPPORTS_CSTRING_CONTRACTID));
               strSupports->SetData(str);

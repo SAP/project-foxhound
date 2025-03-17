@@ -4,16 +4,18 @@
 
 #include "BounceTrackingProtection.h"
 
+#include "BounceTrackingAllowList.h"
 #include "BounceTrackingProtectionStorage.h"
 #include "BounceTrackingState.h"
 #include "BounceTrackingRecord.h"
+#include "BounceTrackingMapEntry.h"
 
 #include "BounceTrackingStateGlobal.h"
 #include "ErrorList.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/Promise.h"
@@ -21,6 +23,7 @@
 #include "nsHashPropertyBag.h"
 #include "nsIClearDataService.h"
 #include "nsIObserverService.h"
+#include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsISupports.h"
 #include "nsServiceManagerUtils.h"
@@ -28,6 +31,7 @@
 #include "prtime.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "xpcpublic.h"
+#include "mozilla/glean/GleanMetrics.h"
 
 #define TEST_OBSERVER_MSG_RECORD_BOUNCES_FINISHED "test-record-bounces-finished"
 
@@ -38,6 +42,11 @@ NS_IMPL_ISUPPORTS(BounceTrackingProtection, nsIBounceTrackingProtection);
 LazyLogModule gBounceTrackingProtectionLog("BounceTrackingProtection");
 
 static StaticRefPtr<BounceTrackingProtection> sBounceTrackingProtection;
+static bool sInitFailed = false;
+
+// Keeps track of whether the feature is enabled based on pref state.
+// Initialized on first call of GetSingleton.
+Maybe<bool> BounceTrackingProtection::sFeatureIsEnabled;
 
 static constexpr uint32_t TRACKER_PURGE_FLAGS =
     nsIClearDataService::CLEAR_ALL_CACHES | nsIClearDataService::CLEAR_COOKIES |
@@ -53,29 +62,82 @@ already_AddRefed<BounceTrackingProtection>
 BounceTrackingProtection::GetSingleton() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  if (!StaticPrefs::privacy_bounceTrackingProtection_enabled_AtStartup()) {
+  // Init previously failed, don't try again.
+  if (sInitFailed) {
     return nullptr;
   }
 
+  // First call to GetSingleton, check main feature pref and record telemetry.
+  if (sFeatureIsEnabled.isNothing()) {
+    if (StaticPrefs::privacy_bounceTrackingProtection_enabled_AtStartup()) {
+      sFeatureIsEnabled = Some(true);
+
+      glean::bounce_tracking_protection::enabled_at_startup.Set(true);
+      glean::bounce_tracking_protection::enabled_dry_run_mode_at_startup.Set(
+          StaticPrefs::privacy_bounceTrackingProtection_enableDryRunMode());
+    } else {
+      sFeatureIsEnabled = Some(false);
+
+      glean::bounce_tracking_protection::enabled_at_startup.Set(false);
+      glean::bounce_tracking_protection::enabled_dry_run_mode_at_startup.Set(
+          false);
+
+      // Feature is disabled.
+      return nullptr;
+    }
+  }
+  MOZ_ASSERT(sFeatureIsEnabled.isSome());
+
+  // Feature is disabled.
+  if (!sFeatureIsEnabled.value()) {
+    return nullptr;
+  }
+
+  // Feature is enabled, lazily create singleton instance.
   if (!sBounceTrackingProtection) {
     sBounceTrackingProtection = new BounceTrackingProtection();
-
     RunOnShutdown([] { sBounceTrackingProtection = nullptr; });
+
+    nsresult rv = sBounceTrackingProtection->Init();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      sInitFailed = true;
+      return nullptr;
+    }
   }
 
   return do_AddRef(sBounceTrackingProtection);
 }
 
-BounceTrackingProtection::BounceTrackingProtection() {
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug, ("constructor"));
+nsresult BounceTrackingProtection::Init() {
+  MOZ_LOG(
+      gBounceTrackingProtectionLog, LogLevel::Info,
+      ("Init BounceTrackingProtection. Config: enableDryRunMode: %d, "
+       "bounceTrackingActivationLifetimeSec: %d, bounceTrackingGracePeriodSec: "
+       "%d, bounceTrackingPurgeTimerPeriodSec: %d, "
+       "clientBounceDetectionTimerPeriodMS: %d, requireStatefulBounces: %d, "
+       "HasMigratedUserActivationData: %d",
+       StaticPrefs::privacy_bounceTrackingProtection_enableDryRunMode(),
+       StaticPrefs::
+           privacy_bounceTrackingProtection_bounceTrackingActivationLifetimeSec(),
+       StaticPrefs::
+           privacy_bounceTrackingProtection_bounceTrackingGracePeriodSec(),
+       StaticPrefs::
+           privacy_bounceTrackingProtection_bounceTrackingPurgeTimerPeriodSec(),
+       StaticPrefs::
+           privacy_bounceTrackingProtection_clientBounceDetectionTimerPeriodMS(),
+       StaticPrefs::privacy_bounceTrackingProtection_requireStatefulBounces(),
+       StaticPrefs::
+           privacy_bounceTrackingProtection_hasMigratedUserActivationData()));
 
   mStorage = new BounceTrackingProtectionStorage();
 
   nsresult rv = mStorage->Init();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = MaybeMigrateUserInteractionPermissions();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Error,
-            ("storage init failed"));
-    return;
+            ("user activation permission migration failed"));
   }
 
   // Schedule timer for tracker purging. The timer interval is determined by
@@ -85,14 +147,14 @@ BounceTrackingProtection::BounceTrackingProtection() {
 
   // The pref can be set to 0 to disable interval purging.
   if (purgeTimerPeriod == 0) {
-    return;
+    return NS_OK;
   }
 
   MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
           ("Scheduling mBounceTrackingPurgeTimer. Interval: %d seconds.",
            purgeTimerPeriod));
 
-  rv = NS_NewTimerWithCallback(
+  return NS_NewTimerWithCallback(
       getter_AddRefs(mBounceTrackingPurgeTimer),
       [](auto) {
         if (!sBounceTrackingProtection) {
@@ -109,9 +171,6 @@ BounceTrackingProtection::BounceTrackingProtection() {
       },
       purgeTimerPeriod * PR_MSEC_PER_SEC, nsITimer::TYPE_REPEATING_SLACK,
       "mBounceTrackingPurgeTimer");
-
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "Failed to schedule timer for RunPurgeBounceTrackers.");
 }
 
 nsresult BounceTrackingProtection::RecordStatefulBounces(
@@ -134,6 +193,11 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
 
   // For each host in navigable’s bounce tracking record's bounce set:
   for (const nsACString& host : record->GetBounceHosts()) {
+    // Skip "null" entries, they are only used for logging purposes.
+    if (host.EqualsLiteral("null")) {
+      continue;
+    }
+
     // If host equals navigable’s bounce tracking record's initial host,
     // continue.
     if (host == record->GetInitialHost()) {
@@ -187,9 +251,10 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
     }
 
     MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Info,
-            ("%s: Added candidate to mBounceTrackers: %s, Time: %" PRIu64,
+            ("%s: Added bounce tracker candidate. siteHost: %s, "
+             "aBounceTrackingState: %s",
              __FUNCTION__, PromiseFlatCString(host).get(),
-             static_cast<uint64_t>(now)));
+             aBounceTrackingState->Describe().get()));
   }
 
   // Set navigable’s bounce tracking record to null.
@@ -220,30 +285,40 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
 }
 
 nsresult BounceTrackingProtection::RecordUserActivation(
-    nsIPrincipal* aPrincipal) {
+    nsIPrincipal* aPrincipal, Maybe<PRTime> aActivationTime) {
   MOZ_ASSERT(XRE_IsParentProcess());
-
   NS_ENSURE_ARG_POINTER(aPrincipal);
-  NS_ENSURE_TRUE(aPrincipal->GetIsContentPrincipal(), NS_ERROR_FAILURE);
+
+  RefPtr<BounceTrackingProtection> btp = GetSingleton();
+  // May be nullptr if feature is disabled.
+  if (!btp) {
+    return NS_OK;
+  }
+
+  if (!BounceTrackingState::ShouldTrackPrincipal(aPrincipal)) {
+    return NS_OK;
+  }
 
   nsAutoCString siteHost;
   nsresult rv = aPrincipal->GetBaseDomain(siteHost);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Info,
+  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
           ("%s: siteHost: %s", __FUNCTION__, siteHost.get()));
 
   RefPtr<BounceTrackingStateGlobal> globalState =
-      mStorage->GetOrCreateStateGlobal(aPrincipal);
+      btp->mStorage->GetOrCreateStateGlobal(aPrincipal);
   MOZ_ASSERT(globalState);
 
-  return globalState->RecordUserActivation(siteHost, PR_Now());
+  // aActivationTime defaults to current time if no value is provided.
+  return globalState->RecordUserActivation(siteHost,
+                                           aActivationTime.valueOr(PR_Now()));
 }
 
 NS_IMETHODIMP
 BounceTrackingProtection::TestGetBounceTrackerCandidateHosts(
     JS::Handle<JS::Value> aOriginAttributes, JSContext* aCx,
-    nsTArray<nsCString>& aCandidates) {
+    nsTArray<RefPtr<nsIBounceTrackingMapEntry>>& aCandidates) {
   MOZ_ASSERT(aCx);
 
   OriginAttributes oa;
@@ -254,8 +329,11 @@ BounceTrackingProtection::TestGetBounceTrackerCandidateHosts(
   BounceTrackingStateGlobal* globalState = mStorage->GetOrCreateStateGlobal(oa);
   MOZ_ASSERT(globalState);
 
-  for (const nsACString& host : globalState->BounceTrackersMapRef().Keys()) {
-    aCandidates.AppendElement(host);
+  for (auto iter = globalState->BounceTrackersMapRef().ConstIter();
+       !iter.Done(); iter.Next()) {
+    RefPtr<nsIBounceTrackingMapEntry> candidate =
+        new BounceTrackingMapEntry(iter.Key(), iter.Data());
+    aCandidates.AppendElement(candidate);
   }
 
   return NS_OK;
@@ -264,7 +342,7 @@ BounceTrackingProtection::TestGetBounceTrackerCandidateHosts(
 NS_IMETHODIMP
 BounceTrackingProtection::TestGetUserActivationHosts(
     JS::Handle<JS::Value> aOriginAttributes, JSContext* aCx,
-    nsTArray<nsCString>& aHosts) {
+    nsTArray<RefPtr<nsIBounceTrackingMapEntry>>& aHosts) {
   MOZ_ASSERT(aCx);
 
   OriginAttributes oa;
@@ -275,8 +353,11 @@ BounceTrackingProtection::TestGetUserActivationHosts(
   BounceTrackingStateGlobal* globalState = mStorage->GetOrCreateStateGlobal(oa);
   MOZ_ASSERT(globalState);
 
-  for (const nsACString& host : globalState->UserActivationMapRef().Keys()) {
-    aHosts.AppendElement(host);
+  for (auto iter = globalState->UserActivationMapRef().ConstIter();
+       !iter.Done(); iter.Next()) {
+    RefPtr<nsIBounceTrackingMapEntry> candidate =
+        new BounceTrackingMapEntry(iter.Key(), iter.Data());
+    aHosts.AppendElement(candidate);
   }
 
   return NS_OK;
@@ -419,6 +500,11 @@ BounceTrackingProtection::TestAddUserActivation(
   return stateGlobal->RecordUserActivation(host, aActivationTime);
 }
 
+NS_IMETHODIMP
+BounceTrackingProtection::TestMaybeMigrateUserInteractionPermissions() {
+  return MaybeMigrateUserInteractionPermissions();
+}
+
 RefPtr<BounceTrackingProtection::PurgeBounceTrackersMozPromise>
 BounceTrackingProtection::PurgeBounceTrackers() {
   // Prevent multiple purge operations from running at the same time.
@@ -430,9 +516,9 @@ BounceTrackingProtection::PurgeBounceTrackers() {
   }
   mPurgeInProgress = true;
 
-  // Obtain a cache of ContentBlockingAllowList permissions so we only need to
+  // Obtain a cache of allow-list permissions so we only need to
   // fetch permissions once even when we do multiple base domain lookups.
-  ContentBlockingAllowListCache contentBlockingAllowListCache;
+  BounceTrackingAllowList bounceTrackingAllowList;
 
   // Collect promises for all clearing operations to later await on.
   nsTArray<RefPtr<ClearDataMozPromise>> clearPromises;
@@ -452,7 +538,7 @@ BounceTrackingProtection::PurgeBounceTrackers() {
     }
 
     nsresult rv = PurgeBounceTrackersForStateGlobal(
-        stateGlobal, contentBlockingAllowListCache, clearPromises);
+        stateGlobal, bounceTrackingAllowList, clearPromises);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return PurgeBounceTrackersMozPromise::CreateAndReject(rv, __func__);
     }
@@ -468,7 +554,7 @@ BounceTrackingProtection::PurgeBounceTrackers() {
                   aResults) {
             MOZ_ASSERT(aResults.IsResolve(), "AllSettled never rejects");
 
-            MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Info,
+            MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
                     ("%s: Done. Cleared %zu hosts.", __FUNCTION__,
                      aResults.ResolveValue().Length()));
 
@@ -493,7 +579,7 @@ BounceTrackingProtection::PurgeBounceTrackers() {
 
 nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
     BounceTrackingStateGlobal* aStateGlobal,
-    ContentBlockingAllowListCache& aContentBlockingAllowList,
+    BounceTrackingAllowList& aBounceTrackingAllowList,
     nsTArray<RefPtr<ClearDataMozPromise>>& aClearPromises) {
   MOZ_ASSERT(aStateGlobal);
   MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
@@ -557,7 +643,7 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
     // Gecko specific: If the host is on the content blocking allow-list,
     // continue.
     bool isAllowListed = false;
-    rv = aContentBlockingAllowList.CheckForBaseDomain(
+    rv = aBounceTrackingAllowList.CheckForBaseDomain(
         host, aStateGlobal->OriginAttributesRef(), isAllowListed);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
@@ -572,6 +658,10 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
                  __FUNCTION__, PromiseFlatCString(host).get(),
                  originAttributeSuffix.get()));
       }
+      // Remove allow-listed host so we don't need to check in again next purge
+      // run. If it gets classified again and the allow-list entry gets removed
+      // it will be purged in the next run.
+      bounceTrackerCandidatesToRemove.AppendElement(host);
       continue;
     }
 
@@ -581,15 +671,23 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
         new ClearDataMozPromise::Private(__func__);
     RefPtr<ClearDataCallback> cb = new ClearDataCallback(clearPromise, host);
 
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: Purge state for host: %s", __FUNCTION__,
-             PromiseFlatCString(host).get()));
+    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Info,
+            ("%s: Purging bounce tracker. siteHost: %s, bounceTime: %" PRIu64
+             " aStateGlobal: %s",
+             __FUNCTION__, PromiseFlatCString(host).get(), bounceTime,
+             aStateGlobal->Describe().get()));
 
-    // TODO: Bug 1842067: Clear by site + OA.
-    rv = clearDataService->DeleteDataFromBaseDomain(host, false,
-                                                    TRACKER_PURGE_FLAGS, cb);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      clearPromise->Reject(0, __func__);
+    if (StaticPrefs::privacy_bounceTrackingProtection_enableDryRunMode()) {
+      // In dry-run mode, we don't actually clear the data, but we still want to
+      // resolve the promise to indicate that the data would have been cleared.
+      cb->OnDataDeleted(0);
+    } else {
+      // TODO: Bug 1842067: Clear by site + OA.
+      rv = clearDataService->DeleteDataFromBaseDomain(host, false,
+                                                      TRACKER_PURGE_FLAGS, cb);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        clearPromise->Reject(0, __func__);
+      }
     }
 
     aClearPromises.AppendElement(clearPromise);
@@ -642,22 +740,81 @@ nsresult BounceTrackingProtection::ClearExpiredUserInteractions(
   return NS_OK;
 }
 
-// ClearDataCallback
-
-NS_IMPL_ISUPPORTS(BounceTrackingProtection::ClearDataCallback,
-                  nsIClearDataCallback);
-
-// nsIClearDataCallback implementation
-NS_IMETHODIMP BounceTrackingProtection::ClearDataCallback::OnDataDeleted(
-    uint32_t aFailedFlags) {
-  if (aFailedFlags) {
-    mPromise->Reject(aFailedFlags, __func__);
-  } else {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Info,
-            ("%s: Cleared %s", __FUNCTION__, mHost.get()));
-    mPromise->Resolve(std::move(mHost), __func__);
+nsresult BounceTrackingProtection::MaybeMigrateUserInteractionPermissions() {
+  // Only run the migration once.
+  if (StaticPrefs::
+          privacy_bounceTrackingProtection_hasMigratedUserActivationData()) {
+    return NS_OK;
   }
-  return NS_OK;
+
+  MOZ_LOG(
+      gBounceTrackingProtectionLog, LogLevel::Debug,
+      ("%s: Importing user activation data from permissions", __FUNCTION__));
+
+  // Get all user activation permissions that are within our user activation
+  // lifetime. We don't care about the rest since they are considered expired
+  // for BTP.
+
+  nsresult rv = NS_OK;
+  nsCOMPtr<nsIPermissionManager> permManager =
+      do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(permManager, NS_ERROR_FAILURE);
+
+  // Construct the since time param. The permission manager expects epoch in
+  // miliseconds.
+  int64_t nowMS = PR_Now() / PR_USEC_PER_MSEC;
+  int64_t activationLifetimeMS =
+      static_cast<int64_t>(
+          StaticPrefs::
+              privacy_bounceTrackingProtection_bounceTrackingActivationLifetimeSec()) *
+      PR_MSEC_PER_SEC;
+  int64_t since = nowMS - activationLifetimeMS;
+  MOZ_ASSERT(since > 0);
+
+  // Get all user activation permissions last modified between "since" and now.
+  nsTArray<RefPtr<nsIPermission>> userActivationPermissions;
+  rv = permManager->GetAllByTypeSince("storageAccessAPI"_ns, since,
+                                      userActivationPermissions);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
+          ("%s: Found %zu (non-expired) user activation permissions",
+           __FUNCTION__, userActivationPermissions.Length()));
+
+  for (const auto& perm : userActivationPermissions) {
+    nsCOMPtr<nsIPrincipal> permPrincipal;
+
+    rv = perm->GetPrincipal(getter_AddRefs(permPrincipal));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+    MOZ_ASSERT(permPrincipal);
+
+    // The time the permission was last modified is the time of last user
+    // activation.
+    int64_t modificationTimeMS;
+    rv = perm->GetModificationTime(&modificationTimeMS);
+    NS_ENSURE_SUCCESS(rv, rv);
+    MOZ_ASSERT(modificationTimeMS >= since,
+               "Unexpected permission modification time");
+
+    // We may end up with duplicates here since user activation permissions are
+    // tracked by origin, while BTP tracks user activation by site host.
+    // RecordUserActivation is responsible for only keeping the most recent user
+    // activation flag for a given site host and needs to make sure existing
+    // activation flags are not overwritten by older timestamps.
+    // RecordUserActivation expects epoch in microseconds.
+    rv = RecordUserActivation(permPrincipal,
+                              Some(modificationTimeMS * PR_USEC_PER_MSEC));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+  }
+
+  // Migration successful, set the pref to indicate that we have migrated.
+  return mozilla::Preferences::SetBool(
+      "privacy.bounceTrackingProtection.hasMigratedUserActivationData", true);
 }
 
 }  // namespace mozilla

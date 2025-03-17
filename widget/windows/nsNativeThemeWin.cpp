@@ -481,6 +481,7 @@ mozilla::Maybe<nsUXThemeClass> nsNativeThemeWin::GetThemeClass(
     case StyleAppearance::Button:
       return Some(eUXButton);
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
       return Some(eUXEdit);
@@ -500,12 +501,7 @@ mozilla::Maybe<nsUXThemeClass> nsNativeThemeWin::GetThemeClass(
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
       return Some(eUXCombobox);
-    case StyleAppearance::Treeheadercell:
-      return Some(eUXHeader);
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
-    case StyleAppearance::Treetwistyopen:
-    case StyleAppearance::Treeitem:
       return Some(eUXListview);
     default:
       return Nothing();
@@ -594,6 +590,7 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
       return NS_OK;
     }
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea: {
       ElementState elementState = GetContentState(aFrame, aAppearance);
@@ -716,7 +713,6 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
       }
       return NS_OK;
     }
-    case StyleAppearance::Treeview:
     case StyleAppearance::Listbox: {
       aPart = TREEVIEW_BODY;
       aState = TS_NORMAL;
@@ -750,17 +746,6 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
         aState = TS_ACTIVE;  // The selected tab is always "pressed".
       } else
         aState = StandardGetState(aFrame, aAppearance, true);
-
-      return NS_OK;
-    }
-    case StyleAppearance::Treeheadercell: {
-      aPart = 1;
-      if (!aFrame) {
-        aState = TS_NORMAL;
-        return NS_OK;
-      }
-
-      aState = StandardGetState(aFrame, aAppearance, true);
 
       return NS_OK;
     }
@@ -956,6 +941,7 @@ RENDER_AGAIN:
 
     DrawThemeBackground(theme, hdc, part, state, &contentRect, &clipRect);
   } else if (aAppearance == StyleAppearance::NumberInput ||
+             aAppearance == StyleAppearance::PasswordInput ||
              aAppearance == StyleAppearance::Textfield ||
              aAppearance == StyleAppearance::Textarea) {
     DrawThemeBackground(theme, hdc, part, state, &widgetRect, &clipRect);
@@ -1088,6 +1074,7 @@ LayoutDeviceIntMargin nsNativeThemeWin::GetWidgetBorder(
   }
 
   if (aFrame && (aAppearance == StyleAppearance::NumberInput ||
+                 aAppearance == StyleAppearance::PasswordInput ||
                  aAppearance == StyleAppearance::Textfield ||
                  aAppearance == StyleAppearance::Textarea)) {
     nsIContent* content = aFrame->GetContent();
@@ -1128,6 +1115,7 @@ bool nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
    * added, see bug 430212)
    */
   if (aAppearance == StyleAppearance::NumberInput ||
+      aAppearance == StyleAppearance::PasswordInput ||
       aAppearance == StyleAppearance::Textfield ||
       aAppearance == StyleAppearance::Textarea) {
     aResult->top = aResult->bottom = 2;
@@ -1236,12 +1224,12 @@ LayoutDeviceIntSize nsNativeThemeWin::GetMinimumWidgetSize(
 
   switch (aAppearance) {
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::Tabpanels:
     case StyleAppearance::Tabpanel:
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
       return {};  // Don't worry about it.
     default:
       break;
@@ -1386,6 +1374,7 @@ bool nsNativeThemeWin::ThemeDrawsFocusForWidget(nsIFrame* aFrame,
     case StyleAppearance::Textarea:
     case StyleAppearance::Textfield:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
       return true;
     default:
       return false;
@@ -1438,6 +1427,7 @@ bool nsNativeThemeWin::ClassicThemeSupportsWidget(nsIFrame* aFrame,
   switch (aAppearance) {
     case StyleAppearance::Button:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Range:
@@ -1445,7 +1435,6 @@ bool nsNativeThemeWin::ClassicThemeSupportsWidget(nsIFrame* aFrame,
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::ProgressBar:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::Tab:
@@ -1465,11 +1454,11 @@ LayoutDeviceIntMargin nsNativeThemeWin::ClassicGetWidgetBorder(
       result.top = result.left = result.bottom = result.right = 2;
       break;
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Tab:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
       result.top = result.left = result.bottom = result.right = 2;
@@ -1516,8 +1505,8 @@ LayoutDeviceIntSize nsNativeThemeWin::ClassicGetMinimumWidgetSize(
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Button:
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Progresschunk:
@@ -1574,8 +1563,8 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(
       return NS_OK;
     }
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Menulist:
@@ -1767,6 +1756,7 @@ RENDER_AGAIN:
     }
     // Draw controls with 2px 3D inset border
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Listbox:
@@ -1784,15 +1774,6 @@ RENDER_AGAIN:
         ::FillRect(hdc, &widgetRect, (HBRUSH)(COLOR_BTNFACE + 1));
       else
         ::FillRect(hdc, &widgetRect, (HBRUSH)(COLOR_WINDOW + 1));
-
-      break;
-    }
-    case StyleAppearance::Treeview: {
-      // Draw inset edge
-      ::DrawEdge(hdc, &widgetRect, EDGE_SUNKEN, BF_RECT | BF_ADJUST);
-
-      // Fill in window color background
-      ::FillRect(hdc, &widgetRect, (HBRUSH)(COLOR_WINDOW + 1));
 
       break;
     }
@@ -1903,6 +1884,7 @@ uint32_t nsNativeThemeWin::GetWidgetNativeDrawingFlags(
   switch (aAppearance) {
     case StyleAppearance::Button:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Menulist:

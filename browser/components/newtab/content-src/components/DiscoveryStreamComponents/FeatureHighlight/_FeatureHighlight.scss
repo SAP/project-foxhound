@@ -88,11 +88,16 @@
       font-size: var(--font-size-small);
       font-weight: normal;
       margin: var(--space-large) 0;
+      flex-grow: 1;
     }
   }
 
   .toggle-button {
     border: none;
     padding: 0;
+
+    &.isHidden {
+      display: none;
+    }
   }
 }

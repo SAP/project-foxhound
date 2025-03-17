@@ -56,7 +56,6 @@
 #include "nsTArray.h"
 #include "nsTableWrapperFrame.h"
 #include "nsTableCellFrame.h"
-#include "nsIScrollableFrame.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsIDocumentEncoder.h"
 #include "nsTextFragment.h"
@@ -2784,16 +2783,25 @@ AbstractRange* Selection::GetAbstractRangeAt(uint32_t aIndex) const {
   return mStyledRanges.mRanges.SafeElementAt(aIndex, empty).mRange;
 }
 
+// https://www.w3.org/TR/selection-api/#dom-selection-direction
 void Selection::GetDirection(nsAString& aDirection) const {
   if (mStyledRanges.mRanges.IsEmpty() ||
       (mFrameSelection && (mFrameSelection->IsDoubleClickSelection() ||
                            mFrameSelection->IsTripleClickSelection()))) {
     // Empty range and double/triple clicks result a directionless selection.
     aDirection.AssignLiteral("none");
-  } else if (mDirection == nsDirection::eDirPrevious) {
-    aDirection.AssignLiteral("backward");
-  } else {
+  } else if (mDirection == nsDirection::eDirNext) {
+    // This is the default direction. It could be that the direction
+    // is really "forward", or the direction is "none" if the selection
+    // is collapsed.
+    if (AreNormalAndCrossShadowBoundaryRangesCollapsed()) {
+      aDirection.AssignLiteral("none");
+      return;
+    }
     aDirection.AssignLiteral("forward");
+  } else {
+    MOZ_ASSERT(!AreNormalAndCrossShadowBoundaryRangesCollapsed());
+    aDirection.AssignLiteral("backward");
   }
 }
 
@@ -3727,6 +3735,24 @@ void Selection::NotifySelectionListeners() {
 
   mStyledRanges.mRangesMightHaveChanged = true;
 
+  // This flag will be set to Double or Triple if a selection by double click or
+  // triple click is detected. As soon as the selection is modified, it needs to
+  // be reset to NotApplicable.
+  mFrameSelection->SetClickSelectionType(ClickSelectionType::NotApplicable);
+
+  // If we're batching changes, record our batching flag and bail out, we'll be
+  // called once the batch ends.
+  if (mFrameSelection->IsBatching()) {
+    mChangesDuringBatching = true;
+    return;
+  }
+  // If being called at end of batching, `mFrameSelection->IsBatching()` will
+  // return false. In this case, this method will only be called if
+  // `mChangesDuringBatching` was true.
+  // (see `nsFrameSelection::EndBatchChanges()`).
+  // Since arriving here means that batching ended, the flag needs to be reset.
+  mChangesDuringBatching = false;
+
   // Our internal code should not move focus with using this class while
   // this moves focus nor from selection listeners.
   AutoRestore<bool> calledByJSRestorer(mCalledByJS);
@@ -3742,28 +3768,13 @@ void Selection::NotifySelectionListeners() {
     mStyledRanges.MaybeFocusCommonEditingHost(presShell);
   }
 
-  RefPtr<nsFrameSelection> frameSelection = mFrameSelection;
-
-  // This flag will be set to Double or Triple if a selection by double click or
-  // triple click is detected. As soon as the selection is modified, it needs to
-  // be reset to NotApplicable.
-  frameSelection->SetClickSelectionType(ClickSelectionType::NotApplicable);
-
-  if (frameSelection->IsBatching()) {
-    frameSelection->SetChangesDuringBatchingFlag();
-    return;
-  }
-  if (mSelectionListeners.IsEmpty() && !mNotifyAutoCopy &&
-      !mAccessibleCaretEventHub && !mSelectionChangeEventDispatcher) {
-    // If there are no selection listeners, we're done!
-    return;
-  }
-
   nsCOMPtr<Document> doc;
   if (PresShell* presShell = GetPresShell()) {
     doc = presShell->GetDocument();
     presShell->ScheduleContentRelevancyUpdate(ContentRelevancyReason::Selected);
   }
+
+  RefPtr<nsFrameSelection> frameSelection = mFrameSelection;
 
   // We've notified all selection listeners even when some of them are removed
   // (and may be destroyed) during notifying one of them.  Therefore, we should
@@ -3771,28 +3782,27 @@ void Selection::NotifySelectionListeners() {
   const CopyableAutoTArray<nsCOMPtr<nsISelectionListener>, 5>
       selectionListeners = mSelectionListeners;
 
+  int32_t amount = static_cast<int32_t>(frameSelection->GetCaretMoveAmount());
   int16_t reason = frameSelection->PopChangeReasons();
   if (calledByJSRestorer.SavedValue()) {
     reason |= nsISelectionListener::JS_REASON;
   }
+  if (mSelectionType == SelectionType::eNormal) {
+    if (mNotifyAutoCopy) {
+      AutoCopyListener::OnSelectionChange(doc, *this, reason);
+    }
 
-  int32_t amount = static_cast<int32_t>(frameSelection->GetCaretMoveAmount());
+    if (mAccessibleCaretEventHub) {
+      RefPtr<AccessibleCaretEventHub> hub(mAccessibleCaretEventHub);
+      hub->OnSelectionChange(doc, this, reason);
+    }
 
-  if (mNotifyAutoCopy) {
-    AutoCopyListener::OnSelectionChange(doc, *this, reason);
+    if (mSelectionChangeEventDispatcher) {
+      RefPtr<SelectionChangeEventDispatcher> dispatcher(
+          mSelectionChangeEventDispatcher);
+      dispatcher->OnSelectionChange(doc, this, reason);
+    }
   }
-
-  if (mAccessibleCaretEventHub) {
-    RefPtr<AccessibleCaretEventHub> hub(mAccessibleCaretEventHub);
-    hub->OnSelectionChange(doc, this, reason);
-  }
-
-  if (mSelectionChangeEventDispatcher) {
-    RefPtr<SelectionChangeEventDispatcher> dispatcher(
-        mSelectionChangeEventDispatcher);
-    dispatcher->OnSelectionChange(doc, this, reason);
-  }
-
   for (const auto& listener : selectionListeners) {
     // MOZ_KnownLive because 'selectionListeners' is guaranteed to
     // keep it alive.

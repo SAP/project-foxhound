@@ -430,6 +430,7 @@ class MediaFormatReader final
     Maybe<TimeStamp> mWaitingForDataStartTime;
     bool mWaitingForKey;
     bool mReceivedNewData;
+    UniquePtr<PerformanceRecorderMulti<PlaybackStage>> mDecodePerfRecorder;
 
     // Pending seek.
     MozPromiseRequestHolder<MediaTrackDemuxer::SeekPromise> mSeekRequest;
@@ -473,6 +474,9 @@ class MediaFormatReader final
       MOZ_RELEASE_ASSERT(mDrainState == DrainState::None);
       mDrainState = DrainState::DrainRequested;
     }
+
+    void StartRecordDecodingPerf(const TrackType aTrack,
+                                 const MediaRawData* aSample);
 
     // Track decoding error and fail when we hit the limit.
     uint32_t mNumOfConsecutiveDecodingError;
@@ -552,7 +556,7 @@ class MediaFormatReader final
     // Rejecting the promise will stop the reader from decoding ahead.
     virtual bool HasPromise() const = 0;
     virtual void RejectPromise(const MediaResult& aError,
-                               const char* aMethodName) = 0;
+                               StaticString aMethodName) = 0;
 
     // Clear track demuxer related data.
     void ResetDemuxer() {
@@ -688,20 +692,20 @@ class MediaFormatReader final
 
     bool HasPromise() const override { return mHasPromise; }
 
-    RefPtr<DataPromise<Type>> EnsurePromise(const char* aMethodName) {
+    RefPtr<DataPromise<Type>> EnsurePromise(StaticString aMethodName) {
       MOZ_ASSERT(mOwner->OnTaskQueue());
       mHasPromise = true;
       return mPromise.Ensure(aMethodName);
     }
 
-    void ResolvePromise(Type* aData, const char* aMethodName) {
+    void ResolvePromise(Type* aData, StaticString aMethodName) {
       MOZ_ASSERT(mOwner->OnTaskQueue());
       mPromise.Resolve(aData, aMethodName);
       mHasPromise = false;
     }
 
     void RejectPromise(const MediaResult& aError,
-                       const char* aMethodName) override {
+                       StaticString aMethodName) override {
       MOZ_ASSERT(mOwner->OnTaskQueue());
       mPromise.Reject(aError, aMethodName);
       mHasPromise = false;

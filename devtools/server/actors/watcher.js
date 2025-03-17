@@ -258,10 +258,24 @@ exports.WatcherActor = class WatcherActor extends Actor {
         continue;
       }
       promises.push(
-        domProcess.getActor(this._jsActorName).watchTargets({
-          watcherActorID: this.actorID,
-          targetType,
-        })
+        domProcess
+          .getActor(this._jsActorName)
+          .watchTargets({
+            watcherActorID: this.actorID,
+            targetType,
+          })
+          .catch(e => {
+            // Ignore any process that got destroyed while trying to send the request
+            if (!domProcess.canSend) {
+              console.warn(
+                "Content process closed while requesting targets",
+                domProcess.name,
+                domProcess.remoteType
+              );
+              return;
+            }
+            throw e;
+          })
       );
     }
     await Promise.all(promises);
@@ -279,8 +293,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   unwatchTargets(targetType, options = {}) {
     const isWatchingTargets = ParentProcessWatcherRegistry.unwatchTargets(
       this,
-      targetType,
-      options
+      targetType
     );
     if (!isWatchingTargets) {
       return;
@@ -293,13 +306,6 @@ exports.WatcherActor = class WatcherActor extends Actor {
         targetType,
         options,
       });
-    }
-
-    // Unregister the JS Actors if there is no more DevTools code observing any target/resource,
-    // unless we're switching mode (having both condition at the same time should only
-    // happen in tests).
-    if (!options.isModeSwitching) {
-      ParentProcessWatcherRegistry.maybeUnregisterJSActors();
     }
   }
 
@@ -561,13 +567,27 @@ exports.WatcherActor = class WatcherActor extends Actor {
     const domProcesses = ChromeUtils.getAllDOMProcesses();
     for (const domProcess of domProcesses) {
       promises.push(
-        domProcess.getActor(this._jsActorName).addOrSetSessionDataEntry({
-          watcherActorID: this.actorID,
-          sessionContext: this.sessionContext,
-          type: "resources",
-          entries: resourceTypes,
-          updateType: "add",
-        })
+        domProcess
+          .getActor(this._jsActorName)
+          .addOrSetSessionDataEntry({
+            watcherActorID: this.actorID,
+            sessionContext: this.sessionContext,
+            type: "resources",
+            entries: resourceTypes,
+            updateType: "add",
+          })
+          .catch(e => {
+            // Ignore any process that got destroyed while trying to send the request
+            if (!domProcess.canSend) {
+              console.warn(
+                "Content process closed while requesting resources",
+                domProcess.name,
+                domProcess.remoteType
+              );
+              return;
+            }
+            throw e;
+          })
       );
     }
     await Promise.all(promises);
@@ -661,9 +681,6 @@ exports.WatcherActor = class WatcherActor extends Actor {
       );
       targetActor.removeSessionDataEntry("resources", targetActorResourceTypes);
     }
-
-    // Unregister the JS Window Actor if there is no more DevTools code observing any target/resource
-    ParentProcessWatcherRegistry.maybeUnregisterJSActors();
   }
 
   clearResources(resourceTypes) {
@@ -769,13 +786,27 @@ exports.WatcherActor = class WatcherActor extends Actor {
     const domProcesses = ChromeUtils.getAllDOMProcesses();
     for (const domProcess of domProcesses) {
       promises.push(
-        domProcess.getActor(this._jsActorName).addOrSetSessionDataEntry({
-          watcherActorID: this.actorID,
-          sessionContext: this.sessionContext,
-          type,
-          entries,
-          updateType,
-        })
+        domProcess
+          .getActor(this._jsActorName)
+          .addOrSetSessionDataEntry({
+            watcherActorID: this.actorID,
+            sessionContext: this.sessionContext,
+            type,
+            entries,
+            updateType,
+          })
+          .catch(e => {
+            // Ignore any process that got destroyed while trying to send the request
+            if (!domProcess.canSend) {
+              console.warn(
+                "Content process closed while sending session data",
+                domProcess.name,
+                domProcess.remoteType
+              );
+              return;
+            }
+            throw e;
+          })
       );
     }
     await Promise.all(promises);

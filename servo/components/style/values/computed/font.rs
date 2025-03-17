@@ -985,22 +985,6 @@ impl ToCss for FontLanguageOverride {
     }
 }
 
-// FIXME(emilio): Make Gecko use the cbindgen'd fontLanguageOverride, then
-// remove this.
-#[cfg(feature = "gecko")]
-impl From<u32> for FontLanguageOverride {
-    fn from(v: u32) -> Self {
-        unsafe { Self::from_u32(v) }
-    }
-}
-
-#[cfg(feature = "gecko")]
-impl From<FontLanguageOverride> for u32 {
-    fn from(v: FontLanguageOverride) -> u32 {
-        v.0
-    }
-}
-
 impl ToComputedValue for specified::MozScriptMinSize {
     type ComputedValue = MozScriptMinSize;
 
@@ -1365,11 +1349,16 @@ impl ToResolvedValue for LineHeight {
             return self;
         }
         let wm = context.style.writing_mode;
-        Self::Length(context.device.calc_line_height(
-            context.style.get_font(),
-            wm,
-            Some(context.element_info.element),
-        ).to_resolved_value(context))
+        Self::Length(
+            context
+                .device
+                .calc_line_height(
+                    context.style.get_font(),
+                    wm,
+                    Some(context.element_info.element),
+                )
+                .to_resolved_value(context),
+        )
     }
 
     #[inline]

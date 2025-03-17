@@ -7,12 +7,19 @@
 #ifndef builtin_temporal_TemporalFields_h
 #define builtin_temporal_TemporalFields_h
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Maybe.h"
 
+#include <array>
 #include <initializer_list>
+#include <iterator>
 
 #include "jstypes.h"
 
+#include "builtin/temporal/Calendar.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
@@ -41,12 +48,125 @@ enum class TemporalField {
   TimeZone,
 };
 
+struct FieldDescriptors {
+  mozilla::EnumSet<TemporalField> relevant;
+  mozilla::EnumSet<TemporalField> required;
+
+#ifdef DEBUG
+  FieldDescriptors(mozilla::EnumSet<TemporalField> relevant,
+                   mozilla::EnumSet<TemporalField> required)
+      : relevant(relevant), required(required) {
+    MOZ_ASSERT(relevant.contains(required),
+               "required is a subset of the relevant fields");
+  }
+#endif
+};
+
+template <typename T, const auto& sorted>
+class SortedEnumSet {
+  mozilla::EnumSet<T> fields_;
+
+ public:
+  explicit SortedEnumSet(mozilla::EnumSet<T> fields) : fields_(fields) {}
+
+  class Iterator {
+    mozilla::EnumSet<T> fields_;
+    size_t index_;
+
+    void findNext() {
+      while (index_ < sorted.size() && !fields_.contains(sorted[index_])) {
+        index_++;
+      }
+    }
+
+    void findPrevious() {
+      while (index_ > 0 && !fields_.contains(sorted[index_])) {
+        index_--;
+      }
+    }
+
+   public:
+    // Iterator traits.
+    using difference_type = ptrdiff_t;
+    using value_type = TemporalField;
+    using pointer = TemporalField*;
+    using reference = TemporalField&;
+    using iterator_category = std::bidirectional_iterator_tag;
+
+    Iterator(mozilla::EnumSet<T> fields, size_t index)
+        : fields_(fields), index_(index) {
+      findNext();
+    }
+
+    bool operator==(const Iterator& other) const {
+      MOZ_ASSERT(fields_ == other.fields_);
+      return index_ == other.index_;
+    }
+
+    bool operator!=(const Iterator& other) const { return !(*this == other); }
+
+    auto operator*() const {
+      MOZ_ASSERT(index_ < sorted.size());
+      MOZ_ASSERT(fields_.contains(sorted[index_]));
+      return sorted[index_];
+    }
+
+    auto& operator++() {
+      MOZ_ASSERT(index_ < sorted.size());
+      index_++;
+      findNext();
+      return *this;
+    }
+
+    auto operator++(int) {
+      auto result = *this;
+      ++(*this);
+      return result;
+    }
+
+    auto& operator--() {
+      MOZ_ASSERT(index_ > 0);
+      index_--;
+      findPrevious();
+      return *this;
+    }
+
+    auto operator--(int) {
+      auto result = *this;
+      --(*this);
+      return result;
+    }
+  };
+
+  Iterator begin() const { return Iterator{fields_, 0}; };
+
+  Iterator end() const { return Iterator{fields_, sorted.size()}; }
+};
+
+namespace detail {
+static constexpr auto sortedTemporalFields = std::array{
+    TemporalField::Day,         TemporalField::Era,
+    TemporalField::EraYear,     TemporalField::Hour,
+    TemporalField::Microsecond, TemporalField::Millisecond,
+    TemporalField::Minute,      TemporalField::Month,
+    TemporalField::MonthCode,   TemporalField::Nanosecond,
+    TemporalField::Offset,      TemporalField::Second,
+    TemporalField::TimeZone,    TemporalField::Year,
+};
+}
+
+// TODO: Consider reordering TemporalField so we don't need this. Probably best
+// to decide after <https://github.com/tc39/proposal-temporal/issues/2826> has
+// landed.
+using SortedTemporalFields =
+    SortedEnumSet<TemporalField, detail::sortedTemporalFields>;
+
 // Default values are specified in Table 15 [1]. `undefined` is replaced with
 // an appropriate value based on the type, for example `double` fields use
 // NaN whereas pointer fields use nullptr.
 //
 // [1] <https://tc39.es/proposal-temporal/#table-temporal-field-requirements>
-struct TemporalFields final {
+struct MOZ_STACK_CLASS TemporalFields final {
   double year = mozilla::UnspecifiedNaN<double>();
   double month = mozilla::UnspecifiedNaN<double>();
   JSString* monthCode = nullptr;
@@ -140,40 +260,82 @@ class MutableWrappedPtrOperations<temporal::TemporalFields, Wrapper>
 
 namespace js::temporal {
 
+PropertyName* ToPropertyName(JSContext* cx, TemporalField field);
+
+mozilla::Maybe<TemporalField> ToTemporalField(JSContext* cx,
+                                              PropertyKey property);
+
 /**
  * PrepareTemporalFields ( fields, fieldNames, requiredFields [ ,
- * duplicateBehaviour ] )
+ * extraFieldDescriptors [ , duplicateBehaviour ] ] )
  */
 bool PrepareTemporalFields(JSContext* cx, JS::Handle<JSObject*> fields,
-                           std::initializer_list<TemporalField> fieldNames,
-                           std::initializer_list<TemporalField> requiredFields,
+                           mozilla::EnumSet<TemporalField> fieldNames,
+                           mozilla::EnumSet<TemporalField> requiredFields,
                            JS::MutableHandle<TemporalFields> result);
+
+/**
+ * PrepareTemporalFields ( fields, fieldNames, requiredFields [ ,
+ * extraFieldDescriptors [ , duplicateBehaviour ] ] )
+ */
+inline bool PrepareTemporalFields(
+    JSContext* cx, JS::Handle<JSObject*> fields,
+    mozilla::EnumSet<TemporalField> fieldNames,
+    mozilla::EnumSet<TemporalField> requiredFields,
+    const FieldDescriptors& extraFieldDescriptors,
+    JS::MutableHandle<TemporalFields> result) {
+  return PrepareTemporalFields(
+      cx, fields, fieldNames + extraFieldDescriptors.relevant,
+      requiredFields + extraFieldDescriptors.required, result);
+}
 
 using TemporalFieldNames = JS::StackGCVector<JS::PropertyKey>;
 
 /**
  * PrepareTemporalFields ( fields, fieldNames, requiredFields [ ,
- * duplicateBehaviour ] )
+ * extraFieldDescriptors [ , duplicateBehaviour ] ] )
  */
 PlainObject* PrepareTemporalFields(JSContext* cx, JS::Handle<JSObject*> fields,
                                    JS::Handle<TemporalFieldNames> fieldNames);
 
 /**
  * PrepareTemporalFields ( fields, fieldNames, requiredFields [ ,
- * duplicateBehaviour ] )
+ * extraFieldDescriptors [ , duplicateBehaviour ] ] )
  */
 PlainObject* PrepareTemporalFields(
     JSContext* cx, JS::Handle<JSObject*> fields,
     JS::Handle<TemporalFieldNames> fieldNames,
-    std::initializer_list<TemporalField> requiredFields);
+    mozilla::EnumSet<TemporalField> requiredFields);
 
 /**
  * PrepareTemporalFields ( fields, fieldNames, requiredFields [ ,
- * duplicateBehaviour ] )
+ * extraFieldDescriptors [ , duplicateBehaviour ] ] )
  */
 PlainObject* PreparePartialTemporalFields(
     JSContext* cx, JS::Handle<JSObject*> fields,
     JS::Handle<TemporalFieldNames> fieldNames);
+
+/**
+ * PrepareCalendarFieldsAndFieldNames ( calendarRec, fields, calendarFieldNames
+ * [ , nonCalendarFieldNames [ , requiredFieldNames ] ] )
+ */
+bool PrepareCalendarFieldsAndFieldNames(
+    JSContext* cx, JS::Handle<CalendarRecord> calendar,
+    JS::Handle<JSObject*> fields,
+    mozilla::EnumSet<CalendarField> calendarFieldNames,
+    JS::MutableHandle<PlainObject*> resultFields,
+    JS::MutableHandle<TemporalFieldNames> resultFieldNames);
+
+/**
+ * PrepareCalendarFields ( calendarRec, fields, calendarFieldNames,
+ * nonCalendarFieldNames, requiredFieldNames )
+ */
+PlainObject* PrepareCalendarFields(
+    JSContext* cx, JS::Handle<CalendarRecord> calendar,
+    JS::Handle<JSObject*> fields,
+    mozilla::EnumSet<CalendarField> calendarFieldNames,
+    mozilla::EnumSet<TemporalField> nonCalendarFieldNames = {},
+    mozilla::EnumSet<TemporalField> requiredFieldNames = {});
 
 [[nodiscard]] bool ConcatTemporalFieldNames(
     const TemporalFieldNames& receiverFieldNames,
@@ -182,11 +344,10 @@ PlainObject* PreparePartialTemporalFields(
 
 [[nodiscard]] bool AppendSorted(
     JSContext* cx, TemporalFieldNames& fieldNames,
-    std::initializer_list<TemporalField> additionalNames);
+    mozilla::EnumSet<TemporalField> additionalNames);
 
 [[nodiscard]] bool SortTemporalFieldNames(JSContext* cx,
                                           TemporalFieldNames& fieldNames);
-
 } /* namespace js::temporal */
 
 #endif /* builtin_temporal_TemporalFields_h */

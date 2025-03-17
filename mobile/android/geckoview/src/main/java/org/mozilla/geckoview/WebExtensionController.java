@@ -248,9 +248,8 @@ public class WebExtensionController {
   @UiThread
   public interface PromptDelegate {
     /**
-     * Called whenever a new extension is being installed. This is intended as an opportunity for
-     * the app to prompt the user for the permissions required by this extension.
-     *
+     * @deprecated This method is no longer called, see the other onInstallPrompt method with the
+     *     explicit permissions and origins arguments.
      * @param extension The {@link WebExtension} that is about to be installed. You can use {@link
      *     WebExtension#metaData} to gather information about this extension when building the user
      *     prompt dialog.
@@ -260,7 +259,31 @@ public class WebExtensionController {
      *     DENY}.
      */
     @Nullable
-    default GeckoResult<AllowOrDeny> onInstallPrompt(final @NonNull WebExtension extension) {
+    @Deprecated
+    @DeprecationSchedule(id = "web-extension-required-permissions", version = 133)
+    default GeckoResult<AllowOrDeny> onInstallPrompt(@NonNull final WebExtension extension) {
+      return null;
+    }
+
+    /**
+     * Called whenever a new extension is being installed. This is intended as an opportunity for
+     * the app to prompt the user for the permissions required by this extension.
+     *
+     * @param extension The {@link WebExtension} that is about to be installed. You can use {@link
+     *     WebExtension#metaData} to gather information about this extension when building the user
+     *     prompt dialog.
+     * @param permissions The list of permissions that are granted during installation.
+     * @param origins The list of origins that are granted during installation.
+     * @return A {@link GeckoResult} that completes to either {@link AllowOrDeny#ALLOW ALLOW} if
+     *     this extension should be installed or {@link AllowOrDeny#DENY DENY} if this extension
+     *     should not be installed. A null value will be interpreted as {@link AllowOrDeny#DENY
+     *     DENY}.
+     */
+    @Nullable
+    default GeckoResult<AllowOrDeny> onInstallPrompt(
+        @NonNull final WebExtension extension,
+        @NonNull final String[] permissions,
+        @NonNull final String[] origins) {
       return null;
     }
 
@@ -334,6 +357,14 @@ public class WebExtensionController {
      */
     @UiThread
     default void onDisabling(@NonNull WebExtension extension) {}
+
+    /**
+     * Called whenever optional permissions of an extension have changed.
+     *
+     * @param extension The {@link WebExtension} that has optional permissions changed.
+     */
+    @UiThread
+    default void onOptionalPermissionsChanged(@NonNull WebExtension extension) {}
 
     /**
      * Called whenever an extension has been disabled.
@@ -489,6 +520,7 @@ public class WebExtensionController {
       EventDispatcher.getInstance()
           .unregisterUiThreadListener(
               mInternals,
+              "GeckoView:WebExtension:OnOptionalPermissionsChanged",
               "GeckoView:WebExtension:OnDisabling",
               "GeckoView:WebExtension:OnDisabled",
               "GeckoView:WebExtension:OnEnabling",
@@ -503,6 +535,7 @@ public class WebExtensionController {
       EventDispatcher.getInstance()
           .registerUiThreadListener(
               mInternals,
+              "GeckoView:WebExtension:OnOptionalPermissionsChanged",
               "GeckoView:WebExtension:OnDisabling",
               "GeckoView:WebExtension:OnDisabled",
               "GeckoView:WebExtension:OnEnabling",
@@ -1021,6 +1054,9 @@ public class WebExtensionController {
     } else if ("GeckoView:WebExtension:OnDisabling".equals(event)) {
       onDisabling(bundle);
       return;
+    } else if ("GeckoView:WebExtension:OnOptionalPermissionsChanged".equals(event)) {
+      onOptionalPermissionsChanged(bundle);
+      return;
     } else if ("GeckoView:WebExtension:OnDisabled".equals(event)) {
       onDisabled(bundle);
       return;
@@ -1151,7 +1187,9 @@ public class WebExtensionController {
       return;
     }
 
-    final GeckoResult<AllowOrDeny> promptResponse = mPromptDelegate.onInstallPrompt(extension);
+    final GeckoResult<AllowOrDeny> promptResponse =
+        mPromptDelegate.onInstallPrompt(
+            extension, message.getStringArray("permissions"), message.getStringArray("origins"));
     if (promptResponse == null) {
       return;
     }
@@ -1263,6 +1301,17 @@ public class WebExtensionController {
     final GeckoBundle extensionBundle = bundle.getBundle("extension");
     final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
     mAddonManagerDelegate.onDisabling(extension);
+  }
+
+  private void onOptionalPermissionsChanged(final GeckoBundle bundle) {
+    if (mAddonManagerDelegate == null) {
+      Log.e(LOGTAG, "no AddonManager delegate registered");
+      return;
+    }
+
+    final GeckoBundle extensionBundle = bundle.getBundle("extension");
+    final WebExtension extension = new WebExtension(mDelegateControllerProvider, extensionBundle);
+    mAddonManagerDelegate.onOptionalPermissionsChanged(extension);
   }
 
   private void onDisabled(final GeckoBundle bundle) {
@@ -1525,7 +1574,7 @@ public class WebExtensionController {
     if (delegate != null) {
       result = delegate.onCloseTab(extension, message.session);
     } else {
-      result = GeckoResult.fromValue(AllowOrDeny.DENY);
+      result = GeckoResult.deny();
     }
 
     message.callback.resolveTo(

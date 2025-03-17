@@ -12,6 +12,8 @@
 
 #include "relrhack.h"
 #include <algorithm>
+#include <array>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -25,6 +27,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "mozilla/ScopeExit.h"
 
 namespace fs = std::filesystem;
 
@@ -111,7 +115,7 @@ struct RelR : public Elf<bits> {
     return 0;
   }
 
-  static bool hack(std::fstream& f);
+  static bool hack(std::fstream& f, bool set_relrhack_bit);
 };
 
 template <typename T>
@@ -147,7 +151,7 @@ void write_vector_at(std::ostream& out, off_t pos, const std::vector<T>& vec) {
 }
 
 template <int bits>
-bool RelR<bits>::hack(std::fstream& f) {
+bool RelR<bits>::hack(std::fstream& f, bool set_relrhack_bit) {
   auto ehdr = read_one_at<Elf_Ehdr>(f, 0);
   if (ehdr.e_phentsize != sizeof(Elf_Phdr)) {
     throw std::runtime_error("Invalid ELF?");
@@ -222,9 +226,11 @@ bool RelR<bits>::hack(std::fstream& f) {
     return false;
   }
 
-  // Change DT_RELR* tags to add DT_RELRHACK_BIT.
-  for (const auto tag : {DT_RELR, DT_RELRSZ, DT_RELRENT}) {
-    write_one_at(f, dyn_info.offset(tag), tag | DT_RELRHACK_BIT);
+  if (set_relrhack_bit) {
+    // Change DT_RELR* tags to add DT_RELRHACK_BIT.
+    for (const auto tag : {DT_RELR, DT_RELRSZ, DT_RELRENT}) {
+      write_one_at(f, dyn_info.offset(tag), tag | DT_RELRHACK_BIT);
+    }
   }
 
   bool is_glibc = false;
@@ -420,10 +426,40 @@ uint16_t get_elf_machine(std::istream& in) {
   return ehdr.e_machine;
 }
 
-int run_command(std::vector<const char*>& args) {
+int run_command(std::vector<const char*>& args, bool use_response_file) {
+  std::string at_file;
+  const char** argv = args.data();
+  std::array<const char*, 3> args_with_atfile{};
+  if (use_response_file) {
+    const char* tmpdir = getenv("TMPDIR");
+    if (!tmpdir) {
+      tmpdir = "/tmp";
+    }
+    std::string tmpfile = tmpdir;
+    tmpfile += "/relrhackXXXXXX";
+    int fd = mkstemp(tmpfile.data());
+    if (fd < 0) {
+      std::cerr << "Failed to create temporary file." << std::endl;
+      return 1;
+    }
+    close(fd);
+    std::ofstream f{tmpfile, f.binary};
+    for (auto arg = std::next(args.begin()); arg != args.end(); ++arg) {
+      f << *arg << "\n";
+    }
+    at_file = "@";
+    at_file += tmpfile;
+    args_with_atfile = {args.front(), at_file.c_str(), nullptr};
+    argv = args_with_atfile.data();
+  }
+  auto guard = mozilla::MakeScopeExit([&] {
+    if (!at_file.empty()) {
+      unlink(at_file.c_str() + 1);
+    }
+  });
   pid_t child_pid;
   if (posix_spawn(&child_pid, args[0], nullptr, nullptr,
-                  const_cast<char* const*>(args.data()), environ) != 0) {
+                  const_cast<char* const*>(argv), environ) != 0) {
     throw std::runtime_error("posix_spawn failed");
   }
 
@@ -442,6 +478,9 @@ int main(int argc, char* argv[]) {
   std::optional<fs::path> real_linker = std::nullopt;
   bool shared = false;
   bool is_android = false;
+  bool use_response_file = false;
+  std::vector<char> response_file;
+  std::vector<const char*> response_file_args;
   uint16_t elf_machine = EM_NONE;
   // Scan argv in order to prepare the following:
   // - get the output file. That's the file we may need to adjust.
@@ -458,6 +497,33 @@ int main(int argc, char* argv[]) {
   //
   // At the same time, we also construct a new list of arguments, with
   // --real-linker filtered out. We'll later inject arguments in that list.
+  if (argc == 2 && argv[1] && argv[1][0] == '@') {
+    // When GCC is given a response file, it wraps all arguments into a
+    // new response file with all arguments, even if originally there were
+    // arguments and a response file.
+    // In that case, we can't scan for arguments, so we need to read the
+    // response file. And as we change the arguments, we'll need to write
+    // a new one.
+    std::ifstream f{argv[1] + 1, f.binary | f.ate};
+    if (!f) {
+      std::cerr << "Failed to read " << argv[1] + 1 << std::endl;
+      return 1;
+    }
+    size_t len = f.tellg();
+    response_file = read_vector_at<char>(f, 0, len);
+    std::replace(response_file.begin(), response_file.end(), '\n', '\0');
+    if (len && response_file[len - 1] != '\0') {
+      response_file.push_back('\0');
+    }
+    response_file_args.push_back(argv[0]);
+    for (const char* a = response_file.data();
+         a < response_file.data() + response_file.size(); a += strlen(a) + 1) {
+      response_file_args.push_back(a);
+    }
+    argv = const_cast<char**>(response_file_args.data());
+    argc = response_file_args.size();
+    use_response_file = true;
+  }
   for (i = 1, argv++; i < argc && *argv; argv++, i++) {
     std::string_view arg{*argv};
     if (arg == "-shared") {
@@ -538,7 +604,7 @@ int main(int argc, char* argv[]) {
     hacked_args.insert(hacked_args.begin() + crti + 1, inject.c_str());
     hacked_args.insert(hacked_args.end() - 1, {"-z", "pack-relative-relocs",
                                                "-init=_relrhack_wrap_init"});
-    int status = run_command(hacked_args);
+    int status = run_command(hacked_args, use_response_file);
     if (status) {
       return status;
     }
@@ -548,10 +614,14 @@ int main(int argc, char* argv[]) {
       f.exceptions(f.failbit);
       auto elf_class = get_elf_class(f);
       f.seekg(0, std::ios::beg);
+      // On Android, we don't set the relrhack bit so that the system linker
+      // can handle the RELR relocations when supported. On desktop, the
+      // glibc unfortunately rejects the binaries without the bit set.
+      // (see comment about GLIBC_ABI_DT_RELR)
       if (elf_class == ELFCLASS32) {
-        hacked = RelR<32>::hack(f);
+        hacked = RelR<32>::hack(f, /* set_relrhack_bit = */ !is_android);
       } else if (elf_class == ELFCLASS64) {
-        hacked = RelR<64>::hack(f);
+        hacked = RelR<64>::hack(f, /* set_relrhack_bit = */ !is_android);
       }
     } catch (const std::runtime_error& err) {
       std::cerr << "Failed to hack " << output->string() << ": " << err.what()
@@ -563,5 +633,5 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  return run_command(args);
+  return run_command(args, use_response_file);
 }

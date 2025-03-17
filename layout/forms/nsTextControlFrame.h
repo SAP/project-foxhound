@@ -19,6 +19,7 @@ class nsISelectionController;
 class EditorInitializerEntryTracker;
 namespace mozilla {
 class AutoTextControlHandlingState;
+class ScrollContainerFrame;
 class TextEditor;
 class TextControlState;
 enum class PseudoStyleType : uint8_t;
@@ -58,7 +59,7 @@ class nsTextControlFrame : public nsContainerFrame,
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void Destroy(DestroyContext&) override;
 
-  nsIScrollableFrame* GetScrollTargetFrame() const override;
+  mozilla::ScrollContainerFrame* GetScrollTargetFrame() const override;
 
   nscoord GetMinISize(gfxContext* aRenderingContext) override;
   nscoord GetPrefISize(gfxContext* aRenderingContext) override;
@@ -189,7 +190,11 @@ class nsTextControlFrame : public nsContainerFrame,
 
   Element* GetPlaceholderNode() const { return mPlaceholderDiv; }
 
-  Element* GetRevealButton() const { return mRevealButton; }
+  Element* GetButton() const { return mButton; }
+
+  bool IsButtonBox(const nsIFrame* aFrame) const {
+    return aFrame->GetContent() == GetButton();
+  }
 
   // called by the focus listener
   nsresult MaybeBeginSecureKeyboardInput();
@@ -206,7 +211,8 @@ class nsTextControlFrame : public nsContainerFrame,
   DEFINE_TEXTCTRL_CONST_FORWARDER(bool, IsSingleLineTextControl)
   DEFINE_TEXTCTRL_CONST_FORWARDER(bool, IsTextArea)
   DEFINE_TEXTCTRL_CONST_FORWARDER(bool, IsPasswordTextControl)
-  DEFINE_TEXTCTRL_CONST_FORWARDER(int32_t, GetCols)
+  DEFINE_TEXTCTRL_CONST_FORWARDER(Maybe<int32_t>, GetCols)
+  DEFINE_TEXTCTRL_CONST_FORWARDER(int32_t, GetColsOrDefault)
   DEFINE_TEXTCTRL_CONST_FORWARDER(int32_t, GetRows)
 
 #undef DEFINE_TEXTCTRL_CONST_FORWARDER
@@ -319,9 +325,9 @@ class nsTextControlFrame : public nsContainerFrame,
   RefPtr<Element> mRootNode;
   RefPtr<Element> mPlaceholderDiv;
   RefPtr<Element> mPreviewDiv;
-  // The Reveal Password button.  Only used for type=password, nullptr
-  // otherwise.
-  RefPtr<Element> mRevealButton;
+  // If we have type=password, number, or search, then mButton is our
+  // reveal-password, spinner, or search button box. Otherwise, it's nullptr.
+  RefPtr<Element> mButton;
   RefPtr<nsAnonDivObserver> mMutationObserver;
   // Cache of the |.value| of <input> or <textarea> element without hard-wrap.
   // If its IsVoid() returns true, it doesn't cache |.value|.

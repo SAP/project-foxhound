@@ -5,6 +5,7 @@
 #define _TRANSCEIVERIMPL_H_
 
 #include <string>
+#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
 #include "mozilla/StateMirroring.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
@@ -109,6 +110,8 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
     return mCurrentDirection;
   }
   void Stop(ErrorResult& aRv);
+  void SetCodecPreferences(const nsTArray<RTCRtpCodec>& aCodecs,
+                           ErrorResult& aRv);
   void SetDirectionInternal(RTCRtpTransceiverDirection aDirection);
   bool HasBeenUsedToSend() const { return mHasBeenUsedToSend; }
 
@@ -168,6 +171,20 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
       const JsepTrackNegotiatedDetails& aDetails,
       std::vector<VideoCodecConfig>* aConfigs);
 
+  static void ToDomRtpCodec(const JsepCodecDescription& aCodec,
+                            RTCRtpCodec* aDomCodec);
+
+  static void ToDomRtpCodecParameters(
+      const JsepCodecDescription& aCodec,
+      RTCRtpCodecParameters* aDomCodecParameters);
+
+  static void ToDomRtpCodecRtx(const JsepVideoCodecDescription& aCodec,
+                               RTCRtpCodec* aDomCodec);
+
+  static void ToDomRtpCodecParametersRtx(
+      const JsepVideoCodecDescription& aCodec,
+      RTCRtpCodecParameters* aDomCodecParameters);
+
   /* Returns a promise that will contain the stats in aStats, along with the
    * codec stats (which is a PC-wide thing) */
   void ChainToDomPromiseWithCodecStats(nsTArray<RefPtr<RTCStatsPromise>> aStats,
@@ -188,6 +205,12 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
 
   Canonical<std::string>& CanonicalMid() { return mMid; }
   Canonical<std::string>& CanonicalSyncGroup() { return mSyncGroup; }
+
+  const std::vector<UniquePtr<JsepCodecDescription>>& GetPreferredCodecs() {
+    return mPreferredCodecs;
+  }
+
+  bool GetPreferredCodecsInUse() { return mPreferredCodecsInUse; }
 
  private:
   virtual ~RTCRtpTransceiver();
@@ -247,6 +270,14 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
 
   Canonical<std::string> mMid;
   Canonical<std::string> mSyncGroup;
+
+  // Preferred codecs to be negotiated set by calling
+  // setCodecPreferences.
+  std::vector<UniquePtr<JsepCodecDescription>> mPreferredCodecs;
+  // Identifies if a preferred list and order of codecs is to be used.
+  // This is true if setCodecPreferences was called succesfully and passed
+  // codecs (not empty).
+  bool mPreferredCodecsInUse = false;
 };
 
 }  // namespace dom

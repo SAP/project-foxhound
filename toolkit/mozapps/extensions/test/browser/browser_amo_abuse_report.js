@@ -10,31 +10,12 @@ add_setup(async () => {
     set: [
       [
         "extensions.abuseReport.amoFormURL",
-        "https://example.org/%LOCALE%/%APP%/feedback/addon/%addonID%/",
+        "https://example.org/%LOCALE%/firefox/feedback/addon/%addonID%/",
       ],
     ],
   });
 
-  // Explicitly flip the amoFormEnabled pref on builds where the pref is
-  // expected to not be set to true by default.
-  if (AppConstants.MOZ_APP_NAME != "firefox") {
-    await SpecialPowers.pushPrefEnv({
-      set: [["extensions.abuseReport.amoFormEnabled", true]],
-    });
-  }
-
-  const { AbuseReporter } = ChromeUtils.importESModule(
-    "resource://gre/modules/AbuseReporter.sys.mjs"
-  );
-
-  Assert.equal(
-    AbuseReporter.amoFormEnabled,
-    true,
-    "Expect AMO abuse report form to be enabled"
-  );
-
-  // Setting up MockProvider to mock various addon types
-  // as installed.
+  // Setting up MockProvider to mock various addon types as installed.
   await AbuseReportTestUtils.setup();
 });
 
@@ -80,6 +61,25 @@ add_task(async function test_report_action_hidden_on_langpack_addons() {
   await AbuseReportTestUtils.assertReportActionHidden(
     gManagerWindow,
     EXT_LANGPACK_ADDON_ID
+  );
+  await closeAboutAddons();
+});
+
+add_task(async function test_report_action_hidden_on_system_addons() {
+  await openAboutAddons("extension");
+  await AbuseReportTestUtils.assertReportActionHidden(
+    gManagerWindow,
+    EXT_SYSTEM_ADDON_ID
+  );
+  await closeAboutAddons();
+});
+
+add_task(async function test_report_action_hidden_on_builtin_addons() {
+  const DEFAULT_BUILTIN_THEME_ID = "default-theme@mozilla.org";
+  await openAboutAddons("theme");
+  await AbuseReportTestUtils.assertReportActionHidden(
+    gManagerWindow,
+    DEFAULT_BUILTIN_THEME_ID
   );
   await closeAboutAddons();
 });

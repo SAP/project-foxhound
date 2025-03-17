@@ -791,6 +791,7 @@ where
             Component::Root |
             Component::Empty |
             Component::Scope |
+            Component::ImplicitScope |
             Component::ParentSelector |
             Component::Nth(..) |
             Component::Host(None) |
@@ -866,6 +867,8 @@ malloc_size_of_is_0!(app_units::Au);
 malloc_size_of_is_0!(cssparser::TokenSerializationType, cssparser::SourceLocation, cssparser::SourcePosition);
 
 malloc_size_of_is_0!(dom::ElementState, dom::DocumentState);
+
+malloc_size_of_is_0!(selectors::OpaqueElement);
 
 #[cfg(feature = "servo")]
 malloc_size_of_is_0!(csp::Destination);

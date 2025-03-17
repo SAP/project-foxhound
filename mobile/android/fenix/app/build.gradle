@@ -680,9 +680,10 @@ dependencies {
     implementation ComponentsDependencies.androidx_core_ktx
     implementation FenixDependencies.androidx_core_splashscreen
     implementation FenixDependencies.androidx_transition
+    implementation FenixDependencies.androidx_viewpager2
     implementation ComponentsDependencies.androidx_work_runtime
-    implementation FenixDependencies.androidx_datastore
-    implementation ComponentsDependencies.androidx_data_store_preferences
+    implementation ComponentsDependencies.androidx_datastore
+    implementation ComponentsDependencies.androidx_datastore_preferences
     implementation FenixDependencies.protobuf_javalite
     implementation ComponentsDependencies.google_material
 
@@ -692,8 +693,8 @@ dependencies {
     implementation FenixDependencies.google_ads_id // Required for the Google Advertising ID
 
     // Required for in-app reviews
-    implementation FenixDependencies.google_play_review
-    implementation FenixDependencies.google_play_review_ktx
+    implementation ComponentsDependencies.play_review
+    implementation ComponentsDependencies.play_review_ktx
 
     implementation FenixDependencies.androidx_profileinstaller
 
@@ -751,7 +752,7 @@ dependencies {
     // depend on a separate library for unit tests. This will be removed in future releases.
     testImplementation "org.mozilla.telemetry:glean-native-forUnitTests:${project.ext.glean_version}"
 
-    lintChecks project(":mozilla-lint-rules")
+    lintPublish project(":mozilla-lint-rules")
     lintChecks project(':tooling-lint')
 }
 
@@ -894,13 +895,8 @@ if (gradle.hasProperty('localProperties.dependencySubstitutions.geckoviewTopsrcd
     if (gradle.hasProperty('localProperties.dependencySubstitutions.geckoviewTopobjdir')) {
         ext.topobjdir = gradle."localProperties.dependencySubstitutions.geckoviewTopobjdir"
     }
-    ext.topsrcdir = StringUtils.removeSuffix(gradle."localProperties.dependencySubstitutions.geckoviewTopsrcdir", File.separator)
+    ext.topsrcdir = gradle."localProperties.dependencySubstitutions.geckoviewTopsrcdir"
     apply from: "${topsrcdir}/substitute-local-geckoview.gradle"
-}
-
-if (gradle.hasProperty('localProperties.autoPublish.glean.dir')) {
-    ext.gleanSrcDir = gradle."localProperties.autoPublish.glean.dir"
-    apply from: "../${gleanSrcDir}/build-scripts/substitute-local-glean.gradle"
 }
 
 android.applicationVariants.configureEach { variant ->

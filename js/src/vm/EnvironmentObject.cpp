@@ -31,6 +31,7 @@
 #include "gc/Marking-inl.h"
 #include "gc/StableCellHasher-inl.h"
 #include "vm/BytecodeIterator-inl.h"
+#include "vm/List-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/Stack-inl.h"
 
@@ -413,8 +414,49 @@ ModuleEnvironmentObject* ModuleEnvironmentObject::create(
   MOZ_ASSERT(!env->inDictionaryMode());
 #endif
 
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  env->initSlot(ModuleEnvironmentObject::DISPOSABLE_OBJECTS_SLOT,
+                UndefinedValue());
+#endif
+
   return env;
 }
+
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+// TODO: at the time of unflagging ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+// consider having a common base class for LexicalEnvironmentObject and
+// ModuleEnvironmentObject containing all the common code.
+static bool addDisposableObjectHelper(JS::Handle<EnvironmentObject*> env,
+                                      uint32_t slot, JSContext* cx,
+                                      JS::Handle<JS::Value> val) {
+  Value slotData = env->getReservedSlot(slot);
+  ListObject* disposablesList = nullptr;
+  if (slotData.isUndefined()) {
+    disposablesList = ListObject::create(cx);
+    if (!disposablesList) {
+      return false;
+    }
+    env->setReservedSlot(slot, ObjectValue(*disposablesList));
+  } else {
+    disposablesList = &slotData.toObject().as<ListObject>();
+  }
+  return disposablesList->append(cx, val);
+}
+
+bool ModuleEnvironmentObject::addDisposableObject(JSContext* cx,
+                                                  JS::Handle<JS::Value> val) {
+  Rooted<ModuleEnvironmentObject*> env(cx, this);
+  return addDisposableObjectHelper(env, DISPOSABLE_OBJECTS_SLOT, cx, val);
+}
+
+Value ModuleEnvironmentObject::getDisposables() {
+  return getReservedSlot(DISPOSABLE_OBJECTS_SLOT);
+}
+
+void ModuleEnvironmentObject::clearDisposables() {
+  setReservedSlot(DISPOSABLE_OBJECTS_SLOT, UndefinedValue());
+}
+#endif
 
 /* static */
 ModuleEnvironmentObject* ModuleEnvironmentObject::createSynthetic(
@@ -941,12 +983,33 @@ LexicalEnvironmentObject* LexicalEnvironmentObject::create(
     env->initEnclosingEnvironment(enclosing);
   }
 
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  env->initSlot(LexicalEnvironmentObject::DISPOSABLE_OBJECTS_SLOT,
+                UndefinedValue());
+#endif
+
   return env;
 }
 
 bool LexicalEnvironmentObject::isExtensible() const {
   return NativeObject::isExtensible();
 }
+
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+bool LexicalEnvironmentObject::addDisposableObject(JSContext* cx,
+                                                   JS::Handle<JS::Value> val) {
+  Rooted<LexicalEnvironmentObject*> env(cx, this);
+  return addDisposableObjectHelper(env, DISPOSABLE_OBJECTS_SLOT, cx, val);
+}
+
+Value LexicalEnvironmentObject::getDisposables() {
+  return getReservedSlot(DISPOSABLE_OBJECTS_SLOT);
+}
+
+void LexicalEnvironmentObject::clearDisposables() {
+  setReservedSlot(DISPOSABLE_OBJECTS_SLOT, UndefinedValue());
+}
+#endif
 
 /* static */
 BlockLexicalEnvironmentObject* BlockLexicalEnvironmentObject::create(
@@ -2613,18 +2676,20 @@ void DebugEnvironments::checkHashTablesAfterMovingGC() {
    * This is called at the end of StoreBuffer::mark() to check that our
    * postbarriers have worked and that no hashtable keys (or values) are left
    * pointing into the nursery.
+   *
+   * |proxiedEnvs| is checked automatically because it is a WeakMap.
    */
-  proxiedEnvs.checkAfterMovingGC();
-  for (MissingEnvironmentMap::Range r = missingEnvs.all(); !r.empty();
-       r.popFront()) {
-    CheckGCThingAfterMovingGC(r.front().key().scope());
+  CheckTableAfterMovingGC(missingEnvs, [this](const auto& entry) {
+    CheckGCThingAfterMovingGC(entry.key().scope(), zone());
     // Use unbarrieredGet() to prevent triggering read barrier while collecting.
-    CheckGCThingAfterMovingGC(r.front().value().unbarrieredGet());
-  }
-  for (LiveEnvironmentMap::Range r = liveEnvs.all(); !r.empty(); r.popFront()) {
-    CheckGCThingAfterMovingGC(r.front().key());
-    CheckGCThingAfterMovingGC(r.front().value().scope_.get());
-  }
+    CheckGCThingAfterMovingGC(entry.value().unbarrieredGet(), zone());
+    return entry.key();
+  });
+  CheckTableAfterMovingGC(liveEnvs, [this](const auto& entry) {
+    CheckGCThingAfterMovingGC(entry.key(), zone());
+    CheckGCThingAfterMovingGC(entry.value().scope_.get(), zone());
+    return entry.key().unbarrieredGet();
+  });
 }
 #endif
 

@@ -78,6 +78,16 @@ function promiseCrashReport(expectedExtra = {}) {
   })();
 }
 
+function promiseCrashReportFail() {
+  return (async function () {
+    info("Starting wait on crash-report-status");
+    await TestUtils.topicObserved("crash-report-status", (unused, data) => {
+      return data == "failed";
+    });
+    info("Topic observed!");
+  })();
+}
+
 /**
  * For an nsIPropertyBag, returns the value for a given
  * key.
@@ -169,15 +179,6 @@ function getEventPromise(eventName, eventKind) {
     );
     info("Installed event listener (" + eventKind + ")");
   });
-}
-
-async function ensureBuildID() {
-  let profD = Services.dirsvc.get("GreD", Ci.nsIFile);
-  let platformIniOrig = await IOUtils.readUTF8(
-    PathUtils.join(profD.path, "platform.ini")
-  );
-  let buildID = Services.appinfo.platformBuildID;
-  return platformIniOrig.indexOf(buildID) > 0;
 }
 
 async function openNewTab(forceCrash) {

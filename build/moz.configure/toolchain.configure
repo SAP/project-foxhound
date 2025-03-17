@@ -1208,7 +1208,11 @@ target_sysroot = sysroot(target)
 def system_lib_option(name, *args, **kwargs):
     option(name, *args, **kwargs)
 
-    @depends(name, target_sysroot.bootstrapped)
+    @depends(
+        name,
+        target_sysroot.bootstrapped,
+        when=kwargs.get("when"),
+    )
     def no_system_lib_in_sysroot(value, bootstrapped):
         if bootstrapped and value:
             die(
@@ -1720,7 +1724,9 @@ host_windows_abi = windows_abi(host, host_c_compiler)
 
 # Generic compiler-based conditions.
 building_with_gcc = depends(c_compiler)(lambda info: info.type == "gcc")
-building_with_gnu_cc = depends(c_compiler)(lambda info: info.type != "clang-cl")
+building_with_gnu_compatible_cc = depends(c_compiler)(
+    lambda info: info.type != "clang-cl"
+)
 
 
 @depends(cxx_compiler, ccache_prefix)
@@ -2151,13 +2157,13 @@ try_compile(
 def default_debug_flags(compiler_info, target):
     # Debug info is ON by default.
     if compiler_info.type == "clang-cl":
-        return "-Z7"
+        return ("-Z7",)
     elif target.kernel == "WINNT" and compiler_info.type == "clang":
-        return "-g -gcodeview"
+        return ("-g", "-gcodeview")
     # The oldest versions of supported compilers default to DWARF-4, but
     # newer versions may default to DWARF-5 or newer (e.g. clang 14), which
     # Valgrind doesn't support. Force-use DWARF-4.
-    return "-gdwarf-4"
+    return ("-gdwarf-4",)
 
 
 option(env="MOZ_DEBUG_FLAGS", nargs=1, help="Debug compiler flags")
@@ -2174,14 +2180,15 @@ set_config("MOZ_DEBUG_SYMBOLS", depends_if("--enable-debug-symbols")(lambda _: T
 
 
 @depends("MOZ_DEBUG_FLAGS", "--enable-debug-symbols", default_debug_flags)
+@imports(_from="mozbuild.shellutil", _import="split")
 def debug_flags(env_debug_flags, enable_debug_flags, default_debug_flags):
     # If MOZ_DEBUG_FLAGS is set, and --enable-debug-symbols is set to a value,
     # --enable-debug-symbols takes precedence. Note, the value of
     # --enable-debug-symbols may be implied by --enable-debug.
     if len(enable_debug_flags):
-        return enable_debug_flags[0]
+        return split(enable_debug_flags[0])
     if env_debug_flags:
-        return env_debug_flags[0]
+        return split(env_debug_flags[0])
     return default_debug_flags
 
 
@@ -2422,6 +2429,8 @@ def asan():
 
 
 add_old_configure_assignment("MOZ_ASAN", asan)
+set_define("MOZ_ASAN", True, when=asan)
+set_config("MOZ_ASAN", True, when=asan)
 
 # MSAN
 # ==============================================================
@@ -2434,7 +2443,18 @@ def msan():
     return True
 
 
+@depends(c_compiler, compilation_flags, linker_flags, when=msan)
+def msan_flags(c_compiler, compilation_flags, linker_flags):
+    flags = ["-fsanitize=memory", "-fsanitize-memory-track-origins"]
+    compilation_flags.cflags.extend(flags)
+    compilation_flags.cxxflags.extend(flags)
+    if c_compiler.type != "clang-cl":
+        linker_flags.ldflags.extend(flags + ["-rdynamic"])
+
+
 add_old_configure_assignment("MOZ_MSAN", msan)
+set_define("MOZ_MSAN", True, when=msan)
+set_config("MOZ_MSAN", True, when=msan)
 
 # TSAN
 # ==============================================================
@@ -2447,7 +2467,18 @@ def tsan():
     return True
 
 
-add_old_configure_assignment("MOZ_TSAN", tsan)
+@depends(c_compiler, compilation_flags, linker_flags, when=tsan)
+def tsan_flags(c_compiler, compilation_flags, linker_flags):
+    flag = "-fsanitize=thread"
+    compilation_flags.cflags.append(flag)
+    compilation_flags.cxxflags.append(flag)
+    if c_compiler.type != "clang-cl":
+        linker_flags.ldflags.extend(["-fsanitize=thread", "-rdynamic"])
+
+
+add_old_configure_assignment("MOZ_TSAN", tsan)  # still used in js/src/old-configure.in
+set_define("MOZ_TSAN", True, when=tsan)
+set_config("MOZ_TSAN", True, when=tsan)
 
 # UBSAN
 # ==============================================================
@@ -2479,10 +2510,37 @@ def ubsan(options, optimize):
 
     checks = options if len(options) else default_checks
 
-    return ",".join(checks)
+    return checks
 
 
-add_old_configure_assignment("MOZ_UBSAN_CHECKS", ubsan)
+@depends(
+    ubsan, c_compiler, compilation_flags, linker_flags, build_environment, when=ubsan
+)
+@imports(_from="__builtin__", _import="open")
+@imports(_from="glob", _import="glob")
+@imports("shutil")
+def ubsan_flags(ubsan_checks, c_compiler, compilation_flags, linker_flags, build_env):
+    ubsan_txt = os.path.join(build_env.topobjdir, "ubsan_blacklist.txt")
+    with open(ubsan_txt, "w") as out_fd:
+        for blacklist in glob(
+            os.path.join(
+                build_env.topsrcdir, "build", "sanitizers", "ubsan_*_blacklist.txt"
+            )
+        ):
+            with open(blacklist) as in_fd:
+                shutil.copyfileobj(in_fd, out_fd)
+
+    joined_ubsan_checks = ",".join(ubsan_checks)
+
+    flags = [
+        f"-fsanitize={joined_ubsan_checks}",
+        f"-fno-sanitize-recover={joined_ubsan_checks}",
+        f"-fsanitize-blacklist={ubsan_txt}",
+    ]
+    compilation_flags.cflags.extend(flags)
+    compilation_flags.cxxflags.extend(flags)
+    if c_compiler.type != "clang-cl":
+        linker_flags.ldflags.extend(["-fsanitize=undefined", "-rdynamic"])
 
 
 option(
@@ -2496,7 +2554,34 @@ def ub_signed_overflow_san():
     return True
 
 
-add_old_configure_assignment("MOZ_SIGNED_OVERFLOW_SANITIZE", ub_signed_overflow_san)
+@depends(
+    c_compiler,
+    compilation_flags,
+    linker_flags,
+    build_environment,
+    when=ub_signed_overflow_san,
+)
+def ub_signed_overflow_san_flags(
+    c_compiler, compilation_flags, linker_flags, build_env
+):
+    sanitizer_blacklist = os.path.join(
+        build_env.topsrcdir,
+        "build",
+        "sanitizers",
+        "ubsan_signed_overflow_blacklist.txt",
+    )
+    flags = [
+        f"-fsanitize=signed-integer-overflow",
+        f"-fsanitize-blacklist={sanitizer_blacklist}",
+    ]
+    compilation_flags.cflags.extend(flags)
+    compilation_flags.cxxflags.extend(flags)
+    if c_compiler.type != "clang-cl":
+        linker_flags.ldflags.extend(["-fsanitize=signed-integer-overflow", "-rdynamic"])
+
+
+set_define("MOZ_SIGNED_OVERFLOW_SANITIZE", True, when=ub_signed_overflow_san)
+set_config("MOZ_SIGNED_OVERFLOW_SANITIZE", True, when=ub_signed_overflow_san)
 
 
 option(
@@ -2510,8 +2595,42 @@ def ub_unsigned_overflow_san():
     return True
 
 
-add_old_configure_assignment("MOZ_UNSIGNED_OVERFLOW_SANITIZE", ub_unsigned_overflow_san)
+@depends(
+    c_compiler,
+    compilation_flags,
+    linker_flags,
+    build_environment,
+    when=ub_unsigned_overflow_san,
+)
+def ub_unsigned_overflow_san_flags(
+    c_compiler, compilation_flags, linker_flags, build_env
+):
+    sanitizer_blacklist = os.path.join(
+        build_env.topsrcdir,
+        "build",
+        "sanitizers",
+        "ubsan_unsigned_overflow_blacklist.txt",
+    )
+    flags = [
+        f"-fsanitize=unsigned-integer-overflow",
+        f"-fsanitize-blacklist={sanitizer_blacklist}",
+    ]
+    compilation_flags.cflags.extend(flags)
+    compilation_flags.cxxflags.extend(flags)
+    if c_compiler.type != "clang-cl":
+        linker_flags.ldflags.extend(
+            ["-fsanitize=unsigned-integer-overflow", "-rdynamic"]
+        )
 
+
+set_define("MOZ_UNSIGNED_OVERFLOW_SANITIZE", True, when=ub_unsigned_overflow_san)
+set_config("MOZ_UNSIGNED_OVERFLOW_SANITIZE", True, when=ub_unsigned_overflow_san)
+
+#
+
+any_ubsan = ubsan | ub_signed_overflow_san | ub_unsigned_overflow_san
+set_define("MOZ_UBSAN", True, when=any_ubsan)
+set_config("MOZ_UBSAN", any_ubsan)
 
 # Security Hardening
 # ==============================================================
@@ -3055,7 +3174,6 @@ set_define("FUZZING", enable_fuzzing)
 
 set_config("LIBFUZZER", enable_libfuzzer)
 set_define("LIBFUZZER", enable_libfuzzer)
-add_old_configure_assignment("LIBFUZZER", enable_libfuzzer)
 
 set_config("AFLFUZZ", enable_aflfuzzer)
 set_define("AFLFUZZ", enable_aflfuzzer)
@@ -3111,9 +3229,39 @@ def libfuzzer_flags(value, tsan, enable_js_fuzzilli):
     )
 
 
+@depends(libfuzzer_flags, when=enable_libfuzzer)
+def sancov(libfuzzer_flags):
+    return any(
+        flag.startswith(head)
+        for head in ("-fsanitize-coverage", "-fsanitize=fuzzer")
+        for flag in libfuzzer_flags.use_flags
+    )
+
+
+add_old_configure_assignment("SANCOV", sancov)
+
+
 set_config("HAVE_LIBFUZZER_FLAG_FUZZER_NO_LINK", libfuzzer_flags.no_link_flag_supported)
 set_config("LIBFUZZER_FLAGS", libfuzzer_flags.use_flags)
-add_old_configure_assignment("LIBFUZZER_FLAGS", libfuzzer_flags.use_flags)
+
+
+# Required for stand-alone (sanitizer-less) libFuzzer.
+# ==============================================================
+@depends(libfuzzer_flags, linker_flags, when=enable_libfuzzer)
+def add_libfuzzer_flags(libfuzzer_flags, linker_flags):
+    linker_flags.ldflags.extend(libfuzzer_flags.use_flags)
+    linker_flags.ldflags.append("-rdynamic")
+
+
+# The LLVM symbolizer is used by all sanitizers
+check_prog(
+    "LLVM_SYMBOLIZER",
+    ("llvm-symbolizer",),
+    allow_missing=True,
+    paths=clang_search_path,
+    when=asan | msan | tsan | any_ubsan | enable_fuzzing,
+)
+
 
 # Shared library building
 # ==============================================================
@@ -3309,9 +3457,19 @@ def nm_names(toolchain_prefix, c_compiler):
 check_prog("NM", nm_names, paths=clang_search_path, when=target_has_linux_kernel)
 
 
+# We don't use it in the code, but it can be useful for debugging, so give
+# the user the option of enabling it.
 option("--enable-cpp-rtti", help="Enable C++ RTTI")
 
-add_old_configure_assignment("_MOZ_USE_RTTI", "1", when="--enable-cpp-rtti")
+
+@depends(compilation_flags, c_compiler, "--enable-cpp-rtti")
+def enable_cpp_rtti(compilation_flags, c_compiler, enable_rtti):
+    if enable_rtti:
+        return
+    if c_compiler.type == "clang-cl":
+        compilation_flags.cxxflags.append("-GR-")
+    else:
+        compilation_flags.cxxflags.append("-fno-rtti")
 
 
 option(

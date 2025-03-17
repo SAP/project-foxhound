@@ -29,8 +29,10 @@ jobs:
           - mozilla-central
       when:
           by-project:
-              mozilla-central: [{hour: 22, minute: 0}]
               # No default
+              mozilla-central:
+                  - {hour: 10, minute: 0}
+                  - {hour: 22, minute: 0}
 
     - name: nightly-desktop
       job:
@@ -40,7 +42,7 @@ jobs:
           include-push-tasks: true
       run-on-projects:
           - mozilla-central
-      when: [{hour: 10, minute: 0}]
+      when: []  # never (hook only)
 
     - name: nightly-desktop-linux
       job:
@@ -140,7 +142,7 @@ jobs:
       run-on-projects:
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr115
+          - mozilla-esr128
           - elm
       # For all non m-c jobs we just run once daily matching the 10 UTC
       # nightly which is designed to align with searchfox's AWS cron
@@ -201,7 +203,7 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr115
+          - mozilla-esr128
       when:
           by-project:
               # No default branch
@@ -214,9 +216,7 @@ jobs:
               mozilla-release:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
-              mozilla-esr115:
-                  - {hour: 7, minute: 0}
-                  - {hour: 19, minute: 0}
+              mozilla-esr128: []
 
     - name: periodic-update
       job:
@@ -227,7 +227,6 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr115
       when:
           - {weekday: 'Monday', hour: 8, minute: 0}
           - {weekday: 'Thursday', hour: 8, minute: 0}

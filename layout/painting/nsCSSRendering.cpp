@@ -23,6 +23,7 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SVGImageContext.h"
 #include "gfxFont.h"
@@ -43,7 +44,6 @@
 #include "nsCSSAnonBoxes.h"
 #include "nsIContent.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "nsIScrollableFrame.h"
 #include "imgIContainer.h"
 #include "ImageOps.h"
 #include "nsCSSColorUtils.h"
@@ -1151,10 +1151,9 @@ static nsIFrame* GetPageSequenceForCanvas(const nsIFrame* aCanvasFrame) {
   return ps;
 }
 
-auto nsCSSRendering::FindEffectiveBackgroundColor(nsIFrame* aFrame,
-                                                  bool aStopAtThemed,
-                                                  bool aPreferBodyToCanvas)
-    -> EffectiveBackgroundColor {
+auto nsCSSRendering::FindEffectiveBackgroundColor(
+    nsIFrame* aFrame, bool aStopAtThemed,
+    bool aPreferBodyToCanvas) -> EffectiveBackgroundColor {
   MOZ_ASSERT(aFrame);
   nsPresContext* pc = aFrame->PresContext();
   auto BgColorIfNotTransparent = [&](nsIFrame* aFrame) -> Maybe<nscolor> {
@@ -2174,7 +2173,7 @@ void nsCSSRendering::GetImageLayerClip(
 
   aClipState->mBGClipArea = clipBorderArea;
 
-  if (aForFrame->IsScrollFrame() &&
+  if (aForFrame->IsScrollContainerFrame() &&
       StyleImageLayerAttachment::Local == aLayer.mAttachment) {
     // As of this writing, this is still in discussion in the CSS Working Group
     // http://lists.w3.org/Archives/Public/www-style/2013Jul/0250.html
@@ -2184,15 +2183,15 @@ void nsCSSRendering::GetImageLayerClip(
     // like the content. (See below.)
     // Therefore, only 'content-box' makes a difference here.
     if (layerClip == StyleGeometryBox::ContentBox) {
-      nsIScrollableFrame* scrollableFrame = do_QueryFrame(aForFrame);
+      ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(aForFrame);
       // Clip at a rectangle attached to the scrolled content.
       aClipState->mHasAdditionalBGClipArea = true;
       aClipState->mAdditionalBGClipArea =
           nsRect(aClipState->mBGClipArea.TopLeft() +
-                     scrollableFrame->GetScrolledFrame()->GetPosition()
+                     scrollContainerFrame->GetScrolledFrame()->GetPosition()
                      // For the dir=rtl case:
-                     + scrollableFrame->GetScrollRange().TopLeft(),
-                 scrollableFrame->GetScrolledRect().Size());
+                     + scrollContainerFrame->GetScrollRange().TopLeft(),
+                 scrollContainerFrame->GetScrolledRect().Size());
       nsMargin padding = aForFrame->GetUsedPadding();
       // padding-bottom is ignored on scrollable frames:
       // https://bugzilla.mozilla.org/show_bug.cgi?id=748518
@@ -2769,13 +2768,14 @@ nsRect nsCSSRendering::ComputeImageLayerPositioningArea(
 
   LayoutFrameType frameType = aForFrame->Type();
   nsIFrame* geometryFrame = aForFrame;
-  if (MOZ_UNLIKELY(frameType == LayoutFrameType::Scroll &&
+  if (MOZ_UNLIKELY(frameType == LayoutFrameType::ScrollContainer &&
                    StyleImageLayerAttachment::Local == aLayer.mAttachment)) {
-    nsIScrollableFrame* scrollableFrame = do_QueryFrame(aForFrame);
-    positionArea = nsRect(scrollableFrame->GetScrolledFrame()->GetPosition()
-                              // For the dir=rtl case:
-                              + scrollableFrame->GetScrollRange().TopLeft(),
-                          scrollableFrame->GetScrolledRect().Size());
+    ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(aForFrame);
+    positionArea =
+        nsRect(scrollContainerFrame->GetScrolledFrame()->GetPosition()
+                   // For the dir=rtl case:
+                   + scrollContainerFrame->GetScrollRange().TopLeft(),
+               scrollContainerFrame->GetScrolledRect().Size());
     // The ScrolledRect’s size does not include the borders or scrollbars,
     // reverse the handling of background-origin
     // compared to the common case below.
@@ -2783,7 +2783,7 @@ nsRect nsCSSRendering::ComputeImageLayerPositioningArea(
       nsMargin border = geometryFrame->GetUsedBorder();
       border.ApplySkipSides(geometryFrame->GetSkipSides());
       positionArea.Inflate(border);
-      positionArea.Inflate(scrollableFrame->GetActualScrollbarSizes());
+      positionArea.Inflate(scrollContainerFrame->GetActualScrollbarSizes());
     } else if (layerOrigin != StyleGeometryBox::PaddingBox) {
       nsMargin padding = geometryFrame->GetUsedPadding();
       padding.ApplySkipSides(geometryFrame->GetSkipSides());
@@ -2860,10 +2860,9 @@ nsRect nsCSSRendering::ComputeImageLayerPositioningArea(
 
       if (!pageContentFrame) {
         // Subtract the size of scrollbars.
-        nsIScrollableFrame* scrollableFrame =
-            aPresContext->PresShell()->GetRootScrollFrameAsScrollable();
-        if (scrollableFrame) {
-          nsMargin scrollbars = scrollableFrame->GetActualScrollbarSizes();
+        if (ScrollContainerFrame* sf =
+                aPresContext->PresShell()->GetRootScrollContainerFrame()) {
+          nsMargin scrollbars = sf->GetActualScrollbarSizes();
           positionArea.Deflate(scrollbars);
         }
       }

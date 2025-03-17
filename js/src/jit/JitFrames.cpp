@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "builtin/ModuleObject.h"
+#include "builtin/Sorting.h"
 #include "gc/GC.h"
 #include "jit/BaselineFrame.h"
 #include "jit/BaselineIC.h"
@@ -35,6 +36,7 @@
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmInstance.h"
 
+#include "builtin/Sorting-inl.h"
 #include "debugger/DebugAPI-inl.h"
 #include "jit/JSJitFrameIter-inl.h"
 #include "vm/GeckoProfiler-inl.h"
@@ -97,6 +99,7 @@ static void UnwindTrampolineNativeFrame(JSRuntime* rt,
   TrampolineNative native = TrampolineNativeForFrame(rt, layout);
   switch (native) {
     case TrampolineNative::ArraySort:
+    case TrampolineNative::TypedArraySort:
       layout->getFrameData<ArraySortData>()->freeMallocData();
       break;
     case TrampolineNative::Count:
@@ -225,13 +228,8 @@ static void OnLeaveIonFrame(JSContext* cx, const InlineFrameIterator& frame,
   RematerializedFrame* rematFrame = nullptr;
   {
     JS::AutoSaveExceptionState savedExc(cx);
-
-    // We can run recover instructions without invalidating because we're
-    // already leaving the frame.
-    MaybeReadFallback::FallbackConsequence consequence =
-        MaybeReadFallback::Fallback_DoNothing;
     rematFrame = act->getRematerializedFrame(cx, frame.frame(), frame.frameNo(),
-                                             consequence);
+                                             IsLeavingFrame::Yes);
     if (!rematFrame) {
       return;
     }
@@ -1431,6 +1429,7 @@ static void TraceTrampolineNativeFrame(JSTracer* trc,
   TrampolineNative native = TrampolineNativeForFrame(trc->runtime(), layout);
   switch (native) {
     case TrampolineNative::ArraySort:
+    case TrampolineNative::TypedArraySort:
       layout->getFrameData<ArraySortData>()->trace(trc);
       break;
     case TrampolineNative::Count:
@@ -1503,6 +1502,11 @@ static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
       uint8_t* nextPC = frames.resumePCinCurrentFrame();
       MOZ_ASSERT(nextPC != 0);
       wasm::WasmFrameIter& wasmFrameIter = frames.asWasm();
+#ifdef ENABLE_WASM_JSPI
+      if (wasmFrameIter.stackSwitched()) {
+        highestByteVisitedInPrevWasmFrame = 0;
+      }
+#endif
       wasm::Instance* instance = wasmFrameIter.instance();
       wasm::TraceInstanceEdge(trc, instance, "WasmFrameIter instance");
       highestByteVisitedInPrevWasmFrame = instance->traceFrame(
@@ -1516,6 +1520,9 @@ void TraceJitActivations(JSContext* cx, JSTracer* trc) {
        ++activations) {
     TraceJitActivation(trc, activations->asJit());
   }
+#ifdef ENABLE_WASM_JSPI
+  cx->wasm().promiseIntegration.traceRoots(trc);
+#endif
 }
 
 void TraceWeakJitActivationsInSweepingZones(JSContext* cx, JSTracer* trc) {

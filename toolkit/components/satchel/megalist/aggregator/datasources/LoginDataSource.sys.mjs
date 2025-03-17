@@ -6,23 +6,18 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { LoginHelper } from "resource://gre/modules/LoginHelper.sys.mjs";
 import { DataSourceBase } from "resource://gre/modules/megalist/aggregator/datasources/DataSourceBase.sys.mjs";
 import { LoginCSVImport } from "resource://gre/modules/LoginCSVImport.sys.mjs";
+import { LoginExport } from "resource://gre/modules/LoginExport.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
+  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "BREACH_ALERTS_ENABLED",
   "signon.management.page.breach-alerts.enabled",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "VULNERABLE_PASSWORDS_ENABLED",
-  "signon.management.page.vulnerable-passwords.enabled",
   false
 );
 
@@ -41,239 +36,270 @@ export class LoginDataSource extends DataSourceBase {
   #loginsDisabledMessage;
   #enabled;
   #header;
+  #exportPasswordsStrings;
 
   constructor(...args) {
     super(...args);
     // Wait for Fluent to provide strings before loading data
-    this.formatMessages(
-      "passwords-section-label",
-      "passwords-origin-label",
-      "passwords-username-label",
-      "passwords-password-label",
-      "command-open",
-      "command-copy",
-      "command-reveal",
-      "command-conceal",
-      "passwords-disabled",
-      "command-delete",
-      "command-edit",
-      "passwords-command-create",
-      "passwords-command-import",
-      "passwords-command-export",
-      "passwords-command-remove-all",
-      "passwords-command-settings",
-      "passwords-command-help",
-      "passwords-import-file-picker-title",
-      "passwords-import-file-picker-import-button",
-      "passwords-import-file-picker-csv-filter-title",
-      "passwords-import-file-picker-tsv-filter-title"
-    ).then(
-      ([
-        headerLabel,
-        originLabel,
-        usernameLabel,
-        passwordLabel,
-        openCommandLabel,
-        copyCommandLabel,
-        revealCommandLabel,
-        concealCommandLabel,
-        passwordsDisabled,
-        deleteCommandLabel,
-        editCommandLabel,
-        passwordsCreateCommandLabel,
-        passwordsImportCommandLabel,
-        passwordsExportCommandLabel,
-        passwordsRemoveAllCommandLabel,
-        passwordsSettingsCommandLabel,
-        passwordsHelpCommandLabel,
-        passwordsImportFilePickerTitle,
-        passwordsImportFilePickerImportButton,
-        passwordsImportFilePickerCsvFilterTitle,
-        passwordsImportFilePickerTsvFilterTitle,
-      ]) => {
-        const copyCommand = { id: "Copy", label: copyCommandLabel };
-        const editCommand = { id: "Edit", label: editCommandLabel };
-        const deleteCommand = { id: "Delete", label: deleteCommandLabel };
-        this.breachedSticker = { type: "warning", label: "BREACH" };
-        this.vulnerableSticker = { type: "risk", label: "🤮 Vulnerable" };
-        this.#loginsDisabledMessage = passwordsDisabled;
-        this.#header = this.createHeaderLine(headerLabel);
-        this.#header.commands.push(
-          { id: "Create", label: passwordsCreateCommandLabel },
-          { id: "Import", label: passwordsImportCommandLabel },
-          { id: "Export", label: passwordsExportCommandLabel },
-          { id: "RemoveAll", label: passwordsRemoveAllCommandLabel },
-          { id: "Settings", label: passwordsSettingsCommandLabel },
-          { id: "Help", label: passwordsHelpCommandLabel }
+    this.localizeStrings({
+      headerLabel: "passwords-section-label",
+      originLabel: "passwords-origin-label",
+      usernameLabel: "passwords-username-label",
+      passwordLabel: "passwords-password-label",
+      passwordsDisabled: "passwords-disabled",
+      passwordOSAuthDialogCaption: "passwords-os-auth-dialog-caption",
+      passwordsImportFilePickerTitle: "passwords-import-file-picker-title",
+      passwordsImportFilePickerImportButton:
+        "passwords-import-file-picker-import-button",
+      passwordsImportFilePickerCsvFilterTitle:
+        "passwords-import-file-picker-csv-filter-title",
+      passwordsImportFilePickerTsvFilterTitle:
+        "passwords-import-file-picker-tsv-filter-title",
+      exportPasswordsOSReauthMessage: this.getPlatformFtl(
+        "passwords-export-os-auth-dialog-message"
+      ),
+      passwordsExportFilePickerTitle: "passwords-export-file-picker-title",
+      passwordsExportFilePickerDefaultFileName:
+        "passwords-export-file-picker-default-filename",
+      passwordsExportFilePickerExportButton:
+        "passwords-export-file-picker-export-button",
+      passwordsExportFilePickerCsvFilterTitle:
+        "passwords-export-file-picker-csv-filter-title",
+      dismissBreachCommandLabel: "passwords-dismiss-breach-alert-command",
+    }).then(strings => {
+      const copyCommand = { id: "Copy", label: "command-copy" };
+      const editCommand = { id: "Edit", label: "command-edit" };
+      const deleteCommand = { id: "Delete", label: "command-delete" };
+      const dismissBreachCommand = {
+        id: "DismissBreach",
+        label: strings.dismissBreachCommandLabel,
+      };
+      const noOriginSticker = { type: "error", label: "😾 Missing origin" };
+      const noPasswordSticker = { type: "error", label: "😾 Missing password" };
+      const breachedSticker = { type: "warning", label: "BREACH" };
+      const vulnerableSticker = { type: "risk", label: "🤮 Vulnerable" };
+      this.#loginsDisabledMessage = strings.passwordsDisabled;
+      this.#header = this.createHeaderLine(strings.headerLabel);
+      this.#header.commands.push(
+        { id: "Create", label: "passwords-command-create" },
+        {
+          id: "ImportFromBrowser",
+          label: "passwords-command-import-from-browser",
+        },
+        { id: "Import", label: "passwords-command-import" },
+        { id: "Export", label: "passwords-command-export" },
+        { id: "RemoveAll", label: "passwords-command-remove-all" },
+        { id: "Settings", label: "passwords-command-settings" },
+        { id: "Help", label: "passwords-command-help" }
+      );
+      this.#header.executeImport = async () =>
+        this.#importFromFile(
+          strings.passwordsImportFilePickerTitle,
+          strings.passwordsImportFilePickerImportButton,
+          strings.passwordsImportFilePickerCsvFilterTitle,
+          strings.passwordsImportFilePickerTsvFilterTitle
         );
-        this.#header.executeImport = async () => {
-          await this.#importFromFile(
-            passwordsImportFilePickerTitle,
-            passwordsImportFilePickerImportButton,
-            passwordsImportFilePickerCsvFilterTitle,
-            passwordsImportFilePickerTsvFilterTitle
-          );
-        };
-        this.#header.executeSettings = () => {
-          this.#openPreferences();
-        };
-        this.#header.executeHelp = () => {
-          this.#getHelp();
-        };
 
-        this.#originPrototype = this.prototypeDataLine({
-          label: { value: originLabel },
-          start: { value: true },
-          value: {
-            get() {
-              return this.record.displayOrigin;
-            },
-          },
-          valueIcon: {
-            get() {
-              return `page-icon:${this.record.origin}`;
-            },
-          },
-          href: {
-            get() {
-              return this.record.origin;
-            },
-          },
-          commands: {
-            value: [
-              { id: "Open", label: openCommandLabel },
-              copyCommand,
-              "-",
-              deleteCommand,
-            ],
-          },
-          executeCopy: {
-            value() {
-              this.copyToClipboard(this.record.origin);
-            },
-          },
-        });
-        this.#usernamePrototype = this.prototypeDataLine({
-          label: { value: usernameLabel },
-          value: {
-            get() {
-              return this.editingValue ?? this.record.username;
-            },
-          },
-          commands: { value: [copyCommand, editCommand, "-", deleteCommand] },
-          executeEdit: {
-            value() {
-              this.editingValue = this.record.username ?? "";
-              this.refreshOnScreen();
-            },
-          },
-          executeSave: {
-            value(value) {
-              try {
-                const modifiedLogin = this.record.clone();
-                modifiedLogin.username = value;
-                Services.logins.modifyLogin(this.record, modifiedLogin);
-              } catch (error) {
-                //todo
-                console.error("failed to modify login", error);
-              }
-              this.executeCancel();
-            },
-          },
-        });
-        this.#passwordPrototype = this.prototypeDataLine({
-          label: { value: passwordLabel },
-          concealed: { value: true, writable: true },
-          end: { value: true },
-          value: {
-            get() {
-              return (
-                this.editingValue ??
-                (this.concealed ? "••••••••" : this.record.password)
-              );
-            },
-          },
-          commands: {
-            get() {
-              const commands = [
-                { id: "Conceal", label: concealCommandLabel },
-                {
-                  id: "Copy",
-                  label: copyCommandLabel,
-                  verify: true,
-                },
-                editCommand,
-                "-",
-                deleteCommand,
-              ];
-              if (this.concealed) {
-                commands[0] = {
-                  id: "Reveal",
-                  label: revealCommandLabel,
-                  verify: true,
-                };
-              }
-              return commands;
-            },
-          },
-          executeReveal: {
-            value() {
-              this.concealed = false;
-              this.refreshOnScreen();
-            },
-          },
-          executeConceal: {
-            value() {
-              this.concealed = true;
-              this.refreshOnScreen();
-            },
-          },
-          executeCopy: {
-            value() {
-              this.copyToClipboard(this.record.password);
-            },
-          },
-          executeEdit: {
-            value() {
-              this.editingValue = this.record.password ?? "";
-              this.refreshOnScreen();
-            },
-          },
-          executeSave: {
-            value(value) {
-              try {
-                const modifiedLogin = this.record.clone();
-                modifiedLogin.password = value;
-                Services.logins.modifyLogin(this.record, modifiedLogin);
-              } catch (error) {
-                //todo
-                console.error("failed to modify login", error);
-              }
-              this.executeCancel();
-            },
-          },
-        });
+      this.#header.executeImportFromBrowser = () => this.#importFromBrowser();
+      this.#header.executeRemoveAll = () => this.#removeAllPasswords();
+      this.#header.executeSettings = () => this.#openPreferences();
+      this.#header.executeHelp = () => this.#getHelp();
+      this.#header.executeExport = async () => this.#exportAllPasswords();
+      this.#exportPasswordsStrings = {
+        OSReauthMessage: strings.exportPasswordsOSReauthMessage,
+        OSAuthDialogCaption: strings.passwordOSAuthDialogCaption,
+        ExportFilePickerTitle: strings.passwordsExportFilePickerTitle,
+        FilePickerExportButton: strings.passwordsExportFilePickerExportButton,
+        FilePickerDefaultFileName:
+          strings.passwordsExportFilePickerDefaultFileName.concat(".csv"),
+        FilePickerCsvFilterTitle:
+          strings.passwordsExportFilePickerCsvFilterTitle,
+      };
 
-        Services.obs.addObserver(this, "passwordmgr-storage-changed");
-        Services.prefs.addObserver("signon.rememberSignons", this);
-        Services.prefs.addObserver(
-          "signon.management.page.breach-alerts.enabled",
-          this
-        );
-        Services.prefs.addObserver(
-          "signon.management.page.vulnerable-passwords.enabled",
-          this
-        );
-        this.#reloadDataSource();
-      }
-    );
+      this.#originPrototype = this.prototypeDataLine({
+        label: { value: strings.originLabel },
+        start: { value: true },
+        value: {
+          get() {
+            return this.record.displayOrigin;
+          },
+        },
+        valueIcon: {
+          get() {
+            return `page-icon:${this.record.origin}`;
+          },
+        },
+        href: {
+          get() {
+            return this.record.origin;
+          },
+        },
+        commands: {
+          *value() {
+            yield { id: "Open", label: "command-open" };
+            yield copyCommand;
+            yield "-";
+            yield deleteCommand;
+
+            if (this.breached) {
+              yield dismissBreachCommand;
+            }
+          },
+        },
+        executeDismissBreach: {
+          value() {
+            lazy.LoginBreaches.recordBreachAlertDismissal(this.record.guid);
+            delete this.breached;
+            this.refreshOnScreen();
+          },
+        },
+        executeCopy: {
+          value() {
+            this.copyToClipboard(this.record.origin);
+          },
+        },
+        executeDelete: {
+          value() {
+            this.setLayout({ id: "remove-login" });
+          },
+        },
+        stickers: {
+          *value() {
+            if (this.isEditing() && !this.editingValue.length) {
+              yield noOriginSticker;
+            }
+
+            if (this.breached) {
+              yield breachedSticker;
+            }
+          },
+        },
+      });
+      this.#usernamePrototype = this.prototypeDataLine({
+        label: { value: strings.usernameLabel },
+        value: {
+          get() {
+            return this.editingValue ?? this.record.username;
+          },
+        },
+        commands: { value: [copyCommand, editCommand, "-", deleteCommand] },
+        executeEdit: {
+          value() {
+            this.editingValue = this.record.username ?? "";
+            this.refreshOnScreen();
+          },
+        },
+        executeSave: {
+          value(value) {
+            try {
+              const modifiedLogin = this.record.clone();
+              modifiedLogin.username = value;
+              Services.logins.modifyLogin(this.record, modifiedLogin);
+            } catch (error) {
+              //todo
+              console.error("failed to modify login", error);
+            }
+            this.executeCancel();
+          },
+        },
+      });
+      this.#passwordPrototype = this.prototypeDataLine({
+        label: { value: strings.passwordLabel },
+        concealed: { value: true, writable: true },
+        end: { value: true },
+        value: {
+          get() {
+            return (
+              this.editingValue ??
+              (this.concealed ? "••••••••" : this.record.password)
+            );
+          },
+        },
+        stickers: {
+          *value() {
+            if (this.isEditing() && !this.editingValue.length) {
+              yield noPasswordSticker;
+            }
+
+            if (this.vulnerable) {
+              yield vulnerableSticker;
+            }
+          },
+        },
+        commands: {
+          *value() {
+            if (this.concealed) {
+              yield { id: "Reveal", label: "command-reveal", verify: true };
+            } else {
+              yield { id: "Conceal", label: "command-conceal" };
+            }
+            yield { ...copyCommand, verify: true };
+            yield editCommand;
+            yield "-";
+            yield deleteCommand;
+          },
+        },
+        executeReveal: {
+          value() {
+            this.concealed = false;
+            this.refreshOnScreen();
+          },
+        },
+        executeConceal: {
+          value() {
+            this.concealed = true;
+            this.refreshOnScreen();
+          },
+        },
+        executeCopy: {
+          value() {
+            this.copyToClipboard(this.record.password);
+          },
+        },
+        executeEdit: {
+          value() {
+            this.editingValue = this.record.password ?? "";
+            this.refreshOnScreen();
+          },
+        },
+        executeSave: {
+          value(value) {
+            if (!value) {
+              return;
+            }
+
+            try {
+              const modifiedLogin = this.record.clone();
+              modifiedLogin.password = value;
+              Services.logins.modifyLogin(this.record, modifiedLogin);
+            } catch (error) {
+              //todo
+              console.error("failed to modify login", error);
+            }
+            this.executeCancel();
+          },
+        },
+      });
+
+      Services.obs.addObserver(this, "passwordmgr-storage-changed");
+      Services.prefs.addObserver("signon.rememberSignons", this);
+      Services.prefs.addObserver(
+        "signon.management.page.breach-alerts.enabled",
+        this
+      );
+      Services.prefs.addObserver(
+        "signon.management.page.vulnerable-passwords.enabled",
+        this
+      );
+      this.#reloadDataSource();
+    });
   }
 
   async #importFromFile(title, buttonLabel, csvTitle, tsvTitle) {
     const { BrowserWindowTracker } = ChromeUtils.importESModule(
       "resource:///modules/BrowserWindowTracker.sys.mjs"
     );
-    const browser = BrowserWindowTracker.getTopWindow().gBrowser;
+    const browsingContext = BrowserWindowTracker.getTopWindow().browsingContext;
     let { result, path } = await this.openFilePickerDialog(
       title,
       buttonLabel,
@@ -287,26 +313,38 @@ export class LoginDataSource extends DataSourceBase {
           extensionPattern: "*.tsv",
         },
       ],
-      browser.ownerGlobal
+      browsingContext
     );
 
     if (result != Ci.nsIFilePicker.returnCancel) {
-      let summary;
       try {
-        summary = await LoginCSVImport.importFromCSV(path);
+        const summary = await LoginCSVImport.importFromCSV(path);
+        const counts = { added: 0, modified: 0, no_change: 0, error: 0 };
+
+        for (const item of summary) {
+          counts[item.result] += 1;
+        }
+        const l10nArgs = Object.values(counts).map(count => ({ count }));
+
+        this.setLayout({
+          id: "import-logins",
+          l10nArgs,
+        });
       } catch (e) {
-        // TODO: Display error for import
-      }
-      if (summary) {
-        // TODO: Display successful import summary
+        this.setLayout({ id: "import-error" });
       }
     }
   }
 
-  async openFilePickerDialog(title, okButtonLabel, appendFilters, ownerGlobal) {
+  async openFilePickerDialog(
+    title,
+    okButtonLabel,
+    appendFilters,
+    browsingContext
+  ) {
     return new Promise(resolve => {
       let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
-      fp.init(ownerGlobal, title, Ci.nsIFilePicker.modeOpen);
+      fp.init(browsingContext, title, Ci.nsIFilePicker.modeOpen);
       for (const appendFilter of appendFilters) {
         fp.appendFilter(appendFilter.title, appendFilter.extensionPattern);
       }
@@ -316,6 +354,109 @@ export class LoginDataSource extends DataSourceBase {
         resolve({ result, path: fp.file.path });
       });
     });
+  }
+
+  #importFromBrowser() {
+    const { BrowserWindowTracker } = ChromeUtils.importESModule(
+      "resource:///modules/BrowserWindowTracker.sys.mjs"
+    );
+    const browser = BrowserWindowTracker.getTopWindow().gBrowser;
+    try {
+      lazy.MigrationUtils.showMigrationWizard(browser.ownerGlobal, {
+        entrypoint: lazy.MigrationUtils.MIGRATION_ENTRYPOINTS.PASSWORDS,
+      });
+    } catch (ex) {
+      console.error(ex);
+    }
+  }
+
+  #removeAllPasswords() {
+    let count = 0;
+    let currentRecord;
+    for (const line of this.lines) {
+      if (line.record != currentRecord) {
+        count += 1;
+        currentRecord = line.record;
+      }
+    }
+
+    this.setLayout({ id: "remove-logins", l10nArgs: [{ count }] });
+  }
+
+  confirmRemoveAll() {
+    Services.logins.removeAllLogins();
+    this.cancelDialog();
+  }
+
+  confirmRemoveLogin([record]) {
+    Services.logins.removeLogin(record);
+    this.cancelDialog();
+  }
+
+  confirmRetryImport() {
+    this.#header.executeImport();
+    this.cancelDialog();
+  }
+
+  #exportAllPasswords() {
+    this.setLayout({ id: "export-logins" });
+  }
+
+  async confirmExportLogins() {
+    const { BrowserWindowTracker } = ChromeUtils.importESModule(
+      "resource:///modules/BrowserWindowTracker.sys.mjs"
+    );
+    const browsingContext = BrowserWindowTracker.getTopWindow().browsingContext;
+
+    const isOSAuthEnabled = LoginHelper.getOSAuthEnabled(
+      LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF
+    );
+
+    let { isAuthorized, telemetryEvent } = await LoginHelper.requestReauth(
+      browsingContext,
+      isOSAuthEnabled,
+      null, // Prompt regardless of a recent prompt
+      this.#exportPasswordsStrings.OSReauthMessage,
+      this.#exportPasswordsStrings.OSAuthDialogCaption
+    );
+
+    let { method, object, extra = {}, value = null } = telemetryEvent;
+    Services.telemetry.recordEvent("pwmgr", method, object, value, extra);
+
+    if (!isAuthorized) {
+      this.cancelDialog();
+      return;
+    }
+    this.exportFilePickerDialog(browsingContext);
+    this.cancelDialog();
+  }
+
+  exportFilePickerDialog(browsingContext) {
+    let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+    function fpCallback(aResult) {
+      if (aResult != Ci.nsIFilePicker.returnCancel) {
+        LoginExport.exportAsCSV(fp.file.path);
+        Services.telemetry.recordEvent(
+          "pwmgr",
+          "mgmt_menu_item_used",
+          "export_complete"
+        );
+      }
+    }
+    fp.init(
+      browsingContext,
+      this.#exportPasswordsStrings.ExportFilePickerTitle,
+      Ci.nsIFilePicker.modeSave
+    );
+    fp.appendFilter(
+      this.#exportPasswordsStrings.FilePickerCsvFilterTitle,
+      "*.csv"
+    );
+    fp.appendFilters(Ci.nsIFilePicker.filterAll);
+    fp.defaultString = this.#exportPasswordsStrings.FilePickerDefaultFileName;
+    fp.defaultExtension = "csv";
+    fp.okButtonLabel = this.#exportPasswordsStrings.FilePickerExportButton;
+    fp.open(fpCallback);
   }
 
   #openPreferences() {
@@ -422,31 +563,8 @@ export class LoginDataSource extends DataSourceBase {
         this.#passwordPrototype
       );
 
-      let breachIndex =
-        originLine.stickers?.findIndex(s => s === this.breachedSticker) ?? -1;
-      let breach = breachesMap.get(login.guid);
-      if (breach && breachIndex < 0) {
-        originLine.stickers ??= [];
-        originLine.stickers.push(this.breachedSticker);
-      } else if (!breach && breachIndex >= 0) {
-        originLine.stickers.splice(breachIndex, 1);
-      }
-
-      const vulnerable = lazy.VULNERABLE_PASSWORDS_ENABLED
-        ? lazy.LoginBreaches.getPotentiallyVulnerablePasswordsByLoginGUID([
-            login,
-          ]).size
-        : 0;
-
-      let vulnerableIndex =
-        passwordLine.stickers?.findIndex(s => s === this.vulnerableSticker) ??
-        -1;
-      if (vulnerable && vulnerableIndex < 0) {
-        passwordLine.stickers ??= [];
-        passwordLine.stickers.push(this.vulnerableSticker);
-      } else if (!vulnerable && vulnerableIndex >= 0) {
-        passwordLine.stickers.splice(vulnerableIndex, 1);
-      }
+      originLine.breached = breachesMap.has(login.guid);
+      passwordLine.vulnerable = lazy.LoginBreaches.isVulnerablePassword(login);
     });
 
     this.afterReloadingDataSource();

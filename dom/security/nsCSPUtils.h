@@ -93,24 +93,15 @@ static const char* CSPStrDirectives[] = {
     "script-src-attr",            // SCRIPT_SRC_ATTR_DIRECTIVE
     "style-src-elem",             // STYLE_SRC_ELEM_DIRECTIVE
     "style-src-attr",             // STYLE_SRC_ATTR_DIRECTIVE
+    "require-trusted-types-for",  // REQUIRE_TRUSTED_TYPES_FOR_DIRECTIVE
+    "trusted-types",              // TRUSTED_TYPES_DIRECTIVE
 };
 
 inline const char* CSP_CSPDirectiveToString(CSPDirective aDir) {
   return CSPStrDirectives[static_cast<uint32_t>(aDir)];
 }
 
-inline CSPDirective CSP_StringToCSPDirective(const nsAString& aDir) {
-  nsString lowerDir = PromiseFlatString(aDir);
-  ToLowerCase(lowerDir);
-
-  uint32_t numDirs = (sizeof(CSPStrDirectives) / sizeof(CSPStrDirectives[0]));
-  for (uint32_t i = 1; i < numDirs; i++) {
-    if (lowerDir.EqualsASCII(CSPStrDirectives[i])) {
-      return static_cast<CSPDirective>(i);
-    }
-  }
-  return nsIContentSecurityPolicy::NO_DIRECTIVE;
-}
+CSPDirective CSP_StringToCSPDirective(const nsAString& aDir);
 
 #define FOR_EACH_CSP_KEYWORD(MACRO)             \
   MACRO(CSP_SELF, "'self'")                     \
@@ -396,6 +387,34 @@ class nsCSPSandboxFlags : public nsCSPBaseSrc {
   nsString mFlags;
 };
 
+/* =============== nsCSPRequireTrustedTypesForDirectiveValue =============== */
+
+class nsCSPRequireTrustedTypesForDirectiveValue : public nsCSPBaseSrc {
+ public:
+  explicit nsCSPRequireTrustedTypesForDirectiveValue(const nsAString& aValue);
+  virtual ~nsCSPRequireTrustedTypesForDirectiveValue() = default;
+
+  bool visit(nsCSPSrcVisitor* aVisitor) const override;
+  void toString(nsAString& aOutStr) const override;
+
+ private:
+  const nsString mValue;
+};
+
+/* =============== nsCSPTrustedTypesDirectiveExpression =============== */
+
+class nsCSPTrustedTypesDirectivePolicyName : public nsCSPBaseSrc {
+ public:
+  explicit nsCSPTrustedTypesDirectivePolicyName(const nsAString& aName);
+  virtual ~nsCSPTrustedTypesDirectivePolicyName() = default;
+
+  bool visit(nsCSPSrcVisitor* aVisitor) const override;
+  void toString(nsAString& aOutStr) const override;
+
+ private:
+  const nsString mName;
+};
+
 /* =============== nsCSPSrcVisitor ================== */
 
 class nsCSPSrcVisitor {
@@ -431,6 +450,7 @@ class nsCSPDirective {
   virtual void toString(nsAString& outStr) const;
   void toDomCSPStruct(mozilla::dom::CSP& outCSP) const;
 
+  // Takes ownership of the passed sources.
   virtual void addSrcs(const nsTArray<nsCSPBaseSrc*>& aSrcs) {
     mSrcs = aSrcs.Clone();
   }
@@ -652,8 +672,8 @@ class nsCSPPolicy {
   void getReportURIs(nsTArray<nsString>& outReportURIs) const;
 
   void getViolatedDirectiveInformation(CSPDirective aDirective,
-                                       nsAString& outDirective,
-                                       nsAString& outDirectiveString,
+                                       nsAString& aDirectiveName,
+                                       nsAString& aDirectiveNameAndValue,
                                        bool* aReportSample) const;
 
   uint32_t getSandboxFlags() const;

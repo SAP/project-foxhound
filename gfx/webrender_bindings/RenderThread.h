@@ -275,7 +275,8 @@ class RenderThread final {
   RefPtr<layers::ShaderProgramOGLsHolder> GetProgramsForCompositorOGL();
 
   /// Can only be called from the render thread.
-  void HandleDeviceReset(const char* aWhere, GLenum aReason);
+  void HandleDeviceReset(gfx::DeviceResetDetectPlace aPlace,
+                         gfx::DeviceResetReason aReason);
   /// Can only be called from the render thread.
   bool IsHandlingDeviceReset();
   /// Can be called from any thread.
@@ -488,6 +489,11 @@ class RenderThread final {
 
   RefPtr<nsIRunnable> mRenderTextureOpsRunnable
       MOZ_GUARDED_BY(mRenderTextureMapLock);
+
+#ifdef DEBUG
+  // used for tests only to ensure render textures don't increase
+  int32_t mRenderTexturesLastTime MOZ_GUARDED_BY(mRenderTextureMapLock) = -1;
+#endif
 
   // Set from MainThread, read from either MainThread or RenderThread
   bool mHasShutdown;

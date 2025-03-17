@@ -5,6 +5,7 @@
 package org.mozilla.fenix.helpers
 
 import androidx.test.platform.app.InstrumentationRegistry
+import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import org.mozilla.fenix.ext.settings
 
 /**
@@ -73,14 +74,14 @@ interface FeatureSettingsHelper {
     var isOpenInAppBannerEnabled: Boolean
 
     /**
-     * Enable or disable the Tabs Tray to Compose rewrite.
-     */
-    var tabsTrayRewriteEnabled: Boolean
-
-    /**
      * Enable or disable the Top Sites to Compose rewrite.
      */
     var composeTopSitesEnabled: Boolean
+
+    /**
+     * Enable or disable all location permission requests.
+     */
+    var isLocationPermissionEnabled: SitePermissionsRules.Action
 
     fun applyFlagUpdates()
 

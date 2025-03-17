@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
@@ -29,7 +30,10 @@ import java.util.Locale
 
 class NavigationToolbarTest : TestSetup() {
     @get:Rule
-    val activityTestRule = HomeActivityTestRule.withDefaultSettingsOverrides()
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/987326
     // Swipes the nav bar left/right to switch between tabs
@@ -41,7 +45,7 @@ class NavigationToolbarTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {
-        }.openTabDrawer {
+        }.openTabDrawer(composeTestRule) {
         }.openNewTab {
         }.submitQuery(secondWebPage.url.toString()) {
             swipeNavBarRight(secondWebPage.url.toString())
@@ -59,10 +63,10 @@ class NavigationToolbarTest : TestSetup() {
         val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
         val arabicLocale = Locale("ar", "AR")
 
-        runWithSystemLocaleChanged(arabicLocale, activityTestRule) {
+        runWithSystemLocaleChanged(arabicLocale, composeTestRule.activityRule) {
             navigationToolbar {
             }.enterURLAndEnterToBrowser(firstWebPage.url) {
-            }.openTabDrawer {
+            }.openTabDrawer(composeTestRule) {
             }.openNewTab {
             }.submitQuery(secondWebPage.url.toString()) {
                 swipeNavBarLeft(secondWebPage.url.toString())

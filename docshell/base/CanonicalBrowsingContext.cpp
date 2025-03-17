@@ -59,7 +59,7 @@
 #include "nsBrowserStatusFilter.h"
 #include "nsIBrowser.h"
 #include "nsTHashSet.h"
-#include "SessionStoreFunctions.h"
+#include "nsISessionStoreFunctions.h"
 #include "nsIXPConnect.h"
 #include "nsImportModule.h"
 #include "UnitTransforms.h"
@@ -317,6 +317,7 @@ void CanonicalBrowsingContext::ReplacedBy(
   txn.SetBrowserId(GetBrowserId());
   txn.SetIsAppTab(GetIsAppTab());
   txn.SetHasSiblings(GetHasSiblings());
+  txn.SetTopLevelCreatedByWebContent(GetTopLevelCreatedByWebContent());
   txn.SetHistoryID(GetHistoryID());
   txn.SetExplicitActive(GetExplicitActive());
   txn.SetEmbedderColorSchemes(GetEmbedderColorSchemes());
@@ -2673,13 +2674,14 @@ void CanonicalBrowsingContext::RestoreState::Resolve() {
 
 nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
     const nsTArray<SSCacheCopy>& aSesssionStorage, uint32_t aEpoch) {
-  nsCOMPtr<nsISessionStoreFunctions> funcs = do_ImportESModule(
-      "resource://gre/modules/SessionStoreFunctions.sys.mjs", fallible);
-  if (!funcs) {
+  nsCOMPtr<nsISessionStoreFunctions> sessionStoreFuncs =
+      do_GetService("@mozilla.org/toolkit/sessionstore-functions;1");
+  if (!sessionStoreFuncs) {
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIXPConnectWrappedJS> wrapped = do_QueryInterface(funcs);
+  nsCOMPtr<nsIXPConnectWrappedJS> wrapped =
+      do_QueryInterface(sessionStoreFuncs);
   AutoJSAPI jsapi;
   if (!jsapi.Init(wrapped->GetJSObjectGlobal())) {
     return NS_ERROR_FAILURE;
@@ -2700,8 +2702,8 @@ nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
     update.setNull();
   }
 
-  return funcs->UpdateSessionStoreForStorage(Top()->GetEmbedderElement(), this,
-                                             key, aEpoch, update);
+  return sessionStoreFuncs->UpdateSessionStoreForStorage(
+      Top()->GetEmbedderElement(), this, key, aEpoch, update);
 }
 
 void CanonicalBrowsingContext::UpdateSessionStoreSessionStorage(
@@ -2777,12 +2779,8 @@ void CanonicalBrowsingContext::CancelSessionStoreUpdate() {
 }
 
 void CanonicalBrowsingContext::SetContainerFeaturePolicy(
-    FeaturePolicy* aContainerFeaturePolicy) {
-  mContainerFeaturePolicy = aContainerFeaturePolicy;
-
-  if (WindowGlobalParent* current = GetCurrentWindowGlobal()) {
-    Unused << current->SendSetContainerFeaturePolicy(mContainerFeaturePolicy);
-  }
+    Maybe<FeaturePolicyInfo>&& aContainerFeaturePolicyInfo) {
+  mContainerFeaturePolicyInfo = std::move(aContainerFeaturePolicyInfo);
 }
 
 void CanonicalBrowsingContext::SetCrossGroupOpenerId(uint64_t aOpenerId) {
@@ -3200,15 +3198,15 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(CanonicalBrowsingContext,
   if (tmp->mSessionHistory) {
     tmp->mSessionHistory->SetBrowsingContext(nullptr);
   }
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSessionHistory, mContainerFeaturePolicy,
-                                  mCurrentBrowserParent, mWebProgress,
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSessionHistory, mCurrentBrowserParent,
+                                  mWebProgress,
                                   mSessionStoreSessionStorageUpdateTimer)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(CanonicalBrowsingContext,
                                                   BrowsingContext)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSessionHistory, mContainerFeaturePolicy,
-                                    mCurrentBrowserParent, mWebProgress,
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSessionHistory, mCurrentBrowserParent,
+                                    mWebProgress,
                                     mSessionStoreSessionStorageUpdateTimer)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 

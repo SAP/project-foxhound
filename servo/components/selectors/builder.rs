@@ -97,17 +97,19 @@ impl<Impl: SelectorImpl> SelectorBuilder<Impl> {
         mut spec: SpecificityAndFlags,
         parse_relative: ParseRelative,
     ) -> ThinArc<SpecificityAndFlags, Component<Impl>> {
-        let implicit_parent = parse_relative.needs_implicit_parent_selector() &&
-            !spec.flags.contains(SelectorFlags::HAS_PARENT);
-
-        let parent_selector_and_combinator;
-        let implicit_parent = if implicit_parent {
-            spec.flags.insert(SelectorFlags::HAS_PARENT);
-            parent_selector_and_combinator = [
+        let implicit_addition = match parse_relative {
+            ParseRelative::ForNesting if !spec.flags.intersects(SelectorFlags::HAS_PARENT) => Some((Component::ParentSelector, SelectorFlags::HAS_PARENT)),
+            ParseRelative::ForScope if !spec.flags.intersects(SelectorFlags::HAS_SCOPE | SelectorFlags::HAS_PARENT) => Some((Component::ImplicitScope, SelectorFlags::HAS_SCOPE)),
+            _ => None,
+        };
+        let implicit_selector_and_combinator;
+        let implicit_selector = if let Some((component, flag)) = implicit_addition {
+            spec.flags.insert(flag);
+            implicit_selector_and_combinator = [
                 Component::Combinator(Combinator::Descendant),
-                Component::ParentSelector,
+                component,
             ];
-            &parent_selector_and_combinator[..]
+            &implicit_selector_and_combinator[..]
         } else {
             &[]
         };
@@ -115,11 +117,11 @@ impl<Impl: SelectorImpl> SelectorBuilder<Impl> {
         // As an optimization, for a selector without combinators, we can just keep the order
         // as-is.
         if self.last_compound_start.is_none() {
-            return Arc::from_header_and_iter(spec, ExactChain(self.components.drain(..), implicit_parent.iter().cloned()));
+            return Arc::from_header_and_iter(spec, ExactChain(self.components.drain(..), implicit_selector.iter().cloned()));
         }
 
         self.reverse_last_compound();
-        Arc::from_header_and_iter(spec, ExactChain(self.components.drain(..).rev(), implicit_parent.iter().cloned()))
+        Arc::from_header_and_iter(spec, ExactChain(self.components.drain(..).rev(), implicit_selector.iter().cloned()))
     }
 }
 
@@ -178,6 +180,7 @@ bitflags! {
         const HAS_PARENT = 1 << 3;
         const HAS_NON_FEATURELESS_COMPONENT = 1 << 4;
         const HAS_HOST = 1 << 5;
+        const HAS_SCOPE = 1 << 6;
     }
 }
 
@@ -221,6 +224,18 @@ pub(crate) struct Specificity {
     element_selectors: u32,
 }
 
+impl Specificity {
+    // Return the specficity of a single class-like selector.
+    #[inline]
+    pub fn single_class_like() -> Self {
+        Specificity {
+            id_selectors: 0,
+            class_like_selectors: 1,
+            element_selectors: 0,
+        }
+    }
+}
+
 impl From<u32> for Specificity {
     #[inline]
     fn from(value: u32) -> Specificity {
@@ -242,7 +257,9 @@ impl From<Specificity> for u32 {
     }
 }
 
-pub(crate) fn specificity_and_flags<Impl>(iter: slice::Iter<Component<Impl>>) -> SpecificityAndFlags
+fn specificity_and_flags<Impl>(
+    iter: slice::Iter<Component<Impl>>,
+) -> SpecificityAndFlags
 where
     Impl: SelectorImpl,
 {
@@ -310,11 +327,16 @@ where
             Component::AttributeOther(..) |
             Component::Root |
             Component::Empty |
-            Component::Scope |
             Component::Nth(..) |
             Component::NonTSPseudoClass(..) => {
                 flags.insert(SelectorFlags::HAS_NON_FEATURELESS_COMPONENT);
                 specificity.class_like_selectors += 1;
+            },
+            Component::Scope | Component::ImplicitScope => {
+                flags.insert(SelectorFlags::HAS_SCOPE);
+                if matches!(*simple_selector, Component::Scope) {
+                    specificity.class_like_selectors += 1;
+                }
             },
             Component::NthOf(ref nth_of_data) => {
                 // https://drafts.csswg.org/selectors/#specificity-rules:
@@ -363,7 +385,11 @@ where
     let mut specificity = Default::default();
     let mut flags = Default::default();
     for simple_selector in iter {
-        component_specificity(&simple_selector, &mut specificity, &mut flags);
+        component_specificity(
+            &simple_selector,
+            &mut specificity,
+            &mut flags,
+        );
     }
     SpecificityAndFlags {
         specificity: specificity.into(),

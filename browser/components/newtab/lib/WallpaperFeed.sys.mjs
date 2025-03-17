@@ -16,12 +16,21 @@ import {
 const PREF_WALLPAPERS_ENABLED =
   "browser.newtabpage.activity-stream.newtabWallpapers.enabled";
 
+const PREF_WALLPAPERS_HIGHLIGHT_SEEN_COUNTER =
+  "browser.newtabpage.activity-stream.newtabWallpapers.highlightSeenCounter";
+
+const PREF_WALLPAPERS_V2_ENABLED =
+  "browser.newtabpage.activity-stream.newtabWallpapers.v2.enabled";
+
+const WALLPAPER_REMOTE_SETTINGS_COLLECTION = "newtab-wallpapers";
+const WALLPAPER_REMOTE_SETTINGS_COLLECTION_V2 = "newtab-wallpapers-v2";
+
 export class WallpaperFeed {
   constructor() {
     this.loaded = false;
-    this.wallpaperClient = "";
-    this.wallpaperDB = "";
+    this.wallpaperClient = null;
     this.baseAttachmentURL = "";
+    this._onSync = this.onSync.bind(this);
   }
 
   /**
@@ -45,15 +54,42 @@ export class WallpaperFeed {
       PREF_WALLPAPERS_ENABLED
     );
 
-    if (wallpapersEnabled) {
+    const wallpapersV2Enabled = Services.prefs.getBoolPref(
+      PREF_WALLPAPERS_V2_ENABLED
+    );
+
+    if (wallpapersEnabled || wallpapersV2Enabled) {
       if (!this.wallpaperClient) {
-        this.wallpaperClient = this.RemoteSettings("newtab-wallpapers");
+        // getting collection
+        if (wallpapersV2Enabled) {
+          this.wallpaperClient = this.RemoteSettings(
+            WALLPAPER_REMOTE_SETTINGS_COLLECTION_V2
+          );
+        } else {
+          this.wallpaperClient = this.RemoteSettings(
+            WALLPAPER_REMOTE_SETTINGS_COLLECTION
+          );
+        }
       }
 
       await this.getBaseAttachment();
-      this.wallpaperClient.on("sync", () => this.updateWallpapers());
+      this.wallpaperClient.on("sync", this._onSync);
       this.updateWallpapers(isStartup);
     }
+  }
+
+  async wallpaperTeardown() {
+    if (this._onSync) {
+      this.wallpaperClient?.off("sync", this._onSync);
+    }
+    this.loaded = false;
+    this.wallpaperClient = null;
+    this.baseAttachmentURL = "";
+  }
+
+  async onSync() {
+    this.wallpaperTeardown();
+    await this.wallpaperSetup(false /* isStartup */);
   }
 
   async getBaseAttachment() {
@@ -70,6 +106,7 @@ export class WallpaperFeed {
   }
 
   async updateWallpapers(isStartup = false) {
+    // retrieving all records in collection
     const records = await this.wallpaperClient.get();
     if (!records?.length) {
       return;
@@ -78,12 +115,26 @@ export class WallpaperFeed {
     if (!this.baseAttachmentURL) {
       await this.getBaseAttachment();
     }
-    const wallpapers = records.map(record => {
-      return {
-        ...record,
-        wallpaperUrl: `${this.baseAttachmentURL}${record.attachment.location}`,
-      };
-    });
+
+    const wallpapers = [
+      ...records.map(record => {
+        return {
+          ...record,
+          ...(record.attachment
+            ? {
+                wallpaperUrl: `${this.baseAttachmentURL}${record.attachment.location}`,
+              }
+            : {}),
+          category: record.category || "",
+        };
+      }),
+    ];
+
+    const categories = [
+      ...new Set(
+        wallpapers.map(wallpaper => wallpaper.category).filter(Boolean)
+      ),
+    ];
 
     this.store.dispatch(
       ac.BroadcastToContent({
@@ -94,23 +145,87 @@ export class WallpaperFeed {
         },
       })
     );
+
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.WALLPAPERS_CATEGORY_SET,
+        data: categories,
+        meta: {
+          isStartup,
+        },
+      })
+    );
+  }
+
+  initHighlightCounter() {
+    let counter = Services.prefs.getIntPref(
+      PREF_WALLPAPERS_HIGHLIGHT_SEEN_COUNTER
+    );
+
+    this.store.dispatch(
+      ac.AlsoToPreloaded({
+        type: at.WALLPAPERS_FEATURE_HIGHLIGHT_COUNTER_INCREMENT,
+        data: {
+          value: counter,
+        },
+      })
+    );
+  }
+
+  wallpaperSeenEvent() {
+    let counter = Services.prefs.getIntPref(
+      PREF_WALLPAPERS_HIGHLIGHT_SEEN_COUNTER
+    );
+
+    const newCount = counter + 1;
+
+    this.store.dispatch(
+      ac.OnlyToMain({
+        type: at.SET_PREF,
+        data: {
+          name: "newtabWallpapers.highlightSeenCounter",
+          value: newCount,
+        },
+      })
+    );
+
+    this.store.dispatch(
+      ac.AlsoToPreloaded({
+        type: at.WALLPAPERS_FEATURE_HIGHLIGHT_COUNTER_INCREMENT,
+        data: {
+          value: newCount,
+        },
+      })
+    );
   }
 
   async onAction(action) {
     switch (action.type) {
       case at.INIT:
         await this.wallpaperSetup(true /* isStartup */);
+        this.initHighlightCounter();
         break;
       case at.UNINIT:
         break;
       case at.SYSTEM_TICK:
         break;
       case at.PREF_CHANGED:
-        if (action.data.name === "newtabWallpapers.enabled") {
+        if (
+          action.data.name === "newtabWallpapers.enabled" ||
+          action.data.name === "newtabWallpapers.v2.enabled"
+        ) {
+          this.wallpaperTeardown();
           await this.wallpaperSetup(false /* isStartup */);
+        }
+        if (action.data.name === "newtabWallpapers.highlightSeenCounter") {
+          // Reset redux highlight counter to pref
+          this.initHighlightCounter();
         }
         break;
       case at.WALLPAPERS_SET:
+        break;
+      case at.WALLPAPERS_FEATURE_HIGHLIGHT_SEEN:
+        this.wallpaperSeenEvent();
         break;
     }
   }

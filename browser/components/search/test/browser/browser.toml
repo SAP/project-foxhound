@@ -13,6 +13,7 @@ support-files = [
   "testEngine_mozsearch.xml",
   "tooManyEnginesOffered.html",
 ]
+tags = "searchnontelem"
 
 ["browser_426329.js"]
 
@@ -61,6 +62,8 @@ support-files = [
 ["browser_oneOffContextMenu_setDefault.js"]
 
 ["browser_private_search_perwindowpb.js"]
+
+["browser_remote_override.js"]
 
 ["browser_rich_suggestions.js"]
 support-files = ["trendingSuggestionEngine.sjs"]

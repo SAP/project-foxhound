@@ -1250,12 +1250,6 @@ interface IIRFilterOptions extends AudioNodeOptions {
     feedforward: number[];
 }
 
-interface IOActivityDataDictionary {
-    location?: string;
-    rx?: number;
-    tx?: number;
-}
-
 interface IdentityCredentialLogoutRPsRequest {
     accountId: UTF8String;
     url: UTF8String;
@@ -9491,6 +9485,10 @@ interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryU
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/createElement)
      */
+    createElement<K extends keyof HTMLElementTagNameMap>(tagName: K, options?: ElementCreationOptions): HTMLElementTagNameMap[K];
+    /** @deprecated */
+    createElement<K extends keyof HTMLElementDeprecatedTagNameMap>(tagName: K, options?: ElementCreationOptions): HTMLElementDeprecatedTagNameMap[K];
+    createElement(tagName: string, options?: ElementCreationOptions): HTMLElement;
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/createElementNS) */
     createElementNS(namespace: string | null, qualifiedName: string, options?: ElementCreationOptions | string): Element;
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/createEvent) */
@@ -17898,11 +17896,10 @@ interface IDBFactory {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/cmp) */
     cmp(first: any, second: any): number;
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/deleteDatabase) */
-    deleteDatabase(name: string, options?: IDBOpenDBOptions): IDBOpenDBRequest;
+    deleteDatabase(name: string): IDBOpenDBRequest;
     deleteForPrincipal(principal: Principal, name: string, options?: IDBOpenDBOptions): IDBOpenDBRequest;
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/open) */
-    open(name: string, version: number): IDBOpenDBRequest;
-    open(name: string, options?: IDBOpenDBOptions): IDBOpenDBRequest;
+    open(name: string, version?: number): IDBOpenDBRequest;
     openForPrincipal(principal: Principal, name: string, version: number): IDBOpenDBRequest;
     openForPrincipal(principal: Principal, name: string, options?: IDBOpenDBOptions): IDBOpenDBRequest;
 }
@@ -35506,7 +35503,6 @@ declare namespace ChromeUtils {
     function registerProcessActor(aName: UTF8String, aOptions?: ProcessActorOptions): void;
     function registerWindowActor(aName: UTF8String, aOptions?: WindowActorOptions): void;
     function releaseAssert(condition: boolean, message?: string): void;
-    function requestIOActivity(): Promise<IOActivityDataDictionary[]>;
     function requestProcInfo(): Promise<ParentProcInfoDictionary>;
     function resetLastExternalProtocolIframeAllowed(): void;
     function saveHeapSnapshot(boundaries?: HeapSnapshotBoundaries): string;

@@ -276,6 +276,7 @@ dependencies {
     implementation ComponentsDependencies.androidx_appcompat
     implementation ComponentsDependencies.androidx_browser
     implementation ComponentsDependencies.androidx_cardview
+    implementation ComponentsDependencies.androidx_collection
     implementation ComponentsDependencies.androidx_compose_ui
     implementation ComponentsDependencies.androidx_compose_ui_tooling
     implementation ComponentsDependencies.androidx_compose_foundation
@@ -294,9 +295,11 @@ dependencies {
     implementation FocusDependencies.androidx_splashscreen
     implementation FocusDependencies.androidx_transition
     implementation ComponentsDependencies.androidx_work_runtime
-    implementation ComponentsDependencies.androidx_data_store_preferences
+    implementation ComponentsDependencies.androidx_datastore_preferences
 
-    implementation FocusDependencies.google_play
+    // Required for in-app reviews
+    implementation ComponentsDependencies.play_review
+    implementation ComponentsDependencies.play_review_ktx
 
     implementation ComponentsDependencies.google_material
 
@@ -705,11 +708,6 @@ if (project.hasProperty("coverage")) {
             }
         }
     }
-}
-
-if (gradle.hasProperty('localProperties.autoPublish.glean.dir')) {
-    ext.gleanSrcDir = gradle."localProperties.autoPublish.glean.dir"
-    apply from: "../${gleanSrcDir}/build-scripts/substitute-local-glean.gradle"
 }
 
 // -------------------------------------------------------------------------------------------------

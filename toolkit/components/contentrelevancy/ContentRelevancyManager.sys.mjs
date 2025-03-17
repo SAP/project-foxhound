@@ -9,8 +9,10 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   getFrecentRecentCombinedUrls:
     "resource://gre/modules/contentrelevancy/private/InputUtils.sys.mjs",
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   RelevancyStore: "resource://gre/modules/RustRelevancy.sys.mjs",
+  InterestVector: "resource://gre/modules/RustRelevancy.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -24,6 +26,7 @@ XPCOMUtils.defineLazyServiceGetter(
 const TIMER_ID = "content-relevancy-timer";
 const PREF_TIMER_LAST_UPDATE = `app.update.lastUpdateTime.${TIMER_ID}`;
 const PREF_TIMER_INTERVAL = "toolkit.contentRelevancy.timerInterval";
+const PREF_LOG_ENABLED = "toolkit.contentRelevancy.log";
 // Set the timer interval to 1 day for validation.
 const DEFAULT_TIMER_INTERVAL_SECONDS = 1 * 24 * 60 * 60;
 
@@ -40,18 +43,22 @@ const NIMBUS_VARIABLE_ENABLED = "enabled";
 const NIMBUS_VARIABLE_MAX_INPUT_URLS = "maxInputUrls";
 const NIMBUS_VARIABLE_MIN_INPUT_URLS = "minInputUrls";
 const NIMBUS_VARIABLE_TIMER_INTERVAL = "timerInterval";
+const NIMBUS_VARIABLE_INGEST_ENABLED = "ingestEnabled";
 
-ChromeUtils.defineLazyGetter(lazy, "log", () => {
-  return console.createInstance({
-    prefix: "ContentRelevancyManager",
-    maxLogLevel: Services.prefs.getBoolPref(
-      "toolkit.contentRelevancy.log",
-      false
-    )
-      ? "Debug"
-      : "Error",
+// Setup the `lazy.log` object.  This is called on startup and also whenever `PREF_LOG_ENABLED`
+// changes.
+function setupLogging() {
+  ChromeUtils.defineLazyGetter(lazy, "log", () => {
+    return console.createInstance({
+      prefix: "ContentRelevancyManager",
+      maxLogLevel: Services.prefs.getBoolPref(PREF_LOG_ENABLED, false)
+        ? "Debug"
+        : "Error",
+    });
   });
-});
+}
+
+setupLogging();
 
 class RelevancyManager {
   get initialized() {
@@ -66,17 +73,19 @@ class RelevancyManager {
    * Note that this should be called once only. `#enable` and `#disable` can be
    * used to toggle the feature once the manager is initialized.
    */
-  async init() {
+  init() {
     if (this.initialized) {
       return;
     }
 
     lazy.log.info("Initializing the manager");
 
+    this.#storeManager = new RustRelevancyStoreManager(this.#storePath);
     if (this.shouldEnable) {
-      await this.#enable();
+      this.#enable();
     }
 
+    Services.prefs.addObserver(PREF_LOG_ENABLED, this);
     this._nimbusUpdateCallback = this.#onNimbusUpdate.bind(this);
     // This will handle both Nimbus updates and pref changes.
     lazy.NimbusFeatures.contentRelevancy.onUpdate(this._nimbusUpdateCallback);
@@ -91,7 +100,9 @@ class RelevancyManager {
     lazy.log.info("Uninitializing the manager");
 
     lazy.NimbusFeatures.contentRelevancy.offUpdate(this._nimbusUpdateCallback);
+    Services.prefs.removeObserver(PREF_LOG_ENABLED, this);
     this.#disable();
+    this.#storeManager = null;
 
     this.#initialized = false;
   }
@@ -143,20 +154,15 @@ class RelevancyManager {
     );
   }
 
-  async #enable() {
-    if (!this.#_store) {
-      // Init the relevancy store.
-      const path = this.#storePath;
-      lazy.log.info(`Initializing RelevancyStore: ${path}`);
-
-      try {
-        this.#_store = await lazy.RelevancyStore.init(path);
-      } catch (error) {
-        lazy.log.error(`Error initializing RelevancyStore: ${error}`);
-        return;
-      }
-    }
-
+  #enable() {
+    this.#storeManager.enable();
+    this._shutdownBlocker = () => this.interrupt();
+    // Interrupt sooner prior to the `profile-before-change` phase to allow
+    // all the in-progress IOs to exit.
+    lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
+      "ContentRelevancyManager: Interrupt IO operations on relevancy store",
+      this._shutdownBlocker
+    );
     this.#startUpTimer();
   }
 
@@ -166,13 +172,19 @@ class RelevancyManager {
    * called.
    */
   #disable() {
-    this.#_store = null;
+    if (this._shutdownBlocker) {
+      lazy.AsyncShutdown.profileChangeTeardown.removeBlocker(
+        this._shutdownBlocker
+      );
+      this._shutdownBlocker = null;
+    }
     lazy.timerManager.unregisterTimer(TIMER_ID);
+    this.#storeManager.disable();
   }
 
-  async #toggleFeature() {
+  #toggleFeature() {
     if (this.shouldEnable) {
-      await this.#enable();
+      this.#enable();
     } else {
       this.#disable();
     }
@@ -199,8 +211,11 @@ class RelevancyManager {
    *
    * The classification will not be performed if the total number of input URLs
    * is less than `DEFAULT_MIN_URLS` (or the corresponding Nimbus value).
+   *
+   * @param {object} options
+   *   options.minUrlsForTest {number} A minimal URL count used only for testing.
    */
-  async #doClassification() {
+  async #doClassification(options = {}) {
     if (this.isInProgress) {
       lazy.log.info(
         "Another classification is in progress, aborting interest classification"
@@ -212,6 +227,8 @@ class RelevancyManager {
     // exit points & success.
     this.#isInProgress = true;
 
+    let timerId;
+
     try {
       lazy.log.info("Fetching input data for interest classification");
 
@@ -222,21 +239,49 @@ class RelevancyManager {
       const minUrls =
         lazy.NimbusFeatures.contentRelevancy.getVariable(
           NIMBUS_VARIABLE_MIN_INPUT_URLS
-        ) ?? DEFAULT_MIN_URLS;
+        ) ??
+        options.minUrlsForTest ??
+        DEFAULT_MIN_URLS;
       const urls = await lazy.getFrecentRecentCombinedUrls(maxUrls);
       if (urls.length < minUrls) {
         lazy.log.info("Aborting interest classification: insufficient input");
+        Glean.relevancyClassify.fail.record({ reason: "insufficient-input" });
         return;
       }
 
       lazy.log.info("Starting interest classification");
-      await this.#doClassificationHelper(urls);
+      timerId = Glean.relevancyClassify.duration.start();
+
+      const interestVector = await this.#classifyUrls(urls);
+      const sortedVector = Object.entries(interestVector).sort(
+        ([, a], [, b]) => b - a // descending
+      );
+      lazy.log.info(`Classification results: ${JSON.stringify(sortedVector)}`);
+
+      Glean.relevancyClassify.duration.stopAndAccumulate(timerId);
+      Glean.relevancyClassify.succeed.record({
+        input_size: urls.length,
+        input_classified_size: sortedVector.reduce((acc, [, v]) => acc + v, 0),
+        input_inconclusive_size: interestVector.inconclusive,
+        output_interest_size: sortedVector.filter(([, v]) => v != 0).length,
+        interest_top_1_hits: sortedVector[0][1],
+        interest_top_2_hits: sortedVector[1][1],
+        interest_top_3_hits: sortedVector[2][1],
+      });
     } catch (error) {
-      if (error instanceof StoreNotAvailableError) {
-        lazy.log.error("#store became null, aborting interest classification");
+      let reason;
+
+      if (error instanceof StoreDisabledError) {
+        lazy.log.error(
+          "RustRelevancyStoreManager not enabled, aborting interest classification"
+        );
+        reason = "store-not-ready";
       } else {
         lazy.log.error("Classification error: " + (error.reason ?? error));
+        reason = "component-errors";
       }
+      Glean.relevancyClassify.fail.record({ reason });
+      Glean.relevancyClassify.duration.cancel(timerId); // No error is recorded if `start` was not called.
     } finally {
       this.#isInProgress = false;
     }
@@ -245,54 +290,76 @@ class RelevancyManager {
   }
 
   /**
-   * Classification helper. Use the getter `this.#store` rather than `#_store`
-   * to access the store so that when it becomes null, a `StoreNotAvailableError`
-   * will be raised. Likewise, other store related errors should be propagated
-   * to the caller if you want to perform custom error handling in this helper.
-   *
-   * @param {Array} urls
-   *   An array of URLs.
-   * @throws {StoreNotAvailableError}
-   *   Thrown when the store became unavailable (i.e. set to null elsewhere).
-   * @throws {RelevancyAPIError}
-   *   Thrown for other API errors on the store.
+   * Interrupt all the IO operations on the relevancy store.
    */
-  async #doClassificationHelper(urls) {
-    // The following logs are unnecessary, only used to suppress the linting error.
-    // TODO(nanj): delete me once the following TODO is done.
-    if (!this.#store) {
-      lazy.log.error("#store became null, aborting interest classification");
+  interrupt() {
+    if (this.#storeManager.enabled) {
+      try {
+        lazy.log.debug(
+          "Interrupting all the IO operations on the relevancy store"
+        );
+        this.#storeManager.store.interrupt();
+      } catch (error) {
+        lazy.log.error("Interrupt error: " + (error.reason ?? error));
+      }
     }
-    lazy.log.info("Classification input: " + urls);
-
-    // TODO(nanj): uncomment the following once `ingest()` is implemented.
-    // await this.#store.ingest(urls);
   }
 
   /**
    * Exposed for testing.
    */
-  async _test_doClassification(urls) {
-    await this.#doClassificationHelper(urls);
+  async _test_doClassification(options = {}) {
+    await this.#doClassification(options);
   }
 
   /**
-   * Internal getter for `#_store` used by for classification. It will throw
-   * a `StoreNotAvailableError` is the store is not ready.
+   * Classify a list of URLs.
+   *
+   * If the nimbus feature is disabled, then this will succeed but return an empty InterestVector.
+   *
+   * @param {Array} urls
+   *   An array of URLs.
+   * @returns {InterestVector}
+   *   An interest vector.
+   * @throws {StoreDisabledError}
+   *   Thrown when storeManager is disabled.
+   * @throws {RelevancyAPIError}
+   *   Thrown for other API errors on the store.
    */
-  get #store() {
-    if (!this._isStoreReady) {
-      throw new StoreNotAvailableError("Store is not available");
+  async #classifyUrls(urls) {
+    lazy.log.info("Classification input: " + urls);
+    let interestVector = new lazy.InterestVector({
+      animals: 0,
+      arts: 0,
+      autos: 0,
+      business: 0,
+      career: 0,
+      education: 0,
+      fashion: 0,
+      finance: 0,
+      food: 0,
+      government: 0,
+      hobbies: 0,
+      home: 0,
+      news: 0,
+      realEstate: 0,
+      society: 0,
+      sports: 0,
+      tech: 0,
+      travel: 0,
+      inconclusive: 0,
+    });
+
+    if (
+      lazy.NimbusFeatures.contentRelevancy.getVariable(
+        NIMBUS_VARIABLE_INGEST_ENABLED
+      ) ??
+      false
+    ) {
+      interestVector = await this.#storeManager.store.ingest(urls);
     }
 
-    return this.#_store;
-  }
-
-  /**
-   * Whether or not the store is ready (i.e. not null).
-   */
-  get _isStoreReady() {
-    return !!this.#_store;
+    return interestVector;
   }
 
   /**
@@ -302,8 +369,22 @@ class RelevancyManager {
     this.#toggleFeature();
   }
 
-  // The `RustRelevancy` store.
-  #_store;
+  /**
+   * Preference observer
+   */
+  observe(_subj, topic, data) {
+    switch (topic) {
+      case "nsPref:changed":
+        if (data === PREF_LOG_ENABLED) {
+          // Call setupLogging again so that the logger will be re-created with the updated pref
+          setupLogging();
+        }
+        break;
+    }
+  }
+
+  // The `RustRelevancyStoreManager`
+  #storeManager;
 
   // Whether or not the module is initialized.
   #initialized = false;
@@ -314,13 +395,69 @@ class RelevancyManager {
 }
 
 /**
+ * Holds the RustRelevancyStore and handles enabling/disabling it.
+ */
+class RustRelevancyStoreManager {
+  constructor(path, rustRelevancyStore = undefined) {
+    lazy.log.info(`Initializing RelevancyStore: ${path}`);
+    if (rustRelevancyStore === undefined) {
+      rustRelevancyStore = lazy.RelevancyStore;
+    }
+    this.#store = rustRelevancyStore.init(path);
+  }
+
+  get store() {
+    if (!this.enabled) {
+      throw new StoreDisabledError();
+    }
+    return this.#store;
+  }
+
+  enable() {
+    this.enabled = true;
+  }
+
+  disable() {
+    // Calling `close()` makes the store release all resources.  In particular, it closes all
+    // database connections until a read/write method is called.  The `store` method ensures that
+    // this won't happen before `enable` is called.
+    this.#store.close();
+    this.enabled = false;
+  }
+
+  // The `RustRelevancy` store.
+  #store;
+
+  // Is the store enabled?
+  enabled = false;
+}
+
+/**
  * Error raised when attempting to access a null store.
  */
-class StoreNotAvailableError extends Error {
-  constructor(message, ...params) {
-    super(message, ...params);
-    this.name = "StoreNotAvailableError";
+class StoreDisabledError extends Error {
+  constructor() {
+    super("RustRelevancyStoreManager is disabled");
+    this.name = "StoreDisabledError";
   }
 }
 
 export var ContentRelevancyManager = new RelevancyManager();
+
+/**
+ * Exposed to provide an easy way for users to run a single classification
+ *
+ * This allows users to test out the relevancy component without too much hassle:
+ *
+ *  - Enable the `toolkit.contentRelevancy.log` pref
+ *  - Enable the `devtools.chrome.enabled` pref if it wasn't already
+ *  - Open the browser console and enter:
+ *    `ChromeUtils.importESModule("resource://gre/modules/ContentRelevancyManager.sys.mjs").classifyOnce()`
+ */
+export function classifyOnce() {
+  ContentRelevancyManager._test_doClassification();
+}
+
+export var exposedForTesting = {
+  RustRelevancyStoreManager,
+};

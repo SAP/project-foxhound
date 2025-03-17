@@ -79,6 +79,7 @@ gfxFontEntry::gfxFontEntry(const nsACString& aName, bool aIsStandardFace)
       mHasGraphiteTables(LazyFlag::Uninitialized),
       mHasGraphiteSpaceContextuals(LazyFlag::Uninitialized),
       mHasColorBitmapTable(LazyFlag::Uninitialized),
+      mNeedsMaskForShadow(LazyFlag::Uninitialized),
       mHasSpaceFeatures(SpaceFeatures::Uninitialized) {
   mTrakTable.exchange(kTrakTableUninitialized);
   memset(&mDefaultSubSpaceFeatures, 0, sizeof(mDefaultSubSpaceFeatures));
@@ -355,7 +356,7 @@ bool gfxFontEntry::TryGetSVGData(const gfxFont* aFont) {
     mSVGInitialized = true;
   }
 
-  if (GetSVGGlyphs()) {
+  if (GetSVGGlyphs() && aFont) {
     AutoWriteLock lock(mLock);
     if (!mFontsUsingSVGGlyphs.Contains(aFont)) {
       mFontsUsingSVGGlyphs.AppendElement(aFont);
@@ -2171,21 +2172,29 @@ gfxFontEntry* gfxFontFamily::FindFont(const nsACString& aFontName,
 }
 
 void gfxFontFamily::ReadAllCMAPs(FontInfoData* aFontInfoData) {
-  AutoWriteLock lock(mLock);
-  FindStyleVariationsLocked(aFontInfoData);
+  AutoTArray<RefPtr<gfxFontEntry>, 16> faces;
+  {
+    AutoWriteLock lock(mLock);
+    FindStyleVariationsLocked(aFontInfoData);
+    faces.AppendElements(mAvailableFonts);
+  }
 
-  uint32_t i, numFonts = mAvailableFonts.Length();
-  for (i = 0; i < numFonts; i++) {
-    gfxFontEntry* fe = mAvailableFonts[i];
+  gfxSparseBitSet familyMap;
+  for (auto& face : faces) {
     // don't try to load cmaps for downloadable fonts not yet loaded
-    if (!fe || fe->mIsUserFontContainer) {
+    if (!face || face->mIsUserFontContainer) {
       continue;
     }
-    fe->ReadCMAP(aFontInfoData);
-    mFamilyCharacterMap.Union(*(fe->GetCharacterMap()));
+    face->ReadCMAP(aFontInfoData);
+    familyMap.Union(*(face->GetCharacterMap()));
   }
-  mFamilyCharacterMap.Compact();
-  mFamilyCharacterMapInitialized = true;
+
+  AutoWriteLock lock(mLock);
+  if (!mFamilyCharacterMapInitialized) {
+    familyMap.Compact();
+    mFamilyCharacterMap = std::move(familyMap);
+    mFamilyCharacterMapInitialized = true;
+  }
 }
 
 void gfxFontFamily::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,

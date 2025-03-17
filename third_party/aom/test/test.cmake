@@ -209,6 +209,7 @@ if(NOT BUILD_SHARED_LIBS)
               "${AOM_ROOT}/test/fdct4x4_test.cc"
               "${AOM_ROOT}/test/fft_test.cc"
               "${AOM_ROOT}/test/firstpass_test.cc"
+              "${AOM_ROOT}/test/frame_resize_test.cc"
               "${AOM_ROOT}/test/fwht4x4_test.cc"
               "${AOM_ROOT}/test/hadamard_test.cc"
               "${AOM_ROOT}/test/horver_correlation_test.cc"
@@ -637,8 +638,7 @@ function(setup_aom_test_targets)
      AND NOT BUILD_SHARED_LIBS
      AND NOT CONFIG_REALTIME_ONLY)
     add_executable(test_aom_rc ${AOM_RC_TEST_SOURCES})
-    target_link_libraries(test_aom_rc ${AOM_LIB_LINK_TYPE} aom aom_av1_rc
-                          aom_gtest aom_gmock webm)
+    target_link_libraries(test_aom_rc ${AOM_LIB_LINK_TYPE} aom_av1_rc aom_gtest)
     set_property(TARGET test_aom_rc PROPERTY FOLDER ${AOM_IDE_TEST_FOLDER})
     list(APPEND AOM_APP_TARGETS test_aom_rc)
   endif()

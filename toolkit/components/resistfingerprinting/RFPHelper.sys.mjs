@@ -4,6 +4,7 @@
  * You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import * as constants from "resource://gre/modules/RFPTargetConstants.sys.mjs";
 
 const kPrefResistFingerprinting = "privacy.resistFingerprinting";
 const kPrefSpoofEnglish = "privacy.spoof_english";
@@ -117,7 +118,7 @@ class _RFPHelper {
           UserCharacteristicsDataDone: { wantUntrusted: true },
         },
       },
-      matches: ["about:fingerprinting"],
+      matches: ["about:fingerprintingprotection"],
       remoteTypes: ["privilegedabout"],
     });
   }
@@ -323,6 +324,11 @@ class _RFPHelper {
   }
 
   _registerLetterboxingActor() {
+    /*
+     * It turns out that this triggers a warning that we're registering a Desktop-only actor
+     * in toolkit (which will also run on mobile.)  It just happens this actor only handles
+     * letterboxing, which isn't used on mobile, but we should resolve this.
+     */
     ChromeUtils.registerWindowActor("RFPHelper", {
       parent: {
         esModuleURI: "resource:///actors/RFPHelperParent.sys.mjs",
@@ -654,6 +660,16 @@ class _RFPHelper {
       },
       { once: true }
     );
+  }
+
+  getTargets() {
+    return constants.Targets;
+  }
+
+  getTargetDefaults() {
+    const key =
+      Services.appinfo.OS === "Android" ? "ANDROID_DEFAULT" : "DESKTOP_DEFAULT";
+    return constants.DefaultTargets[key];
   }
 }
 

@@ -36,7 +36,6 @@ class CSSStyleRuleDeclaration final : public nsDOMCSSDeclaration {
       Operation aOperation, mozilla::DeclarationBlock** aCreated) final;
   nsresult SetCSSDeclaration(DeclarationBlock* aDecl,
                              MutationClosureData* aClosureData) final;
-  Document* DocToUpdate() final;
   ParsingEnvironment GetParsingEnvironment(
       nsIPrincipal* aSubjectPrincipal) const final;
 
@@ -76,6 +75,7 @@ class CSSStyleRule final : public css::GroupRule, public SupportsWeakPtr {
                               bool aRelevantLinkVisited);
   NotNull<DeclarationBlock*> GetDeclarationBlock() const;
   void GetSelectorWarnings(nsTArray<SelectorWarning>& aResult) const;
+  already_AddRefed<nsINodeList> QuerySelectorAll(nsINode& aRoot);
 
   // WebIDL interface
   StyleCssRuleType Type() const final;

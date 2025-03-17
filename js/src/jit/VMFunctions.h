@@ -19,6 +19,7 @@
 #include "gc/AllocKind.h"
 #include "js/ScalarType.h"
 #include "js/TypeDecls.h"
+#include "vm/TypeofEqOperand.h"
 
 class JSJitInfo;
 class JSLinearString;
@@ -354,10 +355,6 @@ struct LastArg<HeadType, TailTypes...> {
                                   uint32_t argc, Value* argv,
                                   MutableHandleValue rval);
 
-[[nodiscard]] bool InvokeNativeFunction(JSContext* cx, bool constructing,
-                                        bool ignoresReturnValue, uint32_t argc,
-                                        Value* argv, MutableHandleValue rval);
-
 bool InvokeFromInterpreterStub(JSContext* cx,
                                InterpreterStubExitFrameLayout* frame);
 void* GetContextSensitiveInterpreterStub();
@@ -584,6 +581,8 @@ bool SetPropertyMegamorphic(JSContext* cx, HandleObject obj, HandleId id,
                             HandleValue value, bool strict);
 
 JSString* TypeOfNameObject(JSObject* obj, JSRuntime* rt);
+
+bool TypeOfEqObject(JSObject* obj, TypeofEqOperand operand);
 
 bool GetPrototypeOf(JSContext* cx, HandleObject target,
                     MutableHandleValue rval);

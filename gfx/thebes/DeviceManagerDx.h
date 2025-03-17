@@ -61,7 +61,6 @@ class DeviceManagerDx final {
 
   enum class DeviceFlag {
     isHardwareWebRenderInUse,
-    disableDeviceReuse,
   };
   using DeviceFlagSet = EnumSet<DeviceFlag, uint8_t>;
   RefPtr<ID3D11Device> GetCompositorDevice();
@@ -185,8 +184,6 @@ class DeviceManagerDx final {
   // a failure.
   bool GetAnyDeviceRemovedReason(DeviceResetReason* aOutReason)
       MOZ_REQUIRES(mDeviceLock);
-
-  std::vector<DXGI_OUTPUT_DESC1> GetOutputDescs();
 
  private:
   static StaticAutoPtr<DeviceManagerDx> sInstance;

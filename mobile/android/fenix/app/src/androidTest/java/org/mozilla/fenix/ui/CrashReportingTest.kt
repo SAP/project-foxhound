@@ -5,7 +5,6 @@
 package org.mozilla.fenix.ui
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
@@ -41,13 +40,12 @@ class CrashReportingTest : TestSetup() {
         }.openNavigationToolbar {
         }.openTabCrashReporter {
         }.clickTabCrashedCloseButton {
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             verifyNoOpenTabsInNormalBrowsing()
         }
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2336134
-    @Ignore("Test failure caused by: https://github.com/mozilla-mobile/fenix/issues/19964")
     @Test
     fun restoreTabFromTabCrashedReporterTest() {
         val website = TestAssetHelper.getGenericAsset(mockWebServer, 1)
@@ -74,7 +72,7 @@ class CrashReportingTest : TestSetup() {
         }.openNavigationToolbar {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {
             mDevice.waitForIdle()
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
         }.openNewTab {
         }.submitQuery(secondWebPage.url.toString()) {
             waitForPageToLoad()
@@ -83,7 +81,7 @@ class CrashReportingTest : TestSetup() {
         navigationToolbar {
         }.openTabCrashReporter {
             verifyPageContent(tabCrashMessage)
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             verifyExistingOpenTabs(firstWebPage.title)
             verifyExistingOpenTabs("about:crashcontent")
         }.closeTabDrawer {

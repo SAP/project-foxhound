@@ -16,6 +16,7 @@ class nsTextFragment;
 class nsIFrame;
 
 namespace mozilla {
+enum class IsFocusableFlags : uint8_t;
 class EventChainPreVisitor;
 class HTMLEditor;
 struct URLExtraData;
@@ -276,13 +277,14 @@ class nsIContent : public nsINode {
    * some widgets may be focusable but removed from the tab order.
    * @return whether the content is focusable via mouse, kbd or script.
    */
-  virtual Focusable IsFocusableWithoutStyle(bool aWithMouse = false);
+  virtual Focusable IsFocusableWithoutStyle(
+      mozilla::IsFocusableFlags = mozilla::IsFocusableFlags(0));
 
   // https://html.spec.whatwg.org/multipage/interaction.html#focus-delegate
-  mozilla::dom::Element* GetFocusDelegate(bool aWithMouse) const;
+  mozilla::dom::Element* GetFocusDelegate(mozilla::IsFocusableFlags) const;
 
   // https://html.spec.whatwg.org/multipage/interaction.html#autofocus-delegate
-  mozilla::dom::Element* GetAutofocusDelegate(bool aWithMouse) const;
+  mozilla::dom::Element* GetAutofocusDelegate(mozilla::IsFocusableFlags) const;
 
   /*
    * Get desired IME state for the content.
@@ -755,21 +757,6 @@ class nsIContent : public nsINode {
   virtual void DumpContent(FILE* out = stdout, int32_t aIndent = 0,
                            bool aDumpAll = true) const = 0;
 #endif
-
-  enum ETabFocusType {
-    eTabFocus_textControlsMask =
-        (1 << 0),  // textboxes and lists always tabbable
-    eTabFocus_formElementsMask = (1 << 1),   // non-text form elements
-    eTabFocus_linksMask = (1 << 2),          // links
-    eTabFocus_any = 1 + (1 << 1) + (1 << 2)  // everything that can be focused
-  };
-
-  // Tab focus model bit field:
-  static int32_t sTabFocusModel;
-
-  // accessibility.tabfocus_applies_to_xul pref - if it is set to true,
-  // the tabfocus bit field applies to xul elements.
-  static bool sTabFocusModelAppliesToXUL;
 };
 
 NON_VIRTUAL_ADDREF_RELEASE(nsIContent)

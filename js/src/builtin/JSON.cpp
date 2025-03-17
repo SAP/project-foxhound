@@ -2016,7 +2016,7 @@ bool js::ParseJSONWithReviver(JSContext* cx,
     }
   } else
 #endif
-      if (!ParseJSON(cx, chars, taint, vp)) {
+  if (!ParseJSON(cx, chars, taint, vp)) {
     return false;
   }
 

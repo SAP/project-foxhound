@@ -109,6 +109,11 @@ class CodeGenerator final : public CodeGeneratorSpecific {
                                   const StoreOutputTo& out);
 
   template <typename LCallIns>
+  void emitCallNative(LCallIns* call, JSNative native, Register argContextReg,
+                      Register argUintNReg, Register argVpReg, Register tempReg,
+                      uint32_t unusedStack);
+
+  template <typename LCallIns>
   void emitCallNative(LCallIns* call, JSNative native);
 
  public:
@@ -204,6 +209,11 @@ class CodeGenerator final : public CodeGeneratorSpecific {
                              wasm::BytecodeOffset bytecodeOffset);
   void visitOutOfLineWasmNewArray(OutOfLineWasmNewArray* ool);
 
+#ifdef ENABLE_WASM_JSPI
+  void callWasmUpdateSuspenderState(wasm::UpdateSuspenderStateAction kind,
+                                    Register suspender);
+#endif
+
  private:
   void emitPostWriteBarrier(const LAllocation* obj);
   void emitPostWriteBarrier(Register objreg);
@@ -248,7 +258,7 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   template <typename T>
   void emitApplyNative(T* apply);
   template <typename T>
-  void emitCallInvokeNativeFunction(T* apply);
+  void emitAlignStackForApplyNative(T* apply, Register argc);
   template <typename T>
   void emitPushNativeArguments(T* apply);
   template <typename T>

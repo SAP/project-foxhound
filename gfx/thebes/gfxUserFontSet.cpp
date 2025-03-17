@@ -469,7 +469,7 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aIsContinue) {
       if (fe) {
         LOG(("userfonts (%p) [src %d] loaded local: (%s) for (%s) gen: %8.8x\n",
              fontSet.get(), mCurrentSrcIndex, currSrc.mLocalName.get(),
-             mFamilyName.get(), uint32_t(fontSet->mGeneration)));
+             mFamilyName.get(), uint32_t(fontSet->GetGeneration())));
         fe->mFeatureSettings.AppendElements(mFeatureSettings);
         fe->mVariationSettings.AppendElements(mVariationSettings);
         fe->mLanguageOverride = mLanguageOverride;
@@ -706,7 +706,6 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
                                         const uint8_t* aSanitizedFontData,
                                         uint32_t aSanitizedLength,
                                         nsTArray<OTSMessage>&& aMessages) {
-  MOZ_ASSERT(NS_IsMainThread());
   RefPtr<gfxUserFontSet> fontSet = GetUserFontSet();
   if (NS_WARN_IF(!fontSet)) {
     free((void*)aOriginalFontData);
@@ -817,10 +816,14 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
          "(%p) gen: %8.8x compress: %d%%\n",
          fontSet.get(), aSrcIndex,
          mSrcList[aSrcIndex].mURI->GetSpecOrDefault().get(), mFamilyName.get(),
-         this, uint32_t(fontSet->mGeneration), fontCompressionRatio));
+         this, uint32_t(fontSet->GetGeneration()), fontCompressionRatio));
     mPlatformFontEntry = fe;
     SetLoadState(STATUS_LOADED);
-    gfxUserFontSet::UserFontCache::CacheFont(fe);
+    if (NS_IsMainThread()) {
+      // UserFontCache::CacheFont is not currently safe to call off-main-thread,
+      // so we only cache the font if this is a main-thread load.
+      gfxUserFontSet::UserFontCache::CacheFont(fe);
+    }
   } else {
     LOG((
         "userfonts (%p) [src %d] failed uri: (%s) for (%s)"

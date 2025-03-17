@@ -17,6 +17,7 @@
     <string name="pref_key_accessibility_force_enable_zoom" translatable="false">pref_key_accessibility_force_enable_zoom</string>
     <string name="pref_key_advanced" translatable="false">pref_key_advanced</string>
     <string name="pref_key_language" translatable="false">pref_key_language</string>
+    <string name="pref_key_translation" translatable="false">pref_key_translation</string>
     <string name="pref_key_data_choices" translatable="false">pref_key_data_choices</string>
     <string name="pref_key_delete_browsing_data" translatable="false">pref_key_delete_browsing_data</string>
     <string name="pref_key_delete_browsing_data_on_quit_preference" translatable="false">pref_key_delete_browsing_data_on_quit_preference</string>
@@ -53,6 +54,9 @@
     <string name="pref_key_override_sync_tokenserver" translatable="false">pref_key_override_sync_tokenserver</string>
     <string name="pref_key_override_push_server" translatable="false">pref_key_override_push_server</string>
     <string name="pref_key_sync_debug_quit" translatable="false">pref_key_sync_debug_quit</string>
+    <string name="pref_key_sync_debug_network_error" translatable="false">pref_key_sync_debug_network_error</string>
+    <string name="pref_key_sync_debug_temporary_auth_error" translatable="false">pref_key_sync_debug_temporary_auth_error</string>
+    <string name="pref_key_sync_debug_permanent_auth_error" translatable="false">pref_key_sync_debug_permanent_auth_error</string>
     <string name="pref_key_customize" translatable="false">pref_key_customize</string>
     <string name="pref_key_private_browsing" translatable="false">pref_key_private_browsing</string>
     <string name="pref_key_leakcanary" translatable="false">pref_key_leakcanary</string>
@@ -80,7 +84,6 @@
     <string name="pref_key_enable_debug_drawer" translatable="false">pref_key_enable_debug_drawer</string>
     <string name="pref_key_show_first_time_translation" translatable="false">pref_key_show_first_time_translation</string>
     <string name="pref_key_translations_offer" translatable="false">pref_key_translations_offer</string>
-    <string name="pref_key_enable_tab_strip" translatable="false">pref_key_enable_tab_strip</string>
 
     <!-- Data Choices -->
     <string name="pref_key_telemetry" translatable="false">pref_key_telemetry</string>
@@ -164,7 +167,7 @@
     <string name="pref_key_swipe_toolbar_switch_tabs" translatable="false">pref_key_swipe_toolbar_switch_tabs</string>
     <string name="pref_key_swipe_toolbar_show_tabs" translatable="false">pref_key_swipe_toolbar_show_tabs</string>
     <string name="pref_key_recent_tabs" translatable="false">pref_key_recent_tabs</string>
-    <string name="pref_key_recent_bookmarks" translatable="false">pref_key_recent_bookmarks</string>
+    <string name="pref_key_customization_bookmarks" translatable="false">pref_key_recent_bookmarks</string>
     <string name="pref_key_customization_category_toolbar" translatable="false">pref_key_customization_category_toolbar</string>
 
     <!-- HTTPS Only Settings -->

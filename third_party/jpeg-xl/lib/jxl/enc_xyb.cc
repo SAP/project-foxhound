@@ -5,6 +5,8 @@
 
 #include "lib/jxl/enc_xyb.h"
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -17,6 +19,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/fast_math-inl.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/cms/opsin_params.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
@@ -219,7 +222,9 @@ StatusOr<Image3F> TransformToLinearRGB(const Image3F& in,
   ColorSpaceTransform c_transform(cms);
   bool is_gray = color_encoding.IsGray();
   const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(is_gray);
-  JXL_ASSIGN_OR_RETURN(Image3F out, Image3F::Create(in.xsize(), in.ysize()));
+  JxlMemoryManager* memory_manager = in.memory_manager();
+  JXL_ASSIGN_OR_RETURN(Image3F out,
+                       Image3F::Create(memory_manager, in.xsize(), in.ysize()));
   std::atomic<bool> has_error{false};
   JXL_CHECK(RunOnPool(
       pool, 0, in.ysize(),
@@ -400,7 +405,9 @@ void ToXYB(const ColorEncoding& c_current, float intensity_target,
 
 Status ToXYB(const ImageBundle& in, ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
              const JxlCmsInterface& cms, Image3F* JXL_RESTRICT linear) {
-  JXL_ASSIGN_OR_RETURN(*xyb, Image3F::Create(in.xsize(), in.ysize()));
+  JxlMemoryManager* memory_manager = in.memory_manager();
+  JXL_ASSIGN_OR_RETURN(*xyb,
+                       Image3F::Create(memory_manager, in.xsize(), in.ysize()));
   CopyImageTo(in.color(), xyb);
   ToXYB(in.c_current(), in.metadata()->IntensityTarget(),
         in.HasBlack() ? &in.black() : nullptr, pool, xyb, cms, linear);

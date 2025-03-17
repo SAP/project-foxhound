@@ -276,12 +276,6 @@ var allowlist = [
   // find the references)
   { file: "chrome://browser/content/screenshots/copied-notification.svg" },
 
-  // Bug 1875361
-  { file: "chrome://global/content/ml/SummarizerModel.sys.mjs" },
-
-  // Bug 1886130
-  { file: "chrome://global/content/ml/ModelHub.sys.mjs" },
-
   // toolkit/xre/MacRunFromDmgUtils.mm
   { file: "resource://gre/localization/en-US/toolkit/global/run-from-dmg.ftl" },
 
@@ -290,6 +284,9 @@ var allowlist = [
   { file: "chrome://browser/content/screenshots/copy.svg" },
   { file: "chrome://browser/content/screenshots/download.svg" },
   { file: "chrome://browser/content/screenshots/download-white.svg" },
+
+  // Referenced programmatically
+  { file: "chrome://browser/content/backup/BackupManifest.1.schema.json" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD) {
@@ -301,6 +298,10 @@ if (AppConstants.NIGHTLY_BUILD) {
       // A debug tool that is only available in Nightly builds, and is accessed
       // directly by developers via the chrome URI (bug 1888491)
       { file: "chrome://browser/content/backup/debug.html" },
+
+      // The Transformers.js prod lib is not used in Nightly builds
+      { file: "chrome://global/content/ml/transformers.js" },
+      { file: "chrome://global/content/ml/ort.js" },
     ]
   );
 }
@@ -358,9 +359,6 @@ const ignorableAllowlist = new Set([
 
   // dom/media/gmp/GMPParent.cpp
   "resource://gre/gmp-clearkey/0.1/manifest.json",
-
-  // Bug 1351669 - obsolete test file
-  "resource://gre/res/test.properties",
 ]);
 for (let entry of ignorableAllowlist) {
   allowlist.add(entry);

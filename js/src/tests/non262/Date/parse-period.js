@@ -1,4 +1,4 @@
-// |reftest| skip-if(xulRuntime.OS=="WINNT") -- Windows doesn't accept IANA names for the TZ env variable
+// |reftest| skip-if(winWidget) -- Windows doesn't accept IANA names for the TZ env variable
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,6 +9,7 @@ const tests = [
   "Aug.. 15, 2015",
   "Aug.15.2015",
   "15.Aug.2015",
+  "15.Aug.0015",
   "Aug 15 2015 12:00 am.",
   "Sat. Aug 15 2015",
   "2015.08.15",

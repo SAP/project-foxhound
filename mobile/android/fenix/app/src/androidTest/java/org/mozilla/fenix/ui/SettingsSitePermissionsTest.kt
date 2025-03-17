@@ -4,11 +4,11 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.espresso.Espresso.pressBack
 import androidx.test.filters.SdkSuppress
 import mozilla.components.concept.engine.mediasession.MediaSession
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -24,6 +24,7 @@ import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import java.lang.AssertionError
 
 /**
  *  Tests for verifying
@@ -38,12 +39,14 @@ class SettingsSitePermissionsTest : TestSetup() {
     private val testPageSubstring = "https://mozilla-mobile.github.io:443"
 
     @get:Rule
-    val activityTestRule = HomeActivityTestRule(
-        isJumpBackInCFREnabled = false,
-        isPWAsPromptEnabled = false,
-        isTCPCFREnabled = false,
-        isDeleteSitePermissionsEnabled = true,
-    )
+    val activityTestRule = AndroidComposeTestRule(
+        HomeActivityTestRule(
+            isJumpBackInCFREnabled = false,
+            isPWAsPromptEnabled = false,
+            isTCPCFREnabled = false,
+            isDeleteSitePermissionsEnabled = true,
+        ),
+    ) { it.activity }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/246974
     @Test
@@ -124,7 +127,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericPage.url) {
             verifyPageContent(genericPage.content)
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
         navigationToolbar {
@@ -133,7 +136,7 @@ class SettingsSitePermissionsTest : TestSetup() {
                 verifyPageContent(videoTestPage.content)
                 clickPageObject(itemWithText("Play"))
                 assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
-            } catch (e: java.lang.AssertionError) {
+            } catch (e: AssertionError) {
                 navigationToolbar {
                 }.openThreeDotMenu {
                 }.refreshPage {
@@ -146,7 +149,6 @@ class SettingsSitePermissionsTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2286807
-    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1827599")
     @SmokeTest
     @Test
     fun verifyAutoplayBlockAudioOnlySettingOnMutedVideoTest() {
@@ -156,14 +158,14 @@ class SettingsSitePermissionsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericPage.url) {
             verifyPageContent(genericPage.content)
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
         navigationToolbar {
         }.enterURLAndEnterToBrowser(mutedVideoTestPage.url) {
             try {
                 verifyPageContent("Media file is playing")
-            } catch (e: java.lang.AssertionError) {
+            } catch (e: AssertionError) {
                 navigationToolbar {
                 }.openThreeDotMenu {
                 }.refreshPage {
@@ -190,7 +192,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericPage.url) {
             verifyPageContent(genericPage.content)
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
         navigationToolbar {
@@ -198,7 +200,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             try {
                 verifyPageContent(videoTestPage.content)
                 assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
-            } catch (e: java.lang.AssertionError) {
+            } catch (e: AssertionError) {
                 navigationToolbar {
                 }.openThreeDotMenu {
                 }.refreshPage {
@@ -210,7 +212,6 @@ class SettingsSitePermissionsTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2286806
-    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1827599")
     @Test
     fun verifyAutoplayAllowAudioVideoSettingOnMutedVideoTest() {
         val mutedVideoTestPage = getMutedVideoPageAsset(mockWebServer)
@@ -227,7 +228,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         }.enterURLAndEnterToBrowser(mutedVideoTestPage.url) {
             try {
                 verifyPageContent("Media file is playing")
-            } catch (e: java.lang.AssertionError) {
+            } catch (e: AssertionError) {
                 navigationToolbar {
                 }.openThreeDotMenu {
                 }.refreshPage {
@@ -256,7 +257,7 @@ class SettingsSitePermissionsTest : TestSetup() {
                 verifyPageContent(videoTestPage.content)
                 clickPageObject(itemWithText("Play"))
                 assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
-            } catch (e: java.lang.AssertionError) {
+            } catch (e: AssertionError) {
                 navigationToolbar {
                 }.openThreeDotMenu {
                 }.refreshPage {
@@ -287,7 +288,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             clickPageObject(itemWithText("Play"))
             try {
                 verifyPageContent("Media file is playing")
-            } catch (e: java.lang.AssertionError) {
+            } catch (e: AssertionError) {
                 navigationToolbar {
                 }.openThreeDotMenu {
                 }.refreshPage {

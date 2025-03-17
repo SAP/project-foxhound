@@ -329,6 +329,8 @@ class LogForwarderEvent : public Runnable {
 
 void CrashStatsLogForwarder::Log(const std::string& aString) {
   MutexAutoLock lock(mMutex);
+  PROFILER_MARKER_TEXT("gfx::CriticalError", GRAPHICS, {},
+                       nsDependentCString(aString.c_str()));
 
   if (UpdateStringsVector(aString)) {
     UpdateCrashReport();
@@ -798,6 +800,8 @@ bool gfxPlatform::HasVariationFontSupport() {
 }
 
 void gfxPlatform::Init() {
+  AUTO_PROFILER_MARKER_TEXT("gfxPlatform", GRAPHICS, {},
+                            "gfxPlatform::Init"_ns);
   MOZ_RELEASE_ASSERT(!XRE_IsGPUProcess(), "GFX: Not allowed in GPU process.");
   MOZ_RELEASE_ASSERT(!XRE_IsRDDProcess(), "GFX: Not allowed in RDD process.");
   MOZ_RELEASE_ASSERT(NS_IsMainThread(), "GFX: Not in main thread.");
@@ -872,10 +876,9 @@ void gfxPlatform::Init() {
         StaticPrefs::webgl_disable_angle(), StaticPrefs::webgl_dxgl_enabled(),
         StaticPrefs::webgl_force_enabled(), StaticPrefs::webgl_msaa_force());
     // Prefs that don't fit into any of the other sections
-    forcedPrefs.AppendPrintf("-T%d%d%d) ",
+    forcedPrefs.AppendPrintf("-T%d%d) ",
                              StaticPrefs::gfx_android_rgb16_force_AtStartup(),
-                             StaticPrefs::gfx_canvas_accelerated(),
-                             StaticPrefs::layers_force_shmem_tiles_AtStartup());
+                             StaticPrefs::gfx_canvas_accelerated());
     ScopedGfxFeatureReporter::AppNote(forcedPrefs);
   }
 
@@ -2083,7 +2086,7 @@ Maybe<nsTArray<uint8_t>>& gfxPlatform::GetCMSOutputProfileData() {
 
 CMSMode GfxColorManagementMode() {
   const auto mode = StaticPrefs::gfx_color_management_mode();
-  if (mode >= 0 && mode < UnderlyingValue(CMSMode::AllCount)) {
+  if (mode >= 0 && mode <= UnderlyingValue(CMSMode::_ENUM_MAX)) {
     return CMSMode(mode);
   }
   return CMSMode::Off;
@@ -2644,6 +2647,10 @@ void gfxPlatform::InitWebRenderConfig() {
   gfxConfigManager manager;
   manager.Init();
   manager.ConfigureWebRender();
+
+  if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
+    gfxVars::SetGPUProcessEnabled(true);
+  }
 
   bool hasHardware = gfxConfig::IsEnabled(Feature::WEBRENDER);
 

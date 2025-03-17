@@ -19,9 +19,11 @@
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/TreeWalker.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/SelectionMovementUtils.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_layout.h"
@@ -34,7 +36,6 @@
 #include "nsFrameSelection.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIHapticFeedback.h"
-#include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsServiceManagerUtils.h"
 
@@ -879,7 +880,7 @@ nsIFrame* AccessibleCaretManager::GetFocusableFrame(nsIFrame* aFrame) const {
   // Look for the nearest enclosing focusable frame.
   nsIFrame* focusableFrame = aFrame;
   while (focusableFrame) {
-    if (focusableFrame->IsFocusable(/* aWithMouse = */ true)) {
+    if (focusableFrame->IsFocusable(IsFocusableFlags::WithMouse)) {
       break;
     }
     focusableFrame = focusableFrame->GetParent();
@@ -1379,14 +1380,15 @@ void AccessibleCaretManager::StartSelectionAutoScrollTimer(
     return;
   }
 
-  nsIScrollableFrame* scrollFrame = nsLayoutUtils::GetNearestScrollableFrame(
-      anchorFrame, nsLayoutUtils::SCROLLABLE_SAME_DOC |
-                       nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
-  if (!scrollFrame) {
+  ScrollContainerFrame* scrollContainerFrame =
+      nsLayoutUtils::GetNearestScrollContainerFrame(
+          anchorFrame, nsLayoutUtils::SCROLLABLE_SAME_DOC |
+                           nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
+  if (!scrollContainerFrame) {
     return;
   }
 
-  nsIFrame* capturingFrame = scrollFrame->GetScrolledFrame();
+  nsIFrame* capturingFrame = scrollContainerFrame->GetScrolledFrame();
   if (!capturingFrame) {
     return;
   }
@@ -1435,7 +1437,7 @@ void AccessibleCaretManager::DispatchCaretStateChangedEvent(
     commonAncestorNode = sel->GetFrameSelection()->GetAncestorLimiter();
   }
 
-  RefPtr<DOMRect> domRect = new DOMRect(ToSupports(doc));
+  auto domRect = MakeRefPtr<DOMRect>(ToSupports(doc));
   nsRect rect = nsLayoutUtils::GetSelectionBoundingRect(sel);
 
   nsIFrame* commonAncestorFrame = nullptr;

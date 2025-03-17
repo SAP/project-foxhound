@@ -164,8 +164,10 @@ enum : uint32_t {
 
   NODE_MAY_HAVE_ELEMENT_CHILDREN = NODE_FLAG_BIT(12),
 
+  NODE_HAS_SCHEDULED_SELECTION_CHANGE_EVENT = NODE_FLAG_BIT(13),
+
   // Remaining bits are node type specific.
-  NODE_TYPE_SPECIFIC_BITS_OFFSET = 13
+  NODE_TYPE_SPECIFIC_BITS_OFFSET = 14
 };
 
 // Flags for selectors that persist to the DOM node.
@@ -541,6 +543,8 @@ class nsINode : public mozilla::dom::EventTarget {
    * https://html.spec.whatwg.org/multipage/popover.html#nearest-inclusive-target-popover-for-invoker
    */
   mozilla::dom::Element* GetNearestInclusiveTargetPopoverForInvoker() const;
+
+  nsGenericHTMLElement* GetEffectiveInvokeTargetElement() const;
 
   /**
    * https://html.spec.whatwg.org/multipage/popover.html#popover-target-element
@@ -1640,6 +1644,18 @@ class nsINode : public mozilla::dom::EventTarget {
   MOZ_CAN_RUN_SCRIPT nsIContent* GetSelectionRootContent(
       mozilla::PresShell* aPresShell, bool aAllowCrossShadowBoundary = false);
 
+  bool HasScheduledSelectionChangeEvent() {
+    return HasFlag(NODE_HAS_SCHEDULED_SELECTION_CHANGE_EVENT);
+  }
+
+  void SetHasScheduledSelectionChangeEvent() {
+    SetFlags(NODE_HAS_SCHEDULED_SELECTION_CHANGE_EVENT);
+  }
+
+  void ClearHasScheduledSelectionChangeEvent() {
+    UnsetFlags(NODE_HAS_SCHEDULED_SELECTION_CHANGE_EVENT);
+  }
+
   nsINodeList* ChildNodes();
 
   nsIContent* GetFirstChild() const { return mFirstChild; }
@@ -1851,8 +1867,9 @@ class nsINode : public mozilla::dom::EventTarget {
    */
  private:
   enum BooleanFlag {
-    // Set if we're being used from -moz-element
-    NodeHasRenderingObservers,
+    // Set if we're being used from -moz-element or observed via a mask,
+    // clipPath, filter or use element.
+    NodeHasDirectRenderingObservers,
     // Set if our parent chain (including this node itself) terminates
     // in a document
     IsInDocument,
@@ -1955,11 +1972,11 @@ class nsINode : public mozilla::dom::EventTarget {
   }
 
  public:
-  bool HasRenderingObservers() const {
-    return GetBoolFlag(NodeHasRenderingObservers);
+  bool HasDirectRenderingObservers() const {
+    return GetBoolFlag(NodeHasDirectRenderingObservers);
   }
-  void SetHasRenderingObservers(bool aValue) {
-    SetBoolFlag(NodeHasRenderingObservers, aValue);
+  void SetHasDirectRenderingObservers(bool aValue) {
+    SetBoolFlag(NodeHasDirectRenderingObservers, aValue);
   }
   bool IsContent() const { return GetBoolFlag(NodeIsContent); }
   bool HasID() const { return GetBoolFlag(ElementHasID); }
@@ -2473,34 +2490,34 @@ inline nsISupports* ToSupports(nsINode* aPointer) { return aPointer; }
 
 // Some checks are faster to do on nsIContent or Element than on
 // nsINode, so spit out FromNode versions taking those types too.
-#define NS_IMPL_FROMNODE_GENERIC(_class, _check, _const)                 \
-  template <typename T>                                                  \
-  static auto FromNode(_const T& aNode)                                  \
-      -> decltype(static_cast<_const _class*>(&aNode)) {                 \
-    return aNode._check ? static_cast<_const _class*>(&aNode) : nullptr; \
-  }                                                                      \
-  template <typename T>                                                  \
-  static _const _class* FromNode(_const T* aNode) {                      \
-    return FromNode(*aNode);                                             \
-  }                                                                      \
-  template <typename T>                                                  \
-  static _const _class* FromNodeOrNull(_const T* aNode) {                \
-    return aNode ? FromNode(*aNode) : nullptr;                           \
-  }                                                                      \
-  template <typename T>                                                  \
-  static auto FromEventTarget(_const T& aEventTarget)                    \
-      -> decltype(static_cast<_const _class*>(&aEventTarget)) {          \
-    return aEventTarget.IsNode() && aEventTarget.AsNode()->_check        \
-               ? static_cast<_const _class*>(&aEventTarget)              \
-               : nullptr;                                                \
-  }                                                                      \
-  template <typename T>                                                  \
-  static _const _class* FromEventTarget(_const T* aEventTarget) {        \
-    return FromEventTarget(*aEventTarget);                               \
-  }                                                                      \
-  template <typename T>                                                  \
-  static _const _class* FromEventTargetOrNull(_const T* aEventTarget) {  \
-    return aEventTarget ? FromEventTarget(*aEventTarget) : nullptr;      \
+#define NS_IMPL_FROMNODE_GENERIC(_class, _check, _const)                  \
+  template <typename T>                                                   \
+  static auto FromNode(                                                   \
+      _const T& aNode) -> decltype(static_cast<_const _class*>(&aNode)) { \
+    return aNode._check ? static_cast<_const _class*>(&aNode) : nullptr;  \
+  }                                                                       \
+  template <typename T>                                                   \
+  static _const _class* FromNode(_const T* aNode) {                       \
+    return FromNode(*aNode);                                              \
+  }                                                                       \
+  template <typename T>                                                   \
+  static _const _class* FromNodeOrNull(_const T* aNode) {                 \
+    return aNode ? FromNode(*aNode) : nullptr;                            \
+  }                                                                       \
+  template <typename T>                                                   \
+  static auto FromEventTarget(_const T& aEventTarget)                     \
+      -> decltype(static_cast<_const _class*>(&aEventTarget)) {           \
+    return aEventTarget.IsNode() && aEventTarget.AsNode()->_check         \
+               ? static_cast<_const _class*>(&aEventTarget)               \
+               : nullptr;                                                 \
+  }                                                                       \
+  template <typename T>                                                   \
+  static _const _class* FromEventTarget(_const T* aEventTarget) {         \
+    return FromEventTarget(*aEventTarget);                                \
+  }                                                                       \
+  template <typename T>                                                   \
+  static _const _class* FromEventTargetOrNull(_const T* aEventTarget) {   \
+    return aEventTarget ? FromEventTarget(*aEventTarget) : nullptr;       \
   }
 
 #define NS_IMPL_FROMNODE_HELPER(_class, _check)                                \

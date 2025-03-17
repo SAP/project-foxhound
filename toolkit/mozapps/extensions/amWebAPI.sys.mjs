@@ -2,17 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
-const lazy = {};
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "AMO_ABUSEREPORT",
-  "extensions.abuseReport.amWebAPI.enabled",
-  false
-);
-
 const MSG_PROMISE_REQUEST = "WebAPIPromiseRequest";
 const MSG_PROMISE_RESULT = "WebAPIPromiseResult";
 const MSG_INSTALL_EVENT = "WebAPIInstallEvent";
@@ -255,12 +244,16 @@ export class WebAPI extends APIObject {
     });
   }
 
-  reportAbuse(id) {
-    return this._apiTask("addonReportAbuse", [id]);
-  }
-
-  get abuseReportPanelEnabled() {
-    return lazy.AMO_ABUSEREPORT;
+  sendAbuseReport(addonId, data, options) {
+    return this._apiTask(
+      "sendAbuseReport",
+      [addonId, data, options],
+      result => {
+        // The result below is a JS object coming from the expected AMO API
+        // endpoint response in JSON format.
+        return Cu.cloneInto(result, this.window);
+      }
+    );
   }
 
   eventListenerAdded() {

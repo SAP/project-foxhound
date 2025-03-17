@@ -11,14 +11,16 @@
     "organicCodes",
     "followOnParamNames",
     "followOnCookies",
-    "ignoreLinkRegexps",
     "extraAdServersRegexps",
     "adServerAttributes",
     "components",
-    "nonAdsLinkRegexps",
+    "ignoreLinkRegexps",
     "nonAdsLinkQueryParamNames",
+    "nonAdsLinkRegexps",
     "shoppingTab",
     "domainExtraction",
+    "accountCookies",
+    "signedInCookies",
     "isSPA",
     "defaultPageQueryParam"
   ]

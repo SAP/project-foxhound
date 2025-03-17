@@ -362,7 +362,7 @@ add_task(async function test_aboutwelcome_embedded_migration() {
         await ContentTaskUtils.waitForEvent(selector, "focus");
       }
 
-      selector.click();
+      EventUtils.synthesizeMouseAtCenter(selector, {}, wizard.ownerGlobal);
       await shown;
 
       let panelRect = panelList.getBoundingClientRect();
@@ -766,5 +766,47 @@ add_task(async function test_aboutwelcome_multiselect() {
   await SpecialPowers.popPrefEnv();
   await cleanup();
 
+  sandbox.restore();
+});
+
+/**
+ * Test end of multistage url bar focus on new tab
+ */
+add_task(async function test_AWMultistage_newtab_urlbar_focus() {
+  const TEST_CONTENT = [
+    {
+      id: "TEST_SCREEN",
+      content: {
+        position: "split",
+        logo: {},
+        title: "Test newtab url focus",
+        primary_button: {
+          label: "Next",
+          action: {
+            navigate: true,
+          },
+        },
+      },
+    },
+  ];
+
+  const TEST_CONTENT_JSON = JSON.stringify(TEST_CONTENT);
+
+  await setAboutWelcomePref(true);
+  await setAboutWelcomeMultiStage(TEST_CONTENT_JSON);
+  const sandbox = sinon.createSandbox();
+
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:welcome",
+    true
+  );
+  const browser = tab.linkedBrowser;
+  let focused = BrowserTestUtils.waitForEvent(gURLBar.inputField, "focus");
+  await onButtonClick(browser, "button.primary");
+  await focused;
+  Assert.ok(gURLBar.focused, "focus should be on url bar");
+
+  BrowserTestUtils.removeTab(tab);
   sandbox.restore();
 });

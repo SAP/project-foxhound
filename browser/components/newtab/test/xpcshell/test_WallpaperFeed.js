@@ -27,12 +27,8 @@ add_task(async function test_construction() {
   Assert.ok(feed, "Could construct a WallpaperFeed");
   Assert.ok(feed.loaded === false, "WallpaperFeed is not loaded");
   Assert.ok(
-    feed.wallpaperClient === "",
-    "wallpaperClient is initialized as an empty string"
-  );
-  Assert.ok(
-    feed.wallpaperDB === "",
-    "wallpaperDB is initialized as an empty string"
+    feed.wallpaperClient === null,
+    "wallpaperClient is initialized as null"
   );
   Assert.ok(
     feed.baseAttachmentURL === "",
@@ -73,15 +69,16 @@ add_task(async function test_onAction_INIT() {
     type: at.INIT,
   });
 
-  Assert.ok(feed.store.dispatch.calledOnce);
+  Assert.ok(feed.store.dispatch.calledThrice);
   Assert.ok(
-    feed.store.dispatch.calledWith(
+    feed.store.dispatch.firstCall.calledWith(
       ac.BroadcastToContent({
         type: at.WALLPAPERS_SET,
         data: [
           {
             ...attachment,
             wallpaperUrl: "http://localhost:8888/base_url/attachment",
+            category: "",
           },
         ],
         meta: {

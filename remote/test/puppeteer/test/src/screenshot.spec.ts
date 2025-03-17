@@ -306,14 +306,15 @@ describe('Screenshots', function () {
 
       await page.setContent('<h1>remove this</h1>');
       using elementHandle = (await page.$('h1'))!;
-      await page.evaluate((element: HTMLElement) => {
+      await page.evaluate(element => {
         return element.remove();
       }, elementHandle);
       const screenshotError = await elementHandle.screenshot().catch(error => {
         return error;
       });
-      expect(screenshotError.message).toBe(
-        'Node is either not visible or not an HTMLElement'
+      expect(screenshotError).toBeInstanceOf(Error);
+      expect(screenshotError.message).toMatch(
+        /Node is either not visible or not an HTMLElement|Node is detached from document/
       );
     });
     it('should not hang with zero width/height element', async () => {
@@ -392,6 +393,33 @@ describe('Screenshots', function () {
       );
 
       await context.close();
+    });
+
+    it('should use element clip', async () => {
+      const {page} = await getTestState();
+
+      await page.setViewport({width: 500, height: 500});
+      await page.setContent(`
+        something above
+        <style>div {
+          border: 2px solid blue;
+          background: green;
+          width: 50px;
+          height: 50px;
+        }
+        </style>
+        <div></div>
+      `);
+      using elementHandle = (await page.$('div'))!;
+      const screenshot = await elementHandle.screenshot({
+        clip: {
+          x: 10,
+          y: 10,
+          width: 20,
+          height: 20,
+        },
+      });
+      expect(screenshot).toBeGolden('screenshot-element-clip.png');
     });
   });
 

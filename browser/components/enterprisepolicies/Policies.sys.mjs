@@ -549,10 +549,26 @@ export var Policies = {
           param.ClientSignature
         );
       }
+      if ("DefaultResult" in param) {
+        if (
+          !Number.isInteger(param.DefaultResult) ||
+          param.DefaultResult < 0 ||
+          param.DefaultResult > 2
+        ) {
+          lazy.log.error(
+            `Non-integer or out of range value for DefaultResult: ${param.DefaultResult}`
+          );
+        } else {
+          setAndLockPref(
+            "browser.contentanalysis.default_result",
+            param.DefaultResult
+          );
+        }
+      }
       let boolPrefs = [
         ["IsPerUser", "is_per_user"],
         ["ShowBlockedResult", "show_blocked_result"],
-        ["DefaultAllow", "default_allow"],
+        ["BypassForSameTabOperations", "bypass_for_same_tab_operations"],
       ];
       for (let pref of boolPrefs) {
         if (pref[0] in param) {
@@ -769,6 +785,15 @@ export var Policies = {
         blockAboutPage(manager, "about:debugging");
         blockAboutPage(manager, "about:devtools-toolbox");
         blockAboutPage(manager, "about:profiling");
+      }
+    },
+  },
+
+  DisableEncryptedClientHello: {
+    onBeforeAddons(manager, param) {
+      if (param) {
+        setAndLockPref("network.dns.echconfig.enabled", false);
+        setAndLockPref("network.dns.http3_echconfig.enabled", false);
       }
     },
   },
@@ -1515,6 +1540,31 @@ export var Policies = {
     },
   },
 
+  HttpAllowlist: {
+    onBeforeAddons(manager, param) {
+      addAllowDenyPermissions("https-only-load-insecure", param);
+    },
+  },
+
+  HttpsOnlyMode: {
+    onBeforeAddons(manager, param) {
+      switch (param) {
+        case "disallowed":
+          setAndLockPref("dom.security.https_only_mode", false);
+          break;
+        case "enabled":
+          PoliciesUtils.setDefaultPref("dom.security.https_only_mode", true);
+          break;
+        case "force_enabled":
+          setAndLockPref("dom.security.https_only_mode", true);
+          break;
+        case "allowed":
+          // The default case.
+          break;
+      }
+    },
+  },
+
   InstallAddonsPermission: {
     onBeforeUIStartup(manager, param) {
       if ("Allow" in param) {
@@ -1787,6 +1837,13 @@ export var Policies = {
     },
   },
 
+  PostQuantumKeyAgreementEnabled: {
+    onBeforeAddons(manager, param) {
+      setAndLockPref("network.http.http3.enable_kyber", param);
+      setAndLockPref("security.tls.enable_kyber", param);
+    },
+  },
+
   Preferences: {
     onBeforeAddons(manager, param) {
       let allowedPrefixes = [
@@ -1811,6 +1868,7 @@ export var Policies = {
         "places.",
         "pref.",
         "print.",
+        "privacy.globalprivacycontrol.enabled",
         "privacy.userContext.enabled",
         "privacy.userContext.ui.enabled",
         "signon.",
@@ -1831,6 +1889,8 @@ export var Policies = {
         "security.insecure_connection_text.enabled",
         "security.insecure_connection_text.pbmode.enabled",
         "security.mixed_content.block_active_content",
+        "security.mixed_content.block_display_content",
+        "security.mixed_content.upgrade_display_content",
         "security.osclientcerts.assume_rsa_pss_support",
         "security.osclientcerts.autoload",
         "security.OCSP.enabled",
@@ -2457,13 +2517,6 @@ export var Policies = {
 
   UserMessaging: {
     onBeforeAddons(manager, param) {
-      if ("WhatsNew" in param) {
-        PoliciesUtils.setDefaultPref(
-          "browser.messaging-system.whatsNewPanel.enabled",
-          param.WhatsNew,
-          param.Locked
-        );
-      }
       if ("ExtensionRecommendations" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",

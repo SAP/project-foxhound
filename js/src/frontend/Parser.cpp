@@ -737,6 +737,10 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredName(
 
     case DeclarationKind::Let:
     case DeclarationKind::Const:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case DeclarationKind::Using:
+    case DeclarationKind::AwaitUsing:
+#endif
     case DeclarationKind::Class:
       // The BoundNames of LexicalDeclaration and ForDeclaration must not
       // contain 'let'. (CatchParameter is the only lexical binding form
@@ -1170,6 +1174,9 @@ static Maybe<ModuleScope::ParserData*> NewModuleScopeData(
   ParserBindingNameVector vars(fc);
   ParserBindingNameVector lets(fc);
   ParserBindingNameVector consts(fc);
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  ParserBindingNameVector usings(fc);
+#endif
 
   bool allBindingsClosedOver =
       pc->sc()->allBindingsClosedOver() || scope.tooBigToOptimize();
@@ -1200,14 +1207,25 @@ static Maybe<ModuleScope::ParserData*> NewModuleScopeData(
           return Nothing();
         }
         break;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+      case BindingKind::Using:
+        if (!usings.append(binding)) {
+          return Nothing();
+        }
+        break;
+#endif
       default:
         MOZ_CRASH("Bad module scope BindingKind");
     }
   }
 
   ModuleScope::ParserData* bindings = nullptr;
-  uint32_t numBindings =
-      imports.length() + vars.length() + lets.length() + consts.length();
+  uint32_t numBindings = imports.length() + vars.length() + lets.length() +
+                         consts.length()
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                         + usings.length()
+#endif
+      ;
 
   if (numBindings > 0) {
     bindings = NewEmptyBindingData<ModuleScope>(fc, alloc, numBindings);
@@ -1219,7 +1237,12 @@ static Maybe<ModuleScope::ParserData*> NewModuleScopeData(
     InitializeBindingData(bindings, numBindings, imports,
                           &ParserModuleScopeSlotInfo::varStart, vars,
                           &ParserModuleScopeSlotInfo::letStart, lets,
-                          &ParserModuleScopeSlotInfo::constStart, consts);
+                          &ParserModuleScopeSlotInfo::constStart, consts
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                          ,
+                          &ParserModuleScopeSlotInfo::usingStart, usings
+#endif
+    );
   }
 
   return Some(bindings);
@@ -1345,6 +1368,9 @@ static Maybe<FunctionScope::ParserData*> NewFunctionScopeData(
         break;
       case BindingKind::Let:
       case BindingKind::Const:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+      case BindingKind::Using:
+#endif
         break;
       default:
         MOZ_CRASH("bad function scope BindingKind");
@@ -1468,6 +1494,9 @@ static Maybe<LexicalScope::ParserData*> NewLexicalScopeData(
     ParseContext* pc) {
   ParserBindingNameVector lets(fc);
   ParserBindingNameVector consts(fc);
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  ParserBindingNameVector usings(fc);
+#endif
 
   bool allBindingsClosedOver =
       pc->sc()->allBindingsClosedOver() || scope.tooBigToOptimize();
@@ -1486,6 +1515,13 @@ static Maybe<LexicalScope::ParserData*> NewLexicalScopeData(
           return Nothing();
         }
         break;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+      case BindingKind::Using:
+        if (!usings.append(binding)) {
+          return Nothing();
+        }
+        break;
+#endif
       case BindingKind::Var:
       case BindingKind::FormalParameter:
         break;
@@ -1496,7 +1532,11 @@ static Maybe<LexicalScope::ParserData*> NewLexicalScopeData(
   }
 
   LexicalScope::ParserData* bindings = nullptr;
-  uint32_t numBindings = lets.length() + consts.length();
+  uint32_t numBindings = lets.length() + consts.length()
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                         + usings.length()
+#endif
+      ;
 
   if (numBindings > 0) {
     bindings = NewEmptyBindingData<LexicalScope>(fc, alloc, numBindings);
@@ -1506,7 +1546,12 @@ static Maybe<LexicalScope::ParserData*> NewLexicalScopeData(
 
     // The ordering here is important. See comments in LexicalScope.
     InitializeBindingData(bindings, numBindings, lets,
-                          &ParserLexicalScopeSlotInfo::constStart, consts);
+                          &ParserLexicalScopeSlotInfo::constStart, consts
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                          ,
+                          &ParserLexicalScopeSlotInfo::usingStart, usings
+#endif
+    );
   }
 
   return Some(bindings);
@@ -2533,6 +2578,14 @@ bool GeneralParser<ParseHandler, Unit>::matchOrInsertSemicolon(
       error(JSMSG_YIELD_OUTSIDE_GENERATOR);
       return false;
     }
+
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    if (!this->pc_->isUsingSyntaxAllowed() &&
+        anyChars.currentToken().type == TokenKind::Using) {
+      error(JSMSG_USING_OUTSIDE_BLOCK_OR_MODULE);
+      return false;
+    }
+#endif
 
     /* Advance the scanner for proper error location reporting. */
     tokenStream.consumeKnownToken(tt, modifier);
@@ -4768,6 +4821,13 @@ GeneralParser<ParseHandler, Unit>::declarationName(DeclarationKind declKind,
 
       if (isForIn) {
         *forHeadKind = ParseNodeKind::ForIn;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+        if (declKind == DeclarationKind::Using ||
+            declKind == DeclarationKind::AwaitUsing) {
+          errorAt(namePos.begin, JSMSG_NO_IN_WITH_USING);
+          return errorResult();
+        }
+#endif
       } else if (isForOf) {
         *forHeadKind = ParseNodeKind::ForOf;
       } else {
@@ -4804,7 +4864,12 @@ GeneralParser<ParseHandler, Unit>::declarationList(
     ParseNodeKind* forHeadKind /* = nullptr */,
     Node* forInOrOfExpression /* = nullptr */) {
   MOZ_ASSERT(kind == ParseNodeKind::VarStmt || kind == ParseNodeKind::LetDecl ||
-             kind == ParseNodeKind::ConstDecl);
+             kind == ParseNodeKind::ConstDecl
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+             || kind == ParseNodeKind::UsingDecl ||
+             kind == ParseNodeKind::AwaitUsingDecl
+#endif
+  );
 
   DeclarationKind declKind;
   switch (kind) {
@@ -4817,6 +4882,14 @@ GeneralParser<ParseHandler, Unit>::declarationList(
     case ParseNodeKind::LetDecl:
       declKind = DeclarationKind::Let;
       break;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case ParseNodeKind::UsingDecl:
+      declKind = DeclarationKind::Using;
+      break;
+    case ParseNodeKind::AwaitUsingDecl:
+      declKind = DeclarationKind::AwaitUsing;
+      break;
+#endif
     default:
       MOZ_CRASH("Unknown declaration kind");
   }
@@ -4869,7 +4942,12 @@ template <class ParseHandler, typename Unit>
 typename ParseHandler::DeclarationListNodeResult
 GeneralParser<ParseHandler, Unit>::lexicalDeclaration(
     YieldHandling yieldHandling, DeclarationKind kind) {
-  MOZ_ASSERT(kind == DeclarationKind::Const || kind == DeclarationKind::Let);
+  MOZ_ASSERT(kind == DeclarationKind::Const || kind == DeclarationKind::Let
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+             || kind == DeclarationKind::Using ||
+             kind == DeclarationKind::AwaitUsing
+#endif
+  );
 
   if (options().selfHostingMode) {
     error(JSMSG_SELFHOSTED_LEXICAL);
@@ -4888,10 +4966,26 @@ GeneralParser<ParseHandler, Unit>::lexicalDeclaration(
    * See 8.1.1.1.6 and the note in 13.2.1.
    */
   DeclarationListNodeType decl;
-  MOZ_TRY_VAR(decl,
-              declarationList(yieldHandling, kind == DeclarationKind::Const
-                                                 ? ParseNodeKind::ConstDecl
-                                                 : ParseNodeKind::LetDecl));
+  ParseNodeKind pnk;
+  switch (kind) {
+    case DeclarationKind::Const:
+      pnk = ParseNodeKind::ConstDecl;
+      break;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case DeclarationKind::Using:
+      pnk = ParseNodeKind::UsingDecl;
+      break;
+    case DeclarationKind::AwaitUsing:
+      pnk = ParseNodeKind::AwaitUsingDecl;
+      break;
+#endif
+    case DeclarationKind::Let:
+      pnk = ParseNodeKind::LetDecl;
+      break;
+    default:
+      MOZ_CRASH("unexpected node kind");
+  }
+  MOZ_TRY_VAR(decl, declarationList(yieldHandling, pnk));
   if (!matchOrInsertSemicolon()) {
     return errorResult();
   }
@@ -6447,10 +6541,72 @@ bool GeneralParser<ParseHandler, Unit>::forHeadStart(
   bool parsingLexicalDeclaration = false;
   bool letIsIdentifier = false;
   bool startsWithForOf = false;
+
   if (tt == TokenKind::Const) {
     parsingLexicalDeclaration = true;
     tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
-  } else if (tt == TokenKind::Let) {
+  }
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  else if (tt == TokenKind::Await) {
+    if (!pc_->isAsync()) {
+      if (pc_->atModuleTopLevel()) {
+        if (!options().topLevelAwait) {
+          error(JSMSG_TOP_LEVEL_AWAIT_NOT_SUPPORTED);
+          return false;
+        }
+        pc_->sc()->asModuleContext()->setIsAsync();
+        MOZ_ASSERT(pc_->isAsync());
+      }
+    }
+    if (pc_->isAsync()) {
+      // Try finding evidence of a AwaitUsingDeclaration the syntax for which
+      // would be:
+      //   await [no LineTerminator here] using [no LineTerminator here]
+      //     identifier
+      tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
+
+      TokenKind nextTok = TokenKind::Eof;
+      if (!tokenStream.peekTokenSameLine(&nextTok,
+                                         TokenStream::SlashIsRegExp)) {
+        return false;
+      }
+
+      if (nextTok == TokenKind::Using) {
+        tokenStream.consumeKnownToken(nextTok, TokenStream::SlashIsRegExp);
+
+        TokenKind nextTokIdent = TokenKind::Eof;
+        if (!tokenStream.peekTokenSameLine(&nextTokIdent)) {
+          return false;
+        }
+
+        if (TokenKindIsPossibleIdentifier(nextTokIdent)) {
+          parsingLexicalDeclaration = true;
+        } else {
+          anyChars.ungetToken();  // put back using token
+          anyChars.ungetToken();  // put back await token
+        }
+      } else {
+        anyChars.ungetToken();  // put back await token
+      }
+    }
+  } else if (tt == TokenKind::Using) {
+    tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
+
+    // Look ahead to find either a 'of' token or if not identifier
+    TokenKind nextTok = TokenKind::Eof;
+    if (!tokenStream.peekTokenSameLine(&nextTok)) {
+      return false;
+    }
+
+    if (nextTok == TokenKind::Of || !TokenKindIsPossibleIdentifier(nextTok)) {
+      anyChars.ungetToken();  // we didnt find a valid case of using decl put
+                              // back the token
+    } else {
+      parsingLexicalDeclaration = true;
+    }
+  }
+#endif
+  else if (tt == TokenKind::Let) {
     // We could have a {For,Lexical}Declaration, or we could have a
     // LeftHandSideExpression with lookahead restrictions so it's not
     // ambiguous with the former.  Check for a continuation of the former
@@ -6506,13 +6662,30 @@ bool GeneralParser<ParseHandler, Unit>::forHeadStart(
     // statements.
     ParseContext::Statement forHeadStmt(pc_, StatementKind::ForLoopLexicalHead);
 
-    MOZ_TRY_VAR_OR_RETURN(
-        *forInitialPart,
-        declarationList(yieldHandling,
-                        tt == TokenKind::Const ? ParseNodeKind::ConstDecl
-                                               : ParseNodeKind::LetDecl,
-                        forHeadKind, forInOrOfExpression),
-        false);
+    ParseNodeKind declKind;
+    switch (tt) {
+      case TokenKind::Const:
+        declKind = ParseNodeKind::ConstDecl;
+        break;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+      case TokenKind::Using:
+        declKind = ParseNodeKind::UsingDecl;
+        break;
+      case TokenKind::Await:
+        declKind = ParseNodeKind::AwaitUsingDecl;
+        break;
+#endif
+      case TokenKind::Let:
+        declKind = ParseNodeKind::LetDecl;
+        break;
+      default:
+        MOZ_CRASH("unexpected node kind");
+    }
+
+    MOZ_TRY_VAR_OR_RETURN(*forInitialPart,
+                          declarationList(yieldHandling, declKind, forHeadKind,
+                                          forInOrOfExpression),
+                          false);
     return true;
   }
 
@@ -9498,8 +9671,38 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
         }
       }
 
-      // Avoid getting next token with SlashIsDiv.
       if (tt == TokenKind::Await && pc_->isAsync()) {
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+        // Try finding evidence of a AwaitUsingDeclaration the syntax for which
+        // would be:
+        //   await [no LineTerminator here] using [no LineTerminator here]
+        //     identifier
+
+        TokenKind nextTokUsing = TokenKind::Eof;
+        // Scan with regex modifier because when its await expression, `/`
+        // should be treated as a regexp.
+        if (!tokenStream.peekTokenSameLine(&nextTokUsing,
+                                           TokenStream::SlashIsRegExp)) {
+          return errorResult();
+        }
+
+        if (nextTokUsing == TokenKind::Using &&
+            this->pc_->isUsingSyntaxAllowed()) {
+          tokenStream.consumeKnownToken(nextTokUsing,
+                                        TokenStream::SlashIsRegExp);
+          TokenKind nextTokIdentifier = TokenKind::Eof;
+          // Here we can use the Div modifier because if the next token is using
+          // then a `/` as the next token can only be considered a division.
+          if (!tokenStream.peekTokenSameLine(&nextTokIdentifier)) {
+            return errorResult();
+          }
+          if (TokenKindIsPossibleIdentifier(nextTokIdentifier)) {
+            return lexicalDeclaration(yieldHandling,
+                                      DeclarationKind::AwaitUsing);
+          }
+          anyChars.ungetToken();  // put back using.
+        }
+#endif
         return expressionStatement(yieldHandling);
       }
 
@@ -9619,6 +9822,27 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
       // [In] is the default behavior, because for-loops specially parse
       // their heads to handle |in| in this situation.
       return lexicalDeclaration(yieldHandling, DeclarationKind::Const);
+
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case TokenKind::Using: {
+      TokenKind nextTok = TokenKind::Eol;
+      if (!tokenStream.peekTokenSameLine(&nextTok)) {
+        return errorResult();
+      }
+      if (!TokenKindIsPossibleIdentifier(nextTok) ||
+          !this->pc_->isUsingSyntaxAllowed()) {
+        if (!tokenStream.peekToken(&nextTok)) {
+          return errorResult();
+        }
+        // labelled statement could be like using\n:\nexpr
+        if (nextTok == TokenKind::Colon) {
+          return labeledStatement(yieldHandling);
+        }
+        return expressionStatement(yieldHandling);
+      }
+      return lexicalDeclaration(yieldHandling, DeclarationKind::Using);
+    }
+#endif
 
     // ImportDeclaration (only inside modules)
     case TokenKind::Import:

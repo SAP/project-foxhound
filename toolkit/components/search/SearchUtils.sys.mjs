@@ -111,6 +111,10 @@ class LoadListener {
 }
 
 export var SearchUtils = {
+  // Permanently enable the new search configuration until we remove the old
+  // code as part of bug 1870686.
+  newSearchConfigEnabled: true,
+
   BROWSER_SEARCH_PREF,
 
   /**
@@ -186,6 +190,7 @@ export var SearchUtils = {
   TOPIC_ENGINE_MODIFIED: "browser-search-engine-modified",
   MODIFIED_TYPE: {
     CHANGED: "engine-changed",
+    ICON_CHANGED: "engine-icon-changed",
     REMOVED: "engine-removed",
     ADDED: "engine-added",
     DEFAULT: "engine-default",
@@ -221,10 +226,6 @@ export var SearchUtils = {
 
   // A tag to denote when we are using the "default_locale" of an engine.
   DEFAULT_TAG: "default",
-
-  MOZ_PARAM: {
-    LOCALE: "moz:locale",
-  },
 
   // Query parameters can have the property "purpose", whose value
   // indicates the context that initiated a search. This list contains
@@ -425,6 +426,86 @@ export var SearchUtils = {
       uri.host.toLowerCase().endsWith(".onion")
     );
   },
+
+  /**
+   * Sorts engines by the default settings. The sort order is:
+   *
+   * Application Default Engine
+   * Application Private Default Engine (if specified)
+   * Engines sorted by orderHint (if specified)
+   * Remaining engines in alphabetical order by locale.
+   *
+   * This is implemented here as it is used in searchengine-devtools as well as
+   * the search service.
+   *
+   * @param {object} options
+   *   The options for this function.
+   * @param {object[]} options.engines
+   *   An array of engine objects to sort. These should have the `name` and
+   *   `orderHint` fields as top-level properties.
+   * @param {object} options.appDefaultEngine
+   *   The application default engine.
+   * @param {object} [options.appPrivateDefaultEngine]
+   *   The application private default engine, if any.
+   * @param {string} [options.locale]
+   *   The current application locale, or the locale to use for the sorting.
+   * @returns {object[]}
+   *   The sorted array of engine objects.
+   */
+  sortEnginesByDefaults({
+    engines,
+    appDefaultEngine,
+    appPrivateDefaultEngine,
+    locale = Services.locale.appLocaleAsBCP47,
+  }) {
+    const sortedEngines = [];
+    const addedEngines = new Set();
+
+    function maybeAddEngineToSort(engine) {
+      if (!engine || addedEngines.has(engine.name)) {
+        return;
+      }
+
+      sortedEngines.push(engine);
+      addedEngines.add(engine.name);
+    }
+
+    // The app default engine should always be first in the list (except
+    // for distros, that we should respect).
+    const appDefault = appDefaultEngine;
+    maybeAddEngineToSort(appDefault);
+
+    // If there's a private default, and it is different to the normal
+    // default, then it should be second in the list.
+    const appPrivateDefault = appPrivateDefaultEngine;
+    if (appPrivateDefault && appPrivateDefault != appDefault) {
+      maybeAddEngineToSort(appPrivateDefault);
+    }
+
+    let remainingEngines;
+    const collator = new Intl.Collator(locale);
+
+    remainingEngines = engines.filter(e => !addedEngines.has(e.name));
+
+    // We sort by highest orderHint first, then alphabetically by name.
+    remainingEngines.sort((a, b) => {
+      if (a._orderHint && b.orderHint) {
+        if (a._orderHint == b.orderHint) {
+          return collator.compare(a.name, b.name);
+        }
+        return b.orderHint - a.orderHint;
+      }
+      if (a.orderHint) {
+        return -1;
+      }
+      if (b.orderHint) {
+        return 1;
+      }
+      return collator.compare(a.name, b.name);
+    });
+
+    return [...sortedEngines, ...remainingEngines];
+  },
 };
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -433,13 +514,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   BROWSER_SEARCH_PREF + "log",
   false
 );
-
-ChromeUtils.defineLazyGetter(SearchUtils, "newSearchConfigEnabled", () => {
-  return Services.prefs.getBoolPref(
-    "browser.search.newSearchConfig.enabled",
-    false
-  );
-});
 
 // Can't use defineLazyPreferenceGetter because we want the value
 // from the default branch

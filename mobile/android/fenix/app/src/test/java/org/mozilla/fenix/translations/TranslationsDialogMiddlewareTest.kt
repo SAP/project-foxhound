@@ -4,11 +4,12 @@
 
 package org.mozilla.fenix.translations
 
-import android.content.Context
-import io.mockk.mockk
+import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.TranslationsAction
+import mozilla.components.browser.state.state.BrowserState
+import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.translate.Language
 import mozilla.components.concept.engine.translate.TranslationOperation
@@ -25,11 +26,17 @@ import org.mozilla.fenix.utils.Settings
 
 @RunWith(FenixRobolectricTestRunner::class)
 class TranslationsDialogMiddlewareTest {
-    private val browserStore = mockk<BrowserStore>(relaxed = true)
-    private val context = mockk<Context>(relaxed = true)
+    private val browserStore = spyk(
+        BrowserStore(
+            BrowserState(
+                tabs = listOf(createTab("https://www.mozilla.org", id = "tab1")),
+                selectedTabId = "tab1",
+            ),
+        ),
+    )
     private val settings = Settings(testContext)
     private val translationsDialogMiddleware =
-        TranslationsDialogMiddleware(browserStore = browserStore, sessionId = "tab1", settings = settings)
+        TranslationsDialogMiddleware(browserStore = browserStore, settings = settings)
 
     @Test
     fun `GIVEN translationState WHEN FetchSupportedLanguages action is called THEN call OperationRequestedAction from BrowserStore`() =
@@ -148,7 +155,7 @@ class TranslationsDialogMiddlewareTest {
         }
 
     @Test
-    fun `GIVEN translationState WHEN UpdatePageSettingsValue with action type AlwaysOfferPopup from TranslationDialogStore is called THEN call UpdatePageSettingAction from BrowserStore`() =
+    fun `GIVEN translationState WHEN UpdatePageSettingsValue with action type AlwaysOfferPopup from TranslationDialogStore is called THEN call UpdateGlobalOfferTranslateSettingAction from BrowserStore`() =
         runTest {
             assertTrue(settings.offerTranslation)
             val translationStore = TranslationsDialogStore(
@@ -166,10 +173,8 @@ class TranslationsDialogMiddlewareTest {
 
             verify {
                 browserStore.dispatch(
-                    TranslationsAction.UpdatePageSettingAction(
-                        tabId = "tab1",
-                        operation = TranslationPageSettingOperation.UPDATE_ALWAYS_OFFER_POPUP,
-                        setting = false,
+                    TranslationsAction.UpdateGlobalOfferTranslateSettingAction(
+                        offerTranslation = false,
                     ),
                 )
             }

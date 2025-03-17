@@ -8,24 +8,19 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.Espresso.openActionBarOverflowOrOptionsMenu
 import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry.getInstrumentation
-import kotlinx.coroutines.runBlocking
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingResources
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.MockBrowserDataHelper.createBookmarkItem
 import org.mozilla.fenix.helpers.RecyclerViewIdlingResource
 import org.mozilla.fenix.helpers.RetryTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
-import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
+import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.longTapSelectItem
 import org.mozilla.fenix.helpers.TestHelper.mDevice
-import org.mozilla.fenix.helpers.TestHelper.restartApp
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.bookmarksMenu
@@ -75,30 +70,6 @@ class BookmarksTest : TestSetup() {
             }
         }.clickSingInToSyncButton {
             verifyTurnOnSyncToolbarTitle()
-        }
-    }
-
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2301370
-    @Test
-    fun verifyAddBookmarkButtonTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-        }.openThreeDotMenu {
-        }.bookmarkPage {
-            verifySnackBarText("Bookmark saved!")
-        }.openThreeDotMenu {
-            verifyEditBookmarkButton()
-        }.openBookmarks {
-            registerAndCleanupIdlingResources(
-                RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
-            ) {
-                verifyBookmarksMenuView()
-                verifyBookmarkTitle(defaultWebPage.title)
-                verifyBookmarkedURL(defaultWebPage.url.toString())
-                verifyBookmarkFavicon(defaultWebPage.url)
-            }
         }
     }
 
@@ -230,14 +201,13 @@ class BookmarksTest : TestSetup() {
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
             ) {}
         }.openThreeDotMenu(defaultWebPage.title) {
-        }.clickOpenInNewTab {
-            verifyTabTrayIsOpened()
-            verifyNormalModeSelected()
+        }.clickOpenInNewTab(activityTestRule) {
+            verifyTabTrayIsOpen()
+            verifyNormalBrowsingButtonIsSelected()
         }
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1919261
-    @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1807268")
     @Test
     fun verifyOpenAllInNewTabsOptionTest() {
         val webPages = listOf(
@@ -261,17 +231,12 @@ class BookmarksTest : TestSetup() {
             createBookmark(webPages[1].url, "root")
             createBookmark(webPages[2].url, "root")
             createBookmark(webPages[3].url, "sub")
-        }.openTabDrawer {
-            closeTab()
-        }
-
-        browserScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.openThreeDotMenu("root") {
-        }.clickOpenAllInTabs {
-            verifyTabTrayIsOpened()
-            verifyNormalModeSelected()
+        }.clickOpenAllInTabs(activityTestRule) {
+            verifyTabTrayIsOpen()
+            verifyNormalBrowsingButtonIsSelected()
 
             verifyExistingOpenTabs("Test_Page_2", "Test_Page_3", "Test_Page_4")
 
@@ -281,7 +246,6 @@ class BookmarksTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1919262
-    @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1807268")
     @Test
     fun verifyOpenAllInPrivateTabsTest() {
         val webPages = listOf(
@@ -301,17 +265,12 @@ class BookmarksTest : TestSetup() {
         browserScreen {
             createBookmark(webPages[0].url, "root")
             createBookmark(webPages[1].url, "sub")
-        }.openTabDrawer {
-            closeTab()
-        }
-
-        browserScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.openThreeDotMenu("root") {
-        }.clickOpenAllInPrivateTabs {
-            verifyTabTrayIsOpened()
-            verifyPrivateModeSelected()
+        }.clickOpenAllInPrivateTabs(activityTestRule) {
+            verifyTabTrayIsOpen()
+            verifyPrivateBrowsingButtonIsSelected()
 
             verifyExistingOpenTabs("Test_Page_1", "Test_Page_2")
         }
@@ -330,9 +289,9 @@ class BookmarksTest : TestSetup() {
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
             ) {}
         }.openThreeDotMenu(defaultWebPage.title) {
-        }.clickOpenInPrivateTab {
-            verifyTabTrayIsOpened()
-            verifyPrivateModeSelected()
+        }.clickOpenInPrivateTab(activityTestRule) {
+            verifyTabTrayIsOpen()
+            verifyPrivateBrowsingButtonIsSelected()
         }
     }
 
@@ -398,7 +357,7 @@ class BookmarksTest : TestSetup() {
 
         browserScreen {
             createBookmark(defaultWebPage.url)
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
 
@@ -414,9 +373,10 @@ class BookmarksTest : TestSetup() {
         }
 
         multipleSelectionToolbar {
-        }.clickOpenNewTab {
-            verifyNormalModeSelected()
-            verifyExistingTabList()
+        }.clickOpenNewTab(activityTestRule) {
+            verifyTabTrayIsOpen()
+            verifyNormalBrowsingButtonIsSelected()
+            verifyNormalTabsList()
         }
     }
 
@@ -438,9 +398,9 @@ class BookmarksTest : TestSetup() {
         }
 
         multipleSelectionToolbar {
-        }.clickOpenPrivateTab {
-            verifyPrivateModeSelected()
-            verifyExistingTabList()
+        }.clickOpenPrivateTab(activityTestRule) {
+            verifyPrivateBrowsingButtonIsSelected()
+            verifyPrivateTabsList()
         }
     }
 
@@ -609,8 +569,8 @@ class BookmarksTest : TestSetup() {
     fun verifySearchBookmarksViewTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, 1u)
-        homeScreen {
+        browserScreen {
+            createBookmark(defaultWebPage.url)
         }.openThreeDotMenu {
         }.openBookmarks {
         }.clickSearchButton {
@@ -623,14 +583,17 @@ class BookmarksTest : TestSetup() {
             tapOutsideToDismissSearchBar()
             verifySearchToolbar(false)
         }
-
-        runBlocking {
-            // Switching to top toolbar position
-            appContext.settings().shouldUseBottomToolbar = false
-            restartApp(activityTestRule.activityRule)
+        bookmarksMenu {
+        }.goBackToBrowserScreen {
+        }.openThreeDotMenu {
+        }.openSettings {
+        }.openCustomizeSubMenu {
+            clickTopToolbarToggle()
         }
 
-        homeScreen {
+        exitMenu()
+
+        browserScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.clickSearchButton {
@@ -648,10 +611,17 @@ class BookmarksTest : TestSetup() {
         val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
         val secondWebPage = TestAssetHelper.getHTMLControlsFormAsset(mockWebServer)
 
-        createBookmarkItem(firstWebPage.url.toString(), firstWebPage.title, 1u)
-        createBookmarkItem(secondWebPage.url.toString(), secondWebPage.title, 2u)
-
         homeScreen {
+        }.openThreeDotMenu {
+        }.openBookmarks {
+            createFolder(bookmarksFolderName)
+        }
+
+        exitMenu()
+
+        browserScreen {
+            createBookmark(firstWebPage.url, bookmarksFolderName)
+            createBookmark(secondWebPage.url)
         }.openThreeDotMenu {
         }.openBookmarks {
         }.clickSearchButton {
@@ -659,16 +629,10 @@ class BookmarksTest : TestSetup() {
             typeSearch(firstWebPage.title)
             verifySearchEngineSuggestionResults(activityTestRule, firstWebPage.url.toString(), searchTerm = firstWebPage.title)
             verifySuggestionsAreNotDisplayed(activityTestRule, secondWebPage.url.toString())
-        }.dismissSearchBar {}
-        bookmarksMenu {
-        }.clickSearchButton {
             // Search for invalid term
             typeSearch("Android")
-            verifySuggestionsAreNotDisplayed(
-                activityTestRule,
-                firstWebPage.url.toString(),
-                secondWebPage.url.toString(),
-            )
+            verifySuggestionsAreNotDisplayed(activityTestRule, firstWebPage.url.toString())
+            verifySuggestionsAreNotDisplayed(activityTestRule, secondWebPage.url.toString())
         }
     }
 
@@ -727,6 +691,7 @@ class BookmarksTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/325642
+    // Verifies that deleting a Bookmarks folder also removes the item from inside it.
     @SmokeTest
     @Test
     fun deleteBookmarkFoldersTest() {
@@ -770,6 +735,31 @@ class BookmarksTest : TestSetup() {
             verifyBookmarkIsDeleted("My Folder")
             verifyBookmarkIsDeleted("My Folder 2")
             verifyBookmarkIsDeleted("Test_Page_1")
+            navigateUp()
+        }
+    }
+
+    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2301370
+    @Test
+    fun verifyAddBookmarkButtonTest() {
+        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+        }.openThreeDotMenu {
+        }.bookmarkPage {
+            verifySnackBarText("Bookmark saved!")
+        }.openThreeDotMenu {
+            verifyEditBookmarkButton()
+        }.openBookmarks {
+            registerAndCleanupIdlingResources(
+                RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
+            ) {
+                verifyBookmarksMenuView()
+                verifyBookmarkTitle(defaultWebPage.title)
+                verifyBookmarkedURL(defaultWebPage.url.toString())
+                verifyBookmarkFavicon(defaultWebPage.url)
+            }
         }
     }
 }

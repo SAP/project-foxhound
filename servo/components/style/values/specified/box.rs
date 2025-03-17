@@ -1495,6 +1495,9 @@ pub enum Appearance {
     /// For HTML's <input type=number>
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     NumberInput,
+    /// For HTML's <input type=password>
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    PasswordInput,
     /// The progress bar's progress indicator
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Progresschunk,
@@ -1576,27 +1579,6 @@ pub enum Appearance {
     /// A tooltip.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Tooltip,
-    /// A listbox or tree widget header
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treeheader,
-    /// An individual header cell
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treeheadercell,
-    /// A tree item.
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treeitem,
-    /// A tree widget branch line
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treeline,
-    /// A tree widget twisty.
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treetwisty,
-    /// Open tree widget twisty.
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treetwistyopen,
-    /// A tree widget.
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treeview,
 
     /// Mac help button.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]

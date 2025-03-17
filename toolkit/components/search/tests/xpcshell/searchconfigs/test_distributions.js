@@ -3,10 +3,6 @@
 
 "use strict";
 
-ChromeUtils.defineESModuleGetters(this, {
-  SearchService: "resource://gre/modules/SearchService.sys.mjs",
-});
-
 const tests = [];
 
 for (let canonicalId of ["canonical", "canonical-001"]) {
@@ -237,7 +233,7 @@ tests.push({
 });
 
 function hasURLs(engines, engineName, url, suggestURL) {
-  let engine = engines.find(e => e._name === engineName);
+  let engine = engines.find(e => e.name === engineName);
   Assert.ok(engine, `Should be able to find ${engineName}`);
 
   let submission = engine.getSubmission("test", "text/html");
@@ -256,7 +252,7 @@ function hasURLs(engines, engineName, url, suggestURL) {
 }
 
 function hasParams(engines, engineName, purpose, param) {
-  let engine = engines.find(e => e._name === engineName);
+  let engine = engines.find(e => e.name === engineName);
   Assert.ok(engine, `Should be able to find ${engineName}`);
 
   let submission = engine.getSubmission("test", "text/html", purpose);
@@ -278,7 +274,7 @@ function hasParams(engines, engineName, purpose, param) {
 }
 
 function hasTelemetryId(engines, engineName, telemetryId) {
-  let engine = engines.find(e => e._name === engineName);
+  let engine = engines.find(e => e.name === engineName);
   Assert.ok(engine, `Should be able to find ${engineName}`);
 
   Assert.equal(
@@ -313,7 +309,14 @@ engineSelector = SearchUtils.newSearchConfigEnabled
   : new SearchEngineSelectorOld();
 
 add_setup(async function () {
-  if (!SearchUtils.newSearchConfigEnabled) {
+  if (SearchUtils.newSearchConfigEnabled) {
+    updateAppInfo({
+      name: "firefox",
+      ID: "xpcshell@tests.mozilla.org",
+      version: "128",
+      platformVersion: "128",
+    });
+  } else {
     AddonTestUtils.init(GLOBAL_SCOPE);
     AddonTestUtils.createAppInfo(
       "xpcshell@tests.mozilla.org",
@@ -328,21 +331,18 @@ add_setup(async function () {
 });
 
 add_task(async function test_expected_distribution_engines() {
-  let searchService = new SearchService();
   for (const { distribution, locale = "en-US", region = "US", test } of tests) {
     let config = await engineSelector.fetchEngineConfiguration({
       locale,
       region,
       distroID: distribution,
     });
+
     let engines = await SearchTestUtils.searchConfigToEngines(config.engines);
-    searchService._engines = engines;
-    searchService._searchDefault = {
-      id: config.engines[0].webExtension.id,
-      locale:
-        config.engines[0]?.webExtension?.locale ?? SearchUtils.DEFAULT_TAG,
-    };
-    engines = searchService._sortEnginesByDefaults(engines);
+    engines = SearchUtils.sortEnginesByDefaults({
+      engines,
+      appDefaultEngine: engines[0],
+    });
     test(engines);
   }
 });

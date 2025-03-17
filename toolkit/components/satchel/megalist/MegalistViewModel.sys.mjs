@@ -67,6 +67,13 @@ export class MegalistViewModel {
     }
   }
 
+  #commandsArray(snapshot) {
+    if (Array.isArray(snapshot.commands)) {
+      return snapshot.commands;
+    }
+    return Array.from(snapshot.commands());
+  }
+
   /**
    *
    * Send snapshot of necessary line data across parent-child boundary.
@@ -95,7 +102,7 @@ export class MegalistViewModel {
       snapshot.end = snapshotData.end;
     }
     if ("commands" in snapshotData) {
-      snapshot.commands = snapshotData.commands;
+      snapshot.commands = this.#commandsArray(snapshotData);
     }
     if ("valueIcon" in snapshotData) {
       snapshot.valueIcon = snapshotData.valueIcon;
@@ -104,7 +111,7 @@ export class MegalistViewModel {
       snapshot.href = snapshotData.href;
     }
     if (snapshotData.stickers) {
-      for (const sticker of snapshotData.stickers) {
+      for (const sticker of snapshotData.stickers()) {
         snapshot.stickers ??= [];
         snapshot.stickers.push(sticker);
       }
@@ -177,13 +184,27 @@ export class MegalistViewModel {
   }
 
   async receiveCommand({ commandId, snapshotId, value } = {}) {
+    const dotIndex = commandId?.indexOf(".");
     const index = snapshotId
       ? snapshotId - this.#firstSnapshotId
       : this.#selectedIndex;
     const snapshot = this.#snapshots[index];
+
+    if (dotIndex >= 0) {
+      const dataSourceName = commandId.substring(0, dotIndex);
+      const functionName = commandId.substring(dotIndex + 1);
+      MegalistViewModel.#aggregator.callFunction(
+        dataSourceName,
+        functionName,
+        snapshot?.record
+      );
+      return;
+    }
+
     if (snapshot) {
-      commandId = commandId ?? snapshot.commands[0]?.id;
-      const mustVerify = snapshot.commands.find(c => c.id == commandId)?.verify;
+      const commands = this.#commandsArray(snapshot);
+      commandId = commandId ?? commands[0]?.id;
+      const mustVerify = commands.find(c => c.id == commandId)?.verify;
       if (!mustVerify || (await this.#verifyUser())) {
         // TODO:Enter the prompt message and pref for #verifyUser()
         await snapshot[`execute${commandId}`]?.(value);
@@ -228,6 +249,10 @@ export class MegalistViewModel {
       const selectedIndex = this.#selectedIndex;
       this.#messageToView("UpdateSelection", { selectedIndex });
     }
+  }
+
+  setLayout(layout) {
+    this.#messageToView("SetLayout", { layout });
   }
 
   async #verifyUser(promptMessage, prefName) {

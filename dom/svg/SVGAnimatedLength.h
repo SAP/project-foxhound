@@ -13,11 +13,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGElement.h"
-#include "mozilla/gfx/Rect.h"
-#include "nsCoord.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
-#include "nsMathUtils.h"
 
 struct GeckoFontMetrics;
 class nsPresContext;
@@ -42,17 +38,21 @@ class UserSpaceMetrics {
   static GeckoFontMetrics DefaultFontMetrics();
   static GeckoFontMetrics GetFontMetrics(const Element* aElement);
   static WritingMode GetWritingMode(const Element* aElement);
+  static float GetZoom(const Element* aElement);
   static CSSSize GetCSSViewportSizeFromContext(const nsPresContext* aContext);
 
   virtual ~UserSpaceMetrics() = default;
 
   virtual float GetEmLength(Type aType) const = 0;
+  virtual float GetZoom() const = 0;
+  virtual float GetRootZoom() const = 0;
   float GetExLength(Type aType) const;
   float GetChSize(Type aType) const;
   float GetIcWidth(Type aType) const;
   float GetCapHeight(Type aType) const;
   virtual float GetAxisLength(uint8_t aCtxType) const = 0;
   virtual CSSSize GetCSSViewportSize() const = 0;
+  virtual float GetLineHeight(Type aType) const = 0;
 
  protected:
   virtual GeckoFontMetrics GetFontMetricsForType(Type aType) const = 0;
@@ -65,7 +65,7 @@ class UserSpaceMetricsWithSize : public UserSpaceMetrics {
   float GetAxisLength(uint8_t aCtxType) const override;
 };
 
-class SVGElementMetrics : public UserSpaceMetrics {
+class SVGElementMetrics final : public UserSpaceMetrics {
  public:
   explicit SVGElementMetrics(const SVGElement* aSVGElement,
                              const SVGViewportElement* aCtx = nullptr);
@@ -75,6 +75,9 @@ class SVGElementMetrics : public UserSpaceMetrics {
   }
   float GetAxisLength(uint8_t aCtxType) const override;
   CSSSize GetCSSViewportSize() const override;
+  float GetLineHeight(Type aType) const override;
+  float GetZoom() const override;
+  float GetRootZoom() const override;
 
  private:
   bool EnsureCtx() const;
@@ -86,13 +89,16 @@ class SVGElementMetrics : public UserSpaceMetrics {
   mutable const SVGViewportElement* mCtx;
 };
 
-class NonSVGFrameUserSpaceMetrics : public UserSpaceMetricsWithSize {
+class NonSVGFrameUserSpaceMetrics final : public UserSpaceMetricsWithSize {
  public:
   explicit NonSVGFrameUserSpaceMetrics(nsIFrame* aFrame);
 
   float GetEmLength(Type aType) const override;
   gfx::Size GetSize() const override;
   CSSSize GetCSSViewportSize() const override;
+  float GetLineHeight(Type aType) const override;
+  float GetZoom() const override;
+  float GetRootZoom() const override;
 
  private:
   GeckoFontMetrics GetFontMetricsForType(Type aType) const override;
@@ -145,14 +151,17 @@ class SVGAnimatedLength {
   float GetAnimValue(const SVGElement* aSVGElement) const {
     return mAnimVal * GetPixelsPerUnit(aSVGElement, mAnimUnitType);
   }
-  float GetAnimValue(nsIFrame* aFrame) const {
-    return mAnimVal * GetPixelsPerUnit(aFrame, mAnimUnitType);
+  float GetAnimValueWithZoom(const SVGElement* aSVGElement) const {
+    return mAnimVal * GetPixelsPerUnitWithZoom(aSVGElement, mAnimUnitType);
   }
-  float GetAnimValue(const SVGViewportElement* aCtx) const {
-    return mAnimVal * GetPixelsPerUnit(aCtx, mAnimUnitType);
+  float GetAnimValueWithZoom(nsIFrame* aFrame) const {
+    return mAnimVal * GetPixelsPerUnitWithZoom(aFrame, mAnimUnitType);
   }
-  float GetAnimValue(const UserSpaceMetrics& aMetrics) const {
-    return mAnimVal * GetPixelsPerUnit(aMetrics, mAnimUnitType);
+  float GetAnimValueWithZoom(const SVGViewportElement* aCtx) const {
+    return mAnimVal * GetPixelsPerUnitWithZoom(aCtx, mAnimUnitType);
+  }
+  float GetAnimValueWithZoom(const UserSpaceMetrics& aMetrics) const {
+    return mAnimVal * GetPixelsPerUnitWithZoom(aMetrics, mAnimUnitType);
   }
 
   uint8_t GetCtxType() const { return mCtxType; }
@@ -191,13 +200,15 @@ class SVGAnimatedLength {
 
   // These APIs returns the number of user-unit pixels per unit of the
   // given type, in a given context (frame/element/etc).
-  float GetPixelsPerUnit(nsIFrame* aFrame, uint8_t aUnitType) const;
-  float GetPixelsPerUnit(const UserSpaceMetrics& aMetrics,
-                         uint8_t aUnitType) const;
   float GetPixelsPerUnit(const SVGElement* aSVGElement,
                          uint8_t aUnitType) const;
-  float GetPixelsPerUnit(const SVGViewportElement* aCtx,
-                         uint8_t aUnitType) const;
+  float GetPixelsPerUnitWithZoom(nsIFrame* aFrame, uint8_t aUnitType) const;
+  float GetPixelsPerUnitWithZoom(const UserSpaceMetrics& aMetrics,
+                                 uint8_t aUnitType) const;
+  float GetPixelsPerUnitWithZoom(const SVGElement* aSVGElement,
+                                 uint8_t aUnitType) const;
+  float GetPixelsPerUnitWithZoom(const SVGViewportElement* aCtx,
+                                 uint8_t aUnitType) const;
 
   // SetBaseValue and SetAnimValue set the value in user units. This may fail
   // if unit conversion fails e.g. conversion to ex or em units where the

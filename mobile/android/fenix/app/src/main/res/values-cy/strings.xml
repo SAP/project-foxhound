@@ -153,8 +153,6 @@
 
     <!-- Shortcut action to open Passwords screen -->
     <string name="home_screen_shortcut_passwords">Cyfrineiriau</string>
-    <!-- Shortcut action to open Passwords screen -->
-    <string name="home_screen_shortcut_open_password_screen" moz:removedIn="126" tools:ignore="UnusedResources">Llwybr byr cyfrineiriau</string>
 
     <!-- Recent Tabs -->
     <!-- Header text for jumping back into the recent tab in the home screen -->
@@ -195,14 +193,14 @@
     <string name="browser_menu_refresh">Adnewyddu</string>
     <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
     <string name="browser_menu_stop">Atal</string>
-    <!-- Browser menu button that opens the addon manager -->
-    <string name="browser_menu_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Ychwanegion</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">Estyniadau</string>
+    <!-- Browser menu button that opens the extensions manager -->
+    <string name="browser_menu_manage_extensions">Rheoli estyniadau</string>
+    <!-- Browser menu button that opens AMO in a tab -->
+    <string name="browser_menu_discover_more_extensions">Darganfod rhagor o estyniadau</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">Manylion cyfrif</string>
-    <!-- Text displayed when there are no add-ons to be shown -->
-    <string name="no_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Dim ychwanegion yma</string>
     <!-- Browser menu button that sends a user to help articles -->
     <string name="browser_menu_help">Cymorth</string>
     <!-- Browser menu button that sends a to a the what's new article -->
@@ -217,8 +215,8 @@
     <string name="browser_menu_open_in_regular_tab">Agorwch mewn tab arferol</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen">Ychwanegu i’r sgrin Cartref</string>
-    <!-- Browser menu toggle that installs a Progressive Web App shortcut to the site on the device home screen. -->
-    <string name="browser_menu_install_on_homescreen" moz:removedIn="126" tools:ignore="UnusedResources">Gosod</string>
+    <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
+    <string name="browser_menu_add_to_homescreen_2">Ychwanegu i\'r sgrin Cartref…</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">Ailgydweddu</string>
     <!-- Browser menu button that opens the find in page menu -->
@@ -228,9 +226,13 @@
     <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
     <string name="browser_menu_translations">Cyfieithu\'r dudalen</string>
     <!-- Browser menu button that saves the current tab to a collection -->
+    <string name="browser_menu_save_to_collection">Cadw i gasgliad…</string>
+    <!-- Browser menu button that saves the current tab to a collection -->
     <string name="browser_menu_save_to_collection_2">Cadw i Gasgliad</string>
     <!-- Browser menu button that open a share menu to share the current site -->
     <string name="browser_menu_share">Rhannu</string>
+    <!-- Browser menu button that open a share menu to share the current site -->
+    <string name="browser_menu_share_2">Rhannu…</string>
     <!-- Browser menu button shown in custom tabs that opens the current tab in Fenix
         The first parameter is the name of the app defined in app_name (for example: Fenix) -->
     <string name="browser_menu_open_in_fenix">Agor yn %1$s</string>
@@ -282,6 +284,24 @@
     <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
          bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen -->
     <string name="browser_menu_save">Cadw</string>
+
+    <!-- Browser menu label that bookmarks the currently visited page -->
+    <string name="browser_menu_bookmark_this_page">Gosod nod tudalen i\'r dudalen hon</string>
+    <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
+    <string name="browser_menu_edit_bookmark">Golygu nod tudalen</string>
+    <!-- Browser menu label that the saves the currently visited page as a PDF -->
+    <string name="browser_menu_save_as_pdf">Cadw fel PDF…</string>
+    <!-- Browser menu label for turning ON reader view of the current visited page -->
+    <string name="browser_menu_turn_on_reader_view">Trowch y Golwg Darllen ymlaen</string>
+    <!-- Browser menu label for turning OFF reader view of the current visited page -->
+    <string name="browser_menu_turn_off_reader_view">Diffodd y Golwg Darllen</string>
+    <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+    <string name="browser_menu_translate_page">Cyfieithu tudalen…</string>
+    <!-- Browser menu label that is displayed when the current page has been translated by the translation feature.
+         The first parameter is the name of the language that page was translated to (e.g. English). -->
+    <string name="browser_menu_translated_to">Wedi\'i gyfieithu i %1$s</string>
+    <!-- Browser menu label for the print feature -->
+    <string name="browser_menu_print">Argraffu…</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -378,8 +398,6 @@
     <!-- Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments. -->
     <!-- Description for learning more about our privacy notice. -->
     <string name="juno_onboarding_privacy_notice_text">Hysbysiad preifatrwydd Firefox</string>
-    <!-- Description for learning more about our privacy notice. -->
-    <string name="juno_onboarding_privacy_notice_text_2" moz:removedIn="125" tools:ignore="UnusedResources">Darllenwch ein hysbysiad preifatrwydd</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_title_nimbus_2">Rydyn ni wrth ein bodd yn eich cadw chi’n ddiogel</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments.
@@ -571,7 +589,9 @@
     <!-- Preference category for account information -->
     <string name="preferences_category_account">Cyfrif</string>
     <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar">Bar Offer</string>
+    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">Bar Offer</string>
+    <!-- Preference for changing where the AddressBar is positioned -->
+    <string name="preferences_toolbar_2">Lleoliad y bar cyfeiriad</string>
     <!-- Preference for changing default theme to dark or light mode -->
     <string name="preferences_theme">Thema</string>
     <!-- Preference for customizing the home screen -->
@@ -589,7 +609,9 @@
     <!-- Preference for language -->
     <string name="preferences_language">Iaith</string>
     <!-- Preference for translation -->
-    <string name="preferences_translation">Cyfieithu</string>
+    <string name="preferences_translation" moz:removedIn="127" tools:ignore="UnusedResources">Cyfieithu</string>
+    <!-- Preference for translations -->
+    <string name="preferences_translations">Cyfieithu</string>
     <!-- Preference for data choices -->
     <string name="preferences_data_choices">Dewisiadau data</string>
     <!-- Preference for data collection -->
@@ -641,13 +663,8 @@
     <!-- Message to indicate users that we are quitting the application to apply the changes -->
     <string name="quit_application">Yn gadael y rhaglen er mwyn gosod y newidiadau…</string>
 
-    <!-- Preference for add_ons -->
-    <string name="preferences_addons" moz:removedIn="126" tools:ignore="UnusedResources">Ychwanegion</string>
-
     <!-- Preference for extensions -->
     <string name="preferences_extensions">Estyniadau</string>
-    <!-- Preference for installing a local add-on -->
-    <string name="preferences_install_local_addon" moz:removedIn="126" tools:ignore="UnusedResources">Gosod ychwanegyn o ffeil</string>
     <!-- Preference for installing a local extension -->
     <string name="preferences_install_local_extension">Gosod estyniad o ffeil</string>
     <!-- Preference for notifications -->
@@ -663,18 +680,15 @@
     <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">Angenrheidiol</string>
     <!-- The title of the optional permissions section from addon's permissions screen -->
     <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">Dewisol</string>
-    <!-- The title of the section with websites that have permissions granted from addon's permissions screen -->
-    <string name="addons_permissions_heading_read_and_change_website_data" tools:ignore="UnusedResources">Darllen a newid data gwefan</string>
-    <!-- The description of the icon that can delete one of the websites displayed  -->
-    <string name="addons_permissions_icon_description_delete_website" tools:ignore="UnusedResources">Dileu gwefan</string>
     <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
     <string name="addons_permissions_allow_for_all_sites" tools:ignore="UnusedResources">Caniatáu ar gyfer pob gwefan</string>
     <!-- The subtitle for the allow for all sites preference toggle -->
     <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">Os ydych yn ymddiried yn yr estyniad hwn, gallwch roi caniatâd iddo ar bob gwefan.</string>
 
+    <!-- The text shown when an extension does not require permissions -->
+    <string name="addons_does_not_require_permissions">Nid oes angen unrhyw ganiatâd ar yr estyniad hwn.</string>
+
     <!-- Add-on Preferences -->
-    <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
-    <string name="preferences_customize_amo_collection" moz:removedIn="126" tools:ignore="UnusedResources">Casgliad Ychwanegion Cyfaddas</string>
     <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
     <string name="preferences_customize_extension_collection">Casgliad Estyniadau Cyfaddas</string>
     <!-- Button caption to confirm the add-on collection configuration -->
@@ -685,8 +699,6 @@
     <string name="customize_addon_collection_hint">Enw’r casgliad</string>
     <!-- Hint displayed on input field for custom collection user ID-->
     <string name="customize_addon_collection_user_hint">Perchennog y casgliad (ID Defnyddiwr)</string>
-    <!-- Toast shown after confirming the custom add-on collection configuration -->
-    <string name="toast_customize_addon_collection_done" moz:removedIn="126" tools:ignore="UnusedResources">Mae’r casgliad Ychwanegion wedi’i addasu. Yn gadael y rhaglen i osod y newidiadau…</string>
 
     <!-- Toast shown after confirming the custom extension collection configuration -->
     <string name="toast_customize_extension_collection_done">Casgliad estyniadau wedi\'i newid. Yn gadael y rhaglen er mwyn gwneud newidiadau…</string>
@@ -745,36 +757,24 @@
     <string name="wallpapers_onboarding_dialog_explore_more_button_text">Rhagor o bapurau wal</string>
 
     <!-- Add-ons general availability nimbus message-->
-    <!-- Title of the Nimbus message for add-ons general availability-->
-    <string name="addon_ga_message_title" moz:removedIn="126" tools:ignore="UnusedResources">Ychwanegion newydd ar gael nawr</string>
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">Estyniadau newydd ar gael nawr</string>
     <!-- Body of the Nimbus message for add-ons general availability. 'Firefox' intentionally hardcoded here-->
     <string name="addon_ga_message_body" tools:ignore="UnusedResources">Edrychwch ar 100+ o estyniadau newydd sy’n gwneud Firefox yn dda i chi.</string>
-    <!-- Button text of the Nimbus message for add-ons general availability. -->
-    <string name="addon_ga_message_button" moz:removedIn="126" tools:ignore="UnusedResources">Archwiliwch yr ychwanegion</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">Archwilio\'r estyniadau</string>
 
     <!-- Extension process crash dialog to user -->
-    <!-- Title of a dialog shown to the user when enough errors have occurred with addons and they need to be temporarily disabled -->
-    <string name="addon_process_crash_dialog_title" moz:removedIn="126" tools:ignore="UnusedResources">Mae ychwanegion wedi’u hanalluogi dros dro</string>
     <!-- Title of the extension crash dialog shown to the user when enough errors have occurred with extensions and they need to be temporarily disabled -->
     <string name="extension_process_crash_dialog_title">Mae\'r estyniadau wedi\'u hanalluogi dros dro</string>
-    <!-- The first parameter is the application name. This is a message shown to the user when too many errors have occurred with the addons process and they have been disabled. The user can decide if they would like to continue trying to start add-ons or if they'd rather continue without them. -->
-    <string name="addon_process_crash_dialog_message" moz:removedIn="126" tools:ignore="UnusedResources">Rhoddodd un neu fwy o ategion y gorau i weithio, gan wneud eich system yn ansefydlog. Ceisiodd %1$s ailgychwyn yr ychwanegyn(ion) yn aflwyddiannus.\n\nNi fydd ychwanegion yn cael eu hailddechrau yn ystod eich sesiwn gyfredol.\n\nGallai dileu neu analluogi ychwanegion ddatrys y broblem hon.</string>
     <!-- This is a message shown to the user when too many errors have occurred with the extensions process and they have been disabled.
     The user can decide if they would like to continue trying to start extensions or if they'd rather continue without them.
     The first parameter is the application name. -->
     <string name="extension_process_crash_dialog_message">Rhoddodd un neu fwy o estyniadau y gorau i weithio, gan wneud eich system yn ansefydlog. Ceisiodd %1$s ailgychwyn yr estyniad(au) yn aflwyddiannus.\n\nNi fydd yr estyniadau\'n cael eu hailddechrau yn ystod eich sesiwn gyfredol.\n\nGall dileu neu analluogi estyniadau ddatrys y broblem hon.</string>
-    <!-- This will cause the add-ons to try restarting but the dialog will reappear if it is unsuccessful again -->
-    <string name="addon_process_crash_dialog_retry_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Ceisiwch ailgychwyn ychwanegion</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to try restarting the extensions but the dialog will reappear if it is unsuccessful again -->
     <string name="extension_process_crash_dialog_retry_button_text" tools:ignore="UnusedResources">Ceisiwch ailgychwyn yr estyniadau</string>
-    <!-- The user will continue with all add-ons disabled -->
-    <string name="addon_process_crash_dialog_disable_addons_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Parhau gydag ychwanegion wedi’u hanalluogi</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to continue with all extensions disabled. -->
     <string name="extension_process_crash_dialog_disable_extensions_button_text">Parhau gydag estyniadau wedi\'u hanalluogi</string>
@@ -792,8 +792,6 @@
     <string name="preferences_sync_history">Hanes</string>
     <!-- Preference for syncing bookmarks -->
     <string name="preferences_sync_bookmarks">Nodau Tudalen</string>
-    <!-- Preference for syncing logins -->
-    <string name="preferences_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Mewngofnodion</string>
     <!-- Preference for syncing passwords -->
     <string name="preferences_sync_logins_2">Cyfrineiriau</string>
     <!-- Preference for syncing tabs -->
@@ -820,8 +818,6 @@
         and the third is the device model. -->
     <string name="default_device_name_2">%1$s o %2$s %3$s</string>
 
-    <!-- Preference for syncing credit cards -->
-    <string name="preferences_sync_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Cardiau credyd</string>
     <!-- Preference for syncing payment methods -->
     <string name="preferences_sync_credit_cards_2">Dulliau talu</string>
     <!-- Preference for syncing addresses -->
@@ -836,6 +832,14 @@
     <string name="fxa_tab_received_notification_name">Tab wedi’i Dderbyn</string>
     <!-- %s is the device name -->
     <string name="fxa_tab_received_from_notification_name">Tab o %s</string>
+
+    <!-- Close Synced Tabs -->
+    <!-- The title for a notification shown when the user closes tabs that are currently
+    open on this device from another device that's signed in to the same Mozilla account.
+    %1$s is a placeholder for the app name; %2$d is the number of tabs closed.  -->
+    <string name="fxa_tabs_closed_notification_title">%1$s tabiau wedi cau: %2$d</string>
+    <!-- The body for a "closed synced tabs" notification. -->
+    <string name="fxa_tabs_closed_text">Gweld tabiau a gaewyd yn ddiweddar</string>
 
     <!-- Advanced Preferences -->
     <!-- Preference for tracking protection exceptions -->
@@ -894,9 +898,14 @@
     <!-- Preference for using the dynamic toolbar -->
     <string name="preference_gestures_dynamic_toolbar">Sgrolio i guddio’r bar offer</string>
     <!-- Preference for switching tabs by swiping horizontally on the toolbar -->
-    <string name="preference_gestures_swipe_toolbar_switch_tabs">Llusgo’r bar offer i’r ochr i newid tabiau</string>
+    <string name="preference_gestures_swipe_toolbar_switch_tabs" moz:removedIn="129" tools:ignore="UnusedResources">Llusgo’r bar offer i’r ochr i newid tabiau</string>
     <!-- Preference for showing the opened tabs by swiping up on the toolbar-->
     <string name="preference_gestures_swipe_toolbar_show_tabs">Llusgo’r bar offer i fyny i agor tabiau</string>
+
+    <!-- Preference for using the dynamic toolbars -->
+    <string name="preference_gestures_dynamic_toolbar_2">Sgroliwch i guddio\'r bar cyfeiriad a\'r bar offer</string>
+    <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
+    <string name="preference_gestures_swipe_toolbar_switch_tabs_2">Llusgo’r bar cyfeiriad ar draws i newid tabiau</string>
 
     <!-- Library -->
     <!-- Option in Library to open Downloads page -->
@@ -1406,6 +1415,23 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">Cau tabiau preifat</string>
 
+    <!-- Microsuverys -->
+    <!-- Text shown in prompt for printing microsurvey. "sec" It's an abrevation for "second". -->
+    <string name="microsurvey_prompt_printing_title" tools:ignore="UnusedResources">Helpwch i wella argraffu yn Firefox. Dim ond eiliad mae\'n ei gymryd</string>
+    <!-- Text shown in prompt for printing microsurvey. 'Firefox' intentionally hardcoded here--> --&gt;
+    <string name="microsurvey_survey_printing_title" tools:ignore="UnusedResources">Pa mor fodlon ydych chi gydag argraffu yn Firefox?</string>
+    <!-- Text for option one, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources">Niwtral</string>
+    <!-- Text for option two, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_1" tools:ignore="UnusedResources">Anfodlon Iawn</string>
+    <!-- Text for option three, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_2" tools:ignore="UnusedResources">Anfodlon</string>
+    <!-- Text for option four, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_3" tools:ignore="UnusedResources">Bodlon</string>
+    <!-- Text for option five, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_4" tools:ignore="UnusedResources">Bodlon Iawn</string>
+
+
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
     <string name="notification_erase_title_android_14">Cau tabiau preifat?</string>
     <string name="notification_erase_text_android_14">Tapiwch neu lusgo\'r hysbysiad hwn i gau tabiau preifat.</string>
@@ -1481,10 +1507,6 @@
     <string name="qr_scanner_dialog_invalid_ok">Iawn</string>
     <!-- Tab collection deletion prompt dialog message. Placeholder will be replaced with the collection name -->
     <string name="tab_collection_dialog_message">Ydych chi’n siŵr eich bod am ddileu %1$s?</string>
-    <!-- Collection and tab deletion prompt dialog message. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_message">Bydd dileu’r tab hwn yn dileu’r casgliad cyfan. Gallwch greu casgliadau newydd ar unrhyw adeg.</string>
-    <!-- Collection and tab deletion prompt dialog title. Placeholder will be replaced with the collection name. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_title">Dileu %1$s?</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">Dileu</string>
     <!-- Text displayed in a notification when the user enters full screen mode -->
@@ -1761,11 +1783,7 @@
     <string name="add_to_homescreen_description_2">Gallwch ychwanegu’r wefan hon yn hawdd i sgrin Cartref eich ffôn i gael mynediad ar unwaith a phori’n gyflymach gyda phrofiad tebyg i ap.</string>
 
     <!-- Preference for managing the settings for logins and passwords in Fenix -->
-    <string name="preferences_passwords_logins_and_passwords" moz:RemovedIn="125" tools:ignore="UnusedResources">Mewngofnodion a chyfrineiriau</string>
-    <!-- Preference for managing the settings for logins and passwords in Fenix -->
     <string name="preferences_passwords_logins_and_passwords_2">Cyfrineiriau</string>
-    <!-- Preference for managing the saving of logins and passwords in Fenix -->
-    <string name="preferences_passwords_save_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Cadw mewngofnodion a chyfrineiriau</string>
     <!-- Preference for managing the saving of logins and passwords in Fenix -->
     <string name="preferences_passwords_save_logins_2">Cadw cyfrineiriau</string>
     <!-- Preference option for asking to save passwords in Fenix -->
@@ -1781,47 +1799,28 @@
     <!-- Description for the preference for autofilling logins from Fenix in other apps (e.g. autofilling the Twitter app) -->
     <string name="preferences_android_autofill_description">Llenwi enwau defnyddwyr a chyfrineiriau mewn apiau eraill ar eich dyfais.</string>
 
-    <!-- Preference option for adding a login -->
-    <string name="preferences_logins_add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Ychwanegu mewngofnod</string>
-
     <!-- Preference option for adding a password -->
     <string name="preferences_logins_add_login_2">Ychwanegu cyfrinair</string>
 
     <!-- Preference for syncing saved passwords in Fenix -->
-    <string name="preferences_passwords_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Cydweddu mewngofnodion</string>
-    <!-- Preference for syncing saved passwords in Fenix -->
     <string name="preferences_passwords_sync_logins_2">Cydweddu cyfrineiriau</string>
-    <!-- Preference for syncing saved logins in Fenix, when not signed in-->
-    <string name="preferences_passwords_sync_logins_across_devices" moz:RemovedIn="125" tools:ignore="UnusedResources">Cydweddu mewngofnodion ar draws dyfeisiau</string>
     <!-- Preference for syncing saved passwords in Fenix, when not signed in-->
     <string name="preferences_passwords_sync_logins_across_devices_2">Cydweddu cyfrineiriau ar draws dyfeisiau</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Mewngofnodion wedi’u cadw</string>
     <!-- Preference to access list of saved passwords -->
     <string name="preferences_passwords_saved_logins_2">Cyfrineiriau wedi\'u cadw</string>
     <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
-    <string name="preferences_passwords_saved_logins_description_empty_text" moz:RemovedIn="125" tools:ignore="UnusedResources">Bydd y mewngofnodi rydych yn eu cadw neu’n cydweddu i %s i’w gweld yma.</string>
-    <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
     <string name="preferences_passwords_saved_logins_description_empty_text_2">Bydd y cyfrineiriau rydych yn eu cadw neu eu cydweddu i %s yn cael eu rhestru yma. Mae\'r holl gyfrineiriau rydych chi\'n eu cadw wedi\'u hamgryptio.
 </string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins_description_empty_learn_more_link" moz:RemovedIn="125" tools:ignore="UnusedResources">Dysgu rhagor am Sync.</string>
     <!-- Clickable text for opening an external link for more information about Sync. -->
     <string name="preferences_passwords_saved_logins_description_empty_learn_more_link_2">Dysgwch fwy am gydweddu</string>
     <!-- Preference to access list of login exceptions that we never save logins for -->
     <string name="preferences_passwords_exceptions">Eithriadau</string>
-    <!-- Empty description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description_empty" moz:RemovedIn="125" tools:ignore="UnusedResources">Bydd mewngofnodion a chyfrineiriau sydd heb eu cadw i’w gweld yma.</string>
     <!-- Empty description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_empty_2">Fydd %s ddim yn cadw cyfrineiriau ar gyfer gwefannau sy\'n cael eu rhestru yma.</string>
-    <!-- Description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Ni fydd mewngofnodion a chyfrineiriau’n cael eu cadw ar gyfer y gwefannau hyn.</string>
     <!-- Description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_2">Fydd %s ddim yn cadw cyfrineiriau ar gyfer y gwefannau hyn.</string>
     <!-- Text on button to remove all saved login exceptions -->
     <string name="preferences_passwords_exceptions_remove_all">Dileu pob eithriad</string>
-    <!-- Hint for search box in logins list -->
-    <string name="preferences_passwords_saved_logins_search" moz:RemovedIn="125" tools:ignore="UnusedResources">Chwilio mewngofnodion</string>
     <!-- Hint for search box in passwords list -->
     <string name="preferences_passwords_saved_logins_search_2">Chwilio cyfrineiriau</string>
     <!-- The header for the site that a login is for -->
@@ -1851,16 +1850,10 @@
     <string name="saved_login_reveal_password">Dangos cyfrinair</string>
     <!-- Content Description (for screenreaders etc) read for the button to hide a password in logins -->
     <string name="saved_login_hide_password">Cuddio cyfrinair</string>
-    <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their logins -->
-    <string name="logins_biometric_prompt_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Datgloi i weld eich mewngofnodi wedi’u cadw</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their passwords -->
     <string name="logins_biometric_prompt_message_2">Datgloi i weld eich cyfrineiriau wedi\'u cadw</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Diogelu mewngofnodion a chyfrineiriau</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_title_2">Diogelwch eich cyfrineiriau wedi\'u cadw</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Creu patrwm cloi dyfais, PIN, neu gyfrinair i ddiogelu eich mewngofnodion a’ch cyfrineiriau sydd wedi’u cadw rhag i rhywun arall sydd â mynediad i’ch dyfais.</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_message_2">Gosodwch batrwm clo dyfais, PIN, neu gyfrinair i ddiogelu eich cyfrineiriau sydd wedi\'u cadw rhag i rywun arall sydd â\'ch dyfais gael mynediad iddyn nhw.</string>
     <!-- Negative button to ignore warning dialog if users have no device authentication set up -->
@@ -1878,8 +1871,6 @@
     <string name="saved_logins_sort_strategy_alphabetically">Enw (A-Z)</string>
     <!-- Saved logins sorting strategy menu item -by last used- (if selected, it will sort saved logins by last used) -->
     <string name="saved_logins_sort_strategy_last_used">Defnyddiwyd Diwethaf</string>
-    <!-- Content description (not visible, for screen readers etc.): Sort saved logins dropdown menu chevron icon -->
-    <string name="saved_logins_menu_dropdown_chevron_icon_content_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Trefnu dewislen mewngofnodi</string>
 
     <!-- Content description (not visible, for screen readers etc.) -->
     <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Didoli dewislen cyfrineiriau</string>
@@ -1889,41 +1880,27 @@
     <string name="preferences_autofill">Awtolanw</string>
     <!-- Preference and title for managing the settings for addresses -->
     <string name="preferences_addresses">Cyfeiriadau</string>
-    <!-- Preference and title for managing the settings for credit cards -->
-    <string name="preferences_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Cardiau credyd</string>
     <!-- Preference and title for managing the settings for payment methods -->
     <string name="preferences_credit_cards_2">Dulliau talu</string>
     <!-- Preference for saving and autofilling credit cards -->
-    <string name="preferences_credit_cards_save_and_autofill_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Cadw ac awtolanw cardiau</string>
-    <!-- Preference for saving and autofilling credit cards -->
     <string name="preferences_credit_cards_save_and_autofill_cards_2">Cadw a llanw dulliau talu</string>
-    <!-- Preference summary for saving and autofilling credit card data -->
-    <string name="preferences_credit_cards_save_and_autofill_cards_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Mae data wedi’i amgryptio</string>
     <!-- Preference summary for saving and autofilling payment method data. Parameter will be replaced by app name. -->
     <string name="preferences_credit_cards_save_and_autofill_cards_summary_2">Mae %s yn amgryptio pob dull talu rydych yn ei gadw</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is not signed into sync -->
     <string name="preferences_credit_cards_sync_cards_across_devices">Cydweddu cardiau ar draws dyfeisiau</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is signed into sync -->
     <string name="preferences_credit_cards_sync_cards">Cydweddu cardiau</string>
-    <!-- Preference option for adding a credit card -->
-    <string name="preferences_credit_cards_add_credit_card" moz:RemovedIn="125" tools:ignore="UnusedResources">Ychwanegu cerdyn credyd</string>
 
     <!-- Preference option for adding a card -->
     <string name="preferences_credit_cards_add_credit_card_2">Ychwanegu cerdyn</string>
-    <!-- Preference option for managing saved credit cards -->
-    <string name="preferences_credit_cards_manage_saved_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Rheoli cardiau wedi’u cadw</string>
     <!-- Preference option for managing saved cards -->
     <string name="preferences_credit_cards_manage_saved_cards_2">Rheoli cardiau</string>
     <!-- Preference option for adding an address -->
     <string name="preferences_addresses_add_address">Ychwanegu cyfeiriad</string>
     <!-- Preference option for managing saved addresses -->
     <string name="preferences_addresses_manage_addresses">Rheoli cyfeiriadau</string>
-    <!-- Preference for saving and autofilling addresses -->
-    <string name="preferences_addresses_save_and_autofill_addresses" moz:RemovedIn="125" tools:ignore="UnusedResources">Cadw ac awtolanw cyfeiriadau</string>
     <!-- Preference for saving and filling addresses -->
     <string name="preferences_addresses_save_and_autofill_addresses_2">Cadw a llanw cyfeiriadau</string>
-    <!-- Preference summary for saving and autofilling address data -->
-    <string name="preferences_addresses_save_and_autofill_addresses_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Cynhwyswch fanylion fel rhifau, cyfeiriadau e-bost a chludo</string>
 
     <!-- Preference summary for saving and filling address data -->
     <string name="preferences_addresses_save_and_autofill_addresses_summary_2">Yn cynnwys rhifau ffôn a chyfeiriadau e-bost</string>
@@ -1947,8 +1924,6 @@
     <!-- The text for the "Delete card" button for deleting a credit card -->
     <string name="credit_cards_delete_card_button">Dileu cerdyn</string>
     <!-- The text for the confirmation message of "Delete card" dialog -->
-    <string name="credit_cards_delete_dialog_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Ydych chi’n siŵr eich bod am ddileu’r cerdyn credyd yma?</string>
-    <!-- The text for the confirmation message of "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_confirmation_2">Dileu cerdyn?</string>
     <!-- The text for the positive button on "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_button">Dileu</string>
@@ -1962,23 +1937,14 @@
     <!-- Title of the "Saved cards" screen -->
     <string name="credit_cards_saved_cards">Cardiau wedi’u cadw</string>
 
-    <!-- Error message for credit card number validation -->
-    <string name="credit_cards_number_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Rhowch rif cerdyn credyd dilys</string>
-
     <!-- Error message for card number validation -->
     <string name="credit_cards_number_validation_error_message_2">Rhoi rif cerdyn dilys</string>
-    <!-- Error message for credit card name on card validation -->
-    <string name="credit_cards_name_on_card_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Llanwch y maes yma.</string>
     <!-- Error message for card name on card validation -->
     <string name="credit_cards_name_on_card_validation_error_message_2">Ychwanegu enw</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their saved credit cards -->
     <string name="credit_cards_biometric_prompt_message">Datgloi i weld y cardiau rydych wedi’u cadw</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Diogelwch eich cerdyn credyd</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_title_2">Diogelu eich dulliau talu sydd wedi\'u cadw</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Gosodwch batrwm cloi dyfais, PIN, neu gyfrinair i ddiogelu eich mewngofnodion a’ch cyfrineiriau sydd wedi’u cadw rhag i rhywun arall sydd â mynediad i’ch dyfais.</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_message_3">Gosodwch batrwm clo dyfais, PIN, neu gyfrinair i ddiogelu eich dulliau talu rhag i rywun arall sydd â\'ch dyfais gael mynediad iddyn nhw.</string>
     <!-- Positive button to send users to set up a pin of warning dialog if users have no device authentication set up -->
@@ -1988,9 +1954,6 @@
     <!-- Title of PIN verification dialog to direct users to re-enter their device credentials to access their credit cards -->
     <string name="credit_cards_biometric_prompt_message_pin">Datgloi’ch dyfais</string>
 
-    <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored credit card information -->
-    <string name="credit_cards_biometric_prompt_unlock_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Datglowch i ddefnyddio manylion cerdyn credyd wedi’i storio</string>
-
     <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored payment method information -->
     <string name="credit_cards_biometric_prompt_unlock_message_2">Datgloi i ddefnyddio dulliau talu wedi\'u cadw</string>
     <!-- Title of the "Add address" screen -->
@@ -1999,12 +1962,6 @@
     <string name="addresses_edit_address">Golygu cyfeiriad</string>
     <!-- Title of the "Manage addresses" screen -->
     <string name="addresses_manage_addresses">Rheoli cyfeiriadau</string>
-    <!-- The header for the first name of an address -->
-    <string name="addresses_first_name" moz:removedIn="125" tools:ignore="UnusedResources">Enw Cyntaf</string>
-    <!-- The header for the middle name of an address -->
-    <string name="addresses_middle_name" moz:removedIn="125" tools:ignore="UnusedResources">Enw Canol</string>
-    <!-- The header for the last name of an address -->
-    <string name="addresses_last_name" moz:removedIn="125" tools:ignore="UnusedResources">Enw Olaf</string>
     <!-- The header for the name of an address. Name represents a person's full name, typically made up of a first, middle and last name, e.g. John Joe Doe. -->
     <string name="addresses_name">Enw</string>
     <!-- The header for the street address of an address -->
@@ -2030,8 +1987,6 @@
     <!-- The text for the "Delete address" button for deleting an address -->
     <string name="addressess_delete_address_button">Dileu cyfeiriad</string>
 
-    <!-- The title for the "Delete address" confirmation dialog -->
-    <string name="addressess_confirm_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Ydych chi’n siŵr eich bod am ddileu’r cyfeiriad hwn?</string>
     <!-- The title for the "Delete address" confirmation dialog -->
     <string name="addressess_confirm_dialog_message_2">Dileu\'r cyfeiriad hwn?</string>
     <!-- The text for the positive button on "Delete address" dialog -->
@@ -2130,48 +2085,28 @@
     <string name="login_menu_delete_button">Dileu</string>
     <!-- Login overflow menu edit button -->
     <string name="login_menu_edit_button">Golygu</string>
-    <!-- Message in delete confirmation dialog for logins -->
-    <string name="login_deletion_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Ydych chi’n siŵr eich bod eisiau dileu’r mewngofnod?</string>
     <!-- Message in delete confirmation dialog for password -->
     <string name="login_deletion_confirmation_2">Ydych chi\'n siŵr eich bod am ddileu\'r cyfrinair hwn?</string>
     <!-- Positive action of a dialog asking to delete  -->
     <string name="dialog_delete_positive">Dileu</string>
     <!-- Negative action of a dialog asking to delete login -->
     <string name="dialog_delete_negative">Diddymu</string>
-    <!--  The saved login options menu description. -->
-    <string name="login_options_menu" moz:RemovedIn="125" tools:ignore="UnusedResources">Dewisiadau mewngofnodi</string>
     <!--  The saved password options menu description. -->
     <string name="login_options_menu_2">Dewisiadau cyfrineiriau</string>
-    <!--  The editable text field for a login's web address. -->
-    <string name="saved_login_hostname_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Maes testun golygadwy cyfeiriad gwe’r mewngofnodi.</string>
     <!--  The editable text field for a website address. -->
     <string name="saved_login_hostname_description_3">Maes testun golygadwy y wefan.</string>
-    <!--  The editable text field for a login's username. -->
-    <string name="saved_login_username_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Maes testun golygadwy enw defnyddiwr y mewngofnodi.</string>
     <!--  The editable text field for a username. -->
     <string name="saved_login_username_description_3">Maes testun golygadwy yr enw defnyddiwr.</string>
     <!--  The editable text field for a login's password. -->
-    <string name="saved_login_password_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Maes testun golygadwy cyfrinair y mewngofnodi.</string>
-    <!--  The editable text field for a login's password. -->
     <string name="saved_login_password_description_2">Maes testun golygadwy y cyfrinair.</string>
-    <!--  The button description to save changes to an edited login. -->
-    <string name="save_changes_to_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Cadw newidiadau i’r mewngofnodi.</string>
     <!--  The button description to save changes to an edited password. -->
     <string name="save_changes_to_login_2">Cadw newidiadau.</string>
-    <!--  The page title for editing a saved login. -->
-    <string name="edit" moz:RemovedIn="125" tools:ignore="UnusedResources">Golygu</string>
     <!--  The page title for editing a saved password. -->
     <string name="edit_2">Golygu cyfrinair</string>
-    <!--  The page title for adding new login. -->
-    <string name="add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Ychwanegu mewngofnod newydd</string>
     <!--  The page title for adding new password. -->
     <string name="add_login_2">Ychwanegu cyfrinair</string>
-    <!--  The error message in add/edit login view when password field is blank. -->
-    <string name="saved_login_password_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Mae angen cyfrinair</string>
     <!--  Error text displayed underneath the password field when it is in an error case. -->
     <string name="saved_login_password_required_2">Rhowch gyfrinair</string>
-    <!--  The error message in add login view when username field is blank. -->
-    <string name="saved_login_username_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Mae angen enw defnyddiwr</string>
     <!--  The error message in add login view when username field is blank. -->
     <string name="saved_login_username_required_2">Rhoi enw defnyddiwr</string>
     <!--  The error message in add login view when hostname field is blank. -->
@@ -2542,9 +2477,6 @@
     <!-- The title of the warning card informs the user that a language is not supported. The first parameter is the name of the language that is not supported. -->
     <string name="translation_error_language_not_supported_warning_text">Ymddiheuriadau, nid ydym yn cefnogi %1$s eto.</string>
 
-    <!-- Button text on the warning card when a language is not supported. The link will take the user to a page to a support page about translations. -->
-    <string name="translation_error_language_not_supported_learn_more" moz:removedIn="126" tools:ignore="UnusedResources">Darllen rhagor</string>
-
     <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
     <string name="translation_in_progress_snackbar">Wrthi\'n cyfieithu…</string>
 
@@ -2556,8 +2488,6 @@
 
 
     <!-- Translations options dialog -->
-    <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
-    <string name="translation_option_bottom_sheet_title" moz:removedIn="126" tools:ignore="UnusedResources">Dewisiadau Cyfieithu</string>
     <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
     <string name="translation_option_bottom_sheet_title_heading">Dewisiadau cyfieithu</string>
     <!-- Toggle switch label that allows a user to set the setting if they would like the browser to always offer or suggest translations when available. -->
@@ -2579,6 +2509,9 @@
 
     <!-- Content description (not visible, for screen readers etc.) for closing the translations bottom sheet. -->
     <string name="translation_option_bottom_sheet_close_content_description">Cau\'r ddalen Cyfieithiadau</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred at page settings. -->
+    <string name="translation_option_bottom_sheet_error_warning_text">Nid yw rhai gosodiadau ar gael dros dro.</string>
 
     <!-- Translation settings dialog -->
     <!-- Title of the translation settings dialog that allows a user to set their preferred translation settings. -->
@@ -2602,6 +2535,9 @@
     <!-- Screen header presenting the automatic translation preference feature. It will appear under the toolbar. -->
     <string name="automatic_translation_header_preference">Dewiswch iaith i reoli dewisiadau ”cyfieithu bob tro“ a ”peidio â chyfieithu“.</string>
 
+    <!-- The title of the warning card informs the user that the system could not load languages for translation settings. -->
+    <string name="automatic_translation_error_warning_text">Methu llwytho ieithoedd. Dewch nôl yn nes ymlaen.</string>
+
     <!-- Automatic translation options preference screen -->
     <!-- Preference option for offering to translate. Radio button title text.-->
     <string name="automatic_translation_option_offer_to_translate_title_preference">Cynnig i gyfieithu (rhagosodedig)</string>
@@ -2624,6 +2560,8 @@
     <!-- Content description (not visible, for screen readers etc.): For a never-translated site list item that is selected.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_item_list_content_description_preference">Tynnu %1$s</string>
+    <!-- The title of the warning card informs the user that an error has occurred at the never translate sites list. -->
+    <string name="never_translate_site_error_warning_text">Methu llwytho gwefannau. Dewch nôl yn nes ymlaen.</string>
     <!-- The Delete site dialogue title will appear when the user clicks on a list item.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_dialog_title_preference">Dileu %1$s?</string>
@@ -2649,8 +2587,10 @@
     <string name="download_languages_language_item_preference">%1$s (%2$s)</string>
     <!-- The subhead of the download language preference screen will appear above the items that were not downloaded. -->
     <string name="download_language_header_preference">Llwytho Ieithoedd i Lawr</string>
-    <!-- All languages list item. When the user presses this item, they can download or delete all languages. -->
+    <!-- All languages list item. When the user presses this item, they can download all languages. -->
     <string name="download_language_all_languages_item_preference">Pob iaith</string>
+    <!-- All languages list item. When the user presses this item, they can delete all languages that were downloaded. -->
+    <string name="download_language_all_languages_item_preference_to_delete">Dileu pob iaith</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">Dileu</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress. -->
@@ -2658,7 +2598,16 @@
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">Llwytho i Lawr</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that is selected. -->
-    <string name="download_languages_item_content_description_selected_state">Dewiswyd</string>
+    <string name="download_languages_item_content_description_selected_state" moz:removedIn="127" tools:ignore="UnusedResources">Dewiswyd</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred when fetching the list of languages. -->
+    <string name="download_languages_fetch_error_warning_text">Methu llwytho ieithoedd. Dewch nôl yn nes ymlaen.</string>
+    <!-- The title of the warning card informs the user that an error has occurred at downloading a language.
+      The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_error_warning_text"><![CDATA[Methu llwytho i lawr <b>%1$s</b>. Ceisiwch eto.]]></string>
+    <!-- The title of the warning card informs the user that an error has occurred at deleting a language.
+          The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_delete_error_warning_text"><![CDATA[Methu â dileu <b>%1$s</b>. Ceisiwch eto.]]></string>
 
     <!-- Title for the dialog used by the translations feature to confirm deleting a language.
     The dialog will be presented when the user requests deletion of a language.
@@ -2685,7 +2634,7 @@
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation. -->
     <string name="download_language_file_dialog_message_all_languages">Rydym yn llwytho ieithoedd rhannol i\'ch storfa i gadw cyfieithiadau\'n breifat.</string>
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation without mentioning the cache. -->
-    <string name="download_language_file_dialog_message_all_languages_no_cache">Rydym yn rhannol lwytho i lawr ieithoedd i gadw cyfieithiadau\'n breifat.</string>
+    <string name="download_language_file_dialog_message_all_languages_no_cache" moz:removedIn="129" tools:ignore="UnusedResources">Rydym yn rhannol lwytho i lawr ieithoedd i gadw cyfieithiadau\'n breifat.</string>
     <!-- Checkbox label text on the data saving mode warning dialog used by the translations feature. This checkbox allows users to ignore the data usage warnings. -->
     <string name="download_language_file_dialog_checkbox_text">Llwytho i lawr yn y modd arbed data, bob tro</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to confirm they wish to continue and download the language file. -->
@@ -2701,13 +2650,18 @@
     <!-- Content description (not visible, for screen readers etc.): Navigate back within the debug drawer. -->
     <string name="debug_drawer_back_button_content_description">Symud nôl</string>
 
+    <!-- Content description (not visible, for screen readers etc.): Open debug drawer. -->
+    <string name="debug_drawer_fab_content_description">Agor drôr dadfygio</string>
+
     <!-- Debug drawer tabs tools -->
     <!-- The title of the Tab Tools feature in the Debug Drawer. -->
     <string name="debug_drawer_tab_tools_title">Offer Tab</string>
     <!-- The title of the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_title">Cyfrif tab</string>
     <!-- The active tab count category in the tab count section in Tab Tools. -->
-    <string name="debug_drawer_tab_tools_tab_count_normal">Gweithredol</string>
+    <string name="debug_drawer_tab_tools_tab_count_normal" moz:removedIn="127" tools:ignore="UnusedResources">Gweithredol</string>
+    <!-- The active tab count category in the tab count section in Tab Tools. -->
+    <string name="debug_drawer_tab_tools_tab_count_active">Gweithredol</string>
     <!-- The inactive tab count category in the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_inactive">Anweithredol</string>
     <!-- The private tab count category in the tab count section in Tab Tools. -->
@@ -2718,6 +2672,16 @@
     <string name="debug_drawer_tab_tools_tab_creation_tool_title">Teclyn creu tabiau</string>
     <!-- The label of the text field in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_text_field_label">Nifer y tabiau i\'w creu</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is empty -->
+    <string name="debug_drawer_tab_tools_tab_quantity_empty_error">Mae\'r maes testun yn wag</string>
+    <!-- The error message of the text field in the tab creation tool when the text field has characters other than digits -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_digits_error">Rhowch gyfanrifau positif yn unig</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a zero -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_zero_error">Rhowch rif sy\'n fwy na sero</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a
+        quantity greater than the max tabs. The first parameter is the maximum number of tabs
+        that can be generated in one operation.-->
+    <string name="debug_drawer_tab_tools_tab_quantity_exceed_max_error">Wedi mynd y tu hwnt i uchafswm nifer y tabiau (%1$s) y mae modd eu cynhyrchu mewn un gweithrediad</string>
     <!-- The button text to add tabs to the active tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_active">Ychwanegu at y tabiau gweithredol</string>
     <!-- The button text to add tabs to the inactive tab group in the tab creation tool. -->
@@ -2727,18 +2691,29 @@
 
     <!-- Micro survey -->
 
+    <!-- Microsurvey -->
+    <!-- Prompt view -->
+    <!-- The microsurvey prompt title. Note: The word "Firefox" should NOT be translated -->
+    <string name="micro_survey_prompt_title" tools:ignore="UnusedResources">Helpwch ni i wneud Firefox yn well. Dim ond munud mae\'n ei gymryd.</string>
     <!-- The continue button label -->
     <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Parhau</string>
+    <!-- Survey view -->
     <!-- The survey header -->
-    <string name="micro_survey_survey_header">Cwblhewch yr arolwg hwn</string>
+    <string name="micro_survey_survey_header" moz:removedIn="129" tools:ignore="UnusedResources">Cwblhewch yr arolwg hwn</string>
+    <!-- The survey header -->
+    <string name="micro_survey_survey_header_2">Cwblhewch yr arolwg</string>
     <!-- The privacy notice link -->
-    <string name="micro_survey_privacy_notice">Hysbysiad Preifatrwydd</string>
+    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">Hysbysiad Preifatrwydd</string>
+    <!-- The privacy notice link -->
+    <string name="micro_survey_privacy_notice_2">Hysbysiad preifatrwydd</string>
     <!-- The submit button label text -->
-    <string name="micro_survey_submit_button_label" tools:ignore="UnusedResources">Cyflwyno</string>
+    <string name="micro_survey_submit_button_label">Cyflwyno</string>
     <!-- The close button label text -->
-    <string name="micro_survey_close_button_label">Cau</string>
+    <string name="micro_survey_close_button_label" moz:removedIn="128" tools:ignore="UnusedResources">Cau</string>
+    <!-- The survey completion header -->
+    <string name="micro_survey_survey_header_confirmation" tools:ignore="UnusedResources">Mae\'r arolwg wedi\'i gwblhau</string>
     <!-- The survey completion confirmation text -->
-    <string name="micro_survey_feedback_confirmation" tools:ignore="UnusedResources">Diolch am eich adborth!</string>
+    <string name="micro_survey_feedback_confirmation">Diolch am eich adborth!</string>
     <!-- Option for likert scale -->
     <string name="likert_scale_option_1" tools:ignore="UnusedResources">Bodlon Iawn</string>
     <!-- Option for likert scale -->
@@ -2749,6 +2724,18 @@
     <string name="likert_scale_option_4" tools:ignore="UnusedResources">Anfodlon</string>
     <!-- Option for likert scale -->
     <string name="likert_scale_option_5" tools:ignore="UnusedResources">Anfodlon Iawn</string>
+
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_6" tools:ignore="UnusedResources">Dydw i ddim yn ei ddefnyddio</string>
+    <!-- Text shown in prompt for homepage microsurvey. 'Firefox' intentionally hardcoded here- -->
+    <string name="microsurvey_prompt_homepage_title" tools:ignore="UnusedResources">Pa mor fodlon ydych chi gyda\'ch cartref Firefox?</string>
+    <!-- Accessibility -->
+    <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
+    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources">Agor arolwg</string>
+    <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
+    <string name="microsurvey_close_handle_content_description" tools:ignore="UnusedResources">Cau\'r arolwg</string>
+    <!-- Content description for "X" button that is closing microsurvey. -->
+    <string name="microsurvey_close_button_content_description" tools:ignore="UnusedResources">Cau</string>
 
     <!-- Debug drawer logins -->
     <!-- The title of the Logins feature in the Debug Drawer. -->

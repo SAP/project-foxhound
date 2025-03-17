@@ -51,7 +51,7 @@ class TotalCookieProtectionTest : TestSetup() {
             waitForPageToLoad()
             verifyCookiesProtectionHintIsDisplayed(composeTestRule, true)
             clickTCPCFRLearnMore(composeTestRule)
-            verifyUrl("support.mozilla.org/en-US/kb/enhanced-tracking-protection-firefox-android")
+            verifyETPLearnMoreURL()
             verifyShouldShowCFRTCP(false, composeTestRule.activity.settings())
         }
     }

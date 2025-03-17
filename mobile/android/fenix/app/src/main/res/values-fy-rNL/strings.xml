@@ -154,8 +154,6 @@
 
     <!-- Shortcut action to open Passwords screen -->
     <string name="home_screen_shortcut_passwords">Wachtwurden</string>
-    <!-- Shortcut action to open Passwords screen -->
-    <string name="home_screen_shortcut_open_password_screen" moz:removedIn="126" tools:ignore="UnusedResources">Wachtwurdfluchkeppeling</string>
 
     <!-- Recent Tabs -->
     <!-- Header text for jumping back into the recent tab in the home screen -->
@@ -196,14 +194,14 @@
     <string name="browser_menu_refresh">Fernije</string>
     <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
     <string name="browser_menu_stop">Stopje</string>
-    <!-- Browser menu button that opens the addon manager -->
-    <string name="browser_menu_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Add-ons</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">Utwreidingen</string>
+    <!-- Browser menu button that opens the extensions manager -->
+    <string name="browser_menu_manage_extensions">Utwreidingen beheare</string>
+    <!-- Browser menu button that opens AMO in a tab -->
+    <string name="browser_menu_discover_more_extensions">Mear útwreidingen ûntdekke</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">Accountynformaasje</string>
-    <!-- Text displayed when there are no add-ons to be shown -->
-    <string name="no_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Gjin add-ons hjir</string>
     <!-- Browser menu button that sends a user to help articles -->
     <string name="browser_menu_help">Help</string>
     <!-- Browser menu button that sends a to a the what's new article -->
@@ -219,8 +217,8 @@
     <string name="browser_menu_open_in_regular_tab">Iepenje yn gewoan ljepblêd</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen">Tafoegje oan startskerm</string>
-    <!-- Browser menu toggle that installs a Progressive Web App shortcut to the site on the device home screen. -->
-    <string name="browser_menu_install_on_homescreen" moz:removedIn="126" tools:ignore="UnusedResources">Ynstallearje</string>
+    <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
+    <string name="browser_menu_add_to_homescreen_2">Tafoegje oan startskerm…</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">Opnij syngronisearje</string>
     <!-- Browser menu button that opens the find in page menu -->
@@ -230,9 +228,13 @@
     <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
     <string name="browser_menu_translations">Side oersette</string>
     <!-- Browser menu button that saves the current tab to a collection -->
+    <string name="browser_menu_save_to_collection">Yn kolleksje bewarje…</string>
+    <!-- Browser menu button that saves the current tab to a collection -->
     <string name="browser_menu_save_to_collection_2">Yn kolleksje bewarje</string>
     <!-- Browser menu button that open a share menu to share the current site -->
     <string name="browser_menu_share">Diele</string>
+    <!-- Browser menu button that open a share menu to share the current site -->
+    <string name="browser_menu_share_2">Diele…</string>
     <!-- Browser menu button shown in custom tabs that opens the current tab in Fenix
         The first parameter is the name of the app defined in app_name (for example: Fenix) -->
     <string name="browser_menu_open_in_fenix">Iepenje yn %1$s</string>
@@ -284,6 +286,24 @@
     <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
          bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen -->
     <string name="browser_menu_save">Bewarje</string>
+
+    <!-- Browser menu label that bookmarks the currently visited page -->
+    <string name="browser_menu_bookmark_this_page">Blêdwizer foar dizze side meitsje</string>
+    <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
+    <string name="browser_menu_edit_bookmark">Blêdwizer bewurkje</string>
+    <!-- Browser menu label that the saves the currently visited page as a PDF -->
+    <string name="browser_menu_save_as_pdf">Bewarje as PDF…</string>
+    <!-- Browser menu label for turning ON reader view of the current visited page -->
+    <string name="browser_menu_turn_on_reader_view">Lêzerwerjefte ynskeakelje</string>
+    <!-- Browser menu label for turning OFF reader view of the current visited page -->
+    <string name="browser_menu_turn_off_reader_view">Lêzerwerjefte útskeakelje</string>
+    <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+    <string name="browser_menu_translate_page">Side oersette…</string>
+    <!-- Browser menu label that is displayed when the current page has been translated by the translation feature.
+         The first parameter is the name of the language that page was translated to (e.g. English). -->
+    <string name="browser_menu_translated_to">Oerset nei %1$s</string>
+    <!-- Browser menu label for the print feature -->
+    <string name="browser_menu_print">Ofdrukke…</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -382,8 +402,6 @@
     <!-- Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments. -->
     <!-- Description for learning more about our privacy notice. -->
     <string name="juno_onboarding_privacy_notice_text">Firefox-privacyferklearring</string>
-    <!-- Description for learning more about our privacy notice. -->
-    <string name="juno_onboarding_privacy_notice_text_2" moz:removedIn="125" tools:ignore="UnusedResources">Lês mear yn ús privacyferklearring</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_title_nimbus_2">Wy hâlde jo graach feilich</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments.
@@ -573,7 +591,9 @@
     <!-- Preference category for account information -->
     <string name="preferences_category_account">Account</string>
     <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar">Arkbalke</string>
+    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">Arkbalke</string>
+    <!-- Preference for changing where the AddressBar is positioned -->
+    <string name="preferences_toolbar_2">Lokaasje adresbalke</string>
     <!-- Preference for changing default theme to dark or light mode -->
     <string name="preferences_theme">Tema</string>
     <!-- Preference for customizing the home screen -->
@@ -591,7 +611,9 @@
     <!-- Preference for language -->
     <string name="preferences_language">Taal</string>
     <!-- Preference for translation -->
-    <string name="preferences_translation">Oersetting</string>
+    <string name="preferences_translation" moz:removedIn="127" tools:ignore="UnusedResources">Oersetting</string>
+    <!-- Preference for translations -->
+    <string name="preferences_translations">Oersettingen</string>
     <!-- Preference for data choices -->
     <string name="preferences_data_choices">Gegevenskarren</string>
     <!-- Preference for data collection -->
@@ -643,13 +665,8 @@
     <!-- Message to indicate users that we are quitting the application to apply the changes -->
     <string name="quit_application">De tapassing wurdt ôfsluten om wizigingen ta te passen…</string>
 
-    <!-- Preference for add_ons -->
-    <string name="preferences_addons" moz:removedIn="126" tools:ignore="UnusedResources">Add-ons</string>
-
     <!-- Preference for extensions -->
     <string name="preferences_extensions">Utwreidingen</string>
-    <!-- Preference for installing a local add-on -->
-    <string name="preferences_install_local_addon" moz:removedIn="126" tools:ignore="UnusedResources">Add-on ynstallearje fia bestân</string>
     <!-- Preference for installing a local extension -->
     <string name="preferences_install_local_extension">Utwreiding ynstallearje fia bestân</string>
     <!-- Preference for notifications -->
@@ -665,18 +682,15 @@
     <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">Fereaske</string>
     <!-- The title of the optional permissions section from addon's permissions screen -->
     <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">Opsjoneel</string>
-    <!-- The title of the section with websites that have permissions granted from addon's permissions screen -->
-    <string name="addons_permissions_heading_read_and_change_website_data" tools:ignore="UnusedResources">Websitegegevens lêze en wizigje</string>
-    <!-- The description of the icon that can delete one of the websites displayed  -->
-    <string name="addons_permissions_icon_description_delete_website" tools:ignore="UnusedResources">Website fuortsmite</string>
     <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
     <string name="addons_permissions_allow_for_all_sites" tools:ignore="UnusedResources">Tastean foar alle websites</string>
     <!-- The subtitle for the allow for all sites preference toggle -->
     <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">As jo dizze útwreiding fertrouwe, kinne jo it op elke website tastimming jaan.</string>
 
+    <!-- The text shown when an extension does not require permissions -->
+    <string name="addons_does_not_require_permissions">Foar dizze útwreiding binne gjin tastimmingen fereaske.</string>
+
     <!-- Add-on Preferences -->
-    <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
-    <string name="preferences_customize_amo_collection" moz:removedIn="126" tools:ignore="UnusedResources">Oanpaste add-onkolleksje</string>
     <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
     <string name="preferences_customize_extension_collection">Oanpaste útwreidingskolleksje</string>
     <!-- Button caption to confirm the add-on collection configuration -->
@@ -687,8 +701,6 @@
     <string name="customize_addon_collection_hint">Namme kolleksje</string>
     <!-- Hint displayed on input field for custom collection user ID-->
     <string name="customize_addon_collection_user_hint">Eigener kolleksje (brûkers-ID)</string>
-    <!-- Toast shown after confirming the custom add-on collection configuration -->
-    <string name="toast_customize_addon_collection_done" moz:removedIn="126" tools:ignore="UnusedResources">Add-onkolleksje oanpast. Tapassing wurdt ôfsluten om wizigingen ta te passen…</string>
 
     <!-- Toast shown after confirming the custom extension collection configuration -->
     <string name="toast_customize_extension_collection_done">Utwreidingskolleksje oanpast. Tapassing wurdt ôfsluten om wizigingen ta te passen…</string>
@@ -747,35 +759,23 @@
     <string name="wallpapers_onboarding_dialog_explore_more_button_text">Mear eftergrûnen ferkenne</string>
 
     <!-- Add-ons general availability nimbus message-->
-    <!-- Title of the Nimbus message for add-ons general availability-->
-    <string name="addon_ga_message_title" moz:removedIn="126" tools:ignore="UnusedResources">Nije add-ons no beskikber</string>
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">Nije útwreidingen no beskikber</string>
     <!-- Body of the Nimbus message for add-ons general availability. 'Firefox' intentionally hardcoded here-->
     <string name="addon_ga_message_body" tools:ignore="UnusedResources">Besjoch mear as 100 nije útwreidingen wêrmei’t jo Firefox jo eigen meitsje kinne.</string>
-    <!-- Button text of the Nimbus message for add-ons general availability. -->
-    <string name="addon_ga_message_button" moz:removedIn="126" tools:ignore="UnusedResources">Add-ons ferkenne</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">Utwreidingen ferkenne</string>
 
     <!-- Extension process crash dialog to user -->
-    <!-- Title of a dialog shown to the user when enough errors have occurred with addons and they need to be temporarily disabled -->
-    <string name="addon_process_crash_dialog_title" moz:removedIn="126" tools:ignore="UnusedResources">Add-ons binne tydlik útskeakele</string>
     <!-- Title of the extension crash dialog shown to the user when enough errors have occurred with extensions and they need to be temporarily disabled -->
     <string name="extension_process_crash_dialog_title">Utwreidingen binne tydlik útskeakele</string>
-    <!-- The first parameter is the application name. This is a message shown to the user when too many errors have occurred with the addons process and they have been disabled. The user can decide if they would like to continue trying to start add-ons or if they'd rather continue without them. -->
-    <string name="addon_process_crash_dialog_message" moz:removedIn="126" tools:ignore="UnusedResources">Ien of mear add-ons wurkje net mear, wêrtroch jo systeem ynstabyl wurdt. It is %1$s net slagge om de add-on(s) opnij te starten.\n\nAdd-ons sille net opnij starte wurden wylst jo aktuele sesje.\n\nIt fuortsmiten of útskeakeljen fan add-ons kin dit probleem oplosse.</string>
     <!-- This is a message shown to the user when too many errors have occurred with the extensions process and they have been disabled.
     The user can decide if they would like to continue trying to start extensions or if they'd rather continue without them.
     The first parameter is the application name. -->
     <string name="extension_process_crash_dialog_message">Ien of mear útwreidingen wurkje net mear, wêrtroch jo systeem ynstabyl wurdt. It is %1$s net slagge om de add-on(s) opnij te starten.\n\nUtwreidingen sille net opnij starte wurden wylst jo aktuele sesje.\n\nIt fuortsmiten of útskeakeljen fan útwreidingen kin dit probleem oplosse.</string>
-    <!-- This will cause the add-ons to try restarting but the dialog will reappear if it is unsuccessful again -->
-    <string name="addon_process_crash_dialog_retry_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Probearje add-ons opnij te starten</string>
     <!-- Button text on the extension crash dialog to prompt the user to try restarting the extensions but the dialog will reappear if it is unsuccessful again -->
     <string name="extension_process_crash_dialog_retry_button_text" tools:ignore="UnusedResources">Probearje útwreidingen opnij te starten</string>
-    <!-- The user will continue with all add-ons disabled -->
-    <string name="addon_process_crash_dialog_disable_addons_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Trochgean mei útskeakele add-ons</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to continue with all extensions disabled. -->
     <string name="extension_process_crash_dialog_disable_extensions_button_text">Trochgean mei útskeakele útwreidingen</string>
@@ -793,8 +793,6 @@
     <string name="preferences_sync_history">Skiednis</string>
     <!-- Preference for syncing bookmarks -->
     <string name="preferences_sync_bookmarks">Blêdwizers</string>
-    <!-- Preference for syncing logins -->
-    <string name="preferences_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldingen</string>
     <!-- Preference for syncing passwords -->
     <string name="preferences_sync_logins_2">Wachtwurden</string>
     <!-- Preference for syncing tabs -->
@@ -821,8 +819,6 @@
         and the third is the device model. -->
     <string name="default_device_name_2">%1$s op %2$s  %3$s</string>
 
-    <!-- Preference for syncing credit cards -->
-    <string name="preferences_sync_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Creditcards</string>
     <!-- Preference for syncing payment methods -->
     <string name="preferences_sync_credit_cards_2">Betellingsmetoaden</string>
     <!-- Preference for syncing addresses -->
@@ -837,6 +833,14 @@
     <string name="fxa_tab_received_notification_name">Ljepblêd ûntfongen</string>
     <!-- %s is the device name -->
     <string name="fxa_tab_received_from_notification_name">Ljepblêd fan %s</string>
+
+    <!-- Close Synced Tabs -->
+    <!-- The title for a notification shown when the user closes tabs that are currently
+    open on this device from another device that's signed in to the same Mozilla account.
+    %1$s is a placeholder for the app name; %2$d is the number of tabs closed.  -->
+    <string name="fxa_tabs_closed_notification_title">%1$s-ljepblêden sluten: %2$d</string>
+    <!-- The body for a "closed synced tabs" notification. -->
+    <string name="fxa_tabs_closed_text">Koartlyn sluten ljepblêden besjen</string>
 
     <!-- Advanced Preferences -->
     <!-- Preference for tracking protection exceptions -->
@@ -895,9 +899,14 @@
     <!-- Preference for using the dynamic toolbar -->
     <string name="preference_gestures_dynamic_toolbar">Scroll om de wurkbalke te ferstopjen</string>
     <!-- Preference for switching tabs by swiping horizontally on the toolbar -->
-    <string name="preference_gestures_swipe_toolbar_switch_tabs">Fei de wurkbalke op side om fan ljepblêd te wikseljen</string>
+    <string name="preference_gestures_swipe_toolbar_switch_tabs" moz:removedIn="129" tools:ignore="UnusedResources">Fei de wurkbalke op side om fan ljepblêd te wikseljen</string>
     <!-- Preference for showing the opened tabs by swiping up on the toolbar-->
     <string name="preference_gestures_swipe_toolbar_show_tabs">Fei de wurkbalke omheech om ljepblêden te iepenjen</string>
+
+    <!-- Preference for using the dynamic toolbars -->
+    <string name="preference_gestures_dynamic_toolbar_2">Skowe om adresbalke en arkbalke te ferstopjen</string>
+    <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
+    <string name="preference_gestures_swipe_toolbar_switch_tabs_2">De arkbalke op side feie om fan ljepblêd te wikseljen</string>
 
     <!-- Library -->
     <!-- Option in Library to open Downloads page -->
@@ -1403,6 +1412,23 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">Priveeljepblêden slute</string>
 
+    <!-- Microsuverys -->
+    <!-- Text shown in prompt for printing microsurvey. "sec" It's an abrevation for "second". -->
+    <string name="microsurvey_prompt_printing_title" tools:ignore="UnusedResources">Help it ôfdrukken yn Firefox better te meitsjen. It duorret mar in amerijke</string>
+    <!-- Text shown in prompt for printing microsurvey. 'Firefox' intentionally hardcoded here--> --&gt;
+    <string name="microsurvey_survey_printing_title" tools:ignore="UnusedResources">Hoe tefreden binne jo mei it ôfdrukken yn Firefox?</string>
+    <!-- Text for option one, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources">Gemiddeld</string>
+    <!-- Text for option two, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_1" tools:ignore="UnusedResources">Hiel ûntefreden</string>
+    <!-- Text for option three, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_2" tools:ignore="UnusedResources">Untefreden</string>
+    <!-- Text for option four, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_3" tools:ignore="UnusedResources">Tefreden</string>
+    <!-- Text for option five, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_4" tools:ignore="UnusedResources">Hiel tefreden</string>
+
+
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
     <string name="notification_erase_title_android_14">Priveeljepblêden slute?</string>
     <string name="notification_erase_text_android_14">Tik of fei dizze melding om priveeljepblêden te sluten.</string>
@@ -1478,10 +1504,6 @@
     <string name="qr_scanner_dialog_invalid_ok">OK</string>
     <!-- Tab collection deletion prompt dialog message. Placeholder will be replaced with the collection name -->
     <string name="tab_collection_dialog_message">Binne jo wis dat jo %1$s fuortsmite wolle?</string>
-    <!-- Collection and tab deletion prompt dialog message. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_message">As jo dit ljepblêd fuortsmite, wurdt de hiele kolleksje fuortsmiten. Jo kinne op elk momint nije kolleksjes meitsje.</string>
-    <!-- Collection and tab deletion prompt dialog title. Placeholder will be replaced with the collection name. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_title">%1$s fuortsmite?</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">Fuortsmite</string>
     <!-- Text displayed in a notification when the user enters full screen mode -->
@@ -1760,11 +1782,7 @@
     <string name="add_to_homescreen_description_2">Jo kinne dizze website ienfâldich oan it startskerm fan jo apparaat tafoegje, om sa daliks tagong te hawwen en flugger te navigearjen mei in app-eftige ûnderfining.</string>
 
     <!-- Preference for managing the settings for logins and passwords in Fenix -->
-    <string name="preferences_passwords_logins_and_passwords" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldingen en wachtwurden</string>
-    <!-- Preference for managing the settings for logins and passwords in Fenix -->
     <string name="preferences_passwords_logins_and_passwords_2">Wachtwurden</string>
-    <!-- Preference for managing the saving of logins and passwords in Fenix -->
-    <string name="preferences_passwords_save_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldingen en wachtwurden bewarje</string>
     <!-- Preference for managing the saving of logins and passwords in Fenix -->
     <string name="preferences_passwords_save_logins_2">Wachtwurden bewarje</string>
     <!-- Preference option for asking to save passwords in Fenix -->
@@ -1780,47 +1798,28 @@
     <!-- Description for the preference for autofilling logins from Fenix in other apps (e.g. autofilling the Twitter app) -->
     <string name="preferences_android_autofill_description">Brûkersnammen en wachtwurden yn oare apps op jo apparaat ynfolje.</string>
 
-    <!-- Preference option for adding a login -->
-    <string name="preferences_logins_add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmelding tafoegje</string>
-
     <!-- Preference option for adding a password -->
     <string name="preferences_logins_add_login_2">Wachtwurd tafoegje</string>
 
     <!-- Preference for syncing saved passwords in Fenix -->
-    <string name="preferences_passwords_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldingen syngronisearje</string>
-    <!-- Preference for syncing saved passwords in Fenix -->
     <string name="preferences_passwords_sync_logins_2">Wachtwurden syngronisearje</string>
-    <!-- Preference for syncing saved logins in Fenix, when not signed in-->
-    <string name="preferences_passwords_sync_logins_across_devices" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldingen op apparaten syngronisearje</string>
     <!-- Preference for syncing saved passwords in Fenix, when not signed in-->
     <string name="preferences_passwords_sync_logins_across_devices_2">Wachtwurden syngronisearje tusken apparaten</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Bewarre oanmeldingen</string>
     <!-- Preference to access list of saved passwords -->
     <string name="preferences_passwords_saved_logins_2">Bewarre wachtwurden</string>
     <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
-    <string name="preferences_passwords_saved_logins_description_empty_text" moz:RemovedIn="125" tools:ignore="UnusedResources">De oanmeldingen dy’t jo bewarje of syngronisearje mei %s wurde hjir toand.</string>
-    <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
     <string name="preferences_passwords_saved_logins_description_empty_text_2">De wachtwurden dy’t jo bewarje of syngronisearje mei %s sille hjir fermeld wurde. Alle wachtwurden dy’t jo bewarje binne fersifere.
 </string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins_description_empty_learn_more_link" moz:RemovedIn="125" tools:ignore="UnusedResources">Mear ynfo oer Sync.</string>
     <!-- Clickable text for opening an external link for more information about Sync. -->
     <string name="preferences_passwords_saved_logins_description_empty_learn_more_link_2">Mear ynfo oer syngronisaasje</string>
     <!-- Preference to access list of login exceptions that we never save logins for -->
     <string name="preferences_passwords_exceptions">Utsûnderingen</string>
-    <!-- Empty description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description_empty" moz:RemovedIn="125" tools:ignore="UnusedResources">Net-bewarre oanmeldingen en wachtwurden wurde hjir werjûn.</string>
     <!-- Empty description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_empty_2">%s sil gjin wachtwurden foar de hjir fermelde websites bewarje.</string>
-    <!-- Description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldingen en wachtwurden wurde foar dizze websites net bewarre. </string>
     <!-- Description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_2">%s sil gjin wachtwurden foar dizze websites bewarje.</string>
     <!-- Text on button to remove all saved login exceptions -->
     <string name="preferences_passwords_exceptions_remove_all">Alle útsûnderingen fuortsmite</string>
-    <!-- Hint for search box in logins list -->
-    <string name="preferences_passwords_saved_logins_search" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldingen sykje</string>
     <!-- Hint for search box in passwords list -->
     <string name="preferences_passwords_saved_logins_search_2">Wachtwurden sykje</string>
     <!-- The header for the site that a login is for -->
@@ -1849,16 +1848,10 @@
     <string name="saved_login_reveal_password">Wachtwurd toane</string>
     <!-- Content Description (for screenreaders etc) read for the button to hide a password in logins -->
     <string name="saved_login_hide_password">Wachtwurd ferstopje</string>
-    <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their logins -->
-    <string name="logins_biometric_prompt_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Untskoattelje om jo bewarre oanmeldingen te besjen</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their passwords -->
     <string name="logins_biometric_prompt_message_2">Untskoattelje om jo bewarre wachtwurden te besjen</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Befeiligje jo oanmeldingen en wachtwurden</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_title_2">Befeiligje jo bewarre wachtwurden</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Stel in beskoattelingspatroan, pinkoade of wachtwurd foar jo apparaat yn om jo bewarre oanmeldingen en wachtwurden te beskermjen tsjin tagong as in oar jo apparaat hat.</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_message_2">Stel in beskoattelingspatroan, pinkoade of wachtwurd foar jo apparaat yn om jo bewarre wachtwurden te beskermjen tsjin tagong as in oar jo apparaat hat.</string>
     <!-- Negative button to ignore warning dialog if users have no device authentication set up -->
@@ -1876,8 +1869,6 @@
     <string name="saved_logins_sort_strategy_alphabetically">Namme (A-Z)</string>
     <!-- Saved logins sorting strategy menu item -by last used- (if selected, it will sort saved logins by last used) -->
     <string name="saved_logins_sort_strategy_last_used">Lêst brûkt</string>
-    <!-- Content description (not visible, for screen readers etc.): Sort saved logins dropdown menu chevron icon -->
-    <string name="saved_logins_menu_dropdown_chevron_icon_content_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Menu Oanmeldingen sortearje</string>
 
     <!-- Content description (not visible, for screen readers etc.) -->
     <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Wachtwurdmenu sortearje</string>
@@ -1887,41 +1878,27 @@
     <string name="preferences_autofill">Automatysk ynfolje</string>
     <!-- Preference and title for managing the settings for addresses -->
     <string name="preferences_addresses">Adressen</string>
-    <!-- Preference and title for managing the settings for credit cards -->
-    <string name="preferences_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Creditcards</string>
     <!-- Preference and title for managing the settings for payment methods -->
     <string name="preferences_credit_cards_2">Betellingsmetoaden</string>
     <!-- Preference for saving and autofilling credit cards -->
-    <string name="preferences_credit_cards_save_and_autofill_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Kaarten bewarje en automatysk ynfolje</string>
-    <!-- Preference for saving and autofilling credit cards -->
     <string name="preferences_credit_cards_save_and_autofill_cards_2">Betellingsmetoaden bewarje en ynfolje</string>
-    <!-- Preference summary for saving and autofilling credit card data -->
-    <string name="preferences_credit_cards_save_and_autofill_cards_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Gegevens binne fersifere</string>
     <!-- Preference summary for saving and autofilling payment method data. Parameter will be replaced by app name. -->
     <string name="preferences_credit_cards_save_and_autofill_cards_summary_2">%s fersiferet alle betellingsmetoaden dy’t jo bewarje</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is not signed into sync -->
     <string name="preferences_credit_cards_sync_cards_across_devices">Kaarten syngronisearje tusken apparaten</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is signed into sync -->
     <string name="preferences_credit_cards_sync_cards">Kaarten syngronisearje</string>
-    <!-- Preference option for adding a credit card -->
-    <string name="preferences_credit_cards_add_credit_card" moz:RemovedIn="125" tools:ignore="UnusedResources">Creditcard tafoegje</string>
 
     <!-- Preference option for adding a card -->
     <string name="preferences_credit_cards_add_credit_card_2">Kaart tafoegje</string>
-    <!-- Preference option for managing saved credit cards -->
-    <string name="preferences_credit_cards_manage_saved_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Bewarre kaarten beheare</string>
     <!-- Preference option for managing saved cards -->
     <string name="preferences_credit_cards_manage_saved_cards_2">Kaarten beheare</string>
     <!-- Preference option for adding an address -->
     <string name="preferences_addresses_add_address">Adres tafoegje</string>
     <!-- Preference option for managing saved addresses -->
     <string name="preferences_addresses_manage_addresses">Adressen beheare</string>
-    <!-- Preference for saving and autofilling addresses -->
-    <string name="preferences_addresses_save_and_autofill_addresses" moz:RemovedIn="125" tools:ignore="UnusedResources">Adressen bewarje en automatysk ynfolje</string>
     <!-- Preference for saving and filling addresses -->
     <string name="preferences_addresses_save_and_autofill_addresses_2">Adressen bewarje en ynfolje</string>
-    <!-- Preference summary for saving and autofilling address data -->
-    <string name="preferences_addresses_save_and_autofill_addresses_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Ynformaasje lykas nûmers, e-mail- en ferstjoeradressen tafoegje</string>
 
     <!-- Preference summary for saving and filling address data -->
     <string name="preferences_addresses_save_and_autofill_addresses_summary_2">Ynklusyf telefoannûmers en e-mailadressen</string>
@@ -1946,8 +1923,6 @@
     <!-- The text for the "Delete card" button for deleting a credit card -->
     <string name="credit_cards_delete_card_button">Kaart fuortsmite</string>
     <!-- The text for the confirmation message of "Delete card" dialog -->
-    <string name="credit_cards_delete_dialog_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Binne jo wis dat jo dizze creditcard fuortsmite wolle?</string>
-    <!-- The text for the confirmation message of "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_confirmation_2">Kaart fuortsmite?</string>
     <!-- The text for the positive button on "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_button">Fuortsmite</string>
@@ -1961,23 +1936,14 @@
     <!-- Title of the "Saved cards" screen -->
     <string name="credit_cards_saved_cards">Bewarre kaarten</string>
 
-    <!-- Error message for credit card number validation -->
-    <string name="credit_cards_number_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Fier in jildich creditkaartnûmer yn</string>
-
     <!-- Error message for card number validation -->
     <string name="credit_cards_number_validation_error_message_2">Fier in jildich kaartnûmer yn</string>
-    <!-- Error message for credit card name on card validation -->
-    <string name="credit_cards_name_on_card_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Folje dit fjild yn</string>
     <!-- Error message for card name on card validation -->
     <string name="credit_cards_name_on_card_validation_error_message_2">Foegje in namme ta</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their saved credit cards -->
     <string name="credit_cards_biometric_prompt_message">Untskoattelje om jo bewarre kaarten te besjen</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Befeiligje jo creditcards</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_title_2">Befeiligje jo bewarre betelmetoaden</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Stel in beskoattelingspatroan, pinkoade of wachtwurd foar jo apparaat yn om jo bewarre creditcards te beskermjen tsjin tagong as in oar jo apparaat hat.</string>
 
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_message_3">Stel in beskoattelingspatroan, pinkoade of wachtwurd foar jo apparaat yn om jo bewarre betellingsmetoaden te beskermjen tsjin tagong as in oar jo apparaat hat.</string>
@@ -1988,9 +1954,6 @@
     <!-- Title of PIN verification dialog to direct users to re-enter their device credentials to access their credit cards -->
     <string name="credit_cards_biometric_prompt_message_pin">Untskoattelje jo apparaat</string>
 
-    <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored credit card information -->
-    <string name="credit_cards_biometric_prompt_unlock_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Untskoattelje om bewarre creditkaartynformaasje te brûken</string>
-
     <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored payment method information -->
     <string name="credit_cards_biometric_prompt_unlock_message_2">Untskoattelje om bewarre betellingsmetoaden te brûken</string>
     <!-- Title of the "Add address" screen -->
@@ -1999,12 +1962,6 @@
     <string name="addresses_edit_address">Adres bewurkje</string>
     <!-- Title of the "Manage addresses" screen -->
     <string name="addresses_manage_addresses">Adressen beheare</string>
-    <!-- The header for the first name of an address -->
-    <string name="addresses_first_name" moz:removedIn="125" tools:ignore="UnusedResources">Foarnamme</string>
-    <!-- The header for the middle name of an address -->
-    <string name="addresses_middle_name" moz:removedIn="125" tools:ignore="UnusedResources">Twadde namme</string>
-    <!-- The header for the last name of an address -->
-    <string name="addresses_last_name" moz:removedIn="125" tools:ignore="UnusedResources">Efternamme</string>
     <!-- The header for the name of an address. Name represents a person's full name, typically made up of a first, middle and last name, e.g. John Joe Doe. -->
     <string name="addresses_name">Namme</string>
     <!-- The header for the street address of an address -->
@@ -2030,8 +1987,6 @@
     <!-- The text for the "Delete address" button for deleting an address -->
     <string name="addressess_delete_address_button">Adres fuortsmite</string>
 
-    <!-- The title for the "Delete address" confirmation dialog -->
-    <string name="addressess_confirm_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Binne jo wis dat jo dit adres fuortsmite wolle?</string>
     <!-- The title for the "Delete address" confirmation dialog -->
     <string name="addressess_confirm_dialog_message_2">Dit adres fuortsmite?</string>
     <!-- The text for the positive button on "Delete address" dialog -->
@@ -2130,48 +2085,28 @@
     <string name="login_menu_delete_button">Fuortsmite</string>
     <!-- Login overflow menu edit button -->
     <string name="login_menu_edit_button">Bewurkje</string>
-    <!-- Message in delete confirmation dialog for logins -->
-    <string name="login_deletion_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Binne jo wis dat jo dizze oanmelding fuortsmite wolle?</string>
     <!-- Message in delete confirmation dialog for password -->
     <string name="login_deletion_confirmation_2">Binne jo wis dat jo dit wachtwurd fuortsmite wolle?</string>
     <!-- Positive action of a dialog asking to delete  -->
     <string name="dialog_delete_positive">Fuortsmite</string>
     <!-- Negative action of a dialog asking to delete login -->
     <string name="dialog_delete_negative">Annulearje</string>
-    <!--  The saved login options menu description. -->
-    <string name="login_options_menu" moz:RemovedIn="125" tools:ignore="UnusedResources">Oanmeldopsjes</string>
     <!--  The saved password options menu description. -->
     <string name="login_options_menu_2">Wachtwurdopsjes</string>
-    <!--  The editable text field for a login's web address. -->
-    <string name="saved_login_hostname_description" moz:RemovedIn="125" tools:ignore="UnusedResources">It bewurkbere tekstfjild foar it webadres fan de oanmelding.</string>
     <!--  The editable text field for a website address. -->
     <string name="saved_login_hostname_description_3">It bewurkbere tekstfjild foar it websiteadres.</string>
-    <!--  The editable text field for a login's username. -->
-    <string name="saved_login_username_description" moz:RemovedIn="125" tools:ignore="UnusedResources">It bewurkbere tekstfjild foar de brûkersnamme fan de oanmelding.</string>
     <!--  The editable text field for a username. -->
     <string name="saved_login_username_description_3">It bewurkbere tekstfjild foar de brûkersnamme.</string>
     <!--  The editable text field for a login's password. -->
-    <string name="saved_login_password_description" moz:RemovedIn="125" tools:ignore="UnusedResources">It bewurkbere tekstfjild foar it wachtwurd fan de oanmelding.</string>
-    <!--  The editable text field for a login's password. -->
     <string name="saved_login_password_description_2">It bewurkbere tekstfjild foar it wachtwurd.</string>
-    <!--  The button description to save changes to an edited login. -->
-    <string name="save_changes_to_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Wizigingen oan oanmelding bewarje.</string>
     <!--  The button description to save changes to an edited password. -->
     <string name="save_changes_to_login_2">Wizigingen bewarje.</string>
-    <!--  The page title for editing a saved login. -->
-    <string name="edit" moz:RemovedIn="125" tools:ignore="UnusedResources">Bewurkje</string>
     <!--  The page title for editing a saved password. -->
     <string name="edit_2">Wachtwurd bewurkje</string>
-    <!--  The page title for adding new login. -->
-    <string name="add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Nije oanmelding tafoegje</string>
     <!--  The page title for adding new password. -->
     <string name="add_login_2">Wachtwurd tafoegje</string>
-    <!--  The error message in add/edit login view when password field is blank. -->
-    <string name="saved_login_password_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Wachtwurd fereaske</string>
     <!--  Error text displayed underneath the password field when it is in an error case. -->
     <string name="saved_login_password_required_2">Folje in wachtwurd yn</string>
-    <!--  The error message in add login view when username field is blank. -->
-    <string name="saved_login_username_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Brûkersnamme fereaske</string>
     <!--  The error message in add login view when username field is blank. -->
     <string name="saved_login_username_required_2">Folje in brûkersnamme yn</string>
     <!--  The error message in add login view when hostname field is blank. -->
@@ -2524,6 +2459,8 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <string name="translations_bottom_sheet_negative_button">No net</string>
     <!-- Button text on the translations dialog to restore the translated website back to the original untranslated version. -->
     <string name="translations_bottom_sheet_negative_button_restore">Orizjineel toane</string>
+    <!-- Accessibility announcement (not visible, for screen readers etc.) for the translations dialog after restore button was pressed that indicates the original untranslated page was loaded. -->
+    <string name="translations_bottom_sheet_restore_accessibility_announcement">Oarspronklik net-oersette side laden</string>
     <!-- Button text on the translations dialog when a translation error appears, used to dismiss the dialog and return to the browser. -->
     <string name="translations_bottom_sheet_negative_button_error">Dien</string>
     <!-- Button text on the translations dialog to begin a translation of the website. -->
@@ -2543,8 +2480,6 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <string name="translation_error_could_not_load_languages_warning_text">Kin talen net lade. Kontrolearje jo ynternetferbining en probearje it nochris.</string>
     <!-- The title of the warning card informs the user that a language is not supported. The first parameter is the name of the language that is not supported. -->
     <string name="translation_error_language_not_supported_warning_text">Sorry, wy stypje %1$s noch net.</string>
-    <!-- Button text on the warning card when a language is not supported. The link will take the user to a page to a support page about translations. -->
-    <string name="translation_error_language_not_supported_learn_more" moz:removedIn="126" tools:ignore="UnusedResources">Mear ynfo</string>
 
     <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
     <string name="translation_in_progress_snackbar">Oersette…</string>
@@ -2556,8 +2491,6 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
 
 
     <!-- Translations options dialog -->
-    <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
-    <string name="translation_option_bottom_sheet_title" moz:removedIn="126" tools:ignore="UnusedResources">Oersetopsjes</string>
     <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
     <string name="translation_option_bottom_sheet_title_heading">Oersetopsjes</string>
     <!-- Toggle switch label that allows a user to set the setting if they would like the browser to always offer or suggest translations when available. -->
@@ -2579,6 +2512,9 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
 
     <!-- Content description (not visible, for screen readers etc.) for closing the translations bottom sheet. -->
     <string name="translation_option_bottom_sheet_close_content_description">Blêd Oersettingen slute</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred at page settings. -->
+    <string name="translation_option_bottom_sheet_error_warning_text">Guon ynstellingen binne tydlik net beskikber.</string>
 
     <!-- Translation settings dialog -->
     <!-- Title of the translation settings dialog that allows a user to set their preferred translation settings. -->
@@ -2602,6 +2538,9 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <!-- Screen header presenting the automatic translation preference feature. It will appear under the toolbar. -->
     <string name="automatic_translation_header_preference">Selektearje in taal om de foarkarren ‘Altyd oersette’ en ‘Nea oersette’ te behearen.</string>
 
+    <!-- The title of the warning card informs the user that the system could not load languages for translation settings. -->
+    <string name="automatic_translation_error_warning_text">Kin talen net lade. Probearje it letter nochris.</string>
+
     <!-- Automatic translation options preference screen -->
     <!-- Preference option for offering to translate. Radio button title text.-->
     <string name="automatic_translation_option_offer_to_translate_title_preference">Oanbiede om oer te setten (standert)</string>
@@ -2624,6 +2563,8 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <!-- Content description (not visible, for screen readers etc.): For a never-translated site list item that is selected.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_item_list_content_description_preference">%1$s fuortsmite</string>
+    <!-- The title of the warning card informs the user that an error has occurred at the never translate sites list. -->
+    <string name="never_translate_site_error_warning_text">Kin websites net lade. Probearje it letter nochris.</string>
     <!-- The Delete site dialogue title will appear when the user clicks on a list item.
              The first parameter is web site url (for example:"wikipedia.com") -->
     <string name="never_translate_site_dialog_title_preference">%1$s fuortsmite?</string>
@@ -2649,8 +2590,10 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <string name="download_languages_language_item_preference">%1$s (%2$s)</string>
     <!-- The subhead of the download language preference screen will appear above the items that were not downloaded. -->
     <string name="download_language_header_preference">Talen downloade</string>
-    <!-- All languages list item. When the user presses this item, they can download or delete all languages. -->
+    <!-- All languages list item. When the user presses this item, they can download all languages. -->
     <string name="download_language_all_languages_item_preference">Alle talen</string>
+    <!-- All languages list item. When the user presses this item, they can delete all languages that were downloaded. -->
+    <string name="download_language_all_languages_item_preference_to_delete">Alle talen fuortsmite</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">Fuortsmite</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress. -->
@@ -2658,7 +2601,16 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">Downloade</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that is selected. -->
-    <string name="download_languages_item_content_description_selected_state">Selektearre</string>
+    <string name="download_languages_item_content_description_selected_state" moz:removedIn="127" tools:ignore="UnusedResources">Selektearre</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred when fetching the list of languages. -->
+    <string name="download_languages_fetch_error_warning_text">Kin talen net lade. Probearje it letter nochris.</string>
+    <!-- The title of the warning card informs the user that an error has occurred at downloading a language.
+      The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_error_warning_text"><![CDATA[Kin <b>%1$s</b> net downloade. Probearje it opnij.]]></string>
+    <!-- The title of the warning card informs the user that an error has occurred at deleting a language.
+          The first parameter is the language name, for example, "Spanish". -->
+    <string name="download_languages_delete_error_warning_text"><![CDATA[Kin <b>%1$s</b> net fuortsmite. Probearje it opnij.]]></string>
 
     <!-- Title for the dialog used by the translations feature to confirm deleting a language.
     The dialog will be presented when the user requests deletion of a language.
@@ -2686,7 +2638,7 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation. -->
     <string name="download_language_file_dialog_message_all_languages">Wy downloade in part fan de talen nei jo buffer om oersettingen privee te hâlden.</string>
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation without mentioning the cache. -->
-    <string name="download_language_file_dialog_message_all_languages_no_cache">Wy downloade in part fan de talen om oersettingen privee te hâlden.</string>
+    <string name="download_language_file_dialog_message_all_languages_no_cache" moz:removedIn="129" tools:ignore="UnusedResources">Wy downloade in part fan de talen om oersettingen privee te hâlden.</string>
     <!-- Checkbox label text on the data saving mode warning dialog used by the translations feature. This checkbox allows users to ignore the data usage warnings. -->
     <string name="download_language_file_dialog_checkbox_text">Altyd downloade yn gegevensbesparringsmodus</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to confirm they wish to continue and download the language file. -->
@@ -2702,13 +2654,18 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <!-- Content description (not visible, for screen readers etc.): Navigate back within the debug drawer. -->
     <string name="debug_drawer_back_button_content_description">Tebek blêdzje</string>
 
+    <!-- Content description (not visible, for screen readers etc.): Open debug drawer. -->
+    <string name="debug_drawer_fab_content_description">Debuglade iepenje</string>
+
     <!-- Debug drawer tabs tools -->
     <!-- The title of the Tab Tools feature in the Debug Drawer. -->
     <string name="debug_drawer_tab_tools_title">Ljepblêdhelpmiddelen</string>
     <!-- The title of the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_title">Oantal ljepblêden</string>
     <!-- The active tab count category in the tab count section in Tab Tools. -->
-    <string name="debug_drawer_tab_tools_tab_count_normal">Aktyf</string>
+    <string name="debug_drawer_tab_tools_tab_count_normal" moz:removedIn="127" tools:ignore="UnusedResources">Aktyf</string>
+    <!-- The active tab count category in the tab count section in Tab Tools. -->
+    <string name="debug_drawer_tab_tools_tab_count_active">Aktyf</string>
     <!-- The inactive tab count category in the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_inactive">Ynaktyf</string>
     <!-- The private tab count category in the tab count section in Tab Tools. -->
@@ -2719,6 +2676,16 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <string name="debug_drawer_tab_tools_tab_creation_tool_title">Helpmiddel foar it oanmeitsjen fan ljepblêden</string>
     <!-- The label of the text field in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_text_field_label">Oantal oan te meitsjen ljepblêden</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is empty -->
+    <string name="debug_drawer_tab_tools_tab_quantity_empty_error">Tekstfjild is leech</string>
+    <!-- The error message of the text field in the tab creation tool when the text field has characters other than digits -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_digits_error">Fier  allinnich positive hiele getallen yn</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a zero -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_zero_error">Fier in getal grutter dan nul yn</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a
+        quantity greater than the max tabs. The first parameter is the maximum number of tabs
+        that can be generated in one operation.-->
+    <string name="debug_drawer_tab_tools_tab_quantity_exceed_max_error">Dit binne mear as it maksimale oantal ljepblêden (%1$s) dat yn ien bewurking oanmakke wurde kin</string>
     <!-- The button text to add tabs to the active tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_active">Tafoegje oan aktive ljepblêden</string>
     <!-- The button text to add tabs to the inactive tab group in the tab creation tool. -->
@@ -2728,18 +2695,29 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
 
     <!-- Micro survey -->
 
+    <!-- Microsurvey -->
+    <!-- Prompt view -->
+    <!-- The microsurvey prompt title. Note: The word "Firefox" should NOT be translated -->
+    <string name="micro_survey_prompt_title" tools:ignore="UnusedResources">Help ús Firefox better te meitsjen. It duorret mar in minút.</string>
     <!-- The continue button label -->
     <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Trochgean</string>
+    <!-- Survey view -->
     <!-- The survey header -->
-    <string name="micro_survey_survey_header">De enkête ynfolje</string>
+    <string name="micro_survey_survey_header" moz:removedIn="129" tools:ignore="UnusedResources">De enkête ynfolje</string>
+    <!-- The survey header -->
+    <string name="micro_survey_survey_header_2">Enkête ynfolje</string>
     <!-- The privacy notice link -->
-    <string name="micro_survey_privacy_notice">Privacyferklearring</string>
+    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">Privacyferklearring</string>
+    <!-- The privacy notice link -->
+    <string name="micro_survey_privacy_notice_2">Privacyferklearring</string>
     <!-- The submit button label text -->
-    <string name="micro_survey_submit_button_label" tools:ignore="UnusedResources">Yntsjinje</string>
+    <string name="micro_survey_submit_button_label">Yntsjinje</string>
     <!-- The close button label text -->
-    <string name="micro_survey_close_button_label">Slute</string>
+    <string name="micro_survey_close_button_label" moz:removedIn="128" tools:ignore="UnusedResources">Slute</string>
+    <!-- The survey completion header -->
+    <string name="micro_survey_survey_header_confirmation" tools:ignore="UnusedResources">Enkête foltôge</string>
     <!-- The survey completion confirmation text -->
-    <string name="micro_survey_feedback_confirmation" tools:ignore="UnusedResources">Tank foar jo kommentaar!</string>
+    <string name="micro_survey_feedback_confirmation">Tank foar jo kommentaar!</string>
     <!-- Option for likert scale -->
     <string name="likert_scale_option_1" tools:ignore="UnusedResources">Hiel tefreden</string>
     <!-- Option for likert scale -->
@@ -2750,6 +2728,18 @@ Dizze analyze sil jo allinnich helpe om de beoardielingskwaliteit te beoardielen
     <string name="likert_scale_option_4" tools:ignore="UnusedResources">Untefreden</string>
     <!-- Option for likert scale -->
     <string name="likert_scale_option_5" tools:ignore="UnusedResources">Hiel ûntefreden</string>
+
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_6" tools:ignore="UnusedResources">Ik brûk it net</string>
+    <!-- Text shown in prompt for homepage microsurvey. 'Firefox' intentionally hardcoded here- -->
+    <string name="microsurvey_prompt_homepage_title" tools:ignore="UnusedResources">Hoe tefreden binne jo mei jo ûnderfining fan de Firefox-Startside?</string>
+    <!-- Accessibility -->
+    <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
+    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources">Enkête iepenje</string>
+    <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
+    <string name="microsurvey_close_handle_content_description" tools:ignore="UnusedResources">Enkête slute</string>
+    <!-- Content description for "X" button that is closing microsurvey. -->
+    <string name="microsurvey_close_button_content_description" tools:ignore="UnusedResources">Slute</string>
 
     <!-- Debug drawer logins -->
     <!-- The title of the Logins feature in the Debug Drawer. -->

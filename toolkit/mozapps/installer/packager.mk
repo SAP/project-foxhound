@@ -75,6 +75,8 @@ ifdef MOZ_CODE_COVERAGE
 		--output-file='$(DIST)/$(PKG_PATH)$(CODE_COVERAGE_ARCHIVE_BASENAME).zip'
 endif
 ifdef ENABLE_MOZSEARCH_PLUGIN
+	@echo 'Generating mozsearch chrome-map...'
+	$(PYTHON3) $(topsrcdir)/mach build-backend -b ChromeMap
 	@echo 'Generating mozsearch index tarball...'
 	$(RM) $(MOZSEARCH_ARCHIVE_BASENAME).zip
 	cd $(topobjdir)/mozsearch_index && \
@@ -109,9 +111,17 @@ endif # Darwin
 ifndef MOZ_ARTIFACT_BUILDS
 	@echo 'Generating XPT artifacts archive ($(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)'
 	$(call py_action,zip $(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip,-C $(topobjdir)/config/makefiles/xpidl '$(ABS_DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.xpt')
+ifeq (Darwin, $(OS_ARCH))
+	@echo 'Generating update-related macOS framework artifacts archive ($(UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME).zip)'
+	$(call py_action,zip $(UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME).zip,-C '$(ABS_DIST)/update_framework_artifacts' '$(ABS_DIST)/$(PKG_PATH)$(UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.framework')
+endif # Darwin
 else
 	@echo 'Packaging existing XPT artifacts from artifact build into archive ($(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)'
 	$(call py_action,zip $(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip,-C $(ABS_DIST)/xpt_artifacts '$(ABS_DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.xpt')
+ifeq (Darwin, $(OS_ARCH))
+	@echo 'Packaging existing update-related macOS framework artifacts from artifact build into archive ($(UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME).zip)'
+	$(call py_action,zip $(UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME).zip,-C $(ABS_DIST)/update_framework_artifacts '$(ABS_DIST)/$(PKG_PATH)$(UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME).zip' '*.framework')
+endif # Darwin
 endif # MOZ_ARTIFACT_BUILDS
 
 prepare-package: stage-package
@@ -119,6 +129,7 @@ prepare-package: stage-package
 make-package-internal: prepare-package make-sourcestamp-file
 	@echo 'Compressing...'
 	$(call MAKE_PACKAGE,$(DIST))
+	echo $(PACKAGE) > $(ABS_DIST)/package_name.txt
 
 make-package: FORCE
 	$(MAKE) make-package-internal

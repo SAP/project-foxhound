@@ -67,9 +67,7 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
 
     private lateinit var bookmarkStore: BookmarkFragmentStore
     private lateinit var bookmarkView: BookmarkView
-    private var _bookmarkInteractor: BookmarkFragmentInteractor? = null
-    private val bookmarkInteractor: BookmarkFragmentInteractor
-        get() = _bookmarkInteractor!!
+    private lateinit var bookmarkInteractor: BookmarkFragmentInteractor
 
     private val sharedViewModel: BookmarksSharedViewModel by activityViewModels()
     private val desktopFolders by lazy { DesktopFolders(requireContext(), showMobileRoot = false) }
@@ -92,7 +90,7 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
             BookmarkFragmentStore(BookmarkFragmentState(null))
         }
 
-        _bookmarkInteractor = BookmarkFragmentInteractor(
+        bookmarkInteractor = BookmarkFragmentInteractor(
             bookmarksController = DefaultBookmarkController(
                 activity = requireActivity() as HomeActivity,
                 navController = findNavController(),
@@ -191,7 +189,7 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
 
                     menu.findItem(R.id.delete_bookmarks_multi_select).title =
                         SpannableString(getString(R.string.bookmark_menu_delete_button)).apply {
-                            setTextColor(requireContext(), R.attr.textWarning)
+                            setTextColor(requireContext(), R.attr.textCritical)
                         }
                 }
             }
@@ -391,7 +389,6 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
 
     override fun onDestroyView() {
         super.onDestroyView()
-        _bookmarkInteractor = null
         _binding = null
     }
 

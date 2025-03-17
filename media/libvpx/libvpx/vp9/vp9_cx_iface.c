@@ -19,11 +19,11 @@
 #include "vpx_dsp/psnr.h"
 #include "vpx_ports/static_assert.h"
 #include "vpx_ports/system_state.h"
-#include "vpx_util/vpx_thread.h"
 #include "vpx_util/vpx_timestamp.h"
 #include "vpx/internal/vpx_codec_internal.h"
 #include "./vpx_version.h"
 #include "vp9/encoder/vp9_encoder.h"
+#include "vp9/encoder/vp9_ethread.h"
 #include "vpx/vp8cx.h"
 #include "vp9/common/vp9_alloccommon.h"
 #include "vp9/common/vp9_scale.h"
@@ -1459,13 +1459,14 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
 
     /* Any pending invisible frames? */
     if (ctx->pending_cx_data) {
+      assert(cx_data_sz >= ctx->pending_cx_data_sz);
       memmove(cx_data, ctx->pending_cx_data, ctx->pending_cx_data_sz);
       ctx->pending_cx_data = cx_data;
       cx_data += ctx->pending_cx_data_sz;
       cx_data_sz -= ctx->pending_cx_data_sz;
 
-      /* TODO: this is a minimal check, the underlying codec doesn't respect
-       * the buffer size anyway.
+      /* TODO(webm:1844): this is a minimal check, the underlying codec doesn't
+       * respect the buffer size anyway.
        */
       if (cx_data_sz < ctx->cx_data_sz / 2) {
         vpx_internal_error(&cpi->common.error, VPX_CODEC_ERROR,
@@ -1484,9 +1485,9 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
         ENCODE_FRAME_RESULT encode_frame_result;
         vp9_init_encode_frame_result(&encode_frame_result);
         // TODO(angiebird): Call vp9_first_pass directly
-        ret = vp9_get_compressed_data(cpi, &lib_flags, &size, cx_data,
-                                      &dst_time_stamp, &dst_end_time_stamp,
-                                      !img, &encode_frame_result);
+        ret = vp9_get_compressed_data(
+            cpi, &lib_flags, &size, cx_data, cx_data_sz, &dst_time_stamp,
+            &dst_end_time_stamp, !img, &encode_frame_result);
         assert(size == 0);  // There is no compressed data in the first pass
         (void)ret;
         assert(ret == 0);
@@ -1510,8 +1511,9 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
       vp9_init_encode_frame_result(&encode_frame_result);
       while (cx_data_sz >= ctx->cx_data_sz / 2 &&
              -1 != vp9_get_compressed_data(cpi, &lib_flags, &size, cx_data,
-                                           &dst_time_stamp, &dst_end_time_stamp,
-                                           !img, &encode_frame_result)) {
+                                           cx_data_sz, &dst_time_stamp,
+                                           &dst_end_time_stamp, !img,
+                                           &encode_frame_result)) {
         // Pack psnr pkt
         if (size > 0 && !cpi->use_svc) {
           // TODO(angiebird): Figure out while we don't need psnr pkt when
@@ -1528,7 +1530,7 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t *ctx,
           if (!cpi->common.show_frame ||
               (cpi->use_svc && cpi->svc.spatial_layer_id <
                                    cpi->svc.number_spatial_layers - 1)) {
-            if (ctx->pending_cx_data == 0) ctx->pending_cx_data = cx_data;
+            if (ctx->pending_cx_data == NULL) ctx->pending_cx_data = cx_data;
             ctx->pending_cx_data_sz += size;
             if (size)
               ctx->pending_frame_sizes[ctx->pending_frame_count++] = size;

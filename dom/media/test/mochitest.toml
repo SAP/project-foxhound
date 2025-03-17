@@ -444,6 +444,7 @@ support-files = [
   "chained-audio-video.ogg^headers^",
   "chromeHelper.js",
   "cloneElementVisually_helpers.js",
+  "complete_length_worker.js",
   "contentType.sjs",
   "detodos.opus",
   "detodos.opus^headers^",
@@ -767,6 +768,9 @@ tags = "cloneelementvisually"
 ["test_clone_media_element.html"]
 skip-if = ["os == 'android'"] # bug 1108558, android(bug 1232305)
 
+["test_complete_length.html"]
+scheme = "https"
+
 ["test_fastSeek-forwards.html"]
 
 ["test_fastSeek.html"]
@@ -774,7 +778,7 @@ skip-if = ["os == 'android'"] # bug 1108558, android(bug 1232305)
 ["test_hls_player_independency.html"]
 # There's a limit for creating decoder when API lever < 18(Bug 1278574)
 # We could skip the test in that case as we cannot play 2 video at a time.
-skip-if = ["os != 'android'"]
+skip-if = ["true"] # bug 1896932
 tags = "hls"
 
 ["test_hw_video_decoding.html"]
@@ -823,7 +827,7 @@ support-files = ["file_playback_and_bfcache.html"]
 # HLS is only supported on Fennec with API level >= 16
 # TODO: This test is similar to test_playback.html, will remove the
 # redundant code once test_playback.html is enabled on Fennec.
-skip-if = ["os != 'android'"]
+skip-if = ["true"] # bug 1896932
 tags = "hls"
 
 ["test_playback_rate.html"]
@@ -883,7 +887,6 @@ skip-if = ["os == 'win'"] # bug 1374189
 
 ["test_video_low_power_telemetry.html"]
 run-if = ["os == 'mac'"] # This telemetry is macOS-specific.
-disabled = "https://bugzilla.mozilla.org/show_bug.cgi?id=1849680"
 
 ["test_video_to_canvas.html"]
 skip-if = ["os == 'android'"] # android(bug 1232305), bugs 1320418,1347953,1347954,1348140,1348386

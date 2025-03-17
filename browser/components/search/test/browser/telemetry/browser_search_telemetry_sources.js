@@ -63,7 +63,6 @@ add_setup(async function () {
       ],
       // Ensure to add search suggestion telemetry as search_suggestion not search_formhistory.
       ["browser.urlbar.maxHistoricalSearchSuggestions", 0],
-      ["browser.search.serpEventTelemetry.enabled", true],
     ],
   });
   // Enable local telemetry recording for the duration of the tests.
@@ -148,6 +147,7 @@ async function track_ad_click(
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {

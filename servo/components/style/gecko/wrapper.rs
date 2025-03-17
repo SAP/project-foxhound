@@ -61,6 +61,7 @@ use crate::rule_tree::CascadeLevel as ServoCascadeLevel;
 use crate::selector_parser::{AttrValue, Lang};
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
+use crate::stylesheets::scope_rule::ImplicitScopeRoot;
 use crate::stylist::CascadeData;
 use crate::values::computed::Display;
 use crate::values::{AtomIdent, AtomString};
@@ -207,6 +208,15 @@ impl<'lr> TShadowRoot for GeckoShadowRoot<'lr> {
         }
 
         unsafe { mem::transmute(slice) }
+    }
+
+    #[inline]
+    fn implicit_scope_for_sheet(&self, sheet_index: usize) -> Option<ImplicitScopeRoot> {
+        use crate::stylesheets::StylesheetInDocument;
+
+        let author_styles = unsafe { self.0.mServoStyles.mPtr.as_ref()? };
+        let sheet = author_styles.stylesheets.get(sheet_index)?;
+        sheet.implicit_scope_root()
     }
 }
 
@@ -577,14 +587,14 @@ pub enum GeckoChildrenIterator<'a> {
     /// replaces it with the next sibling when requested.
     Current(Option<GeckoNode<'a>>),
     /// A Gecko-implemented iterator we need to drop appropriately.
-    GeckoIterator(structs::StyleChildrenIterator),
+    GeckoIterator(std::mem::ManuallyDrop<structs::StyleChildrenIterator>),
 }
 
 impl<'a> Drop for GeckoChildrenIterator<'a> {
     fn drop(&mut self) {
         if let GeckoChildrenIterator::GeckoIterator(ref mut it) = *self {
             unsafe {
-                bindings::Gecko_DestroyStyleChildrenIterator(it);
+                bindings::Gecko_DestroyStyleChildrenIterator(&mut **it);
             }
         }
     }
@@ -605,7 +615,7 @@ impl<'a> Iterator for GeckoChildrenIterator<'a> {
                 // however we can't express this easily with bindgen, and it would
                 // introduce functions with two input lifetimes into bindgen,
                 // which would be out of scope for elision.
-                bindings::Gecko_GetNextStyleChild(&mut *(it as *mut _))
+                bindings::Gecko_GetNextStyleChild(&mut **it)
                     .as_ref()
                     .map(GeckoNode)
             },
@@ -806,13 +816,14 @@ impl<'le> GeckoElement<'le> {
             "note_explicit_hints: {:?}, restyle_hint={:?}, change_hint={:?}",
             self, restyle_hint, change_hint
         );
-
+        debug_assert!(bindings::Gecko_IsMainThread());
         debug_assert!(
             !(restyle_hint.has_animation_hint() && restyle_hint.has_non_animation_hint()),
             "Animation restyle hints should not appear with non-animation restyle hints"
         );
 
-        let mut data = match self.mutate_data() {
+        // See comments on borrow_assert_main_thread and co.
+        let data = match self.get_data() {
             Some(d) => d,
             None => {
                 debug!("(Element not styled, discarding hints)");
@@ -820,14 +831,17 @@ impl<'le> GeckoElement<'le> {
             },
         };
 
-        debug_assert!(data.has_styles(), "how?");
-
         // Propagate the bit up the chain.
         if restyle_hint.has_animation_hint() {
             bindings::Gecko_NoteAnimationOnlyDirtyElement(self.0);
         } else {
             bindings::Gecko_NoteDirtyElement(self.0);
         }
+
+        #[cfg(debug_assertions)]
+        let mut data = data.borrow_mut();
+        #[cfg(not(debug_assertions))]
+        let data = &mut *data.as_ptr();
 
         data.hint.insert(restyle_hint);
         data.damage |= damage;
@@ -875,10 +889,12 @@ impl<'le> GeckoElement<'le> {
         // function.
         if let Some(ref existing) = existing_transitions.get(&property_declaration_id.to_owned()) {
             let after_value =
-                AnimationValue::from_computed_values(property_declaration_id, after_change_style)
-                    .unwrap();
-
-            return ***existing != after_value;
+                AnimationValue::from_computed_values(property_declaration_id, after_change_style);
+            debug_assert!(
+                after_value.is_some() ||
+                    matches!(property_declaration_id, PropertyDeclarationId::Custom(..))
+            );
+            return after_value.is_none() || ***existing != after_value.unwrap();
         }
 
         if combined_duration_seconds <= 0.0f32 {
@@ -889,10 +905,15 @@ impl<'le> GeckoElement<'le> {
             AnimationValue::from_computed_values(property_declaration_id, before_change_style);
         let to = AnimationValue::from_computed_values(property_declaration_id, after_change_style);
 
-        // If the declaration contains a custom property and getComputedValue was previously called
-        // before that custom property was defined, `from` will be `None` here.
         debug_assert!(
-            to.is_some() == from.is_some() || matches!(to, Some(AnimationValue::Custom(..)))
+            to.is_some() == from.is_some() ||
+                // If the declaration contains a custom property and getComputedValue was previously
+                // called before that custom property was defined, `from` will be `None` here.
+                matches!(from, Some(AnimationValue::Custom(..))) ||
+                // Similarly, if the declaration contains a custom property, getComputedValue was
+                // previously called, and the custom property registration is removed, `to` will be
+                // `None`.
+                matches!(to, Some(AnimationValue::Custom(..)))
         );
 
         from != to
@@ -1015,9 +1036,11 @@ impl<'le> TElement for GeckoElement<'le> {
             self.may_have_anonymous_children()
         {
             unsafe {
-                let mut iter: structs::StyleChildrenIterator = ::std::mem::zeroed();
-                bindings::Gecko_ConstructStyleChildrenIterator(self.0, &mut iter);
-                return LayoutIterator(GeckoChildrenIterator::GeckoIterator(iter));
+                let mut iter = std::mem::MaybeUninit::<structs::StyleChildrenIterator>::uninit();
+                bindings::Gecko_ConstructStyleChildrenIterator(self.0, iter.as_mut_ptr());
+                return LayoutIterator(GeckoChildrenIterator::GeckoIterator(
+                    std::mem::ManuallyDrop::new(iter.assume_init()),
+                ));
             }
         }
 
@@ -2045,9 +2068,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozAutofillPreview |
             NonTSPseudoClass::MozRevealed |
             NonTSPseudoClass::MozValueEmpty => self.state().intersects(pseudo_class.state_flag()),
-            NonTSPseudoClass::Dir(ref dir) => {
-                self.state().intersects(dir.element_state())
-            },
+            NonTSPseudoClass::Dir(ref dir) => self.state().intersects(dir.element_state()),
             NonTSPseudoClass::AnyLink => self.is_link(),
             NonTSPseudoClass::Link => {
                 self.is_link() && context.visited_handling().matches_unvisited()
@@ -2103,8 +2124,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 bindings::Gecko_IsSelectListBox(self.0)
             },
             NonTSPseudoClass::MozIsHTML => self.as_node().owner_doc().is_html_document(),
-            NonTSPseudoClass::MozLocaleDir(..) |
-            NonTSPseudoClass::MozWindowInactive => {
+            NonTSPseudoClass::MozLocaleDir(..) | NonTSPseudoClass::MozWindowInactive => {
                 let state_bit = pseudo_class.document_state_flag();
                 if state_bit.is_empty() {
                     debug_assert!(

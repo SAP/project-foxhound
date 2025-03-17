@@ -6,6 +6,7 @@ import React from "react";
 import { actionCreators as ac } from "common/Actions.mjs";
 import { SafeAnchor } from "../../DiscoveryStreamComponents/SafeAnchor/SafeAnchor";
 import { WallpapersSection } from "../../WallpapersSection/WallpapersSection";
+import { WallpaperCategories } from "../../WallpapersSection/WallpaperCategories";
 
 export class ContentSection extends React.PureComponent {
   constructor(props) {
@@ -28,7 +29,7 @@ export class ContentSection extends React.PureComponent {
   }
 
   onPreferenceSelect(e) {
-    // eventSource: TOP_SITES | TOP_STORIES | HIGHLIGHTS
+    // eventSource: TOP_SITES | TOP_STORIES | HIGHLIGHTS | WEATHER
     const { preference, eventSource } = e.target.dataset;
     let value;
     if (e.target.nodeName === "SELECT") {
@@ -97,9 +98,11 @@ export class ContentSection extends React.PureComponent {
       pocketRegion,
       mayHaveSponsoredStories,
       mayHaveRecentSaves,
+      mayHaveWeather,
       openPreferences,
       spocMessageVariant,
       wallpapersEnabled,
+      wallpapersV2Enabled,
       activeWallpaper,
       setPref,
     } = this.props;
@@ -107,6 +110,7 @@ export class ContentSection extends React.PureComponent {
       topSitesEnabled,
       pocketEnabled,
       highlightsEnabled,
+      weatherEnabled,
       showSponsoredTopSitesEnabled,
       showSponsoredPocketEnabled,
       showRecentSavesEnabled,
@@ -115,10 +119,17 @@ export class ContentSection extends React.PureComponent {
 
     return (
       <div className="home-section">
-        {wallpapersEnabled && (
+        {!wallpapersV2Enabled && wallpapersEnabled && (
           <div className="wallpapers-section">
-            <h2 data-l10n-id="newtab-wallpaper-title"></h2>
             <WallpapersSection
+              setPref={setPref}
+              activeWallpaper={activeWallpaper}
+            />
+          </div>
+        )}
+        {wallpapersV2Enabled && (
+          <div className="wallpapers-section">
+            <WallpaperCategories
               setPref={setPref}
               activeWallpaper={activeWallpaper}
             />
@@ -268,6 +279,22 @@ export class ContentSection extends React.PureComponent {
             />
           </label>
         </div>
+
+        {mayHaveWeather && (
+          <div id="weather-section" className="section">
+            <label className="switch">
+              <moz-toggle
+                id="weather-toggle"
+                pressed={weatherEnabled || null}
+                onToggle={this.onPreferenceSelect}
+                data-preference="showWeather"
+                data-eventSource="WEATHER"
+                data-l10n-id="newtab-custom-weather-toggle"
+                data-l10n-attrs="label, description"
+              />
+            </label>
+          </div>
+        )}
 
         {pocketRegion &&
           mayHaveSponsoredStories &&

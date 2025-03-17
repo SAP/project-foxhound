@@ -54,14 +54,31 @@ be as simple as running the following commands:
 COMMIT_LIST_FILE=$TMP_DIR/rebase-commit-list.txt
 export HGPLAIN=1
 
+if [ "x$MOZ_TOP_FF" = "x" ]; then
+  MOZ_TOP_FF=""
+fi
+if [ "x$MOZ_BOTTOM_FF" = "x" ]; then
+  MOZ_BOTTOM_FF=""
+fi
+if [ "x$STOP_FOR_REORDER" = "x" ]; then
+  STOP_FOR_REORDER=""
+fi
+
 # After this point:
 # * eE: All commands should succeed.
+# * u: All variables should be defined before use.
 # * o pipefail: All stages of all pipes should succeed.
-set -eEo pipefail
+set -eEuo pipefail
 
 if [ -f $STATE_DIR/rebase_resume_state ]; then
   source $STATE_DIR/rebase_resume_state
 else
+
+  # on first run, we want to verify sanity of the patch-stack so
+  # ending guidance is appropriate regarding changes in
+  # third_party/libwebrtc between the old central we're currently
+  # based on and the new central we're rebasing onto.
+  bash dom/media/webrtc/third_party_build/verify_vendoring.sh
 
   if [ "x" == "x$MOZ_TOP_FF" ]; then
     MOZ_TOP_FF=`hg log -r . -T"{node|short}"`
@@ -118,12 +135,6 @@ That command looks like:
     exit 1
   fi
   ERROR_HELP=""
-
-  # After this point:
-  # * eE: All commands should succeed.
-  # * u: All variables should be defined before use.
-  # * o pipefail: All stages of all pipes should succeed.
-  set -eEuo pipefail
 
   MOZ_NEW_CENTRAL=`hg log -r central -T"{node|short}"`
 
@@ -279,7 +290,7 @@ REMAINING_STEPS=$"
 The rebase process is complete.  The following steps must be completed manually:
 $PATCH_STACK_FIXUP
   ./mach bootstrap --application=browser --no-system-changes && \\
-  ./mach build && \\
+  ./mach clobber && ./mach build && \\
   hg push -r tip --force && \\
   hg push -B $MOZ_BOOKMARK
 "

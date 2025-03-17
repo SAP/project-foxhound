@@ -33,9 +33,6 @@ if CONFIG["MOZ_CRASHREPORTER"]:
             "mozwer-rust",
         ]
 
-        if CONFIG["MOZ_CRASHREPORTER_INJECTOR"]:
-            DIRS += ["breakpad-windows-standalone"]
-
     elif CONFIG["OS_ARCH"] == "Darwin":
         DIRS += [
             "breakpad-client",
@@ -77,13 +74,6 @@ if CONFIG["MOZ_CRASHREPORTER"]:
         "mozannotation_server",
     ]
 
-    if CONFIG["MOZ_CRASHREPORTER_INJECTOR"]:
-        DIRS += ["injector"]
-        UNIFIED_SOURCES += [
-            "InjectCrashReporter.cpp",
-            "LoadLibraryRemote.cpp",
-        ]
-
     TEST_DIRS += ["test"]
 
     UNIFIED_SOURCES += [
@@ -106,11 +96,11 @@ if CONFIG["MOZ_CRASHREPORTER"]:
         DEFINES["ANDROID_NDK_MAJOR_VERSION"] = CONFIG["ANDROID_NDK_MAJOR_VERSION"]
         DEFINES["ANDROID_NDK_MINOR_VERSION"] = CONFIG["ANDROID_NDK_MINOR_VERSION"]
         DEFINES["ANDROID_PACKAGE_NAME"] = '"%s"' % CONFIG["ANDROID_PACKAGE_NAME"]
-        # NDK5 workarounds
-        DEFINES["_STLP_CONST_CONSTRUCTOR_BUG"] = True
-        DEFINES["_STLP_NO_MEMBER_TEMPLATES"] = True
         LOCAL_INCLUDES += [
             "/toolkit/crashreporter/google-breakpad/src/common/android/include",
+        ]
+        UNIFIED_SOURCES += [
+            "bionic_missing_funcs.cpp",
         ]
 
     DEFINES["UNICODE"] = True

@@ -140,6 +140,10 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
   static bool checkMarkingForZone(JS::Zone* zone);
 #endif
 
+#ifdef JSGC_HASH_TABLE_CHECKS
+  static void checkWeakMapsAfterMovingGC(JS::Zone* zone);
+#endif
+
  protected:
   // Instance member functions called by the above. Instantiations of WeakMap
   // override these with definitions appropriate for their Key and Value types.
@@ -150,14 +154,14 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
   virtual void clearAndCompact() = 0;
 
   // We have a key that, if it or its delegate is marked, may lead to a WeakMap
-  // value getting marked. Insert it or its delegate (if any) into the
-  // appropriate zone's gcEphemeronEdges or gcNurseryEphemeronEdges.
-  [[nodiscard]] bool addImplicitEdges(gc::MarkColor mapColor, gc::Cell* key,
-                                      gc::Cell* delegate,
-                                      gc::TenuredCell* value);
-  [[nodiscard]] bool addEphemeronTableEntries(gc::MarkColor mapColor,
-                                              gc::Cell* key, gc::Cell* value,
-                                              gc::Cell* maybeValue);
+  // value getting marked. Insert the necessary edges into the appropriate
+  // zone's gcEphemeronEdges or gcNurseryEphemeronEdges tables.
+  [[nodiscard]] bool addEphemeronEdgesForEntry(gc::MarkColor mapColor,
+                                               gc::Cell* key,
+                                               gc::Cell* delegate,
+                                               gc::TenuredCell* value);
+  [[nodiscard]] bool addEphemeronEdge(gc::MarkColor color, gc::Cell* src,
+                                      gc::Cell* dst);
 
   virtual bool markEntries(GCMarker* marker) = 0;
 
@@ -170,6 +174,10 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
   virtual bool allowKeysInOtherZones() const { return false; }
   friend bool gc::CheckWeakMapEntryMarking(const WeakMapBase*, gc::Cell*,
                                            gc::Cell*);
+#endif
+
+#ifdef JSGC_HASH_TABLE_CHECKS
+  virtual void checkAfterMovingGC() const = 0;
 #endif
 
   // Object that this weak map is part of, if any.
@@ -329,6 +337,10 @@ class WeakMap
 #ifdef JS_GC_ZEAL
   bool checkMarking() const override;
 #endif
+
+#ifdef JSGC_HASH_TABLE_CHECKS
+  void checkAfterMovingGC() const override;
+#endif
 };
 
 using ObjectValueWeakMap = WeakMap<HeapPtr<JSObject*>, HeapPtr<Value>>;
@@ -355,10 +367,6 @@ class ObjectWeakMap {
   }
 
   ObjectValueWeakMap& valueMap() { return map; }
-
-#ifdef JSGC_HASH_TABLE_CHECKS
-  void checkAfterMovingGC();
-#endif
 };
 
 // Get the hash from the Symbol.

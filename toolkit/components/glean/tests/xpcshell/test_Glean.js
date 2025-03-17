@@ -514,7 +514,7 @@ add_task(async function test_fog_object_works() {
   let expected = [
     { colour: "red", diameter: 5 },
     { colour: "blue", diameter: 7 },
-    { colour: "orange", diameter: null },
+    { colour: "orange" },
   ];
   Assert.deepEqual(expected, result);
 
@@ -528,10 +528,10 @@ add_task(async function test_fog_object_works() {
   Glean.testOnly.balloons.set(balloons);
   result = Glean.testOnly.balloons.testGetValue();
   expected = [
-    { colour: "inf", diameter: null },
-    { colour: "negative-inf", diameter: null },
-    { colour: "nan", diameter: null },
-    { colour: "undef", diameter: null },
+    { colour: "inf" },
+    { colour: "negative-inf" },
+    { colour: "nan" },
+    { colour: "undef" },
   ];
   Assert.deepEqual(expected, result);
 
@@ -562,3 +562,108 @@ add_task(async function test_fog_object_works() {
     "Should throw because last object was invalid."
   );
 });
+
+add_task(async function test_fog_complex_object_works() {
+  if (!Glean.testOnly.crashStack) {
+    // FIXME(bug 1883857): object metric type not available, e.g. in artifact builds.
+    // Skipping this test.
+    return;
+  }
+
+  Assert.equal(
+    undefined,
+    Glean.testOnly.crashStack.testGetValue(),
+    "No object stored"
+  );
+
+  Glean.testOnly.crashStack.set({});
+  let result = Glean.testOnly.crashStack.testGetValue();
+  Assert.deepEqual({}, result);
+
+  let stack = {
+    status: "OK",
+    crash_info: {
+      typ: "main",
+      address: "0xf001ba11",
+      crashing_thread: 1,
+    },
+    main_module: 0,
+    modules: [
+      {
+        base_addr: "0x00000000",
+        end_addr: "0x00004000",
+      },
+    ],
+  };
+
+  Glean.testOnly.crashStack.set(stack);
+  result = Glean.testOnly.crashStack.testGetValue();
+  Assert.deepEqual(stack, result);
+
+  stack = {
+    status: "OK",
+    modules: [
+      {
+        base_addr: "0x00000000",
+        end_addr: "0x00004000",
+      },
+    ],
+  };
+  Glean.testOnly.crashStack.set(stack);
+  result = Glean.testOnly.crashStack.testGetValue();
+  Assert.deepEqual(stack, result);
+
+  stack = {
+    status: "OK",
+    modules: [],
+  };
+  Glean.testOnly.crashStack.set(stack);
+  result = Glean.testOnly.crashStack.testGetValue();
+  Assert.deepEqual({ status: "OK" }, result);
+
+  stack = {
+    status: "OK",
+  };
+  Glean.testOnly.crashStack.set(stack);
+  result = Glean.testOnly.crashStack.testGetValue();
+  Assert.deepEqual(stack, result);
+});
+
+add_task(
+  // FIXME(1897219): Should be re-enabled along with the newer implementation.
+  // ride-along pings are not handled correctly in artifact builds.
+  {
+    skip_if: () =>
+      Services.prefs.getBoolPref("telemetry.fog.artifact_build", false),
+  },
+  function test_fog_ride_along_pings() {
+    Assert.equal(null, Glean.testOnly.badCode.testGetValue("test-ping"));
+    Assert.equal(null, Glean.testOnly.badCode.testGetValue("ride-along-ping"));
+
+    Glean.testOnly.badCode.add(37);
+    Assert.equal(37, Glean.testOnly.badCode.testGetValue("test-ping"));
+    Assert.equal(37, Glean.testOnly.badCode.testGetValue("ride-along-ping"));
+
+    let testPingSubmitted = false;
+
+    GleanPings.testPing.testBeforeNextSubmit(() => {
+      testPingSubmitted = true;
+    });
+    // FIXME(bug 1896356):
+    // We can't use `testBeforeNextSubmit` for `ride-along-ping`
+    // because it's triggered internally, but the callback would only be available
+    // in the C++ bits, not in the internal Rust parts.
+
+    // Submit only a single ping, the other will ride along.
+    GleanPings.testPing.submit();
+
+    Assert.ok(
+      testPingSubmitted,
+      "Test ping was submitted, callback was called."
+    );
+
+    // Both pings have been submitted, so the values should be cleared.
+    Assert.equal(null, Glean.testOnly.badCode.testGetValue("test-ping"));
+    Assert.equal(null, Glean.testOnly.badCode.testGetValue("ride-along-ping"));
+  }
+);

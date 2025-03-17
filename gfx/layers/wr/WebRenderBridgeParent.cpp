@@ -1120,7 +1120,8 @@ bool WebRenderBridgeParent::SetDisplayList(
 bool WebRenderBridgeParent::ProcessDisplayListData(
     DisplayListData& aDisplayList, wr::Epoch aWrEpoch,
     const TimeStamp& aTxnStartTime, bool aValidTransaction) {
-  wr::TransactionBuilder txn(mApi);
+  wr::TransactionBuilder txn(mApi, /* aUseSceneBuilderThread */ true,
+                             mRemoteTextureTxnScheduler, mFwdTransactionId);
   Maybe<wr::AutoTransactionSender> sender;
 
   if (aDisplayList.mScrollData && !aDisplayList.mScrollData->Validate()) {
@@ -1239,10 +1240,6 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
   wr::IpcResourceUpdateQueue::ReleaseShmems(this, aDisplayList.mSmallShmems);
   wr::IpcResourceUpdateQueue::ReleaseShmems(this, aDisplayList.mLargeShmems);
 
-  if (mRemoteTextureTxnScheduler) {
-    mRemoteTextureTxnScheduler->NotifyTxn(aFwdTransactionId);
-  }
-
   if (!success) {
     return IPC_FAIL(this, "Failed to process DisplayListData.");
   }
@@ -1253,7 +1250,8 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
 bool WebRenderBridgeParent::ProcessEmptyTransactionUpdates(
     TransactionData& aData, bool* aScheduleComposite) {
   *aScheduleComposite = false;
-  wr::TransactionBuilder txn(mApi);
+  wr::TransactionBuilder txn(mApi, /* aUseSceneBuilderThread */ true,
+                             mRemoteTextureTxnScheduler, mFwdTransactionId);
   txn.SetLowPriority(!IsRootWebRenderBridgeParent());
 
   if (!aData.mScrollUpdates.IsEmpty()) {
@@ -1395,10 +1393,6 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvEmptyTransaction(
                                               aTransactionData->mLargeShmems);
   }
 
-  if (mRemoteTextureTxnScheduler) {
-    mRemoteTextureTxnScheduler->NotifyTxn(aFwdTransactionId);
-  }
-
   if (!success) {
     return IPC_FAIL(this, "Failed to process empty transaction update.");
   }
@@ -1464,7 +1458,9 @@ bool WebRenderBridgeParent::ProcessWebRenderParentCommands(
       case WebRenderParentCommand::TOpRemovePipelineIdForCompositable: {
         const OpRemovePipelineIdForCompositable& op =
             cmd.get_OpRemovePipelineIdForCompositable();
-        RemovePipelineIdForCompositable(op.pipelineId(), aTxn);
+        auto* pendingOps = mApi->GetPendingAsyncImagePipelineOps(aTxn);
+
+        RemovePipelineIdForCompositable(op.pipelineId(), pendingOps, aTxn);
         break;
       }
       case WebRenderParentCommand::TOpReleaseTextureOfImage: {
@@ -1846,7 +1842,8 @@ void WebRenderBridgeParent::AddPipelineIdForCompositable(
 }
 
 void WebRenderBridgeParent::RemovePipelineIdForCompositable(
-    const wr::PipelineId& aPipelineId, wr::TransactionBuilder& aTxn) {
+    const wr::PipelineId& aPipelineId, AsyncImagePipelineOps* aPendingOps,
+    wr::TransactionBuilder& aTxn) {
   if (mDestroyed) {
     return;
   }
@@ -1858,7 +1855,7 @@ void WebRenderBridgeParent::RemovePipelineIdForCompositable(
   RefPtr<WebRenderImageHost>& wrHost = it->second;
 
   wrHost->ClearWrBridge(aPipelineId, this);
-  mAsyncImageManager->RemoveAsyncImagePipeline(aPipelineId, aTxn);
+  mAsyncImageManager->RemoveAsyncImagePipeline(aPipelineId, aPendingOps, aTxn);
   aTxn.RemovePipeline(aPipelineId);
   mAsyncCompositables.erase(wr::AsUint64(aPipelineId));
 }
@@ -2730,7 +2727,8 @@ void WebRenderBridgeParent::ClearResources() {
     wr::PipelineId pipelineId = wr::AsPipelineId(entry.first);
     RefPtr<WebRenderImageHost> host = entry.second;
     host->ClearWrBridge(pipelineId, this);
-    mAsyncImageManager->RemoveAsyncImagePipeline(pipelineId, txn);
+    mAsyncImageManager->RemoveAsyncImagePipeline(
+        pipelineId, /* aPendingOps */ nullptr, txn);
     txn.RemovePipeline(pipelineId);
   }
   mAsyncCompositables.clear();

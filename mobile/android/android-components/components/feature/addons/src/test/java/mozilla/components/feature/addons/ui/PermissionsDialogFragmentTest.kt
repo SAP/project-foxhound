@@ -37,7 +37,7 @@ class PermissionsDialogFragmentTest {
             translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"),
             permissions = listOf("privacy", "<all_urls>", "tabs"),
         )
-        val fragment = createPermissionsDialogFragment(addon)
+        val fragment = createPermissionsDialogFragment(addon, permissions = addon.permissions)
 
         doReturn(testContext).`when`(fragment).requireContext()
         val dialog = fragment.onCreateDialog(null)
@@ -48,8 +48,8 @@ class PermissionsDialogFragmentTest {
         val optionalOrRequiredTextView = dialog.findViewById<TextView>(R.id.optional_or_required_text)
         val permissionsRecyclerView = dialog.findViewById<RecyclerView>(R.id.permissions)
         val recyclerAdapter = permissionsRecyclerView.adapter!! as RequiredPermissionsAdapter
-        val optionalOrRequiredText = fragment.buildOptionalOrRequiredText()
         val permissionList = fragment.buildPermissionsList()
+        val optionalOrRequiredText = fragment.buildOptionalOrRequiredText(hasPermissions = permissionList.isNotEmpty())
 
         assertTrue(titleTextView.text.contains(name))
         assertTrue(optionalOrRequiredText.contains(testContext.getString(R.string.mozac_feature_addons_permissions_dialog_subtitle)))
@@ -69,7 +69,7 @@ class PermissionsDialogFragmentTest {
     fun `clicking on dialog buttons notifies lambdas`() {
         val addon = Addon("id", translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"))
 
-        val fragment = createPermissionsDialogFragment(addon)
+        val fragment = createPermissionsDialogFragment(addon, permissions = emptyList())
         var allowedWasExecuted = false
         var denyWasExecuted = false
 
@@ -100,7 +100,7 @@ class PermissionsDialogFragmentTest {
     fun `dismissing the dialog notifies deny lambda`() {
         val addon = Addon("id", translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"))
 
-        val fragment = createPermissionsDialogFragment(addon)
+        val fragment = createPermissionsDialogFragment(addon, permissions = emptyList())
         var denyWasExecuted = false
 
         fragment.onNegativeButtonClicked = {
@@ -123,7 +123,7 @@ class PermissionsDialogFragmentTest {
     fun `dialog must have all the styles of the feature promptsStyling object`() {
         val addon = Addon("id", translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"))
         val styling = PromptsStyling(TOP, true)
-        val fragment = createPermissionsDialogFragment(addon, styling)
+        val fragment = createPermissionsDialogFragment(addon, permissions = emptyList(), styling)
 
         doReturn(testContext).`when`(fragment).requireContext()
 
@@ -140,9 +140,8 @@ class PermissionsDialogFragmentTest {
         val addon = Addon(
             "id",
             translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"),
-            permissions = emptyList(),
         )
-        val fragment = createPermissionsDialogFragment(addon)
+        val fragment = createPermissionsDialogFragment(addon, permissions = emptyList())
 
         doReturn(testContext).`when`(fragment).requireContext()
         val dialog = fragment.onCreateDialog(null)
@@ -153,12 +152,12 @@ class PermissionsDialogFragmentTest {
         val optionalOrRequiredTextView = dialog.findViewById<TextView>(R.id.optional_or_required_text)
         val permissionsRecyclerView = dialog.findViewById<RecyclerView>(R.id.permissions)
         val recyclerAdapter = permissionsRecyclerView.adapter!! as RequiredPermissionsAdapter
-        val optionalOrRequiredText = fragment.buildOptionalOrRequiredText()
         val permissionList = fragment.buildPermissionsList()
+        val optionalOrRequiredText = fragment.buildOptionalOrRequiredText(hasPermissions = permissionList.isNotEmpty())
 
         assertTrue(titleTextView.text.contains(name))
-        assertTrue(optionalOrRequiredText.contains(testContext.getString(R.string.mozac_feature_addons_permissions_dialog_subtitle)))
-        assertTrue(optionalOrRequiredTextView.text.contains(testContext.getString(R.string.mozac_feature_addons_permissions_dialog_subtitle)))
+        assertFalse(optionalOrRequiredText.contains(testContext.getString(R.string.mozac_feature_addons_permissions_dialog_subtitle)))
+        assertFalse(optionalOrRequiredTextView.text.contains(testContext.getString(R.string.mozac_feature_addons_permissions_dialog_subtitle)))
         assertEquals(0, recyclerAdapter.itemCount)
         assertFalse(permissionList.contains(testContext.getString(R.string.mozac_feature_addons_permissions_privacy_description)))
         assertFalse(permissionList.contains(testContext.getString(R.string.mozac_feature_addons_permissions_all_urls_description)))
@@ -172,7 +171,7 @@ class PermissionsDialogFragmentTest {
             translatableName = mapOf(Addon.DEFAULT_LOCALE to "my_addon"),
             permissions = listOf("privacy", "https://example.org/", "tabs"),
         )
-        val fragment = createPermissionsDialogFragment(addon, forOptionalPermissions = true, optionalPermissions = addon.permissions)
+        val fragment = createPermissionsDialogFragment(addon, forOptionalPermissions = true, permissions = addon.permissions)
 
         doReturn(testContext).`when`(fragment).requireContext()
         val dialog = fragment.onCreateDialog(null)
@@ -185,8 +184,8 @@ class PermissionsDialogFragmentTest {
         val recyclerAdapter = permissionsRecyclerView.adapter!! as RequiredPermissionsAdapter
         val allowButton = dialog.findViewById<Button>(R.id.allow_button)
         val denyButton = dialog.findViewById<Button>(R.id.deny_button)
-        val optionalOrRequiredText = fragment.buildOptionalOrRequiredText()
         val permissionsList = fragment.buildPermissionsList()
+        val optionalOrRequiredText = fragment.buildOptionalOrRequiredText(hasPermissions = permissionsList.isNotEmpty())
 
         assertEquals(
             titleTextView.text,
@@ -223,16 +222,16 @@ class PermissionsDialogFragmentTest {
 
     private fun createPermissionsDialogFragment(
         addon: Addon,
+        permissions: List<String>,
         promptsStyling: PromptsStyling? = null,
         forOptionalPermissions: Boolean = false,
-        optionalPermissions: List<String> = emptyList(),
     ): PermissionsDialogFragment {
         return spy(
             PermissionsDialogFragment.newInstance(
                 addon = addon,
+                permissions = permissions,
                 promptsStyling = promptsStyling,
                 forOptionalPermissions = forOptionalPermissions,
-                optionalPermissions = optionalPermissions,
             ),
         ).apply {
             doNothing().`when`(this).dismiss()

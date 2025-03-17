@@ -29,6 +29,10 @@ from six import reraise
 
 from . import errors
 
+if sys.platform.startswith("darwin"):
+    # Marionette's own processhandler is only used on MacOS for now
+    from .processhandler import UNKNOWN_RETURNCODE, ProcessHandler
+
 
 class GeckoInstance(object):
     required_prefs = {
@@ -41,6 +45,10 @@ class GeckoInstance(object):
         # and causing false-positive test failures. See bug 1176798, bug 1177018,
         # bug 1210465.
         "apz.content_response_timeout": 60000,
+        # Don't pull weather data from the network
+        "browser.newtabpage.activity-stream.discoverystream.region-weather-config": "",
+        # Don't pull wallpaper content from the network
+        "browser.newtabpage.activity-stream.newtabWallpapers.enabled": False,
         # Don't pull sponsored Top Sites content from the network
         "browser.newtabpage.activity-stream.showSponsoredTopSites": False,
         # Disable geolocation ping (#1)
@@ -388,7 +396,7 @@ class GeckoInstance(object):
             }
         )
 
-        return {
+        args = {
             "binary": self.binary,
             "profile": self.profile,
             "cmdargs": ["-no-remote", "-marionette"] + self.app_args,
@@ -396,6 +404,13 @@ class GeckoInstance(object):
             "symbols_path": self.symbols_path,
             "process_args": process_args,
         }
+
+        if sys.platform.startswith("darwin"):
+            # Bug 1887666: The custom process handler class for Marionette is
+            # only supported on MacOS at the moment.
+            args["process_class"] = ProcessHandler
+
+        return args
 
     def close(self, clean=False):
         """
@@ -431,6 +446,19 @@ class GeckoInstance(object):
         self.close(clean=clean)
         self.start()
 
+    def update_process(self, pid, timeout=None):
+        """Update the process to track when the application re-launched itself"""
+        if sys.platform.startswith("darwin"):
+            # The new process handler is only supported on MacOS yet
+            returncode = self.runner.process_handler.update_process(pid, timeout)
+            if returncode not in [0, UNKNOWN_RETURNCODE]:
+                raise IOError(
+                    f"Old process inappropriately quit with exit code: {returncode}"
+                )
+
+        else:
+            returncode = self.runner.process_handler.check_for_detached(pid)
+
 
 class FennecInstance(GeckoInstance):
     fennec_prefs = {
@@ -454,7 +482,7 @@ class FennecInstance(GeckoInstance):
         package_name=None,
         env=None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         required_prefs = deepcopy(FennecInstance.fennec_prefs)
         required_prefs.update(kwargs.get("prefs", {}))

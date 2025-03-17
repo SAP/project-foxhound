@@ -140,17 +140,6 @@ export const ExperimentTestUtils = {
       )
     );
   },
-  async validateRollouts(rollout) {
-    const schema = await fetchSchema(
-      "resource://nimbus/schemas/NimbusEnrollment.schema.json"
-    );
-
-    return this._validateSchema(
-      schema,
-      rollout,
-      `Rollout configuration ${rollout.slug} is not valid`
-    );
-  },
   /**
    * Add features for tests.
    *
@@ -203,43 +192,6 @@ export const ExperimentFakes = {
       ExperimentAPI._store.once(`update:${slug}`, resolve)
     );
   },
-  async enrollWithRollout(
-    featureConfig,
-    { manager = lazy.ExperimentAPI._manager, source } = {}
-  ) {
-    await manager.store.init();
-    const rollout = this.rollout(`${featureConfig.featureId}-rollout`, {
-      branch: {
-        slug: `${featureConfig.featureId}-rollout-branch`,
-        features: [featureConfig],
-      },
-    });
-    if (source) {
-      rollout.source = source;
-    }
-    await ExperimentTestUtils.validateRollouts(rollout);
-    // After storing the remote configuration to store and updating the feature
-    // we want to flush so that NimbusFeature usage in content process also
-    // receives the update
-    await manager.store.addEnrollment(rollout);
-    manager.store._syncToChildren({ flush: true });
-
-    let unenrollCompleted = slug =>
-      new Promise(resolve =>
-        manager.store.on(`update:${slug}`, (event, enrollment) => {
-          if (enrollment.slug === rollout.slug && !enrollment.active) {
-            manager.store._deleteForTests(rollout.slug);
-            resolve();
-          }
-        })
-      );
-
-    return () => {
-      let promise = unenrollCompleted(rollout.slug);
-      manager.unenroll(rollout.slug, "cleanup");
-      return promise;
-    };
-  },
   /**
    * Enroll in an experiment branch with the given feature configuration.
    *
@@ -248,15 +200,21 @@ export const ExperimentFakes = {
    */
   async enrollWithFeatureConfig(
     featureConfig,
-    { manager = lazy.ExperimentAPI._manager, isRollout = false } = {}
+    {
+      manager = lazy.ExperimentAPI._manager,
+      isRollout = false,
+      source,
+      slug = null,
+      branchSlug = "control",
+    } = {}
   ) {
     await manager.store.ready();
-    // Use id passed in featureConfig value to compute experimentId
-    // This help filter telemetry events (such as expose) in race conditions when telemetry
-    // from multiple experiments with same featureId co-exist in snapshot
-    let experimentId = `${featureConfig.featureId}${
-      featureConfig?.value?.id ? "-" + featureConfig?.value?.id : ""
-    }-experiment-${Math.random()}`;
+
+    const experimentId =
+      slug ??
+      `${featureConfig.featureId}-${
+        isRollout ? "rollout" : "experiment"
+      }-${Math.random()}`;
 
     let recipe = this.recipe(experimentId, {
       bucketConfig: {
@@ -268,29 +226,30 @@ export const ExperimentFakes = {
       },
       branches: [
         {
-          slug: "control",
+          slug: branchSlug,
           ratio: 1,
           features: [featureConfig],
         },
       ],
       isRollout,
     });
-    let { enrollmentPromise, doExperimentCleanup } = this.enrollmentHelper(
-      recipe,
-      { manager }
-    );
+    const doEnrollmentCleanup = await this.enrollmentHelper(recipe, {
+      manager,
+      source,
+    });
 
-    await enrollmentPromise;
-
-    return doExperimentCleanup;
+    return doEnrollmentCleanup;
   },
   /**
-   * Enroll in the given recipe.
+   * Attempt enrollment in the given recipe.
    *
-   * NB: It is unnecessary to await the enrollmentPromise.
-   *     See bug 1773583 and bug 1829412.
+   * This will evaluate bucketing, so it is possible that enrollment will *not*
+   * occur.
+   *
+   * If you are testing a feature, you likely want to use enrollInFeatureConfig,
+   * which will guarantee successful enrollment.
    */
-  enrollmentHelper(
+  async enrollmentHelper(
     recipe,
     { manager = lazy.ExperimentAPI._manager, source = "enrollmentHelper" } = {}
   ) {
@@ -298,38 +257,15 @@ export const ExperimentFakes = {
       throw new Error("Enrollment helper expects a recipe");
     }
 
-    let enrollmentPromise = new Promise(resolve =>
-      manager.store.on(`update:${recipe.slug}`, (event, experiment) => {
-        if (experiment.active) {
-          manager.store._syncToChildren({ flush: true });
-          resolve(experiment);
-        }
-      })
-    );
-    let unenrollCompleted = slug =>
-      new Promise(resolve =>
-        manager.store.on(`update:${slug}`, (event, experiment) => {
-          if (!experiment.active) {
-            // Removes recipe from file storage which
-            // (normally the users archive of past experiments)
-            manager.store._deleteForTests(recipe.slug);
-            resolve();
-          }
-        })
-      );
-    let doExperimentCleanup = async () => {
-      const experiment = manager.store.get(recipe.slug);
-      let promise = unenrollCompleted(experiment.slug);
-      manager.unenroll(experiment.slug, "cleanup");
-      await promise;
-    };
-
-    if (!manager.store._isReady) {
-      throw new Error("Manager store not ready, call `manager.onStartup`");
+    const enrollment = await manager.enroll(recipe, source);
+    if (enrollment?.active) {
+      manager.store._syncToChildren({ flush: true });
     }
-    manager.enroll(recipe, source);
 
-    return { enrollmentPromise, doExperimentCleanup };
+    return function doEnrollmentCleanup() {
+      manager.unenroll(enrollment.slug, "cleanup");
+      manager.store._deleteForTests(enrollment.slug);
+    };
   },
   async cleanupAll(slugs, { manager = lazy.ExperimentAPI._manager } = {}) {
     function unenrollCompleted(slug) {
@@ -369,11 +305,12 @@ export const ExperimentFakes = {
   },
   rsLoader() {
     const loader = new lazy._RemoteSettingsExperimentLoader();
-    // Replace RS client with a fake
-    Object.defineProperty(loader, "remoteSettingsClient", {
+    Object.defineProperty(loader.remoteSettingsClients, "experiments", {
       value: { get: () => Promise.resolve([]) },
     });
-    // Replace xman with a fake
+    Object.defineProperty(loader.remoteSettingsClients, "secureExperiments", {
+      value: { get: () => Promise.resolve([]) },
+    });
     loader.manager = this.manager();
 
     return loader;
@@ -394,8 +331,8 @@ export const ExperimentFakes = {
       },
       source: "NimbusTestUtils",
       isEnrollmentPaused: true,
-      experimentType: "NimbusTestUtils",
-      userFacingName: "NimbusTestUtils",
+      experimentType: "NimbusTestUtils experiment",
+      userFacingName: "NimbusTestUtils experiment",
       userFacingDescription: "NimbusTestUtils",
       lastSeen: new Date().toJSON(),
       featureIds: props?.branch?.features?.map(f => f.featureId) || [
@@ -422,8 +359,8 @@ export const ExperimentFakes = {
       source: "NimbusTestUtils",
       isEnrollmentPaused: true,
       experimentType: "rollout",
-      userFacingName: "NimbusTestUtils",
-      userFacingDescription: "NimbusTestUtils",
+      userFacingName: "NimbusTestUtils rollout",
+      userFacingDescription: "NimbusTestUtils rollout",
       lastSeen: new Date().toJSON(),
       featureIds: (props?.branch?.features || props?.features)?.map(
         f => f.featureId
@@ -449,7 +386,7 @@ export const ExperimentFakes = {
       application: "firefox-desktop",
       branches: ExperimentFakes.recipe.branches,
       bucketConfig: ExperimentFakes.recipe.bucketConfig,
-      userFacingName: "Nimbus recipe",
+      userFacingName: "NimbusTestUtils recipe",
       userFacingDescription: "NimbusTestUtils recipe",
       featureIds: props?.branches?.[0].features?.map(f => f.featureId) || [
         "testFeature",

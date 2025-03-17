@@ -146,7 +146,6 @@ static const char sIntPrefs[][45] = {
     "ui.treeLazyScrollDelay",
     "ui.treeScrollDelay",
     "ui.treeScrollLinesMax",
-    "accessibility.tabfocus",  // Weird one...
     "ui.chosenMenuItemsShouldBlink",
     "ui.windowsAccentColorInTitlebar",
     "ui.macBigSurTheme",
@@ -190,6 +189,7 @@ static const char sIntPrefs[][45] = {
     "ui.panelAnimations",
     "ui.hideCursorWhileTyping",
     "ui.gtkThemeFamily",
+    "ui.fullKeyboardAccess",
 };
 
 static_assert(ArrayLength(sIntPrefs) == size_t(LookAndFeel::IntID::End),
@@ -297,6 +297,8 @@ static const char sColorPrefs[][41] = {
     "ui.textSelectAttentionForeground",
     "ui.textHighlightBackground",
     "ui.textHighlightForeground",
+    "ui.targetTextBackground",
+    "ui.targetTextForeground",
     "ui.IMERawInputBackground",
     "ui.IMERawInputForeground",
     "ui.IMERawInputUnderline",
@@ -527,9 +529,6 @@ void nsXPLookAndFeel::Init() {
   //     for each types.  Then, we could reduce the unnecessary loop from
   //     nsXPLookAndFeel::OnPrefChanged().
   Preferences::RegisterPrefixCallback(OnPrefChanged, "ui.");
-  // We really do just want the accessibility.tabfocus pref, not other prefs
-  // that start with that string.
-  Preferences::RegisterCallback(OnPrefChanged, "accessibility.tabfocus");
 
   for (const auto& pref : kMediaQueryPrefs) {
     Preferences::RegisterCallback(
@@ -712,6 +711,8 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(MozNativehyperlinktext, 0x00, 0x66, 0xCC)
       COLOR(MozNativevisitedhyperlinktext, 0x55, 0x1A, 0x8B)
       COLOR(MozAutofillBackground, 0xff, 0xfc, 0xc8)
+      COLOR(TargetTextBackground, 0xff, 0xeb, 0xcd)
+      COLOR(TargetTextForeground, 0x00, 0x00, 0x00)
     default:
       break;
   }
@@ -1237,8 +1238,7 @@ void LookAndFeel::DoHandleGlobalThemeChange() {
   //
   // We can use the *DoNotUseDirectly functions directly here, because we want
   // to notify all possible themes in a given process (but just once).
-  if (XRE_IsParentProcess() ||
-      !StaticPrefs::widget_non_native_theme_enabled()) {
+  if (XRE_IsParentProcess()) {
     if (nsCOMPtr<nsITheme> theme = do_GetNativeThemeDoNotUseDirectly()) {
       theme->ThemeChanged();
     }

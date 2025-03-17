@@ -90,6 +90,40 @@ static const unsigned int NEGATIVE_RECORD_LIFETIME = 60;
 // for threads MaxResolverThreadsAnyPriority() + 1 -> MaxResolverThreads()
 #define ShortIdleTimeoutSeconds 60
 
+using namespace mozilla;
+
+namespace geckoprofiler::markers {
+
+struct HostResolverMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("HostResolver");
+  }
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aHost,
+      const mozilla::ProfilerString8View& aOriginSuffix, uint16_t aType,
+      uint32_t aFlags) {
+    aWriter.StringProperty("host", aHost);
+    aWriter.StringProperty("originSuffix", aOriginSuffix);
+    aWriter.IntProperty("qtype", aType);
+    aWriter.StringProperty("flags", nsPrintfCString("0x%x", aFlags));
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema(MS::Location::MarkerChart, MS::Location::MarkerTable);
+    schema.SetTableLabel("{marker.name} - {marker.data.host}");
+    schema.AddKeyFormatSearchable("host", MS::Format::SanitizedString,
+                                  MS::Searchable::Searchable);
+    schema.AddKeyFormatSearchable("originSuffix", MS::Format::SanitizedString,
+                                  MS::Searchable::Searchable);
+    schema.AddKeyFormat("qtype", MS::Format::Integer);
+    schema.AddKeyFormat("flags", MS::Format::String);
+    return schema;
+  }
+};
+
+}  // namespace geckoprofiler::markers
+
 //----------------------------------------------------------------------------
 
 namespace mozilla::net {
@@ -264,10 +298,19 @@ nsresult nsHostResolver::Init() MOZ_NO_THREAD_SAFETY_ANALYSIS {
 #endif
   LOG(("Native HTTPS records supported=%d", bool(sNativeHTTPSSupported)));
 
+  // The ThreadFunc has its own loop and will live very long and block one
+  // thread from the thread pool's point of view, such that the timeouts are
+  // less important here. The pool is mostly used to provide an easy way to
+  // create and shutdown those threads.
+  // TODO: It seems, the ThreadFunc resembles some quite similar timeout and
+  // wait for events logic as the pool offers, maybe we could simplify this
+  // a bit, see bug 1478732 for a previous attempt.
   nsCOMPtr<nsIThreadPool> threadPool = new nsThreadPool();
   MOZ_ALWAYS_SUCCEEDS(threadPool->SetThreadLimit(MaxResolverThreads()));
-  MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadLimit(MaxResolverThreads()));
-  MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadTimeout(poolTimeoutMs));
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadLimit(
+      std::max(MaxResolverThreads() / 4, (uint32_t)1)));
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadMaximumTimeout(poolTimeoutMs));
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetIdleThreadGraceTimeout(100));
   MOZ_ALWAYS_SUCCEEDS(
       threadPool->SetThreadStackSize(nsIThreadManager::kThreadPoolStackSize));
   MOZ_ALWAYS_SUCCEEDS(threadPool->SetName("DNS Resolver"_ns));
@@ -455,7 +498,8 @@ already_AddRefed<nsHostRecord> nsHostResolver::InitLoopbackRecord(
   return rec.forget();
 }
 
-static bool IsNativeHTTPSEnabled() {
+// static
+bool nsHostResolver::IsNativeHTTPSEnabled() {
   if (!StaticPrefs::network_dns_native_https_query()) {
     return false;
   }
@@ -476,6 +520,9 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost,
   LOG(("Resolving host [%s]<%s>%s%s type %d. [this=%p]\n", host.get(),
        originSuffix.get(), flags & RES_BYPASS_CACHE ? " - bypassing cache" : "",
        flags & RES_REFRESH_CACHE ? " - refresh cache" : "", type, this));
+
+  PROFILER_MARKER("nsHostResolver::ResolveHost", NETWORK, {},
+                  HostResolverMarker, host, originSuffix, type, flags);
 
   // ensure that we are working with a valid hostname before proceeding.  see
   // bug 304904 for details.
@@ -527,6 +574,7 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost,
     bool excludedFromTRR = false;
     if (TRRService::Get() && TRRService::Get()->IsExcludedFromTRR(host)) {
       flags |= nsIDNSService::RESOLVE_DISABLE_TRR;
+      flags |= nsIDNSService::RESOLVE_DISABLE_NATIVE_HTTPS_QUERY;
       excludedFromTRR = true;
 
       if (!aTrrServer.IsEmpty()) {
@@ -910,7 +958,7 @@ bool nsHostResolver::TRRServiceEnabledForRecord(nsHostRecord* aRec) {
   if (NS_IsOffline()) {
     // If we are in the NOT_CONFIRMED state _because_ we lack connectivity,
     // then we should report that the browser is offline instead.
-    aRec->RecordReason(TRRSkippedReason::TRR_IS_OFFLINE);
+    aRec->RecordReason(TRRSkippedReason::TRR_BROWSER_IS_OFFLINE);
     return false;
   }
 
@@ -1182,8 +1230,14 @@ nsresult nsHostResolver::NameLookup(nsHostRecord* rec,
       (rec->mEffectiveTRRMode == nsIRequest::TRR_FIRST_MODE &&
        (rec->flags & nsIDNSService::RESOLVE_DISABLE_TRR || serviceNotReady ||
         NS_FAILED(rv)))) {
-    if (!IsNativeHTTPSEnabled() && !rec->IsAddrRecord()) {
-      return rv;
+    if (!rec->IsAddrRecord()) {
+      if (!IsNativeHTTPSEnabled()) {
+        return NS_ERROR_UNKNOWN_HOST;
+      }
+
+      if (rec->flags & nsIDNSService::RESOLVE_DISABLE_NATIVE_HTTPS_QUERY) {
+        return NS_ERROR_UNKNOWN_HOST;
+      }
     }
 
 #ifdef DEBUG
@@ -1639,6 +1693,10 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupLocked(
     }
   }
 
+  PROFILER_MARKER("nsHostResolver::CompleteLookupLocked", NETWORK, {},
+                  HostResolverMarker, addrRec->host, addrRec->originSuffix,
+                  addrRec->type, addrRec->flags);
+
   // get the list of pending callbacks for this lookup, and notify
   // them that the lookup is complete.
   mozilla::LinkedList<RefPtr<nsResolveHostCallback>> cbs =
@@ -1745,6 +1803,10 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupByTypeLocked(
     MOZ_ASSERT(aReason != TRRSkippedReason::TRR_UNSET);
     typeRec->RecordReason(aReason);
   }
+
+  PROFILER_MARKER("nsHostResolver::CompleteLookupByTypeLocked", NETWORK, {},
+                  HostResolverMarker, typeRec->host, typeRec->originSuffix,
+                  typeRec->type, typeRec->flags);
 
   mozilla::LinkedList<RefPtr<nsResolveHostCallback>> cbs =
       std::move(typeRec->mCallbacks);

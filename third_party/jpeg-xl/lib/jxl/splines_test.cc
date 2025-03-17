@@ -6,6 +6,7 @@
 #include "lib/jxl/splines.h"
 
 #include <jxl/cms.h>
+#include <jxl/memory_manager.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -18,15 +19,18 @@
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -46,9 +50,9 @@ namespace {
 using test::ReadTestData;
 
 constexpr int kQuantizationAdjustment = 0;
-const ColorCorrelationMap* const cmap = new ColorCorrelationMap;
-const float kYToX = cmap->YtoXRatio(0);
-const float kYToB = cmap->YtoBRatio(0);
+const ColorCorrelation color_correlation{};
+const float kYToX = color_correlation.YtoXRatio(0);
+const float kYToB = color_correlation.YtoBRatio(0);
 
 constexpr float kTolerance = 0.003125;
 
@@ -71,6 +75,7 @@ std::vector<Spline> DequantizeSplines(const Splines& splines) {
 }  // namespace
 
 TEST(SplinesTest, Serialization) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   Spline spline1{
       /*control_points=*/{
           {109, 54}, {218, 159}, {80, 3}, {110, 274}, {94, 185}, {17, 277}},
@@ -164,7 +169,7 @@ TEST(SplinesTest, Serialization) {
     }
   }
 
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   EncodeSplines(splines, &writer, kLayerSplines, HistogramParams(), nullptr);
   writer.ZeroPadToByte();
   const size_t bits_written = writer.BitsWritten();
@@ -173,7 +178,8 @@ TEST(SplinesTest, Serialization) {
 
   BitReader reader(writer.GetSpan());
   Splines decoded_splines;
-  ASSERT_TRUE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
+  ASSERT_TRUE(
+      decoded_splines.Decode(memory_manager, &reader, /*num_pixels=*/1000));
   ASSERT_TRUE(reader.JumpToByteBoundary());
   EXPECT_EQ(reader.TotalBitsConsumed(), bits_written);
   ASSERT_TRUE(reader.Close());
@@ -209,6 +215,7 @@ TEST(SplinesTest, DISABLED_TooManySplinesTest) {
 #else
 TEST(SplinesTest, TooManySplinesTest) {
 #endif
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   // This is more than the limit for 1000 pixels.
   const size_t kNumSplines = 300;
 
@@ -227,14 +234,15 @@ TEST(SplinesTest, TooManySplinesTest) {
 
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
-  BitWriter writer;
+  BitWriter writer{memory_manager};
   EncodeSplines(splines, &writer, kLayerSplines,
                 HistogramParams(SpeedTier::kFalcon, 1), nullptr);
   writer.ZeroPadToByte();
   // Re-read splines.
   BitReader reader(writer.GetSpan());
   Splines decoded_splines;
-  EXPECT_FALSE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
+  EXPECT_FALSE(
+      decoded_splines.Decode(memory_manager, &reader, /*num_pixels=*/1000));
   EXPECT_TRUE(reader.Close());
 }
 
@@ -243,6 +251,7 @@ TEST(SplinesTest, DISABLED_DuplicatePoints) {
 #else
 TEST(SplinesTest, DuplicatePoints) {
 #endif
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   std::vector<Spline::Point> control_points{
       {9, 54}, {118, 159}, {97, 3},  // Repeated.
       {97, 3}, {10, 40},   {150, 25}, {120, 300}};
@@ -262,14 +271,15 @@ TEST(SplinesTest, DuplicatePoints) {
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
 
-  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(320, 320));
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 320, 320));
   ZeroFillImage(&image);
-  EXPECT_FALSE(
-      splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
+  EXPECT_FALSE(splines.InitializeDrawCache(image.xsize(), image.ysize(),
+                                           color_correlation));
 }
 
 TEST(SplinesTest, Drawing) {
-  CodecInOut io_expected;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  CodecInOut io_expected{memory_manager};
   const std::vector<uint8_t> orig = ReadTestData("jxl/splines.pfm");
   ASSERT_TRUE(SetFromBytes(Bytes(orig), &io_expected,
                            /*pool=*/nullptr));
@@ -298,13 +308,14 @@ TEST(SplinesTest, Drawing) {
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
 
-  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(320, 320));
+  JXL_ASSIGN_OR_DIE(Image3F image, Image3F::Create(memory_manager, 320, 320));
   ZeroFillImage(&image);
-  ASSERT_TRUE(splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
+  ASSERT_TRUE(splines.InitializeDrawCache(image.xsize(), image.ysize(),
+                                          color_correlation));
   splines.AddTo(&image, Rect(image), Rect(image));
 
-  CodecInOut io_actual;
-  JXL_ASSIGN_OR_DIE(Image3F image2, Image3F::Create(320, 320));
+  CodecInOut io_actual{memory_manager};
+  JXL_ASSIGN_OR_DIE(Image3F image2, Image3F::Create(memory_manager, 320, 320));
   CopyImageTo(image, &image2);
   io_actual.SetFromImage(std::move(image2), ColorEncoding::SRGB());
   ASSERT_TRUE(io_actual.frames[0].TransformTo(io_expected.Main().c_current(),
@@ -315,12 +326,13 @@ TEST(SplinesTest, Drawing) {
 }
 
 TEST(SplinesTest, ClearedEveryFrame) {
-  CodecInOut io_expected;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  CodecInOut io_expected{memory_manager};
   const std::vector<uint8_t> bytes_expected =
       ReadTestData("jxl/spline_on_first_frame.png");
   ASSERT_TRUE(SetFromBytes(Bytes(bytes_expected), &io_expected,
                            /*pool=*/nullptr));
-  CodecInOut io_actual;
+  CodecInOut io_actual{memory_manager};
   const std::vector<uint8_t> bytes_actual =
       ReadTestData("jxl/spline_on_first_frame.jxl");
   ASSERT_TRUE(test::DecodeFile({}, Bytes(bytes_actual), &io_actual));

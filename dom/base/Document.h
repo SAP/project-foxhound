@@ -1503,7 +1503,8 @@ class Document : public nsINode,
 
   void DoNotifyPossibleTitleChange();
 
-  void InitFeaturePolicy();
+  void InitFeaturePolicy(const Variant<Nothing, FeaturePolicyInfo, Element*>&
+                             aContainerFeaturePolicy);
   nsresult InitFeaturePolicy(nsIChannel* aChannel);
 
   void EnsureNotEnteringAndExitFullscreen();
@@ -3417,8 +3418,6 @@ class Document : public nsINode,
   mozilla::dom::HTMLAllCollection* All();
 
   static bool DocumentSupportsL10n(JSContext* aCx, JSObject* aObject);
-  static bool AreWebAnimationsTimelinesEnabled(JSContext* aCx,
-                                               JSObject* aObject);
   // Checks that the caller is either chrome or some addon.
   static bool IsCallerChromeOrAddon(JSContext* aCx, JSObject* aObject);
 
@@ -3709,8 +3708,9 @@ class Document : public nsINode,
     return !mIntersectionObservers.IsEmpty();
   }
 
-  void UpdateIntersectionObservations(TimeStamp aNowTime);
-  void ScheduleIntersectionObserverNotification();
+  // Update intersection observers in this document and all
+  // same-process subdocuments.
+  void UpdateIntersections(TimeStamp aNowTime);
   MOZ_CAN_RUN_SCRIPT void NotifyIntersectionObservers();
 
   DOMIntersectionObserver* GetLazyLoadObserver() { return mLazyLoadObserver; }

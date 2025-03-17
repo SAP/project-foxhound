@@ -111,16 +111,19 @@ objects:
         default: {}
       title:
         type: Option<Text>
-        description: "The title text displayed to the user"
+        description: The title text displayed to the user
         default: null
       text:
         type: Text
-        description: "The message text displayed to the user"
+        description: The message text displayed to the user
         # This should never be defaulted.
         default: ""
+      microsurvey-config:
+        type: Option<MicrosurveyConfig>
+        description: Optional configuration data for a microsurvey.
       is-control:
         type: Boolean
-        description: "Indicates if this message is the control message, if true shouldn't be displayed"
+        description: Indicates if this message is the control message, if true shouldn't be displayed
         default: false
       experiment:
         type: Option<ExperimentSlug>
@@ -183,6 +186,27 @@ objects:
           How often, in minutes, the notification message worker will wake up and check for new
           messages.
         default: 240 # 4 hours
+  MicrosurveyConfig:
+    description: Attributes relating to microsurvey content.
+    fields:
+      icon:
+        type: Option<Image>
+        description: The icon shown in the survey.
+      options:
+        description: The list of options to present to the user e.g. "Satisfied, Dissatisfied...".
+        type: List<MicrosurveyQuestion>
+        default: [] # Should not be defaulted
+  MicrosurveyQuestion:
+    description: Attributes relating to microsurvey content.
+    fields:
+      scale-value:
+        type: Int
+        description: Scale value for this question.
+        default: 0
+      text:
+        type: Text
+        description: The text for the question.
+        default: "" # This should never be defaulted.
 
 enums:
   ControlMessageBehavior:

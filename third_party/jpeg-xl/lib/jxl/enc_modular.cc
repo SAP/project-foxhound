@@ -5,11 +5,11 @@
 
 #include "lib/jxl/enc_modular.h"
 
-#include <stddef.h>
-#include <stdint.h>
+#include <jxl/memory_manager.h>
 
 #include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -17,7 +17,9 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -55,7 +57,7 @@ const float squeeze_luma_factor =
     1.1;  // for easy tweaking of the balance between luma (or anything
           // non-chroma) and chroma (decrease this number for higher quality
           // luma)
-const float squeeze_quality_factor_xyb = 2.4f;
+const float squeeze_quality_factor_xyb = 4.8f;
 const float squeeze_xyb_qtable[3][16] = {
     {163.84, 81.92, 40.96, 20.48, 10.24, 5.12, 2.56, 1.28, 0.64, 0.32, 0.16,
      0.08, 0.04, 0.02, 0.01, 0.005},  // Y
@@ -426,10 +428,13 @@ void try_palettes(Image& gi, int& max_bitdepth, int& maxval,
 
 }  // namespace
 
-ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
+ModularFrameEncoder::ModularFrameEncoder(JxlMemoryManager* memory_manager,
+                                         const FrameHeader& frame_header,
                                          const CompressParams& cparams_orig,
                                          bool streaming_mode)
-    : frame_dim_(frame_header.ToFrameDimensions()), cparams_(cparams_orig) {
+    : memory_manager_(memory_manager),
+      frame_dim_(frame_header.ToFrameDimensions()),
+      cparams_(cparams_orig) {
   size_t num_streams =
       ModularStreamId::Num(frame_dim_, frame_header.passes.num_passes);
   if (cparams_.ModularPartIsLossless()) {
@@ -462,7 +467,9 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
         ModularOptions::TreeKind::kTrivialTreeNoPredictor;
     cparams_.options.nb_repeats = 0;
   }
-  stream_images_.resize(num_streams);
+  for (size_t i = 0; i < num_streams; ++i) {
+    stream_images_.emplace_back(memory_manager);
+  }
 
   // use a sensible default if nothing explicit is specified:
   // Squeeze for lossy, no squeeze for lossless
@@ -625,6 +632,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     const Rect& frame_area_rect, PassesEncoderState* JXL_RESTRICT enc_state,
     const JxlCmsInterface& cms, ThreadPool* pool, AuxOut* aux_out,
     bool do_color) {
+  JxlMemoryManager* memory_manager = enc_state->memory_manager();
   JXL_DEBUG_V(6, "Computing modular encoding data for frame %s",
               frame_header.DebugString().c_str());
 
@@ -683,12 +691,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
       do_color ? metadata.bit_depth.bits_per_sample + (fp ? 0 : 1) : 0;
   Image& gi = stream_images_[0];
   JXL_ASSIGN_OR_RETURN(
-      gi, Image::Create(xsize, ysize, metadata.bit_depth.bits_per_sample,
-                        nb_chans));
+      gi, Image::Create(memory_manager, xsize, ysize,
+                        metadata.bit_depth.bits_per_sample, nb_chans));
   int c = 0;
   if (cparams_.color_transform == ColorTransform::kXYB &&
       cparams_.modular_mode == true) {
-    float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
+    float enc_factors[3] = {65536.0f, 4096.0f, 4096.0f};
     if (cparams_.butteraugli_distance > 0 && !cparams_.responsive) {
       // quantize XYB here and then treat it as a lossless image
       enc_factors[0] *= 1.f / (1.f + 23.f * cparams_.butteraugli_distance);
@@ -697,11 +705,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
       cparams_.butteraugli_distance = 0;
     }
     if (cparams_.manual_xyb_factors.size() == 3) {
-      DequantMatricesSetCustomDC(&enc_state->shared.matrices,
+      DequantMatricesSetCustomDC(memory_manager, &enc_state->shared.matrices,
                                  cparams_.manual_xyb_factors.data());
       // TODO(jon): update max_bitdepth in this case
     } else {
-      DequantMatricesSetCustomDC(&enc_state->shared.matrices, enc_factors);
+      DequantMatricesSetCustomDC(memory_manager, &enc_state->shared.matrices,
+                                 enc_factors);
       max_bitdepth = 12;
     }
   }
@@ -729,8 +738,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
             // TODO(eustas): check if std::roundf is appropriate
             row_out[x] = row_in[x] * factor + 0.5f;
             row_out[x] -= row_Y[x];
-            // zero the lsb of B
-            row_out[x] = row_out[x] / 2 * 2;
           }
         }
       } else {
@@ -998,7 +1005,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       pool, 0, stream_params_.size(), ThreadPool::NoInit,
       [&](const uint32_t i, size_t /* thread */) {
         size_t stream = stream_params_[i].id.ID(frame_dim_);
-        stream_options_[stream] = stream_options_[0];
+        if (stream != 0) {
+          stream_options_[stream] = stream_options_[0];
+        }
         JXL_CHECK(PrepareStreamParams(
             stream_params_[i].rect, cparams_, stream_params_[i].minShift,
             stream_params_[i].maxShift, stream_params_[i].id, do_color,
@@ -1237,6 +1246,7 @@ Status ModularFrameEncoder::ComputeTokens(ThreadPool* pool) {
 Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
                                              BitWriter* writer,
                                              AuxOut* aux_out) {
+  JxlMemoryManager* memory_manager = writer->memory_manager();
   BitWriter::Allotment allotment(writer, 1);
   // If we are using brotli, or not using modular mode.
   if (tree_tokens_.empty() || tree_tokens_[0].empty()) {
@@ -1253,9 +1263,9 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   {
     EntropyEncodingData tree_code;
     std::vector<uint8_t> tree_context_map;
-    BuildAndEncodeHistograms(params, kNumTreeContexts, tree_tokens_, &tree_code,
-                             &tree_context_map, writer, kLayerModularTree,
-                             aux_out);
+    BuildAndEncodeHistograms(memory_manager, params, kNumTreeContexts,
+                             tree_tokens_, &tree_code, &tree_context_map,
+                             writer, kLayerModularTree, aux_out);
     WriteTokens(tree_tokens_[0], tree_code, tree_context_map, 0, writer,
                 kLayerModularTree, aux_out);
   }
@@ -1263,8 +1273,9 @@ Status ModularFrameEncoder::EncodeGlobalInfo(bool streaming_mode,
   params.add_missing_symbols = streaming_mode;
   params.image_widths = image_widths_;
   // Write histograms.
-  BuildAndEncodeHistograms(params, (tree_.size() + 1) / 2, tokens_, &code_,
-                           &context_map_, writer, kLayerModularGlobal, aux_out);
+  BuildAndEncodeHistograms(memory_manager, params, (tree_.size() + 1) / 2,
+                           tokens_, &code_, &context_map_, writer,
+                           kLayerModularGlobal, aux_out);
   return true;
 }
 
@@ -1291,7 +1302,7 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
 
 void ModularFrameEncoder::ClearStreamData(const ModularStreamId& stream) {
   size_t stream_id = stream.ID(frame_dim_);
-  Image empty_image;
+  Image empty_image(stream_images_[stream_id].memory_manager());
   std::swap(stream_images_[stream_id], empty_image);
 }
 
@@ -1320,12 +1331,13 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                                                 bool do_color, bool groupwise) {
   size_t stream_id = stream.ID(frame_dim_);
   Image& full_image = stream_images_[0];
+  JxlMemoryManager* memory_manager = full_image.memory_manager();
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   Image& gi = stream_images_[stream_id];
   if (stream_id > 0) {
-    JXL_ASSIGN_OR_RETURN(gi,
-                         Image::Create(xsize, ysize, full_image.bitdepth, 0));
+    JXL_ASSIGN_OR_RETURN(gi, Image::Create(memory_manager, xsize, ysize,
+                                           full_image.bitdepth, 0));
     // start at the first bigger-than-frame_dim.group_dim non-metachannel
     size_t c = full_image.nb_meta_channels;
     if (!groupwise) {
@@ -1343,7 +1355,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
              rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
       if (r.xsize() == 0 || r.ysize() == 0) continue;
       gi_channel_[stream_id].push_back(c);
-      JXL_ASSIGN_OR_RETURN(Channel gc, Channel::Create(r.xsize(), r.ysize()));
+      JXL_ASSIGN_OR_RETURN(
+          Channel gc, Channel::Create(memory_manager, r.xsize(), r.ysize()));
       gc.hshift = fc.hshift;
       gc.vshift = fc.vshift;
       for (size_t y = 0; y < r.ysize(); ++y) {
@@ -1489,6 +1502,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
                                         size_t group_index, bool nl_dc,
                                         PassesEncoderState* enc_state,
                                         bool jpeg_transcode) {
+  JxlMemoryManager* memory_manager = dc.memory_manager();
   extra_dc_precision[group_index] = nl_dc ? 1 : 0;
   float mul = 1 << extra_dc_precision[group_index];
 
@@ -1514,15 +1528,17 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
   stream_options_[stream_id].histogram_params =
       stream_options_[0].histogram_params;
 
-  JXL_ASSIGN_OR_RETURN(stream_images_[stream_id],
-                       Image::Create(r.xsize(), r.ysize(), 8, 3));
+  JXL_ASSIGN_OR_RETURN(
+      stream_images_[stream_id],
+      Image::Create(memory_manager, r.xsize(), r.ysize(), 8, 3));
+  const ColorCorrelation& color_correlation = enc_state->shared.cmap.base();
   if (nl_dc && stream_options_[stream_id].tree_kind ==
                    ModularOptions::TreeKind::kGradientFixedDC) {
     JXL_ASSERT(frame_header.chroma_subsampling.Is444());
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
-      float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
+      float cfl_factor = color_correlation.DCFactors()[c];
       for (size_t y = 0; y < r.ysize(); y++) {
         int32_t* quant_row =
             stream_images_[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
@@ -1551,7 +1567,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
-      float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
+      float cfl_factor = color_correlation.DCFactors()[c];
       weighted::Header header;
       weighted::State wp_state(header, r.xsize(), r.ysize());
       for (size_t y = 0; y < r.ysize(); y++) {
@@ -1583,7 +1599,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
-      float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
+      float cfl_factor = color_correlation.DCFactors()[c];
       for (size_t y = 0; y < r.ysize(); y++) {
         int32_t* quant_row =
             stream_images_[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
@@ -1628,7 +1644,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
 
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,
             stream_images_[stream_id], enc_state->shared.quantizer.MulDC(),
-            1.0 / mul, enc_state->shared.cmap.DCFactors(),
+            1.0 / mul, color_correlation.DCFactors(),
             frame_header.chroma_subsampling, enc_state->shared.block_ctx_map);
   return true;
 }
@@ -1636,6 +1652,7 @@ Status ModularFrameEncoder::AddVarDCTDC(const FrameHeader& frame_header,
 Status ModularFrameEncoder::AddACMetadata(const Rect& r, size_t group_index,
                                           bool jpeg_transcode,
                                           PassesEncoderState* enc_state) {
+  JxlMemoryManager* memory_manager = enc_state->memory_manager();
   size_t stream_id = ModularStreamId::ACMetadata(group_index).ID(frame_dim_);
   stream_options_[stream_id].max_chan_size = 0xFFFFFF;
   if (stream_options_[stream_id].predictor != Predictor::Weighted) {
@@ -1660,15 +1677,19 @@ Status ModularFrameEncoder::AddACMetadata(const Rect& r, size_t group_index,
       stream_options_[0].histogram_params;
   // YToX, YToB, ACS + QF, EPF
   Image& image = stream_images_[stream_id];
-  JXL_ASSIGN_OR_RETURN(image, Image::Create(r.xsize(), r.ysize(), 8, 4));
+  JXL_ASSIGN_OR_RETURN(
+      image, Image::Create(memory_manager, r.xsize(), r.ysize(), 8, 4));
   static_assert(kColorTileDimInBlocks == 8, "Color tile size changed");
   Rect cr(r.x0() >> 3, r.y0() >> 3, (r.xsize() + 7) >> 3, (r.ysize() + 7) >> 3);
-  JXL_ASSIGN_OR_RETURN(image.channel[0],
-                       Channel::Create(cr.xsize(), cr.ysize(), 3, 3));
-  JXL_ASSIGN_OR_RETURN(image.channel[1],
-                       Channel::Create(cr.xsize(), cr.ysize(), 3, 3));
-  JXL_ASSIGN_OR_RETURN(image.channel[2],
-                       Channel::Create(r.xsize() * r.ysize(), 2, 0, 0));
+  JXL_ASSIGN_OR_RETURN(
+      image.channel[0],
+      Channel::Create(memory_manager, cr.xsize(), cr.ysize(), 3, 3));
+  JXL_ASSIGN_OR_RETURN(
+      image.channel[1],
+      Channel::Create(memory_manager, cr.xsize(), cr.ysize(), 3, 3));
+  JXL_ASSIGN_OR_RETURN(
+      image.channel[2],
+      Channel::Create(memory_manager, r.xsize() * r.ysize(), 2, 0, 0));
   ConvertPlaneAndClamp(cr, enc_state->shared.cmap.ytox_map,
                        Rect(image.channel[0].plane), &image.channel[0].plane);
   ConvertPlaneAndClamp(cr, enc_state->shared.cmap.ytob_map,
@@ -1695,8 +1716,8 @@ Status ModularFrameEncoder::AddACMetadata(const Rect& r, size_t group_index,
 }
 
 Status ModularFrameEncoder::EncodeQuantTable(
-    size_t size_x, size_t size_y, BitWriter* writer,
-    const QuantEncoding& encoding, size_t idx,
+    JxlMemoryManager* memory_manager, size_t size_x, size_t size_y,
+    BitWriter* writer, const QuantEncoding& encoding, size_t idx,
     ModularFrameEncoder* modular_frame_encoder) {
   JXL_ASSERT(encoding.qraw.qtable != nullptr);
   JXL_ASSERT(size_x * size_y * 3 == encoding.qraw.qtable->size());
@@ -1706,7 +1727,8 @@ Status ModularFrameEncoder::EncodeQuantTable(
         writer, nullptr, 0, ModularStreamId::QuantTable(idx)));
     return true;
   }
-  JXL_ASSIGN_OR_RETURN(Image image, Image::Create(size_x, size_y, 8, 3));
+  JXL_ASSIGN_OR_RETURN(Image image,
+                       Image::Create(memory_manager, size_x, size_y, 8, 3));
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
       int32_t* JXL_RESTRICT row = image.channel[c].Row(y);
@@ -1727,7 +1749,9 @@ Status ModularFrameEncoder::AddQuantTable(size_t size_x, size_t size_y,
   JXL_ASSERT(encoding.qraw.qtable != nullptr);
   JXL_ASSERT(size_x * size_y * 3 == encoding.qraw.qtable->size());
   Image& image = stream_images_[stream_id];
-  JXL_ASSIGN_OR_RETURN(image, Image::Create(size_x, size_y, 8, 3));
+  JxlMemoryManager* memory_manager = image.memory_manager();
+  JXL_ASSIGN_OR_RETURN(image,
+                       Image::Create(memory_manager, size_x, size_y, 8, 3));
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
       int32_t* JXL_RESTRICT row = image.channel[c].Row(y);

@@ -31,6 +31,7 @@
  *          loadTestSubscript awaitBrowserLoaded
  *          getScreenAt roundCssPixcel getCssAvailRect isRectContained
  *          getToolboxBackgroundColor
+ *          promiseBrowserContentUnloaded
  */
 
 // There are shutdown issues for which multiple rejections are left uncaught.
@@ -165,6 +166,44 @@ function getListStyleImage(button) {
 
 function promiseAnimationFrame(win = window) {
   return AppUiTestInternals.promiseAnimationFrame(win);
+}
+
+async function promiseBrowserContentUnloaded(browser) {
+  // Wait until the content has unloaded before resuming the test, to avoid
+  // calling extension.getViews too early (and having intermittent failures).
+  const MSG_WINDOW_DESTROYED = "Test:BrowserContentDestroyed";
+  let unloadPromise = new Promise(resolve => {
+    Services.ppmm.addMessageListener(MSG_WINDOW_DESTROYED, function listener() {
+      Services.ppmm.removeMessageListener(MSG_WINDOW_DESTROYED, listener);
+      resolve();
+    });
+  });
+
+  await ContentTask.spawn(
+    browser,
+    MSG_WINDOW_DESTROYED,
+    MSG_WINDOW_DESTROYED => {
+      let innerWindowId = this.content.windowGlobalChild.innerWindowId;
+      let observer = subject => {
+        if (
+          innerWindowId === subject.QueryInterface(Ci.nsISupportsPRUint64).data
+        ) {
+          Services.obs.removeObserver(observer, "inner-window-destroyed");
+
+          // Use process message manager to ensure that the message is delivered
+          // even after the <browser>'s message manager is disconnected.
+          Services.cpmm.sendAsyncMessage(MSG_WINDOW_DESTROYED);
+        }
+      };
+      // Observe inner-window-destroyed, like ExtensionPageChild, to ensure that
+      // the ExtensionPageContextChild instance has been unloaded when we resolve
+      // the unloadPromise.
+      Services.obs.addObserver(observer, "inner-window-destroyed");
+    }
+  );
+
+  // Return an object so that callers can use "await".
+  return { unloadPromise };
 }
 
 function promisePopupHidden(popup) {
@@ -308,12 +347,9 @@ function alterContent(browser, task, arg = null) {
 }
 
 async function focusButtonAndPressKey(key, elem, modifiers) {
-  let focused = BrowserTestUtils.waitForEvent(elem, "focus", true);
-
   elem.setAttribute("tabindex", "-1");
   elem.focus();
   elem.removeAttribute("tabindex");
-  await focused;
 
   EventUtils.synthesizeKey(key, modifiers);
   elem.blur();
@@ -437,10 +473,11 @@ async function openContextMenuInPopup(
 }
 
 async function openContextMenuInSidebar(selector = "body") {
-  let contentAreaContextMenu = SidebarUI.browser.contentDocument.getElementById(
-    "contentAreaContextMenu"
-  );
-  let browser = SidebarUI.browser.contentDocument.getElementById(
+  let contentAreaContextMenu =
+    SidebarController.browser.contentDocument.getElementById(
+      "contentAreaContextMenu"
+    );
+  let browser = SidebarController.browser.contentDocument.getElementById(
     "webext-panels-browser"
   );
   let popupShownPromise = BrowserTestUtils.waitForEvent(
@@ -452,7 +489,9 @@ async function openContextMenuInSidebar(selector = "body") {
   // fail intermittently if synthesizeMouseAtCenter is being called
   // while the sidebar is still opening and the browser window layout
   // being recomputed.
-  await SidebarUI.browser.contentWindow.promiseDocumentFlushed(() => {});
+  await SidebarController.browser.contentWindow.promiseDocumentFlushed(
+    () => {}
+  );
 
   info("Opening context menu in sidebarAction panel");
   await BrowserTestUtils.synthesizeMouseAtCenter(

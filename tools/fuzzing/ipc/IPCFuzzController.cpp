@@ -23,6 +23,7 @@
 #include "mozilla/dom/PContent.h"
 
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <algorithm>
 
@@ -52,6 +53,8 @@ const uint32_t ipcDefaultTriggerMsg = dom::PContent::Msg_SignalFuzzingReady__ID;
 
 IPCFuzzController::IPCFuzzController()
     : useLastPortName(false),
+      useLastPortNameAlways(false),
+      protoFilterTargetExcludeToplevel(false),
       useLastActor(0),
       mMutex("IPCFuzzController"),
       mIPCTriggerMsg(ipcDefaultTriggerMsg) {
@@ -136,11 +139,21 @@ void IPCFuzzController::InitializeIPCTypes() {
       validMsgTypes[(ProtocolId)start] = msgCount;
     }
   }
+
+  // Resolve potentially disallowed messages now that we have initialized IPC
+  // types.
+  InitDisallowedIPCTypes();
 }
 
 bool IPCFuzzController::GetRandomIPCMessageType(ProtocolId pId,
                                                 uint16_t typeOffset,
                                                 uint32_t* type) {
+  if (actorAllowedMessages.size() > 0) {
+    // We are fixed to a single actor with a particular message set allowed.
+    *type = actorAllowedMessages[typeOffset % actorAllowedMessages.size()];
+    return true;
+  }
+
   auto pIdEntry = validMsgTypes.find(pId);
   if (pIdEntry == validMsgTypes.end()) {
     return false;
@@ -153,7 +166,126 @@ bool IPCFuzzController::GetRandomIPCMessageType(ProtocolId pId,
     *type = *type - 1;
   }
 
+  // Check if we are allowed to send this message type.
+  if (actorDisallowedMessages.find(*type) != actorDisallowedMessages.end()) {
+    return false;
+  }
+
   return true;
+}
+
+void IPCFuzzController::InitDisallowedIPCTypes() {
+  const char* targetMsgName = getenv("MOZ_FUZZ_IPC_MSGFILTER_DISALLOW");
+  if (!targetMsgName) {
+    // Nothing to do.
+    return;
+  }
+
+  std::vector<std::string> targetMsgNames;
+  std::istringstream targetMsgNameStream(targetMsgName);
+  for (std::string msg; getline(targetMsgNameStream, msg, ';');) {
+    targetMsgNames.push_back(msg);
+  }
+
+  for (auto pIdEntry : validMsgTypes) {
+    for (uint16_t typeOffset = 0; typeOffset < pIdEntry.second; ++typeOffset) {
+      uint32_t type = ((uint32_t)pIdEntry.first << 16) + 1 + typeOffset;
+      const char* msgName = IPC::StringFromIPCMessageType(type);
+      if (strstr(msgName, "::Reply_")) {
+        continue;
+      }
+
+      for (std::string msg : targetMsgNames) {
+        if (strstr(msgName, msg.c_str())) {
+          actorDisallowedMessages.insert(type);
+          break;
+        }
+      }
+    }
+  }
+}
+
+void IPCFuzzController::InitAllowedIPCTypes() {
+  const char* targetMsgName = getenv("MOZ_FUZZ_IPC_MSGFILTER_ALLOW");
+  if (!targetMsgName) {
+    // Nothing to do.
+    return;
+  }
+
+  std::vector<std::string> targetMsgNames;
+  std::istringstream targetMsgNameStream(targetMsgName);
+  for (std::string msg; getline(targetMsgNameStream, msg, ';');) {
+    targetMsgNames.push_back(msg);
+  }
+
+  if (!maybeLastActorId) {
+    // We only want to call this if we are actually pinning to an actor.
+    // This also means that calling this is only valid with a PROTOID_FILTER
+    // set.
+    MOZ_FUZZING_NYX_ABORT("InitAllowedIPCTypes called without actor pinned?!");
+  }
+
+  auto result = actorIds.find(lastActorPortName);
+  if (result == actorIds.end()) {
+    MOZ_FUZZING_NYX_ABORT("ERROR: Couldn't find port in actors map?!\n");
+  }
+  auto actors = result->second;
+
+  bool found = false;
+  size_t actorIndex;
+  for (actorIndex = 0; actorIndex < actors.size(); ++actorIndex) {
+    if (actors[actorIndex].first == maybeLastActorId ||
+        (maybeLastActorId == MSG_ROUTING_CONTROL &&
+         !actors[actorIndex].first)) {
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    MOZ_FUZZING_NYX_ABORT(
+        "ERROR: Pinned to actor that's not in actors map!?\n");
+  }
+
+  ActorIdPair ids = actors[actorIndex];
+
+  ProtocolId pId = ids.second;
+
+  auto pIdEntry = validMsgTypes.find(pId);
+  if (pIdEntry == validMsgTypes.end()) {
+    MOZ_FUZZING_NYX_ABORT("ERROR: Pinned actor has no valid message types!?\n");
+  }
+
+  for (uint16_t typeOffset = 0; typeOffset < pIdEntry->second; ++typeOffset) {
+    uint32_t type = ((uint32_t)pIdEntry->first << 16) + 1 + typeOffset;
+    const char* msgName = IPC::StringFromIPCMessageType(type);
+    if (strstr(msgName, "::Reply_")) {
+      continue;
+    }
+
+    for (std::string msg : targetMsgNames) {
+      if (strstr(msgName, msg.c_str())) {
+        actorAllowedMessages.push_back(type);
+        break;
+      }
+    }
+  }
+
+  if (!actorAllowedMessages.size()) {
+    MOZ_FUZZING_NYX_ABORT("ERROR: Empty actorAllowedMessages!?\n");
+  }
+}
+
+static bool IsManagedByTargetActor(IProtocol* protocol,
+                                   std::string& protoIdFilter) {
+  while (protocol) {
+    if (!strcmp(protocol->GetProtocolName(), protoIdFilter.c_str())) {
+      return true;
+    }
+
+    protocol = protocol->Manager();
+  }
+  return false;
 }
 
 void IPCFuzzController::OnActorConnected(IProtocol* protocol) {
@@ -171,7 +303,8 @@ void IPCFuzzController::OnActorConnected(IProtocol* protocol) {
       "DEBUG: IPCFuzzController::OnActorConnected() Mutex locked\n");
 
   static bool protoIdFilterInitialized = false;
-  static bool allowNewActors = false;
+  static bool allowSubActors =
+      !!getenv("MOZ_FUZZ_PROTOID_FILTER_ALLOW_SUBACTORS");
   static std::string protoIdFilter;
   if (!protoIdFilterInitialized) {
     const char* protoIdFilterStr = getenv("MOZ_FUZZ_PROTOID_FILTER");
@@ -181,42 +314,67 @@ void IPCFuzzController::OnActorConnected(IProtocol* protocol) {
     protoIdFilterInitialized = true;
   }
 
-#ifdef FUZZ_DEBUG
-  MOZ_FUZZING_NYX_PRINTF("INFO: [OnActorConnected] ActorID %d Protocol: %s\n",
-                         protocol->Id(), protocol->GetProtocolName());
-#endif
-
   MessageChannel* channel = protocol->ToplevelProtocol()->GetIPCChannel();
 
   Maybe<PortName> portName = channel->GetPortName();
+
+  if (!portName) {
+    MOZ_FUZZING_NYX_PRINTF("INFO: [OnActorConnected] ActorID %d Protocol: %s\n",
+                           protocol->Id(), protocol->GetProtocolName());
+  }
+
   if (portName) {
-    if (!protoIdFilter.empty() &&
-        (!Nyx::instance().started() || !allowNewActors) &&
-        strcmp(protocol->GetProtocolName(), protoIdFilter.c_str()) &&
-        !actorIds[*portName].empty()) {
+    if (!protoIdFilter.empty()) {
+      if (!strcmp(protocol->GetProtocolName(), protoIdFilter.c_str())) {
+        MOZ_FUZZING_NYX_PRINTF(
+            "INFO: [OnActorConnected] ActorID %d Protocol: %s matches "
+            "target.\n",
+            protocol->Id(), protocol->GetProtocolName());
+
+        // If our matching protocol is not a toplevel actor, then we need to
+        // exclude the toplevel protocol later in `MakeTargetDecision` because
+        // the actor will always be added to the map.
+        protoFilterTargetExcludeToplevel = protocol->Manager() != nullptr;
+      } else if (actorIds[*portName].empty()) {
+        MOZ_FUZZING_NYX_PRINTF(
+            "INFO: [OnActorConnected] ActorID %d Protocol: %s is toplevel "
+            "actor.\n",
+            protocol->Id(), protocol->GetProtocolName());
+      } else if (allowSubActors &&
+                 IsManagedByTargetActor(protocol, protoIdFilter)) {
+        MOZ_FUZZING_NYX_PRINTF(
+            "INFO: [OnActorConnected] ActorID %d Protocol: %s is managed by "
+            "target actor.\n",
+            protocol->Id(), protocol->GetProtocolName());
+      } else {
+        // Not a toplevel actor, not matching the filter and also either not a
+        // sub actor of our target or we are focusing only on the target. Ignore
+        // this actor.
+        if (!!getenv("MOZ_FUZZ_DEBUG")) {
+          MOZ_FUZZING_NYX_PRINTF(
+              "INFO: [OnActorConnected] ActorID %d Protocol: %s ignored due to "
+              "filter.\n",
+              protocol->Id(), protocol->GetProtocolName());
+        }
+        return;
+      }
+    }
+
+    if (!!getenv("MOZ_FUZZ_DEBUG")) {
       MOZ_FUZZING_NYX_PRINTF(
-          "INFO: [OnActorConnected] ActorID %d Protocol: %s ignored due to "
-          "filter.\n",
-          protocol->Id(), protocol->GetProtocolName());
-      return;
-    } else if (!protoIdFilter.empty() &&
-               !strcmp(protocol->GetProtocolName(), protoIdFilter.c_str())) {
-      MOZ_FUZZING_NYX_PRINTF(
-          "INFO: [OnActorConnected] ActorID %d Protocol: %s matches target.\n",
-          protocol->Id(), protocol->GetProtocolName());
-    } else if (!protoIdFilter.empty() && actorIds[*portName].empty()) {
-      MOZ_FUZZING_NYX_PRINTF(
-          "INFO: [OnActorConnected] ActorID %d Protocol: %s is toplevel "
-          "actor.\n",
-          protocol->Id(), protocol->GetProtocolName());
+          "INFO: [OnActorConnected] ActorID %d Protocol: %s Port: %lu %lu\n",
+          protocol->Id(), protocol->GetProtocolName(), portName->v1,
+          portName->v2);
     }
 
     actorIds[*portName].emplace_back(protocol->Id(), protocol->GetProtocolId());
 
-    if (Nyx::instance().started() && protoIdFilter.empty()) {
-      // Fix the port we will be using for at least the next 5 messages
-      useLastPortName = true;
-      lastActorPortName = *portName;
+    if (Nyx::instance().started()) {
+      if (!useLastPortNameAlways) {
+        // Fix the port we will be using for at least the next 5 messages
+        useLastPortName = true;
+        lastActorPortName = *portName;
+      }
 
       // Use this actor for the next 5 messages
       useLastActor = 5;
@@ -246,6 +404,16 @@ void IPCFuzzController::OnActorDestroyed(IProtocol* protocol) {
     MutexAutoLock lock(mMutex);
     MOZ_FUZZING_NYX_DEBUG(
         "DEBUG: IPCFuzzController::OnActorDestroyed() Mutex locked\n");
+
+    if (maybeLastActorId &&
+        (maybeLastActorId == protocol->Id() ||
+         (maybeLastActorId == MSG_ROUTING_CONTROL && !protocol->Id())) &&
+        lastActorPortName == *portName) {
+      MOZ_FUZZING_NYX_DEBUG("INFO: Actor pinning released.\n");
+      // We destroyed the actor we were focusing on, unpin.
+      maybeLastActorId = 0;
+      useLastActor = 0;
+    }
 
     for (auto iter = actorIds[*portName].begin();
          iter != actorIds[*portName].end();) {
@@ -293,13 +461,14 @@ bool IPCFuzzController::ObserveIPCMessage(mozilla::ipc::NodeChannel* channel,
     if (!channel->mBlockSendRecv) {
       MOZ_FUZZING_NYX_PRINTF(
           "INFO: [NodeChannel::OnMessageReceived] Blocking further "
-          "communication on Port %lu %lu (seen fuzz msg)\n",
+          "communication on node %lu %lu (seen fuzz msg)\n",
           channel->GetName().v1, channel->GetName().v2);
       channel->mBlockSendRecv = true;
     }
     return true;
   } else if (aMessage.type() == mIPCTriggerMsg && !Nyx::instance().started()) {
-    MOZ_FUZZING_NYX_PRINT("DEBUG: Ready message detected.\n");
+    MOZ_FUZZING_NYX_PRINTF("DEBUG: Ready message detected on actor %d.\n",
+                           aMessage.routing_id());
 
     if (!haveTargetNodeName && !!getenv("MOZ_FUZZ_PROTOID_FILTER")) {
       // With a protocol filter set, we want to pin to the actor that
@@ -322,8 +491,25 @@ bool IPCFuzzController::ObserveIPCMessage(mozilla::ipc::NodeChannel* channel,
       }
 
       lastActorPortName = event->port_name();
-      useLastPortName = true;
-      useLastActor = 1024;
+      useLastPortNameAlways = true;
+
+      if (!getenv("MOZ_FUZZ_PROTOID_FILTER_ALLOW_SUBACTORS")) {
+        // In this mode, we really want to focus on a single actor.
+        useLastActor = 1024;
+        maybeLastActorId = aMessage.routing_id();
+        MOZ_FUZZING_NYX_PRINTF("DEBUG: Pinned to actor %d forever.\n",
+                               aMessage.routing_id());
+      } else {
+        // In this mode, we want to focus on a particular actor and all of its
+        // sub actors. This means we have to pin the port at least. Undesired
+        // other actors are filtered out already in OnActorConnected *except*
+        // for the toplevel actor belonging to this port. This exception is
+        // handled separately in MakeTargetDecision.
+        MOZ_FUZZING_NYX_PRINTF("DEBUG: Pinned to port %lu %lu forever.\n",
+                               lastActorPortName.v1, lastActorPortName.v2);
+      }
+
+      InitAllowedIPCTypes();
     }
 
     // TODO: This is specific to PContent fuzzing. If we later want to fuzz
@@ -353,7 +539,7 @@ bool IPCFuzzController::ObserveIPCMessage(mozilla::ipc::NodeChannel* channel,
     if (!channel->mBlockSendRecv) {
       MOZ_FUZZING_NYX_PRINTF(
           "INFO: [NodeChannel::OnMessageReceived] Blocking further "
-          "communication on Port %lu %lu (fuzzing started)\n",
+          "communication on node %lu %lu (fuzzing started)\n",
           channel->GetName().v1, channel->GetName().v2);
       channel->mBlockSendRecv = true;
     }
@@ -428,13 +614,14 @@ bool IPCFuzzController::ObserveIPCMessage(mozilla::ipc::NodeChannel* channel,
           if (!channel->mBlockSendRecv) {
             MOZ_FUZZING_NYX_PRINTF(
                 "INFO: [NodeChannel::OnMessageReceived] Blocking further "
-                "communication on Port %lu %lu (fuzzing start pending)\n",
+                "communication on node %lu %lu (fuzzing start pending)\n",
                 channel->GetName().v1, channel->GetName().v2);
             channel->mBlockSendRecv = true;
           }
 
           return false;
         }
+        MOZ_FUZZING_NYX_ABORT("Unreachable");
         return true;
       }
     }
@@ -452,6 +639,11 @@ bool IPCFuzzController::ObserveIPCMessage(mozilla::ipc::NodeChannel* channel,
       portSeqNos.insert_or_assign(
           name, std::pair<int32_t, uint64_t>(aMessage.seqno(),
                                              userMsgEv->sequence_num()));
+#ifdef FUZZ_DEBUG
+      MOZ_FUZZING_NYX_PRINTF(
+          "DEBUG: Port %lu %lu updated sequence number to %lu\n", name.v1,
+          name.v2, userMsgEv->sequence_num());
+#endif
 
       portNodeName.insert_or_assign(name, channel->GetName());
     }
@@ -518,20 +710,9 @@ void IPCFuzzController::OnMessageError(
 
 bool IPCFuzzController::MakeTargetDecision(
     uint8_t portIndex, uint8_t portInstanceIndex, uint8_t actorIndex,
-    uint16_t typeOffset, PortName* name, int32_t* seqno, uint64_t* fseqno,
-    int32_t* actorId, uint32_t* type, bool* is_cons, bool update) {
-  // Every possible toplevel actor type has a fixed number that
-  // we assign to it in the constructor of this class. Here, we
-  // use the lower 6 bits to select this toplevel actor type.
-  // This approach has the advantage that the tests will always
-  // select the same toplevel actor type deterministically,
-  // independent of the order they appeared and independent
-  // of the type of fuzzing we are doing.
-  auto portInstances = portNames[portIndex & 0x3f];
-  if (!portInstances.size()) {
-    return false;
-  }
-
+    uint8_t actorProtocolIndex, uint16_t typeOffset, PortName* name,
+    int32_t* seqno, uint64_t* fseqno, int32_t* actorId, uint32_t* type,
+    bool* is_cons, bool update) {
   if (useLastActor) {
     useLastActor--;
     *name = lastActorPortName;
@@ -541,17 +722,26 @@ bool IPCFuzzController::MakeTargetDecision(
     // Once we stop pinning to the last actor, we need to decide if we
     // want to keep the pinning on the port itself. We use one of the
     // unused upper bits of portIndex for this purpose.
-    if (!useLastActor && (portIndex & (1 << 7))) {
-      if (mIPCTriggerMsg == ipcDefaultTriggerMsg) {
-        MOZ_FUZZING_NYX_PRINT(
-            "DEBUG: MakeTargetDecision: Released pinning on last port.\n");
-        useLastPortName = false;
-      }
+    if (!useLastActor && !useLastPortNameAlways && (portIndex & (1 << 7))) {
+      MOZ_FUZZING_NYX_PRINT(
+          "DEBUG: MakeTargetDecision: Released pinning on last port.\n");
+      useLastPortName = false;
     }
-  } else if (useLastPortName) {
+  } else if (useLastPortName || useLastPortNameAlways) {
     *name = lastActorPortName;
     MOZ_FUZZING_NYX_PRINT("DEBUG: MakeTargetDecision: Pinned to last port.\n");
   } else {
+    // Every possible toplevel actor type has a fixed number that
+    // we assign to it in the constructor of this class. Here, we
+    // use the lower 6 bits to select this toplevel actor type.
+    // This approach has the advantage that the tests will always
+    // select the same toplevel actor type deterministically,
+    // independent of the order they appeared and independent
+    // of the type of fuzzing we are doing.
+    auto portInstances = portNames[portIndex & 0x3f];
+    if (!portInstances.size()) {
+      return false;
+    }
     *name = portInstances[portInstanceIndex % portInstances.size()];
   }
 
@@ -580,7 +770,26 @@ bool IPCFuzzController::MakeTargetDecision(
   bool isPreserveHeader = *type;
 
   if (useLastActor) {
-    actorIndex = actors.size() - 1;
+    if (maybeLastActorId) {
+      bool found = false;
+      for (actorIndex = 0; actorIndex < actors.size(); ++actorIndex) {
+        // Toplevel actors have a discrepancy here: Routing ID is -1 but the
+        // actor id provided through protocol->Id() is 0.
+        if (actors[actorIndex].first == maybeLastActorId ||
+            (maybeLastActorId == MSG_ROUTING_CONTROL &&
+             !actors[actorIndex].first)) {
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        MOZ_FUZZING_NYX_ABORT(
+            "ERROR: Pinned to actor that's not in actors map!?\n");
+      }
+    } else {
+      actorIndex = actors.size() - 1;
+    }
   } else if (isPreserveHeader) {
     // In preserveHeaderMode, we need to find an actor that matches the
     // requested message type instead of any random actor.
@@ -592,6 +801,11 @@ bool IPCFuzzController::MakeTargetDecision(
     ProtocolId wantedProtocolId = static_cast<ProtocolId>(maybeProtocolId);
     std::vector<uint32_t> allowedIndices;
     for (uint32_t i = 0; i < actors.size(); ++i) {
+      if (protoFilterTargetExcludeToplevel && !i) {
+        // Filter out the toplevel protocol at index 0
+        continue;
+      }
+
       if (actors[i].second == wantedProtocolId) {
         allowedIndices.push_back(i);
       }
@@ -603,7 +817,43 @@ bool IPCFuzzController::MakeTargetDecision(
 
     actorIndex = allowedIndices[actorIndex % allowedIndices.size()];
   } else {
-    actorIndex %= actors.size();
+    std::set<ProtocolId> seenProtocol;
+    std::vector<ProtocolId> availableProtocols;
+
+    if (protoFilterTargetExcludeToplevel && actors.size() < 2) {
+      // We likely destroyed all other actors
+      return false;
+    }
+
+    for (auto actor : actors) {
+      if (protoFilterTargetExcludeToplevel && seenProtocol.empty()) {
+        // Skip the toplevel protocol.
+        seenProtocol.insert(actor.second);
+        continue;
+      }
+
+      if (seenProtocol.find(actor.second) == seenProtocol.end()) {
+        seenProtocol.insert(actor.second);
+        availableProtocols.push_back(actor.second);
+      }
+    }
+
+    // Instead of directly selecting a random actor, we select the protocol
+    // first and then out of all available actors matching this protocol,
+    // we select the destination actor. This makes sure that we are uniformly
+    // fuzzing protocols and not biasing towards protocols with lots of actor
+    // instances.
+    ProtocolId wantedProtocolId =
+        availableProtocols[actorProtocolIndex % availableProtocols.size()];
+
+    std::vector<uint32_t> allowedIndices;
+    for (uint32_t i = 0; i < actors.size(); ++i) {
+      if (actors[i].second == wantedProtocolId) {
+        allowedIndices.push_back(i);
+      }
+    }
+
+    actorIndex = allowedIndices[actorIndex % allowedIndices.size()];
   }
 
   ActorIdPair ids = actors[actorIndex];
@@ -615,7 +865,7 @@ bool IPCFuzzController::MakeTargetDecision(
     *actorId = MSG_ROUTING_CONTROL;
   }
 
-  if (!isPreserveHeader) {
+  if (!isPreserveHeader || actorAllowedMessages.size() > 0) {
     // If msgType is already set, then we are in preserveHeaderMode
     if (!this->GetRandomIPCMessageType(ids.second, typeOffset, type)) {
       MOZ_FUZZING_NYX_PRINT("ERROR: GetRandomIPCMessageType failed?!\n");
@@ -626,6 +876,13 @@ bool IPCFuzzController::MakeTargetDecision(
     if (constructorTypes.find(*type) != constructorTypes.end()) {
       *is_cons = true;
     }
+  }
+
+  if (isPreserveHeader &&
+      actorDisallowedMessages.find(*type) != actorDisallowedMessages.end()) {
+    // If we have messages that aren't allowed to be sent, we need to
+    // confirm that the type set in the header is still allowed.
+    return false;
   }
 
   MOZ_FUZZING_NYX_PRINTF(
@@ -735,11 +992,14 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
         auto portNameResult =
             IPCFuzzController::instance().portNodeName.find(iter->first);
         if (portNameResult->second ==
-            IPCFuzzController::instance().targetNodeName) {
-          MOZ_FUZZING_NYX_PRINT(
+                IPCFuzzController::instance().targetNodeName &&
+            IPCFuzzController::instance().mIPCTriggerMsg ==
+                ipcDefaultTriggerMsg) {
+          MOZ_FUZZING_NYX_PRINTF(
               "ERROR: We should not have port map entries without a "
               "corresponding "
-              "entry in our actors map\n");
+              "entry in our actors map (Port %lu %lu)\n",
+              iter->first.v1, iter->first.v2);
           MOZ_REALLY_CRASH(__LINE__);
         } else {
           iter = IPCFuzzController::instance().portSeqNos.erase(iter);
@@ -883,7 +1143,7 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
     // Byte  1 - Actor Index (selects one of the actors for that port)
     // Byte  2 - Type Offset (select valid type for the specified actor)
     // Byte  3 -  ^- continued
-    // Byte  4 - Sync Bit
+    // Byte  4 - Actor Protocol Index (selects the protocol on that port)
     // Byte  5 - Optionally select a particular instance of the selected
     //           port type. Some toplevel protocols can have multiple
     //           instances running at the same time.
@@ -895,6 +1155,7 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
     uint8_t portIndex = controlData[0];
     uint8_t actorIndex = controlData[1];
     uint16_t typeOffset = *(uint16_t*)(&controlData[2]);
+    uint8_t actorProtocolIndex = controlData[4];
     uint8_t portInstanceIndex = controlData[5];
 
     UniquePtr<IPC::Message> msg(new IPC::Message(ipcMsgData, ipcMsgLen));
@@ -913,9 +1174,9 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
     }
 
     if (!IPCFuzzController::instance().MakeTargetDecision(
-            portIndex, portInstanceIndex, actorIndex, typeOffset,
-            &new_port_name, &new_seqno, &new_fseqno, &actorId, &msgType,
-            &isConstructor)) {
+            portIndex, portInstanceIndex, actorIndex, actorProtocolIndex,
+            typeOffset, &new_port_name, &new_seqno, &new_fseqno, &actorId,
+            &msgType, &isConstructor)) {
       MOZ_FUZZING_NYX_DEBUG("DEBUG: MakeTargetDecision returned false.\n");
       continue;
     }
@@ -952,6 +1213,9 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
       msg->header()->type = msgType;
     }
 
+    // Make sure we're not sending with LAZY_SEND
+    msg->header()->flags.mFlags &= ~IPC::Message::HeaderFlags::LAZY_SEND_BIT;
+
     // Create the footer
     auto messageEvent = MakeUnique<UserMessageEvent>(0);
     messageEvent->set_port_name(new_port_name);
@@ -984,6 +1248,14 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
         "DEBUG: OnEventMessage: Flags: %u TxID: %d Handles: %u\n",
         msg->header()->flags, msg->header()->txid, msg->header()->num_handles);
 #endif
+
+    if (!!getenv("MOZ_FUZZ_DEBUG")) {
+      MOZ_FUZZING_NYX_PRINTF(
+          "INFO: Flags: IsSync: %d IsReply: %d IsReplyError: %d IsConstructor: "
+          "%d IsRelay: %d IsLazySend: %d\n",
+          msg->is_sync(), msg->is_reply(), msg->is_reply_error(),
+          msg->is_constructor(), msg->is_relay(), msg->is_lazy_send());
+    }
 
     // The number of messages we expect to see stopped.
     expected_messages++;
@@ -1117,6 +1389,9 @@ void IPCFuzzController::SynchronizeOnMessageExecution(
       Nyx::instance().handle_event("MOZ_TIMEOUT", nullptr, 0, nullptr);
       MOZ_FUZZING_NYX_PRINT(
           "ERROR: ======== END OF ITERATION (TIMEOUT) ========\n");
+      if (!!getenv("MOZ_FUZZ_CRASH_ON_TIMEOUT")) {
+        MOZ_DIAGNOSTIC_ASSERT(false, "IPCFuzzController Timeout");
+      }
       Nyx::instance().release(
           IPCFuzzController::instance().getMessageStopCount());
     }
@@ -1241,6 +1516,7 @@ UniquePtr<IPC::Message> IPCFuzzController::replaceIPCMessage(
 
   IPCFuzzController::instance().useLastActor = 0;
   IPCFuzzController::instance().useLastPortName = false;
+  IPCFuzzController::instance().useLastPortNameAlways = false;
 
   MOZ_FUZZING_NYX_DEBUG("DEBUG: Requesting data...\n");
 
@@ -1276,7 +1552,7 @@ UniquePtr<IPC::Message> IPCFuzzController::replaceIPCMessage(
   ipchdr->payload_size = ipcMsgLen - sizeof(IPC::Message::Header);
 
   if (Nyx::instance().is_replay()) {
-    MOZ_FUZZING_NYX_PRINT("INFO: Replaying IPC packet with payload:\n");
+    MOZ_FUZZING_NYX_PRINT("INFO: Replaying single IPC packet with payload:\n");
     for (uint32_t i = 0; i < ipcMsgLen - sizeof(IPC::Message::Header); ++i) {
       if (i % 16 == 0) {
         MOZ_FUZZING_NYX_PRINT("\n  ");
@@ -1290,6 +1566,11 @@ UniquePtr<IPC::Message> IPCFuzzController::replaceIPCMessage(
   }
 
   UniquePtr<IPC::Message> msg(new IPC::Message(ipcMsgData, ipcMsgLen));
+
+  if (!!getenv("MOZ_FUZZ_DEBUG")) {
+    MOZ_FUZZING_NYX_PRINTF("INFO: Name: %s Target: %d\n", msg->name(),
+                           msg->routing_id());
+  }
 
   // This marks the message as a fuzzing message. Without this, it will
   // be ignored by MessageTask and also not even scheduled by NodeChannel

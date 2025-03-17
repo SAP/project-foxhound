@@ -14,20 +14,20 @@ pub mod import_rule;
 pub mod keyframes_rule;
 pub mod layer_rule;
 mod loader;
+mod margin_rule;
 mod media_rule;
 mod namespace_rule;
 pub mod origin;
 mod page_rule;
-mod margin_rule;
 mod property_rule;
 mod rule_list;
 mod rule_parser;
 mod rules_iterator;
+pub mod scope_rule;
 mod starting_style_rule;
 mod style_rule;
 mod stylesheet;
 pub mod supports_rule;
-mod scope_rule;
 
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::sugar::refptr::RefCounted;
@@ -71,9 +71,9 @@ pub use self::rules_iterator::{AllRules, EffectiveRules};
 pub use self::rules_iterator::{
     EffectiveRulesIterator, NestedRuleIterationCondition, RulesIterator,
 };
+pub use self::scope_rule::ScopeRule;
 pub use self::starting_style_rule::StartingStyleRule;
 pub use self::style_rule::StyleRule;
-pub use self::scope_rule::ScopeRule;
 pub use self::stylesheet::{AllowImportRules, SanitizationData, SanitizationKind};
 pub use self::stylesheet::{DocumentStyleSheet, Namespaces, Stylesheet};
 pub use self::stylesheet::{StylesheetContents, StylesheetInDocument, UserAgentStylesheets};
@@ -321,12 +321,12 @@ impl CssRule {
             },
             CssRule::StartingStyle(ref arc) => {
                 arc.unconditional_shallow_size_of(ops) + arc.size_of(guard, ops)
-            }
+            },
             // TODO(emilio): Add memory reporting for these rules.
             CssRule::LayerBlock(_) | CssRule::LayerStatement(_) => 0,
             CssRule::Scope(ref rule) => {
                 rule.unconditional_shallow_size_of(ops) + rule.size_of(guard, ops)
-            }
+            },
         }
     }
 }
@@ -488,7 +488,7 @@ impl CssRule {
         // Override the nesting context with existing data.
         context.nesting_context = NestingContext::new(
             insert_rule_context.containing_rule_types,
-            insert_rule_context.parse_relative_rule_type
+            insert_rule_context.parse_relative_rule_type,
         );
 
         let state = if !insert_rule_context.containing_rule_types.is_empty() {

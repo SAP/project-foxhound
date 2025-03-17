@@ -86,7 +86,6 @@ add_setup(async function () {
   // Enable local telemetry recording for the duration of the tests.
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.search.serpEventTelemetry.enabled", true],
       // Set the IPC count to a small number so that we only have to open
       // one additional tab to reuse the same process.
       ["dom.ipc.processCount.webIsolated", 1],
@@ -139,6 +138,7 @@ add_task(async function update_telemetry_tab_already_open() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -192,6 +192,7 @@ add_task(async function update_telemetry_tab_closed() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -246,6 +247,7 @@ add_task(async function update_telemetry_multiple_tabs() {
           is_shopping_page: "false",
           is_private: "false",
           shopping_tab_displayed: "false",
+          is_signed_in: "false",
         },
         adImpressions: [
           {
@@ -307,6 +309,7 @@ add_task(async function update_telemetry_multiple_processes_and_tabs() {
           is_shopping_page: "false",
           is_private: "false",
           shopping_tab_displayed: "false",
+          is_signed_in: "false",
         },
         adImpressions: [
           {

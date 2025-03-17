@@ -10,6 +10,7 @@
 #  include "PlatformDecoderModule.h"
 #  include "WMF.h"
 #  include "WMFUtils.h"
+#  include "mozilla/Atomics.h"
 
 namespace mozilla {
 
@@ -43,7 +44,9 @@ class WMFDecoderModule : public PlatformDecoderModule {
     ForceEnableHEVC,
   };
 
-  // Called on main thread.
+  // Can be called on any thread, but avoid calling this on the main thread
+  // because the initialization takes long time and we don't want to block the
+  // main thread.
   static void Init(Config aConfig = Config::None);
 
   // Called from any thread, must call init first
@@ -53,16 +56,24 @@ class WMFDecoderModule : public PlatformDecoderModule {
                                   RefPtr<MFTDecoder>& aDecoder);
   static bool CanCreateMFTDecoder(const WMFStreamType& aType);
 
+  static void DisableForceEnableHEVC();
+
  private:
   // This is used for GPU process only, where we can't set the preference
   // directly (it can only set in the parent process) So we need a way to force
   // enable the HEVC in order to report the support information via telemetry.
-  static inline bool sForceEnableHEVC = false;
+  static inline Atomic<bool> sForceEnableHEVC{false};
 
   static bool IsHEVCSupported();
 
   WMFDecoderModule() = default;
   virtual ~WMFDecoderModule() = default;
+
+  static inline StaticMutex sMutex;
+  static inline bool sSupportedTypesInitialized MOZ_GUARDED_BY(sMutex) = false;
+  static inline EnumSet<WMFStreamType> sSupportedTypes MOZ_GUARDED_BY(sMutex);
+  static inline EnumSet<WMFStreamType> sLackOfExtensionTypes
+      MOZ_GUARDED_BY(sMutex);
 };
 
 }  // namespace mozilla

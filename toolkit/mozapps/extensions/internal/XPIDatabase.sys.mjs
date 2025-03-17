@@ -200,6 +200,7 @@ const PROP_JSON_FIELDS = [
   "incognito",
   "userPermissions",
   "optionalPermissions",
+  "requestedPermissions",
   "sitePermissions",
   "siteOrigin",
   "icons",
@@ -1426,12 +1427,70 @@ AddonWrapper = class {
     return addon.location.name == KEY_APP_PROFILE;
   }
 
+  /**
+   * Returns true if the addon is configured to be installed
+   * by enterprise policy.
+   */
+  get isInstalledByEnterprisePolicy() {
+    const policySettings = Services.policies?.getExtensionSettings(this.id);
+    return ["force_installed", "normal_installed"].includes(
+      policySettings?.installation_mode
+    );
+  }
+
+  /**
+   * Required permissions that extension has access to based on its manifest.
+   * In mv3 this doesn't include host_permissions.
+   */
   get userPermissions() {
     return addonFor(this).userPermissions;
   }
 
   get optionalPermissions() {
     return addonFor(this).optionalPermissions;
+  }
+
+  /**
+   * Additional permissions that extension is requesting in its manifest.
+   * Currently this is host_permissions in MV3.
+   */
+  get requestedPermissions() {
+    return addonFor(this).requestedPermissions;
+  }
+
+  /**
+   * A helper that returns all permissions for the install prompt.
+   */
+  get installPermissions() {
+    let required = this.userPermissions;
+    if (!required) {
+      return null;
+    }
+    let requested = this.requestedPermissions;
+    // Currently this can't result in duplicates, but if logic of what goes
+    // into these lists changes, make sure to check for dupes.
+    let perms = {
+      origins: required.origins.concat(requested?.origins ?? []),
+      permissions: required.permissions.concat(requested?.permissions ?? []),
+    };
+    return perms;
+  }
+
+  get optionalOriginsNormalized() {
+    const { permissions } = this.userPermissions;
+    const { origins } = this.optionalPermissions;
+
+    const { patterns } = new MatchPatternSet(origins, {
+      restrictSchemes: !(
+        this.isPrivileged && permissions?.includes("mozillaAddons")
+      ),
+      ignorePath: true,
+    });
+
+    // De-dup the normalized host permission patterns.
+    return patterns
+      ? [...new Set(patterns.map(matcher => matcher.pattern))]
+      : [];
   }
 
   isCompatibleWith(aAppVersion, aPlatformVersion) {
@@ -2202,6 +2261,18 @@ export const XPIDatabase = {
         }
 
         if (
+          addon.signedState === lazy.AddonManager.SIGNEDSTATE_SIGNED &&
+          Services.policies
+        ) {
+          const addonDetailsFromFile =
+            await XPIExports.XPIInstall.loadManifestFromFile(
+              addon._sourceBundle,
+              addon.location
+            );
+          addon.adminInstallOnly = addonDetailsFromFile.adminInstallOnly;
+        }
+
+        if (
           !lazy.ObjectUtils.deepEqual(
             signedTypes?.toSorted(),
             addon.signedTypes?.toSorted()
@@ -2537,6 +2608,25 @@ export const XPIDatabase = {
       if (Services.prefs.getBoolPref(PREF_XPI_SIGNATURES_DEV_ROOT, false)) {
         logger.warn(`Preference ${PREF_XPI_SIGNATURES_DEV_ROOT} is set.`);
       }
+      return false;
+    }
+
+    // When signatures are required, and the addon has the adminInstallOnly
+    // flag set to true, then we want to confirm if there is still an active
+    // enterprise policy setting for the same addon id, otherwise we should
+    // mark if as appDisabled.
+    //
+    // NOTE: the adminInstallOnly boolean flag is not being stored in the Addon DB,
+    // it is instead computed only when installing the addon and when we are
+    // re-verify the signatures once per day.
+    if (
+      this.mustSign(aAddon.type) &&
+      aAddon.adminInstallOnly &&
+      !aAddon.wrapper.isInstalledByEnterprisePolicy
+    ) {
+      logger.warn(
+        `Add-on ${aAddon.id} is installable only from policies, but no policy extension settings have been found.`
+      );
       return false;
     }
 

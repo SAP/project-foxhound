@@ -144,20 +144,35 @@ JSObject* HTMLDetailsElement::WrapNode(JSContext* aCx,
   return HTMLDetailsElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void HTMLDetailsElement::HandleInvokeInternal(nsAtom* aAction,
+bool HTMLDetailsElement::IsValidInvokeAction(InvokeAction aAction) const {
+  return nsGenericHTMLElement::IsValidInvokeAction(aAction) ||
+         aAction == InvokeAction::Toggle || aAction == InvokeAction::Close ||
+         aAction == InvokeAction::Open;
+}
+
+bool HTMLDetailsElement::HandleInvokeInternal(Element* aInvoker,
+                                              InvokeAction aAction,
                                               ErrorResult& aRv) {
-  if (nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::_auto) ||
-      nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::toggle)) {
+  if (nsGenericHTMLElement::HandleInvokeInternal(aInvoker, aAction, aRv)) {
+    return true;
+  }
+
+  if (aAction == InvokeAction::Auto || aAction == InvokeAction::Toggle) {
     ToggleOpen();
-  } else if (nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::close)) {
+    return true;
+  } else if (aAction == InvokeAction::Close) {
     if (Open()) {
       SetOpen(false, IgnoreErrors());
     }
-  } else if (nsContentUtils::EqualsIgnoreASCIICase(aAction, nsGkAtoms::open)) {
+    return true;
+  } else if (aAction == InvokeAction::Open) {
     if (!Open()) {
       SetOpen(true, IgnoreErrors());
     }
+    return true;
   }
+
+  return false;
 }
 
 }  // namespace mozilla::dom

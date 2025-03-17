@@ -124,6 +124,7 @@ class MarkStack {
    public:
     TaggedPtr() = default;
     TaggedPtr(Tag tag, Cell* ptr);
+    uintptr_t asBits() const;
     Tag tag() const;
     uintptr_t tagUnchecked() const;
     template <typename T>
@@ -144,6 +145,7 @@ class MarkStack {
     TaggedPtr ptr() const;
 
     void setStart(size_t newStart);
+    void setEmpty();
 
    private:
     static constexpr size_t StartShift = 2;
@@ -385,12 +387,6 @@ class GCMarker {
   // structures.
   void abortLinearWeakMarking();
 
-  // 'delegate' is no longer the delegate of 'key'.
-  void severWeakDelegate(JSObject* key, JSObject* delegate);
-
-  // 'delegate' is now the delegate of 'key'. Update weakmap marking state.
-  void restoreWeakDelegate(JSObject* key, JSObject* delegate);
-
 #ifdef DEBUG
   // We can't check atom marking if the helper thread lock is already held by
   // the current thread. This allows us to disable the check.
@@ -429,7 +425,7 @@ class GCMarker {
   void markAndTraverse(T* thing);
 
   template <typename T>
-  void markImplicitEdges(T* oldThing);
+  void markImplicitEdges(T* markedThing);
 
  private:
   /*
@@ -523,9 +519,6 @@ class GCMarker {
 
   inline void pushValueRange(JSObject* obj, SlotsOrElementsKind kind,
                              size_t start, size_t end);
-
-  template <typename T>
-  void markImplicitEdgesHelper(T markedThing);
 
   // Mark through edges whose target color depends on the colors of two source
   // entities (eg a WeakMap and one of its keys), and push the target onto the

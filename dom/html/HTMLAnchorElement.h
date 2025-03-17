@@ -51,14 +51,14 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(UnbindContext&) override;
-  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+  bool IsHTMLFocusable(IsFocusableFlags, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
   MOZ_CAN_RUN_SCRIPT
   nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
-  void GetLinkTarget(nsAString& aTarget) override;
+  void GetLinkTargetImpl(nsAString& aTarget) override;
   already_AddRefed<nsIURI> GetHrefURI() const override;
 
   virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
@@ -194,6 +194,8 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
 
  protected:
   virtual ~HTMLAnchorElement();
+
+  void MaybeTryDNSPrefetch();
 
   JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
   RefPtr<nsDOMTokenList> mRelList;

@@ -61,6 +61,32 @@ impl computed_value::T {
 }
 </%helpers:single_keyword>
 
+// Changes do not invalidate our element. We handle notify/invalidating
+// elements that reference anchor-name elsewhere.
+${helpers.predefined_type(
+    "anchor-name",
+    "AnchorName",
+    "computed::AnchorName::none()",
+    engines="gecko",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#propdef-anchor-name",
+    affects="",
+)}
+
+// Changes do not invalidate our element. We handle notify/invalidating
+// any affected descendants elsewhere.
+${helpers.predefined_type(
+    "anchor-scope",
+    "AnchorScope",
+    "computed::AnchorScope::none()",
+    engines="gecko",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#propdef-scope",
+    affects="",
+)}
+
 ${helpers.predefined_type(
     "float",
     "Float",
@@ -187,7 +213,6 @@ ${helpers.predefined_type(
     animation_value_type="ComputedValue",
     boxed=True,
     flags="CAN_ANIMATE_ON_COMPOSITOR",
-    gecko_pref="layout.css.individual-transform.enabled",
     spec="https://drafts.csswg.org/css-transforms-2/#individual-transforms",
     servo_restyle_damage = "reflow_out_of_flow",
     affects="overflow",
@@ -201,7 +226,6 @@ ${helpers.predefined_type(
     animation_value_type="ComputedValue",
     boxed=True,
     flags="CAN_ANIMATE_ON_COMPOSITOR",
-    gecko_pref="layout.css.individual-transform.enabled",
     spec="https://drafts.csswg.org/css-transforms-2/#individual-transforms",
     servo_restyle_damage = "reflow_out_of_flow",
     affects="overflow",
@@ -215,7 +239,6 @@ ${helpers.predefined_type(
     animation_value_type="ComputedValue",
     boxed=True,
     flags="CAN_ANIMATE_ON_COMPOSITOR",
-    gecko_pref="layout.css.individual-transform.enabled",
     spec="https://drafts.csswg.org/css-transforms-2/#individual-transforms",
     servo_restyle_damage="reflow_out_of_flow",
     affects="overflow",
@@ -500,8 +523,6 @@ ${helpers.predefined_type(
     "computed::ContainerType::Normal",
     engines="gecko servo",
     animation_value_type="none",
-    enabled_in="ua",
-    gecko_pref="layout.css.container-queries.enabled",
     servo_pref="layout.container-queries.enabled",
     spec="https://drafts.csswg.org/css-contain-3/#container-type",
     affects="layout",
@@ -513,8 +534,6 @@ ${helpers.predefined_type(
     "computed::ContainerName::none()",
     engines="gecko servo",
     animation_value_type="none",
-    enabled_in="ua",
-    gecko_pref="layout.css.container-queries.enabled",
     servo_pref="layout.container-queries.enabled",
     spec="https://drafts.csswg.org/css-contain-3/#container-name",
     affects="",

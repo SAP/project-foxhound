@@ -25,6 +25,7 @@ XPCOMUtils.defineLazyServiceGetter(
 
 ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -211,7 +212,10 @@ export const ContentAnalysis = {
    * Registers for various messages/events that will indicate the
    * need for communicating something to the user.
    */
-  initialize() {
+  initialize(doc) {
+    if (!lazy.gContentAnalysis.isActive) {
+      return;
+    }
     if (!this.isInitialized) {
       this.isInitialized = true;
       this.initializeDownloadCA();
@@ -223,6 +227,15 @@ export const ContentAnalysis = {
         );
       });
     }
+
+    // Do this even if initialized so the icon shows up on new windows, not just the
+    // first one.
+    doc.l10n.setAttributes(
+      doc.getElementById("content-analysis-indicator"),
+      "content-analysis-indicator-tooltip",
+      { agentName: lazy.agentName }
+    );
+    doc.documentElement.setAttribute("contentanalysisactive", "true");
   },
 
   async uninitialize() {
@@ -246,6 +259,7 @@ export const ContentAnalysis = {
   async observe(aSubj, aTopic, _aData) {
     switch (aTopic) {
       case "quit-application-requested": {
+        let quitCancelled = false;
         let pendingRequests =
           this.dlpBusyViewsByTopBrowsingContext.getAllRequests();
         if (pendingRequests.length) {
@@ -279,11 +293,17 @@ export const ContentAnalysis = {
             null,
             { value: 0 }
           );
-          if (buttonSelected === 0) {
-            lazy.gContentAnalysis.cancelAllRequests();
-          } else {
+          if (buttonSelected === 1) {
             aSubj.data = true;
+            quitCancelled = true;
           }
+        }
+        if (!quitCancelled) {
+          // Ideally we would wait until "quit-application" to cancel outstanding
+          // DLP requests, but the "DLP busy" or "DLP blocked" dialog can block the
+          // main thread, thus preventing the "quit-application" from being sent,
+          // which causes a shutdownhang. (bug 1899703)
+          lazy.gContentAnalysis.cancelAllRequests();
         }
         break;
       }
@@ -388,6 +408,18 @@ export const ContentAnalysis = {
         break;
       }
     }
+  },
+
+  async showPanel(element, panelUI) {
+    element.ownerDocument.l10n.setAttributes(
+      lazy.PanelMultiView.getViewNode(
+        element.ownerDocument,
+        "content-analysis-panel-description"
+      ),
+      "content-analysis-panel-text",
+      { agentName: lazy.agentName }
+    );
+    panelUI.showSubView("content-analysis-panel", element);
   },
 
   _showAnotherPendingDialog(aBrowsingContext) {
@@ -618,6 +650,36 @@ export const ContentAnalysis = {
     });
   },
 
+  _getErrorDialogMessage(aResourceNameOrOperationType) {
+    if (aResourceNameOrOperationType.name) {
+      return this.l10n.formatValueSync(
+        "contentanalysis-error-message-upload-file",
+        {
+          filename: aResourceNameOrOperationType.name,
+        }
+      );
+    }
+    let l10nId = undefined;
+    switch (aResourceNameOrOperationType.operationType) {
+      case Ci.nsIContentAnalysisRequest.eClipboard:
+        l10nId = "contentanalysis-error-message-clipboard";
+        break;
+      case Ci.nsIContentAnalysisRequest.eDroppedText:
+        l10nId = "contentanalysis-error-message-dropped-text";
+        break;
+      case Ci.nsIContentAnalysisRequest.eOperationPrint:
+        l10nId = "contentanalysis-error-message-print";
+        break;
+    }
+    if (!l10nId) {
+      console.error(
+        "Unknown operationTypeForDisplay: ",
+        aResourceNameOrOperationType
+      );
+      return "";
+    }
+    return this.l10n.formatValueSync(l10nId);
+  },
   _showSlowCABlockingMessage(
     aBrowsingContext,
     aRequestToken,
@@ -710,7 +772,7 @@ export const ContentAnalysis = {
             Ci.nsIPromptService.BUTTON_TITLE_IS_STRING +
             Ci.nsIPromptService.BUTTON_POS_1 *
               Ci.nsIPromptService.BUTTON_TITLE_IS_STRING +
-            Ci.nsIPromptService.BUTTON_POS_1_DEFAULT,
+            Ci.nsIPromptService.BUTTON_POS_2_DEFAULT,
           await this.l10n.formatValue(
             "contentanalysis-warndialog-response-allow"
           ),
@@ -725,26 +787,73 @@ export const ContentAnalysis = {
         lazy.gContentAnalysis.respondToWarnDialog(aRequestToken, allow);
         return null;
       }
-      case Ci.nsIContentAnalysisResponse.eBlock:
+      case Ci.nsIContentAnalysisResponse.eBlock: {
         if (!lazy.showBlockedResult) {
           // Don't show anything
           return null;
         }
-        message = await this.l10n.formatValue("contentanalysis-block-message", {
-          content: this._getResourceNameFromNameOrOperationType(
-            aResourceNameOrOperationType
-          ),
-        });
-        timeoutMs = this._RESULT_NOTIFICATION_TIMEOUT_MS;
-        break;
+        let titleId = undefined;
+        let body = undefined;
+        if (aResourceNameOrOperationType.name) {
+          titleId = "contentanalysis-block-dialog-title-upload-file";
+          body = this.l10n.formatValueSync(
+            "contentanalysis-block-dialog-body-upload-file",
+            {
+              filename: aResourceNameOrOperationType.name,
+            }
+          );
+        } else {
+          let bodyId = undefined;
+          switch (aResourceNameOrOperationType.operationType) {
+            case Ci.nsIContentAnalysisRequest.eClipboard:
+              titleId = "contentanalysis-block-dialog-title-clipboard";
+              bodyId = "contentanalysis-block-dialog-body-clipboard";
+              break;
+            case Ci.nsIContentAnalysisRequest.eDroppedText:
+              titleId = "contentanalysis-block-dialog-title-dropped-text";
+              bodyId = "contentanalysis-block-dialog-body-dropped-text";
+              break;
+            case Ci.nsIContentAnalysisRequest.eOperationPrint:
+              titleId = "contentanalysis-block-dialog-title-print";
+              bodyId = "contentanalysis-block-dialog-body-print";
+              break;
+          }
+          if (!titleId || !bodyId) {
+            console.error(
+              "Unknown operationTypeForDisplay: ",
+              aResourceNameOrOperationType
+            );
+            return null;
+          }
+          body = this.l10n.formatValueSync(bodyId);
+        }
+        if (aBrowsingContext.embedderElement?.getAttribute("printpreview")) {
+          // If we're in a print preview window, the window itself is about to close
+          // (because of the thrown NS_ERROR_CONTENT_BLOCKED), so using an async
+          // call would just immediately make the dialog disappear. Instead, use
+          // a blocking version. (see bug 1899714)
+          Services.prompt.alertBC(
+            aBrowsingContext,
+            Ci.nsIPromptService.MODAL_TYPE_TAB,
+            this.l10n.formatValueSync(titleId),
+            body
+          );
+        } else {
+          await Services.prompt.asyncAlert(
+            aBrowsingContext,
+            Ci.nsIPromptService.MODAL_TYPE_TAB,
+            this.l10n.formatValueSync(titleId),
+            body
+          );
+        }
+        return null;
+      }
       case Ci.nsIContentAnalysisResponse.eUnspecified:
         message = await this.l10n.formatValue(
-          "contentanalysis-unspecified-error-message",
+          "contentanalysis-unspecified-error-message-content",
           {
             agent: lazy.agentName,
-            content: this._getResourceNameFromNameOrOperationType(
-              aResourceNameOrOperationType
-            ),
+            content: this._getErrorDialogMessage(aResourceNameOrOperationType),
           }
         );
         timeoutMs = this._RESULT_NOTIFICATION_TIMEOUT_MS;
@@ -759,26 +868,25 @@ export const ContentAnalysis = {
               );
               return null;
             case Ci.nsIContentAnalysisResponse.eNoAgent:
-              messageId = "contentanalysis-no-agent-connected-message";
+              messageId = "contentanalysis-no-agent-connected-message-content";
               break;
             case Ci.nsIContentAnalysisResponse.eInvalidAgentSignature:
-              messageId = "contentanalysis-invalid-agent-signature-message";
+              messageId =
+                "contentanalysis-invalid-agent-signature-message-content";
               break;
             case Ci.nsIContentAnalysisResponse.eErrorOther:
-              messageId = "contentanalysis-unspecified-error-message";
+              messageId = "contentanalysis-unspecified-error-message-content";
               break;
             default:
               console.error(
                 "Unexpected CA cancelError value: " + aRequestCancelError
               );
-              messageId = "contentanalysis-unspecified-error-message";
+              messageId = "contentanalysis-unspecified-error-message-content";
               break;
           }
           message = await this.l10n.formatValue(messageId, {
             agent: lazy.agentName,
-            content: this._getResourceNameFromNameOrOperationType(
-              aResourceNameOrOperationType
-            ),
+            content: this._getErrorDialogMessage(aResourceNameOrOperationType),
           });
           timeoutMs = this._RESULT_NOTIFICATION_TIMEOUT_MS;
         }

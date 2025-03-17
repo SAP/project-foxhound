@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use crate::{
+    command::RecordedComputePass,
     error::{ErrMsg, ErrorBuffer, ErrorBufferType},
     wgpu_string, AdapterInformation, ByteBuf, CommandEncoderAction, DeviceAction, DropAction,
     QueueWriteAction, SwapChainId, TextureAction,
@@ -303,7 +304,7 @@ pub unsafe extern "C" fn wgpu_server_adapter_request_device(
     // TODO: in https://github.com/gfx-rs/wgpu/pull/3626/files#diff-033343814319f5a6bd781494692ea626f06f6c3acc0753a12c867b53a646c34eR97
     // which introduced the queue id parameter, the queue id is also the device id. I don't know how applicable this is to
     // other situations (this one in particular).
-    let (_, _, error) = gfx_select!(self_id => global.adapter_request_device(self_id, &desc, trace_path, Some(new_id), Some(new_id.transmute())));
+    let (_, _, error) = gfx_select!(self_id => global.adapter_request_device(self_id, &desc, trace_path, Some(new_id), Some(new_id.into_queue_id())));
     if let Some(err) = error {
         error_buf.init(err);
     }
@@ -342,7 +343,13 @@ impl ShaderModuleCompilationMessage {
         let utf16_offset;
         let utf16_length;
 
-        if let Some(location) = error.location(source) {
+        let location = match error {
+            CreateShaderModuleError::Parsing(e) => e.inner.location(source),
+            CreateShaderModuleError::Validation(e) => e.inner.location(source),
+            _ => None,
+        };
+
+        if let Some(location) = location {
             let len_utf16 = |s: &str| s.chars().map(|c| c.len_utf16() as u64).sum();
             let start = location.offset as usize;
             let end = start + location.length as usize;
@@ -945,9 +952,9 @@ impl Global {
                 base,
                 timestamp_writes,
             } => {
-                if let Err(err) = self.command_encoder_run_compute_pass_impl::<A>(
+                if let Err(err) = self.compute_pass_end_with_unresolved_commands::<A>(
                     self_id,
-                    base.as_ref(),
+                    base,
                     timestamp_writes.as_ref(),
                 ) {
                     error_buf.init(err);
@@ -988,7 +995,7 @@ impl Global {
                 timestamp_writes,
                 occlusion_query_set_id,
             } => {
-                if let Err(err) = self.command_encoder_run_render_pass_impl::<A>(
+                if let Err(err) = self.render_pass_end_impl::<A>(
                     self_id,
                     base.as_ref(),
                     &target_colors,
@@ -1087,10 +1094,31 @@ pub unsafe extern "C" fn wgpu_server_compute_pass(
     byte_buf: &ByteBuf,
     error_buf: ErrorBuffer,
 ) {
-    let pass = bincode::deserialize(byte_buf.as_slice()).unwrap();
-    let action = crate::command::replay_compute_pass(encoder_id, &pass).into_command();
+    let src_pass = bincode::deserialize(byte_buf.as_slice()).unwrap();
 
-    gfx_select!(encoder_id => global.command_encoder_action(encoder_id, action, error_buf));
+    trait ReplayComputePass {
+        fn replay_compute_pass<A>(
+            &self,
+            encoder_id: id::CommandEncoderId,
+            src_pass: &RecordedComputePass,
+            error_buf: ErrorBuffer,
+        ) where
+            A: wgc::hal_api::HalApi;
+    }
+    impl ReplayComputePass for Global {
+        fn replay_compute_pass<A>(
+            &self,
+            encoder_id: id::CommandEncoderId,
+            src_pass: &RecordedComputePass,
+            error_buf: ErrorBuffer,
+        ) where
+            A: wgc::hal_api::HalApi,
+        {
+            crate::command::replay_compute_pass::<A>(self, encoder_id, src_pass, error_buf);
+        }
+    }
+
+    gfx_select!(encoder_id => global.replay_compute_pass(encoder_id, &src_pass, error_buf));
 }
 
 #[no_mangle]

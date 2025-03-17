@@ -94,6 +94,11 @@ class FunctionFlags {
     BASESCRIPT = 1 << 5,
     SELFHOSTLAZY = 1 << 6,
 
+    // This Native function has a JIT entry which emulates the
+    // js::BaseScript::jitCodeRaw mechanism. Used for Wasm functions and
+    // TrampolineNative builtins.
+    NATIVE_JIT_ENTRY = 1 << 7,
+
     // Function may be called as a constructor. This corresponds in the spec as
     // having a [[Construct]] internal method.
     //
@@ -103,12 +108,7 @@ class FunctionFlags {
     // This flag is used both by scripted functions and native functions.
     //
     // WARNING: This is independent from FunctionKind::ClassConstructor.
-    CONSTRUCTOR = 1 << 7,
-
-    // Function is either getter or setter, with "get " or "set " prefix,
-    // but JSFunction::AtomSlot contains unprefixed name, and the function name
-    // is lazily constructed on the first access.
-    LAZY_ACCESSOR_NAME = 1 << 8,
+    CONSTRUCTOR = 1 << 8,
 
     // Function comes from a FunctionExpression, ArrowFunction, or Function()
     // call (not a FunctionDeclaration).
@@ -116,10 +116,10 @@ class FunctionFlags {
     // This flag is used only by scripted functions and AsmJS.
     LAMBDA = 1 << 9,
 
-    // This Native function has a JIT entry which emulates the
-    // js::BaseScript::jitCodeRaw mechanism. Used for Wasm functions and
-    // TrampolineNative builtins.
-    NATIVE_JIT_ENTRY = 1 << 10,
+    // Function is either getter or setter, with "get " or "set " prefix,
+    // but JSFunction::AtomSlot contains unprefixed name, and the function name
+    // is lazily constructed on the first access.
+    LAZY_ACCESSOR_NAME = 1 << 10,
 
     // Function had no explicit name, but a name was set by SetFunctionName at
     // compile time or SetFunctionName at runtime.
@@ -436,12 +436,8 @@ class FunctionFlags {
   FunctionFlags& setIsGhost() { return setFlags(GHOST_FUNCTION); }
   bool isGhost() const { return hasFlags(GHOST_FUNCTION); }
 
-  static uint16_t HasJitEntryFlags(bool isConstructing) {
-    uint16_t flags = BASESCRIPT | SELFHOSTLAZY;
-    if (!isConstructing) {
-      flags |= NATIVE_JIT_ENTRY;
-    }
-    return flags;
+  static constexpr uint16_t HasJitEntryFlags() {
+    return BASESCRIPT | SELFHOSTLAZY | NATIVE_JIT_ENTRY;
   }
 
   static FunctionFlags clearMutableflags(FunctionFlags flags) {

@@ -49,12 +49,20 @@
 
     <!-- Home - Recently saved bookmarks -->
     <!-- Title for the home screen section with recently saved bookmarks. -->
-    <string name="recently_saved_title">Nedavno shranjeno</string>
+    <string name="recently_saved_title" moz:removedIn="127" tools:ignore="UnusedResources">Nedavno shranjeno</string>
     <!-- Content description for the button which navigates the user to show all of their saved bookmarks. -->
-    <string name="recently_saved_show_all_content_description_2">Prikaži vse shranjene zaznamke</string>
+    <string name="recently_saved_show_all_content_description_2" moz:removedIn="127" tools:ignore="UnusedResources">Prikaži vse shranjene zaznamke</string>
 
     <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
-    <string name="recently_saved_menu_item_remove">Odstrani</string>
+    <string name="recently_saved_menu_item_remove" moz:removedIn="127" tools:ignore="UnusedResources">Odstrani</string>
+
+    <!-- Home - Bookmarks -->
+    <!-- Title for the home screen section with bookmarks. -->
+    <string name="home_bookmarks_title">Zaznamki</string>
+    <!-- Content description for the button which navigates the user to show all of their bookmarks. -->
+    <string name="home_bookmarks_show_all_content_description">Prikaži vse zaznamke</string>
+    <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
+    <string name="home_bookmarks_menu_item_remove">Odstrani</string>
 
     <!-- About content. The first parameter is the name of the application. (For example: Fenix) -->
     <string name="about_content">%1$s izdeluje Mozilla.</string>
@@ -145,8 +153,8 @@
     <!-- Shortcut action to open new private tab -->
     <string name="home_screen_shortcut_open_new_private_tab_2">Nov zasebni zavihek</string>
 
-    <!-- Shortcut action to open Passwords screens -->
-    <string name="home_screen_shortcut_open_password_screen">Bližnjica do gesel</string>
+    <!-- Shortcut action to open Passwords screen -->
+    <string name="home_screen_shortcut_passwords">Gesla</string>
 
     <!-- Recent Tabs -->
     <!-- Header text for jumping back into the recent tab in the home screen -->
@@ -187,14 +195,14 @@
     <string name="browser_menu_refresh">Osveži</string>
     <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
     <string name="browser_menu_stop">Ustavi</string>
-    <!-- Browser menu button that opens the addon manager -->
-    <string name="browser_menu_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Dodatki</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">Razširitve</string>
+    <!-- Browser menu button that opens the extensions manager -->
+    <string name="browser_menu_manage_extensions">Upravljanje razširitev</string>
+    <!-- Browser menu button that opens AMO in a tab -->
+    <string name="browser_menu_discover_more_extensions">Odkrijte več razširitev</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">Podatki o računu</string>
-    <!-- Text displayed when there are no add-ons to be shown -->
-    <string name="no_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Tukaj ni dodatkov</string>
     <!-- Browser menu button that sends a user to help articles -->
     <string name="browser_menu_help">Pomoč</string>
     <!-- Browser menu button that sends a to a the what's new article -->
@@ -209,18 +217,24 @@
     <string name="browser_menu_open_in_regular_tab">Odpri v navadnem zavihku</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen">Dodaj na domač zaslon</string>
-    <!-- Browser menu toggle that installs a Progressive Web App shortcut to the site on the device home screen. -->
-    <string name="browser_menu_install_on_homescreen" moz:removedIn="126" tools:ignore="UnusedResources">Namesti</string>
+    <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
+    <string name="browser_menu_add_to_homescreen_2">Dodaj na domači zaslon …</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">Znova sinhroniziraj</string>
     <!-- Browser menu button that opens the find in page menu -->
     <string name="browser_menu_find_in_page">Najdi na strani</string>
+    <!-- Browser menu button that opens the find in page menu -->
+    <string name="browser_menu_find_in_page_2">Najdi na strani …</string>
     <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
     <string name="browser_menu_translations">Prevedi stran</string>
+    <!-- Browser menu button that saves the current tab to a collection -->
+    <string name="browser_menu_save_to_collection">Shrani v zbirko …</string>
     <!-- Browser menu button that saves the current tab to a collection -->
     <string name="browser_menu_save_to_collection_2">Shrani v zbirko</string>
     <!-- Browser menu button that open a share menu to share the current site -->
     <string name="browser_menu_share">Deli</string>
+    <!-- Browser menu button that open a share menu to share the current site -->
+    <string name="browser_menu_share_2">Deli …</string>
     <!-- Browser menu button shown in custom tabs that opens the current tab in Fenix
         The first parameter is the name of the app defined in app_name (for example: Fenix) -->
     <string name="browser_menu_open_in_fenix">Odpri v %1$su</string>
@@ -248,9 +262,47 @@
     <string name="browser_menu_customize_home_1">Prilagodi domačo stran</string>
 
     <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
-    <string name="browser_menu_sign_in" tools:ignore="UnusedResources">Prijava</string>
-    <!-- Browser menu caption label for the "Sign in" browser menu item described in browser_menu_sign_in -->
-    <string name="browser_menu_sign_in_caption" tools:ignore="UnusedResources">Sinhronizirajte gesla, zavihke in druge podatke</string>
+    <string name="browser_menu_sign_in">Prijava</string>
+    <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
+    <string name="browser_menu_sign_in_caption">Sinhronizirajte gesla, zavihke in druge podatke</string>
+
+    <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
+    <string name="browser_menu_sign_back_in_to_sync">Znova se prijavite za sinhronizacijo</string>
+    <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
+    <string name="browser_menu_syncing_paused_caption">Sinhroniziranje ustavljeno</string>
+    <!-- Browser menu label that creates a private tab -->
+    <string name="browser_menu_new_private_tab">Nov zasebni zavihek</string>
+
+    <!-- Browser menu label that navigates to the Password screen -->
+    <string name="browser_menu_passwords">Gesla</string>
+    <!-- Browser menu label that navigates to the SUMO page for the Firefox for Android release notes.
+         The first parameter is the name of the app defined in app_name (for example: Fenix)-->
+    <string name="browser_menu_new_in_firefox">Novo v %1$su</string>
+    <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
+    <string name="browser_menu_switch_to_desktop_site">Preklop na stran za računalnike</string>
+    <!-- Browser menu label that navigates to the page tools sub-menu -->
+    <string name="browser_menu_tools">Orodja</string>
+    <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
+         bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen -->
+    <string name="browser_menu_save">Shrani</string>
+
+    <!-- Browser menu label that bookmarks the currently visited page -->
+    <string name="browser_menu_bookmark_this_page">Dodaj stran med zaznamke</string>
+    <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
+    <string name="browser_menu_edit_bookmark">Uredi zaznamek</string>
+    <!-- Browser menu label that the saves the currently visited page as a PDF -->
+    <string name="browser_menu_save_as_pdf">Shrani kot PDF …</string>
+    <!-- Browser menu label for turning ON reader view of the current visited page -->
+    <string name="browser_menu_turn_on_reader_view">Vklopi bralni pogled</string>
+    <!-- Browser menu label for turning OFF reader view of the current visited page -->
+    <string name="browser_menu_turn_off_reader_view">Izklopi bralni pogled</string>
+    <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+    <string name="browser_menu_translate_page">Prevedi stran …</string>
+    <!-- Browser menu label that is displayed when the current page has been translated by the translation feature.
+         The first parameter is the name of the language that page was translated to (e.g. English). -->
+    <string name="browser_menu_translated_to">Prevedeno v jezik %1$s</string>
+    <!-- Browser menu label for the print feature -->
+    <string name="browser_menu_print">Natisni …</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -348,8 +400,6 @@
     <!-- Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments. -->
     <!-- Description for learning more about our privacy notice. -->
     <string name="juno_onboarding_privacy_notice_text">Obvestilo o zasebnosti za Firefox</string>
-    <!-- Description for learning more about our privacy notice. -->
-    <string name="juno_onboarding_privacy_notice_text_2" moz:removedIn="125" tools:ignore="UnusedResources">Preberite več v obvestilu o zasebnosti</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_title_nimbus_2">Z veseljem skrbimo za vašo varnost</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments.
@@ -539,7 +589,9 @@
     <!-- Preference category for account information -->
     <string name="preferences_category_account">Račun</string>
     <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar">Orodna vrstica</string>
+    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">Orodna vrstica</string>
+    <!-- Preference for changing where the AddressBar is positioned -->
+    <string name="preferences_toolbar_2">Mesto naslovne vrstice</string>
     <!-- Preference for changing default theme to dark or light mode -->
     <string name="preferences_theme">Tema</string>
     <!-- Preference for customizing the home screen -->
@@ -556,6 +608,10 @@
     <string name="preferences_account_sync_error">Ponovno se povežite za nadaljevanje sinhronizacije</string>
     <!-- Preference for language -->
     <string name="preferences_language">Jezik</string>
+    <!-- Preference for translation -->
+    <string name="preferences_translation" moz:removedIn="127" tools:ignore="UnusedResources">Prevajanje</string>
+    <!-- Preference for translations -->
+    <string name="preferences_translations">Prevajanje</string>
     <!-- Preference for data choices -->
     <string name="preferences_data_choices">Podatkovne možnosti</string>
     <!-- Preference for data collection -->
@@ -607,13 +663,8 @@
     <!-- Message to indicate users that we are quitting the application to apply the changes -->
     <string name="quit_application">Zapiranje aplikacije za uveljavitev sprememb …</string>
 
-    <!-- Preference for add_ons -->
-    <string name="preferences_addons" moz:removedIn="126" tools:ignore="UnusedResources">Dodatki</string>
-
     <!-- Preference for extensions -->
     <string name="preferences_extensions">Razširitve</string>
-    <!-- Preference for installing a local add-on -->
-    <string name="preferences_install_local_addon" moz:removedIn="126" tools:ignore="UnusedResources">Namesti dodatek iz datoteke</string>
     <!-- Preference for installing a local extension -->
     <string name="preferences_install_local_extension">Namesti razširitev iz datoteke</string>
     <!-- Preference for notifications -->
@@ -624,9 +675,20 @@
     <!-- Summary for notification preference indicating notifications are not allowed -->
     <string name="notifications_not_allowed_summary">Ni dovoljeno</string>
 
+    <!-- Add-on Permissions -->
+    <!-- The title of the required permissions section from addon's permissions screen -->
+    <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">Zahtevano</string>
+    <!-- The title of the optional permissions section from addon's permissions screen -->
+    <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">Izbirno</string>
+    <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
+    <string name="addons_permissions_allow_for_all_sites" tools:ignore="UnusedResources">Dovoli za vsa spletna mesta</string>
+    <!-- The subtitle for the allow for all sites preference toggle -->
+    <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">Če tej razširitvi zaupate, ji lahko dodelite dovoljenje za vsako spletno mesto.</string>
+
+    <!-- The text shown when an extension does not require permissions -->
+    <string name="addons_does_not_require_permissions">Ta razširitev ne zahteva nobenih dovoljenj.</string>
+
     <!-- Add-on Preferences -->
-    <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
-    <string name="preferences_customize_amo_collection" moz:removedIn="126" tools:ignore="UnusedResources">Zbirka dodatkov po meri</string>
     <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
     <string name="preferences_customize_extension_collection">Zbirka razširitev po meri</string>
     <!-- Button caption to confirm the add-on collection configuration -->
@@ -638,8 +700,6 @@
 
     <!-- Hint displayed on input field for custom collection user ID-->
     <string name="customize_addon_collection_user_hint">Lastnik zbirke (ID uporabnika)</string>
-    <!-- Toast shown after confirming the custom add-on collection configuration -->
-    <string name="toast_customize_addon_collection_done" moz:removedIn="126" tools:ignore="UnusedResources">Zbirka dodatkov je spremenjena. Zapiranje aplikacije za uveljavitev sprememb …</string>
 
     <!-- Toast shown after confirming the custom extension collection configuration -->
     <string name="toast_customize_extension_collection_done">Zbirka razširitev je spremenjena. Zapiranje aplikacije za uveljavitev sprememb …</string>
@@ -648,7 +708,9 @@
     <!-- Header text for jumping back into the recent tab in customize the home screen -->
     <string name="customize_toggle_jump_back_in">Skoči nazaj</string>
     <!-- Title for the customize home screen section with recently saved bookmarks. -->
-    <string name="customize_toggle_recent_bookmarks">Nedavni zaznamki</string>
+    <string name="customize_toggle_recent_bookmarks" moz:removedIn="127" tools:ignore="UnusedResources">Nedavni zaznamki</string>
+    <!-- Title for the customize home screen section with bookmarks. -->
+    <string name="customize_toggle_bookmarks">Zaznamki</string>
     <!-- Title for the customize home screen section with recently visited. Recently visited is
     a section where users see a list of tabs that they have visited in the past few days -->
     <string name="customize_toggle_recently_visited">Nedavno obiskano</string>
@@ -697,35 +759,23 @@
     <string name="wallpapers_onboarding_dialog_explore_more_button_text">Raziščite več ozadij</string>
 
     <!-- Add-ons general availability nimbus message-->
-    <!-- Title of the Nimbus message for add-ons general availability-->
-    <string name="addon_ga_message_title" moz:removedIn="126" tools:ignore="UnusedResources">Na voljo so novi dodatki</string>
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">Na voljo so nove razširitve</string>
     <!-- Body of the Nimbus message for add-ons general availability. 'Firefox' intentionally hardcoded here-->
     <string name="addon_ga_message_body" tools:ignore="UnusedResources">Oglejte si prek 100 novih razširitev, s katerimi lahko prilagodite Firefox po svoji meri.</string>
-    <!-- Button text of the Nimbus message for add-ons general availability. -->
-    <string name="addon_ga_message_button" moz:removedIn="126" tools:ignore="UnusedResources">Razišči dodatke</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">Razišči razširitve</string>
 
     <!-- Extension process crash dialog to user -->
-    <!-- Title of a dialog shown to the user when enough errors have occurred with addons and they need to be temporarily disabled -->
-    <string name="addon_process_crash_dialog_title" moz:removedIn="126" tools:ignore="UnusedResources">Dodatki so začasno onemogočeni</string>
     <!-- Title of the extension crash dialog shown to the user when enough errors have occurred with extensions and they need to be temporarily disabled -->
     <string name="extension_process_crash_dialog_title">Razširitve so začasno onemogočene</string>
-    <!-- The first parameter is the application name. This is a message shown to the user when too many errors have occurred with the addons process and they have been disabled. The user can decide if they would like to continue trying to start add-ons or if they'd rather continue without them. -->
-    <string name="addon_process_crash_dialog_message" moz:removedIn="126" tools:ignore="UnusedResources">Eden ali več dodatkov je prenehal delovati, zaradi česar je sistem postal nestabilen. %1$s jih je poskušal znova zagnati, a ni uspel.\n\nMed trenutno sejo se dodatki ne bodo znova zagnali.\n\nTežavo lahko odpravite tako, da odstranite ali onemogočite dodatke.</string>
     <!-- This is a message shown to the user when too many errors have occurred with the extensions process and they have been disabled.
     The user can decide if they would like to continue trying to start extensions or if they'd rather continue without them.
     The first parameter is the application name. -->
     <string name="extension_process_crash_dialog_message">Ena ali več razširitev je prenehalo delovati, zaradi česar je sistem postal nestabilen. %1$s jih je poskušal znova zagnati, a ni uspel.\n\nMed trenutno sejo se razširitve ne bodo znova zagnale.\n\nTežavo lahko odpravite tako, da razširitve odstranite ali onemogočite.</string>
-    <!-- This will cause the add-ons to try restarting but the dialog will reappear if it is unsuccessful again -->
-    <string name="addon_process_crash_dialog_retry_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Poskusi znova zagnati dodatke</string>
     <!-- Button text on the extension crash dialog to prompt the user to try restarting the extensions but the dialog will reappear if it is unsuccessful again -->
     <string name="extension_process_crash_dialog_retry_button_text" tools:ignore="UnusedResources">Poskusi znova zagnati razširitve</string>
-    <!-- The user will continue with all add-ons disabled -->
-    <string name="addon_process_crash_dialog_disable_addons_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Nadaljuj z onemogočenimi dodatki</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to continue with all extensions disabled. -->
     <string name="extension_process_crash_dialog_disable_extensions_button_text">Nadaljuj z onemogočenimi razširitvami</string>
@@ -743,8 +793,6 @@
     <string name="preferences_sync_history">Zgodovina</string>
     <!-- Preference for syncing bookmarks -->
     <string name="preferences_sync_bookmarks">Zaznamki</string>
-    <!-- Preference for syncing logins -->
-    <string name="preferences_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Prijave</string>
     <!-- Preference for syncing passwords -->
     <string name="preferences_sync_logins_2">Gesla</string>
     <!-- Preference for syncing tabs -->
@@ -772,8 +820,6 @@
         and the third is the device model. -->
     <string name="default_device_name_2">%1$s na %2$s %3$s</string>
 
-    <!-- Preference for syncing credit cards -->
-    <string name="preferences_sync_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Kreditne kartice</string>
     <!-- Preference for syncing payment methods -->
     <string name="preferences_sync_credit_cards_2">Plačilna sredstva</string>
     <!-- Preference for syncing addresses -->
@@ -789,6 +835,14 @@
     <string name="fxa_tab_received_notification_name">Zavihek prejet</string>
     <!-- %s is the device name -->
     <string name="fxa_tab_received_from_notification_name">Zavihek iz naprave %s</string>
+
+    <!-- Close Synced Tabs -->
+    <!-- The title for a notification shown when the user closes tabs that are currently
+    open on this device from another device that's signed in to the same Mozilla account.
+    %1$s is a placeholder for the app name; %2$d is the number of tabs closed.  -->
+    <string name="fxa_tabs_closed_notification_title">Zaprtih %1$s zavihkov: %2$d</string>
+    <!-- The body for a "closed synced tabs" notification. -->
+    <string name="fxa_tabs_closed_text">Prikaži nedavno zaprte zavihke</string>
 
     <!-- Advanced Preferences -->
     <!-- Preference for tracking protection exceptions -->
@@ -849,10 +903,15 @@
     <!-- Preference for using the dynamic toolbar -->
     <string name="preference_gestures_dynamic_toolbar">Skritje orodne vrstice ob pomiku</string>
     <!-- Preference for switching tabs by swiping horizontally on the toolbar -->
-    <string name="preference_gestures_swipe_toolbar_switch_tabs">Preklop med zavihki s potegom orodne vrstice vstran</string>
+    <string name="preference_gestures_swipe_toolbar_switch_tabs" moz:removedIn="129" tools:ignore="UnusedResources">Preklop med zavihki s potegom orodne vrstice vstran</string>
 
     <!-- Preference for showing the opened tabs by swiping up on the toolbar-->
     <string name="preference_gestures_swipe_toolbar_show_tabs">Odpiranje zavihkov s potegom orodne vrstice navzgor</string>
+
+    <!-- Preference for using the dynamic toolbars -->
+    <string name="preference_gestures_dynamic_toolbar_2">Ob pomikanju skrij naslovno in orodno vrstico</string>
+    <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
+    <string name="preference_gestures_swipe_toolbar_switch_tabs_2">Preklop med zavihki s potegom naslovne vrstice vstran</string>
 
     <!-- Library -->
     <!-- Option in Library to open Downloads page -->
@@ -1365,6 +1424,25 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">Zapri zasebne zavihke</string>
 
+    <!-- Microsuverys -->
+    <!-- Text shown in prompt for printing microsurvey. "sec" It's an abrevation for "second". -->
+    <string name="microsurvey_prompt_printing_title" tools:ignore="UnusedResources">Pomagajte izboljšati tiskanje v Firefoxu. Vzelo vam bo samo sekundo</string>
+    <!-- Text shown in prompt for printing microsurvey. 'Firefox' intentionally hardcoded here--> --&gt;
+    <string name="microsurvey_survey_printing_title" tools:ignore="UnusedResources">Kako zadovoljni ste s tiskanjem v Firefoxu?</string>
+    <!-- Text for option one, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources">neodločen/-a</string>
+    <!-- Text for option two, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_1" tools:ignore="UnusedResources">zelo nezadovoljen/-na</string>
+    <!-- Text for option three, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_2" tools:ignore="UnusedResources">nezadovoljen/-na</string>
+    <!-- Text for option four, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_3" tools:ignore="UnusedResources">zadovoljen/-na</string>
+    <!-- Text for option five, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_4" tools:ignore="UnusedResources">zelo zadovoljen/-na</string>
+
+
+    <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
+    <string name="notification_erase_title_android_14">Zaprem zasebne zavihke?</string>
     <string name="notification_erase_text_android_14">Tapnite to obvestilo ali ga povlecite vstran, da zaprete zasebne zavihke.</string>
 
     <!-- Name of the marketing notification channel. Displayed in the "App notifications" system settings for the app -->
@@ -1439,10 +1517,6 @@
     <string name="qr_scanner_dialog_invalid_ok">V redu</string>
     <!-- Tab collection deletion prompt dialog message. Placeholder will be replaced with the collection name -->
     <string name="tab_collection_dialog_message">Ali ste prepričani, da želite izbrisati %1$s?</string>
-    <!-- Collection and tab deletion prompt dialog message. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_message">Če izbrišete ta zavihek, boste izbrisali celotno zbirko. Nove zbirke lahko ustvarite kadarkoli.</string>
-    <!-- Collection and tab deletion prompt dialog title. Placeholder will be replaced with the collection name. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_title">Izbrišem %1$s?</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">Izbriši</string>
     <!-- Text displayed in a notification when the user enters full screen mode -->
@@ -1725,11 +1799,7 @@
     <string name="add_to_homescreen_description_2">To stran lahko preprosto dodate na svoj domači zaslon naprave za lažji dostop in hitrejše brskanje v načinu, podobnem aplikaciji.</string>
 
     <!-- Preference for managing the settings for logins and passwords in Fenix -->
-    <string name="preferences_passwords_logins_and_passwords" moz:RemovedIn="125" tools:ignore="UnusedResources">Prijave in gesla</string>
-    <!-- Preference for managing the settings for logins and passwords in Fenix -->
     <string name="preferences_passwords_logins_and_passwords_2">Gesla</string>
-    <!-- Preference for managing the saving of logins and passwords in Fenix -->
-    <string name="preferences_passwords_save_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Shranjevanje prijav in gesel</string>
     <!-- Preference for managing the saving of logins and passwords in Fenix -->
     <string name="preferences_passwords_save_logins_2">Shranjuj gesla</string>
     <!-- Preference option for asking to save passwords in Fenix -->
@@ -1747,46 +1817,27 @@
     <!-- Description for the preference for autofilling logins from Fenix in other apps (e.g. autofilling the Twitter app) -->
     <string name="preferences_android_autofill_description">Izpolnjuj uporabniška imena in gesla v drugih aplikacijah na napravi.</string>
 
-    <!-- Preference option for adding a login -->
-    <string name="preferences_logins_add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Dodaj prijavo</string>
-
     <!-- Preference option for adding a password -->
     <string name="preferences_logins_add_login_2">Dodaj geslo</string>
 
     <!-- Preference for syncing saved passwords in Fenix -->
-    <string name="preferences_passwords_sync_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Sinhronizacija prijav</string>
-    <!-- Preference for syncing saved passwords in Fenix -->
     <string name="preferences_passwords_sync_logins_2">Sinhroniziraj gesla</string>
-    <!-- Preference for syncing saved logins in Fenix, when not signed in-->
-    <string name="preferences_passwords_sync_logins_across_devices" moz:RemovedIn="125" tools:ignore="UnusedResources">Sinhroniziraj prijave med napravami</string>
     <!-- Preference for syncing saved passwords in Fenix, when not signed in-->
     <string name="preferences_passwords_sync_logins_across_devices_2">Sinhroniziraj gesla med napravami</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins" moz:RemovedIn="125" tools:ignore="UnusedResources">Shranjene prijave</string>
     <!-- Preference to access list of saved passwords -->
     <string name="preferences_passwords_saved_logins_2">Shranjena gesla</string>
     <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
-    <string name="preferences_passwords_saved_logins_description_empty_text" moz:RemovedIn="125" tools:ignore="UnusedResources">Tu se prikažejo prijave, ki jih shranite ali sinhronizirate v %s.</string>
-    <!-- Description of empty list of saved passwords. Placeholder is replaced with app name.  -->
     <string name="preferences_passwords_saved_logins_description_empty_text_2">Gesla, ki jih boste shranili ali sinhronizirali v %su, bodo našteta tukaj. Vsa gesla so shranjena v šifrirani obliki.</string>
-    <!-- Preference to access list of saved logins -->
-    <string name="preferences_passwords_saved_logins_description_empty_learn_more_link" moz:RemovedIn="125" tools:ignore="UnusedResources">Več o Sync.</string>
     <!-- Clickable text for opening an external link for more information about Sync. -->
     <string name="preferences_passwords_saved_logins_description_empty_learn_more_link_2">Več o sinhronizaciji</string>
     <!-- Preference to access list of login exceptions that we never save logins for -->
     <string name="preferences_passwords_exceptions">Izjeme</string>
-    <!-- Empty description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description_empty" moz:RemovedIn="125" tools:ignore="UnusedResources">Tu bodo prikazane prijave in gesla, ki niso shranjena.</string>
     <!-- Empty description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_empty_2">Za tukaj navedena mesta %s ne bo shranjeval gesel.</string>
-    <!-- Description of list of login exceptions that we never save logins for -->
-    <string name="preferences_passwords_exceptions_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Prijave in gesla za te strani ne bodo shranjene.</string>
     <!-- Description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
     <string name="preferences_passwords_exceptions_description_2">Za ta spletna mesta %s ne bo shranjeval gesel.</string>
     <!-- Text on button to remove all saved login exceptions -->
     <string name="preferences_passwords_exceptions_remove_all">Izbriši vse izjeme</string>
-    <!-- Hint for search box in logins list -->
-    <string name="preferences_passwords_saved_logins_search" moz:RemovedIn="125" tools:ignore="UnusedResources">Iskanje prijav</string>
     <!-- Hint for search box in passwords list -->
     <string name="preferences_passwords_saved_logins_search_2">Iskanje gesel</string>
     <!-- The header for the site that a login is for -->
@@ -1815,16 +1866,10 @@
     <string name="saved_login_reveal_password">Prikaži geslo</string>
     <!-- Content Description (for screenreaders etc) read for the button to hide a password in logins -->
     <string name="saved_login_hide_password">Skrij geslo</string>
-    <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their logins -->
-    <string name="logins_biometric_prompt_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Odklenite za ogled shranjenih prijav</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their passwords -->
     <string name="logins_biometric_prompt_message_2">Odklenite za ogled shranjenih gesel</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Zavarujte svoje prijave in gesla</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_title_2">Zavarujte shranjena gesla</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="logins_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Nastavite vzorec za zaklepanje naprave, PIN ali geslo za zaščito pred dostopom do shranjenih prijav in gesel, če vašo napravo uporablja še kdo.</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="logins_warning_dialog_message_2">Nastavite vzorec za zaklepanje naprave, PIN ali geslo, da preprečite dostop do shranjenih gesel, če vašo napravo uporabi kdo drug.</string>
     <!-- Negative button to ignore warning dialog if users have no device authentication set up -->
@@ -1845,9 +1890,6 @@
     <!-- Saved logins sorting strategy menu item -by last used- (if selected, it will sort saved logins by last used) -->
     <string name="saved_logins_sort_strategy_last_used">Času zadnje uporabe</string>
 
-    <!-- Content description (not visible, for screen readers etc.): Sort saved logins dropdown menu chevron icon -->
-    <string name="saved_logins_menu_dropdown_chevron_icon_content_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Meni razvrščanja prijav</string>
-
     <!-- Content description (not visible, for screen readers etc.) -->
     <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">Meni za razvrščanje gesel</string>
 
@@ -1856,41 +1898,27 @@
     <string name="preferences_autofill">Samodejno izpolnjevanje</string>
     <!-- Preference and title for managing the settings for addresses -->
     <string name="preferences_addresses">Naslovi</string>
-    <!-- Preference and title for managing the settings for credit cards -->
-    <string name="preferences_credit_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Kreditne kartice</string>
     <!-- Preference and title for managing the settings for payment methods -->
     <string name="preferences_credit_cards_2">Plačilna sredstva</string>
     <!-- Preference for saving and autofilling credit cards -->
-    <string name="preferences_credit_cards_save_and_autofill_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Shrani in samodejno izpolni kartice</string>
-    <!-- Preference for saving and autofilling credit cards -->
     <string name="preferences_credit_cards_save_and_autofill_cards_2">Shranjuj in izpolnjuj plačilna sredstva</string>
-    <!-- Preference summary for saving and autofilling credit card data -->
-    <string name="preferences_credit_cards_save_and_autofill_cards_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Podatki so šifrirani</string>
     <!-- Preference summary for saving and autofilling payment method data. Parameter will be replaced by app name. -->
     <string name="preferences_credit_cards_save_and_autofill_cards_summary_2">%s šifrira vsa plačilna sredstva, ki jih shranite</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is not signed into sync -->
     <string name="preferences_credit_cards_sync_cards_across_devices">Sinhroniziraj kartice med napravami</string>
     <!-- Preference option for syncing credit cards across devices. This is displayed when the user is signed into sync -->
     <string name="preferences_credit_cards_sync_cards">Sinhroniziraj kartice</string>
-    <!-- Preference option for adding a credit card -->
-    <string name="preferences_credit_cards_add_credit_card" moz:RemovedIn="125" tools:ignore="UnusedResources">Dodaj kreditno kartico</string>
 
     <!-- Preference option for adding a card -->
     <string name="preferences_credit_cards_add_credit_card_2">Dodaj kartico</string>
-    <!-- Preference option for managing saved credit cards -->
-    <string name="preferences_credit_cards_manage_saved_cards" moz:RemovedIn="125" tools:ignore="UnusedResources">Upravljanje shranjenih kartic</string>
     <!-- Preference option for managing saved cards -->
     <string name="preferences_credit_cards_manage_saved_cards_2">Upravljanje kartic</string>
     <!-- Preference option for adding an address -->
     <string name="preferences_addresses_add_address">Dodaj naslov</string>
     <!-- Preference option for managing saved addresses -->
     <string name="preferences_addresses_manage_addresses">Upravljanje naslovov</string>
-    <!-- Preference for saving and autofilling addresses -->
-    <string name="preferences_addresses_save_and_autofill_addresses" moz:RemovedIn="125" tools:ignore="UnusedResources">Shranjuj in samodejno izpolnjuj naslove</string>
     <!-- Preference for saving and filling addresses -->
     <string name="preferences_addresses_save_and_autofill_addresses_2">Shranjuj in izpolnjuj naslove</string>
-    <!-- Preference summary for saving and autofilling address data -->
-    <string name="preferences_addresses_save_and_autofill_addresses_summary" moz:RemovedIn="125" tools:ignore="UnusedResources">Vključi podatke, kot so številke, e-poštni naslovi in naslovi za dostavo</string>
 
     <!-- Preference summary for saving and filling address data -->
     <string name="preferences_addresses_save_and_autofill_addresses_summary_2">Vključuje telefonske številke in e-poštne naslove</string>
@@ -1914,7 +1942,7 @@
     <!-- The text for the "Delete card" button for deleting a credit card -->
     <string name="credit_cards_delete_card_button">Izbriši kartico</string>
     <!-- The text for the confirmation message of "Delete card" dialog -->
-    <string name="credit_cards_delete_dialog_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Ali ste prepričani, da želite izbrisati to kreditno kartico?</string>
+    <string name="credit_cards_delete_dialog_confirmation_2">Izbrišem kartico?</string>
     <!-- The text for the positive button on "Delete card" dialog -->
     <string name="credit_cards_delete_dialog_button">Izbriši</string>
     <!-- The title for the "Save" menu item for saving a credit card -->
@@ -1927,23 +1955,14 @@
     <!-- Title of the "Saved cards" screen -->
     <string name="credit_cards_saved_cards">Shranjene kartice</string>
 
-    <!-- Error message for credit card number validation -->
-    <string name="credit_cards_number_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Vnesite veljavno številko kreditne kartice</string>
-
     <!-- Error message for card number validation -->
     <string name="credit_cards_number_validation_error_message_2">Vnesite veljavno številko kartice</string>
-    <!-- Error message for credit card name on card validation -->
-    <string name="credit_cards_name_on_card_validation_error_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Izpolnite to polje</string>
     <!-- Error message for card name on card validation -->
     <string name="credit_cards_name_on_card_validation_error_message_2">Dodajte ime</string>
     <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their saved credit cards -->
     <string name="credit_cards_biometric_prompt_message">Odklenite za ogled shranjenih kartic</string>
     <!-- Title of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_title" moz:RemovedIn="125" tools:ignore="UnusedResources">Zavarujte svoje kreditne kartice</string>
-    <!-- Title of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_title_2">Zavarujte shranjena plačilna sredstva</string>
-    <!-- Message of warning dialog if users have no device authentication set up -->
-    <string name="credit_cards_warning_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Nastavite vzorec za zaklepanje naprave, PIN ali geslo za zaščito pred dostopom do kreditnih kartic, če vašo napravo uporablja še kdo.</string>
     <!-- Message of warning dialog if users have no device authentication set up -->
     <string name="credit_cards_warning_dialog_message_3">Nastavite vzorec za zaklepanje naprave, PIN ali geslo, da preprečite dostop do plačilnih sredstev, če vašo napravo uporabi kdo drug.</string>
     <!-- Positive button to send users to set up a pin of warning dialog if users have no device authentication set up -->
@@ -1953,9 +1972,6 @@
     <!-- Title of PIN verification dialog to direct users to re-enter their device credentials to access their credit cards -->
     <string name="credit_cards_biometric_prompt_message_pin">Odklenite svojo napravo</string>
 
-    <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored credit card information -->
-    <string name="credit_cards_biometric_prompt_unlock_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Odklenite za uporabo shranjenih podatkov o kreditnih karticah</string>
-
     <!-- Message displayed in biometric prompt for authentication, before allowing users to use their stored payment method information -->
     <string name="credit_cards_biometric_prompt_unlock_message_2">Odklenite za ogled shranjenih plačilnih sredstev</string>
     <!-- Title of the "Add address" screen -->
@@ -1964,12 +1980,6 @@
     <string name="addresses_edit_address">Uredi naslov</string>
     <!-- Title of the "Manage addresses" screen -->
     <string name="addresses_manage_addresses">Upravljanje naslovov</string>
-    <!-- The header for the first name of an address -->
-    <string name="addresses_first_name" moz:removedIn="125" tools:ignore="UnusedResources">Ime</string>
-    <!-- The header for the middle name of an address -->
-    <string name="addresses_middle_name" moz:removedIn="125" tools:ignore="UnusedResources">Drugo ime</string>
-    <!-- The header for the last name of an address -->
-    <string name="addresses_last_name" moz:removedIn="125" tools:ignore="UnusedResources">Priimek</string>
     <!-- The header for the name of an address. Name represents a person's full name, typically made up of a first, middle and last name, e.g. John Joe Doe. -->
     <string name="addresses_name">Ime</string>
     <!-- The header for the street address of an address -->
@@ -1996,7 +2006,7 @@
     <string name="addressess_delete_address_button">Izbriši naslov</string>
 
     <!-- The title for the "Delete address" confirmation dialog -->
-    <string name="addressess_confirm_dialog_message" moz:RemovedIn="125" tools:ignore="UnusedResources">Res želite izbrisati ta naslov?</string>
+    <string name="addressess_confirm_dialog_message_2">Izbrišem ta naslov?</string>
     <!-- The text for the positive button on "Delete address" dialog -->
     <string name="addressess_confirm_dialog_ok_button">Izbriši</string>
     <!-- The text for the negative button on "Delete address" dialog -->
@@ -2095,48 +2105,28 @@
     <string name="login_menu_delete_button">Izbriši</string>
     <!-- Login overflow menu edit button -->
     <string name="login_menu_edit_button">Uredi</string>
-    <!-- Message in delete confirmation dialog for logins -->
-    <string name="login_deletion_confirmation" moz:RemovedIn="125" tools:ignore="UnusedResources">Ali ste prepričani, da želite izbrisati to prijavo?</string>
     <!-- Message in delete confirmation dialog for password -->
     <string name="login_deletion_confirmation_2">Ali ste prepričani, da želite izbrisati to geslo?</string>
     <!-- Positive action of a dialog asking to delete  -->
     <string name="dialog_delete_positive">Izbriši</string>
     <!-- Negative action of a dialog asking to delete login -->
     <string name="dialog_delete_negative">Prekliči</string>
-    <!--  The saved login options menu description. -->
-    <string name="login_options_menu" moz:RemovedIn="125" tools:ignore="UnusedResources">Možnosti prijave</string>
     <!--  The saved password options menu description. -->
     <string name="login_options_menu_2">Možnosti gesel</string>
-    <!--  The editable text field for a login's web address. -->
-    <string name="saved_login_hostname_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Besedilno polje za urejanje spletnega naslova prijave.</string>
     <!--  The editable text field for a website address. -->
     <string name="saved_login_hostname_description_3">Besedilno polje za urejanje spletnega naslova.</string>
-    <!--  The editable text field for a login's username. -->
-    <string name="saved_login_username_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Besedilno polje za urejanje uporabniškega imena prijave.</string>
     <!--  The editable text field for a username. -->
     <string name="saved_login_username_description_3">Besedilno polje za urejanje uporabniškega imena.</string>
     <!--  The editable text field for a login's password. -->
-    <string name="saved_login_password_description" moz:RemovedIn="125" tools:ignore="UnusedResources">Besedilno polje za urejanje gesla prijave.</string>
-    <!--  The editable text field for a login's password. -->
     <string name="saved_login_password_description_2">Besedilno polje za urejanje gesla.</string>
-    <!--  The button description to save changes to an edited login. -->
-    <string name="save_changes_to_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Shrani spremembe v prijavo.</string>
     <!--  The button description to save changes to an edited password. -->
     <string name="save_changes_to_login_2">Shrani spremembe.</string>
-    <!--  The page title for editing a saved login. -->
-    <string name="edit" moz:RemovedIn="125" tools:ignore="UnusedResources">Urejanje</string>
     <!--  The page title for editing a saved password. -->
     <string name="edit_2">Uredi geslo</string>
-    <!--  The page title for adding new login. -->
-    <string name="add_login" moz:RemovedIn="125" tools:ignore="UnusedResources">Dodaj novo prijavo</string>
     <!--  The page title for adding new password. -->
     <string name="add_login_2">Dodaj geslo</string>
-    <!--  The error message in add/edit login view when password field is blank. -->
-    <string name="saved_login_password_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Zahtevano je geslo</string>
     <!--  Error text displayed underneath the password field when it is in an error case. -->
     <string name="saved_login_password_required_2">Vnesite geslo</string>
-    <!--  The error message in add login view when username field is blank. -->
-    <string name="saved_login_username_required" moz:RemovedIn="125" tools:ignore="UnusedResources">Zahtevano je uporabniško ime</string>
     <!--  The error message in add login view when username field is blank. -->
     <string name="saved_login_username_required_2">Vnesite uporabniško ime</string>
     <!--  The error message in add login view when hostname field is blank. -->
@@ -2463,6 +2453,10 @@
     <!-- Translation request dialog -->
     <!-- Title for the translation dialog that allows a user to translate the webpage. -->
     <string name="translations_bottom_sheet_title">Prevedem to stran?</string>
+    <!-- Title for the translation dialog after a translation was completed successfully.
+    The first parameter is the name of the language that the page was translated from, for example, "French".
+    The second parameter is the name of the language that the page was translated to, for example, "English". -->
+    <string name="translations_bottom_sheet_title_translation_completed">Stran prevedena iz jezika %1$s v jezik %2$s</string>
     <!-- Title for the translation dialog that allows a user to translate the webpage when a user uses the translation feature the first time. The first parameter is the name of the application, for example, "Fenix". -->
     <string name="translations_bottom_sheet_title_first_time">Preskusite zasebno prevajanje v %1$su</string>
     <!-- Additional information on the translation dialog that appears when a user uses the translation feature the first time. The first parameter is clickable text with a link, for example, "Learn more". -->
@@ -2473,10 +2467,14 @@
     <string name="translations_bottom_sheet_translate_from">Izvorni jezik</string>
     <!-- Label for the dropdown to select which language to translate to on the translations dialog. Usually the translate to language selected will be the user's preferred language. -->
     <string name="translations_bottom_sheet_translate_to">Ciljni jezik</string>
+    <!-- Label for the dropdown to select which language to translate from on the translations dialog when the page language is not supported. This selection is to allow the user to select another language, in case we automatically detected the page language incorrectly. -->
+    <string name="translations_bottom_sheet_translate_from_unsupported_language">Poskusi z drugim izvornim jezikom</string>
     <!-- Button text on the translations dialog to dismiss the dialog and return to the browser. -->
     <string name="translations_bottom_sheet_negative_button">Ne zdaj</string>
     <!-- Button text on the translations dialog to restore the translated website back to the original untranslated version. -->
     <string name="translations_bottom_sheet_negative_button_restore">Prikaži izvirnik</string>
+    <!-- Accessibility announcement (not visible, for screen readers etc.) for the translations dialog after restore button was pressed that indicates the original untranslated page was loaded. -->
+    <string name="translations_bottom_sheet_restore_accessibility_announcement">Naložena izvirna neprevedena stran</string>
     <!-- Button text on the translations dialog when a translation error appears, used to dismiss the dialog and return to the browser. -->
     <string name="translations_bottom_sheet_negative_button_error">Končano</string>
     <!-- Button text on the translations dialog to begin a translation of the website. -->
@@ -2496,17 +2494,22 @@
     <string name="translation_error_could_not_load_languages_warning_text">Jezikov ni bilo mogoče naložiti. Preverite internetno povezavo in poskusite znova.</string>
     <!-- The title of the warning card informs the user that a language is not supported. The first parameter is the name of the language that is not supported. -->
     <string name="translation_error_language_not_supported_warning_text">%1$s žal še ni podprt jezik.</string>
-    <!-- Button text on the warning card when a language is not supported. The link will take the user to a page to a support page about translations. -->
-    <string name="translation_error_language_not_supported_learn_more">Več o tem</string>
 
 
     <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
     <string name="translation_in_progress_snackbar">Prevajanje …</string>
 
 
+    <!-- Title for the data saving mode warning dialog used in the translation request dialog.
+    This dialog will be presented when the user attempts to perform
+    a translation without the necessary language files downloaded first when Android's data saver mode is enabled and the user is not using WiFi.
+    The first parameter is the size in kilobytes or megabytes of the language file. -->
+    <string name="translations_download_language_file_dialog_title">Prenesem jezik ob varčevanju s podatki (%1$s)?</string>
+
+
     <!-- Translations options dialog -->
     <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
-    <string name="translation_option_bottom_sheet_title">Možnosti prevajanja</string>
+    <string name="translation_option_bottom_sheet_title_heading">Možnosti prevajanja</string>
     <!-- Toggle switch label that allows a user to set the setting if they would like the browser to always offer or suggest translations when available. -->
     <string name="translation_option_bottom_sheet_always_translate">Vedno ponudi prevod</string>
 
@@ -2518,10 +2521,15 @@
     <string name="translation_option_bottom_sheet_never_translate_site">Nikoli ne prevajaj tega spletnega mesta</string>
     <!-- Toggle switch description that will appear under the "Never translate these sites" settings toggle switch to provide more information on how this setting interacts with other settings. -->
     <string name="translation_option_bottom_sheet_switch_never_translate_site_description">Preglasi vse druge nastavitve</string>
+    <!-- Toggle switch description that will appear under the "Never translate" and "Always translate" toggle switch settings to provide more information on how these  settings interacts with other settings. -->
+    <string name="translation_option_bottom_sheet_switch_description">Preglasi ponudbe za prevajanje</string>
     <!-- Button text for the button that will take the user to the translation settings dialog. -->
     <string name="translation_option_bottom_sheet_translation_settings">Nastavitve prevajanja</string>
     <!-- Button text for the button that will take the user to a website to learn more about how translations works in the given app. The first parameter is the name of the application, for example, "Fenix". -->
     <string name="translation_option_bottom_sheet_about_translations">O prevodih v %1$su</string>
+
+    <!-- The title of the warning card informs the user that an error has occurred at page settings. -->
+    <string name="translation_option_bottom_sheet_error_warning_text">Nekatere nastavitve začasno niso na voljo.</string>
 
     <!-- Translation settings dialog -->
     <!-- Title of the translation settings dialog that allows a user to set their preferred translation settings. -->
@@ -2544,6 +2552,9 @@
     <!-- Title of the automatic translation preference screen that will appear on the toolbar.-->
     <string name="automatic_translation_toolbar_title_preference">Samodejno prevajanje</string>
 
+    <!-- The title of the warning card informs the user that the system could not load languages for translation settings. -->
+    <string name="automatic_translation_error_warning_text">Jezikov ni bilo mogoče naložiti. Poskusite znova pozneje.</string>
+
     <!-- Automatic translation options preference screen -->
     <!-- Preference option for offering to translate. Radio button title text.-->
     <string name="automatic_translation_option_offer_to_translate_title_preference">Ponudi prevajanje (privzeto)</string>
@@ -2562,6 +2573,16 @@
     <!-- Never translate site preference screen -->
     <!-- Title of the never translate site preference screen that will appear on the toolbar.-->
     <string name="never_translate_site_toolbar_title_preference">Nikoli ne prevajaj teh spletnih mest</string>
+    <!-- Screen header presenting the never translate site preference feature. It will appear under the toolbar. -->
+    <string name="never_translate_site_header_preference">Za dodajanje novega spletnega mesta: obiščite ga in v meniju prevajalnika izberite &quot;Nikoli ne prevajaj tega spletnega mesta&quot;.</string>
+    <!-- Content description (not visible, for screen readers etc.): For a never-translated site list item that is selected.
+             The first parameter is web site url (for example:"wikipedia.com") -->
+    <string name="never_translate_site_item_list_content_description_preference">Odstrani %1$s</string>
+    <!-- The title of the warning card informs the user that an error has occurred at the never translate sites list. -->
+    <string name="never_translate_site_error_warning_text">Spletnih mest ni bilo mogoče naložiti. Poskusite znova pozneje.</string>
+    <!-- The Delete site dialogue title will appear when the user clicks on a list item.
+             The first parameter is web site url (for example:"wikipedia.com") -->
+    <string name="never_translate_site_dialog_title_preference">Izbrišem %1$s?</string>
     <!-- The Delete site dialogue positive button will appear when the user clicks on a list item. The site will be deleted. -->
     <string name="never_translate_site_dialog_confirm_delete_preference">Izbriši</string>
     <!-- The Delete site dialogue negative button will appear when the user clicks on a list item. The dialog will be dismissed. -->
@@ -2580,8 +2601,12 @@
     The first parameter is the language name, for example, "Spanish".
     The second parameter is the language file size, for example, "(3.91 KB)" or, if the language package name is a pivot language, "(required)". -->
     <string name="download_languages_language_item_preference">%1$s (%2$s)</string>
-    <!-- All languages list item. When the user presses this item, they can download or delete all languages. -->
+    <!-- The subhead of the download language preference screen will appear above the items that were not downloaded. -->
+    <string name="download_language_header_preference">Prenesi jezike</string>
+    <!-- All languages list item. When the user presses this item, they can download all languages. -->
     <string name="download_language_all_languages_item_preference">Vsi jeziki</string>
+    <!-- All languages list item. When the user presses this item, they can delete all languages that were downloaded. -->
+    <string name="download_language_all_languages_item_preference_to_delete">Izbriši vse jezike</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">Izbriši</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress. -->
@@ -2589,8 +2614,18 @@
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">Prenesi</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that is selected. -->
-    <string name="download_languages_item_content_description_selected_state">Izbrano</string>
+    <string name="download_languages_item_content_description_selected_state" moz:removedIn="127" tools:ignore="UnusedResources">Izbrano</string>
 
+    <!-- Title for the dialog used by the translations feature to confirm deleting a language.
+    The dialog will be presented when the user requests deletion of a language.
+    The first parameter is the name of the language, for example, "Spanish" and the second parameter is the size in kilobytes or megabytes of the language file. -->
+    <string name="delete_language_file_dialog_title">Izbrišem jezik %1$s (%2$s)?</string>
+    <!-- Additional information for the dialog used by the translations feature to confirm deleting a language. The first parameter is the name of the application, for example, "Fenix". -->
+    <string name="delete_language_file_dialog_message">Če boste izbrisali ta jezik, bo %1$s pri prevajanju v predpomnilnik naložil delne jezike.</string>
+    <!-- Title for the dialog used by the translations feature to confirm deleting all languages file.
+    The dialog will be presented when the user requests deletion of all languages file.
+    The first parameter is the size in kilobytes or megabytes of the language file. -->
+    <string name="delete_language_all_languages_file_dialog_title">Izbrišem vse jezike (%1$s)?</string>
     <!-- Additional information for the dialog used by the translations feature to confirm deleting all languages file. The first parameter is the name of the application, for example, "Fenix". -->
     <string name="delete_language_all_languages_file_dialog_message">Če izbrišete vse jezike, bo %1$s pri prevajanju v predpomnilnik naložil delne jezike.</string>
     <!-- Button text on the dialog used by the translations feature to confirm deleting a language. -->
@@ -2598,6 +2633,10 @@
     <!-- Button text on the dialog used by the translations feature to cancel deleting a language. -->
     <string name="delete_language_file_dialog_negative_button_text">Prekliči</string>
 
+    <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation. -->
+    <string name="download_language_file_dialog_message_all_languages">Dele jezikov prenesemo v vaš predpomnilnik, da prevodi ostanejo zasebni.</string>
+    <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation without mentioning the cache. -->
+    <string name="download_language_file_dialog_message_all_languages_no_cache">Dele jezikov prenesemo, da prevodi ostanejo zasebni.</string>
     <!-- Checkbox label text on the data saving mode warning dialog used by the translations feature. This checkbox allows users to ignore the data usage warnings. -->
     <string name="download_language_file_dialog_checkbox_text">Vedno prenesi tudi ob varčevanju s podatki</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to confirm they wish to continue and download the language file. -->
@@ -2612,12 +2651,19 @@
     <string name="debug_drawer_title">Orodja za razhroščevanje</string>
     <!-- Content description (not visible, for screen readers etc.): Navigate back within the debug drawer. -->
     <string name="debug_drawer_back_button_content_description">Pojdi nazaj</string>
+
+    <!-- Content description (not visible, for screen readers etc.): Open debug drawer. -->
+    <string name="debug_drawer_fab_content_description">Odpri predal za razhroščevanje</string>
+
+    <!-- Debug drawer tabs tools -->
     <!-- The title of the Tab Tools feature in the Debug Drawer. -->
     <string name="debug_drawer_tab_tools_title">Orodja za zavihke</string>
     <!-- The title of the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_title">Št. zavihkov</string>
     <!-- The active tab count category in the tab count section in Tab Tools. -->
-    <string name="debug_drawer_tab_tools_tab_count_normal">Dejavni</string>
+    <string name="debug_drawer_tab_tools_tab_count_normal" moz:removedIn="127" tools:ignore="UnusedResources">Dejavni</string>
+    <!-- The active tab count category in the tab count section in Tab Tools. -->
+    <string name="debug_drawer_tab_tools_tab_count_active">Dejaven</string>
     <!-- The inactive tab count category in the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_inactive">Nedejavni</string>
     <!-- The private tab count category in the tab count section in Tab Tools. -->
@@ -2628,10 +2674,73 @@
     <string name="debug_drawer_tab_tools_tab_creation_tool_title">Orodje za ustvarjanje zavihkov</string>
     <!-- The label of the text field in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_text_field_label">Količina zavihkov, ki jih želite ustvariti</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is empty -->
+    <string name="debug_drawer_tab_tools_tab_quantity_empty_error">Besedilno polje je prazno</string>
+    <!-- The error message of the text field in the tab creation tool when the text field has characters other than digits -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_digits_error">Vnesite pozitivno celo število</string>
+    <!-- The error message of the text field in the tab creation tool when the text field is a zero -->
+    <string name="debug_drawer_tab_tools_tab_quantity_non_zero_error">Vnesite število, večje od nič</string>
     <!-- The button text to add tabs to the active tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_active">Dodaj med dejavne zavihke</string>
     <!-- The button text to add tabs to the inactive tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_inactive">Dodaj med nedejavne zavihke</string>
     <!-- The button text to add tabs to the private tab group in the tab creation tool. -->
     <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_private">Dodaj med zasebne zavihke</string>
+
+    <!-- Micro survey -->
+
+    <!-- Microsurvey -->
+    <!-- Prompt view -->
+    <!-- The microsurvey prompt title. Note: The word "Firefox" should NOT be translated -->
+    <string name="micro_survey_prompt_title" tools:ignore="UnusedResources">Pomagajte nam izboljšati Firefox. Vzelo vam bo le minuto.</string>
+    <!-- The continue button label -->
+    <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Nadaljuj</string>
+    <!-- Survey view -->
+    <!-- The survey header -->
+    <string name="micro_survey_survey_header" moz:removedIn="129" tools:ignore="UnusedResources">Izpolnite anketo</string>
+    <!-- The survey header -->
+    <string name="micro_survey_survey_header_2">Izpolnite anketo</string>
+    <!-- The privacy notice link -->
+    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">Obvestilo o zasebnosti</string>
+    <!-- The privacy notice link -->
+    <string name="micro_survey_privacy_notice_2">Obvestilo o zasebnosti</string>
+    <!-- The submit button label text -->
+    <string name="micro_survey_submit_button_label">Pošlji</string>
+    <!-- The close button label text -->
+    <string name="micro_survey_close_button_label" moz:removedIn="128" tools:ignore="UnusedResources">Zapri</string>
+    <!-- The survey completion header -->
+    <string name="micro_survey_survey_header_confirmation" tools:ignore="UnusedResources">Anketa končana</string>
+    <!-- The survey completion confirmation text -->
+    <string name="micro_survey_feedback_confirmation">Hvala za vaše mnenje!</string>
+
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_1" tools:ignore="UnusedResources">zelo zadovoljen/-na</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_2" tools:ignore="UnusedResources">zadovoljen/-na</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_3" tools:ignore="UnusedResources">neodločen/-a</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_4" tools:ignore="UnusedResources">nezadovoljen/-na</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_5" tools:ignore="UnusedResources">zelo nezadovoljen/-na</string>
+
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_6" tools:ignore="UnusedResources">Ne uporabljam ga</string>
+    <!-- Text shown in prompt for homepage microsurvey. 'Firefox' intentionally hardcoded here- -->
+    <string name="microsurvey_prompt_homepage_title" tools:ignore="UnusedResources">Kako zadovoljni ste s Firefoxovo domačo stranjo?</string>
+    <!-- Accessibility -->
+    <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
+    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources">Odpri anketo</string>
+    <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
+    <string name="microsurvey_close_handle_content_description" tools:ignore="UnusedResources">Zapri anketo</string>
+    <!-- Content description for "X" button that is closing microsurvey. -->
+    <string name="microsurvey_close_button_content_description" tools:ignore="UnusedResources">Zapri</string>
+
+    <!-- Debug drawer logins -->
+    <!-- The title of the Logins feature in the Debug Drawer. -->
+    <string name="debug_drawer_logins_title">Prijave</string>
+    <!-- The title of the logins section in the Logins feature, where the parameter will be the site domain  -->
+    <string name="debug_drawer_logins_current_domain_label">Trenutna domena: %s</string>
+    <!-- Content description for delete button where parameter will be the username of the login -->
+    <string name="debug_drawer_logins_delete_login_button_content_description">Izbriši prijavo z uporabniškim imenom %s</string>
 </resources>

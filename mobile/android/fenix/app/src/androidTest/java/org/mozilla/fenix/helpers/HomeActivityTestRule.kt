@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.intent.rule.IntentsTestRule
 import androidx.test.rule.ActivityTestRule
 import androidx.test.uiautomator.UiSelector
+import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import org.junit.rules.TestRule
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.helpers.Constants.TAG
@@ -20,6 +21,7 @@ import org.mozilla.fenix.helpers.FeatureSettingsHelper.Companion.settings
 import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.onboarding.FenixOnboarding
+import org.mozilla.fenix.settings.PhoneFeature
 
 typealias HomeActivityComposeTestRule = AndroidComposeTestRule<out TestRule, HomeActivity>
 
@@ -56,8 +58,8 @@ class HomeActivityTestRule(
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
-        tabsTrayRewriteEnabled: Boolean = false,
         composeTopSitesEnabled: Boolean = false,
+        isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomeOnboardingDialogEnabled = isHomeOnboardingDialogEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -70,8 +72,8 @@ class HomeActivityTestRule(
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
         this.etpPolicy = etpPolicy
-        this.tabsTrayRewriteEnabled = tabsTrayRewriteEnabled
         this.composeTopSitesEnabled = composeTopSitesEnabled
+        this.isLocationPermissionEnabled = isLocationPermissionEnabled
     }
 
     /**
@@ -121,13 +123,11 @@ class HomeActivityTestRule(
             initialTouchMode: Boolean = false,
             launchActivity: Boolean = true,
             skipOnboarding: Boolean = false,
-            tabsTrayRewriteEnabled: Boolean = false,
             composeTopSitesEnabled: Boolean = false,
         ) = HomeActivityTestRule(
             initialTouchMode = initialTouchMode,
             launchActivity = launchActivity,
             skipOnboarding = skipOnboarding,
-            tabsTrayRewriteEnabled = tabsTrayRewriteEnabled,
             isJumpBackInCFREnabled = false,
             isPWAsPromptEnabled = false,
             isTCPCFREnabled = false,
@@ -171,8 +171,8 @@ class HomeActivityIntentTestRule internal constructor(
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
-        tabsTrayRewriteEnabled: Boolean = false,
         composeTopSitesEnabled: Boolean = false,
+        isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomeOnboardingDialogEnabled = isHomeOnboardingDialogEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -185,8 +185,8 @@ class HomeActivityIntentTestRule internal constructor(
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
         this.etpPolicy = etpPolicy
-        this.tabsTrayRewriteEnabled = tabsTrayRewriteEnabled
         this.composeTopSitesEnabled = composeTopSitesEnabled
+        this.isLocationPermissionEnabled = isLocationPermissionEnabled
     }
 
     private val longTapUserPreference = getLongPressTimeout()
@@ -255,6 +255,7 @@ class HomeActivityIntentTestRule internal constructor(
         isDeleteSitePermissionsEnabled = settings.deleteSitePermissions
         isOpenInAppBannerEnabled = settings.shouldShowOpenInAppBanner
         etpPolicy = getETPPolicy(settings)
+        isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings)
     }
 
     companion object {
@@ -272,13 +273,11 @@ class HomeActivityIntentTestRule internal constructor(
             initialTouchMode: Boolean = false,
             launchActivity: Boolean = true,
             skipOnboarding: Boolean = false,
-            tabsTrayRewriteEnabled: Boolean = false,
             composeTopSitesEnabled: Boolean = false,
         ) = HomeActivityIntentTestRule(
             initialTouchMode = initialTouchMode,
             launchActivity = launchActivity,
             skipOnboarding = skipOnboarding,
-            tabsTrayRewriteEnabled = tabsTrayRewriteEnabled,
             isJumpBackInCFREnabled = false,
             isPWAsPromptEnabled = false,
             isTCPCFREnabled = false,

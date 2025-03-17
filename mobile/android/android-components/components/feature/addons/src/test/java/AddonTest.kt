@@ -9,6 +9,7 @@ import mozilla.components.concept.engine.webextension.DisabledFlags
 import mozilla.components.concept.engine.webextension.Incognito
 import mozilla.components.concept.engine.webextension.Metadata
 import mozilla.components.concept.engine.webextension.WebExtension
+import mozilla.components.feature.addons.Addon.Companion.localizeOptionalPermissions
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.whenever
@@ -351,10 +352,31 @@ class AddonTest {
     }
 
     @Test
+    fun `localizeOptionalPermissions - should provide LocalizedPermission list`() {
+        val expectedLocalizedPermissions = listOf(
+            Addon.LocalizedPermission(testContext.getString(R.string.mozac_feature_addons_permissions_all_urls_description), Addon.Permission("<all_urls>", false)),
+            Addon.LocalizedPermission(testContext.getString(R.string.mozac_feature_addons_permissions_web_navigation_description), Addon.Permission("webNavigation", false)),
+            Addon.LocalizedPermission(testContext.getString(R.string.mozac_feature_addons_permissions_clipboard_read_description), Addon.Permission("clipboardRead", false)),
+            Addon.LocalizedPermission(testContext.getString(R.string.mozac_feature_addons_permissions_clipboard_write_description), Addon.Permission("clipboardWrite", false)),
+        )
+
+        val permissions = listOf(
+            Addon.Permission("<all_urls>", false),
+            Addon.Permission("webNavigation", false),
+            Addon.Permission("clipboardRead", false),
+            Addon.Permission("clipboardWrite", false),
+        )
+
+        val localizedResult = localizeOptionalPermissions(permissions, testContext)
+
+        assertEquals(expectedLocalizedPermissions, localizedResult)
+    }
+
+    @Test
     fun `newFromWebExtension - must return an Addon instance`() {
         val version = "1.2.3"
         val permissions = listOf("scripting", "activeTab")
-        val hostPermissions = listOf("https://example.org/")
+        val origins = listOf("https://example.org/")
         val name = "some name"
         val description = "some description"
         val extension: WebExtension = mock()
@@ -363,12 +385,16 @@ class AddonTest {
         whenever(extension.url).thenReturn("some-url")
         whenever(extension.getMetadata()).thenReturn(metadata)
         whenever(metadata.version).thenReturn(version)
-        whenever(metadata.permissions).thenReturn(permissions)
+        whenever(metadata.requiredPermissions).thenReturn(permissions)
         whenever(metadata.optionalPermissions).thenReturn(listOf("clipboardRead"))
         whenever(metadata.grantedOptionalPermissions).thenReturn(listOf("clipboardRead"))
         whenever(metadata.optionalOrigins).thenReturn(listOf("*://*.example.com/*", "*://opt-host-perm.example.com/*"))
-        whenever(metadata.grantedOptionalOrigins).thenReturn(listOf("*://*.example.com/*"))
-        whenever(metadata.hostPermissions).thenReturn(hostPermissions)
+        // NOTE: in grantedOptionalOrigins we are including one host permission that isn't part of the optionaOrigins list
+        // and so it wasn't explicitly listed in the extension manifest.json but  something granted by the user on
+        // an extension call to browser.permissions.request (allowed on the Gecko side because "*://sub.example.com" is a
+        // subset of the "*://*.example.com" host permission, which was explicitly included in the manifest).
+        whenever(metadata.grantedOptionalOrigins).thenReturn(listOf("*://*.example.com/*", "*://sub.example.com/*"))
+        whenever(metadata.requiredOrigins).thenReturn(origins)
         whenever(metadata.name).thenReturn(name)
         whenever(metadata.description).thenReturn(description)
         whenever(metadata.disabledFlags).thenReturn(DisabledFlags.select(0))
@@ -389,13 +415,17 @@ class AddonTest {
         assertEquals("some-id", addon.id)
         assertEquals("some-url", addon.homepageUrl)
         assertEquals("some-download-url", addon.downloadUrl)
-        assertEquals(permissions + hostPermissions, addon.permissions)
+        assertEquals(permissions + origins, addon.permissions)
         assertEquals(
             listOf(Addon.Permission(name = "clipboardRead", granted = true)),
             addon.optionalPermissions,
         )
         assertEquals(
-            listOf(Addon.Permission(name = "*://*.example.com/*", granted = true), Addon.Permission(name = "*://opt-host-perm.example.com/*", granted = false)),
+            listOf(
+                Addon.Permission(name = "*://*.example.com/*", granted = true),
+                Addon.Permission(name = "*://opt-host-perm.example.com/*", granted = false),
+                Addon.Permission(name = "*://sub.example.com/*", granted = true),
+            ),
             addon.optionalOrigins,
         )
         assertEquals("", addon.updatedAt)

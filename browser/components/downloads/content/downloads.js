@@ -96,8 +96,9 @@ var DownloadsPanel = {
     this._initialized = true;
 
     window.addEventListener("unload", this.onWindowUnload);
-
-    window.ensureCustomElements("moz-button-group");
+    document
+      .getElementById("downloadPanelCommands")
+      .addEventListener("command", this);
 
     // Load and resume active downloads if required.  If there are downloads to
     // be shown in the panel, they will be loaded asynchronously.
@@ -137,6 +138,9 @@ var DownloadsPanel = {
     }
 
     window.removeEventListener("unload", this.onWindowUnload);
+    document
+      .getElementById("downloadPanelCommands")
+      .removeEventListener("command", this);
 
     // Ensure that the panel is closed before shutting down.
     this.hidePanel();
@@ -228,6 +232,11 @@ var DownloadsPanel = {
 
   handleEvent(aEvent) {
     switch (aEvent.type) {
+      case "command":
+        // Handle the commands defined in downloadsPanel.inc.xhtml.
+        // Every command "id" is also its corresponding command.
+        goDoCommand(aEvent.target.id);
+        break;
       case "mousemove":
         if (
           !DownloadsView.contextMenuOpen &&
@@ -327,7 +336,7 @@ var DownloadsPanel = {
     // to the browser window when the panel closes automatically.
     this.hidePanel();
 
-    BrowserDownloadsUI();
+    BrowserCommands.downloadsUI();
   },
 
   // Internal functions
@@ -868,7 +877,7 @@ var DownloadsView = {
       } else if (aEvent.shiftKey || aEvent.ctrlKey || aEvent.metaKey) {
         // We adjust the command for supported modifiers to suggest where the download
         // may be opened
-        let openWhere = target.ownerGlobal.whereToOpenLink(aEvent, false, true);
+        let openWhere = BrowserUtils.whereToOpenLink(aEvent, false, true);
         if (["tab", "window", "tabshifted"].includes(openWhere)) {
           command += ":" + openWhere;
         }

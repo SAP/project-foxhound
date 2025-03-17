@@ -454,7 +454,6 @@ void MediaDecoder::OnPlaybackErrorEvent(const MediaResult& aError) {
   }
   LOG("Need to create a new %s state machine",
       needExternalEngine ? "external engine" : "normal");
-  mStateMachineRecreated = true;
 
   nsresult rv = CreateAndInitStateMachine(
       false /* live stream */,
@@ -950,6 +949,8 @@ void MediaDecoder::NetworkError(const MediaResult& aError) {
 void MediaDecoder::DecodeError(const MediaResult& aError) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(!IsShutdown());
+  LOG("DecodeError, type=%s, error=%s", ContainerType().OriginalString().get(),
+      aError.ErrorName().get());
   GetOwner()->DecodeError(aError);
 }
 

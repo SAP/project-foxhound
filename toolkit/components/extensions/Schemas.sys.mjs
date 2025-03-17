@@ -253,6 +253,17 @@ const POSTPROCESSORS = {
 
     return canvas.toDataURL("image/png");
   },
+  mutuallyExclusiveBlockingOrAsyncBlocking(value, context) {
+    if (!Array.isArray(value)) {
+      return value;
+    }
+    if (value.includes("blocking") && value.includes("asyncBlocking")) {
+      throw new context.cloneScope.Error(
+        "'blocking' and 'asyncBlocking' are mutually exclusive"
+      );
+    }
+    return value;
+  },
   webRequestBlockingPermissionRequired(string, context) {
     if (string === "blocking" && !context.hasPermission("webRequestBlocking")) {
       throw new context.cloneScope.Error(
@@ -313,6 +324,27 @@ const POSTPROCESSORS = {
         context.logError(context.makeError(msg));
         throw new Error(msg);
       }
+    }
+    return value;
+  },
+
+  incognitoSplitUnsupportedAndFallback(value, context) {
+    if (value === "split") {
+      // incognito:split has not been implemented (bug 1380812). There are two
+      // alternatives: "spanning" and "not_allowed".
+      //
+      // "incognito":"split" is required by Chrome when extensions want to load
+      // any extension page in a tab in Chrome. In Firefox that is not required,
+      // so extensions could replace "split" with "spanning".
+      // Another (poorly documented) effect of "incognito":"split" is separation
+      // of some state between some extension APIs. Because this can in theory
+      // result in unwanted mixing of state between private and non-private
+      // browsing, we fall back to "not_allowed", which prevents the user from
+      // enabling the extension in private browsing windows.
+      value = "not_allowed";
+      context.logWarning(
+        `incognito "split" is unsupported. Falling back to incognito "${value}".`
+      );
     }
     return value;
   },
@@ -422,6 +454,10 @@ class Context {
 
   get url() {
     return this.params.url;
+  }
+
+  get ignoreUnrecognizedProperties() {
+    return !!this.params.ignoreUnrecognizedProperties;
   }
 
   get principal() {
@@ -2208,17 +2244,19 @@ class ObjectType extends Type {
           }
           result[prop] = r.value;
         }
-      } else if (remainingProps.size == 1) {
-        return context.error(
-          `Unexpected property "${[...remainingProps]}"`,
-          `not contain an unexpected "${[...remainingProps]}" property`
-        );
-      } else if (remainingProps.size) {
-        let props = [...remainingProps].sort().join(", ");
-        return context.error(
-          `Unexpected properties: ${props}`,
-          `not contain the unexpected properties [${props}]`
-        );
+      } else if (remainingProps.size && !context.ignoreUnrecognizedProperties) {
+        if (remainingProps.size == 1) {
+          return context.error(
+            `Unexpected property "${[...remainingProps]}"`,
+            `not contain an unexpected "${[...remainingProps]}" property`
+          );
+        } else if (remainingProps.size) {
+          let props = [...remainingProps].sort().join(", ");
+          return context.error(
+            `Unexpected properties: ${props}`,
+            `not contain the unexpected properties [${props}]`
+          );
+        }
       }
 
       return this.postprocess({ value: result }, context);
@@ -3187,9 +3225,62 @@ class Namespace extends Map {
 
     if (DEBUG) {
       for (let key of this.keys()) {
+        // Force initialization of all lazy keys to catch unexpected errors.
         this.get(key);
       }
+      this.#verifyFallbackEntries();
     }
+  }
+
+  /**
+   * Verify that multiple definitions via fallback entries (currently only
+   * supported for functions and events) are defined for mutually exclusive
+   * manifest versions.
+   */
+  #verifyFallbackEntries() {
+    for (
+      let manifestVersion = MIN_MANIFEST_VERSION;
+      manifestVersion <= MAX_MANIFEST_VERSION;
+      manifestVersion++
+    ) {
+      for (let key of this.keys()) {
+        let hasMatch = false;
+        let entry = this.get(key);
+        do {
+          let isMatch =
+            manifestVersion >= entry.min_manifest_version &&
+            manifestVersion <= entry.max_manifest_version;
+          if (isMatch && hasMatch) {
+            throw new Error(
+              `Namespace ${this.path.join(".")} has ` +
+                `multiple definitions for ${key} ` +
+                `for manifest version ${manifestVersion}`
+            );
+          }
+          hasMatch ||= isMatch;
+          entry = entry.fallbackEntry;
+        } while (entry);
+      }
+    }
+  }
+
+  /**
+   * Returns the definition of the provided Entry or Namespace which is valid for
+   * the manifest version of the provided context, or none.
+   *
+   * @param {Entry|Namespace} entryOrNs
+   * @param {Context} context
+   *
+   * @returns {Entry|Namespace?}
+   */
+  #getMatchingDefinitionForContext(entryOrNs, context) {
+    do {
+      if (context.matchManifestVersion(entryOrNs)) {
+        // Common case at first iteration.
+        return entryOrNs;
+      }
+      entryOrNs = entryOrNs.fallbackEntry;
+    } while (entryOrNs);
   }
 
   /**
@@ -3209,8 +3300,14 @@ class Namespace extends Map {
   initKey(key, type) {
     let loader = LOADERS[type];
 
+    let entry;
     for (let schema of this[type].get(key)) {
-      this.set(key, this[loader](key, schema));
+      // Note: The 3rd parameter is currently only supported by loadEvent() and
+      // loadFunction(). It stores the entry from the last iteration as a
+      // fallbackEntry (different definitions for different manifest versions).
+      entry = this[loader](key, schema, entry);
+      // entry is always an Entry past the first iteration.
+      this.set(key, entry);
     }
 
     return this.get(key);
@@ -3286,12 +3383,24 @@ class Namespace extends Map {
     }
   }
 
-  loadFunction(name, fun) {
-    return FunctionEntry.parseSchema(this.root, fun, this.path);
+  loadFunction(name, fun, fallbackEntry) {
+    const parsed = FunctionEntry.parseSchema(this.root, fun, this.path);
+    // If there is already a valid entry, use it as a fallback for the current
+    // one. Used for multiple definitions for different manifest versions.
+    if (fallbackEntry) {
+      parsed.fallbackEntry = fallbackEntry;
+    }
+    return parsed;
   }
 
-  loadEvent(name, event) {
-    return Event.parseSchema(this.root, event, this.path);
+  loadEvent(name, event, fallbackEntry) {
+    const parsed = Event.parseSchema(this.root, event, this.path);
+    // If there is already a valid entry, use it as a fallback for the current
+    // one. Used for multiple definitions for different manifest versions.
+    if (fallbackEntry) {
+      parsed.fallbackEntry = fallbackEntry;
+    }
+    return parsed;
   }
 
   /**
@@ -3304,18 +3413,24 @@ class Namespace extends Map {
    */
   injectInto(dest, context) {
     for (let name of this.keys()) {
-      // If the entry does not match the manifest version do not
-      // inject the property.  This prevents the item from being
-      // enumerable in the namespace object.  We cannot accomplish
-      // this inside exportLazyProperty, it specifically injects
-      // an enumerable object.
-      let entry = this.get(name);
-      if (!context.matchManifestVersion(entry)) {
+      // TODO bug 1896081: we should not call this.get() unconditionally, but
+      //                   only for entries that have min_manifest_version or
+      //                   max_manifest_version set.
+      let entry = this.#getMatchingDefinitionForContext(
+        this.get(name),
+        context
+      );
+      // If no definition matches the manifest version, do not inject the property.
+      // This prevents the item from being enumerable in the namespace object.
+      // We cannot accomplish this inside exportLazyProperty, it specifically
+      // injects an enumerable object.
+      if (!entry) {
         continue;
       }
-      exportLazyProperty(dest, name, () => {
-        let entry = this.get(name);
 
+      exportLazyProperty(dest, name, () => {
+        // See Bug 1896081.
+        // entry ??= this.get(name);
         return context.getDescriptor(entry, dest, name, this.path, this);
       });
     }

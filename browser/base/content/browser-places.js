@@ -55,7 +55,6 @@ var StarUI = {
     delete this.panel;
     this._createPanelIfNeeded();
     var element = this._element("editBookmarkPanel");
-    window.ensureCustomElements("moz-button-group");
     // initially the panel is hidden
     // to avoid impacting startup / new window performance
     element.hidden = false;
@@ -116,12 +115,13 @@ var StarUI = {
             this.panel.hidePopup();
             break;
           // This case is for catching character-generating keypresses
-          case 0:
+          case 0: {
             let accessKey = document.getElementById("key_close");
             if (eventMatchesKey(aEvent, accessKey)) {
               this.panel.hidePopup();
             }
             break;
+          }
         }
         break;
       case "compositionend":
@@ -705,7 +705,7 @@ class HistoryMenu extends PlacesMenu {
   }
 
   _onCommand(aEvent) {
-    aEvent = getRootEvent(aEvent);
+    aEvent = BrowserUtils.getRootEvent(aEvent);
     let placesNode = aEvent.target._placesNode;
     if (placesNode) {
       if (!PrivateBrowsingUtils.isWindowPrivate(window)) {
@@ -1378,7 +1378,7 @@ var BookmarkingUI = {
 
     this.updateLabel(
       "BMB_viewBookmarksSidebar",
-      SidebarUI.currentID == "viewBookmarksSidebar"
+      SidebarController.currentID == "viewBookmarksSidebar"
     );
     this.updateLabel("BMB_viewBookmarksToolbar", !this.toolbar.collapsed);
   },
@@ -1999,6 +1999,13 @@ var BookmarkingUI = {
       case "ViewHiding":
         this.onPanelMenuViewHiding(aEvent);
         break;
+      case "command":
+        if (aEvent.target.id == "panelMenu_searchBookmarks") {
+          PlacesCommandHook.searchBookmarks();
+        } else if (aEvent.target.id == "panelMenu_viewBookmarksToolbar") {
+          this.toggleBookmarksToolbar("bookmark-tools");
+        }
+        break;
     }
   },
 
@@ -2026,12 +2033,15 @@ var BookmarkingUI = {
       panelview
     );
     panelview.removeEventListener("ViewShowing", this);
+    panelview.addEventListener("command", this);
   },
 
   onPanelMenuViewHiding: function BUI_onViewHiding(aEvent) {
     this._panelMenuView.uninit();
     delete this._panelMenuView;
-    aEvent.target.removeEventListener("ViewHiding", this);
+    let panelview = aEvent.target;
+    panelview.removeEventListener("ViewHiding", this);
+    panelview.removeEventListener("command", this);
   },
 
   handlePlacesEvents(aEvents) {

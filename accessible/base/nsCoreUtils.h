@@ -172,11 +172,12 @@ class nsCoreUtils {
    * Scrolls the given frame to the point, used for implememntation of
    * nsIAccessible::scrollToPoint and nsIAccessibleText::scrollSubstringToPoint.
    *
-   * @param aScrollableFrame  the scrollable frame
+   * @param aScrollContainerFrame the scroll container frame
    * @param aFrame            the frame to scroll
    * @param aPoint            the point scroll to (in dev pixels)
    */
-  static void ScrollFrameToPoint(nsIFrame* aScrollableFrame, nsIFrame* aFrame,
+  static void ScrollFrameToPoint(nsIFrame* aScrollContainerFrame,
+                                 nsIFrame* aFrame,
                                  const mozilla::LayoutDeviceIntPoint& aPoint);
 
   /**
@@ -306,11 +307,6 @@ class nsCoreUtils {
     return aChar == ' ' || aChar == '\n' || aChar == '\r' || aChar == '\t' ||
            aChar == 0xa0;
   }
-
-  /**
-   * Remove non-breaking spaces from the beginning and end of the string.
-   */
-  static void TrimNonBreakingSpaces(nsAString& aString);
 
   /*
    * Return true if there are any observers of accessible events.

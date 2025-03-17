@@ -24,13 +24,14 @@ here = os.path.abspath(os.path.dirname(__file__))
 resolver = TestResolver.from_environment(cwd=here, loader_cls=TestManifestLoader)
 
 TEST_VARIANTS = {}
-if os.path.exists(os.path.join(GECKO, "taskcluster", "ci", "test", "variants.yml")):
-    TEST_VARIANTS = load_yaml(GECKO, "taskcluster", "ci", "test", "variants.yml")
+if os.path.exists(os.path.join(GECKO, "taskcluster", "kinds", "test", "variants.yml")):
+    TEST_VARIANTS = load_yaml(GECKO, "taskcluster", "kinds", "test", "variants.yml")
 
 WPT_SUBSUITES = {
     "canvas": "html/canvas",
     "webgpu": "_mozilla/webgpu",
     "privatebrowsing": "/service-workers/cache-storage",
+    "webcodecs": "webcodecs",
 }
 
 
@@ -135,6 +136,8 @@ def guess_mozinfo_from_task(task, repo=""):
             info[tag] = True
         else:
             info[tag] = False
+
+    info["automation"] = True
     return info
 
 

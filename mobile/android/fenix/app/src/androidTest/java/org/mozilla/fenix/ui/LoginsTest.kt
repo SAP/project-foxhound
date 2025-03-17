@@ -6,9 +6,9 @@ package org.mozilla.fenix.ui
 
 import android.os.Build
 import android.view.autofill.AutofillManager
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -43,7 +43,9 @@ import org.mozilla.fenix.ui.robots.setPageObjectText
 class LoginsTest : TestSetup() {
     @get:Rule
     val activityTestRule =
-        HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true)
+        AndroidComposeTestRule(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
     @Before
     override fun setUp() {
@@ -296,7 +298,7 @@ class LoginsTest : TestSetup() {
         }.openSavedLogins {
             tapSetupLater()
             viewSavedLoginDetails(originWebsite)
-            clickThreeDotButton(activityTestRule)
+            clickThreeDotButton(activityTestRule.activityRule)
             clickEditLoginButton()
             setNewPassword("fenix")
             saveEditedLogin()
@@ -325,7 +327,7 @@ class LoginsTest : TestSetup() {
         }.openSavedLogins {
             tapSetupLater()
             viewSavedLoginDetails(originWebsite)
-            clickThreeDotButton(activityTestRule)
+            clickThreeDotButton(activityTestRule.activityRule)
             clickEditLoginButton()
             setNewUserName("android")
             setNewPassword("fenix")
@@ -363,7 +365,7 @@ class LoginsTest : TestSetup() {
         }.openSavedLogins {
             tapSetupLater()
             viewSavedLoginDetails(originWebsite)
-            clickThreeDotButton(activityTestRule)
+            clickThreeDotButton(activityTestRule.activityRule)
             clickEditLoginButton()
             clickClearUserNameButton()
             verifyUserNameRequiredErrorMessage()
@@ -393,7 +395,7 @@ class LoginsTest : TestSetup() {
         }.openSavedLogins {
             tapSetupLater()
             viewSavedLoginDetails(originWebsite)
-            clickThreeDotButton(activityTestRule)
+            clickThreeDotButton(activityTestRule.activityRule)
             clickEditLoginButton()
             clickClearPasswordButton()
             verifyPasswordRequiredErrorMessage()
@@ -424,7 +426,7 @@ class LoginsTest : TestSetup() {
         }.openSavedLogins {
             tapSetupLater()
             viewSavedLoginDetails(originWebsite)
-            clickThreeDotButton(activityTestRule)
+            clickThreeDotButton(activityTestRule.activityRule)
             clickEditLoginButton()
             setNewUserName("android")
             setNewPassword("fenix")
@@ -451,13 +453,13 @@ class LoginsTest : TestSetup() {
         }.openSavedLogins {
             tapSetupLater()
             viewSavedLoginDetails("test@example.com")
-            clickThreeDotButton(activityTestRule)
+            clickThreeDotButton(activityTestRule.activityRule)
             clickDeleteLoginButton()
             verifyLoginDeletionPrompt()
             clickCancelDeleteLogin()
             verifyLoginItemUsername("test@example.com")
             viewSavedLoginDetails("test@example.com")
-            clickThreeDotButton(activityTestRule)
+            clickThreeDotButton(activityTestRule.activityRule)
             clickDeleteLoginButton()
             verifyLoginDeletionPrompt()
             clickConfirmDeleteLogin()
@@ -506,7 +508,7 @@ class LoginsTest : TestSetup() {
             waitForPageToLoad()
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Save"))
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
 
@@ -515,7 +517,7 @@ class LoginsTest : TestSetup() {
             waitForPageToLoad()
             clickPageObject(itemWithResId("togglePassword"))
             verifyPrefilledLoginCredentials("mozilla", "firefox", true)
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
 
@@ -538,7 +540,6 @@ class LoginsTest : TestSetup() {
     }
 
     // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/593768
-    @Ignore("Failing, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1812995")
     @Test
     fun doNotSaveOptionWillNotUpdateALoginTest() {
         val loginPage = "https://mozilla-mobile.github.io/testapp/v2.0/loginForm.html"
@@ -547,19 +548,18 @@ class LoginsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(loginPage.toUri()) {
             setPageObjectText(itemWithResId("username"), "mozilla")
+            waitForAppWindowToBeUpdated()
             setPageObjectText(itemWithResId("password"), "firefox")
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Save"))
-        }.openTabDrawer {
-            closeTab()
-        }
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(loginPage.toUri()) {
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("togglePassword"))
             setPageObjectText(itemWithResId("username"), "mozilla")
+            waitForAppWindowToBeUpdated()
             setPageObjectText(itemWithResId("password"), "fenix")
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Don’t update"))
@@ -699,7 +699,7 @@ class LoginsTest : TestSetup() {
             verifySortedLogin(1, firstLoginPage.url.authority.toString())
         }
 
-        restartApp(activityTestRule)
+        restartApp(activityTestRule.activityRule)
 
         browserScreen {
         }.openThreeDotMenu {
@@ -744,7 +744,7 @@ class LoginsTest : TestSetup() {
             verifySortedLogin(1, originWebsite)
         }
 
-        restartApp(activityTestRule)
+        restartApp(activityTestRule.activityRule)
 
         browserScreen {
         }.openThreeDotMenu {

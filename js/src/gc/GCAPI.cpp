@@ -792,26 +792,9 @@ const char* CellColorName(CellColor color) {
 } /* namespace gc */
 } /* namespace js */
 
-JS_PUBLIC_API bool js::gc::IsDeadNurseryObject(JSObject* obj) {
-  MOZ_ASSERT(JS::RuntimeHeapIsMinorCollecting());
-  MOZ_ASSERT(obj);
-  MOZ_ASSERT(IsInsideNursery(obj));
-  MOZ_ASSERT(!IsForwarded(obj));
-
-  return obj->runtimeFromMainThread()->gc.nursery().inCollectedRegion(obj);
-}
-
-JS_PUBLIC_API void js::gc::FinalizeDeadNurseryObject(JSContext* cx,
-                                                     JSObject* obj) {
+JS_PUBLIC_API JS::GCContext* js::gc::GetGCContext(JSContext* cx) {
   CHECK_THREAD(cx);
-  MOZ_ASSERT(JS::RuntimeHeapIsMinorCollecting());
-
-  MOZ_ASSERT(obj);
-  MOZ_ASSERT(IsInsideNursery(obj));
-  MOZ_ASSERT(!IsForwarded(obj));
-
-  const JSClass* jsClass = JS::GetClass(obj);
-  jsClass->doFinalize(cx->gcContext(), obj);
+  return cx->gcContext();
 }
 
 JS_PUBLIC_API void js::gc::SetPerformanceHint(JSContext* cx,
@@ -866,3 +849,24 @@ JS_PUBLIC_API void js::gc::UnlockStoreBuffer(JSRuntime* runtime) {
   MOZ_ASSERT(runtime);
   runtime->gc.unlockStoreBuffer();
 }
+
+#ifdef JS_GC_ZEAL
+JS_PUBLIC_API void JS::GetGCZealBits(JSContext* cx, uint32_t* zealBits,
+                                     uint32_t* frequency,
+                                     uint32_t* nextScheduled) {
+  cx->runtime()->gc.getZealBits(zealBits, frequency, nextScheduled);
+}
+
+JS_PUBLIC_API void JS::SetGCZeal(JSContext* cx, uint8_t zeal,
+                                 uint32_t frequency) {
+  cx->runtime()->gc.setZeal(zeal, frequency);
+}
+
+JS_PUBLIC_API void JS::UnsetGCZeal(JSContext* cx, uint8_t zeal) {
+  cx->runtime()->gc.unsetZeal(zeal);
+}
+
+JS_PUBLIC_API void JS::ScheduleGC(JSContext* cx, uint32_t count) {
+  cx->runtime()->gc.setNextScheduled(count);
+}
+#endif

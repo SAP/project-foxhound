@@ -26,6 +26,12 @@ const OTHER_ORIGIN5 = 'https://{{hosts[][www]}}:{{ports[https][1]}}';
 const OTHER_ORIGIN6 = 'https://{{hosts[alt][www]}}:{{ports[https][0]}}';
 const OTHER_ORIGIN7 = 'https://{{hosts[alt][www]}}:{{ports[https][1]}}';
 
+// Trusted signals hosted on OTHER_ORIGIN1
+const CROSS_ORIGIN_TRUSTED_BIDDING_SIGNALS_URL = OTHER_ORIGIN1 + BASE_PATH +
+    'resources/trusted-bidding-signals.py';
+const CROSS_ORIGIN_TRUSTED_SCORING_SIGNALS_URL = OTHER_ORIGIN1 + BASE_PATH +
+    'resources/trusted-scoring-signals.py';
+
 // Creates a URL that will be sent to the URL request tracker script.
 // `uuid` is used to identify the stash shard to use.
 // `dispatch` affects what the tracker script does.
@@ -74,6 +80,15 @@ function createSellerBeaconURL(uuid, id = '1', origin = window.location.origin) 
 
 function createDirectFromSellerSignalsURL(origin = window.location.origin) {
   let url = new URL(`${origin}${RESOURCE_PATH}direct-from-seller-signals.py`);
+  return url.toString();
+}
+
+function createUpdateURL(params = {}) {
+  let origin = window.location.origin;
+  let url = new URL(`${origin}${RESOURCE_PATH}update-url.py`);
+  url.searchParams.append('body', params.body);
+  url.searchParams.append('uuid', params.uuid);
+
   return url.toString();
 }
 
@@ -142,18 +157,20 @@ async function waitForObservedRequests(uuid, expectedRequests, filter) {
       trackedRequests = trackedRequests.filter(filter);
     }
 
-    // If expected number of requests have been observed, compare with list of
-    // all expected requests and exit.
-    if (trackedRequests.length >= expectedRequests.length) {
-      assert_array_equals(trackedRequests, expectedRequests);
-      break;
-    }
-
     // If fewer than total number of expected requests have been observed,
     // compare what's been received so far, to have a greater chance to fail
     // rather than hang on error.
     for (const trackedRequest of trackedRequests) {
       assert_in_array(trackedRequest, expectedRequests);
+    }
+
+    // If expected number of requests have been observed, compare with list of
+    // all expected requests and exit. This check was previously before the for loop,
+    // but was swapped in order to avoid flakiness with failing tests and their
+    // respective *-expected.txt.
+    if (trackedRequests.length >= expectedRequests.length) {
+      assert_array_equals(trackedRequests, expectedRequests);
+      break;
     }
   }
 }
@@ -221,6 +238,10 @@ function createDecisionScriptURL(uuid, params = {}) {
     url.searchParams.append('reportResult', params.reportResult);
   if (params.error != null)
     url.searchParams.append('error', params.error);
+  if (params.permitCrossOriginTrustedSignals != null) {
+    url.searchParams.append('permit-cross-origin-trusted-signals',
+                            params.permitCrossOriginTrustedSignals);
+  }
   return url.toString();
 }
 
@@ -830,3 +851,37 @@ let additionalBidHelper = function() {
     fetchAdditionalBids: fetchAdditionalBids
   };
 }();
+
+
+// DeprecatedRenderURLReplacements helper function.
+// Returns an object containing sample strings both before and after the
+// replacements in 'replacements' have been applied by
+// deprecatedRenderURLReplacements. All substitution strings will appear
+// only once in the output strings.
+function createStringBeforeAndAfterReplacements(deprecatedRenderURLReplacements) {
+  let beforeReplacements = '';
+  let afterReplacements = '';
+  if(deprecatedRenderURLReplacements){
+    for (const [match, replacement] of Object.entries(deprecatedRenderURLReplacements)) {
+      beforeReplacements += match + "/";
+      afterReplacements += replacement + "/";
+    }
+  }
+  return { beforeReplacements, afterReplacements };
+}
+
+// Delete all cookies. Separate function so that can be replaced with
+// something else for testing outside of a WPT environment.
+async function deleteAllCookies() {
+  await test_driver.delete_all_cookies();
+}
+
+// Deletes all cookies (to avoid pre-existing cookies causing inconsistent
+// output on failure) and sets a cookie with name "cookie" and a value of
+// "cookie". Adds a cleanup task to delete all cookies again when the test
+// is done.
+async function setCookie(test) {
+  await deleteAllCookies();
+  document.cookie = 'cookie=cookie; path=/'
+  test.add_cleanup(deleteAllCookies);
+}

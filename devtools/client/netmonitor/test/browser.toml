@@ -12,6 +12,7 @@ support-files = [
   "html_cause-test-page.html",
   "html_content-type-without-cache-test-page.html",
   "html_brotli-test-page.html",
+  "html_zstd-test-page.html",
   "html_image-tooltip-test-page.html",
   "html_cache-test-page.html",
   "html_cors-test-page.html",
@@ -49,6 +50,7 @@ support-files = [
   "html_single-get-page.html",
   "html_slow-requests-test-page.html",
   "html_send-beacon.html",
+  "html_send-beacon-late-iframe-request.html",
   "html_sorting-test-page.html",
   "html_statistics-edge-case-page.html",
   "html_statistics-test-page.html",
@@ -180,6 +182,7 @@ skip-if = [
 ["browser_net_columns_showhide.js"]
 
 ["browser_net_columns_time.js"]
+https_first_disabled = true # Bug 1898241
 skip-if = [
   "win11_2009", # Bug 1797751
 ]
@@ -557,3 +560,5 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_net_ws-sse-persist-columns.js"]
 
 ["browser_net_ws-stomp-payload.js"]
+
+["browser_net_zstd.js"]

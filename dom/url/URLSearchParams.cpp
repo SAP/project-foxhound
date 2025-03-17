@@ -157,7 +157,9 @@ void URLSearchParams::Serialize(nsACString& aValue) const {
 void URLSearchParams::Stringify(nsAString& aValue) const {
   nsAutoCString serialized;
   mParams->Serialize(serialized, true);
+  SafeStringTaint taint = serialized.Taint();
   CopyUTF8toUTF16(serialized, aValue);
+  aValue.AssignTaint(taint);
 }
 
 void URLSearchParams::NotifyObserver() {

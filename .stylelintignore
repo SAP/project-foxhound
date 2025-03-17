@@ -14,6 +14,7 @@
 
 # Always ignore crashtests - specially crafted files that originally caused a
 # crash.
+**/crashtest/
 **/crashtests/
 # Also ignore reftest - specially crafted to produce expected output.
 **/reftest/
@@ -76,11 +77,10 @@ layout/style/test/gtest/example.css
 layout/style/test/mapped2.css
 layout/style/test/unstyled-frame.css
 
-# TODO - Bug 1881094: temporarily ignored for firefox-android migration
+# Bug 1893763
 mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readerview.css
-mobile/android/android-components/components/feature/webcompat/src/main/assets/extensions/webcompat/about-compat/aboutCompat.css
+# Three dashes at top of file (for Jekyll?) cause syntax error:
 mobile/android/android-components/docs/assets/main.scss
-mobile/android/fenix/app/src/main/assets/shared_error_style.css
 
 # Empty test files:
 netwerk/test/mochitests/test1.css
@@ -92,6 +92,7 @@ python/mozbuild/mozbuild/test/backend/data/build/foo.css
 # This is third-party in a way:
 toolkit/components/pdfjs/content/web/debugger.css
 toolkit/components/pdfjs/content/web/viewer.css
+toolkit/components/pdfjs/content/web/viewer-geckoview.css
 
 # Ignore web-platform tests as they are not necessarily under our control.
 testing/web-platform/tests/

@@ -2,8 +2,6 @@ import asyncio
 import base64
 import copy
 import json
-import time
-from datetime import datetime, timedelta
 from typing import Any, Coroutine, Mapping
 
 import pytest
@@ -87,13 +85,9 @@ async def set_cookie(bidi_session):
 
     yield set_cookie
 
-    yesterday = datetime.now() - timedelta(1)
-    yesterday_timestamp = time.mktime(yesterday.timetuple())
-
     for cookie, partition in reversed(cookies):
         try:
-            cookie["expiry"] = yesterday_timestamp
-            await bidi_session.storage.set_cookie(cookie=cookie, partition=partition)
+            await bidi_session.storage.delete_cookies(filter=cookie, partition=partition)
         except (InvalidArgumentException, UnableToSetCookieException, UnderspecifiedStoragePartitionException):
             pass
 
@@ -538,13 +532,22 @@ def fetch(bidi_session, top_context, configuration):
     """
 
     async def fetch(
-        url, method="GET", headers=None, context=top_context, timeout_in_seconds=3
+        url,
+        method="GET",
+        headers=None,
+        post_data=None,
+        context=top_context,
+        timeout_in_seconds=3,
     ):
         method_arg = f"method: '{method}',"
 
         headers_arg = ""
         if headers is not None:
             headers_arg = f"headers: {json.dumps(headers)},"
+
+        body_arg = ""
+        if post_data is not None:
+            body_arg = f"body: {post_data},"
 
         timeout_in_seconds = timeout_in_seconds * configuration["timeout_multiplier"]
         # Wait for fetch() to resolve a response and for response.text() to
@@ -558,6 +561,7 @@ def fetch(bidi_session, top_context, configuration):
                    fetch("{url}", {{
                      {method_arg}
                      {headers_arg}
+                     {body_arg}
                      signal: controller.signal,
                    }}).then(response => response.text());
                  }}""",

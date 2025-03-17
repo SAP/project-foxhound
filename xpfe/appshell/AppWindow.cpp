@@ -533,6 +533,13 @@ NS_IMETHODIMP AppWindow::ShowModal() {
   return mModalStatus;
 }
 
+NS_IMETHODIMP AppWindow::RollupAllPopups() {
+  if (nsXULPopupManager* pm = nsXULPopupManager::GetInstance()) {
+    pm->Rollup({});
+  }
+  return NS_OK;
+}
+
 //*****************************************************************************
 // AppWindow::nsIBaseWindow
 //*****************************************************************************
@@ -1631,30 +1638,33 @@ void AppWindow::SyncAttributesToWidget() {
 
   NS_ENSURE_TRUE_VOID(mWindow);
 
+  // Only change blank window status once we're loaded, so that a
+  // partially-loaded browser window doesn't start painting early.
+  if (mChromeLoaded) {
+    mWindow->SetIsEarlyBlankWindow(attr.EqualsLiteral("navigator:blank"));
+    NS_ENSURE_TRUE_VOID(mWindow);
+  }
+
   // "icon" attribute
   windowElement->GetAttribute(u"icon"_ns, attr);
   if (!attr.IsEmpty()) {
     mWindow->SetIcon(attr);
-
     NS_ENSURE_TRUE_VOID(mWindow);
   }
 
   // "drawtitle" attribute
   windowElement->GetAttribute(u"drawtitle"_ns, attr);
   mWindow->SetDrawsTitle(attr.LowerCaseEqualsLiteral("true"));
-
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "toggletoolbar" attribute
   windowElement->GetAttribute(u"toggletoolbar"_ns, attr);
   mWindow->SetShowsToolbarButton(attr.LowerCaseEqualsLiteral("true"));
-
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "macnativefullscreen" attribute
   windowElement->GetAttribute(u"macnativefullscreen"_ns, attr);
   mWindow->SetSupportsNativeFullscreen(attr.LowerCaseEqualsLiteral("true"));
-
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "macanimationtype" attribute
@@ -2954,15 +2964,6 @@ void AppWindow::SizeModeChanged(nsSizeMode aSizeMode) {
   // then need to be different.
 }
 
-void AppWindow::UIResolutionChanged() {
-  nsCOMPtr<nsPIDOMWindowOuter> ourWindow =
-      mDocShell ? mDocShell->GetWindow() : nullptr;
-  if (ourWindow) {
-    ourWindow->DispatchCustomEvent(u"resolutionchange"_ns,
-                                   ChromeOnlyDispatch::eYes);
-  }
-}
-
 void AppWindow::FullscreenWillChange(bool aInFullscreen) {
   if (mDocShell) {
     if (nsCOMPtr<nsPIDOMWindowOuter> ourWindow = mDocShell->GetWindow()) {
@@ -3018,6 +3019,9 @@ void AppWindow::FullscreenChanged(bool aInFullscreen) {
 
 void AppWindow::FinishFullscreenChange(bool aInFullscreen) {
   mFullscreenChangeState = FullscreenChangeState::NotChanging;
+  if (nsXULPopupManager* pm = nsXULPopupManager::GetInstance()) {
+    pm->Rollup({});
+  }
   if (mDocShell) {
     if (nsCOMPtr<nsPIDOMWindowOuter> ourWindow = mDocShell->GetWindow()) {
       ourWindow->FinishFullscreenChange(aInFullscreen);
@@ -3448,11 +3452,6 @@ bool AppWindow::WidgetListenerDelegate::RequestWindowClose(nsIWidget* aWidget) {
 void AppWindow::WidgetListenerDelegate::SizeModeChanged(nsSizeMode aSizeMode) {
   RefPtr<AppWindow> holder = mAppWindow;
   holder->SizeModeChanged(aSizeMode);
-}
-
-void AppWindow::WidgetListenerDelegate::UIResolutionChanged() {
-  RefPtr<AppWindow> holder = mAppWindow;
-  holder->UIResolutionChanged();
 }
 
 void AppWindow::WidgetListenerDelegate::MacFullscreenMenubarOverlapChanged(

@@ -26,14 +26,14 @@ use style_traits::values::specified::AllowedNumericType;
 use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss};
 
 #[cfg(feature = "gecko")]
-pub use self::align::{AlignContent, AlignItems, AlignSelf, AlignTracks, ContentDistribution};
+pub use self::align::{AlignContent, AlignItems, AlignSelf, ContentDistribution};
 #[cfg(feature = "gecko")]
-pub use self::align::{JustifyContent, JustifyItems, JustifySelf, JustifyTracks, SelfAlignment};
+pub use self::align::{JustifyContent, JustifyItems, JustifySelf, SelfAlignment};
 pub use self::angle::{AllowUnitlessZeroAngle, Angle};
 pub use self::animation::{
-    AnimationIterationCount, AnimationName, AnimationTimeline, AnimationPlayState,
-    AnimationFillMode, AnimationComposition, AnimationDirection, ScrollAxis,
-    ScrollTimelineName, TransitionBehavior, TransitionProperty, ViewTimelineInset
+    AnimationComposition, AnimationDirection, AnimationFillMode, AnimationIterationCount,
+    AnimationName, AnimationPlayState, AnimationTimeline, ScrollAxis, ScrollTimelineName,
+    TransitionBehavior, TransitionProperty, ViewTimelineInset,
 };
 pub use self::background::{BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
@@ -80,8 +80,15 @@ pub use self::motion::{OffsetPath, OffsetPosition, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::page::{PageName, PageOrientation, PageSize, PageSizeOrientation, PaperSize};
 pub use self::percentage::{NonNegativePercentage, Percentage};
+pub use self::position::AnchorName;
+pub use self::position::AnchorScope;
 pub use self::position::AspectRatio;
+pub use self::position::PositionAnchor;
+pub use self::position::PositionTryOptions;
+pub use self::position::PositionTryOrder;
+pub use self::position::PositionVisibility;
 pub use self::position::{GridAutoFlow, GridTemplateAreas, Position, PositionOrAuto};
+pub use self::position::{InsetArea, InsetAreaKeyword};
 pub use self::position::{MasonryAutoFlow, MasonryItemOrder, MasonryPlacement};
 pub use self::position::{PositionComponent, ZIndex};
 pub use self::ratio::Ratio;

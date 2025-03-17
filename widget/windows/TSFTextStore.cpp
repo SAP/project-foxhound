@@ -7,16 +7,11 @@
 #define TEXTATTRS_INIT_GUID
 #include "TSFTextStore.h"
 
-#include <algorithm>
-#include <comutil.h>  // for _bstr_t
-#include <oleauto.h>  // for SysAllocString
-#include <olectl.h>
-#include "nscore.h"
-
 #include "IMMHandler.h"
 #include "KeyboardLayout.h"
 #include "WinIMEHandler.h"
 #include "WinUtils.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_intl.h"
@@ -28,6 +23,11 @@
 #include "mozilla/widget/WinRegistry.h"
 #include "nsWindow.h"
 #include "nsPrintfCString.h"
+
+#include <algorithm>
+#include <comutil.h>  // for _bstr_t
+#include <oleauto.h>  // for SysAllocString
+#include <olectl.h>
 
 // For collecting other people's log, tell `MOZ_LOG=IMEHandler:4,sync`
 // rather than `MOZ_LOG=IMEHandler:5,sync` since using `5` may create too
@@ -2819,12 +2819,22 @@ Maybe<TSFTextStore::Content>& TSFTextStore::ContentForTSF() {
         !mIsInitializingContentForTSF,
         "TSFTextStore::ContentForTSF() shouldn't be called recursively");
 
+    // We may query text content recursively if TSF does something recursively,
+    // e.g., with flushing pending layout, an nsWindow may be
+    // moved/resized/focused/blured by that.  In the case, we cannot avoid the
+    // loop at least first nested call.  For avoiding to make an infinite loop,
+    // we should not allow to flush pending layout in the nested query.
+    const AllowToFlushLayoutIfNoCache allowToFlushPendingLayout =
+        !mIsInitializingSelectionForTSF && !mIsInitializingContentForTSF
+            ? AllowToFlushLayoutIfNoCache::Yes
+            : AllowToFlushLayoutIfNoCache::No;
+
     AutoNotifyingTSFBatch deferNotifyingTSF(*this);
     AutoRestore<bool> saveInitializingContetTSF(mIsInitializingContentForTSF);
     mIsInitializingContentForTSF = true;
 
     nsString text;  // Don't use auto string for avoiding to copy long string.
-    if (NS_WARN_IF(!GetCurrentText(text))) {
+    if (NS_WARN_IF(!GetCurrentText(text, allowToFlushPendingLayout))) {
       MOZ_LOG(gIMELog, LogLevel::Error,
               ("0x%p   TSFTextStore::ContentForTSF(), FAILED, due to "
                "GetCurrentText() failure",
@@ -2832,10 +2842,13 @@ Maybe<TSFTextStore::Content>& TSFTextStore::ContentForTSF() {
       return mContentForTSF;
     }
 
-    MOZ_DIAGNOSTIC_ASSERT(mContentForTSF.isNothing(),
-                          "How was it initialized recursively?");
-    mContentForTSF.reset();  // For avoiding crash in release channel
-    mContentForTSF.emplace(*this, text);
+    // If this is called recursively, the inner one should computed with the
+    // latest (flushed) layout because it should not cause flushing layout so
+    // that nobody should invalidate the layout after that.  Therefore, let's
+    // use first query result.
+    if (mContentForTSF.isNothing()) {
+      mContentForTSF.emplace(*this, text);
+    }
     // Basically, the cached content which is expected by TSF/TIP should be
     // cleared after active composition is committed or the document lock is
     // unlocked.  However, in e10s mode, content will be modified
@@ -2872,7 +2885,9 @@ bool TSFTextStore::CanAccessActualContentDirectly() const {
   return mSelectionForTSF->EqualsExceptDirection(*mPendingSelectionChangeData);
 }
 
-bool TSFTextStore::GetCurrentText(nsAString& aTextContent) {
+bool TSFTextStore::GetCurrentText(
+    nsAString& aTextContent,
+    AllowToFlushLayoutIfNoCache aAllowToFlushLayoutIfNoCache) {
   if (mContentForTSF.isSome()) {
     aTextContent = mContentForTSF->TextRef();
     return true;
@@ -2889,6 +2904,8 @@ bool TSFTextStore::GetCurrentText(nsAString& aTextContent) {
   WidgetQueryContentEvent queryTextContentEvent(true, eQueryTextContent,
                                                 mWidget);
   queryTextContentEvent.InitForQueryTextContent(0, UINT32_MAX);
+  queryTextContentEvent.mNeedsToFlushLayout =
+      aAllowToFlushLayoutIfNoCache == AllowToFlushLayoutIfNoCache::Yes;
   mWidget->InitEvent(queryTextContentEvent);
   DispatchEvent(queryTextContentEvent);
   if (NS_WARN_IF(queryTextContentEvent.Failed())) {
@@ -2917,6 +2934,14 @@ Maybe<TSFTextStore::Selection>& TSFTextStore::SelectionForTSF() {
         !mIsInitializingSelectionForTSF,
         "TSFTextStore::SelectionForTSF() shouldn't be called recursively");
 
+    // We may query selection recursively if TSF does something recursively,
+    // e.g., with flushing pending layout, an nsWindow may be
+    // moved/resized/focused/blured by that.  In the case, we cannot avoid the
+    // loop at least first nested call.  For avoiding to make an infinite loop,
+    // we should not allow to flush pending layout in the nested query.
+    const bool allowToFlushPendingLayout =
+        !mIsInitializingSelectionForTSF && !mIsInitializingContentForTSF;
+
     AutoNotifyingTSFBatch deferNotifyingTSF(*this);
     AutoRestore<bool> saveInitializingSelectionForTSF(
         mIsInitializingSelectionForTSF);
@@ -2924,14 +2949,24 @@ Maybe<TSFTextStore::Selection>& TSFTextStore::SelectionForTSF() {
 
     WidgetQueryContentEvent querySelectedTextEvent(true, eQuerySelectedText,
                                                    mWidget);
+    querySelectedTextEvent.mNeedsToFlushLayout = allowToFlushPendingLayout;
     mWidget->InitEvent(querySelectedTextEvent);
     DispatchEvent(querySelectedTextEvent);
     if (NS_WARN_IF(querySelectedTextEvent.Failed())) {
       return mSelectionForTSF;
     }
-    MOZ_DIAGNOSTIC_ASSERT(mSelectionForTSF.isNothing(),
-                          "How was it initialized recursively?");
-    mSelectionForTSF = Some(Selection(querySelectedTextEvent));
+    // If this is called recursively, the inner one should computed with the
+    // latest (flushed) layout because it should not cause flushing layout so
+    // that nobody should invalidate the layout after that.  Therefore, let's
+    // use first query result.
+    if (mSelectionForTSF.isNothing()) {
+      mSelectionForTSF.emplace(querySelectedTextEvent);
+    }
+  }
+
+  if (mPendingToCreateNativeCaret) {
+    mPendingToCreateNativeCaret = false;
+    CreateNativeCaret();
   }
 
   MOZ_LOG(gIMELog, LogLevel::Debug,
@@ -6459,14 +6494,24 @@ void TSFTextStore::CreateNativeCaret() {
 
   IMEHandler::MaybeDestroyNativeCaret();
 
-  // Don't create native caret after destroyed.
+  // Don't create native caret after destroyed or when we need to wait for end
+  // of query selection.
   if (mDestroyed) {
     return;
   }
 
   MOZ_LOG(gIMELog, LogLevel::Debug,
-          ("0x%p   TSFTextStore::CreateNativeCaret(), mComposition=%s", this,
-           ToString(mComposition).c_str()));
+          ("0x%p   TSFTextStore::CreateNativeCaret(), mComposition=%s, "
+           "mPendingToCreateNativeCaret=%s",
+           this, ToString(mComposition).c_str(),
+           GetBoolName(mPendingToCreateNativeCaret)));
+
+  // If we're initializing selection, we should create native caret when it's
+  // done.
+  if (mIsInitializingSelectionForTSF || mPendingToCreateNativeCaret) {
+    mPendingToCreateNativeCaret = true;
+    return;
+  }
 
   Maybe<Selection>& selectionForTSF = SelectionForTSF();
   if (MOZ_UNLIKELY(selectionForTSF.isNothing())) {
@@ -6489,6 +6534,9 @@ void TSFTextStore::CreateNativeCaret() {
   }
 
   WidgetQueryContentEvent queryCaretRectEvent(true, eQueryCaretRect, mWidget);
+  // Don't request flushing pending layout because we must have the lastest
+  // layout since we already caches selection above.
+  queryCaretRectEvent.mNeedsToFlushLayout = false;
   mWidget->InitEvent(queryCaretRectEvent);
 
   WidgetQueryContentEvent::Options options;
@@ -6586,25 +6634,35 @@ void TSFTextStore::CommitCompositionInternal(bool aDiscard) {
       sink->OnTextChange(0, &textChange);
     }
   }
-  // Terminate two contexts, the base context (mContext) and the top
-  // if the top context is not the same as the base context
-  RefPtr<ITfContext> context = mContext;
-  do {
-    if (context) {
-      RefPtr<ITfContextOwnerCompositionServices> services;
-      context->QueryInterface(IID_ITfContextOwnerCompositionServices,
-                              getter_AddRefs(services));
-      if (services) {
-        MOZ_LOG(gIMELog, LogLevel::Debug,
-                ("0x%p   TSFTextStore::CommitCompositionInternal(), "
-                 "requesting TerminateComposition() for the context 0x%p...",
-                 this, context.get()));
-        services->TerminateComposition(nullptr);
-      }
+  // Terminate two contexts, the base context (mContext) and the top if the top
+  // context is not the same as the base context.
+  // NOTE: that the context might have a hidden composition from our point of
+  // view.  Therefore, do this even if we don't have composition.
+  RefPtr<ITfContext> baseContext = mContext;
+  RefPtr<ITfContext> topContext;
+  if (mDocumentMgr) {
+    mDocumentMgr->GetTop(getter_AddRefs(topContext));
+  }
+  const auto TerminateCompositionIn = [this](ITfContext* aContext) {
+    if (MOZ_UNLIKELY(!aContext)) {
+      return;
     }
-    if (context != mContext) break;
-    if (mDocumentMgr) mDocumentMgr->GetTop(getter_AddRefs(context));
-  } while (context != mContext);
+    RefPtr<ITfContextOwnerCompositionServices> services;
+    aContext->QueryInterface(IID_ITfContextOwnerCompositionServices,
+                             getter_AddRefs(services));
+    if (MOZ_UNLIKELY(!services)) {
+      return;
+    }
+    MOZ_LOG(gIMELog, LogLevel::Debug,
+            ("0x%p   TSFTextStore::CommitCompositionInternal(), "
+             "requesting TerminateComposition() for the context 0x%p...",
+             this, aContext));
+    services->TerminateComposition(nullptr);
+  };
+  TerminateCompositionIn(baseContext);
+  if (baseContext != topContext) {
+    TerminateCompositionIn(topContext);
+  }
 }
 
 static bool GetCompartment(IUnknown* pUnk, const GUID& aID,
@@ -7415,7 +7473,8 @@ TSFTextStore::MouseTracker::AdviseSink(TSFTextStore* aTextStore,
   }
 
   nsAutoString textContent;
-  if (NS_WARN_IF(!aTextStore->GetCurrentText(textContent))) {
+  if (NS_WARN_IF(!aTextStore->GetCurrentText(
+          textContent, AllowToFlushLayoutIfNoCache::Yes))) {
     MOZ_LOG(gIMELog, LogLevel::Error,
             ("0x%p   TSFTextStore::MouseTracker::AdviseMouseSink() FAILED "
              "due to failure of TSFTextStore::GetCurrentText()",

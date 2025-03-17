@@ -97,7 +97,6 @@ const PREF_XPI_FILE_WHITELISTED = "xpinstall.whitelist.fileRequest";
 const PREF_XPI_WHITELIST_REQUIRED = "xpinstall.whitelist.required";
 const PREF_XPI_WEAK_SIGNATURES_ALLOWED =
   "xpinstall.signatures.weakSignaturesTemporarilyAllowed";
-const PREF_XPI_WEAK_SIGNATURES_ALLOWED_DEFAULT = true;
 
 const PREF_SELECTED_THEME = "extensions.activeThemeID";
 
@@ -501,6 +500,7 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
   addon.id = bss.id;
   addon.version = manifest.version;
   addon.manifestVersion = manifest.manifest_version;
+  addon.name = manifest.name;
   addon.type = extension.type;
   addon.loader = null;
   addon.strictCompatibility = true;
@@ -543,8 +543,9 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
   // WebExtensions don't use iconURLs
   addon.iconURL = null;
   addon.icons = manifest.icons || {};
-  addon.userPermissions = extension.manifestPermissions;
+  addon.userPermissions = extension.getRequiredPermissions();
   addon.optionalPermissions = extension.manifestOptionalPermissions;
+  addon.requestedPermissions = extension.getRequestedPermissions();
   addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
 
   function getLocale(aLocale) {
@@ -593,6 +594,8 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
       maxVersion: bss.strict_max_version,
     },
   ];
+
+  addon.adminInstallOnly = bss.admin_install_only;
 
   addon.targetPlatforms = [];
   // Themes are disabled by default, except when they're installed from a web page.
@@ -1579,6 +1582,11 @@ class AddonInstall {
     try {
       try {
         this.addon = await loadManifest(pkg, this.location, this.existingAddon);
+        // Set the install.name property to the addon name if it is not set yet,
+        // install.name is expected to be set to the addon name and used to
+        // fill the addon name in the fluent strings when reporting install
+        // errors.
+        this.name = this.name ?? this.addon.name;
       } catch (e) {
         return Promise.reject([AddonManager.ERROR_CORRUPT_FILE, e]);
       }
@@ -1657,6 +1665,16 @@ class AddonInstall {
           ]);
         }
 
+        if (
+          this.addon.adminInstallOnly &&
+          !this.addon.wrapper.isInstalledByEnterprisePolicy
+        ) {
+          return Promise.reject([
+            AddonManager.ERROR_ADMIN_INSTALL_ONLY,
+            "This addon can only be installed through Enterprise Policies",
+          ]);
+        }
+
         // Restrict install for signed extension only signed with weak signature algorithms, unless the
         // restriction is explicitly disabled through prefs or enterprise policies.
         if (
@@ -1664,12 +1682,13 @@ class AddonInstall {
           this.addon.signedDate &&
           !hasStrongSignature(this.addon)
         ) {
-          const addonAllowedByPolicies = Services.policies.getExtensionSettings(
-            this.addon.id
-          )?.temporarily_allow_weak_signatures;
+          const addonAllowedByPolicies =
+            Services.policies?.getExtensionSettings(
+              this.addon.id
+            )?.temporarily_allow_weak_signatures;
 
           const globallyAllowedByPolicies =
-            Services.policies.getExtensionSettings(
+            Services.policies?.getExtensionSettings(
               "*"
             )?.temporarily_allow_weak_signatures;
 
@@ -4411,10 +4430,7 @@ export var XPIInstall = {
   },
 
   isWeakSignatureInstallAllowed() {
-    return Services.prefs.getBoolPref(
-      PREF_XPI_WEAK_SIGNATURES_ALLOWED,
-      PREF_XPI_WEAK_SIGNATURES_ALLOWED_DEFAULT
-    );
+    return Services.prefs.getBoolPref(PREF_XPI_WEAK_SIGNATURES_ALLOWED, false);
   },
 
   getWeakSignatureInstallPrefName() {

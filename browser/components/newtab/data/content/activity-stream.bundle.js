@@ -233,7 +233,23 @@ for (const type of [
   "UPDATE_PINNED_SEARCH_SHORTCUTS",
   "UPDATE_SEARCH_SHORTCUTS",
   "UPDATE_SECTION_PREFS",
+  "WALLPAPERS_CATEGORY_SET",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_COUNTER_INCREMENT",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_CTA_CLICKED",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_DISMISSED",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_SEEN",
   "WALLPAPERS_SET",
+  "WALLPAPER_CATEGORY_CLICK",
+  "WALLPAPER_CLICK",
+  "WEATHER_IMPRESSION",
+  "WEATHER_LOAD_ERROR",
+  "WEATHER_LOCATION_DATA_UPDATE",
+  "WEATHER_LOCATION_SEARCH_UPDATE",
+  "WEATHER_LOCATION_SUGGESTIONS_UPDATE",
+  "WEATHER_OPEN_PROVIDER_URL",
+  "WEATHER_QUERY_UPDATE",
+  "WEATHER_SEARCH_ACTIVE",
+  "WEATHER_UPDATE",
   "WEBEXT_CLICK",
   "WEBEXT_DISMISS",
 ]) {
@@ -675,8 +691,11 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
     this.systemTick = this.systemTick.bind(this);
     this.syncRemoteSettings = this.syncRemoteSettings.bind(this);
     this.onStoryToggle = this.onStoryToggle.bind(this);
+    this.handleWeatherSubmit = this.handleWeatherSubmit.bind(this);
+    this.handleWeatherUpdate = this.handleWeatherUpdate.bind(this);
     this.state = {
-      toggledStories: {}
+      toggledStories: {},
+      weatherQuery: ""
     };
   }
   setConfigValue(name, value) {
@@ -719,12 +738,56 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
   syncRemoteSettings() {
     this.dispatchSimpleAction(actionTypes.DISCOVERY_STREAM_DEV_SYNC_RS);
   }
+  handleWeatherUpdate(e) {
+    this.setState({
+      weatherQuery: e.target.value || ""
+    });
+  }
+  handleWeatherSubmit(e) {
+    e.preventDefault();
+    const {
+      weatherQuery
+    } = this.state;
+    this.props.dispatch(actionCreators.SetPref("weather.query", weatherQuery));
+  }
   renderComponent(width, component) {
     return /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
       className: "min"
     }, "Type"), /*#__PURE__*/external_React_default().createElement("td", null, component.type)), /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
       className: "min"
     }, "Width"), /*#__PURE__*/external_React_default().createElement("td", null, width)), component.feed && this.renderFeed(component.feed)));
+  }
+  renderWeatherData() {
+    const {
+      suggestions
+    } = this.props.state.Weather;
+    let weatherTable;
+    if (suggestions) {
+      weatherTable = /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weather-section"
+      }, /*#__PURE__*/external_React_default().createElement("form", {
+        onSubmit: this.handleWeatherSubmit
+      }, /*#__PURE__*/external_React_default().createElement("label", {
+        htmlFor: "weather-query"
+      }, "Weather query"), /*#__PURE__*/external_React_default().createElement("input", {
+        type: "text",
+        min: "3",
+        max: "10",
+        id: "weather-query",
+        onChange: this.handleWeatherUpdate,
+        value: this.weatherQuery
+      }), /*#__PURE__*/external_React_default().createElement("button", {
+        type: "submit"
+      }, "Submit")), /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, suggestions.map(suggestion => /*#__PURE__*/external_React_default().createElement("tr", {
+        className: "message-item",
+        key: suggestion.city_name
+      }, /*#__PURE__*/external_React_default().createElement("td", {
+        className: "message-id"
+      }, /*#__PURE__*/external_React_default().createElement("span", null, suggestion.city_name, " ", /*#__PURE__*/external_React_default().createElement("br", null))), /*#__PURE__*/external_React_default().createElement("td", {
+        className: "message-summary"
+      }, /*#__PURE__*/external_React_default().createElement("pre", null, JSON.stringify(suggestion, null, 2))))))));
+    }
+    return weatherTable;
   }
   renderFeedData(url) {
     const {
@@ -836,7 +899,7 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       state: {
         Personalization: this.props.state.Personalization
       }
-    }), /*#__PURE__*/external_React_default().createElement("h3", null, "Spocs"), this.renderSpocs(), /*#__PURE__*/external_React_default().createElement("h3", null, "Feeds Data"), this.renderFeedsData());
+    }), /*#__PURE__*/external_React_default().createElement("h3", null, "Spocs"), this.renderSpocs(), /*#__PURE__*/external_React_default().createElement("h3", null, "Feeds Data"), this.renderFeedsData(), /*#__PURE__*/external_React_default().createElement("h3", null, "Weather Data"), this.renderWeatherData());
   }
 }
 class DiscoveryStreamAdminInner extends (external_React_default()).PureComponent {
@@ -859,7 +922,8 @@ class DiscoveryStreamAdminInner extends (external_React_default()).PureComponent
     }, "Click here"))), /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement(DiscoveryStreamAdminUI, {
       state: {
         DiscoveryStream: this.props.DiscoveryStream,
-        Personalization: this.props.Personalization
+        Personalization: this.props.Personalization,
+        Weather: this.props.Weather
       },
       otherPrefs: this.props.Prefs.values,
       dispatch: this.props.dispatch
@@ -929,7 +993,8 @@ const DiscoveryStreamAdmin = (0,external_ReactRedux_namespaceObject.connect)(sta
   Sections: state.Sections,
   DiscoveryStream: state.DiscoveryStream,
   Personalization: state.Personalization,
-  Prefs: state.Prefs
+  Prefs: state.Prefs,
+  Weather: state.Weather
 }))(_DiscoveryStreamAdmin);
 ;// CONCATENATED MODULE: ./content-src/components/ConfirmDialog/ConfirmDialog.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -1704,6 +1769,70 @@ const LinkMenuOptions = {
       : LinkMenuOptions.EmptyItem(),
   OpenInPrivateWindow: (site, index, eventSource, isEnabled) =>
     isEnabled ? _OpenInPrivateWindow(site) : LinkMenuOptions.EmptyItem(),
+  ChangeWeatherLocation: () => ({
+    id: "newtab-weather-menu-change-location",
+    action: actionCreators.BroadcastToContent({
+      type: actionTypes.WEATHER_SEARCH_ACTIVE,
+      data: true,
+    }),
+  }),
+  ChangeWeatherDisplaySimple: () => ({
+    id: "newtab-weather-menu-change-weather-display-simple",
+    action: actionCreators.OnlyToMain({
+      type: actionTypes.SET_PREF,
+      data: {
+        name: "weather.display",
+        value: "simple",
+      },
+    }),
+  }),
+  ChangeWeatherDisplayDetailed: () => ({
+    id: "newtab-weather-menu-change-weather-display-detailed",
+    action: actionCreators.OnlyToMain({
+      type: actionTypes.SET_PREF,
+      data: {
+        name: "weather.display",
+        value: "detailed",
+      },
+    }),
+  }),
+  ChangeTempUnitFahrenheit: () => ({
+    id: "newtab-weather-menu-change-temperature-units-fahrenheit",
+    action: actionCreators.OnlyToMain({
+      type: actionTypes.SET_PREF,
+      data: {
+        name: "weather.temperatureUnits",
+        value: "f",
+      },
+    }),
+  }),
+  ChangeTempUnitCelsius: () => ({
+    id: "newtab-weather-menu-change-temperature-units-celsius",
+    action: actionCreators.OnlyToMain({
+      type: actionTypes.SET_PREF,
+      data: {
+        name: "weather.temperatureUnits",
+        value: "c",
+      },
+    }),
+  }),
+  HideWeather: () => ({
+    id: "newtab-weather-menu-hide-weather",
+    action: actionCreators.OnlyToMain({
+      type: actionTypes.SET_PREF,
+      data: {
+        name: "showWeather",
+        value: false,
+      },
+    }),
+  }),
+  OpenLearnMoreURL: site => ({
+    id: "newtab-weather-menu-learn-more",
+    action: actionCreators.OnlyToMain({
+      type: actionTypes.OPEN_LINK,
+      data: { url: site.url },
+    }),
+  }),
 };
 
 ;// CONCATENATED MODULE: ./content-src/components/LinkMenu/LinkMenu.jsx
@@ -2299,21 +2428,26 @@ function FeatureHighlight({
   ariaLabel,
   feature = "FEATURE_HIGHLIGHT_DEFAULT",
   dispatch = () => {},
-  windowObj = __webpack_require__.g
+  windowObj = __webpack_require__.g,
+  openedOverride = false,
+  showButtonIcon = true,
+  dismissCallback = () => {},
+  outsideClickCallback = () => {}
 }) {
-  const [opened, setOpened] = (0,external_React_namespaceObject.useState)(false);
+  const [opened, setOpened] = (0,external_React_namespaceObject.useState)(openedOverride);
   const ref = (0,external_React_namespaceObject.useRef)(null);
   (0,external_React_namespaceObject.useEffect)(() => {
     const handleOutsideClick = e => {
       if (!ref?.current?.contains(e.target)) {
         setOpened(false);
+        outsideClickCallback();
       }
     };
     windowObj.document.addEventListener("click", handleOutsideClick);
     return () => {
       windowObj.document.removeEventListener("click", handleOutsideClick);
     };
-  }, [windowObj]);
+  }, [windowObj, outsideClickCallback]);
   const onToggleClick = (0,external_React_namespaceObject.useCallback)(() => {
     if (!opened) {
       dispatch(actionCreators.DiscoveryStreamUserEvent({
@@ -2326,6 +2460,11 @@ function FeatureHighlight({
     }
     setOpened(!opened);
   }, [dispatch, feature, opened]);
+  const onDismissClick = (0,external_React_namespaceObject.useCallback)(() => {
+    setOpened(false);
+    dismissCallback();
+  }, [dismissCallback]);
+  const hideButtonClass = showButtonIcon ? `` : `isHidden`;
   const openedClassname = opened ? `opened` : `closed`;
   return /*#__PURE__*/external_React_default().createElement("div", {
     ref: ref,
@@ -2334,17 +2473,16 @@ function FeatureHighlight({
     title: title,
     "aria-haspopup": "true",
     "aria-label": ariaLabel,
-    className: "toggle-button",
+    className: `toggle-button ${hideButtonClass}`,
     onClick: onToggleClick
   }, toggle), /*#__PURE__*/external_React_default().createElement("div", {
     className: `feature-highlight-modal ${position} ${openedClassname}`
   }, /*#__PURE__*/external_React_default().createElement("div", {
     className: "message-icon"
   }, icon), /*#__PURE__*/external_React_default().createElement("p", null, message), /*#__PURE__*/external_React_default().createElement("button", {
-    title: "Dismiss",
-    "aria-label": "Close sponsored content more info popup",
+    "data-l10n-id": "feature-highlight-dismiss-button",
     className: "icon icon-dismiss",
-    onClick: () => setOpened(false)
+    onClick: onDismissClick
   })));
 }
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight.jsx
@@ -2967,11 +3105,11 @@ class _DSCard extends (external_React_default()).PureComponent {
       ctaButtonVariant: ctaButtonVariant,
       dispatch: this.props.dispatch,
       spocMessageVariant: this.props.spocMessageVariant
-    }), saveToPocketCard && /*#__PURE__*/external_React_default().createElement("div", {
+    }), /*#__PURE__*/external_React_default().createElement("div", {
       className: "card-stp-button-hover-background"
     }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "card-stp-button-position-wrapper"
-    }, !this.props.flightId && stpButton(), /*#__PURE__*/external_React_default().createElement(DSLinkMenu, {
+    }, saveToPocketCard && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, !this.props.flightId && stpButton()), /*#__PURE__*/external_React_default().createElement(DSLinkMenu, {
       id: this.props.id,
       index: this.props.pos,
       dispatch: this.props.dispatch,
@@ -2989,25 +3127,7 @@ class _DSCard extends (external_React_default()).PureComponent {
       saveToPocketCard: saveToPocketCard,
       pocket_button_enabled: pocketButtonEnabled,
       isRecentSave: isRecentSave
-    }))), !saveToPocketCard && /*#__PURE__*/external_React_default().createElement(DSLinkMenu, {
-      id: this.props.id,
-      index: this.props.pos,
-      dispatch: this.props.dispatch,
-      url: this.props.url,
-      title: this.props.title,
-      source: source,
-      type: this.props.type,
-      pocket_id: this.props.pocket_id,
-      shim: this.props.shim,
-      bookmarkGuid: this.props.bookmarkGuid,
-      flightId: !this.props.is_collection ? this.props.flightId : undefined,
-      showPrivacyInfo: !!this.props.flightId,
-      hostRef: this.contextMenuButtonHostRef,
-      onMenuUpdate: this.onMenuUpdate,
-      onMenuShow: this.onMenuShow,
-      pocket_button_enabled: pocketButtonEnabled,
-      isRecentSave: isRecentSave
-    }));
+    }))));
   }
 }
 _DSCard.defaultProps = {
@@ -5533,6 +5653,23 @@ const INITIAL_STATE = {
   },
   Wallpapers: {
     wallpaperList: [],
+    highlightSeenCounter: 0,
+    categories: [],
+  },
+  Weather: {
+    initialized: false,
+    lastUpdated: null,
+    query: "",
+    suggestions: [],
+    locationData: {
+      city: "",
+      adminArea: "",
+      country: "",
+    },
+    // Display search input in Weather widget
+    searchActive: false,
+    locationSearchString: "",
+    suggestedLocations: [],
   },
 };
 
@@ -5723,12 +5860,13 @@ function TopSites(prevState = INITIAL_STATE.TopSites, action) {
       return Object.assign({}, prevState, { rows: newRows });
     case actionTypes.UPDATE_SEARCH_SHORTCUTS:
       return { ...prevState, searchShortcuts: action.data.searchShortcuts };
-    case actionTypes.SOV_UPDATED:
+    case actionTypes.SOV_UPDATED: {
       const sov = {
         ready: action.data.ready,
         positions: action.data.positions,
       };
       return { ...prevState, sov };
+    }
     default:
       return prevState;
   }
@@ -6122,7 +6260,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           loaded: true,
         },
       };
-    case actionTypes.DISCOVERY_STREAM_FEED_UPDATE:
+    case actionTypes.DISCOVERY_STREAM_FEED_UPDATE: {
       const newData = {};
       newData[action.data.url] = action.data.feed;
       return {
@@ -6135,6 +6273,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           },
         },
       };
+    }
     case actionTypes.DISCOVERY_STREAM_SPOCS_CAPS:
       return {
         ...prevState,
@@ -6191,7 +6330,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
             items.filter(item => item.url !== action.data.url)
           );
 
-    case actionTypes.PLACES_SAVED_TO_POCKET:
+    case actionTypes.PLACES_SAVED_TO_POCKET: {
       const addPocketInfo = item => {
         if (item.url === action.data.url) {
           return Object.assign({}, item, {
@@ -6205,7 +6344,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       return isNotReady()
         ? prevState
         : nextState(items => items.map(addPocketInfo));
-
+    }
     case actionTypes.DELETE_FROM_POCKET:
     case actionTypes.ARCHIVE_FROM_POCKET:
       return isNotReady()
@@ -6214,7 +6353,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
             items.filter(item => item.pocket_id !== action.data.pocket_id)
           );
 
-    case actionTypes.PLACES_BOOKMARK_ADDED:
+    case actionTypes.PLACES_BOOKMARK_ADDED: {
       const updateBookmarkInfo = item => {
         if (item.url === action.data.url) {
           const { bookmarkGuid, bookmarkTitle, dateAdded } = action.data;
@@ -6230,8 +6369,8 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       return isNotReady()
         ? prevState
         : nextState(items => items.map(updateBookmarkInfo));
-
-    case actionTypes.PLACES_BOOKMARKS_REMOVED:
+    }
+    case actionTypes.PLACES_BOOKMARKS_REMOVED: {
       const removeBookmarkInfo = item => {
         if (action.data.urls.includes(item.url)) {
           const newSite = Object.assign({}, item);
@@ -6248,6 +6387,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       return isNotReady()
         ? prevState
         : nextState(items => items.map(removeBookmarkInfo));
+    }
     case actionTypes.PREF_CHANGED:
       if (action.data.name === PREF_COLLECTION_DISMISSIBLE) {
         return {
@@ -6277,7 +6417,40 @@ function Search(prevState = INITIAL_STATE.Search, action) {
 function Wallpapers(prevState = INITIAL_STATE.Wallpapers, action) {
   switch (action.type) {
     case actionTypes.WALLPAPERS_SET:
-      return { wallpaperList: action.data };
+      return {
+        ...prevState,
+        wallpaperList: action.data,
+      };
+    case actionTypes.WALLPAPERS_FEATURE_HIGHLIGHT_COUNTER_INCREMENT:
+      return {
+        ...prevState,
+        highlightSeenCounter: action.data,
+      };
+    case actionTypes.WALLPAPERS_CATEGORY_SET:
+      return { ...prevState, categories: action.data };
+    default:
+      return prevState;
+  }
+}
+
+function Weather(prevState = INITIAL_STATE.Weather, action) {
+  switch (action.type) {
+    case actionTypes.WEATHER_UPDATE:
+      return {
+        ...prevState,
+        suggestions: action.data.suggestions,
+        lastUpdated: action.data.date,
+        locationData: action.data.locationData || prevState.locationData,
+        initialized: true,
+      };
+    case actionTypes.WEATHER_SEARCH_ACTIVE:
+      return { ...prevState, searchActive: action.data };
+    case actionTypes.WEATHER_LOCATION_SEARCH_UPDATE:
+      return { ...prevState, locationSearchString: action.data };
+    case actionTypes.WEATHER_LOCATION_SUGGESTIONS_UPDATE:
+      return { ...prevState, suggestedLocations: action.data };
+    case actionTypes.WEATHER_LOCATION_DATA_UPDATE:
+      return { ...prevState, locationData: action.data };
     default:
       return prevState;
   }
@@ -6295,6 +6468,7 @@ const reducers = {
   DiscoveryStream,
   Search,
   Wallpapers,
+  Weather,
 };
 
 ;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSiteFormInput.jsx
@@ -8854,6 +9028,7 @@ const DiscoveryStreamBase = (0,external_ReactRedux_namespaceObject.connect)(stat
 
 
 
+
 class _WallpapersSection extends (external_React_default()).PureComponent {
   constructor(props) {
     super(props);
@@ -8871,18 +9046,46 @@ class _WallpapersSection extends (external_React_default()).PureComponent {
     } = event.target;
     const prefs = this.props.Prefs.values;
     const colorMode = this.prefersDarkQuery?.matches ? "dark" : "light";
-    this.props.setPref(`newtabWallpapers.wallpaper-${colorMode}`, id);
-    // bug 1892095
-    if (prefs["newtabWallpapers.wallpaper-dark"] === "" && colorMode === "light") {
-      this.props.setPref("newtabWallpapers.wallpaper-dark", id.replace("light", "dark"));
+    if (prefs["newtabWallpapers.v2.enabled"]) {
+      // If we don't care about color mode, set both to the same wallpaper.
+      this.props.setPref(`newtabWallpapers.wallpaper-dark`, id);
+      this.props.setPref(`newtabWallpapers.wallpaper-light`, id);
+    } else {
+      this.props.setPref(`newtabWallpapers.wallpaper-${colorMode}`, id);
+      // bug 1892095
+      if (prefs["newtabWallpapers.wallpaper-dark"] === "" && colorMode === "light") {
+        this.props.setPref("newtabWallpapers.wallpaper-dark", id.replace("light", "dark"));
+      }
+      if (prefs["newtabWallpapers.wallpaper-light"] === "" && colorMode === "dark") {
+        this.props.setPref(`newtabWallpapers.wallpaper-light`, id.replace("dark", "light"));
+      }
     }
-    if (prefs["newtabWallpapers.wallpaper-light"] === "" && colorMode === "dark") {
-      this.props.setPref(`newtabWallpapers.wallpaper-light`, id.replace("dark", "light"));
-    }
+    this.handleUserEvent({
+      selected_wallpaper: id,
+      hadPreviousWallpaper: !!this.props.activeWallpaper
+    });
   }
   handleReset() {
+    const prefs = this.props.Prefs.values;
     const colorMode = this.prefersDarkQuery?.matches ? "dark" : "light";
-    this.props.setPref(`newtabWallpapers.wallpaper-${colorMode}`, "");
+    if (prefs["newtabWallpapers.v2.enabled"]) {
+      this.props.setPref("newtabWallpapers.wallpaper-light", "");
+      this.props.setPref("newtabWallpapers.wallpaper-dark", "");
+    } else {
+      this.props.setPref(`newtabWallpapers.wallpaper-${colorMode}`, "");
+    }
+    this.handleUserEvent({
+      selected_wallpaper: "none",
+      hadPreviousWallpaper: !!this.props.activeWallpaper
+    });
+  }
+
+  // Record user interaction when changing wallpaper and reseting wallpaper to default
+  handleUserEvent(data) {
+    this.props.dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WALLPAPER_CLICK,
+      data
+    }));
   }
   render() {
     const {
@@ -8891,8 +9094,13 @@ class _WallpapersSection extends (external_React_default()).PureComponent {
     const {
       activeWallpaper
     } = this.props;
+    const prefs = this.props.Prefs.values;
+    let fieldsetClassname = `wallpaper-list`;
+    if (prefs["newtabWallpapers.v2.enabled"]) {
+      fieldsetClassname += " ignore-color-mode";
+    }
     return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("fieldset", {
-      className: "wallpaper-list"
+      className: fieldsetClassname
     }, wallpaperList.map(({
       title,
       theme,
@@ -8925,10 +9133,203 @@ const WallpapersSection = (0,external_ReactRedux_namespaceObject.connect)(state 
     Prefs: state.Prefs
   };
 })(_WallpapersSection);
+;// CONCATENATED MODULE: ./content-src/components/WallpapersSection/WallpaperCategories.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+class _WallpaperCategories extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.handleChange = this.handleChange.bind(this);
+    this.handleReset = this.handleReset.bind(this);
+    this.handleCategory = this.handleCategory.bind(this);
+    this.handleBack = this.handleBack.bind(this);
+    this.prefersHighContrastQuery = null;
+    this.prefersDarkQuery = null;
+    this.state = {
+      activeCategory: null,
+      activeCategoryFluentID: null
+    };
+  }
+  componentDidMount() {
+    this.prefersDarkQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
+  }
+  handleChange(event) {
+    const {
+      id
+    } = event.target;
+    this.props.setPref("newtabWallpapers.wallpaper-light", id);
+    this.props.setPref("newtabWallpapers.wallpaper-dark", id);
+    // Setting this now so when we remove v1 we don't have to migrate v1 values.
+    this.props.setPref("newtabWallpapers.wallpaper", id);
+    this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
+      selected_wallpaper: id,
+      hadPreviousWallpaper: !!this.props.activeWallpaper
+    });
+  }
+  handleReset() {
+    this.props.setPref("newtabWallpapers.wallpaper-light", "");
+    this.props.setPref("newtabWallpapers.wallpaper-dark", "");
+    // Setting this now so when we remove v1 we don't have to migrate v1 values.
+    this.props.setPref("newtabWallpapers.wallpaper", "");
+    this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
+      selected_wallpaper: "none",
+      hadPreviousWallpaper: !!this.props.activeWallpaper
+    });
+  }
+  handleCategory = event => {
+    this.setState({
+      activeCategory: event.target.id
+    });
+    this.handleUserEvent(actionTypes.WALLPAPER_CATEGORY_CLICK, event.target.id);
+    let fluent_id;
+    switch (event.target.id) {
+      case "photographs":
+        fluent_id = "newtab-wallpaper-category-title-photographs";
+        break;
+      case "abstracts":
+        fluent_id = "newtab-wallpaper-category-title-abstract";
+        break;
+      case "solid-colors":
+        fluent_id = "newtab-wallpaper-category-title-colors";
+    }
+    this.setState({
+      activeCategoryFluentID: fluent_id
+    });
+  };
+  handleBack() {
+    this.setState({
+      activeCategory: null
+    });
+  }
+
+  // Record user interaction when changing wallpaper and reseting wallpaper to default
+  handleUserEvent(type, data) {
+    this.props.dispatch(actionCreators.OnlyToMain({
+      type,
+      data
+    }));
+  }
+  render() {
+    const prefs = this.props.Prefs.values;
+    const {
+      wallpaperList,
+      categories
+    } = this.props.Wallpapers;
+    const {
+      activeWallpaper
+    } = this.props;
+    const {
+      activeCategory
+    } = this.state;
+    const {
+      activeCategoryFluentID
+    } = this.state;
+    const filteredWallpapers = wallpaperList.filter(wallpaper => wallpaper.category === activeCategory);
+    let categorySectionClassname = "category wallpaper-list";
+    if (prefs["newtabWallpapers.v2.enabled"]) {
+      categorySectionClassname += " ignore-color-mode";
+    }
+    return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "category-header"
+    }, /*#__PURE__*/external_React_default().createElement("h2", {
+      "data-l10n-id": "newtab-wallpaper-title"
+    }), /*#__PURE__*/external_React_default().createElement("button", {
+      className: "wallpapers-reset",
+      onClick: this.handleReset,
+      "data-l10n-id": "newtab-wallpaper-reset"
+    })), /*#__PURE__*/external_React_default().createElement("fieldset", {
+      className: "category-list"
+    }, categories.map(category => {
+      const filteredList = wallpaperList.filter(wallpaper => wallpaper.category === category);
+      const activeWallpaperObj = activeWallpaper && filteredList.find(wp => wp.title === activeWallpaper);
+      const thumbnail = activeWallpaperObj || filteredList[0];
+      let fluent_id;
+      switch (category) {
+        case "photographs":
+          fluent_id = "newtab-wallpaper-category-title-photographs";
+          break;
+        case "abstracts":
+          fluent_id = "newtab-wallpaper-category-title-abstract";
+          break;
+        case "solid-colors":
+          fluent_id = "newtab-wallpaper-category-title-colors";
+      }
+      let style = {};
+      if (thumbnail?.wallpaperUrl) {
+        style.backgroundImage = `url(${thumbnail.wallpaperUrl})`;
+      } else {
+        style.backgroundColor = thumbnail?.solid_color || "";
+      }
+      return /*#__PURE__*/external_React_default().createElement("div", {
+        key: category
+      }, /*#__PURE__*/external_React_default().createElement("input", {
+        id: category,
+        style: style,
+        onClick: this.handleCategory,
+        className: "wallpaper-input"
+      }), /*#__PURE__*/external_React_default().createElement("label", {
+        htmlFor: category,
+        "data-l10n-id": fluent_id
+      }, fluent_id));
+    })), /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
+      in: !!activeCategory,
+      timeout: 300,
+      classNames: "wallpaper-list",
+      unmountOnExit: true
+    }, /*#__PURE__*/external_React_default().createElement("section", {
+      className: categorySectionClassname
+    }, /*#__PURE__*/external_React_default().createElement("button", {
+      className: "arrow-button",
+      "data-l10n-id": activeCategoryFluentID,
+      onClick: this.handleBack
+    }), /*#__PURE__*/external_React_default().createElement("fieldset", null, filteredWallpapers.map(({
+      title,
+      theme,
+      fluent_id,
+      solid_color,
+      wallpaperUrl
+    }) => {
+      let style = {};
+      if (wallpaperUrl) {
+        style.backgroundImage = `url(${wallpaperUrl})`;
+      } else {
+        style.backgroundColor = solid_color || "";
+      }
+      return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("input", {
+        onChange: this.handleChange,
+        style: style,
+        type: "radio",
+        name: `wallpaper-${title}`,
+        id: title,
+        value: title,
+        checked: title === activeWallpaper,
+        "aria-checked": title === activeWallpaper,
+        className: `wallpaper-input theme-${theme}`
+      }), /*#__PURE__*/external_React_default().createElement("label", {
+        htmlFor: title,
+        className: "sr-only",
+        "data-l10n-id": fluent_id
+      }, fluent_id));
+    })))));
+  }
+}
+const WallpaperCategories = (0,external_ReactRedux_namespaceObject.connect)(state => {
+  return {
+    Wallpapers: state.Wallpapers,
+    Prefs: state.Prefs
+  };
+})(_WallpaperCategories);
 ;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/ContentSection/ContentSection.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -8954,7 +9355,7 @@ class ContentSection extends (external_React_default()).PureComponent {
     }));
   }
   onPreferenceSelect(e) {
-    // eventSource: TOP_SITES | TOP_STORIES | HIGHLIGHTS
+    // eventSource: TOP_SITES | TOP_STORIES | HIGHLIGHTS | WEATHER
     const {
       preference,
       eventSource
@@ -9011,9 +9412,11 @@ class ContentSection extends (external_React_default()).PureComponent {
       pocketRegion,
       mayHaveSponsoredStories,
       mayHaveRecentSaves,
+      mayHaveWeather,
       openPreferences,
       spocMessageVariant,
       wallpapersEnabled,
+      wallpapersV2Enabled,
       activeWallpaper,
       setPref
     } = this.props;
@@ -9021,6 +9424,7 @@ class ContentSection extends (external_React_default()).PureComponent {
       topSitesEnabled,
       pocketEnabled,
       highlightsEnabled,
+      weatherEnabled,
       showSponsoredTopSitesEnabled,
       showSponsoredPocketEnabled,
       showRecentSavesEnabled,
@@ -9028,11 +9432,14 @@ class ContentSection extends (external_React_default()).PureComponent {
     } = enabledSections;
     return /*#__PURE__*/external_React_default().createElement("div", {
       className: "home-section"
-    }, wallpapersEnabled && /*#__PURE__*/external_React_default().createElement("div", {
+    }, !wallpapersV2Enabled && wallpapersEnabled && /*#__PURE__*/external_React_default().createElement("div", {
       className: "wallpapers-section"
-    }, /*#__PURE__*/external_React_default().createElement("h2", {
-      "data-l10n-id": "newtab-wallpaper-title"
-    }), /*#__PURE__*/external_React_default().createElement(WallpapersSection, {
+    }, /*#__PURE__*/external_React_default().createElement(WallpapersSection, {
+      setPref: setPref,
+      activeWallpaper: activeWallpaper
+    })), wallpapersV2Enabled && /*#__PURE__*/external_React_default().createElement("div", {
+      className: "wallpapers-section"
+    }, /*#__PURE__*/external_React_default().createElement(WallpaperCategories, {
       setPref: setPref,
       activeWallpaper: activeWallpaper
     })), /*#__PURE__*/external_React_default().createElement("div", {
@@ -9156,6 +9563,19 @@ class ContentSection extends (external_React_default()).PureComponent {
       "data-eventSource": "HIGHLIGHTS",
       "data-l10n-id": "newtab-custom-recent-toggle",
       "data-l10n-attrs": "label, description"
+    }))), mayHaveWeather && /*#__PURE__*/external_React_default().createElement("div", {
+      id: "weather-section",
+      className: "section"
+    }, /*#__PURE__*/external_React_default().createElement("label", {
+      className: "switch"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
+      id: "weather-toggle",
+      pressed: weatherEnabled || null,
+      onToggle: this.onPreferenceSelect,
+      "data-preference": "showWeather",
+      "data-eventSource": "WEATHER",
+      "data-l10n-id": "newtab-custom-weather-toggle",
+      "data-l10n-attrs": "label, description"
     }))), pocketRegion && mayHaveSponsoredStories && spocMessageVariant === "variant-c" && /*#__PURE__*/external_React_default().createElement("div", {
       className: "sponsored-content-info"
     }, /*#__PURE__*/external_React_default().createElement("div", {
@@ -9221,21 +9641,25 @@ class _CustomizeMenu extends (external_React_default()).PureComponent {
       className: "customize-menu",
       role: "dialog",
       "data-l10n-id": "newtab-personalize-dialog-label"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "close-button-wrapper"
     }, /*#__PURE__*/external_React_default().createElement("button", {
       onClick: () => this.props.onClose(),
       className: "close-button",
       "data-l10n-id": "newtab-custom-close-button",
       ref: c => this.closeButton = c
-    }), /*#__PURE__*/external_React_default().createElement(ContentSection, {
+    })), /*#__PURE__*/external_React_default().createElement(ContentSection, {
       openPreferences: this.props.openPreferences,
       setPref: this.props.setPref,
       enabledSections: this.props.enabledSections,
       wallpapersEnabled: this.props.wallpapersEnabled,
+      wallpapersV2Enabled: this.props.wallpapersV2Enabled,
       activeWallpaper: this.props.activeWallpaper,
       pocketRegion: this.props.pocketRegion,
       mayHaveSponsoredTopSites: this.props.mayHaveSponsoredTopSites,
       mayHaveSponsoredStories: this.props.mayHaveSponsoredStories,
       mayHaveRecentSaves: this.props.DiscoveryStream.recentSavesEnabled,
+      mayHaveWeather: this.props.mayHaveWeather,
       spocMessageVariant: this.props.spocMessageVariant,
       dispatch: this.props.dispatch
     }))));
@@ -9449,6 +9873,500 @@ class _Search extends (external_React_default()).PureComponent {
 const Search_Search = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   Prefs: state.Prefs
 }))(_Search);
+;// CONCATENATED MODULE: ./content-src/components/Weather/LocationSearch.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+function LocationSearch({
+  outerClassName
+}) {
+  // should be the location object from suggestedLocations
+  const [selectedLocation, setSelectedLocation] = (0,external_React_namespaceObject.useState)("");
+  const suggestedLocations = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Weather.suggestedLocations);
+  const locationSearchString = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Weather.locationSearchString);
+  const [userInput, setUserInput] = (0,external_React_namespaceObject.useState)(locationSearchString || "");
+  const inputRef = (0,external_React_namespaceObject.useRef)(null);
+  const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (selectedLocation) {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WEATHER_LOCATION_DATA_UPDATE,
+        data: {
+          city: selectedLocation.localized_name,
+          adminName: selectedLocation.administrative_area,
+          country: selectedLocation.country
+        }
+      }));
+      dispatch(actionCreators.SetPref("weather.query", selectedLocation.key));
+      dispatch(actionCreators.BroadcastToContent({
+        type: actionTypes.WEATHER_SEARCH_ACTIVE,
+        data: false
+      }));
+    }
+  }, [selectedLocation, dispatch]);
+
+  // when component mounts, set focus to input
+  (0,external_React_namespaceObject.useEffect)(() => {
+    inputRef?.current?.focus();
+  }, [inputRef]);
+  function handleChange(event) {
+    const {
+      value
+    } = event.target;
+    setUserInput(value);
+    // if the user input contains less than three characters and suggestedLocations is not an empty array,
+    // reset suggestedLocations to [] so there arent incorrect items in the datalist
+    if (value.length < 3 && suggestedLocations.length) {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WEATHER_LOCATION_SUGGESTIONS_UPDATE,
+        data: []
+      }));
+    }
+    // find match in suggestedLocation array
+    const match = suggestedLocations?.find(({
+      key
+    }) => key === value);
+    if (match) {
+      setSelectedLocation(match);
+      setUserInput(`${match.localized_name}, ${match.administrative_area.localized_name}`);
+    } else if (value.length >= 3 && !match) {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WEATHER_LOCATION_SEARCH_UPDATE,
+        data: value
+      }));
+    }
+  }
+  function handleCloseSearch() {
+    dispatch(actionCreators.BroadcastToContent({
+      type: actionTypes.WEATHER_SEARCH_ACTIVE,
+      data: false
+    }));
+    setUserInput("");
+  }
+  function handleKeyDown(e) {
+    if (e.key === "Escape") {
+      handleCloseSearch();
+    }
+  }
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: `${outerClassName} location-search`
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "location-input-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "search-icon"
+  }), /*#__PURE__*/external_React_default().createElement("input", {
+    ref: inputRef,
+    list: "merino-location-list",
+    type: "text",
+    placeholder: "Search location",
+    onChange: handleChange,
+    value: userInput,
+    onKeyDown: handleKeyDown
+  }), /*#__PURE__*/external_React_default().createElement("button", {
+    className: "close-icon",
+    onClick: handleCloseSearch
+  }), /*#__PURE__*/external_React_default().createElement("datalist", {
+    id: "merino-location-list"
+  }, (suggestedLocations || []).map(location => /*#__PURE__*/external_React_default().createElement("option", {
+    value: location.key,
+    key: location.key
+  }, location.localized_name, ",", " ", location.administrative_area.localized_name)))));
+}
+
+;// CONCATENATED MODULE: ./content-src/components/Weather/Weather.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+const Weather_VISIBLE = "visible";
+const Weather_VISIBILITY_CHANGE_EVENT = "visibilitychange";
+class _Weather extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.state = {
+      contextMenuKeyboard: false,
+      showContextMenu: false,
+      url: "https://example.com",
+      impressionSeen: false,
+      errorSeen: false
+    };
+    this.setImpressionRef = element => {
+      this.impressionElement = element;
+    };
+    this.setErrorRef = element => {
+      this.errorElement = element;
+    };
+    this.onClick = this.onClick.bind(this);
+    this.onKeyDown = this.onKeyDown.bind(this);
+    this.onUpdate = this.onUpdate.bind(this);
+    this.onProviderClick = this.onProviderClick.bind(this);
+  }
+  componentDidMount() {
+    const {
+      props
+    } = this;
+    if (!props.dispatch) {
+      return;
+    }
+    if (props.document.visibilityState === Weather_VISIBLE) {
+      // Setup the impression observer once the page is visible.
+      this.setImpressionObservers();
+    } else {
+      // We should only ever send the latest impression stats ping, so remove any
+      // older listeners.
+      if (this._onVisibilityChange) {
+        props.document.removeEventListener(Weather_VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+      }
+      this._onVisibilityChange = () => {
+        if (props.document.visibilityState === Weather_VISIBLE) {
+          // Setup the impression observer once the page is visible.
+          this.setImpressionObservers();
+          props.document.removeEventListener(Weather_VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+        }
+      };
+      props.document.addEventListener(Weather_VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+    }
+  }
+  componentWillUnmount() {
+    // Remove observers on unmount
+    if (this.observer && this.impressionElement) {
+      this.observer.unobserve(this.impressionElement);
+    }
+    if (this.observer && this.errorElement) {
+      this.observer.unobserve(this.errorElement);
+    }
+    if (this._onVisibilityChange) {
+      this.props.document.removeEventListener(Weather_VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+    }
+  }
+  setImpressionObservers() {
+    if (this.impressionElement) {
+      this.observer = new IntersectionObserver(this.onImpression.bind(this));
+      this.observer.observe(this.impressionElement);
+    }
+    if (this.errorElement) {
+      this.observer = new IntersectionObserver(this.onError.bind(this));
+      this.observer.observe(this.errorElement);
+    }
+  }
+  onImpression(entries) {
+    if (this.state) {
+      const entry = entries.find(e => e.isIntersecting);
+      if (entry) {
+        if (this.impressionElement) {
+          this.observer.unobserve(this.impressionElement);
+        }
+        this.props.dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WEATHER_IMPRESSION
+        }));
+
+        // Stop observing since element has been seen
+        this.setState({
+          impressionSeen: true
+        });
+      }
+    }
+  }
+  onError(entries) {
+    if (this.state) {
+      const entry = entries.find(e => e.isIntersecting);
+      if (entry) {
+        if (this.errorElement) {
+          this.observer.unobserve(this.errorElement);
+        }
+        this.props.dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WEATHER_LOAD_ERROR
+        }));
+
+        // Stop observing since element has been seen
+        this.setState({
+          errorSeen: true
+        });
+      }
+    }
+  }
+  openContextMenu(isKeyBoard) {
+    if (this.props.onUpdate) {
+      this.props.onUpdate(true);
+    }
+    this.setState({
+      showContextMenu: true,
+      contextMenuKeyboard: isKeyBoard
+    });
+  }
+  onClick(event) {
+    event.preventDefault();
+    this.openContextMenu(false, event);
+  }
+  onKeyDown(event) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      this.openContextMenu(true, event);
+    }
+  }
+  onUpdate(showContextMenu) {
+    if (this.props.onUpdate) {
+      this.props.onUpdate(showContextMenu);
+    }
+    this.setState({
+      showContextMenu
+    });
+  }
+  onProviderClick() {
+    this.props.dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WEATHER_OPEN_PROVIDER_URL,
+      data: {
+        source: "WEATHER"
+      }
+    }));
+  }
+  render() {
+    // Check if weather should be rendered
+    const isWeatherEnabled = this.props.Prefs.values["system.showWeather"];
+    if (!isWeatherEnabled || !this.props.Weather.initialized) {
+      return false;
+    }
+    const {
+      showContextMenu
+    } = this.state;
+    const {
+      props
+    } = this;
+    const {
+      className,
+      index,
+      dispatch,
+      eventSource,
+      shouldSendImpressionStats,
+      Prefs,
+      Weather
+    } = props;
+    const WEATHER_SUGGESTION = Weather.suggestions?.[0];
+    const isContextMenuOpen = this.state.activeCard === index;
+    const outerClassName = ["weather", className, isContextMenuOpen && !Weather.searchActive && "active", props.placeholder && "placeholder", Weather.searchActive && "search"].filter(v => v).join(" ");
+    const showDetailedView = Prefs.values["weather.display"] === "detailed";
+
+    // Note: The temperature units/display options will become secondary menu items
+    const WEATHER_SOURCE_CONTEXT_MENU_OPTIONS = [...(this.props.Prefs.values["weather.locationSearchEnabled"] ? ["ChangeWeatherLocation"] : []), ...(this.props.Prefs.values["weather.temperatureUnits"] === "f" ? ["ChangeTempUnitCelsius"] : ["ChangeTempUnitFahrenheit"]), ...(this.props.Prefs.values["weather.display"] === "simple" ? ["ChangeWeatherDisplayDetailed"] : ["ChangeWeatherDisplaySimple"]), "HideWeather", "OpenLearnMoreURL"];
+    if (Weather.searchActive) {
+      return /*#__PURE__*/external_React_default().createElement(LocationSearch, {
+        outerClassName: outerClassName
+      });
+    } else if (WEATHER_SUGGESTION) {
+      return /*#__PURE__*/external_React_default().createElement("div", {
+        ref: this.setImpressionRef,
+        className: outerClassName
+      }, /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherCard"
+      }, /*#__PURE__*/external_React_default().createElement("a", {
+        "data-l10n-id": "newtab-weather-see-forecast",
+        "data-l10n-args": "{\"provider\": \"AccuWeather\"}",
+        href: WEATHER_SUGGESTION.forecast.url,
+        className: "weatherInfoLink",
+        onClick: this.onProviderClick
+      }, /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherIconCol"
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        className: `weatherIcon iconId${WEATHER_SUGGESTION.current_conditions.icon_id}`
+      })), /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherText"
+      }, /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherForecastRow"
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherTemperature"
+      }, WEATHER_SUGGESTION.current_conditions.temperature[this.props.Prefs.values["weather.temperatureUnits"]], "\xB0", this.props.Prefs.values["weather.temperatureUnits"])), /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherCityRow"
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherCity"
+      }, Weather.locationData.city)), showDetailedView ? /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherDetailedSummaryRow"
+      }, /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherHighLowTemps"
+      }, /*#__PURE__*/external_React_default().createElement("span", null, WEATHER_SUGGESTION.forecast.high[this.props.Prefs.values["weather.temperatureUnits"]], "\xB0", this.props.Prefs.values["weather.temperatureUnits"]), /*#__PURE__*/external_React_default().createElement("span", null, "\u2022"), /*#__PURE__*/external_React_default().createElement("span", null, WEATHER_SUGGESTION.forecast.low[this.props.Prefs.values["weather.temperatureUnits"]], "\xB0", this.props.Prefs.values["weather.temperatureUnits"])), /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherTextSummary"
+      }, WEATHER_SUGGESTION.current_conditions.summary)) : null)), /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherButtonContextMenuWrapper"
+      }, /*#__PURE__*/external_React_default().createElement("button", {
+        "aria-haspopup": "true",
+        onKeyDown: this.onKeyDown,
+        onClick: this.onClick,
+        "data-l10n-id": "newtab-menu-section-tooltip",
+        className: "weatherButtonContextMenu"
+      }, showContextMenu ? /*#__PURE__*/external_React_default().createElement(LinkMenu, {
+        dispatch: dispatch,
+        index: index,
+        source: eventSource,
+        onUpdate: this.onUpdate,
+        options: WEATHER_SOURCE_CONTEXT_MENU_OPTIONS,
+        site: {
+          url: "https://support.mozilla.org/kb/customize-items-on-firefox-new-tab-page"
+        },
+        link: "https://support.mozilla.org/kb/customize-items-on-firefox-new-tab-page",
+        shouldSendImpressionStats: shouldSendImpressionStats
+      }) : null))), /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherSponsorText"
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        "data-l10n-id": "newtab-weather-sponsored",
+        "data-l10n-args": "{\"provider\": \"AccuWeather\"}"
+      })));
+    }
+    return /*#__PURE__*/external_React_default().createElement("div", {
+      ref: this.setErrorRef,
+      className: outerClassName
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "weatherNotAvailable"
+    }, /*#__PURE__*/external_React_default().createElement("span", {
+      className: "icon icon-small-spacer icon-info-critical"
+    }), " ", /*#__PURE__*/external_React_default().createElement("span", {
+      "data-l10n-id": "newtab-weather-error-not-available"
+    })));
+  }
+}
+const Weather_Weather = (0,external_ReactRedux_namespaceObject.connect)(state => ({
+  Weather: state.Weather,
+  Prefs: state.Prefs,
+  IntersectionObserver: globalThis.IntersectionObserver,
+  document: globalThis.document
+}))(_Weather);
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+const WallpaperFeatureHighlight_INTERSECTION_RATIO = 1;
+const WallpaperFeatureHighlight_VISIBLE = "visible";
+const WallpaperFeatureHighlight_VISIBILITY_CHANGE_EVENT = "visibilitychange";
+const WALLPAPER_HIGHLIGHT_DISMISSED_PREF = "newtabWallpapers.highlightDismissed";
+function WallpaperFeatureHighlight({
+  position,
+  dispatch,
+  windowObj = globalThis
+}) {
+  const [highlightVisibilityTimeoutID, setHighlightVisibilityTimeoutID] = (0,external_React_namespaceObject.useState)("");
+  const heightElement = (0,external_React_namespaceObject.useRef)(null);
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const highlightHeaderText = prefs["newtabWallpapers.highlightHeaderText"];
+  const highlightContentText = prefs["newtabWallpapers.highlightContentText"];
+  const highlightCtaText = prefs["newtabWallpapers.highlightCtaText"];
+
+  // Event triggered by the CTA click event in the FeatureHighlight component.
+  const onToggleClick = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.SetPref(WALLPAPER_HIGHLIGHT_DISMISSED_PREF, true));
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WALLPAPERS_FEATURE_HIGHLIGHT_CTA_CLICKED
+    }));
+  }, [dispatch]);
+
+  // Event triggered by the onDismiss click event in the FeatureHighlight component.
+  const onDismissCallback = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.SetPref(WALLPAPER_HIGHLIGHT_DISMISSED_PREF, true));
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WALLPAPERS_FEATURE_HIGHLIGHT_DISMISSED
+    }));
+  }, [dispatch]);
+
+  // Event triggered by the onOutsideClick click event in the FeatureHighlight component.
+  const onOutsideClickCallback = () => {
+    clearTimeout(highlightVisibilityTimeoutID);
+  };
+
+  // Update the counter everytime the Wallpaper Highlight is viewed for more than 3 seconds
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const options = {
+      threshold: WallpaperFeatureHighlight_INTERSECTION_RATIO
+    };
+    const intersectionObserver = new windowObj.IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= WallpaperFeatureHighlight_INTERSECTION_RATIO)) {
+        intersectionObserver.unobserve(heightElement.current);
+
+        // Set the timeout ID so that it can be cleared independently
+        // if there is an outside click detected
+        setHighlightVisibilityTimeoutID(setTimeout(() => {
+          dispatch(actionCreators.OnlyToMain({
+            type: actionTypes.WALLPAPERS_FEATURE_HIGHLIGHT_SEEN
+          }));
+        }, 3000));
+      }
+    }, options);
+    const onVisibilityChange = () => {
+      intersectionObserver.observe(heightElement.current);
+      windowObj.document.removeEventListener(WallpaperFeatureHighlight_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
+    };
+    if (heightElement.current) {
+      if (windowObj.document.visibilityState === WallpaperFeatureHighlight_VISIBLE) {
+        intersectionObserver.observe(heightElement.current);
+      } else {
+        windowObj.document.addEventListener(WallpaperFeatureHighlight_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
+      }
+    }
+    return () => {
+      intersectionObserver?.disconnect();
+      windowObj.document.removeEventListener(WallpaperFeatureHighlight_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
+    };
+  }, [dispatch, windowObj]);
+  let header = /*#__PURE__*/external_React_default().createElement("span", {
+    className: "highlightHeader",
+    "data-l10n-id": "newtab-wallpaper-feature-highlight-header"
+  });
+  let content = /*#__PURE__*/external_React_default().createElement("span", {
+    className: "highlightContent",
+    "data-l10n-id": "newtab-wallpaper-feature-highlight-content"
+  });
+  let button = /*#__PURE__*/external_React_default().createElement("button", {
+    onClick: onToggleClick,
+    "data-l10n-id": "newtab-wallpaper-feature-highlight-button"
+  });
+  if (highlightHeaderText) {
+    header = /*#__PURE__*/external_React_default().createElement("span", {
+      className: "highlightHeader"
+    }, highlightHeaderText);
+  }
+  if (highlightContentText) {
+    content = /*#__PURE__*/external_React_default().createElement("span", {
+      className: "highlightContent"
+    }, highlightContentText);
+  }
+  if (highlightCtaText) {
+    button = /*#__PURE__*/external_React_default().createElement("button", {
+      onClick: onToggleClick
+    }, highlightCtaText);
+  }
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: "wallpaper-feature-highlight",
+    ref: heightElement
+  }, /*#__PURE__*/external_React_default().createElement(FeatureHighlight, {
+    position: position,
+    "data-l10n-id": "feature-highlight-wallpaper",
+    feature: "FEATURE_HIGHLIGHT_WALLPAPER",
+    dispatch: dispatch,
+    message: /*#__PURE__*/external_React_default().createElement("div", {
+      className: "wallpaper-feature-highlight-content"
+    }, header, content, button),
+    icon: /*#__PURE__*/external_React_default().createElement("div", {
+      className: "customize-icon"
+    }),
+    toggle: /*#__PURE__*/external_React_default().createElement("div", {
+      className: "icon icon-help"
+    }),
+    openedOverride: true,
+    showButtonIcon: false,
+    dismissCallback: onDismissCallback,
+    outsideClickCallback: onOutsideClickCallback
+  }));
+}
 ;// CONCATENATED MODULE: ./content-src/components/Base/Base.jsx
 function Base_extends() { Base_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return Base_extends.apply(this, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -9465,8 +10383,11 @@ function Base_extends() { Base_extends = Object.assign ? Object.assign.bind() : 
 
 
 
+
+
 const Base_VISIBLE = "visible";
 const Base_VISIBILITY_CHANGE_EVENT = "visibilitychange";
+const Base_WALLPAPER_HIGHLIGHT_DISMISSED_PREF = "newtabWallpapers.highlightDismissed";
 const PrefsButton = ({
   onClick,
   icon
@@ -9546,6 +10467,7 @@ class BaseContent extends (external_React_default()).PureComponent {
     this.handleOnKeyDown = this.handleOnKeyDown.bind(this);
     this.onWindowScroll = debounce(this.onWindowScroll.bind(this), 5);
     this.setPref = this.setPref.bind(this);
+    this.shouldShowWallpapersHighlight = this.shouldShowWallpapersHighlight.bind(this);
     this.updateWallpaper = this.updateWallpaper.bind(this);
     this.prefersDarkQuery = null;
     this.handleColorModeChange = this.handleColorModeChange.bind(this);
@@ -9660,7 +10582,7 @@ class BaseContent extends (external_React_default()).PureComponent {
     if (activeWallpaper && wallpaperList && name.url) {
       return /*#__PURE__*/external_React_default().createElement("p", {
         className: `wallpaper-attribution`,
-        key: name,
+        key: name.string,
         "data-l10n-id": "newtab-wallpaper-attribution",
         "data-l10n-args": JSON.stringify({
           author_string: name.string,
@@ -9680,15 +10602,101 @@ class BaseContent extends (external_React_default()).PureComponent {
   }
   async updateWallpaper() {
     const prefs = this.props.Prefs.values;
+    const wallpaperLight = prefs["newtabWallpapers.wallpaper-light"];
+    const wallpaperDark = prefs["newtabWallpapers.wallpaper-dark"];
     const {
       wallpaperList
     } = this.props.Wallpapers;
     if (wallpaperList) {
-      const lightWallpaper = wallpaperList.find(wp => wp.title === prefs["newtabWallpapers.wallpaper-light"]) || "";
-      const darkWallpaper = wallpaperList.find(wp => wp.title === prefs["newtabWallpapers.wallpaper-dark"]) || "";
+      const lightWallpaper = wallpaperList.find(wp => wp.title === wallpaperLight) || "";
+      const darkWallpaper = wallpaperList.find(wp => wp.title === wallpaperDark) || "";
+      const wallpaperColor = darkWallpaper?.solid_color || lightWallpaper?.solid_color || "";
       __webpack_require__.g.document?.body.style.setProperty(`--newtab-wallpaper-light`, `url(${lightWallpaper?.wallpaperUrl || ""})`);
       __webpack_require__.g.document?.body.style.setProperty(`--newtab-wallpaper-dark`, `url(${darkWallpaper?.wallpaperUrl || ""})`);
+      __webpack_require__.g.document?.body.style.setProperty(`--newtab-wallpaper-color`, wallpaperColor || "transparent");
+      let wallpaperTheme = "";
+
+      // If we have a solid colour set, let's see how dark it is.
+      if (wallpaperColor) {
+        const rgbColors = this.getRGBColors(wallpaperColor);
+        const isColorDark = this.isWallpaperColorDark(rgbColors);
+        wallpaperTheme = isColorDark ? "dark" : "light";
+      } else {
+        // Grab the contrast of the currently displayed wallpaper.
+        const {
+          theme
+        } = this.state.colorMode === "light" ? lightWallpaper : darkWallpaper;
+        if (theme) {
+          wallpaperTheme = theme;
+        }
+      }
+
+      // Add helper class to body if user has a wallpaper selected
+      if (wallpaperTheme === "light") {
+        __webpack_require__.g.document?.body.classList.add("lightWallpaper");
+        __webpack_require__.g.document?.body.classList.remove("darkWallpaper");
+      }
+      if (wallpaperTheme === "dark") {
+        __webpack_require__.g.document?.body.classList.add("darkWallpaper");
+        __webpack_require__.g.document?.body.classList.remove("lightWallpaper");
+      }
     }
+  }
+
+  // Contains all the logic to show the wallpapers Feature Highlight
+  shouldShowWallpapersHighlight() {
+    const prefs = this.props.Prefs.values;
+
+    // If wallpapers (or v2 wallpapers) are not enabled, don't show the highlight.
+    const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
+    const wallpapersV2Enabled = prefs["newtabWallpapers.v2.enabled"];
+    if (!wallpapersEnabled || !wallpapersV2Enabled) {
+      return false;
+    }
+
+    // If user has interacted/dismissed the highlight, don't show
+    const wallpapersHighlightDismissed = prefs[Base_WALLPAPER_HIGHLIGHT_DISMISSED_PREF];
+    if (wallpapersHighlightDismissed) {
+      return false;
+    }
+
+    // If the user has selected a wallpaper, don't show the pop-up
+    const activeWallpaperLight = prefs[`newtabWallpapers.wallpaper-light`];
+    const activeWallpaperDark = prefs[`newtabWallpapers.wallpaper-dark`];
+    if (activeWallpaperLight || activeWallpaperDark) {
+      this.props.dispatch(actionCreators.SetPref(Base_WALLPAPER_HIGHLIGHT_DISMISSED_PREF, true));
+      return false;
+    }
+
+    // If the user has seen* the highlight more than three times
+    // *Seen means they loaded HNT page and the highlight was observed for more than 3 seconds
+    const {
+      highlightSeenCounter
+    } = this.props.Wallpapers;
+    if (highlightSeenCounter.value > 3) {
+      return false;
+    }
+
+    // Show the highlight if available
+    const wallpapersHighlightEnabled = prefs["newtabWallpapers.highlightEnabled"];
+    if (wallpapersHighlightEnabled) {
+      return true;
+    }
+
+    // Default return value
+    return false;
+  }
+  getRGBColors(input) {
+    if (input.length !== 7) {
+      return [];
+    }
+    const r = parseInt(input.substr(1, 2), 16);
+    const g = parseInt(input.substr(3, 2), 16);
+    const b = parseInt(input.substr(5, 2), 16);
+    return [r, g, b];
+  }
+  isWallpaperColorDark([r, g, b]) {
+    return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
   }
   render() {
     const {
@@ -9704,6 +10712,8 @@ class BaseContent extends (external_React_default()).PureComponent {
     const prefs = props.Prefs.values;
     const activeWallpaper = prefs[`newtabWallpapers.wallpaper-${this.state.colorMode}`];
     const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
+    const wallpapersV2Enabled = prefs["newtabWallpapers.v2.enabled"];
+    const weatherEnabled = prefs.showWeather;
     const {
       pocketConfig
     } = prefs;
@@ -9723,31 +10733,40 @@ class BaseContent extends (external_React_default()).PureComponent {
       showSponsoredTopSitesEnabled: prefs.showSponsoredTopSites,
       showSponsoredPocketEnabled: prefs.showSponsored,
       showRecentSavesEnabled: prefs.showRecentSaves,
-      topSitesRowsCount: prefs.topSitesRows
+      topSitesRowsCount: prefs.topSitesRows,
+      weatherEnabled: prefs.showWeather
     };
     const pocketRegion = prefs["feeds.system.topstories"];
     const mayHaveSponsoredStories = prefs["system.showSponsored"];
+    const mayHaveWeather = prefs["system.showWeather"];
     const {
       mayHaveSponsoredTopSites
     } = prefs;
     const outerClassName = ["outer-wrapper", isDiscoveryStream && pocketEnabled && "ds-outer-wrapper-search-alignment", isDiscoveryStream && "ds-outer-wrapper-breakpoint-override", prefs.showSearch && this.state.fixedSearch && !noSectionsEnabled && "fixed-search", prefs.showSearch && noSectionsEnabled && "only-search", prefs["logowordmark.alwaysVisible"] && "visible-logo"].filter(v => v).join(" ");
-    if (wallpapersEnabled) {
+    if (wallpapersEnabled || wallpapersV2Enabled) {
       this.updateWallpaper();
     }
-    return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement(CustomizeMenu, {
+    return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("menu", {
+      className: "personalizeButtonWrapper"
+    }, /*#__PURE__*/external_React_default().createElement(CustomizeMenu, {
       onClose: this.closeCustomizationMenu,
       onOpen: this.openCustomizationMenu,
       openPreferences: this.openPreferences,
       setPref: this.setPref,
       enabledSections: enabledSections,
       wallpapersEnabled: wallpapersEnabled,
+      wallpapersV2Enabled: wallpapersV2Enabled,
       activeWallpaper: activeWallpaper,
       pocketRegion: pocketRegion,
       mayHaveSponsoredTopSites: mayHaveSponsoredTopSites,
       mayHaveSponsoredStories: mayHaveSponsoredStories,
+      mayHaveWeather: mayHaveWeather,
       spocMessageVariant: spocMessageVariant,
       showing: customizeMenuVisible
-    }), /*#__PURE__*/external_React_default().createElement("div", {
+    }), this.shouldShowWallpapersHighlight() && /*#__PURE__*/external_React_default().createElement(WallpaperFeatureHighlight, {
+      position: "inset-block-end inset-inline-start",
+      dispatch: this.props.dispatch
+    })), /*#__PURE__*/external_React_default().createElement("div", {
       className: outerClassName,
       onClick: this.closeCustomizationMenu
     }, /*#__PURE__*/external_React_default().createElement("main", null, prefs.showSearch && /*#__PURE__*/external_React_default().createElement("div", {
@@ -9763,7 +10782,7 @@ class BaseContent extends (external_React_default()).PureComponent {
       locale: props.App.locale,
       mayHaveSponsoredStories: mayHaveSponsoredStories,
       firstVisibleTimestamp: this.state.firstVisibleTimestamp
-    })) : /*#__PURE__*/external_React_default().createElement(Sections_Sections, null)), /*#__PURE__*/external_React_default().createElement(ConfirmDialog, null), wallpapersEnabled && this.renderWallpaperAttribution())));
+    })) : /*#__PURE__*/external_React_default().createElement(Sections_Sections, null)), /*#__PURE__*/external_React_default().createElement(ConfirmDialog, null), wallpapersEnabled && this.renderWallpaperAttribution()), /*#__PURE__*/external_React_default().createElement("aside", null, weatherEnabled && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Weather_Weather, null)))));
   }
 }
 BaseContent.defaultProps = {
@@ -9775,7 +10794,8 @@ const Base = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   Sections: state.Sections,
   DiscoveryStream: state.DiscoveryStream,
   Search: state.Search,
-  Wallpapers: state.Wallpapers
+  Wallpapers: state.Wallpapers,
+  Weather: state.Weather
 }))(_Base);
 ;// CONCATENATED MODULE: ./content-src/lib/detect-user-session-start.mjs
 /* This Source Code Form is subject to the terms of the Mozilla Public

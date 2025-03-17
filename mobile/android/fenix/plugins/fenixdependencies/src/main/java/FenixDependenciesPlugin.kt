@@ -19,22 +19,20 @@ object FenixVersions {
     const val fastlane = "2.1.1"
 
     const val androidx_activity = "1.7.2"
-    const val androidx_benchmark = "1.2.3"
+    const val androidx_benchmark = "1.2.4"
     const val androidx_profileinstaller = "1.3.1"
     const val androidx_splash_screen = "1.0.1"
-    const val androidx_transition = "1.4.1"
-    const val androidx_datastore = "1.0.0"
+    const val androidx_transition = "1.5.0"
+    const val androidx_viewpager2 = "1.1.0"
     const val google_accompanist = "0.32.0"
 
     const val adjust = "4.38.2"
     const val installreferrer = "2.2"
 
     const val junit = "5.10.2"
-    const val mockk = "1.13.10"
+    const val mockk = "1.13.11"
 
     const val google_ads_id_version = "16.0.0"
-
-    const val google_play_review_version = "2.0.1"
 
     // keep in sync with the versions used in AS.
     const val protobuf = "3.21.10"
@@ -53,7 +51,7 @@ object FenixDependencies {
     const val androidx_profileinstaller = "androidx.profileinstaller:profileinstaller:${FenixVersions.androidx_profileinstaller}"
     const val androidx_activity_ktx = "androidx.activity:activity-ktx:${FenixVersions.androidx_activity}"
     const val androidx_transition = "androidx.transition:transition:${FenixVersions.androidx_transition}"
-    const val androidx_datastore = "androidx.datastore:datastore:${FenixVersions.androidx_datastore}"
+    const val androidx_viewpager2 = "androidx.viewpager2:viewpager2:${FenixVersions.androidx_viewpager2}"
 
     const val google_accompanist_drawablepainter = "com.google.accompanist:accompanist-drawablepainter:${FenixVersions.google_accompanist}"
 
@@ -86,10 +84,6 @@ object FenixDependencies {
     // --- END AndroidX test dependencies --- //
 
     const val google_ads_id = "com.google.android.gms:play-services-ads-identifier:${FenixVersions.google_ads_id_version}"
-
-    // Required for in-app reviews
-    const val google_play_review = "com.google.android.play:review:${FenixVersions.google_play_review_version}"
-    const val google_play_review_ktx = "com.google.android.play:review-ktx:${FenixVersions.google_play_review_version}"
 
     const val junitApi = "org.junit.jupiter:junit-jupiter-api:${FenixVersions.junit}"
     const val junitParams = "org.junit.jupiter:junit-jupiter-params:${FenixVersions.junit}"

@@ -117,6 +117,8 @@ class GCParallelTask : private mozilla::LinkedListElement<GCParallelTask>,
 
   UnprotectedData<State> state_;
 
+  HelperThreadLockData<bool> dispatchedToThreadPool;
+
   // May be set to the time this task was queued to collect telemetry.
   mozilla::TimeStamp maybeQueueTime_;
 
@@ -161,8 +163,6 @@ class GCParallelTask : private mozilla::LinkedListElement<GCParallelTask>,
   void joinWithLockHeld(
       AutoLockHelperThreadState& lock,
       mozilla::Maybe<mozilla::TimeStamp> deadline = mozilla::Nothing());
-  void joinNonIdleTask(mozilla::Maybe<mozilla::TimeStamp> deadline,
-                       AutoLockHelperThreadState& lock);
 
   // Instead of dispatching to a helper, run the task on the current thread.
   void runFromMainThread();
@@ -247,6 +247,9 @@ class GCParallelTask : private mozilla::LinkedListElement<GCParallelTask>,
   }
   friend class gc::GCRuntime;
 
+  void joinNonIdleTask(mozilla::Maybe<mozilla::TimeStamp> deadline,
+                       AutoLockHelperThreadState& lock);
+
   void runTask(JS::GCContext* gcx, AutoLockHelperThreadState& lock);
 
   // Implement the HelperThreadTask interface.
@@ -254,6 +257,7 @@ class GCParallelTask : private mozilla::LinkedListElement<GCParallelTask>,
     return ThreadType::THREAD_TYPE_GCPARALLEL;
   }
   void runHelperThreadTask(AutoLockHelperThreadState& locked) override;
+  void onThreadPoolDispatch() override;
 };
 
 } /* namespace js */

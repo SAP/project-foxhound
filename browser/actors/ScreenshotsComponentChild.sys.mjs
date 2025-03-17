@@ -10,10 +10,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ScreenshotsOverlay: "resource:///modules/ScreenshotsOverlayChild.sys.mjs",
 });
 
+const SCREENSHOTS_PREVENT_CONTENT_EVENTS_PREF =
+  "screenshots.browser.component.preventContentEvents";
+
 export class ScreenshotsComponentChild extends JSWindowActorChild {
   #resizeTask;
   #scrollTask;
   #overlay;
+  #preventableEventsAdded = false;
 
   static OVERLAY_EVENTS = [
     "click",
@@ -22,6 +26,21 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     "pointerup",
     "keyup",
     "keydown",
+  ];
+
+  // The following events are only listened to so we can prevent them from
+  // reaching the content page. The events in OVERLAY_EVENTS are also prevented.
+  static PREVENTABLE_EVENTS = [
+    "mousemove",
+    "mousedown",
+    "mouseup",
+    "touchstart",
+    "touchmove",
+    "touchend",
+    "dblclick",
+    "auxclick",
+    "keypress",
+    "contextmenu",
   ];
 
   get overlay() {
@@ -48,6 +67,11 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
         return this.removeEventListeners();
       case "Screenshots:AddEventListeners":
         return this.addEventListeners();
+      case "Screenshots:MoveFocusToContent":
+        return this.focusOverlay();
+      case "Screenshots:ClearFocus":
+        Services.focus.clearFocus(this.contentWindow);
+        return null;
     }
     return null;
   }
@@ -57,18 +81,31 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
       return;
     }
 
+    // Handle overlay events here
+    if (
+      [
+        ...ScreenshotsComponentChild.OVERLAY_EVENTS,
+        ...ScreenshotsComponentChild.PREVENTABLE_EVENTS,
+        "selectionchange",
+      ].includes(event.type)
+    ) {
+      if (!this.overlay?.initialized) {
+        return;
+      }
+
+      // Preventing a pointerdown event throws an error in debug builds.
+      // See https://searchfox.org/mozilla-central/rev/b41bb321fe4bd7d03926083698ac498ebec0accf/widget/WidgetEventImpl.cpp#566-572
+      // Don't prevent the default context menu.
+      if (!["contextmenu", "pointerdown"].includes(event.type)) {
+        event.preventDefault();
+      }
+
+      event.stopImmediatePropagation();
+      this.overlay.handleEvent(event);
+      return;
+    }
+
     switch (event.type) {
-      case "click":
-      case "pointerdown":
-      case "pointermove":
-      case "pointerup":
-      case "keyup":
-      case "keydown":
-        if (!this.overlay?.initialized) {
-          return;
-        }
-        this.overlay.handleEvent(event);
-        break;
       case "beforeunload":
         this.requestCancelScreenshot("navigation");
         break;
@@ -98,8 +135,8 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
         this.requestDownloadScreenshot(event.detail.region);
         break;
       case "Screenshots:OverlaySelection": {
-        let { hasSelection } = event.detail;
-        this.sendOverlaySelection({ hasSelection });
+        let { hasSelection, overlayState } = event.detail;
+        this.sendOverlaySelection({ hasSelection, overlayState });
         break;
       }
       case "Screenshots:RecordEvent": {
@@ -108,10 +145,13 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
         break;
       }
       case "Screenshots:ShowPanel":
-        this.showPanel();
+        this.sendAsyncMessage("Screenshots:ShowPanel");
         break;
       case "Screenshots:HidePanel":
-        this.hidePanel();
+        this.sendAsyncMessage("Screenshots:HidePanel");
+        break;
+      case "Screenshots:FocusPanel":
+        this.sendAsyncMessage("Screenshots:MoveFocusToParent", event.detail);
         break;
     }
   }
@@ -150,14 +190,6 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     this.endScreenshotsOverlay({ doNotResetMethods: true });
   }
 
-  showPanel() {
-    this.sendAsyncMessage("Screenshots:ShowPanel");
-  }
-
-  hidePanel() {
-    this.sendAsyncMessage("Screenshots:HidePanel");
-  }
-
   getDocumentTitle() {
     return this.document.title;
   }
@@ -170,6 +202,11 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     let methodsUsed = this.#overlay.methodsUsed;
     this.#overlay.resetMethodsUsed();
     return methodsUsed;
+  }
+
+  focusOverlay() {
+    this.contentWindow.focus();
+    this.#overlay.focus();
   }
 
   /**
@@ -220,6 +257,16 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     for (let event of ScreenshotsComponentChild.OVERLAY_EVENTS) {
       chromeEventHandler.addEventListener(event, this, true);
     }
+
+    this.document.addEventListener("selectionchange", this);
+
+    if (Services.prefs.getBoolPref(SCREENSHOTS_PREVENT_CONTENT_EVENTS_PREF)) {
+      for (let event of ScreenshotsComponentChild.PREVENTABLE_EVENTS) {
+        chromeEventHandler.addEventListener(event, this, true);
+      }
+
+      this.#preventableEventsAdded = true;
+    }
   }
 
   /**
@@ -257,6 +304,16 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     for (let event of ScreenshotsComponentChild.OVERLAY_EVENTS) {
       chromeEventHandler.removeEventListener(event, this, true);
     }
+
+    this.document.removeEventListener("selectionchange", this);
+
+    if (this.#preventableEventsAdded) {
+      for (let event of ScreenshotsComponentChild.PREVENTABLE_EVENTS) {
+        chromeEventHandler.removeEventListener(event, this, true);
+      }
+    }
+
+    this.#preventableEventsAdded = false;
   }
 
   /**
@@ -308,8 +365,8 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     let rect = {
       left: scrollMinX,
       top: scrollMinY,
-      right: scrollWidth,
-      bottom: scrollHeight,
+      right: scrollMinX + scrollWidth,
+      bottom: scrollMinY + scrollHeight,
       width: scrollWidth,
       height: scrollHeight,
       devicePixelRatio,
@@ -341,13 +398,18 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
    *        The height of the content window.
    */
   getVisibleBounds() {
-    let { scrollX, scrollY, clientWidth, clientHeight, devicePixelRatio } =
-      this.#overlay.windowDimensions.dimensions;
+    let {
+      pageScrollX,
+      pageScrollY,
+      clientWidth,
+      clientHeight,
+      devicePixelRatio,
+    } = this.#overlay.windowDimensions.dimensions;
     let rect = {
-      left: scrollX,
-      top: scrollY,
-      right: scrollX + clientWidth,
-      bottom: scrollY + clientHeight,
+      left: pageScrollX,
+      top: pageScrollY,
+      right: pageScrollX + clientWidth,
+      bottom: pageScrollY + clientHeight,
       width: clientWidth,
       height: clientHeight,
       devicePixelRatio,

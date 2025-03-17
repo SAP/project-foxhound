@@ -68,6 +68,8 @@ skip-if = ["apple_catalina && debug"] # Bug 1773790
 ["browser_UrlbarInput_trimURLs.js"]
 https_first_disabled = true
 
+["browser_UrlbarInput_untrimOnUserInteraction.js"]
+
 ["browser_aboutHomeLoading.js"]
 skip-if = [
   "tsan", # Intermittently times out, see 1622698 (frequent on TSan).
@@ -172,6 +174,8 @@ support-files = [
 ["browser_clipboard.js"]
 
 ["browser_closePanelOnClick.js"]
+
+["browser_close_other_panels.js"]
 
 ["browser_content_opener.js"]
 
@@ -365,6 +369,8 @@ support-files = [
 
 ["browser_quickactions.js"]
 
+["browser_quickactions_commands.js"]
+
 ["browser_quickactions_devtools.js"]
 
 ["browser_quickactions_screenshot.js"]
@@ -498,6 +504,8 @@ support-files = ["search-engines", "../../../search/test/browser/trendingSuggest
 
 ["browser_search_history_from_history_panel.js"]
 
+["browser_secondaryActions.js"]
+
 ["browser_selectStaleResults.js"]
 support-files = [
   "searchSuggestionEngineSlow.xml",
@@ -611,6 +619,7 @@ https_first_disabled = true
 https_first_disabled = true
 
 ["browser_url_formatted_correctly_on_load.js"]
+https_first_disabled = true
 
 ["browser_urlbar_annotation.js"]
 support-files = ["redirect_to.sjs"]
@@ -643,9 +652,6 @@ tags = "search-telemetry"
 
 ["browser_urlbar_telemetry_places.js"]
 https_first_disabled = true
-tags = "search-telemetry"
-
-["browser_urlbar_telemetry_quickactions.js"]
 tags = "search-telemetry"
 
 ["browser_urlbar_telemetry_remotetab.js"]

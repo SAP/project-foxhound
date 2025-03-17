@@ -14,8 +14,6 @@
 #include "nsContentUtils.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsFontMetrics.h"
-#include "nsGfxScrollFrame.h"
-#include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsRect.h"
@@ -24,6 +22,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/dom/Selection.h"
 #include "TextDrawTarget.h"
 
@@ -94,7 +93,7 @@ static bool IsInlineAxisOverflowVisible(nsIFrame* aFrame) {
              "expected a block frame");
 
   nsIFrame* f = aFrame;
-  while (f && f->Style()->IsAnonBox() && !f->IsScrollFrame()) {
+  while (f && f->Style()->IsAnonBox() && !f->IsScrollContainerFrame()) {
     f = f->GetParent();
   }
   if (!f) {
@@ -249,7 +248,7 @@ void nsDisplayTextOverflowMarker::PaintTextToContext(gfxContext* aCtx,
   } else {
     RefPtr<nsFontMetrics> fm =
         nsLayoutUtils::GetInflatedFontMetricsForFrame(mFrame);
-    NS_ConvertUTF8toUTF16 str16{mStyle.AsString().AsString()};
+    nsDependentAtomString str16(mStyle.AsString().AsAtom());
     nsLayoutUtils::DrawString(mFrame, *fm, aCtx, str16.get(), str16.Length(),
                               pt);
   }
@@ -287,17 +286,19 @@ TextOverflow::TextOverflow(nsDisplayListBuilder* aBuilder,
                    aBlockFrame->GetSize()),
       mBuilder(aBuilder),
       mBlock(aBlockFrame),
-      mScrollableFrame(nsLayoutUtils::GetScrollableFrameFor(aBlockFrame)),
+      mScrollContainerFrame(
+          nsLayoutUtils::GetScrollContainerFrameFor(aBlockFrame)),
       mMarkerList(aBuilder),
       mBlockSize(aBlockFrame->GetSize()),
       mBlockWM(aBlockFrame->GetWritingMode()),
       mCanHaveInlineAxisScrollbar(false),
       mInLineClampContext(aBlockFrame->IsInLineClampContext()),
       mAdjustForPixelSnapping(false) {
-  if (mScrollableFrame) {
-    auto scrollbarStyle = mBlockWM.IsVertical()
-                              ? mScrollableFrame->GetScrollStyles().mVertical
-                              : mScrollableFrame->GetScrollStyles().mHorizontal;
+  if (mScrollContainerFrame) {
+    auto scrollbarStyle =
+        mBlockWM.IsVertical()
+            ? mScrollContainerFrame->GetScrollStyles().mVertical
+            : mScrollContainerFrame->GetScrollStyles().mHorizontal;
     mCanHaveInlineAxisScrollbar = scrollbarStyle != StyleOverflow::Hidden;
     if (!mAdjustForPixelSnapping) {
       // Scrolling to the end position can leave some text still overflowing due
@@ -307,8 +308,9 @@ TextOverflow::TextOverflow(nsDisplayListBuilder* aBuilder,
     // Use a null containerSize to convert a vector from logical to physical.
     const nsSize nullContainerSize;
     mContentArea.MoveBy(
-        mBlockWM, LogicalPoint(mBlockWM, mScrollableFrame->GetScrollPosition(),
-                               nullContainerSize));
+        mBlockWM,
+        LogicalPoint(mBlockWM, mScrollContainerFrame->GetScrollPosition(),
+                     nullContainerSize));
   }
   StyleDirection direction = aBlockFrame->StyleVisibility()->mDirection;
   const nsStyleTextReset* style = aBlockFrame->StyleTextReset();
@@ -341,9 +343,9 @@ Maybe<TextOverflow> TextOverflow::WillProcessLines(
       !CanHaveOverflowMarkers(aBlockFrame)) {
     return Nothing();
   }
-  nsIScrollableFrame* scrollableFrame =
-      nsLayoutUtils::GetScrollableFrameFor(aBlockFrame);
-  if (scrollableFrame && scrollableFrame->IsTransformingByAPZ()) {
+  ScrollContainerFrame* scrollContainerFrame =
+      nsLayoutUtils::GetScrollContainerFrameFor(aBlockFrame);
+  if (scrollContainerFrame && scrollContainerFrame->IsTransformingByAPZ()) {
     // If the APZ is actively scrolling this, don't bother with markers.
     return Nothing();
   }
@@ -489,9 +491,9 @@ LogicalRect TextOverflow::ExamineLineFrames(nsLineBox* aLine,
   bool suppressIStart = mIStart.IsSuppressed(mInLineClampContext);
   bool suppressIEnd = mIEnd.IsSuppressed(mInLineClampContext);
   if (mCanHaveInlineAxisScrollbar) {
-    LogicalPoint pos(mBlockWM, mScrollableFrame->GetScrollPosition(),
+    LogicalPoint pos(mBlockWM, mScrollContainerFrame->GetScrollPosition(),
                      mBlockSize);
-    LogicalRect scrollRange(mBlockWM, mScrollableFrame->GetScrollRange(),
+    LogicalRect scrollRange(mBlockWM, mScrollContainerFrame->GetScrollRange(),
                             mBlockSize);
     // No ellipsing when nothing to scroll to on that side (this includes
     // overflow:auto that doesn't trigger a horizontal scrollbar).
@@ -925,7 +927,7 @@ void TextOverflow::Marker::SetupString(nsIFrame* aFrame) {
     RefPtr<nsFontMetrics> fm =
         nsLayoutUtils::GetInflatedFontMetricsForFrame(aFrame);
     mISize = nsLayoutUtils::AppUnitWidthOfStringBidi(
-        NS_ConvertUTF8toUTF16(mStyle->AsString().AsString()), aFrame, *fm, *rc);
+        nsDependentAtomString(mStyle->AsString().AsAtom()), aFrame, *fm, *rc);
   }
   mIntrinsicISize = mISize;
   mInitialized = true;

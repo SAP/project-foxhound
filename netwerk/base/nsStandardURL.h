@@ -142,7 +142,6 @@ class nsStandardURL : public nsIFileURL,
   static void InitGlobalObjects();
   static void ShutdownGlobalObjects();
 
- public: /* internal -- HPUX compiler can't handle this being private */
   //
   // location and length of an url segment relative to mSpec
   //
@@ -174,6 +173,7 @@ class nsStandardURL : public nsIFileURL,
     }
   };
 
+ public:
   //
   // URL segment encoder : performs charset conversion and URL escaping.
   //

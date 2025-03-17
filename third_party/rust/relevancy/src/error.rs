@@ -23,6 +23,25 @@ pub enum Error {
 
     #[error("Error fetching interest data")]
     FetchInterestDataError,
+
+    #[error("Interrupted")]
+    Interrupted(#[from] interrupt_support::Interrupted),
+
+    #[error("Invalid interest code: {0}")]
+    InvalidInterestCode(u32),
+
+    #[error("Remote Setting Error: {0}")]
+    RemoteSettingsError(#[from] remote_settings::RemoteSettingsError),
+
+    #[error("Error parsing {type_name}: {error} ({path})")]
+    RemoteSettingsParseError {
+        type_name: String,
+        path: String,
+        error: serde_json::Error,
+    },
+
+    #[error("Base64 Decode Error: {0}")]
+    Base64DecodeError(String),
 }
 
 /// Result enum for the public API
@@ -37,8 +56,17 @@ impl GetErrorHandling for Error {
     type ExternalError = RelevancyApiError;
 
     fn get_error_handling(&self) -> ErrorHandling<Self::ExternalError> {
-        ErrorHandling::convert(RelevancyApiError::Unexpected {
-            reason: self.to_string(),
-        })
+        match self {
+            Self::RemoteSettingsParseError { .. } => {
+                ErrorHandling::convert(RelevancyApiError::Unexpected {
+                    reason: self.to_string(),
+                })
+                .report_error("relevancy-remote-settings-parse-error")
+            }
+
+            _ => ErrorHandling::convert(RelevancyApiError::Unexpected {
+                reason: self.to_string(),
+            }),
+        }
     }
 }

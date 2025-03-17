@@ -327,8 +327,8 @@ export var AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_ANDROID_HISTORY:
-#ifdef MOZ_ANDROID_HISTORY
+  MOZ_GECKOVIEW_HISTORY:
+#ifdef MOZ_GECKOVIEW_HISTORY
   true,
 #else
   false,
@@ -452,6 +452,7 @@ export var AppConstants = Object.freeze({
     false,
 #endif
 
+#if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
   MOZ_CAN_FOLLOW_SYSTEM_TIME:
 #ifdef XP_WIN
     true,
@@ -466,9 +467,17 @@ export var AppConstants = Object.freeze({
 #else
     false,
 #endif
+#endif
 
   MOZ_SYSTEM_POLICIES:
 #ifdef MOZ_SYSTEM_POLICIES
+    true,
+#else
+    false,
+#endif
+
+  MOZ_SELECTABLE_PROFILES:
+#ifdef MOZ_SELECTABLE_PROFILES
     true,
 #else
     false,

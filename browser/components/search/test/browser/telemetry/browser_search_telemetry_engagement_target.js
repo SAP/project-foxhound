@@ -148,9 +148,6 @@ add_setup(async function () {
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.serpEventTelemetry.enabled", true]],
-  });
 
   registerCleanupFunction(async () => {
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
@@ -189,6 +186,7 @@ add_task(async function test_click_second_ad_in_component() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -245,6 +243,7 @@ add_task(async function test_click_ads_link_modified() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -300,6 +299,7 @@ add_task(async function test_click_and_submit_incontent_searchbox() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -321,6 +321,7 @@ add_task(async function test_click_and_submit_incontent_searchbox() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
     },
   ]);
@@ -358,6 +359,7 @@ add_task(async function test_click_autosuggest() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -375,6 +377,7 @@ add_task(async function test_click_autosuggest() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
     },
   ]);
@@ -404,6 +407,7 @@ add_task(async function test_click_carousel_expand() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -464,6 +468,7 @@ add_task(async function test_click_link_with_special_characters_in_path() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -519,6 +524,7 @@ add_task(async function test_click_cookie_banner_accept() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -564,6 +570,7 @@ add_task(async function test_click_cookie_banner_reject() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -609,6 +616,7 @@ add_task(async function test_click_cookie_banner_more_options() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {

@@ -18,6 +18,17 @@
 #include "nsServiceManagerUtils.h"
 #include "WinUtils.h"
 
+#ifdef __MINGW32__
+// The PKEY_Link_Arguments property key does not exist in the MINGW32
+// build configuration, so we define it ourselves here.
+#  define INITGUID  // This alters the behavior of DEFINE_PROPERTYKEY so that
+                    // we define PKEY_Link_Arguments rather than declare it.
+#  include <propkeydef.h>  // For DEFINE_PROPERTYKEY() definition
+DEFINE_PROPERTYKEY(PKEY_Link_Arguments, 0x436F2667, 0x14E2, 0x4FEB, 0xB3, 0x0A,
+                   0x14, 0x6C, 0x53, 0xB5, 0xB6, 0x74, 100);
+#  undef INITGUID
+#endif
+
 using mozilla::dom::Promise;
 using mozilla::dom::WindowsJumpListShortcutDescription;
 
@@ -291,15 +302,35 @@ JumpListBuilder::CheckForRemovals(JSContext* aCx, Promise** aPromise) {
 }
 
 NS_IMETHODIMP
-JumpListBuilder::PopulateJumpList(
-    const nsTArray<JS::Value>& aTaskDescriptions, const nsAString& aCustomTitle,
-    const nsTArray<JS::Value>& aCustomDescriptions, JSContext* aCx,
-    Promise** aPromise) {
+JumpListBuilder::PopulateJumpList(JS::Handle<JS::Value> aTaskDescriptions,
+                                  const nsAString& aCustomTitle,
+                                  JS::Handle<JS::Value> aCustomDescriptions,
+                                  JSContext* aCx, Promise** aPromise) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPromise);
   MOZ_ASSERT(mIOThread);
 
-  if (aCustomDescriptions.Length() && aCustomTitle.IsEmpty()) {
+  if (!aTaskDescriptions.isObject() || !aCustomDescriptions.isObject()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  JS::Rooted<JSObject*> taskDescriptionsObj(aCx, &aTaskDescriptions.toObject());
+  JS::Rooted<JSObject*> customDescriptionsObj(aCx,
+                                              &aCustomDescriptions.toObject());
+
+  uint32_t taskDescriptionsLength = 0;
+  uint32_t customDescriptionsLength = 0;
+  if (NS_WARN_IF(!JS::GetArrayLength(aCx, taskDescriptionsObj,
+                                     &taskDescriptionsLength))) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (NS_WARN_IF(!JS::GetArrayLength(aCx, customDescriptionsObj,
+                                     &customDescriptionsLength))) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (customDescriptionsLength && aCustomTitle.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -309,9 +340,11 @@ JumpListBuilder::PopulateJumpList(
   mIOThread->Dispatch(event, NS_DISPATCH_NORMAL);
 
   nsTArray<WindowsJumpListShortcutDescription> taskDescs;
-  for (auto& jsval : aTaskDescriptions) {
+  for (uint32_t arrayIndex = 0; arrayIndex < taskDescriptionsLength;
+       arrayIndex++) {
     JS::Rooted<JS::Value> rootedVal(aCx);
-    if (NS_WARN_IF(!dom::ToJSValue(aCx, jsval, &rootedVal))) {
+    if (NS_WARN_IF(
+            !JS_GetElement(aCx, taskDescriptionsObj, arrayIndex, &rootedVal))) {
       return NS_ERROR_INVALID_ARG;
     }
 
@@ -324,9 +357,11 @@ JumpListBuilder::PopulateJumpList(
   }
 
   nsTArray<WindowsJumpListShortcutDescription> customDescs;
-  for (auto& jsval : aCustomDescriptions) {
+  for (uint32_t arrayIndex = 0; arrayIndex < customDescriptionsLength;
+       arrayIndex++) {
     JS::Rooted<JS::Value> rootedVal(aCx);
-    if (NS_WARN_IF(!dom::ToJSValue(aCx, jsval, &rootedVal))) {
+    if (NS_WARN_IF(!JS_GetElement(aCx, customDescriptionsObj, arrayIndex,
+                                  &rootedVal))) {
       return NS_ERROR_INVALID_ARG;
     }
 
@@ -592,7 +627,14 @@ void JumpListBuilder::DoPopulateJumpList(
         reinterpret_cast<const wchar_t*>(aCustomTitle.BeginReading()),
         pCustomArray);
 
-    if (FAILED(hr)) {
+    // E_ACCESSDENIED might be returned if Windows is configured not to show
+    // recently opened items in the start menu or jump lists. In that case, we
+    // still want to populate the tasks, so we ignore the error and commit
+    // the list.
+    //
+    // See
+    // https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-icustomdestinationlist-appendcategory
+    if (FAILED(hr) && hr != E_ACCESSDENIED) {
       rv = NS_ERROR_UNEXPECTED;
       return;
     }
@@ -659,26 +701,47 @@ void JumpListBuilder::RemoveIconCacheAndGetJumplistShortcutURIs(
 
     if (FAILED(aObjArray->GetAt(idx, IID_IShellLinkW,
                                 static_cast<void**>(getter_AddRefs(pLink))))) {
+      NS_WARNING("Could not get a IShellLink from the IObjectArray");
       continue;
     }
 
-    wchar_t buf[MAX_PATH];
-    HRESULT hres = pLink->GetArguments(buf, MAX_PATH);
-    if (SUCCEEDED(hres)) {
-      LPWSTR* arglist;
-      int32_t numArgs;
+    RefPtr<IPropertyStore> pPropStore = nullptr;
+    if (NS_WARN_IF(FAILED(pLink->QueryInterface(
+            IID_IPropertyStore,
+            static_cast<void**>(getter_AddRefs(pPropStore)))))) {
+      NS_WARNING("Could not get IPropertyStore from IShellLink");
+      continue;
+    }
 
-      arglist = ::CommandLineToArgvW(buf, &numArgs);
-      if (arglist && numArgs > 0) {
-        nsString spec(arglist[0]);
-        aURISpecs.AppendElement(std::move(spec));
-        ::LocalFree(arglist);
-      }
+    PROPVARIANT pv;
+    PropVariantInit(&pv);
+    auto cleanupPropVariant = MakeScopeExit([&] { PropVariantClear(&pv); });
+    if (NS_WARN_IF(FAILED(pPropStore->GetValue(PKEY_Link_Arguments, &pv)))) {
+      NS_WARNING("Could not get PKEY_Link_Arguments from IPropertyStore");
+      continue;
+    }
+
+    if (pv.vt != VT_LPWSTR) {
+      NS_WARNING("Unexpected type returned for PKEY_Link_Arguments");
+      continue;
+    }
+
+    LPCWSTR args(char16ptr_t(pv.pwszVal));
+    LPWSTR* arglist;
+    int32_t numArgs;
+
+    arglist = ::CommandLineToArgvW(args, &numArgs);
+    if (arglist && numArgs > 0) {
+      nsString spec(arglist[0]);
+      aURISpecs.AppendElement(std::move(spec));
+      ::LocalFree(arglist);
     }
 
     int iconIdx = 0;
-    hres = pLink->GetIconLocation(buf, MAX_PATH, &iconIdx);
+    wchar_t buf[MAX_PATH + 1];
+    HRESULT hres = pLink->GetIconLocation(buf, MAX_PATH, &iconIdx);
     if (SUCCEEDED(hres)) {
+      buf[MAX_PATH] = '\0';
       nsDependentString spec(buf);
       DeleteIconFromDisk(spec);
     }

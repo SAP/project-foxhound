@@ -1305,17 +1305,16 @@ function checkAppBundleModTime() {
  * @param   aUpdateCount
  *          The update history's update count.
  */
-function checkUpdateManager(
+async function checkUpdateManager(
   aStatusFileState,
   aHasActiveUpdate,
   aUpdateStatusState,
   aUpdateErrCode,
   aUpdateCount
 ) {
-  let activeUpdate =
-    aUpdateStatusState == STATE_DOWNLOADING
-      ? gUpdateManager.downloadingUpdate
-      : gUpdateManager.readyUpdate;
+  let activeUpdate = await (aUpdateStatusState == STATE_DOWNLOADING
+    ? gUpdateManager.getDownloadingUpdate()
+    : gUpdateManager.getReadyUpdate());
   Assert.equal(
     readStatusState(),
     aStatusFileState,
@@ -1337,13 +1336,14 @@ function checkUpdateManager(
         msgTags[i] + "the active update should not be defined"
       );
     }
+    const history = await gUpdateManager.getHistory();
     Assert.equal(
-      gUpdateManager.getUpdateCount(),
+      history.length,
       aUpdateCount,
       msgTags[i] + "the update manager updateCount attribute" + MSG_SHOULD_EQUAL
     );
     if (aUpdateCount > 0) {
-      let update = gUpdateManager.getUpdateAt(0);
+      let update = history[0];
       Assert.equal(
         update.state,
         aUpdateStatusState,
@@ -1445,9 +1445,9 @@ function checkPostUpdateRunningFile(aShouldExist) {
  * Initializes the most commonly used settings and creates an instance of the
  * update service stub.
  */
-function standardInit() {
+async function standardInit() {
   // Initialize the update service stub component
-  initUpdateServiceStub();
+  await initUpdateServiceStub();
 }
 
 /**
@@ -2285,7 +2285,12 @@ function checkSymlink() {
 /**
  * Sets the active update and related information for updater tests.
  */
-function setupActiveUpdate() {
+async function setupActiveUpdate() {
+  // The update system being initialized at an unexpected time could cause
+  // unexpected effects in the reload process. Make sure that initialization
+  // has already run first.
+  await gAUS.init();
+
   let pendingState = gIsServiceTest ? STATE_PENDING_SVC : STATE_PENDING;
   let patchProps = { state: pendingState };
   let patches = getLocalPatchString(patchProps);
@@ -2294,7 +2299,10 @@ function setupActiveUpdate() {
   writeVersionFile(DEFAULT_UPDATE_VERSION);
   writeStatusFile(pendingState);
   reloadUpdateManagerData();
-  Assert.ok(!!gUpdateManager.readyUpdate, "the ready update should be defined");
+  Assert.ok(
+    !!(await gUpdateManager.getReadyUpdate()),
+    "the ready update should be defined"
+  );
 }
 
 /**
@@ -2356,7 +2364,7 @@ async function stageUpdate(
     );
 
     Assert.equal(
-      gUpdateManager.readyUpdate.state,
+      (await gUpdateManager.getReadyUpdate()).state,
       aStateAfterStage,
       "the update state" + MSG_SHOULD_EQUAL
     );
@@ -3161,6 +3169,11 @@ async function setupUpdaterTest(
   { requiresOmnijar = false } = {}
 ) {
   debugDump("start - updater test setup");
+  // Make sure that update has already been initialized. If post update
+  // processing unexpectedly runs between this setup and when we use these
+  // files, it may clean them up before we get the chance to use them.
+  await gAUS.init();
+
   let updatesPatchDir = getUpdateDirFile(DIR_PATCH);
   if (!updatesPatchDir.exists()) {
     updatesPatchDir.create(Ci.nsIFile.DIRECTORY_TYPE, PERMS_DIRECTORY);
@@ -3298,7 +3311,7 @@ async function setupUpdaterTest(
   });
 
   if (aSetupActiveUpdate) {
-    setupActiveUpdate();
+    await setupActiveUpdate();
   }
 
   if (aPostUpdateAsync !== null) {
@@ -4283,10 +4296,10 @@ async function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
  *          onStopRequest occurs and returns the arguments from onStopRequest.
  */
 async function waitForUpdateDownload(aUpdates, aExpectedStatus) {
-  let bestUpdate = gAUS.selectUpdate(aUpdates);
-  let success = await gAUS.downloadUpdate(bestUpdate, false);
-  if (!success) {
-    do_throw("nsIApplicationUpdateService:downloadUpdate returned " + success);
+  let bestUpdate = await gAUS.selectUpdate(aUpdates);
+  let result = await gAUS.downloadUpdate(bestUpdate, false);
+  if (result != Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS) {
+    do_throw("nsIApplicationUpdateService:downloadUpdate returned " + result);
   }
   return new Promise(resolve =>
     gAUS.addDownloadListener({

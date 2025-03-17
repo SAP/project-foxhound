@@ -69,7 +69,7 @@ from ..frontend.data import (
     XPIDLModule,
 )
 from ..makeutil import Makefile
-from ..util import FileAvoidWrite, OrderedDefaultDict, ensureParentDir, pairwise
+from ..util import FileAvoidWrite, ensureParentDir, pairwise
 from .common import CommonBackend
 from .make import MakeBackend
 
@@ -364,7 +364,7 @@ class RecursiveMakeBackend(MakeBackend):
         self._install_manifests["dist_private"]
 
         self._traversal = RecursiveMakeTraversal()
-        self._compile_graph = OrderedDefaultDict(set)
+        self._compile_graph = defaultdict(set)
         self._rust_targets = set()
         self._gkrust_target = None
         self._pre_compile = set()
@@ -810,7 +810,7 @@ class RecursiveMakeBackend(MakeBackend):
                     rule.add_dependencies(sorted(deps))
 
         non_default_roots = defaultdict(list)
-        non_default_graphs = defaultdict(lambda: OrderedDefaultDict(set))
+        non_default_graphs = defaultdict(lambda: defaultdict(set))
 
         for root in compile_roots:
             # If this is a non-default target, separate the root from the
@@ -1366,7 +1366,8 @@ class RecursiveMakeBackend(MakeBackend):
         backend_file.write_once("LIBRARY_NAME := %s\n" % libdef.basename)
         backend_file.write("FORCE_SHARED_LIB := 1\n")
         backend_file.write("IMPORT_LIBRARY := %s\n" % libdef.import_name)
-        backend_file.write("SHARED_LIBRARY := %s\n" % libdef.lib_name)
+        shared_lib = self._pretty_path(libdef.output_path, backend_file)
+        backend_file.write("SHARED_LIBRARY := %s\n" % shared_lib)
         if libdef.soname:
             backend_file.write("DSO_SONAME := %s\n" % libdef.soname)
         if libdef.symbols_file:
@@ -1375,11 +1376,7 @@ class RecursiveMakeBackend(MakeBackend):
         if not libdef.cxx_link:
             backend_file.write("LIB_IS_C_ONLY := 1\n")
         if libdef.output_category:
-            self._process_non_default_target(libdef, libdef.lib_name, backend_file)
-            # Override the install rule target for this library. This is hacky,
-            # but can go away as soon as we start building libraries in their
-            # final location (bug 1459764).
-            backend_file.write("SHARED_LIBRARY_TARGET := %s\n" % libdef.output_category)
+            self._process_non_default_target(libdef, shared_lib, backend_file)
 
     def _process_static_library(self, libdef, backend_file):
         backend_file.write_once("LIBRARY_NAME := %s\n" % libdef.basename)
@@ -1427,15 +1424,13 @@ class RecursiveMakeBackend(MakeBackend):
         )
 
     def _process_linked_libraries(self, obj, backend_file):
-        def pretty_relpath(lib, name):
-            return os.path.normpath(
-                mozpath.join(mozpath.relpath(lib.objdir, obj.objdir), name)
-            )
+        def pretty_relpath(path):
+            return os.path.normpath(mozpath.relpath(path, obj.objdir))
 
         objs, shared_libs, os_libs, static_libs = self._expand_libs(obj)
 
         obj_target = obj.name
-        if isinstance(obj, Program):
+        if isinstance(obj, (Program, SharedLibrary)):
             obj_target = self._pretty_path(obj.output_path, backend_file)
 
         objs_ref = " \\\n    ".join(os.path.relpath(o, obj.objdir) for o in objs)
@@ -1485,7 +1480,7 @@ class RecursiveMakeBackend(MakeBackend):
         for lib in shared_libs:
             assert obj.KIND != "host" and obj.KIND != "wasm"
             backend_file.write_once(
-                "SHARED_LIBS += %s\n" % pretty_relpath(lib, lib.import_name)
+                "SHARED_LIBS += %s\n" % pretty_relpath(lib.import_path)
             )
 
         # We have to link any Rust libraries after all intermediate static
@@ -1497,7 +1492,7 @@ class RecursiveMakeBackend(MakeBackend):
             (l for l in static_libs if isinstance(l, BaseRustLibrary)),
         ):
             backend_file.write_once(
-                "%s += %s\n" % (var, pretty_relpath(lib, lib.import_name))
+                "%s += %s\n" % (var, pretty_relpath(lib.import_path))
             )
 
         for lib in os_libs:

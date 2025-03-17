@@ -9,6 +9,7 @@ import { TelemetryUtils } from "resource://gre/modules/TelemetryUtils.sys.mjs";
 import { ObjectUtils } from "resource://gre/modules/ObjectUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { UpdateUtils } from "resource://gre/modules/UpdateUtils.sys.mjs";
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const Utils = TelemetryUtils;
 
@@ -32,6 +33,15 @@ ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
+
+if (AppConstants.MOZ_UPDATER) {
+  XPCOMUtils.defineLazyServiceGetter(
+    lazy,
+    "UpdateServiceStub",
+    "@mozilla.org/updates/update-service-stub;1",
+    "nsIApplicationUpdateServiceStub"
+  );
+}
 
 // The maximum length of a string (e.g. description) in the addons section.
 const MAX_ADDON_STRING_LENGTH = 100;
@@ -895,6 +905,8 @@ EnvironmentAddonBuilder.prototype = {
         hasBinaryComponents: false,
         installDay: Utils.millisecondsToDays(installDate.getTime()),
         updateDay: Utils.millisecondsToDays(updateDate.getTime()),
+        signedState: theme.signedState,
+        signedTypes: JSON.stringify(theme.signedTypes),
       };
     }
 
@@ -1618,7 +1630,8 @@ EnvironmentCache.prototype = {
       intl: Policy._intlLoaded ? getIntlSettings() : {},
       update: {
         channel: updateChannel,
-        enabled: !Services.policies || Services.policies.isAllowed("appUpdate"),
+        enabled:
+          AppConstants.MOZ_UPDATER && !lazy.UpdateServiceStub.updateDisabled,
       },
       userPrefs: this._getPrefData(),
       sandbox: this._getSandboxData(),
@@ -1672,6 +1685,7 @@ EnvironmentCache.prototype = {
     let creationDate = await profileAccessor.created;
     let resetDate = await profileAccessor.reset;
     let firstUseDate = await profileAccessor.firstUse;
+    let recoveredFromBackup = await profileAccessor.recoveredFromBackup;
 
     this._currentEnvironment.profile.creationDate =
       Utils.millisecondsToDays(creationDate);
@@ -1682,6 +1696,10 @@ EnvironmentCache.prototype = {
     if (firstUseDate) {
       this._currentEnvironment.profile.firstUseDate =
         Utils.millisecondsToDays(firstUseDate);
+    }
+    if (recoveredFromBackup) {
+      this._currentEnvironment.profile.recoveredFromBackup =
+        Utils.millisecondsToDays(recoveredFromBackup);
     }
   },
 

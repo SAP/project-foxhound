@@ -5,8 +5,6 @@
 package org.mozilla.fenix.home
 
 import android.content.Context
-import android.content.Intent
-import android.speech.RecognizerIntent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -16,15 +14,14 @@ import androidx.constraintlayout.widget.ConstraintSet
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
-import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.support.ktx.android.content.res.resolveAttribute
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.toolbar.IncompleteRedesignToolbarFeature
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.databinding.FragmentHomeBinding
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.toolbar.ToolbarInteractor
-import org.mozilla.fenix.search.ExtraAction
 import org.mozilla.fenix.utils.ToolbarPopupWindow
 import java.lang.ref.WeakReference
 
@@ -35,7 +32,6 @@ class ToolbarView(
     private val binding: FragmentHomeBinding,
     private val context: Context,
     private val interactor: ToolbarInteractor,
-    private val searchEngine: SearchEngine?,
 ) {
     init {
         updateLayout(binding.root)
@@ -52,14 +48,6 @@ class ToolbarView(
             interactor.onNavigateSearch()
         }
 
-        binding.qrActionImage.setOnClickListener {
-            interactor.onNavigateSearch(ExtraAction.QR_READER)
-        }
-
-        binding.microphoneActionImage.setOnClickListener {
-            interactor.onNavigateSearch(ExtraAction.VOICE_SEARCH)
-        }
-
         binding.toolbarWrapper.setOnLongClickListener {
             ToolbarPopupWindow.show(
                 WeakReference(it),
@@ -71,31 +59,10 @@ class ToolbarView(
         }
     }
 
-    @Suppress("LongMethod")
     private fun updateLayout(view: View) {
-        val speechIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-
-        when (IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
-            true -> {
-                binding.menuButton.isVisible = false
-                binding.tabButton.isVisible = false
-                binding.qrActionImage.isVisible =
-                    searchEngine?.isGeneral == true || searchEngine?.type == SearchEngine.Type.CUSTOM
-                binding.microphoneActionImage.isVisible =
-                    speechIntent.resolveActivity(context.packageManager) != null &&
-                    context.settings().shouldShowVoiceSearch
-                binding.browserActionSeparator.isVisible =
-                    binding.qrActionImage.isVisible || binding.microphoneActionImage.isVisible
-            }
-
-            false -> {
-                binding.menuButton.isVisible = true
-                binding.tabButton.isVisible = true
-                binding.browserActionSeparator.isVisible = false
-                binding.qrActionImage.isVisible = false
-                binding.microphoneActionImage.isVisible = false
-            }
-        }
+        val redesignEnabled = IncompleteRedesignToolbarFeature(context.settings()).isEnabled
+        binding.menuButton.isVisible = !redesignEnabled
+        binding.tabButton.isVisible = !redesignEnabled
 
         when (context.settings().toolbarPosition) {
             ToolbarPosition.TOP -> {
@@ -106,7 +73,7 @@ class ToolbarView(
                     gravity = Gravity.TOP
                 }
 
-                val isTabletAndTabStripEnabled = context.settings().isTabletAndTabStripEnabled
+                val isTabletAndTabStripEnabled = context.isTabStripEnabled()
                 ConstraintSet().apply {
                     clone(binding.toolbarLayout)
                     clear(binding.bottomBar.id, ConstraintSet.BOTTOM)
@@ -159,14 +126,6 @@ class ToolbarView(
             }
 
             ToolbarPosition.BOTTOM -> {}
-        }
-
-        binding.toolbarWrapper.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-            rightMargin = if (IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
-                context.resources.getDimensionPixelSize(R.dimen.home_fragment_toolbar_margin)
-            } else {
-                0
-            }
         }
     }
 }

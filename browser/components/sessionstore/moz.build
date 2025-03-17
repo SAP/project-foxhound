@@ -16,16 +16,22 @@ EXTRA_JS_MODULES.sessionstore = [
     "RunState.sys.mjs",
     "SessionCookies.sys.mjs",
     "SessionFile.sys.mjs",
+    "SessionLogger.sys.mjs",
     "SessionMigration.sys.mjs",
     "SessionSaver.sys.mjs",
     "SessionStartup.sys.mjs",
     "SessionStore.sys.mjs",
+    "SessionStoreFunctions.sys.mjs",
     "SessionWriter.sys.mjs",
     "StartupPerformance.sys.mjs",
     "TabAttributes.sys.mjs",
     "TabState.sys.mjs",
     "TabStateCache.sys.mjs",
     "TabStateFlusher.sys.mjs",
+]
+
+XPCOM_MANIFESTS += [
+    "components.conf",
 ]
 
 TESTING_JS_MODULES += [

@@ -4,7 +4,6 @@
 
 // eslint-disable-next-line import/no-unresolved
 import { html, ifDefined } from "lit.all.mjs";
-// eslint-disable-next-line import/no-unassigned-import
 import "browser/components/shopping/content/shopping-message-bar.mjs";
 
 window.MozXULElement.insertFTLIfNeeded("browser/shopping.ftl");
@@ -15,21 +14,19 @@ export default {
   component: "shopping-message-bar",
   argTypes: {
     type: {
-      control: {
-        type: "select",
-        options: [
-          "stale",
-          "generic-error",
-          "not-enough-reviews",
-          "product-not-available",
-          "product-not-available-reported",
-          "thanks-for-reporting",
-          "analysis-in-progress",
-          "reanalysis-in-progress",
-          "page-not-supported",
-          "thank-you-for-feedback",
-        ],
-      },
+      control: { type: "select" },
+      options: [
+        "stale",
+        "generic-error",
+        "not-enough-reviews",
+        "product-not-available",
+        "product-not-available-reported",
+        "thanks-for-reporting",
+        "analysis-in-progress",
+        "reanalysis-in-progress",
+        "page-not-supported",
+        "thank-you-for-feedback",
+      ],
     },
   },
   parameters: {

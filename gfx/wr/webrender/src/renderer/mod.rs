@@ -69,8 +69,8 @@ use crate::frame_builder::Frame;
 use glyph_rasterizer::GlyphFormat;
 use crate::gpu_cache::{GpuCacheUpdate, GpuCacheUpdateList};
 use crate::gpu_cache::{GpuCacheDebugChunk, GpuCacheDebugCmd};
-use crate::gpu_types::{ScalingInstance, SvgFilterInstance, CopyInstance, PrimitiveInstanceData};
-use crate::gpu_types::{BlurInstance, ClearInstance, CompositeInstance, CompositorTransform};
+use crate::gpu_types::{ScalingInstance, SvgFilterInstance, SVGFEFilterInstance, CopyInstance, PrimitiveInstanceData};
+use crate::gpu_types::{BlurInstance, ClearInstance, CompositeInstance};
 use crate::internal_types::{TextureSource, TextureCacheCategory, FrameId};
 #[cfg(any(feature = "capture", feature = "replay"))]
 use crate::internal_types::DebugOutput;
@@ -193,11 +193,11 @@ const GPU_TAG_CACHE_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
     label: "C_LinearGradient",
     color: debug_colors::BROWN,
 };
-const GPU_TAG_CACHE_RADIAL_GRADIENT: GpuProfileTag = GpuProfileTag {
+const GPU_TAG_RADIAL_GRADIENT: GpuProfileTag = GpuProfileTag {
     label: "C_RadialGradient",
     color: debug_colors::BROWN,
 };
-const GPU_TAG_CACHE_CONIC_GRADIENT: GpuProfileTag = GpuProfileTag {
+const GPU_TAG_CONIC_GRADIENT: GpuProfileTag = GpuProfileTag {
     label: "C_ConicGradient",
     color: debug_colors::BROWN,
 };
@@ -257,6 +257,10 @@ const GPU_TAG_SVG_FILTER: GpuProfileTag = GpuProfileTag {
     label: "SvgFilter",
     color: debug_colors::LEMONCHIFFON,
 };
+const GPU_TAG_SVG_FILTER_NODES: GpuProfileTag = GpuProfileTag {
+    label: "SvgFilterNodes",
+    color: debug_colors::LEMONCHIFFON,
+};
 const GPU_TAG_COMPOSITE: GpuProfileTag = GpuProfileTag {
     label: "Composite",
     color: debug_colors::TOMATO,
@@ -288,6 +292,8 @@ impl BatchKind {
             }
             BatchKind::TextRun(_) => GPU_TAG_PRIM_TEXT_RUN,
             BatchKind::Quad(PatternKind::ColorOrTexture) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::RadialGradient) => GPU_TAG_RADIAL_GRADIENT,
+            BatchKind::Quad(PatternKind::ConicGradient) => GPU_TAG_CONIC_GRADIENT,
             BatchKind::Quad(PatternKind::Mask) => GPU_TAG_INDIRECT_MASK,
         }
     }
@@ -2527,6 +2533,35 @@ impl Renderer {
         );
     }
 
+    fn handle_svg_nodes(
+        &mut self,
+        textures: &BatchTextures,
+        svg_filters: &[SVGFEFilterInstance],
+        projection: &default::Transform3D<f32>,
+        stats: &mut RendererStats,
+    ) {
+        if svg_filters.is_empty() {
+            return;
+        }
+
+        let _timer = self.gpu_profiler.start_timer(GPU_TAG_SVG_FILTER_NODES);
+
+        self.shaders.borrow_mut().cs_svg_filter_node.bind(
+            &mut self.device,
+            &projection,
+            None,
+            &mut self.renderer_errors,
+            &mut self.profile,
+        );
+
+        self.draw_instanced_batch(
+            &svg_filters,
+            VertexArrayKind::SvgFilterNode,
+            textures,
+            stats,
+        );
+    }
+
     fn handle_resolve(
         &mut self,
         resolve_op: &ResolveOp,
@@ -3008,7 +3043,7 @@ impl Renderer {
                     ];
 
                     let instance = CompositeInstance::new_yuv(
-                        surface_rect.cast_unit().to_f32(),
+                        surface_rect.to_f32(),
                         surface_rect.to_f32(),
                         // z-id is not relevant when updating a native compositor surface.
                         // TODO(gw): Support compositor surfaces without z-buffer, for memory / perf win here.
@@ -3016,7 +3051,7 @@ impl Renderer {
                         format,
                         channel_bit_depth,
                         uv_rects,
-                        CompositorTransform::identity(),
+                        (false, false),
                     );
 
                     ( textures, instance )
@@ -3039,11 +3074,11 @@ impl Renderer {
                     let textures = BatchTextures::composite_rgb(plane.texture);
                     let uv_rect = self.texture_resolver.get_uv_rect(&textures.input.colors[0], plane.uv_rect);
                     let instance = CompositeInstance::new_rgb(
-                        surface_rect.cast_unit().to_f32(),
+                        surface_rect.to_f32(),
                         surface_rect.to_f32(),
                         PremultipliedColorF::WHITE,
                         uv_rect,
-                        CompositorTransform::identity(),
+                        (false, false),
                     );
 
                     ( textures, instance )
@@ -3102,8 +3137,9 @@ impl Renderer {
             let tile = &composite_state.tiles[item.key];
 
             let clip_rect = item.rectangle;
-            let tile_rect = tile.local_rect;
-            let transform = composite_state.get_device_transform(tile.transform_index).into();
+            let transform = composite_state.get_device_transform(tile.transform_index);
+            let tile_rect = transform.map_rect(&tile.local_rect);
+            let flip = (transform.scale.x < 0.0, transform.scale.y < 0.0);
 
             // Work out the draw params based on the tile surface
             let (instance, textures, shader_params) = match tile.surface {
@@ -3114,7 +3150,7 @@ impl Renderer {
                         tile_rect,
                         clip_rect,
                         color.premultiplied(),
-                        transform,
+                        flip,
                     );
                     let features = instance.get_rgb_features();
                     (
@@ -3128,7 +3164,7 @@ impl Renderer {
                         tile_rect,
                         clip_rect,
                         PremultipliedColorF::WHITE,
-                        transform,
+                        flip,
                     );
                     let features = instance.get_rgb_features();
                     (
@@ -3172,7 +3208,7 @@ impl Renderer {
                                     format,
                                     channel_bit_depth,
                                     uv_rects,
-                                    transform,
+                                    flip,
                                 ),
                                 textures,
                                 (
@@ -3190,7 +3226,7 @@ impl Renderer {
                                 clip_rect,
                                 PremultipliedColorF::WHITE,
                                 uv_rect,
-                                transform,
+                                flip,
                             );
                             let features = instance.get_rgb_features();
                             (
@@ -3213,7 +3249,7 @@ impl Renderer {
                         tile_rect,
                         clip_rect,
                         PremultipliedColorF::BLACK,
-                        transform,
+                        flip,
                     );
                     let features = instance.get_rgb_features();
                     (
@@ -3574,6 +3610,10 @@ impl Renderer {
                 projection,
                 stats,
             );
+        }
+
+        for (ref textures, ref filters) in &target.svg_nodes {
+            self.handle_svg_nodes(textures, filters, projection, stats);
         }
 
         for alpha_batch_container in &target.alpha_batch_containers {
@@ -4069,7 +4109,7 @@ impl Renderer {
 
         // Draw any radial gradients for this target.
         if !target.radial_gradients.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_RADIAL_GRADIENT);
+            let _timer = self.gpu_profiler.start_timer(GPU_TAG_RADIAL_GRADIENT);
 
             self.set_blend(false, FramebufferKind::Other);
 
@@ -4095,7 +4135,7 @@ impl Renderer {
 
         // Draw any conic gradients for this target.
         if !target.conic_gradients.is_empty() {
-            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CACHE_CONIC_GRADIENT);
+            let _timer = self.gpu_profiler.start_timer(GPU_TAG_CONIC_GRADIENT);
 
             self.set_blend(false, FramebufferKind::Other);
 
@@ -4494,6 +4534,22 @@ impl Renderer {
             &frame.gpu_buffer_i,
             TextureSampler::GpuBufferI,
         );
+
+        let bytes_to_mb = 1.0 / 1000000.0;
+        let gpu_buffer_bytes_f = gpu_buffer_texture_f
+            .as_ref()
+            .map(|tex| tex.size_in_bytes())
+            .unwrap_or(0);
+        let gpu_buffer_bytes_i = gpu_buffer_texture_i
+            .as_ref()
+            .map(|tex| tex.size_in_bytes())
+            .unwrap_or(0);
+        let gpu_buffer_mb = (gpu_buffer_bytes_f + gpu_buffer_bytes_i) as f32 * bytes_to_mb;
+        self.profile.set(profiler::GPU_BUFFER_MEM, gpu_buffer_mb);
+
+        let gpu_cache_bytes = self.gpu_cache_texture.gpu_size_in_bytes();
+        let gpu_cache_mb = gpu_cache_bytes as f32 * bytes_to_mb;
+        self.profile.set(profiler::GPU_CACHE_MEM, gpu_cache_mb);
 
         // Determine the present mode and dirty rects, if device_size
         // is Some(..). If it's None, no composite will occur and only

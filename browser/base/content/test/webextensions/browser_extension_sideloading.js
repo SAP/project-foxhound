@@ -16,11 +16,14 @@ const kSideloaded = true;
 async function createWebExtension(details) {
   let options = {
     manifest: {
+      manifest_version: details.manifest_version ?? 2,
+
       browser_specific_settings: { gecko: { id: details.id } },
 
       name: details.name,
 
       permissions: details.permissions,
+      host_permissions: details.host_permissions,
     },
   };
 
@@ -86,9 +89,10 @@ add_task(async function test_sideloading() {
 
   const ID2 = "addon2@tests.mozilla.org";
   await createWebExtension({
+    manifest_version: 3,
     id: ID2,
     name: "Test 2",
-    permissions: ["<all_urls>"],
+    host_permissions: ["<all_urls>"],
   });
 
   const ID3 = "addon3@tests.mozilla.org";
@@ -224,7 +228,7 @@ add_task(async function test_sideloading() {
   // Close the hamburger menu and go directly to the addons manager
   await gCUITestUtils.hideMainMenu();
 
-  win = await BrowserOpenAddonsMgr(VIEW);
+  win = await BrowserAddonUI.openAddonsMgr(VIEW);
   await waitAboutAddonsViewLoaded(win.document);
 
   // about:addons addon entry element.
@@ -293,7 +297,7 @@ add_task(async function test_sideloading() {
   // Close the hamburger menu and go to the detail page for this addon
   await gCUITestUtils.hideMainMenu();
 
-  win = await BrowserOpenAddonsMgr(
+  win = await BrowserAddonUI.openAddonsMgr(
     `addons://detail/${encodeURIComponent(ID3)}`
   );
 

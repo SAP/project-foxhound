@@ -58,7 +58,7 @@ export class PlacesQuery {
   #historyListenerCallback = null;
   /** @type {DeferredTask} */
   #historyObserverTask = null;
-  searchInProgress = false;
+  #searchInProgress = false;
 
   /**
    * Get a snapshot of history visits at this moment.
@@ -118,14 +118,18 @@ export class PlacesQuery {
         groupBy = "url";
         break;
     }
+    const whereClause =
+      daysOld == Infinity
+        ? ""
+        : `WHERE visit_date >= (strftime('%s','now','localtime','start of day','-${Number(
+            daysOld
+          )} days','utc') * 1000000)`;
     const sql = `SELECT MAX(visit_date) as visit_date, title, url
       FROM moz_historyvisits v
       JOIN moz_places h
       ON v.place_id = h.id
-      WHERE visit_date >= (strftime('%s','now','localtime','start of day','-${Number(
-        daysOld
-      )} days','utc') * 1000000)
       AND hidden = 0
+      ${whereClause}
       GROUP BY ${groupBy}
       ORDER BY visit_date DESC
       LIMIT ${limit > 0 ? limit : -1}`;
@@ -169,11 +173,11 @@ export class PlacesQuery {
       GROUP BY url
       ORDER BY ${orderBy}
       LIMIT ${limit > 0 ? limit : -1}`;
-    if (this.searchInProgress) {
+    if (this.#searchInProgress) {
       db.interrupt();
     }
     try {
-      this.searchInProgress = true;
+      this.#searchInProgress = true;
       const rows = await db.executeCached(sql, {
         query,
         matchBehavior: Ci.mozIPlacesAutoComplete.MATCH_ANYWHERE_UNMODIFIED,
@@ -181,7 +185,7 @@ export class PlacesQuery {
       });
       return rows.map(row => this.formatRowAsVisit(row));
     } finally {
-      this.searchInProgress = false;
+      this.#searchInProgress = false;
     }
   }
 
@@ -268,11 +272,12 @@ export class PlacesQuery {
     switch (this.cachedHistoryOptions.sortBy) {
       case "date":
         return this.getStartOfDayTimestamp(visit.date);
-      case "site":
+      case "site": {
         const { protocol } = new URL(visit.url);
         return protocol === "http:" || protocol === "https:"
           ? lazy.BrowserUtils.formatURIStringForDisplay(visit.url)
           : "";
+      }
     }
     return null;
   }
@@ -309,7 +314,7 @@ export class PlacesQuery {
     }
     this.#historyListener = null;
     this.#historyListenerCallback = null;
-    if (!this.#historyObserverTask.isFinalized) {
+    if (this.#historyObserverTask && !this.#historyObserverTask.isFinalized) {
       this.#historyObserverTask.disarm();
       this.#historyObserverTask.finalize();
     }

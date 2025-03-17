@@ -17,9 +17,8 @@ import mozilla.components.support.ktx.android.content.res.resolveAttribute
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.Components
-import org.mozilla.fenix.components.toolbar.IncompleteRedesignToolbarFeature
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.search.SearchEngineSource
 import org.mozilla.fenix.search.SearchFragmentState
 import org.mozilla.fenix.utils.Settings
@@ -101,21 +100,10 @@ class ToolbarView(
                     R.color.suggestion_highlight_color,
                 ),
                 clear = context.getColorFromAttr(R.attr.textPrimary),
-                erase = context.getColorFromAttr(R.attr.textPrimary),
-                pageActionSeparator = context.getColorFromAttr(R.attr.borderToolbarDivider),
             )
 
-            val searchUrlBackground = if (IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
-                R.drawable.search_url_background
-            } else {
-                R.drawable.search_old_url_background
-            }
-
             edit.setUrlBackground(
-                AppCompatResources.getDrawable(
-                    context,
-                    searchUrlBackground,
-                ),
+                AppCompatResources.getDrawable(context, R.drawable.search_url_background),
             )
 
             private = isPrivate
@@ -139,7 +127,7 @@ class ToolbarView(
                 },
             )
 
-            if (settings.isTabletAndTabStripEnabled) {
+            if (context.isTabStripEnabled()) {
                 (layoutParams as ViewGroup.MarginLayoutParams).updateMargins(
                     top = context.resources.getDimensionPixelSize(R.dimen.tab_strip_height),
                 )

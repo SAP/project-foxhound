@@ -62,7 +62,7 @@ USE_LIBS += [
     "taint",
 ]
 
-if CONFIG["OS_ARCH"] not in ("WINNT", "HP-UX"):
+if CONFIG["OS_ARCH"] != "WINNT":
     OS_LIBS += [
         "m",
     ]
@@ -98,8 +98,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
             "synchronization",
         ]
 
-if CONFIG["MOZ_NEEDS_LIBATOMIC"]:
-    OS_LIBS += ["atomic"]
+OS_LIBS += CONFIG["LIBATOMIC_LIBS"]
 
 if CONFIG["TARGET_OS"] == "iOS":
     OS_LIBS += ["-framework BrowserEngineCore"]

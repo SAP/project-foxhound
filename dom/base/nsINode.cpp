@@ -85,7 +85,6 @@
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/NodeInfoInlines.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIScrollableFrame.h"
 #include "nsView.h"
 #include "nsViewManager.h"
 #include "nsIWidget.h"
@@ -3401,10 +3400,35 @@ Element* nsINode::GetNearestInclusiveOpenPopover() const {
 
 Element* nsINode::GetNearestInclusiveTargetPopoverForInvoker() const {
   for (auto* el : InclusiveFlatTreeAncestorsOfType<Element>()) {
+    if (auto* popover = el->GetEffectiveInvokeTargetElement()) {
+      if (popover->IsAutoPopover() && popover->IsPopoverOpen()) {
+        return popover;
+      }
+    }
     if (auto* popover = el->GetEffectivePopoverTargetElement()) {
       if (popover->IsAutoPopover() && popover->IsPopoverOpen()) {
         return popover;
       }
+    }
+  }
+  return nullptr;
+}
+
+nsGenericHTMLElement* nsINode::GetEffectiveInvokeTargetElement() const {
+  if (!StaticPrefs::dom_element_invokers_enabled()) {
+    return nullptr;
+  }
+
+  const auto* formControl =
+      nsGenericHTMLFormControlElementWithState::FromNode(this);
+  if (!formControl || formControl->IsDisabled() ||
+      !formControl->IsButtonControl()) {
+    return nullptr;
+  }
+  if (auto* popover = nsGenericHTMLElement::FromNodeOrNull(
+          formControl->GetInvokeTargetElement())) {
+    if (popover->GetPopoverAttributeState() != PopoverAttributeState::None) {
+      return popover;
     }
   }
   return nullptr;
@@ -3608,6 +3632,9 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
         }
         if (elm->MayHaveTransitionEventListener()) {
           window->SetHasTransitionEventListeners();
+        }
+        if (elm->MayHaveSMILTimeEventListener()) {
+          window->SetHasSMILTimeEventListeners();
         }
       }
     }

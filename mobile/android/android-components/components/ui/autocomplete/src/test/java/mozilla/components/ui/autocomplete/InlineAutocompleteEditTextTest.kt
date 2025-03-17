@@ -101,8 +101,8 @@ class InlineAutocompleteEditTextTest {
         doReturn(false).`when`(et).isShown
         doReturn(mock(ViewParent::class.java)).`when`(et).parent
 
-        val event = AccessibilityEvent()
-        event.eventType = AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED
+        val event = mock<AccessibilityEvent>()
+        doReturn(AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED).`when`(event).eventType
         et.sendAccessibilityEventUnchecked(event)
 
         verify(et).onInitializeAccessibilityEvent(event)
@@ -223,6 +223,17 @@ class InlineAutocompleteEditTextTest {
         et.onAttachedToWindow()
 
         et.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        assertTrue(invoked)
+    }
+
+    @Test
+    fun `onCommitListenerInvocation with Numpad ENTER`() {
+        val et = InlineAutocompleteEditText(testContext, attributes)
+        var invoked = false
+        et.setOnCommitListener { invoked = true }
+        et.onAttachedToWindow()
+
+        et.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_NUMPAD_ENTER))
         assertTrue(invoked)
     }
 

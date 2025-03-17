@@ -8,11 +8,11 @@
 #include "nsCSSPropertyID.h"
 #include "nsIFrame.h"
 #include "nsContainerFrame.h"
-#include "nsIScrollableFrame.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsRefreshDriver.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/ServoBindings.h"
@@ -323,14 +323,15 @@ static Maybe<nsRect> ComputeTheIntersection(
   //
   // `intersectionRect` is kept relative to `target` during the loop.
   auto inflowRect = nsLayoutUtils::GetAllInFlowRectsUnion(
-      target, target, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
+      target, target,
+      nsLayoutUtils::GetAllInFlowRectsFlag::AccountForTransforms);
   // For content-visibility, we need to observe the overflow clip edge,
   // https://drafts.csswg.org/css-contain-2/#close-to-the-viewport
   if (aIsForProximityToViewport ==
       DOMIntersectionObserver::IsForProximityToViewport::Yes) {
     const auto& disp = *target->StyleDisplay();
     auto clipAxes = target->ShouldApplyOverflowClipping(&disp);
-    if (clipAxes != PhysicalAxes::None) {
+    if (!clipAxes.isEmpty()) {
       inflowRect = OverflowAreas::GetOverflowClipRect(
           inflowRect, inflowRect, clipAxes,
           target->OverflowClipMargin(clipAxes));
@@ -350,9 +351,10 @@ static Maybe<nsRect> ComputeTheIntersection(
       nsLayoutUtils::GetCrossDocParentFrameInProcess(target);
   while (containerFrame && containerFrame != aRoot) {
     // FIXME(emilio): What about other scroll frames that inherit from
-    // nsHTMLScrollFrame but have a different type, like nsListControlFrame?
+    // ScrollContainerFrame but have a different type, like nsListControlFrame?
     // This looks bogus in that case, but different bug.
-    if (nsIScrollableFrame* scrollFrame = do_QueryFrame(containerFrame)) {
+    if (ScrollContainerFrame* scrollContainerFrame =
+            do_QueryFrame(containerFrame)) {
       if (containerFrame->GetParent() == aRoot && !aRoot->GetParent()) {
         // This is subtle: if we're computing the intersection against the
         // viewport (the root frame), and this is its scroll frame, we really
@@ -360,7 +362,7 @@ static Maybe<nsRect> ComputeTheIntersection(
         // root margin, which is already in aRootBounds).
         break;
       }
-      nsRect subFrameRect = scrollFrame->GetScrollPortRect();
+      nsRect subFrameRect = scrollContainerFrame->GetScrollPortRect();
 
       // 3.1 Map intersectionRect to the coordinate space of container.
       nsRect intersectionRectRelativeToContainer =
@@ -383,7 +385,7 @@ static Maybe<nsRect> ComputeTheIntersection(
       const auto& disp = *containerFrame->StyleDisplay();
       auto clipAxes = containerFrame->ShouldApplyOverflowClipping(&disp);
       // 3.2 TODO: Apply clip-path.
-      if (clipAxes != PhysicalAxes::None) {
+      if (!clipAxes.isEmpty()) {
         // 3.1 Map intersectionRect to the coordinate space of container.
         const nsRect intersectionRectRelativeToContainer =
             nsLayoutUtils::TransformFrameRectToAncestor(
@@ -427,9 +429,9 @@ static Maybe<nsRect> ComputeTheIntersection(
   // the viewport already (but it's in the same document).
   nsRect rect = intersectionRect.value();
   if (aTarget->PresContext() != aRoot->PresContext()) {
-    if (nsIFrame* rootScrollFrame =
-            aTarget->PresShell()->GetRootScrollFrame()) {
-      nsLayoutUtils::TransformRect(aRoot, rootScrollFrame, rect);
+    if (nsIFrame* rootScrollContainerFrame =
+            aTarget->PresShell()->GetRootScrollContainerFrame()) {
+      nsLayoutUtils::TransformRect(aRoot, rootScrollContainerFrame, rect);
     }
   }
 
@@ -503,9 +505,9 @@ static Maybe<OopIframeMetrics> GetOopIframeMetrics(
   }
 
   nsRect inProcessRootRect;
-  if (nsIScrollableFrame* scrollFrame =
-          rootPresShell->GetRootScrollFrameAsScrollable()) {
-    inProcessRootRect = scrollFrame->GetScrollPortRect();
+  if (ScrollContainerFrame* rootScrollContainerFrame =
+          rootPresShell->GetRootScrollContainerFrame()) {
+    inProcessRootRect = rootScrollContainerFrame->GetScrollPortRect();
   }
 
   Maybe<LayoutDeviceRect> remoteDocumentVisibleRect =
@@ -542,10 +544,11 @@ IntersectionInput DOMIntersectionObserver::ComputeInput(
   if (aRoot && aRoot->IsElement()) {
     if ((rootFrame = aRoot->AsElement()->GetPrimaryFrame())) {
       nsRect rootRectRelativeToRootFrame;
-      if (nsIScrollableFrame* scrollFrame = do_QueryFrame(rootFrame)) {
+      if (ScrollContainerFrame* scrollContainerFrame =
+              do_QueryFrame(rootFrame)) {
         // rootRectRelativeToRootFrame should be the content rect of rootFrame,
         // not including the scrollbars.
-        rootRectRelativeToRootFrame = scrollFrame->GetScrollPortRect();
+        rootRectRelativeToRootFrame = scrollContainerFrame->GetScrollPortRect();
       } else {
         // rootRectRelativeToRootFrame should be the border rect of rootFrame.
         rootRectRelativeToRootFrame = rootFrame->GetRectRelativeToSelf();
@@ -575,11 +578,11 @@ IntersectionInput DOMIntersectionObserver::ComputeInput(
       // handle the OOP iframe positions.
       if (PresShell* presShell = rootDocument->GetPresShell()) {
         rootFrame = presShell->GetRootFrame();
-        // We use the root scrollable frame's scroll port to account the
+        // We use the root scroll container frame's scroll port to account the
         // scrollbars in rootRect, if needed.
-        if (nsIScrollableFrame* scrollFrame =
-                presShell->GetRootScrollFrameAsScrollable()) {
-          rootRect = scrollFrame->GetScrollPortRect();
+        if (ScrollContainerFrame* rootScrollContainerFrame =
+                presShell->GetRootScrollContainerFrame()) {
+          rootRect = rootScrollContainerFrame->GetScrollPortRect();
         } else if (rootFrame) {
           rootRect = rootFrame->GetRectRelativeToSelf();
         }
@@ -669,7 +672,7 @@ IntersectionOutput DOMIntersectionObserver::Intersect(
   if (aIsForProximityToViewport == IsForProximityToViewport::Yes) {
     const auto& disp = *targetFrame->StyleDisplay();
     auto clipAxes = targetFrame->ShouldApplyOverflowClipping(&disp);
-    if (clipAxes != PhysicalAxes::None) {
+    if (!clipAxes.isEmpty()) {
       targetRect = OverflowAreas::GetOverflowClipRect(
           targetRect, targetRect, clipAxes,
           targetFrame->OverflowClipMargin(clipAxes));

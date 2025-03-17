@@ -603,7 +603,7 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   RefPtr<dom::ContentParent> mContentParent;
 
   void RejectOpenPromise(nsresult aStatus, nsresult aLoadGroupStatus,
-                         bool aContinueNavigating, const char* aLocation) {
+                         bool aContinueNavigating, StaticString aLocation) {
     // It is possible for mOpenPromise to not be set if AsyncOpen failed and
     // the DocumentChannel got canceled.
     if (!mOpenPromiseResolved && mOpenPromise) {
@@ -617,6 +617,8 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
   bool mOpenPromiseResolved = false;
 
   const bool mIsDocumentLoad;
+
+  RefPtr<HTTPSFirstDowngradeData> mHTTPSFirstDowngradeData;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DocumentLoadListener, DOCUMENT_LOAD_LISTENER_IID)

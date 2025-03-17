@@ -79,7 +79,6 @@ export class Translator {
     this.#fromLanguage = fromLanguage;
     this.#toLanguage = toLanguage;
     this.#requestTranslationsPort = requestTranslationsPort;
-    this.#createNewPortIfClosed();
   }
 
   /**
@@ -113,13 +112,41 @@ export class Translator {
   /**
    * Opens up a port and creates a new translator.
    *
-   * @param {string} fromLanguage
-   * @param {string} toLanguage
-   * @returns {Promise<Translator>}
+   * @param {string} fromLanguage - The BCP-47 language tag of the from-language.
+   * @param {string} toLanguage - The BCP-47 language tag of the to-language.
+   * @param {object} data - Data for creating a translator.
+   * @param {Function} [data.requestTranslationsPort]
+   *  - A function to request a translations port for communication with the Translations engine.
+   *    This is required in all cases except if allowSameLanguage is true and the fromLanguage
+   *    is the same as the toLanguage.
+   * @param {boolean} [data.allowSameLanguage]
+   *  - Whether to allow or disallow the creation of a PassthroughTranslator in the event
+   *    that the fromLanguage and the toLanguage are the same language.
+   *
+   * @returns {Promise<Translator | PassthroughTranslator>}
    */
-  static async create(fromLanguage, toLanguage, requestTranslationsPort) {
-    if (!fromLanguage || !toLanguage || !requestTranslationsPort) {
-      return undefined;
+  static async create(
+    fromLanguage,
+    toLanguage,
+    { requestTranslationsPort, allowSameLanguage }
+  ) {
+    if (!fromLanguage || !toLanguage) {
+      throw new Error(
+        "Attempt to create Translator with missing language tags."
+      );
+    }
+
+    if (fromLanguage === toLanguage) {
+      if (!allowSameLanguage) {
+        throw new Error("Attempt to create disallowed PassthroughTranslator");
+      }
+      return new PassthroughTranslator(fromLanguage, toLanguage);
+    }
+
+    if (!requestTranslationsPort) {
+      throw new Error(
+        "Attempt to create Translator without a requestTranslationsPort function"
+      );
     }
 
     const translator = new Translator(
@@ -127,7 +154,7 @@ export class Translator {
       toLanguage,
       requestTranslationsPort
     );
-    await translator.ready;
+    await translator.#createNewPortIfClosed();
 
     return translator;
   }
@@ -139,13 +166,14 @@ export class Translator {
    */
   async #createNewPortIfClosed() {
     if (!this.#portClosed) {
-      return this.#ready;
+      return;
     }
 
     this.#port = await this.#requestTranslationsPort(
       this.#fromLanguage,
       this.#toLanguage
     );
+    this.#portClosed = false;
 
     // Create a promise that will be resolved when the engine is ready.
     const { promise, resolve, reject } = Promise.withResolvers();
@@ -162,7 +190,6 @@ export class Translator {
         }
         case "TranslationsPort:GetEngineStatusResponse": {
           if (data.status === "ready") {
-            this.#portClosed = false;
             resolve();
           } else {
             this.#portClosed = true;
@@ -181,8 +208,6 @@ export class Translator {
 
     this.#ready = promise;
     this.#port.postMessage({ type: "TranslationsPort:GetEngineStatusRequest" });
-
-    return this.#ready;
   }
 
   /**
@@ -195,6 +220,8 @@ export class Translator {
    */
   async translate(sourceText, isHTML = false) {
     await this.#createNewPortIfClosed();
+    await this.#ready;
+
     const { promise, resolve, reject } = Promise.withResolvers();
     const messageId = this.#nextMessageId++;
 
@@ -224,4 +251,90 @@ export class Translator {
     this.#portClosed = true;
     this.#ready = Promise.reject;
   }
+}
+
+/**
+ * The PassthroughTranslator class mimics the same API as the Translator class,
+ * but it does not create any message ports for actual translation. This class
+ * may only be constructed with the same fromLanguage and toLanguage value, and
+ * instead of translating, it just passes through the source text as the translated
+ * text.
+ *
+ * The Translator class may return a PassthroughTranslator instance if the fromLanguage
+ * and toLanguage passed to the create() method are the same.
+ *
+ * @see Translator.create
+ */
+class PassthroughTranslator {
+  /**
+   * The BCP-47 language tag for the from-language and the to-language.
+   *
+   * @type {string}
+   */
+  #language;
+
+  /**
+   * @returns {Promise<void>} A promise that indicates if the Translator is ready to translate.
+   */
+  get ready() {
+    return Promise.resolve;
+  }
+
+  /**
+   * @returns {boolean} Always false for PassthroughTranslator because there is no port.
+   */
+  get portClosed() {
+    return false;
+  }
+
+  /**
+   * @returns {string} The BCP-47 language tag of the from-language.
+   */
+  get fromLanguage() {
+    return this.#language;
+  }
+
+  /**
+   * @returns {string} The BCP-47 language tag of the to-language.
+   */
+  get toLanguage() {
+    return this.#language;
+  }
+
+  /**
+   * Initializes a new PassthroughTranslator.
+   *
+   * Prefer using the Translator.create() function.
+   *
+   * @see Translator.create
+   *
+   * @param {string} fromLanguage - The BCP-47 from-language tag.
+   * @param {string} toLanguage - The BCP-47 to-language tag.
+   */
+  constructor(fromLanguage, toLanguage) {
+    if (fromLanguage !== toLanguage) {
+      throw new Error(
+        "Attempt to create PassthroughTranslator with different fromLanguage and toLanguage."
+      );
+    }
+    this.#language = fromLanguage;
+  }
+
+  /**
+   * Passes through the source text as if it was translated.
+   *
+   * @returns {Promise<string>}
+   */
+  async translate(sourceText) {
+    return Promise.resolve(sourceText);
+  }
+
+  /**
+   * There is nothing to destroy in the PassthroughTranslator class.
+   * This function is implemented to maintain the same API surface as
+   * the Translator class.
+   *
+   * @see Translator
+   */
+  destroy() {}
 }

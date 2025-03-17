@@ -7,10 +7,12 @@
 
 #include <jxl/cms.h>
 #include <jxl/color_encoding.h>
+#include <jxl/memory_manager.h>
 #include <jxl/types.h>
 
 #include <cstdint>
 
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_external_image.h"
@@ -26,6 +28,7 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
                                        const PackedFrame& frame,
                                        const CodecInOut& io, ThreadPool* pool,
                                        ImageBundle* bundle) {
+  JxlMemoryManager* memory_manager = io.memory_manager;
   JXL_ASSERT(frame.color.pixels() != nullptr);
   size_t frame_bits_per_sample =
       input_bitdepth.type == JXL_BIT_DEPTH_FROM_PIXEL_FORMAT
@@ -64,8 +67,9 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
   bundle->extra_channels().resize(io.metadata.m.extra_channel_info.size());
   for (size_t i = 0; i < frame.extra_channels.size(); i++) {
     const auto& ppf_ec = frame.extra_channels[i];
-    JXL_ASSIGN_OR_RETURN(bundle->extra_channels()[i],
-                         ImageF::Create(ppf_ec.xsize, ppf_ec.ysize));
+    JXL_ASSIGN_OR_RETURN(
+        bundle->extra_channels()[i],
+        ImageF::Create(memory_manager, ppf_ec.xsize, ppf_ec.ysize));
     JXL_CHECK(BufferToImageF(ppf_ec.format, ppf_ec.xsize, ppf_ec.ysize,
                              ppf_ec.pixels(), ppf_ec.pixels_size, pool,
                              &bundle->extra_channels()[i]));
@@ -75,6 +79,7 @@ Status ConvertPackedFrameToImageBundle(const JxlBasicInfo& info,
 
 Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
                                           ThreadPool* pool, CodecInOut* io) {
+  JxlMemoryManager* memory_manager = io->memory_manager;
   const bool has_alpha = ppf.info.alpha_bits != 0;
   JXL_ASSERT(!ppf.frames.empty());
   if (has_alpha) {
@@ -141,6 +146,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   // Convert the extra blobs
   io->blobs.exif = ppf.metadata.exif;
   io->blobs.iptc = ppf.metadata.iptc;
+  io->blobs.jhgm = ppf.metadata.jhgm;
   io->blobs.jumbf = ppf.metadata.jumbf;
   io->blobs.xmp = ppf.metadata.xmp;
 
@@ -178,7 +184,7 @@ Status ConvertPackedPixelFileToCodecInOut(const PackedPixelFile& ppf,
   // Convert the pixels
   io->frames.clear();
   for (const auto& frame : ppf.frames) {
-    ImageBundle bundle(&io->metadata.m);
+    ImageBundle bundle(memory_manager, &io->metadata.m);
     JXL_RETURN_IF_ERROR(ConvertPackedFrameToImageBundle(
         ppf.info, ppf.input_bitdepth, frame, *io, pool, &bundle));
     io->frames.push_back(std::move(bundle));
@@ -233,6 +239,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
                                           const ColorEncoding& c_desired,
                                           ThreadPool* pool,
                                           PackedPixelFile* ppf) {
+  JxlMemoryManager* memory_manager = io.memory_manager;
   const bool has_alpha = io.metadata.m.HasAlpha();
   JXL_ASSERT(!io.frames.empty());
 
@@ -286,6 +293,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
   // Convert the extra blobs
   ppf->metadata.exif = io.blobs.exif;
   ppf->metadata.iptc = io.blobs.iptc;
+  ppf->metadata.jhgm = io.blobs.jhgm;
   ppf->metadata.jumbf = io.blobs.jumbf;
   ppf->metadata.xmp = io.blobs.xmp;
   const bool float_out = pixel_format.data_type == JXL_TYPE_FLOAT ||
@@ -316,7 +324,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
     JXL_ASSIGN_OR_RETURN(ImageBundle ib, frame.Copy());
     const ImageBundle* to_color_transform = &ib;
     ImageMetadata metadata = io.metadata.m;
-    ImageBundle store(&metadata);
+    ImageBundle store(memory_manager, &metadata);
     const ImageBundle* transformed;
     // TODO(firsching): handle the transform here.
     JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired,
@@ -332,7 +340,7 @@ Status ConvertCodecInOutToPackedPixelFile(const CodecInOut& io,
 
     // TODO(firsching): Convert the extra channels, beside one potential alpha
     // channel. FIXME!
-    JXL_CHECK(frame.extra_channels().size() <= has_alpha);
+    JXL_CHECK(frame.extra_channels().size() <= (has_alpha ? 1 : 0));
     ppf->frames.push_back(std::move(packed_frame));
   }
 

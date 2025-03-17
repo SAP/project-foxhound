@@ -492,7 +492,13 @@
    * JSGC_PARALLEL_MARKING_THRESHOLD_MB                                        \
    */                                                                          \
   _(JSGC_PARALLEL_MARKING_THRESHOLD_MB, size_t, parallelMarkingThresholdBytes, \
-    ConvertMB, NoCheck, 4 * 1024 * 1024)
+    ConvertMB, NoCheck, 4 * 1024 * 1024)                                       \
+                                                                               \
+  /*                                                                           \
+   * JSGC_GENERATE_MISSING_ALLOC_SITES                                         \
+   */                                                                          \
+  _(JSGC_GENERATE_MISSING_ALLOC_SITES, bool, generateMissingAllocSites,        \
+    ConvertBool, NoCheck, false)
 
 namespace js {
 
@@ -544,6 +550,9 @@ static const double HelperThreadRatio = 0.5;
 
 /* JSGC_MAX_HELPER_THREADS */
 static const size_t MaxHelperThreads = 8;
+
+/* JSGC_MAX_MARKING_THREADS */
+static const size_t MaxMarkingThreads = 2;
 
 }  // namespace TuningDefaults
 

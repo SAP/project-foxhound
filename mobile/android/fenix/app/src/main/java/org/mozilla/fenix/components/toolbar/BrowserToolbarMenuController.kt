@@ -8,6 +8,7 @@ import android.content.Intent
 import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AlertDialog
+import androidx.fragment.app.Fragment
 import androidx.navigation.NavController
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CoroutineScope
@@ -16,10 +17,10 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.state.action.EngineAction
+import mozilla.components.browser.state.ext.getUrl
 import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.selector.selectedTab
-import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession.LoadUrlFlags
 import mozilla.components.concept.engine.prompt.ShareData
@@ -51,6 +52,7 @@ import org.mozilla.fenix.ext.getRootView
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.ext.openSetDefaultBrowserOption
+import org.mozilla.fenix.settings.biometric.bindBiometricsCredentialsPromptOrShowWarning
 import org.mozilla.fenix.settings.deletebrowsingdata.deleteAndQuit
 import org.mozilla.fenix.utils.Settings
 
@@ -63,6 +65,7 @@ interface BrowserToolbarMenuController {
 
 @Suppress("LargeClass", "ForbiddenComment", "LongParameterList")
 class DefaultBrowserToolbarMenuController(
+    private val fragment: Fragment,
     private val store: BrowserStore,
     private val activity: HomeActivity,
     private val navController: NavController,
@@ -79,7 +82,8 @@ class DefaultBrowserToolbarMenuController(
     private val tabCollectionStorage: TabCollectionStorage,
     private val topSitesStorage: DefaultTopSitesStorage,
     private val pinnedSiteStorage: PinnedSiteStorage,
-    private val browserStore: BrowserStore,
+    private val onShowPinVerification: (Intent) -> Unit,
+    private val onBiometricAuthenticationSuccessful: () -> Unit,
 ) : BrowserToolbarMenuController {
 
     private val currentSession
@@ -214,11 +218,15 @@ class DefaultBrowserToolbarMenuController(
                 }
             }
             is ToolbarMenu.Item.Share -> {
+                val sessionId = currentSession?.id
+                val url = sessionId?.let {
+                    store.state.findTab(it)?.getUrl()
+                }
                 val directions = NavGraphDirections.actionGlobalShareFragment(
-                    sessionId = currentSession?.id,
+                    sessionId = sessionId,
                     data = arrayOf(
                         ShareData(
-                            url = getProperUrl(currentSession),
+                            url = url,
                             title = currentSession?.content?.title,
                         ),
                     ),
@@ -257,9 +265,9 @@ class DefaultBrowserToolbarMenuController(
                 }
             }
             is ToolbarMenu.Item.OpenInRegularTab -> {
-                currentSession?.let { session ->
-                    getProperUrl(session)?.let { url ->
-                        tabsUseCases.migratePrivateTabUseCase.invoke(session.id, url)
+                currentSession?.id?.let { sessionId ->
+                    store.state.findTab(sessionId)?.getUrl()?.let { url ->
+                        tabsUseCases.migratePrivateTabUseCase.invoke(sessionId, url)
                     }
                 }
             }
@@ -350,7 +358,7 @@ class DefaultBrowserToolbarMenuController(
             }
             is ToolbarMenu.Item.Bookmark -> {
                 store.state.selectedTab?.let {
-                    getProperUrl(it)?.let { url -> bookmarkTapped(url, it.content.title) }
+                    it.getUrl()?.let { url -> bookmarkTapped(url, it.content.title) }
                 }
             }
             is ToolbarMenu.Item.Bookmarks -> browserAnimator.captureEngineViewAndDrawStatically {
@@ -365,7 +373,15 @@ class DefaultBrowserToolbarMenuController(
                     BrowserFragmentDirections.actionGlobalHistoryFragment(),
                 )
             }
-
+            is ToolbarMenu.Item.Passwords -> browserAnimator.captureEngineViewAndDrawStatically {
+                fragment.view?.let { view ->
+                    bindBiometricsCredentialsPromptOrShowWarning(
+                        view = view,
+                        onShowPinVerification = onShowPinVerification,
+                        onAuthSuccess = onBiometricAuthenticationSuccessful,
+                    )
+                }
+            }
             is ToolbarMenu.Item.Downloads -> browserAnimator.captureEngineViewAndDrawStatically {
                 navController.nav(
                     R.id.browserFragment,
@@ -411,21 +427,8 @@ class DefaultBrowserToolbarMenuController(
             ToolbarMenu.Item.Translate -> {
                 Translations.action.record(Translations.ActionExtra("main_flow_browser"))
                 val directions =
-                    BrowserFragmentDirections.actionBrowserFragmentToTranslationsDialogFragment(
-                        sessionId = currentSession?.id,
-                    )
+                    BrowserFragmentDirections.actionBrowserFragmentToTranslationsDialogFragment()
                 navController.navigateSafe(R.id.browserFragment, directions)
-            }
-        }
-    }
-
-    private fun getProperUrl(currentSession: SessionState?): String? {
-        return currentSession?.id?.let {
-            val currentTab = browserStore.state.findTab(it)
-            if (currentTab?.readerState?.active == true) {
-                currentTab.readerState.activeUrl
-            } else {
-                currentSession.content.url
             }
         }
     }
@@ -494,6 +497,8 @@ class DefaultBrowserToolbarMenuController(
                 Events.browserMenuAction.record(Events.BrowserMenuActionExtra("bookmarks"))
             is ToolbarMenu.Item.History ->
                 Events.browserMenuAction.record(Events.BrowserMenuActionExtra("history"))
+            is ToolbarMenu.Item.Passwords ->
+                Events.browserMenuAction.record(Events.BrowserMenuActionExtra("passwords"))
             is ToolbarMenu.Item.Downloads ->
                 Events.browserMenuAction.record(Events.BrowserMenuActionExtra("downloads"))
             is ToolbarMenu.Item.NewTab ->

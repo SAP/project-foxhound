@@ -19,11 +19,8 @@ trailer = """
 #pragma GCC diagnostic pop
 #include "mozilla/ServoStyleConstsInlines.h"
 """
-autogen_warning = """/* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen.
- * To generate this file:
- *   1. Get the latest cbindgen using `cargo install --force cbindgen`
- *      a. Alternatively, you can clone `https://github.com/eqrion/cbindgen` and use a tagged release
- *   2. Run `rustup run nightly cbindgen toolkit/library/rust/ --lockfile Cargo.lock --crate style -o layout/style/ServoStyleConsts.h`
+autogen_warning = """/* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen. See RunCbindgen.py
+ * To modify this file, edit servo/ports/geckolib/cbindgen.toml and build Firefox.
  */
 """
 include_guard = "mozilla_ServoStyleConsts_h"
@@ -82,6 +79,8 @@ exclude = [
   "AuthorStyles",
 ]
 include = [
+  "AnchorName",
+  "AnchorScope",
   "AnimationTimeline",
   "AnimationIterationCount",
   "AnimationDirection",
@@ -93,11 +92,18 @@ include = [
   "BreakBetween",
   "BreakWithin",
   "BorderStyle",
+  "BorderSpacing",
   "BoolInteger",
   "OutlineStyle",
   "CaptionSide",
   "FontSizeAdjust",
   "FontPalette",
+  "FontLanguageOverride",
+  "FontVariantEastAsian",
+  "FontVariantLigatures",
+  "FontVariantNumeric",
+  "InsetArea",
+  "InsetAreaKeyword",
   "ComputedFontStretchRange",
   "ComputedFontStyleDescriptor",
   "ComputedFontWeightRange",
@@ -109,6 +115,10 @@ include = [
   "DisplayInside",
   "DisplayMode",
   "Platform",
+  "PositionAnchor",
+  "PositionTryOptions",
+  "PositionTryOrder",
+  "PositionVisibility",
   "GtkThemeFamily",
   "PrefersColorScheme",
   "PrefersContrast",
@@ -160,6 +170,7 @@ include = [
   "TextDecorationLength",
   "Time",
   "Rect",
+  "InitialLetter",
   "IntersectionObserverRootMargin",
   "Size",
   "MaxSize",
@@ -172,6 +183,7 @@ include = [
   "BorderSpacing",
   "BorderRadius",
   "ColorScheme",
+  "ColumnCount",
   "NonNegativeLengthOrNumberRect",
   "Perspective",
   "ZIndex",
@@ -259,8 +271,6 @@ include = [
   "ComputedJustifyItems",
   "AlignContent",
   "JustifyContent",
-  "AlignTracks",
-  "JustifyTracks",
   "TransformStyle",
   "Image",
   "ClipPath",
@@ -350,7 +360,7 @@ renaming_overrides_prefixing = true
 "BeforeFlag" = "StyleEasingBeforeFlag"
 "FontPaletteValueSet" = "gfx::FontPaletteValueSet"
 "PaletteValues" = "gfx::FontPaletteValueSet::PaletteValues"
-"ThinVec" = "nsTArray"
+"ThinVec" = "CopyableTArray"
 "RawPthread" = "pthread_t"
 "RawHandle" = "void*"
 
@@ -493,7 +503,7 @@ renaming_overrides_prefixing = true
 
   // Defined in WritingModes.h
   inline const T& Get(mozilla::Side) const;
-  inline const T& Get(WritingMode, LogicalSide) const;
+  inline const T& Get(LogicalSide, WritingMode) const;
   inline const T& GetIStart(WritingMode) const;
   inline const T& GetBStart(WritingMode) const;
   inline const T& Start(LogicalAxis, WritingMode) const;
@@ -502,7 +512,7 @@ renaming_overrides_prefixing = true
   inline const T& End(LogicalAxis, WritingMode) const;
 
   inline T& Get(mozilla::Side);
-  inline T& Get(WritingMode, LogicalSide);
+  inline T& Get(LogicalSide, WritingMode);
   inline T& GetIStart(WritingMode);
   inline T& GetBStart(WritingMode);
   inline T& GetIEnd(WritingMode);
@@ -527,8 +537,7 @@ renaming_overrides_prefixing = true
 """
 
 "TextTransform" = """
-  static inline StyleTextTransform None();
-  inline bool IsNone() const;
+  bool IsNone() const { return *this == NONE; }
 """
 
 "TextUnderlinePosition" = """

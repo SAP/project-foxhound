@@ -422,9 +422,11 @@ export class SearchService {
   async getAppProvidedEngines() {
     await this.init();
 
-    return this._sortEnginesByDefaults(
-      this.#sortedEngines.filter(e => e.isAppProvided)
-    );
+    return lazy.SearchUtils.sortEnginesByDefaults({
+      engines: this.#sortedEngines.filter(e => e.isAppProvided),
+      appDefaultEngine: this.appDefaultEngine,
+      appPrivateDefaultEngine: this.appPrivateDefaultEngine,
+    });
   }
 
   async getEnginesByExtensionID(extensionID) {
@@ -1801,9 +1803,9 @@ export class SearchService {
         this.#addEngineToStore(engine);
       } catch (ex) {
         console.error(
-          `Could not load engine ${
-            "webExtension" in config ? config.webExtension.id : "unknown"
-          }: ${ex}`
+          "Could not load engine",
+          "webExtension" in config ? config.webExtension.id : "unknown",
+          ex
         );
       }
     }
@@ -1839,7 +1841,8 @@ export class SearchService {
         });
       } catch (ex) {
         lazy.logConsole.error(
-          `#createAndAddAddonEngine failed for ${extension.id}`,
+          "#createAndAddAddonEngine failed for",
+          extension.id,
           ex
         );
       }
@@ -2499,6 +2502,19 @@ export class SearchService {
         } else if (loadPath?.startsWith("[user]")) {
           engine = new lazy.UserSearchEngine({ json: engineJSON });
         } else if (engineJSON.extensionID ?? engineJSON._extensionID) {
+          let existingEngine = this.#getEngineByName(engineJSON._name);
+          let extensionId = engineJSON.extensionID ?? engineJSON._extensionID;
+
+          if (existingEngine && existingEngine._extensionID == extensionId) {
+            // We assume that this WebExtension was already loaded as part of
+            // #loadStartupEngines, and therefore do not try to add it again.
+            lazy.logConsole.log(
+              "Ignoring already added WebExtension",
+              extensionId
+            );
+            continue;
+          }
+
           engine = new lazy.AddonSearchEngine({
             isAppProvided: false,
             json: engineJSON,
@@ -2587,7 +2603,7 @@ export class SearchService {
   async _fetchEngineSelectorEngines() {
     let searchEngineSelectorProperties = {
       locale: Services.locale.appLocaleAsBCP47,
-      region: lazy.Region.home || "default",
+      region: lazy.Region.home || "unknown",
       channel: lazy.SearchUtils.MODIFIED_APP_CHANNEL,
       experiment:
         lazy.NimbusFeatures.searchConfiguration.getVariable("experiment") ?? "",
@@ -2728,70 +2744,11 @@ export class SearchService {
     }
     lazy.logConsole.debug("#buildSortedEngineList: using default orders");
 
-    return (this._cachedSortedEngines = this._sortEnginesByDefaults(
-      Array.from(this._engines.values())
-    ));
-  }
-
-  /**
-   * Sorts engines by the default settings (prefs, configuration values).
-   *
-   * @param {Array} engines
-   *   An array of engine objects to sort.
-   * @returns {Array}
-   *   The sorted array of engine objects.
-   *
-   * This is a private method with _ rather than # because it is
-   * called in a test.
-   */
-  _sortEnginesByDefaults(engines) {
-    const sortedEngines = [];
-    const addedEngines = new Set();
-
-    function maybeAddEngineToSort(engine) {
-      if (!engine || addedEngines.has(engine.name)) {
-        return;
-      }
-
-      sortedEngines.push(engine);
-      addedEngines.add(engine.name);
-    }
-
-    // The app default engine should always be first in the list (except
-    // for distros, that we should respect).
-    const appDefault = this.appDefaultEngine;
-    maybeAddEngineToSort(appDefault);
-
-    // If there's a private default, and it is different to the normal
-    // default, then it should be second in the list.
-    const appPrivateDefault = this.appPrivateDefaultEngine;
-    if (appPrivateDefault && appPrivateDefault != appDefault) {
-      maybeAddEngineToSort(appPrivateDefault);
-    }
-
-    let remainingEngines;
-    const collator = new Intl.Collator();
-
-    remainingEngines = engines.filter(e => !addedEngines.has(e.name));
-
-    // We sort by highest orderHint first, then alphabetically by name.
-    remainingEngines.sort((a, b) => {
-      if (a._orderHint && b._orderHint) {
-        if (a._orderHint == b._orderHint) {
-          return collator.compare(a.name, b.name);
-        }
-        return b._orderHint - a._orderHint;
-      }
-      if (a._orderHint) {
-        return -1;
-      }
-      if (b._orderHint) {
-        return 1;
-      }
-      return collator.compare(a.name, b.name);
-    });
-
-    return [...sortedEngines, ...remainingEngines];
+    return (this._cachedSortedEngines = lazy.SearchUtils.sortEnginesByDefaults({
+      engines: Array.from(this._engines.values()),
+      appDefaultEngine: this.appDefaultEngine,
+      appPrivateDefaultEngine: this.appPrivateDefaultEngine,
+    }));
   }
 
   /**
@@ -2799,7 +2756,6 @@ export class SearchService {
    *
    * @returns {Array<SearchEngine>}
    */
-
   get #sortedVisibleEngines() {
     return this.#sortedEngines.filter(engine => !engine.hidden);
   }

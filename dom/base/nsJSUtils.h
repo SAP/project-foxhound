@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /*
- * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
+ * Modifications Copyright SAP SE. 2019-2025.  All rights reserved.
  */
 
 #ifndef nsJSUtils_h__
@@ -107,6 +107,8 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
                 "Shouldn't overflow here or in SetCapacity");
 
   if (XPCStringConvert::MaybeAssignUCStringChars(s, len, dest)) {
+    // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+    dest.AssignTaint(JS_GetStringTaint(s));
     return true;
   }
 
@@ -185,11 +187,10 @@ inline void AssignJSLinearString(nsAString& dest, JSLinearString* s) {
   static_assert(JS::MaxStringLength < (1 << 30),
                 "Shouldn't overflow here or in SetCapacity");
   dest.SetLength(len);
+  JS::CopyLinearStringChars(dest.BeginWriting(), s, len);
 
   // TaintFox: copy taint when converting between JavaScript and Gecko strings.
   dest.AssignTaint(JS_GetStringTaint(s));
-
-  JS::CopyLinearStringChars(dest.BeginWriting(), s, len);
 }
 
 inline void AssignJSLinearString(nsACString& dest, JSLinearString* s) {
@@ -198,6 +199,9 @@ inline void AssignJSLinearString(nsACString& dest, JSLinearString* s) {
                 "Shouldn't overflow here or in SetCapacity");
   dest.SetLength(len);
   JS::LossyCopyLinearStringChars(dest.BeginWriting(), s, len);
+
+  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  dest.AssignTaint(JS_GetStringTaint(s));
 }
 
 template <typename T>

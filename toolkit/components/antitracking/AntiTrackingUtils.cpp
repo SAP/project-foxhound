@@ -567,9 +567,8 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
 
   if (policyType == ExtContentPolicy::TYPE_SUBDOCUMENT) {
     // For loads of framed documents, we only use storage access
-    // if the load is the result of a same-origin, self-initiated
+    // if the load is the result of a same-origin, same-site-initiated
     // navigation of the frame.
-    uint64_t targetWindowIdNoTop = bc->GetCurrentInnerWindowId();
     uint64_t triggeringWindowId;
     rv = loadInfo->GetTriggeringWindowId(&triggeringWindowId);
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -581,10 +580,29 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return nsILoadInfo::NoStoragePermission;
     }
-    RefPtr<net::HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
 
-    if (targetWindowIdNoTop == triggeringWindowId &&
-        triggeringWindowHasStorageAccess &&
+    nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+    RefPtr<nsIPrincipal> channelResultPrincipal;
+    rv = ssm->GetChannelResultPrincipal(aChannel,
+                                        getter_AddRefs(channelResultPrincipal));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return nsILoadInfo::NoStoragePermission;
+    }
+    RefPtr<net::HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
+    bool crossSiteInitiated = false;
+    if (bc && bc->GetParent()->GetCurrentWindowContext()) {
+      RefPtr<WindowGlobalParent> triggeringWGP =
+          WindowGlobalParent::GetByInnerWindowId(triggeringWindowId);
+      if (triggeringWGP && triggeringWGP->DocumentPrincipal()) {
+        rv = triggeringWGP->DocumentPrincipal()->IsThirdPartyPrincipal(
+            channelResultPrincipal, &crossSiteInitiated);
+        if (NS_FAILED(rv)) {
+          crossSiteInitiated = false;
+        }
+      }
+    }
+
+    if (!crossSiteInitiated && triggeringWindowHasStorageAccess &&
         trackingPrincipal->Equals(framePrincipal) && httpChannel &&
         !httpChannel->HasRedirectTaintedOrigin()) {
       return nsILoadInfo::HasStoragePermission;
@@ -852,35 +870,16 @@ void AntiTrackingUtils::ComputeIsThirdPartyToTopWindow(nsIChannel* aChannel) {
 bool AntiTrackingUtils::IsThirdPartyChannel(nsIChannel* aChannel) {
   MOZ_ASSERT(aChannel);
 
-  // We have to handle blob URLs here because they always fail
-  // IsThirdPartyChannel because of how blob URLs are constructed. We just
-  // recompare to their ancestor chain from the loadInfo, bailing if any is
-  // third party.
-  nsAutoCString scheme;
-  nsCOMPtr<nsIURI> channelURI;
-  nsresult rv = aChannel->GetURI(getter_AddRefs(channelURI));
-  if (NS_SUCCEEDED(rv) && channelURI->SchemeIs("blob")) {
-    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-    for (const nsCOMPtr<nsIPrincipal>& principal :
-         loadInfo->AncestorPrincipals()) {
-      bool thirdParty = true;
-      rv = loadInfo->PrincipalToInherit()->IsThirdPartyPrincipal(principal,
-                                                                 &thirdParty);
-      if (NS_SUCCEEDED(rv) && thirdParty) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   nsCOMPtr<mozIThirdPartyUtil> tpuService =
       mozilla::components::ThirdPartyUtil::Service();
   if (!tpuService) {
     return true;
   }
   bool thirdParty = true;
-  rv = tpuService->IsThirdPartyChannel(aChannel, nullptr, &thirdParty);
-  NS_ENSURE_SUCCESS(rv, true);
+  nsresult rv = tpuService->IsThirdPartyChannel(aChannel, nullptr, &thirdParty);
+  if (NS_FAILED(rv)) {
+    return true;
+  }
   return thirdParty;
 }
 
@@ -940,22 +939,20 @@ bool AntiTrackingUtils::IsThirdPartyDocument(Document* aDocument) {
     return true;
   }
   bool thirdParty = true;
-  if (!aDocument->GetChannel() ||
-      aDocument->GetDocumentURI()->SchemeIs("blob")) {
+  if (!aDocument->GetChannel()) {
     // If we can't get the channel from the document, i.e. initial about:blank
     // page, we use the browsingContext of the document to check if it's in the
     // third-party context. If the browsing context is still not available, we
     // will treat the window as third-party.
-    // We also rely on IsThirdPartyContext for blob documents because the
-    // IsThirdPartyChannel check relies on getting the BaseDomain,
-    // which correctly fails for blobs URIs.
     RefPtr<BrowsingContext> bc = aDocument->GetBrowsingContext();
     return bc ? IsThirdPartyContext(bc) : true;
   }
 
   nsresult rv = tpuService->IsThirdPartyChannel(aDocument->GetChannel(),
                                                 nullptr, &thirdParty);
-  NS_ENSURE_SUCCESS(rv, true);
+  if (NS_FAILED(rv)) {
+    return true;
+  }
   return thirdParty;
 }
 

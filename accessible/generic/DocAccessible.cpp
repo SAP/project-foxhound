@@ -30,7 +30,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsImageFrame.h"
 #include "nsViewManager.h"
-#include "nsIScrollableFrame.h"
 #include "nsIURI.h"
 #include "nsIWebNavigation.h"
 #include "nsFocusManager.h"
@@ -42,6 +41,7 @@
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "nsAccessibilityService.h"
 #include "mozilla/a11y/DocAccessibleChild.h"
 #include "mozilla/dom/AncestorIterator.h"
@@ -581,7 +581,7 @@ nsRect DocAccessible::RelativeBounds(nsIFrame** aRelativeFrame) const {
     }
 
     nsRect scrollPort;
-    nsIScrollableFrame* sf = presShell->GetRootScrollFrameAsScrollable();
+    ScrollContainerFrame* sf = presShell->GetRootScrollContainerFrame();
     if (sf) {
       scrollPort = sf->GetScrollPortRect();
     } else {
@@ -709,9 +709,9 @@ std::pair<nsPoint, nsRect> DocAccessible::ComputeScrollData(
   nsRect scrollRange;
 
   if (nsIFrame* frame = aAcc->GetFrame()) {
-    nsIScrollableFrame* sf = aAcc == this
-                                 ? mPresShell->GetRootScrollFrameAsScrollable()
-                                 : frame->GetScrollTargetFrame();
+    ScrollContainerFrame* sf = aAcc == this
+                                   ? mPresShell->GetRootScrollContainerFrame()
+                                   : frame->GetScrollTargetFrame();
 
     // If there is no scrollable frame, it's likely a scroll in a popup, like
     // <select>. Return a scroll offset and range of 0. The scroll info
@@ -1019,6 +1019,21 @@ void DocAccessible::ElementStateChanged(dom::Document* aDocument,
 
   if (aStateMask.HasState(dom::ElementState::INDETERMINATE)) {
     RefPtr<AccEvent> event = new AccStateChangeEvent(accessible, states::MIXED);
+    FireDelayedEvent(event);
+  }
+
+  if (aStateMask.HasState(dom::ElementState::DISABLED) &&
+      !nsAccUtils::ARIAAttrValueIs(aElement, nsGkAtoms::aria_disabled,
+                                   nsGkAtoms::_true, eCaseMatters)) {
+    // The DOM disabled state has changed and there is no aria-disabled="true"
+    // taking precedence.
+    RefPtr<AccEvent> event =
+        new AccStateChangeEvent(accessible, states::UNAVAILABLE);
+    FireDelayedEvent(event);
+    event = new AccStateChangeEvent(accessible, states::ENABLED);
+    FireDelayedEvent(event);
+    // This likely changes focusability as well.
+    event = new AccStateChangeEvent(accessible, states::FOCUSABLE);
     FireDelayedEvent(event);
   }
 }
@@ -1358,6 +1373,17 @@ bool DocAccessible::PruneOrInsertSubtree(nsIContent* aRoot) {
     if (acc->IsXULLabel()) {
       ContentRemoved(acc);
       return true;
+    }
+
+    // This check *must* come before the broken image check below.
+    if (frame && frame->IsReplaced() && frame->AccessibleType() == eImageType &&
+        !aRoot->IsHTMLElement(nsGkAtoms::img)) {
+      // This is an image specified using the CSS content property which
+      // replaces the content of the node. Its frame might be reconstructed,
+      // which means its alt text might have changed. We expose the alt text
+      // as the name, so fire a name change event.
+      FireDelayedEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, acc);
+      return false;
     }
 
     // It is a broken image that is being reframed because it either got

@@ -57,6 +57,8 @@
 #include "sslerr.h"
 #include "sslexp.h"
 #include "sslproto.h"
+#include "zlib.h"
+#include "brotli/decode.h"
 
 #if defined(__arm__)
 #  include "mozilla/arm.h"
@@ -1329,6 +1331,113 @@ static const SSLSignatureScheme sEnabledSignatureSchemes[] = {
     ssl_sig_rsa_pkcs1_sha1,
 };
 
+enum CertificateCompressionAlgorithms {
+  zlib = 0x01,
+  brotli = 0x2,
+};
+
+void GatherCertificateCompressionTelemetry(SECStatus rv,
+                                           CertificateCompressionAlgorithms alg,
+                                           PRUint64 actualCertLen,
+                                           PRUint64 encodedCertLen) {
+  nsAutoCString decoder;
+
+  switch (alg) {
+    case zlib:
+      decoder.AssignLiteral("zlib");
+      break;
+    case brotli:
+      decoder.AssignLiteral("brotli");
+      break;
+  }
+
+  mozilla::glean::cert_compression::used.Get(decoder).Add(1);
+
+  if (rv != SECSuccess) {
+    mozilla::glean::cert_compression::failures.Get(decoder).Add(1);
+    return;
+  }
+
+  if (actualCertLen >= encodedCertLen) {
+    switch (alg) {
+      case zlib:
+        mozilla::glean::cert_compression::zlib_saved_bytes
+            .AccumulateSingleSample(actualCertLen - encodedCertLen);
+        break;
+
+      case brotli:
+        mozilla::glean::cert_compression::brotli_saved_bytes
+            .AccumulateSingleSample(actualCertLen - encodedCertLen);
+        break;
+    }
+  }
+}
+
+SECStatus zlibCertificateDecode(const SECItem* input, unsigned char* output,
+                                size_t outputLen, size_t* usedLen) {
+  SECStatus rv = SECFailure;
+  if (!input || !input->data || input->len == 0 || !output || outputLen == 0) {
+    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
+    return rv;
+  }
+
+  z_stream strm = {};
+
+  if (inflateInit(&strm) != Z_OK) {
+    PR_SetError(SEC_ERROR_LIBRARY_FAILURE, 0);
+    return rv;
+  }
+
+  auto cleanup = MakeScopeExit([&] {
+    GatherCertificateCompressionTelemetry(rv, zlib, *usedLen, input->len);
+    (void)inflateEnd(&strm);
+  });
+
+  strm.avail_in = input->len;
+  strm.next_in = input->data;
+
+  strm.avail_out = outputLen;
+  strm.next_out = output;
+
+  int ret = inflate(&strm, Z_FINISH);
+  bool ok = ret == Z_STREAM_END && strm.avail_in == 0 && strm.avail_out == 0;
+  if (!ok) {
+    PR_SetError(SEC_ERROR_BAD_DATA, 0);
+    return rv;
+  }
+
+  *usedLen = strm.total_out;
+  rv = SECSuccess;
+  return rv;
+}
+
+SECStatus brotliCertificateDecode(const SECItem* input, unsigned char* output,
+                                  size_t outputLen, size_t* usedLen) {
+  SECStatus rv = SECFailure;
+
+  if (!input || !input->data || input->len == 0 || !output || outputLen == 0) {
+    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
+    return rv;
+  }
+
+  auto cleanup = MakeScopeExit([&] {
+    GatherCertificateCompressionTelemetry(rv, brotli, *usedLen, input->len);
+  });
+
+  size_t uncompressedSize = outputLen;
+  BrotliDecoderResult result = BrotliDecoderDecompress(
+      input->len, input->data, &uncompressedSize, output);
+
+  if (result != BROTLI_DECODER_RESULT_SUCCESS) {
+    PR_SetError(SEC_ERROR_BAD_DATA, 0);
+    return rv;
+  }
+
+  *usedLen = uncompressedSize;
+  rv = SECSuccess;
+  return rv;
+}
+
 static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
                                        bool haveProxy, const char* host,
                                        int32_t port,
@@ -1477,6 +1586,27 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     // This ensures that we send key shares for X25519 and P-256 in TLS 1.3, so
     // that servers are less likely to use HelloRetryRequest.
     if (SECSuccess != SSL_SendAdditionalKeyShares(fd, 1)) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  // Enabling Certificate Compression Decoding mechanisms.
+  if (range.max >= SSL_LIBRARY_VERSION_TLS_1_3 &&
+      !(infoObject->GetProviderFlags() &
+        (nsISocketProvider::BE_CONSERVATIVE | nsISocketProvider::IS_RETRY))) {
+    SSLCertificateCompressionAlgorithm zlibAlg = {1, "zlib", nullptr,
+                                                  zlibCertificateDecode};
+
+    SSLCertificateCompressionAlgorithm brotliAlg = {2, "brotli", nullptr,
+                                                    brotliCertificateDecode};
+
+    if (StaticPrefs::security_tls_enable_certificate_compression_zlib() &&
+        SSL_SetCertificateCompressionAlgorithm(fd, zlibAlg) != SECSuccess) {
+      return NS_ERROR_FAILURE;
+    }
+
+    if (StaticPrefs::security_tls_enable_certificate_compression_brotli() &&
+        SSL_SetCertificateCompressionAlgorithm(fd, brotliAlg) != SECSuccess) {
       return NS_ERROR_FAILURE;
     }
   }

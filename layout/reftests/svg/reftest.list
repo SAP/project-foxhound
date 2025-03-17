@@ -159,6 +159,7 @@ fuzzy(0-1,0-10000) == dynamic-filter-contents-01b.svg dynamic-filter-contents-01
 == dynamic-mask-contents-01.svg pass.svg
 == dynamic-mask-pre-effects-bbox.html dynamic-mask-pre-effects-bbox-ref.html
 == dynamic-opacity-property-01.svg pass.svg
+== dynamic-opacity-transition-01.svg pass.svg
 == dynamic-pattern-01.svg pass.svg
 == dynamic-pattern-02.svg pass.svg
 == dynamic-pattern-contents-01.svg pass.svg
@@ -292,7 +293,7 @@ fuzzy(0-65,0-570) == marker-orientation-01.svg marker-orientation-01-ref.svg
 fuzzy(0-65,0-570) == marker-orientation-02.svg marker-orientation-02-ref.svg
 == marker-orientation-03.svg pass.svg
 == marker-orientation-04.svg pass.svg
-== marker-orientation-05.svg pass.svg
+fuzzy(0-1,0-2) == marker-orientation-05.svg pass.svg
 
 fuzzy(0-28,0-28) == mask-and-clipPath.html mask-and-clipPath-ref.html
 == mask-and-clipPath-2.svg pass.svg
@@ -334,7 +335,7 @@ fuzzy(0-1,0-6400) == mask-type-04.svg mask-type-01-ref.svg
 fuzzy(0-3,0-448000) == nesting-invalid-01.svg nesting-invalid-01-ref.svg
 
 fuzzy(0-2,0-1000) == non-scaling-stroke-01.svg non-scaling-stroke-01-ref.svg
-fuzzy(0-51,0-900) fuzzy-if(Android,0-51,0-4090) fails-if(useDrawSnapshot) == non-scaling-stroke-02.svg non-scaling-stroke-02-ref.svg
+fuzzy(0-51,0-900) fuzzy-if(Android,0-52,0-4090) fails-if(useDrawSnapshot) == non-scaling-stroke-02.svg non-scaling-stroke-02-ref.svg
 == non-scaling-stroke-03.svg non-scaling-stroke-03-ref.svg
 
 == objectBoundingBox-and-clipPath.svg pass.svg
@@ -510,8 +511,8 @@ fuzzy(0-2,0-1000) == text-scale-02.svg text-scale-02-ref.svg
 == text-style-01e.svg text-style-01-ref.svg
 
 == text-stroke-scaling-01.svg text-stroke-scaling-01-ref.svg
-fuzzy(0-16,0-3) == text-stroke-scaling-02a.html text-stroke-scaling-02-ref.html # antialiasing
-fuzzy(0-16,0-3) == text-stroke-scaling-02b.html text-stroke-scaling-02-ref.html # antialiasing
+fuzzy(0-16,0-11) fuzzy-if(Android,0-16,0-1500) == text-stroke-scaling-02a.html text-stroke-scaling-02-ref.html # antialiasing
+fuzzy(0-16,0-11) fuzzy-if(Android,0-16,0-1500) == text-stroke-scaling-02b.html text-stroke-scaling-02-ref.html # antialiasing
 == text-stroke-scaling-02a.html text-stroke-scaling-02b.html
 == textPath-01.svg textPath-01-ref.svg
 == textPath-02.svg pass.svg
@@ -634,3 +635,7 @@ skip-if(Android) skip-if(cocoaWidget) skip-if(winWidget) == transform-animation-
 
 fuzzy(0-20,0-110) == 1792313.svg 1792313-ref.svg
 pref(svg.use-element.recursive-clone-limit.enabled,1) != about:blank explosive-use.svg
+
+# do not increase fuzz significantly, test was designed to be within 1 color unit
+fuzzy(0-1,0-230400) == 1630900-1.html 1630900-1-ref.html
+# do not increase fuzz significantly, test was designed to be within 1 color unit

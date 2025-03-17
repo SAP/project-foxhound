@@ -31,6 +31,7 @@ import mozilla.components.concept.engine.serviceworker.ServiceWorkerDelegate
 import mozilla.components.concept.engine.translate.LanguageSetting
 import mozilla.components.concept.engine.translate.ModelManagementOptions
 import mozilla.components.concept.engine.translate.ModelOperation
+import mozilla.components.concept.engine.translate.ModelState
 import mozilla.components.concept.engine.translate.OperationLevel
 import mozilla.components.concept.engine.webextension.Action
 import mozilla.components.concept.engine.webextension.InstallationMethod
@@ -1372,6 +1373,8 @@ class GeckoEngineTest {
         whenever(runtime.webExtensionController).thenReturn(webExtensionController)
 
         val extension = mockNativeWebExtension("test", "uri")
+        val permissions = arrayOf("some", "permissions")
+        val origins = arrayOf("and some", "origins")
         val webExtensionsDelegate: WebExtensionDelegate = mock()
         val engine = GeckoEngine(context, runtime = runtime)
 
@@ -1380,12 +1383,16 @@ class GeckoEngineTest {
         val geckoDelegateCaptor = argumentCaptor<WebExtensionController.PromptDelegate>()
         verify(webExtensionController).promptDelegate = geckoDelegateCaptor.capture()
 
-        val result = geckoDelegateCaptor.value.onInstallPrompt(extension)
+        val result = geckoDelegateCaptor.value.onInstallPrompt(extension, permissions, origins)
 
         val extensionCaptor = argumentCaptor<WebExtension>()
         val onConfirmCaptor = argumentCaptor<((Boolean) -> Unit)>()
 
-        verify(webExtensionsDelegate).onInstallPermissionRequest(extensionCaptor.capture(), onConfirmCaptor.capture())
+        verify(webExtensionsDelegate).onInstallPermissionRequest(
+            extensionCaptor.capture(),
+            eq(permissions.asList() + origins.asList()),
+            onConfirmCaptor.capture(),
+        )
 
         onConfirmCaptor.value(true)
 
@@ -1399,6 +1406,8 @@ class GeckoEngineTest {
         whenever(runtime.webExtensionController).thenReturn(webExtensionController)
 
         val extension = mockNativeWebExtension("test", "uri")
+        val permissions = arrayOf("some", "permissions")
+        val origins = arrayOf("and some", "origins")
         val webExtensionsDelegate: WebExtensionDelegate = mock()
         val engine = GeckoEngine(context, runtime = runtime)
 
@@ -1407,12 +1416,16 @@ class GeckoEngineTest {
         val geckoDelegateCaptor = argumentCaptor<WebExtensionController.PromptDelegate>()
         verify(webExtensionController).promptDelegate = geckoDelegateCaptor.capture()
 
-        val result = geckoDelegateCaptor.value.onInstallPrompt(extension)
+        val result = geckoDelegateCaptor.value.onInstallPrompt(extension, permissions, origins)
 
         val extensionCaptor = argumentCaptor<WebExtension>()
         val onConfirmCaptor = argumentCaptor<((Boolean) -> Unit)>()
 
-        verify(webExtensionsDelegate).onInstallPermissionRequest(extensionCaptor.capture(), onConfirmCaptor.capture())
+        verify(webExtensionsDelegate).onInstallPermissionRequest(
+            extensionCaptor.capture(),
+            eq(permissions.asList() + origins.asList()),
+            onConfirmCaptor.capture(),
+        )
 
         onConfirmCaptor.value(false)
 
@@ -2740,6 +2753,28 @@ class GeckoEngineTest {
     }
 
     @Test
+    fun `web extension delegate handles add-on onOptionalPermissionsChanged event`() {
+        val runtime: GeckoRuntime = mock()
+        val webExtensionController: WebExtensionController = mock()
+        whenever(runtime.webExtensionController).thenReturn(webExtensionController)
+
+        val extension = mockNativeWebExtension("test", "uri")
+        val webExtensionsDelegate: WebExtensionDelegate = mock()
+        val engine = GeckoEngine(context, runtime = runtime)
+        engine.registerWebExtensionDelegate(webExtensionsDelegate)
+
+        val geckoDelegateCaptor = argumentCaptor<WebExtensionController.AddonManagerDelegate>()
+        verify(webExtensionController).setAddonManagerDelegate(geckoDelegateCaptor.capture())
+
+        assertEquals(Unit, geckoDelegateCaptor.value.onOptionalPermissionsChanged(extension))
+        val extensionCaptor = argumentCaptor<WebExtension>()
+        verify(webExtensionsDelegate).onOptionalPermissionsChanged(extensionCaptor.capture())
+        val capturedExtension =
+            extensionCaptor.value as mozilla.components.browser.engine.gecko.webextension.GeckoWebExtension
+        assertEquals(extension, capturedExtension.nativeExtension)
+    }
+
+    @Test
     fun `web extension delegate handles add-on onInstallationFailed event`() {
         val runtime: GeckoRuntime = mock()
         val webExtensionController: WebExtensionController = mock()
@@ -2967,13 +3002,13 @@ class GeckoEngineTest {
         var onSuccessCalled = false
         var onErrorCalled = false
 
-        var code = "es"
-        var localizedDisplayName = "Spanish"
-        var isDownloaded = true
-        var size: Long = 1234
-        var geckoLanguage = TranslationsController.Language(code, localizedDisplayName)
-        var geckoLanguageModel = LanguageModel(geckoLanguage, isDownloaded, size)
-        var geckoResultValue: List<LanguageModel> = mutableListOf(geckoLanguageModel)
+        val code = "es"
+        val localizedDisplayName = "Spanish"
+        val isDownloaded = true
+        val size: Long = 1234
+        val geckoLanguage = TranslationsController.Language(code, localizedDisplayName)
+        val geckoLanguageModel = LanguageModel(geckoLanguage, isDownloaded, size)
+        val geckoResultValue: List<LanguageModel> = mutableListOf(geckoLanguageModel)
         val geckoResult = GeckoResult<List<LanguageModel>>()
 
         Mockito.mockStatic(TranslationsController.RuntimeTranslation::class.java, Mockito.CALLS_REAL_METHODS).use {
@@ -2986,7 +3021,7 @@ class GeckoEngineTest {
                     onSuccessCalled = true
                     assertTrue(it[0].language!!.code == code)
                     assertTrue(it[0].language!!.localizedDisplayName == localizedDisplayName)
-                    assertTrue(it[0].isDownloaded == isDownloaded)
+                    assertTrue(it[0].status == ModelState.DOWNLOADED)
                     assertTrue(it[0].size == size)
                 },
                 onError = { onErrorCalled = true },

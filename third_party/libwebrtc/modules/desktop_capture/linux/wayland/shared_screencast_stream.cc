@@ -80,7 +80,7 @@ class SharedScreenCastStreamPrivate {
 
   // Track damage region updates that were reported since the last time
   // frame was captured
-  DesktopRegion damage_region_;
+  DesktopRegion damage_region_ RTC_GUARDED_BY(&latest_frame_lock_);
 
   uint32_t pw_stream_node_id_ = 0;
 
@@ -90,6 +90,9 @@ class SharedScreenCastStreamPrivate {
   webrtc::Mutex queue_lock_;
   ScreenCaptureFrameQueue<SharedDesktopFrame> queue_
       RTC_GUARDED_BY(&queue_lock_);
+  webrtc::Mutex latest_frame_lock_ RTC_ACQUIRED_AFTER(queue_lock_);
+  SharedDesktopFrame* latest_available_frame_
+      RTC_GUARDED_BY(&latest_frame_lock_) = nullptr;
   std::unique_ptr<MouseCursor> mouse_cursor_;
   DesktopVector mouse_cursor_position_ = DesktopVector(-1, -1);
 
@@ -144,7 +147,6 @@ class SharedScreenCastStreamPrivate {
   void ConvertRGBxToBGRx(uint8_t* frame, uint32_t size);
   void UpdateFrameUpdatedRegions(const spa_buffer* spa_buffer,
                                  DesktopFrame& frame);
-  void NotifyCallbackOfNewFrame(std::unique_ptr<SharedDesktopFrame> frame);
 
   // PipeWire callbacks
   static void OnCoreError(void* data,
@@ -327,6 +329,19 @@ void SharedScreenCastStreamPrivate::OnStreamProcess(void* data) {
   }
 
   if (!buffer) {
+    return;
+  }
+
+  struct spa_meta_header* header =
+      static_cast<spa_meta_header*>(spa_buffer_find_meta_data(
+          buffer->buffer, SPA_META_Header, sizeof(*header)));
+  if (header && (header->flags & SPA_META_HEADER_FLAG_CORRUPTED)) {
+    RTC_LOG(LS_INFO) << "Dropping corrupted buffer";
+    if (that->observer_) {
+      that->observer_->OnBufferCorruptedMetadata();
+    }
+    // Queue buffer for reuse; it will not be processed further.
+    pw_stream_queue_buffer(that->pw_stream_, buffer);
     return;
   }
 
@@ -600,13 +615,13 @@ void SharedScreenCastStreamPrivate::StopAndCleanupStream() {
 
 std::unique_ptr<SharedDesktopFrame>
 SharedScreenCastStreamPrivate::CaptureFrame() {
-  webrtc::MutexLock lock(&queue_lock_);
+  webrtc::MutexLock latest_frame_lock(&latest_frame_lock_);
 
-  if (!pw_stream_ || !queue_.current_frame()) {
+  if (!pw_stream_ || !latest_available_frame_) {
     return std::unique_ptr<SharedDesktopFrame>{};
   }
 
-  std::unique_ptr<SharedDesktopFrame> frame = queue_.current_frame()->Share();
+  std::unique_ptr<SharedDesktopFrame> frame = latest_available_frame_->Share();
   if (use_damage_region_) {
     frame->mutable_updated_region()->Swap(&damage_region_);
     damage_region_.Clear();
@@ -630,6 +645,8 @@ DesktopVector SharedScreenCastStreamPrivate::CaptureCursorPosition() {
 void SharedScreenCastStreamPrivate::UpdateFrameUpdatedRegions(
     const spa_buffer* spa_buffer,
     DesktopFrame& frame) {
+  latest_frame_lock_.AssertHeld();
+
   if (!use_damage_region_) {
     frame.mutable_updated_region()->SetRect(
         DesktopRect::MakeSize(frame.size()));
@@ -656,22 +673,6 @@ void SharedScreenCastStreamPrivate::UpdateFrameUpdatedRegions(
         meta_region->region.position.x, meta_region->region.position.y,
         meta_region->region.size.width, meta_region->region.size.height));
   }
-}
-
-void SharedScreenCastStreamPrivate::NotifyCallbackOfNewFrame(
-    std::unique_ptr<SharedDesktopFrame> frame) {
-  if (!pw_stream_ || !frame->data()) {
-    callback_->OnCaptureResult(DesktopCapturer::Result::ERROR_TEMPORARY,
-                               nullptr);
-    return;
-  }
-
-  if (use_damage_region_) {
-    frame->mutable_updated_region()->Swap(&damage_region_);
-    damage_region_.Clear();
-  }
-  callback_->OnCaptureResult(DesktopCapturer::Result::SUCCESS,
-                             std::move(frame));
 }
 
 RTC_NO_SANITIZE("cfi-icall")
@@ -719,7 +720,20 @@ void SharedScreenCastStreamPrivate::ProcessBuffer(pw_buffer* buffer) {
     }
   }
 
-  if (spa_buffer->datas[0].chunk->size == 0) {
+  if (spa_buffer->datas[0].chunk->flags & SPA_CHUNK_FLAG_CORRUPTED) {
+    RTC_LOG(LS_INFO) << "Dropping buffer with corrupted or missing data";
+    if (observer_) {
+      observer_->OnBufferCorruptedData();
+    }
+    return;
+  }
+
+  if (spa_buffer->datas[0].type == SPA_DATA_MemFd &&
+      spa_buffer->datas[0].chunk->size == 0) {
+    RTC_LOG(LS_INFO) << "Dropping buffer with empty data";
+    if (observer_) {
+      observer_->OnEmptyBuffer();
+    }
     return;
   }
 
@@ -826,6 +840,8 @@ void SharedScreenCastStreamPrivate::ProcessBuffer(pw_buffer* buffer) {
     if (observer_) {
       observer_->OnFailedToProcessBuffer();
     }
+    webrtc::MutexLock latest_frame_lock(&latest_frame_lock_);
+    latest_available_frame_ = nullptr;
     return;
   }
 
@@ -844,15 +860,32 @@ void SharedScreenCastStreamPrivate::ProcessBuffer(pw_buffer* buffer) {
     observer_->OnDesktopFrameChanged();
   }
 
-  UpdateFrameUpdatedRegions(spa_buffer, *queue_.current_frame());
-  queue_.current_frame()->set_may_contain_cursor(is_cursor_embedded_);
+  std::unique_ptr<SharedDesktopFrame> frame;
+  {
+    webrtc::MutexLock latest_frame_lock(&latest_frame_lock_);
 
-  if (callback_) {
-    std::unique_ptr<SharedDesktopFrame> frame = queue_.current_frame()->Share();
+    UpdateFrameUpdatedRegions(spa_buffer, *queue_.current_frame());
+    queue_.current_frame()->set_may_contain_cursor(is_cursor_embedded_);
+
+    latest_available_frame_ = queue_.current_frame();
+
+    if (!callback_) {
+      return;
+    }
+
+    frame = latest_available_frame_->Share();
     frame->set_capturer_id(DesktopCapturerId::kWaylandCapturerLinux);
     frame->set_capture_time_ms((rtc::TimeNanos() - capture_start_time_nanos) /
                                rtc::kNumNanosecsPerMillisec);
-    NotifyCallbackOfNewFrame(std::move(frame));
+    if (use_damage_region_) {
+      frame->mutable_updated_region()->Swap(&damage_region_);
+      damage_region_.Clear();
+    }
+  }
+
+  if (callback_) {
+    callback_->OnCaptureResult(DesktopCapturer::Result::SUCCESS,
+                               std::move(frame));
   }
 }
 

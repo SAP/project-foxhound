@@ -220,14 +220,6 @@ struct SizeComputationInput {
    * sizes.
    */
   template <typename SizeOrMaxSize>
-  inline nscoord ComputeISizeValue(const WritingMode aWM,
-                                   const LogicalSize& aContainingBlockSize,
-                                   const LogicalSize& aContentEdgeToBoxSizing,
-                                   nscoord aBoxSizingToMarginEdge,
-                                   const SizeOrMaxSize&) const;
-  // same as previous, but using mComputedBorderPadding, mComputedPadding,
-  // and mComputedMargin
-  template <typename SizeOrMaxSize>
   inline nscoord ComputeISizeValue(const LogicalSize& aContainingBlockSize,
                                    mozilla::StyleBoxSizing aBoxSizing,
                                    const SizeOrMaxSize&) const;
@@ -445,7 +437,7 @@ struct ReflowInput : public SizeComputationInput {
   struct Flags {
     Flags() { memset(this, 0, sizeof(*this)); }
 
-    // cached mFrame->IsReplaced() || mFrame->IsReplacedWithBlock()
+    // Cached mFrame->IsReplaced().
     bool mIsReplaced : 1;
 
     // used by tables to communicate special reflow (in process) to handle
@@ -460,11 +452,11 @@ struct ReflowInput : public SizeComputationInput {
     // infinite loops.
     bool mIsTopOfPage : 1;
 
-    // parent frame is an nsIScrollableFrame and it is assuming a horizontal
+    // parent frame is an ScrollContainerFrame and it is assuming a horizontal
     // scrollbar
     bool mAssumingHScrollbar : 1;
 
-    // parent frame is an nsIScrollableFrame and it is assuming a vertical
+    // parent frame is an ScrollContainerFrame and it is assuming a vertical
     // scrollbar
     bool mAssumingVScrollbar : 1;
 
@@ -740,6 +732,15 @@ struct ReflowInput : public SizeComputationInput {
                                 nsPresContext* aPresContext, bool aIsVertical,
                                 const nsIContent* aContent, nscoord aBlockBSize,
                                 float aFontSizeInflation);
+
+  static nscoord CalcLineHeightForCanvas(const StyleLineHeight& aLh,
+                                         const nsFont& aRelativeToFont,
+                                         nsAtom* aLanguage,
+                                         bool aExplicitLanguage,
+                                         nsPresContext* aPresContext,
+                                         mozilla::WritingMode aWM);
+
+  static constexpr float kNormalLineHeightFactor = 1.2f;
 
   mozilla::LogicalSize ComputeContainingBlockRectangle(
       nsPresContext* aPresContext, const ReflowInput* aContainingBlockRI) const;

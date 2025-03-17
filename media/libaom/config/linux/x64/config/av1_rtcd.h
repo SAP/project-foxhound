@@ -215,10 +215,10 @@ void av1_compute_stats_sse4_1(int wiener_win, const uint8_t *dgd8, const uint8_t
 void av1_compute_stats_avx2(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, int use_downsampled_wiener_stats);
 RTCD_EXTERN void (*av1_compute_stats)(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, int use_downsampled_wiener_stats);
 
-void av1_compute_stats_highbd_c(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
-void av1_compute_stats_highbd_sse4_1(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
-void av1_compute_stats_highbd_avx2(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
-RTCD_EXTERN void (*av1_compute_stats_highbd)(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
+void av1_compute_stats_highbd_c(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
+void av1_compute_stats_highbd_sse4_1(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
+void av1_compute_stats_highbd_avx2(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
+RTCD_EXTERN void (*av1_compute_stats_highbd)(int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth);
 
 void av1_convolve_2d_scale_c(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int x_step_qn, const int subpel_y_qn, const int y_step_qn, ConvolveParams *conv_params);
 void av1_convolve_2d_scale_sse4_1(const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int x_step_qn, const int subpel_y_qn, const int y_step_qn, ConvolveParams *conv_params);
@@ -701,6 +701,15 @@ void av1_resize_and_extend_frame_c(const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CO
 void av1_resize_and_extend_frame_ssse3(const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CONFIG *dst, const InterpFilter filter, const int phase, const int num_planes);
 RTCD_EXTERN void (*av1_resize_and_extend_frame)(const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CONFIG *dst, const InterpFilter filter, const int phase, const int num_planes);
 
+void av1_resize_horz_dir_c(const uint8_t *const input, int in_stride, uint8_t *intbuf, int height, int filteredlength, int width2);
+void av1_resize_horz_dir_avx2(const uint8_t *const input, int in_stride, uint8_t *intbuf, int height, int filteredlength, int width2);
+RTCD_EXTERN void (*av1_resize_horz_dir)(const uint8_t *const input, int in_stride, uint8_t *intbuf, int height, int filteredlength, int width2);
+
+bool av1_resize_vert_dir_c(uint8_t *intbuf, uint8_t *output, int out_stride, int height, int height2, int width2, int start_col);
+bool av1_resize_vert_dir_sse2(uint8_t *intbuf, uint8_t *output, int out_stride, int height, int height2, int width2, int start_col);
+bool av1_resize_vert_dir_avx2(uint8_t *intbuf, uint8_t *output, int out_stride, int height, int height2, int width2, int start_col);
+RTCD_EXTERN bool (*av1_resize_vert_dir)(uint8_t *intbuf, uint8_t *output, int out_stride, int height, int height2, int width2, int start_col);
+
 void av1_round_shift_array_c(int32_t *arr, int size, int bit);
 void av1_round_shift_array_sse4_1(int32_t *arr, int size, int bit);
 RTCD_EXTERN void (*av1_round_shift_array)(int32_t *arr, int size, int bit);
@@ -1086,6 +1095,10 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_AVX2) av1_quantize_lp = av1_quantize_lp_avx2;
     av1_resize_and_extend_frame = av1_resize_and_extend_frame_c;
     if (flags & HAS_SSSE3) av1_resize_and_extend_frame = av1_resize_and_extend_frame_ssse3;
+    av1_resize_horz_dir = av1_resize_horz_dir_c;
+    if (flags & HAS_AVX2) av1_resize_horz_dir = av1_resize_horz_dir_avx2;
+    av1_resize_vert_dir = av1_resize_vert_dir_sse2;
+    if (flags & HAS_AVX2) av1_resize_vert_dir = av1_resize_vert_dir_avx2;
     av1_round_shift_array = av1_round_shift_array_c;
     if (flags & HAS_SSE4_1) av1_round_shift_array = av1_round_shift_array_sse4_1;
     av1_selfguided_restoration = av1_selfguided_restoration_c;

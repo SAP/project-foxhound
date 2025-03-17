@@ -15,6 +15,7 @@
 #include "vm/CompletionKind.h"      // CompletionKind
 #include "vm/FunctionPrefixKind.h"  // FunctionPrefixKind
 #include "vm/GeneratorResumeKind.h"
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 
 namespace js {
 
@@ -103,6 +104,7 @@ class BytecodeLocation {
 
   inline JSAtom* getAtom(const JSScript* script) const;
   inline JSString* getString(const JSScript* script) const;
+  inline bool atomizeString(JSContext* cx, JSScript* script);
   inline PropertyName* getPropertyName(const JSScript* script) const;
   inline JS::BigInt* getBigInt(const JSScript* script) const;
   inline JSObject* getObject(const JSScript* script) const;
@@ -198,8 +200,6 @@ class BytecodeLocation {
 
   bool isStrictSetOp() const { return IsStrictSetPC(rawBytecode_); }
 
-  bool isNameOp() const { return IsNameOp(getOp()); }
-
   bool isSpreadOp() const { return IsSpreadOp(getOp()); }
 
   bool isInvokeOp() const { return IsInvokeOp(getOp()); }
@@ -277,6 +277,11 @@ class BytecodeLocation {
                "the bytecode emitter must never generate JSOp::InitElemArray "
                "with an index exceeding int32_t range");
     return index;
+  }
+
+  TypeofEqOperand getTypeofEqOperand() const {
+    MOZ_ASSERT(is(JSOp::TypeofEq));
+    return TypeofEqOperand::fromRawValue(GET_UINT8(rawBytecode_));
   }
 
   FunctionPrefixKind getFunctionPrefixKind() const {

@@ -4,6 +4,10 @@
 
 //! Parse/serialize and resolve a single color component.
 
+use super::{
+    parsing::{rcs_enabled, ChannelKeyword},
+    AbsoluteColor,
+};
 use crate::{
     parser::ParserContext,
     values::{
@@ -60,6 +64,12 @@ impl<ValueType> ColorComponent<ValueType> {
 /// An utility trait that allows the construction of [ColorComponent]
 /// `ValueType`'s after parsing a color component.
 pub trait ColorComponentType: Sized {
+    // TODO(tlouw): This function should be named according to the rules in the spec
+    //              stating that all the values coming from color components are
+    //              numbers and that each has their own rules dependeing on types.
+    /// Construct a new component from a single value.
+    fn from_value(value: f32) -> Self;
+
     /// Return the [CalcUnits] flags that the impl can handle.
     fn units() -> CalcUnits;
 
@@ -77,6 +87,7 @@ impl<ValueType: ColorComponentType> ColorComponent<ValueType> {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
         allow_none: bool,
+        origin_color: Option<&AbsoluteColor>,
     ) -> Result<Self, ParseError<'i>> {
         let location = input.current_source_location();
 
@@ -84,11 +95,48 @@ impl<ValueType: ColorComponentType> ColorComponent<ValueType> {
             Token::Ident(ref value) if allow_none && value.eq_ignore_ascii_case("none") => {
                 Ok(ColorComponent::None)
             },
+            ref t @ Token::Ident(ref ident) if origin_color.is_some() => {
+                if let Ok(channel_keyword) = ChannelKeyword::from_ident(ident) {
+                    if let Ok(value) = origin_color
+                        .unwrap()
+                        .get_component_by_channel_keyword(channel_keyword)
+                    {
+                        Ok(Self::Value(ValueType::from_value(value.unwrap_or(0.0))))
+                    } else {
+                        Err(location.new_unexpected_token_error(t.clone()))
+                    }
+                } else {
+                    Err(location.new_unexpected_token_error(t.clone()))
+                }
+            },
             Token::Function(ref name) => {
                 let function = SpecifiedCalcNode::math_function(context, name, location)?;
-                let node = SpecifiedCalcNode::parse(context, input, function, ValueType::units())?;
+                let units = if rcs_enabled() {
+                    ValueType::units() | CalcUnits::COLOR_COMPONENT
+                } else {
+                    ValueType::units()
+                };
+                let node = SpecifiedCalcNode::parse(context, input, function, units)?;
 
-                let Ok(resolved_leaf) = node.resolve() else {
+                let Ok(resolved_leaf) = node.resolve_map(|leaf| {
+                    //
+                    Ok(match leaf {
+                        SpecifiedLeaf::ColorComponent(channel_keyword) => {
+                            if let Some(origin_color) = origin_color {
+                                if let Ok(value) =
+                                    origin_color.get_component_by_channel_keyword(*channel_keyword)
+                                {
+                                    SpecifiedLeaf::Number(value.unwrap_or(0.0))
+                                } else {
+                                    return Err(());
+                                }
+                            } else {
+                                return Err(());
+                            }
+                        },
+                        l => l.clone(),
+                    })
+                }) else {
                     return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
                 };
 

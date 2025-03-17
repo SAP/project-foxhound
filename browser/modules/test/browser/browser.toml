@@ -32,9 +32,13 @@ https_first_disabled = true
 ["browser_TabUnloader.js"]
 support-files = [
   "file_webrtc.html",
-  "../../../base/content/test/tabs/dummy_page.html",
-  "../../../base/content/test/tabs/file_mediaPlayback.html",
+  "../../../components/tabbrowser/test/browser/tabs/dummy_page.html",
+  "../../../components/tabbrowser/test/browser/tabs/file_mediaPlayback.html",
   "../../../base/content/test/general/audio.ogg",
+]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # Bug 1781868
+  "os == 'linux' && os_version == '18.04' && tsan", # Bug 1781868
 ]
 
 ["browser_Telemetry_numberOfSiteOrigins.js"]

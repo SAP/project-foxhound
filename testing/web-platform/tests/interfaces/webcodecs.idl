@@ -229,7 +229,7 @@ dictionary EncodedAudioChunkInit {
   required EncodedAudioChunkType type;
   [EnforceRange] required long long timestamp;    // microseconds
   [EnforceRange] unsigned long long duration;     // microseconds
-  required BufferSource data;
+  required AllowSharedBufferSource data;
   sequence<ArrayBuffer> transfer = [];
 };
 
@@ -371,6 +371,8 @@ dictionary VideoFrameBufferInit {
   VideoColorSpaceInit colorSpace;
 
   sequence<ArrayBuffer> transfer = [];
+
+  VideoFrameMetadata metadata;
 };
 
 dictionary VideoFrameMetadata {
@@ -380,6 +382,8 @@ dictionary VideoFrameMetadata {
 dictionary VideoFrameCopyToOptions {
   DOMRectInit rect;
   sequence<PlaneLayout> layout;
+  VideoPixelFormat format;
+  PredefinedColorSpace colorSpace;
 };
 
 dictionary PlaneLayout {

@@ -41,6 +41,7 @@ DIRS += [
     "enterprisepolicies",
     "extensions",
     "firefoxview",
+    "genai",
     "ion",
     "messagepreview",
     "migration",
@@ -51,7 +52,6 @@ DIRS += [
     "pocket",
     "preferences",
     "privatebrowsing",
-    "profiles",
     "prompts",
     "protections",
     "protocolhandler",
@@ -64,9 +64,10 @@ DIRS += [
     "shopping",
     "sidebar",
     "syncedtabs",
-    "tabpreview",
+    "tabbrowser",
     "tabunloader",
     "textrecognition",
+    "topsites",
     "translations",
     "uitour",
     "urlbar",
@@ -74,6 +75,8 @@ DIRS += [
 
 DIRS += ["build"]
 
+if CONFIG["MOZ_SELECTABLE_PROFILES"]:
+    DIRS += ["profiles"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     DIRS += ["touchbar"]

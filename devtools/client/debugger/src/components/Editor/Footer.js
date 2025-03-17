@@ -319,8 +319,8 @@ class SourceFooter extends PureComponent {
         React.createElement(MenuItem, {
           className: "menu-item debugger-jump-mapped-source",
           label: this.props.mappedSource.isOriginal
-            ? L10N.getStr("sourceFooter.sourceMapButton.jumpToGeneratedSource")
-            : L10N.getStr("sourceFooter.sourceMapButton.jumpToOriginalSource"),
+            ? L10N.getStr("sourceFooter.sourceMapButton.jumpToOriginalSource")
+            : L10N.getStr("sourceFooter.sourceMapButton.jumpToGeneratedSource"),
           tooltip: this.props.mappedSource.url,
           onClick: () =>
             this.props.jumpToMappedLocation(this.props.selectedLocation),
@@ -458,8 +458,6 @@ const mapStateToProps = state => {
       ? getSourceMapResolvedURL(state, selectedLocation.sourceActor.id)
       : null,
     isSourceActorWithSourceMap: isSourceActorWithSourceMapProp,
-
-    sourceMapURL: selectedLocation?.sourceActor.sourceMapURL,
 
     areSourceMapsEnabled: areSourceMapsEnabledProp,
     shouldSelectOriginalLocation: getShouldSelectOriginalLocation(state),

@@ -166,7 +166,7 @@ nsHTTPCompressConv::MaybeRetarget(nsIRequest* request) {
   if (!req) {
     return NS_ERROR_NO_INTERFACE;
   }
-  if (!StaticPrefs::network_decompression_off_mainthread()) {
+  if (!StaticPrefs::network_decompression_off_mainthread2()) {
     return NS_OK;
   }
   nsCOMPtr<nsISerialEventTarget> target;
@@ -667,7 +667,7 @@ nsHTTPCompressConv::OnDataAvailable(nsIRequest* request, nsIInputStream* iStr,
             return NS_ERROR_INVALID_CONTENT_ENCODING;
           }
         } /* for */
-      }   /* gzip */
+      } /* gzip */
       break;
 
     case HTTP_COMPRESS_BROTLI: {
@@ -736,8 +736,15 @@ nsresult nsHTTPCompressConv::do_OnDataAvailable(nsIRequest* request,
                                                 uint64_t offset,
                                                 const char* buffer,
                                                 uint32_t count) {
-  LOG(("nsHttpCompressConv %p do_OnDataAvailable mDispatchToMainThread %d",
-       this, mDispatchToMainThread));
+  LOG(
+      ("nsHttpCompressConv %p do_OnDataAvailable mDispatchToMainThread %d "
+       "count %u",
+       this, mDispatchToMainThread, count));
+  if (count == 0) {
+    // Never send 0-byte OnDataAvailables; imglib at least barfs on them and
+    // they're not useful
+    return NS_OK;
+  }
   if (mDispatchToMainThread && !NS_IsMainThread()) {
     nsCOMPtr<nsIInputStream> stream;
     MOZ_TRY(NS_NewByteInputStream(getter_AddRefs(stream), Span(buffer, count),
@@ -937,7 +944,8 @@ uint32_t nsHTTPCompressConv::check_header(nsIInputStream* iStr,
 
 NS_IMETHODIMP
 nsHTTPCompressConv::CheckListenerChain() {
-  if (XRE_IsContentProcess()) {
+  if (XRE_IsContentProcess() &&
+      StaticPrefs::network_decompression_off_mainthread2()) {
     // handle decompression OMT always.  If the chain needs to be MT,
     // we'll determine that in OnStartRequest and dispatch to MT
     return NS_OK;

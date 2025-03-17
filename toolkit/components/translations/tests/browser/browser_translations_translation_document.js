@@ -12,7 +12,8 @@ const { TranslationsDocument, LRUCache } = ChromeUtils.importESModule(
 /**
  * @param {string} html
  * @param {{
- *  mockedTranslatorPort?: (message: string) => Promise<string>
+ *  mockedTranslatorPort?: (message: string) => Promise<string>,
+ *  mockedReportVisibleChange?: () => void
  * }} [options]
  */
 async function createDoc(html, options) {
@@ -42,6 +43,7 @@ async function createDoc(html, options) {
       () => {
         throw new Error("Cannot request a new port");
       },
+      options?.mockedReportVisibleChange ?? (() => {}),
       performance.now(),
       () => performance.now(),
       new LRUCache()
@@ -81,12 +83,21 @@ async function createDoc(html, options) {
   return { htmlMatches, cleanup, translate, document };
 }
 
-add_task(async function test_translated_div_element() {
-  const { translate, htmlMatches, cleanup } = await createDoc(/* html */ `
+add_task(async function test_translated_div_element_and_visible_change() {
+  let hasVisibleChangeOccurred = false;
+  const { translate, htmlMatches, cleanup } = await createDoc(
+    /* html */ `
     <div>
       This is a simple translation.
     </div>
-  `);
+  `,
+    {
+      mockedTranslatorPort: createMockedTranslatorPort(),
+      mockedReportVisibleChange: () => {
+        hasVisibleChangeOccurred = true;
+      },
+    }
+  );
 
   translate();
 
@@ -99,6 +110,7 @@ add_task(async function test_translated_div_element() {
     `
   );
 
+  Assert.ok(hasVisibleChangeOccurred, "A visible change was reported.");
   cleanup();
 });
 
@@ -197,18 +209,18 @@ add_task(async function test_translated_nested_elements() {
       <div class="menu-main-menu-container">
         <ul class="menu-list">
           <li class="menu-item menu-item-top-level">
-            <a href="/" data-moz-translations-id="0">
+            <a href="/">
               LATEST WORK
             </a>
           </li>
           <li class="menu-item menu-item-top-level">
-            <a href="/category/interactive/" data-moz-translations-id="0">
+            <a href="/category/interactive/">
               CREATIVE CODING
             </a>
           </li>
           <li id="menu-id-categories" class="menu-item menu-item-top-level">
-            <a href="#" data-moz-translations-id="0">
-              <span class="category-arrow" data-moz-translations-id="1">
+            <a href="#">
+              <span class="category-arrow">
                 CATEGORIES
               </span>
             </a>
@@ -434,11 +446,11 @@ add_task(async function test_translation_batching() {
       aaaa aa a aaaaaa aaaaaaa.
     </div>
     <div>
-      <span data-moz-translations-id="0">
+      <span>
         bbbb bbbbbb
       </span>
       bbbbbbb bbbbbbbbb bb b
-      <b data-moz-translations-id="1">
+      <b>
         bbbbb
       </b>
       .
@@ -479,7 +491,7 @@ add_task(async function test_translation_inline_styling() {
       aaaa aaaa aa aaaa aa a aaaaa.
       <span>
         bbbbbb bbbb bb bbbb bb b
-        <b data-moz-translations-id="0">
+        <b>
           bbbbb
         </b>
         .
@@ -529,22 +541,22 @@ add_task(async function test_many_inlines() {
     "Batching",
     /* html */ `
     <div>
-      <span data-moz-translations-id="0">
+      <span>
         aaaa aa a
       </span>
-      <span data-moz-translations-id="1">
+      <span>
         aaaa aaaaaa
       </span>
-      <span data-moz-translations-id="2">
+      <span>
         aaaaaaa aaaa aaaaaaaa
       </span>
-      <span data-moz-translations-id="3">
+      <span>
         aaaa aaaa aaaaaaaa
       </span>
-      <span data-moz-translations-id="4">
+      <span>
         aa aaaa aaaa aaaaaaa
       </span>
-      <span data-moz-translations-id="5">
+      <span>
         aa aaaaa aaaa aaaa.
       </span>
     </div>
@@ -746,10 +758,10 @@ add_task(async function test_display_none() {
     /* html */ `
     <p>
       aaaa aa aaaa aaaa.
-      <span data-moz-translations-id="0">
+      <span>
         aa aaa aaaaaa aaaaaaaa
       </span>
-      <style data-moz-translations-id="1">
+      <style>
       </style>
     </p>
     `
@@ -882,13 +894,13 @@ add_task(async function test_reordering() {
   await htmlMatches(
     "Nodes can be re-ordered by the translator",
     /* html */ `
-      <span data-moz-translations-id="1">
+      <span>
         A - THIS WAS SECOND.
       </span>
-      <span data-moz-translations-id="0">
+      <span>
         B - THIS WAS FIRST.
       </span>
-      <span data-moz-translations-id="2">
+      <span>
         C - THIS WAS THIRD.
       </span>
     `
@@ -916,7 +928,7 @@ add_task(async function test_reordering2() {
   await htmlMatches(
     "Text nodes can be re-ordered.",
     /* html */ `
-      <span data-moz-translations-id="0">
+      <span>
         A - THIS WAS SECOND.
       </span>
       B - THIS WAS FIRST.
@@ -1271,11 +1283,11 @@ add_task(async function test_title_attribute_subnodes() {
     "Titles are translated",
     /* html */ `
       <div>
-        <span data-moz-translations-id="0">SPAN TEXT 1</span>
-        <span data-moz-translations-id="1">SPAN TEXT 2</span>
-        <span data-moz-translations-id="2">SPAN TEXT 3</span>
-        <span data-moz-translations-id="3">SPAN TEXT 4</span>
-        <span data-moz-translations-id="4">SPAN TEXT 5</span>
+        <span>SPAN TEXT 1</span>
+        <span>SPAN TEXT 2</span>
+        <span>SPAN TEXT 3</span>
+        <span>SPAN TEXT 4</span>
+        <span>SPAN TEXT 5</span>
         THIS IS TEXT.
       </div>
     `
@@ -1302,11 +1314,11 @@ add_task(async function test_title_attribute_subnodes() {
     "Titles are translated",
     /* html */ `
       <div title="TITLE IN DIV">
-        <span title="TITLE 1" data-moz-translations-id="0">SPAN TEXT 1</span>
-        <span title="TITLE 2" data-moz-translations-id="1">SPAN TEXT 2</span>
-        <span title="TITLE 3" data-moz-translations-id="2">SPAN TEXT 3</span>
-        <span title="TITLE 4" data-moz-translations-id="3">SPAN TEXT 4</span>
-        <span title="TITLE 5" data-moz-translations-id="4">SPAN TEXT 5</span>
+        <span title="TITLE 1">SPAN TEXT 1</span>
+        <span title="TITLE 2">SPAN TEXT 2</span>
+        <span title="TITLE 3">SPAN TEXT 3</span>
+        <span title="TITLE 4">SPAN TEXT 4</span>
+        <span title="TITLE 5">SPAN TEXT 5</span>
         THIS IS TEXT.
       </div>
     `
@@ -1334,9 +1346,9 @@ add_task(async function test_attributes() {
     /* html */ `
       <div>
       THIS IS THE OUTER DIV
-      <label data-moz-translations-id="0">
+      <label>
       ENTER INFORMATION:
-        <input type="text" data-moz-translations-id="1">
+        <input type="text">
       </label>
     </div>
     `
@@ -1364,9 +1376,9 @@ add_task(async function test_attributes() {
     /* html */ `
       <div title="TITLES ARE USER VISIBLE">
       THIS IS THE OUTER DIV
-      <label data-moz-translations-id="0">
+      <label>
       ENTER INFORMATION:
-        <input type="text" placeholder="THIS IS A PLACEHOLDER" data-moz-translations-id="1">
+        <input type="text" placeholder="THIS IS A PLACEHOLDER">
       </label>
     </div>
     `
@@ -1395,9 +1407,9 @@ add_task(async function test_attributes() {
     /* html */ `
       <div>
         THIS IS THE OUTER DIV
-        <label data-moz-translations-id="0">
+        <label>
           ENTER INFORMATION 1:
-          <label data-moz-translations-id="1">
+          <label>
             ENTER INFORMATION 2:
           </label>
         </label>

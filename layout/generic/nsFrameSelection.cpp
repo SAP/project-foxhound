@@ -19,6 +19,7 @@
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_bidi.h"
@@ -38,7 +39,6 @@
 #include "nsTArray.h"
 #include "nsTableWrapperFrame.h"
 #include "nsTableCellFrame.h"
-#include "nsIScrollableFrame.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsTextFragment.h"
 #include <algorithm>
@@ -1441,11 +1441,6 @@ nsresult nsFrameSelection::TakeFocus(nsIContent& aNewFocus,
     }
   }
 
-  // Don't notify selection listeners if batching is on:
-  if (IsBatching()) {
-    return NS_OK;
-  }
-
   // Be aware, the Selection instance may be destroyed after this call.
   return NotifySelectionListeners(SelectionType::eNormal);
 }
@@ -1655,7 +1650,7 @@ nsIFrame* nsFrameSelection::GetFrameToPageSelect() const {
       return nullptr;
     }
   } else {
-    rootFrameToSelect = mPresShell->GetRootScrollFrame();
+    rootFrameToSelect = mPresShell->GetRootScrollContainerFrame();
     if (NS_WARN_IF(!rootFrameToSelect)) {
       return nullptr;
     }
@@ -1667,16 +1662,16 @@ nsIFrame* nsFrameSelection::GetFrameToPageSelect() const {
     // parent under the root frame.
     for (nsIFrame* frame = contentToSelect->GetPrimaryFrame();
          frame && frame != rootFrameToSelect; frame = frame->GetParent()) {
-      nsIScrollableFrame* scrollableFrame = do_QueryFrame(frame);
-      if (!scrollableFrame) {
+      ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(frame);
+      if (!scrollContainerFrame) {
         continue;
       }
-      ScrollStyles scrollStyles = scrollableFrame->GetScrollStyles();
+      ScrollStyles scrollStyles = scrollContainerFrame->GetScrollStyles();
       if (scrollStyles.mVertical == StyleOverflow::Hidden) {
         continue;
       }
       layers::ScrollDirections directions =
-          scrollableFrame->GetAvailableScrollingDirections();
+          scrollContainerFrame->GetAvailableScrollingDirections();
       if (directions.contains(layers::ScrollDirection::eVertical)) {
         // If there is sub scrollable frame, let's use its page size to select.
         return frame;
@@ -1698,12 +1693,13 @@ nsresult nsFrameSelection::PageMove(bool aForward, bool aExtend,
   // expected behavior for PageMove is to scroll AND move the caret
   // and remain relative position of the caret in view. see Bug 4302.
 
-  // Get the scrollable frame.  If aFrame is not scrollable, this is nullptr.
-  nsIScrollableFrame* scrollableFrame = aFrame->GetScrollTargetFrame();
+  // Get the scroll container frame.  If aFrame is not scrollable, this is
+  // nullptr.
+  ScrollContainerFrame* scrollContainerFrame = aFrame->GetScrollTargetFrame();
   // Get the scrolled frame.  If aFrame is not scrollable, this is aFrame
   // itself.
   nsIFrame* scrolledFrame =
-      scrollableFrame ? scrollableFrame->GetScrolledFrame() : aFrame;
+      scrollContainerFrame ? scrollContainerFrame->GetScrolledFrame() : aFrame;
   if (!scrolledFrame) {
     return NS_OK;
   }
@@ -1732,7 +1728,7 @@ nsresult nsFrameSelection::PageMove(bool aForward, bool aExtend,
     }
   }
 
-  if (scrollableFrame) {
+  if (scrollContainerFrame) {
     // If there is a scrollable frame, adjust pseudo-click position with page
     // scroll amount.
     // XXX This may scroll more than one page if ScrollSelectionIntoView is
@@ -1741,9 +1737,9 @@ nsresult nsFrameSelection::PageMove(bool aForward, bool aExtend,
     //     the frame, ScrollSelectionIntoView additionally scrolls to show
     //     the caret entirely.
     if (aForward) {
-      caretPos.y += scrollableFrame->GetPageScrollAmount().height;
+      caretPos.y += scrollContainerFrame->GetPageScrollAmount().height;
     } else {
-      caretPos.y -= scrollableFrame->GetPageScrollAmount().height;
+      caretPos.y -= scrollContainerFrame->GetPageScrollAmount().height;
     }
   } else {
     // Otherwise, adjust pseudo-click position with the frame size.
@@ -1793,10 +1789,10 @@ nsresult nsFrameSelection::PageMove(bool aForward, bool aExtend,
       aSelectionIntoView == SelectionIntoView::IfChanged && !selectionChanged);
 
   // Then, scroll the given frame one page.
-  if (scrollableFrame) {
+  if (scrollContainerFrame) {
     // If we'll call ScrollSelectionIntoView later and selection wasn't
     // changed and we scroll outside of selection limiter, we shouldn't use
-    // smooth scroll here because nsIScrollableFrame uses normal runnable,
+    // smooth scroll here because ScrollContainerFrame uses normal runnable,
     // but ScrollSelectionIntoView uses early runner and it cancels the
     // pending smooth scroll.  Therefore, if we used smooth scroll in such
     // case, ScrollSelectionIntoView would scroll to show caret instead of
@@ -1805,8 +1801,8 @@ nsresult nsFrameSelection::PageMove(bool aForward, bool aExtend,
                                     scrolledFrame != frameToClick
                                 ? ScrollMode::Instant
                                 : ScrollMode::Smooth;
-    scrollableFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1),
-                              ScrollUnit::PAGES, scrollMode);
+    scrollContainerFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1),
+                                   ScrollUnit::PAGES, scrollMode);
   }
 
   // Finally, scroll selection into view if requested.
@@ -2021,20 +2017,30 @@ void nsFrameSelection::EndBatchChanges(const char* aRequesterFuncName,
   MOZ_ASSERT(mBatching.mCounter > 0, "Bad mBatching.mCounter");
   mBatching.mCounter--;
 
-  if (mBatching.mCounter == 0 && mBatching.mChangesDuringBatching) {
+  if (mBatching.mCounter == 0) {
     AddChangeReasons(aReasons);
     mCaretMoveAmount = eSelectNoAmount;
-    mBatching.mChangesDuringBatching = false;
-    // Be aware, the Selection instance may be destroyed after this call.
-    NotifySelectionListeners(SelectionType::eNormal);
+    // Be aware, the Selection instance may be destroyed after this call,
+    // hence make sure that this instance remains until the end of this call.
+    RefPtr frameSelection = this;
+    for (auto selectionType : kPresentSelectionTypes) {
+      // This returns NS_ERROR_FAILURE if being called for a selection that is
+      // not present. We don't care about that here, so we silently ignore it
+      // and continue.
+      Unused << NotifySelectionListeners(selectionType, IsBatchingEnd::Yes);
+    }
   }
 }
 
 nsresult nsFrameSelection::NotifySelectionListeners(
-    SelectionType aSelectionType) {
+    SelectionType aSelectionType, IsBatchingEnd aEndBatching) {
   int8_t index = GetIndexFromSelectionType(aSelectionType);
   if (index >= 0 && mDomSelections[index]) {
     RefPtr<Selection> selection = mDomSelections[index];
+    if (aEndBatching == IsBatchingEnd::Yes &&
+        !selection->ChangesDuringBatching()) {
+      return NS_OK;
+    }
     selection->NotifySelectionListeners();
     mCaretMoveAmount = eSelectNoAmount;
     return NS_OK;

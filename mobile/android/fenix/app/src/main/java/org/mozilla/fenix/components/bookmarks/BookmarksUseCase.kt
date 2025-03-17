@@ -9,7 +9,7 @@ import mozilla.appservices.places.BookmarkRoot
 import mozilla.appservices.places.uniffi.PlacesApiException
 import mozilla.components.concept.storage.BookmarksStorage
 import mozilla.components.concept.storage.HistoryStorage
-import org.mozilla.fenix.home.recentbookmarks.RecentBookmark
+import org.mozilla.fenix.home.bookmarks.Bookmark
 import java.util.concurrent.TimeUnit
 
 /**
@@ -20,12 +20,17 @@ class BookmarksUseCase(
     historyStorage: HistoryStorage,
 ) {
 
+    /**
+     * Use case for adding a new bookmark.
+     *
+     * @param storage [BookmarksStorage] used to add and retrieve bookmark data.
+     */
     class AddBookmarksUseCase internal constructor(private val storage: BookmarksStorage) {
 
         /**
          * Adds a new bookmark with the provided [url] and [title].
          *
-         * @return The result if the operation was executed or not. A bookmark may not be added if
+         * @return The guid of the newly added bookmark or null. A bookmark may not be added if
          * one with the identical [url] already exists.
          */
         @WorkerThread
@@ -34,21 +39,22 @@ class BookmarksUseCase(
             title: String,
             position: UInt? = null,
             parentGuid: String? = null,
-        ): Boolean {
+        ): String? {
             return try {
                 val canAdd = storage.getBookmarksWithUrl(url).firstOrNull { it.url == url } == null
 
-                if (canAdd) {
+                return if (canAdd) {
                     storage.addItem(
                         parentGuid ?: BookmarkRoot.Mobile.id,
                         url = url,
                         title = title,
                         position = position,
                     )
+                } else {
+                    null
                 }
-                canAdd
             } catch (e: PlacesApiException.UrlParseFailed) {
-                false
+                null
             }
         }
     }
@@ -68,27 +74,26 @@ class BookmarksUseCase(
          * Retrieves a list of recently added bookmarks, if any, up to maximum.
          *
          * @param count The number of recent bookmarks to return.
-         * @param maxAgeInMs The maximum age (ms) of a recently added bookmark to return.
-         * @return a list of [RecentBookmark] that were added no older than specify by [maxAgeInMs],
-         * if any, up to a number specified by [count].
+         * @param previewImageMaxAgeMs The maximum age (ms) to search history for preview image URLs.
+         * @return a list of [Bookmark]s if any, up to a number specified by [count].
          */
         @WorkerThread
         suspend operator fun invoke(
             count: Int = DEFAULT_BOOKMARKS_TO_RETRIEVE,
-            maxAgeInMs: Long = TimeUnit.DAYS.toMillis(DEFAULT_BOOKMARKS_DAYS_AGE_TO_RETRIEVE),
-        ): List<RecentBookmark> {
+            previewImageMaxAgeMs: Long = TimeUnit.DAYS.toMillis(DEFAULT_BOOKMARKS_LENGTH_DAYS_PREVIEW_IMAGE_SEARCH),
+        ): List<Bookmark> {
             val currentTime = System.currentTimeMillis()
 
             // Fetch visit information within the time range of now and the specified maximum age.
             val history = historyStorage?.getDetailedVisits(
-                start = currentTime - maxAgeInMs,
+                start = currentTime - previewImageMaxAgeMs,
                 end = currentTime,
             )
 
             return bookmarksStorage
-                .getRecentBookmarks(count, maxAgeInMs)
+                .getRecentBookmarks(count)
                 .map { bookmark ->
-                    RecentBookmark(
+                    Bookmark(
                         title = bookmark.title,
                         url = bookmark.url,
                         previewImageUrl = history?.find { bookmark.url == it.url }?.previewImageUrl,
@@ -107,9 +112,9 @@ class BookmarksUseCase(
 
     companion object {
         // Number of recent bookmarks to retrieve.
-        const val DEFAULT_BOOKMARKS_TO_RETRIEVE = 4
+        const val DEFAULT_BOOKMARKS_TO_RETRIEVE = 8
 
         // The maximum age in days of a recent bookmarks to retrieve.
-        const val DEFAULT_BOOKMARKS_DAYS_AGE_TO_RETRIEVE = 10L
+        const val DEFAULT_BOOKMARKS_LENGTH_DAYS_PREVIEW_IMAGE_SEARCH = 10L
     }
 }

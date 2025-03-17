@@ -38,6 +38,8 @@
     <string name="mozac_feature_prompt_error_empty_password_2">Skriv inn passord</string>
     <!-- Error text displayed underneath the login field when it is in an error case -->
     <string name="mozac_feature_prompt_error_unknown_cause" moz:removedIn="125" tools:ignore="UnusedResources">Klarte ikkje å lagre innlogginga</string>
+    <!-- Error text displayed underneath the password field when it is in an error case -->
+    <string name="mozac_feature_prompt_error_unknown_cause_2">Kan ikkje lagre passordet</string>
     <!-- Prompt message displayed when app detects a user has entered a new username and password and user decides if app should save the new login. -->
     <string name="mozac_feature_prompt_login_save_headline" moz:removedIn="125" tools:ignore="UnusedResources">Lagre denne innlogginga?</string>
     <!-- Prompt message displayed when app detects a user has entered a new username and password and user decides if app should save the new password. -->
@@ -103,6 +105,8 @@
     <string name="mozac_feature_prompts_expand_logins_content_description_2">Utvid lagra passord</string>
     <!-- Content description for collapsing the saved logins options in the select login prompt -->
     <string name="mozac_feature_prompts_collapse_logins_content_description" moz:removedIn="125" tools:ignore="UnusedResources">Slå saman føreslåtte innloggingar</string>
+    <!-- Content description for collapsing the saved passwords options in the select password prompt -->
+    <string name="mozac_feature_prompts_collapse_logins_content_description_2">Skjul lagra passord</string>
     <!-- Header for the select login prompt to allow users to fill a form with a saved login -->
     <string name="mozac_feature_prompts_saved_logins" moz:removedIn="125" tools:ignore="UnusedResources">Føreslåtte innloggingar</string>
 
@@ -112,9 +116,25 @@
     <!-- Content description for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
     <string name="mozac_feature_prompts_suggest_strong_password_content_description">Føreslå sterkt passord</string>
     <!-- Header for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
-    <string name="mozac_feature_prompts_suggest_strong_password">Føreslå sterkt passord</string>
+    <string name="mozac_feature_prompts_suggest_strong_password" moz:removedIn="128" tools:ignore="UnusedResources">Føreslå sterkt passord</string>
+    <!-- Header for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
+    <string name="mozac_feature_prompts_suggest_strong_password_2">Bruk sterkt passord</string>
     <!-- Title for using the suggest strong password confirmation dialog. %1$s will be replaced with the generated password -->
     <string name="mozac_feature_prompts_suggest_strong_password_message">Bruk sterkt passord: %1$s</string>
+
+    <!-- Title for using the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_title">Bruke sterkt passord?</string>
+    <!-- Content description for the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_description">Beskytt kontoen din ved å bruke eit sterkt, tilfeldig generert passord. Få rask tilgang til passorda dine ved å lagre det i kontoen din.</string>
+    <!-- Pressing this will use the suggested strong password -->
+    <string name="mozac_feature_prompts_suggest_strong_password_use_password">Bruk passord</string>
+    <!-- Pressing this will dismiss the suggested strong password dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Ikkje no</string>
+    <!-- Title for showing the suggest strong password saved confirmation snackbar -->
+    <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title">Passord lagra</string>
+    <!-- Title for showing the suggest strong password updated confirmation snackbar -->
+    <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Passord oppdatert</string>
+
 
     <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
     <string name="mozac_feature_prompt_repost_title">Sende data på nytt til denne nettstaden?</string>
@@ -131,8 +151,12 @@
     <string name="mozac_feature_prompts_select_credit_card_2">Bruk lagra kort</string>
     <!-- Content description for expanding the select credit card options in the select credit card prompt. -->
     <string name="mozac_feature_prompts_expand_credit_cards_content_description" moz:removedIn="125" tools:ignore="UnusedResources">Utvid føreslått betalingskort</string>
+    <!-- Content description for expanding the saved card options in the select card prompt. -->
+    <string name="mozac_feature_prompts_expand_credit_cards_content_description_2">Utvid lagra passord</string>
     <!-- Content description for collapsing the select credit card options in the select credit prompt. -->
     <string name="mozac_feature_prompts_collapse_credit_cards_content_description" moz:removedIn="125" tools:ignore="UnusedResources">Minimer føreslått betalingskort</string>
+    <!-- Content description for collapsing the saved card options in the select prompt. -->
+    <string name="mozac_feature_prompts_collapse_credit_cards_content_description_2">Skjul lagra kort</string>
     <!-- Option in the expanded select credit card prompt that links to credit cards settings. -->
     <string name="mozac_feature_prompts_manage_credit_cards" moz:removedIn="125" tools:ignore="UnusedResources">Handsam betalingskort</string>
     <!-- Option in the expanded select card prompt that links to cards settings. -->
@@ -144,6 +168,9 @@
     <!-- Subtitle text displayed under the title of the save credit card dialog. -->
     <string name="mozac_feature_prompts_save_credit_card_prompt_body" moz:removedIn="125" tools:ignore="UnusedResources">Kortnummeret vil bli kryptert. Tryggingskoden vert ikkje lagra.</string>
 
+    <!-- Subtitle text displayed under the title of the saved card dialog. Parameter will be replaced by app name-->
+    <string name="mozac_feature_prompts_save_credit_card_prompt_body_2">%s krypterer kortnummeret ditt. Sikkerheitskoden din vert ikkje lagra.</string>
+
     <!-- Address Autofill -->
     <!-- Header for the select address prompt to allow users to fill a form with a saved address. -->
     <string name="mozac_feature_prompts_select_address_2">Vel adresse</string>
@@ -153,6 +180,8 @@
     <string name="mozac_feature_prompts_expand_address_content_description_2">Utvid lagra adresser</string>
     <!-- Content description for collapsing the select address options in the select address prompt. -->
     <string name="mozac_feature_prompts_collapse_address_content_description" moz:removedIn="125" tools:ignore="UnusedResources">Slå saman føreslåtte adresser</string>
+    <!-- Content description for collapsing the saved address options in the select address prompt. -->
+    <string name="mozac_feature_prompts_collapse_address_content_description_2">Skjul lagra adresser</string>
     <!-- Text for the manage addresses button. -->
     <string name="mozac_feature_prompts_manage_address">Handsam adresser</string>
 

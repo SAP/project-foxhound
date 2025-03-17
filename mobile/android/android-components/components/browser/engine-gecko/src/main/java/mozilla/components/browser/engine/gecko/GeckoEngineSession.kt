@@ -4,7 +4,6 @@
 
 package mozilla.components.browser.engine.gecko
 
-import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
@@ -58,6 +57,7 @@ import mozilla.components.support.base.facts.Action
 import mozilla.components.support.base.facts.Fact
 import mozilla.components.support.base.facts.collect
 import mozilla.components.support.base.log.logger.Logger
+import mozilla.components.support.ktx.kotlin.decode
 import mozilla.components.support.ktx.kotlin.isEmail
 import mozilla.components.support.ktx.kotlin.isExtensionUrl
 import mozilla.components.support.ktx.kotlin.isGeoLocation
@@ -557,9 +557,8 @@ class GeckoEngineSession(
     /**
      * See [EngineSession.findNext]
      */
-    @SuppressLint("WrongConstant") // FinderFindFlags annotation doesn't include a 0 value.
     override fun findNext(forward: Boolean) {
-        val findFlags = if (forward) 0 else GeckoSession.FINDER_FIND_BACKWARDS
+        val findFlags = if (forward) GeckoSession.FINDER_FIND_FORWARD else GeckoSession.FINDER_FIND_BACKWARDS
         geckoSession.finder.find(null, findFlags).then { result: GeckoSession.FinderResult? ->
             result?.let {
                 val activeMatchOrdinal = if (it.current > 0) it.current - 1 else it.current
@@ -612,14 +611,14 @@ class GeckoEngineSession(
     /**
      * See [EngineSession.checkForFormData].
      */
-    override fun checkForFormData() {
+    override fun checkForFormData(adjustPriority: Boolean) {
         geckoSession.containsFormData().then(
             { result ->
                 if (result == null) {
                     logger.error("No result from GeckoView containsFormData.")
                     return@then GeckoResult<Boolean>()
                 }
-                notifyObservers { onCheckForFormData(result) }
+                notifyObservers { onCheckForFormData(result, adjustPriority) }
                 GeckoResult<Boolean>()
             },
             { throwable ->
@@ -1159,9 +1158,9 @@ class GeckoEngineSession(
 
             return when {
                 maybeInterceptRequest(request, false) != null ->
-                    GeckoResult.fromValue(AllowOrDeny.DENY)
+                    GeckoResult.deny()
                 request.target == NavigationDelegate.TARGET_WINDOW_NEW ->
-                    GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                    GeckoResult.allow()
                 else -> {
                     notifyObservers {
                         onLoadRequest(
@@ -1171,7 +1170,7 @@ class GeckoEngineSession(
                         )
                     }
 
-                    GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                    GeckoResult.allow()
                 }
             }
         }
@@ -1181,15 +1180,15 @@ class GeckoEngineSession(
             request: NavigationDelegate.LoadRequest,
         ): GeckoResult<AllowOrDeny> {
             if (request.target == NavigationDelegate.TARGET_WINDOW_NEW) {
-                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                return GeckoResult.allow()
             }
 
             return if (maybeInterceptRequest(request, true) != null) {
-                GeckoResult.fromValue(AllowOrDeny.DENY)
+                GeckoResult.deny()
             } else {
                 // Not notifying session observer because of performance concern and currently there
                 // is no use case.
-                GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                GeckoResult.allow()
             }
         }
 
@@ -1468,10 +1467,6 @@ class GeckoEngineSession(
             notifyObservers { onCookieBannerChange(CookieBannerHandlingStatus.HANDLED) }
         }
 
-        override fun onProductUrl(session: GeckoSession) {
-            notifyObservers { onProductUrlChange(true) }
-        }
-
         override fun onFirstComposite(session: GeckoSession) = Unit
 
         override fun onFirstContentfulPaint(session: GeckoSession) {
@@ -1526,7 +1521,7 @@ class GeckoEngineSession(
                         url = url,
                         contentLength = contentLength,
                         contentType = DownloadUtils.sanitizeMimeType(contentType),
-                        fileName = fileName.sanitizeFileName(),
+                        fileName = fileName.sanitizeFileName().decode(),
                         response = response,
                         isPrivate = privateMode,
                         openInApp = webResponse.requestExternalApp,

@@ -9,6 +9,7 @@
 
 #include "AudioSampleFormat.h"
 #include "MediaInfo.h"
+#include "MediaCodecsSupport.h"
 #include "VideoLimits.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Attributes.h"
@@ -552,6 +553,10 @@ bool IsWaveMimetype(const nsACString& aMimeType);
 
 void DetermineResolutionForTelemetry(const MediaInfo& aInfo,
                                      nsCString& aResolutionOut);
+
+// True if given MediaCodecsSupported contains any hardware decoding support.
+bool ContainHardwareCodecsSupported(
+    const media::MediaCodecsSupported& aSupport);
 
 }  // end namespace mozilla
 

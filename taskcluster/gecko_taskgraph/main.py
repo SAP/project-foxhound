@@ -63,7 +63,7 @@ def format_taskgraph_json(taskgraph):
 
 
 def format_taskgraph_yaml(taskgraph):
-    from mozbuild.util import ReadOnlyDict
+    from taskgraph.util.readonlydict import ReadOnlyDict
 
     class TGDumper(yaml.SafeDumper):
         def ignore_aliases(self, data):
@@ -108,7 +108,7 @@ def get_filtered_taskgraph(taskgraph, tasksregex, exclude_keys):
             for key in exclude_keys:
                 obj = task_dict
                 attrs = key.split(".")
-                while attrs[0] in obj:
+                while obj and attrs[0] in obj:
                     if len(attrs) == 1:
                         del obj[attrs[0]]
                         break
@@ -386,10 +386,10 @@ def show_taskgraph(options):
     output_file = options["output_file"]
 
     if options["diff"]:
-        # --root argument is taskgraph's config at <repo>/taskcluster/ci
+        # --root argument is taskgraph's config at <repo>/taskcluster
         repo_root = os.getcwd()
         if options["root"]:
-            repo_root = f"{options['root']}/../.."
+            repo_root = f"{options['root']}/.."
         repo = get_repository(repo_root)
 
         if not repo.working_directory_clean():
@@ -707,7 +707,7 @@ def decision(options):
 @argument(
     "--root",
     "-r",
-    default="taskcluster/ci",
+    default="taskcluster",
     help="root of the taskgraph definition relative to topsrcdir",
 )
 def action_callback(options):
@@ -743,7 +743,7 @@ def action_callback(options):
 @argument(
     "--root",
     "-r",
-    default="taskcluster/ci",
+    default="taskcluster",
     help="root of the taskgraph definition relative to topsrcdir",
 )
 @argument(

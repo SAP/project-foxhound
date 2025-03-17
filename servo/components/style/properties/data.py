@@ -62,7 +62,7 @@ PRIORITARY_PROPERTIES = set(
         "font-stretch",
         "font-style",
         "font-family",
-        # color-scheme affects how system colors resolve.
+        # color-scheme affects how system colors and light-dark() resolve.
         "color-scheme",
         # forced-color-adjust affects whether colors are adjusted.
         "forced-color-adjust",
@@ -566,6 +566,8 @@ class Longhand(Property):
                 "ImageRendering",
                 "InitialLetter",
                 "Integer",
+                "InsetArea",
+                "InsetAreaKeyword",
                 "JustifyContent",
                 "JustifyItems",
                 "JustifySelf",
@@ -591,6 +593,8 @@ class Longhand(Property):
                 "OverscrollBehavior",
                 "PageOrientation",
                 "Percentage",
+                "PositionTryOrder",
+                "PositionVisibility",
                 "PrintColorAdjust",
                 "ForcedColorAdjust",
                 "Resize",

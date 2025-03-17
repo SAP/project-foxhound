@@ -1215,6 +1215,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsACString& aOutput) {
     if (*iter == '+') {
       aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), aOutput.Length());
       aOutput.Append(' ');
+      ++iter;
       continue;
     }
 
@@ -1241,7 +1242,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsACString& aOutput) {
         aOutput.Append(hexDigit(*first) * 16 + hexDigit(*second));
         iter = second + 1;
       } else {
-        aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), aOutput.Length());
+        aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), aOutput.Length());        
         aOutput.Append('%');
         ++iter;
       }

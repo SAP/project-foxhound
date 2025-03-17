@@ -17,11 +17,6 @@ import java.util.Locale
 // be inconsistent between Kotlin versions. So to be safe we avoid this completely by
 // constructing the strings manually.
 
-// Parameters copied from nsSearchService.js
-private const val MOZ_PARAM_LOCALE = "{" + "moz:locale" + "}"
-private const val MOZ_PARAM_DIST_ID = "{" + "moz:distributionID" + "}"
-private const val MOZ_PARAM_OFFICIAL = "{" + "moz:official" + "}"
-
 // Supported OpenSearch parameters
 // See http://opensearch.a9.com/spec/1.1/querysyntax/#core
 private const val OS_PARAM_USER_DEFINED = OS_SEARCH_ENGINE_TERMS_PARAM
@@ -64,10 +59,6 @@ internal class SearchUrlBuilder(
 private fun paramSubstitution(template: String, query: String, inputEncoding: String): String {
     var result = template
     val locale = Locale.getDefault().toString()
-
-    result = result.replace(MOZ_PARAM_LOCALE, locale)
-    result = result.replace(MOZ_PARAM_DIST_ID, "")
-    result = result.replace(MOZ_PARAM_OFFICIAL, "unofficial")
 
     result = result.replace(OS_PARAM_USER_DEFINED, query)
     result = result.replace(OS_PARAM_INPUT_ENCODING, inputEncoding)

@@ -56,7 +56,7 @@ native nsWriteTaintedSegmentFun(nsWriteTaintedSegmentFun);
  *
  * A taint-aware input stream.
  */
-[scriptable, uuid(f2b59693-8054-4497-837d-27982874c48a)]
+[scriptable, builtinclass, uuid(f2b59693-8054-4497-837d-27982874c48a)]
 interface nsITaintawareInputStream : nsISupports
 {
     /**

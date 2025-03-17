@@ -8,6 +8,7 @@
 
 use std::time::Duration;
 
+use neqo_common::IpTosEcn;
 use test_fixture::now;
 
 use crate::{
@@ -16,8 +17,8 @@ use crate::{
         MAX_DATAGRAM_SIZE,
     },
     packet::PacketType,
+    recovery::SentPacket,
     rtt::RttEstimate,
-    tracking::SentPacket,
 };
 
 const PTO: Duration = Duration::from_millis(100);
@@ -44,59 +45,66 @@ fn issue_876() {
     let sent_packets = &[
         SentPacket::new(
             PacketType::Short,
-            1,                     // pn
-            time_before,           // time sent
-            true,                  // ack eliciting
-            Vec::new(),            // tokens
-            MAX_DATAGRAM_SIZE - 1, // size
+            1,
+            IpTosEcn::default(),
+            time_before,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE - 1,
         ),
         SentPacket::new(
             PacketType::Short,
-            2,                     // pn
-            time_before,           // time sent
-            true,                  // ack eliciting
-            Vec::new(),            // tokens
-            MAX_DATAGRAM_SIZE - 2, // size
+            2,
+            IpTosEcn::default(),
+            time_before,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE - 2,
         ),
         SentPacket::new(
             PacketType::Short,
-            3,                 // pn
-            time_before,       // time sent
-            true,              // ack eliciting
-            Vec::new(),        // tokens
-            MAX_DATAGRAM_SIZE, // size
+            3,
+            IpTosEcn::default(),
+            time_before,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE,
         ),
         SentPacket::new(
             PacketType::Short,
-            4,                 // pn
-            time_before,       // time sent
-            true,              // ack eliciting
-            Vec::new(),        // tokens
-            MAX_DATAGRAM_SIZE, // size
+            4,
+            IpTosEcn::default(),
+            time_before,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE,
         ),
         SentPacket::new(
             PacketType::Short,
-            5,                 // pn
-            time_before,       // time sent
-            true,              // ack eliciting
-            Vec::new(),        // tokens
-            MAX_DATAGRAM_SIZE, // size
+            5,
+            IpTosEcn::default(),
+            time_before,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE,
         ),
         SentPacket::new(
             PacketType::Short,
-            6,                 // pn
-            time_before,       // time sent
-            true,              // ack eliciting
-            Vec::new(),        // tokens
-            MAX_DATAGRAM_SIZE, // size
+            6,
+            IpTosEcn::default(),
+            time_before,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE,
         ),
         SentPacket::new(
             PacketType::Short,
-            7,                     // pn
-            time_after,            // time sent
-            true,                  // ack eliciting
-            Vec::new(),            // tokens
-            MAX_DATAGRAM_SIZE - 3, // size
+            7,
+            IpTosEcn::default(),
+            time_after,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE - 3,
         ),
     ];
 
@@ -125,14 +133,14 @@ fn issue_876() {
 
     // and ack it. cwnd increases slightly
     cc.on_packets_acked(&sent_packets[6..], &RTT_ESTIMATE, time_now);
-    assert_eq!(cc.acked_bytes(), sent_packets[6].size);
+    assert_eq!(cc.acked_bytes(), sent_packets[6].len());
     cwnd_is_halved(&cc);
     assert_eq!(cc.bytes_in_flight(), 5 * MAX_DATAGRAM_SIZE - 2);
 
     // Packet from before is lost. Should not hurt cwnd.
     cc.on_packets_lost(Some(time_now), None, PTO, &sent_packets[1..2]);
     assert!(!cc.recovery_packet());
-    assert_eq!(cc.acked_bytes(), sent_packets[6].size);
+    assert_eq!(cc.acked_bytes(), sent_packets[6].len());
     cwnd_is_halved(&cc);
     assert_eq!(cc.bytes_in_flight(), 4 * MAX_DATAGRAM_SIZE);
 }
@@ -146,11 +154,12 @@ fn issue_1465() {
     let mut next_packet = |now| {
         let p = SentPacket::new(
             PacketType::Short,
-            pn,                // pn
-            now,               // time_sent
-            true,              // ack eliciting
-            Vec::new(),        // tokens
-            MAX_DATAGRAM_SIZE, // size
+            pn,
+            IpTosEcn::default(),
+            now,
+            true,
+            Vec::new(),
+            MAX_DATAGRAM_SIZE,
         );
         pn += 1;
         p

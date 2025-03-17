@@ -684,7 +684,7 @@ diffoscope
 ----------
 Tasks used to compare pairs of Firefox builds using https://diffoscope.org/.
 As of writing, this is mainly meant to be used in try builds, by editing
-taskcluster/ci/diffoscope/kind.yml for your needs.
+taskcluster/kinds/diffoscope/kind.yml for your needs.
 
 addon
 -----
@@ -702,11 +702,6 @@ webrender
 ---------
 Tasks used to do testing of WebRender standalone (without gecko). The
 WebRender code lives in gfx/wr and has its own testing infrastructure.
-
-github-sync
-------------
-Tasks used to do synchronize parts of Gecko that have downstream GitHub
-repositories.
 
 instrumented-build
 ------------------
@@ -860,8 +855,8 @@ android-startup-test
 --------------------
 Startup test for android.
 
-post-signing
-------------
+post-signing-dummy
+------------------
 Gating kind to wait for all android signing tasks.
 
 beetmover-components

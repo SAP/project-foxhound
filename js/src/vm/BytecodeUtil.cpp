@@ -53,7 +53,8 @@
 #include "vm/Opcodes.h"
 #include "vm/Realm.h"
 #include "vm/Shape.h"
-#include "vm/ToSource.h"  // js::ValueToSource
+#include "vm/ToSource.h"         // js::ValueToSource
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 
 #include "gc/GC-inl.h"
 #include "vm/BytecodeIterator-inl.h"
@@ -1892,6 +1893,16 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     case JSOp::TypeofExpr:
       return write("(typeof ") && decompilePCForStackOperand(pc, -1) &&
              write(")");
+
+    case JSOp::TypeofEq: {
+      auto operand = TypeofEqOperand::fromRawValue(GET_UINT8(pc));
+      JSType type = operand.type();
+      JSOp compareOp = operand.compareOp();
+
+      return write("(typeof ") && decompilePCForStackOperand(pc, -1) &&
+             write(compareOp == JSOp::Ne ? " != \"" : " == \"") &&
+             write(JSTypeToString(type)) && write("\")");
+    }
 
     case JSOp::InitElemArray:
       return write("[...]");

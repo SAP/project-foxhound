@@ -8,6 +8,9 @@ support-files = [
 
 ["browser_broadcastChannel.js"]
 
+["browser_cookie_chips.js"]
+support-files = ["chips.sjs"]
+
 ["browser_cookie_insecure_overwrites_secure.js"]
 
 ["browser_cookie_purge_sync.js"]
@@ -16,6 +19,9 @@ support-files = [
 support-files = ["server.sjs"]
 
 ["browser_cookies_ipv6.js"]
+
+["browser_cookies_serviceWorker.js"]
+support-files = ["cookies.sjs", "serviceWorker.js"]
 
 ["browser_domCache.js"]
 

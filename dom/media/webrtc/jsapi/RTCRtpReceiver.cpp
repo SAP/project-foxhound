@@ -187,6 +187,8 @@ RTCRtpReceiver::RTCRtpReceiver(
 
   mWatchManager.Watch(mReceiveTrackMute,
                       &RTCRtpReceiver::UpdateReceiveTrackMute);
+
+  mParameters.mCodecs.Construct();
 }
 
 #undef INIT_CANONICAL
@@ -209,6 +211,10 @@ void RTCRtpReceiver::GetCapabilities(
     const GlobalObject&, const nsAString& aKind,
     Nullable<dom::RTCRtpCapabilities>& aResult) {
   PeerConnectionImpl::GetCapabilities(aKind, aResult, sdp::Direction::kRecv);
+}
+
+void RTCRtpReceiver::GetParameters(RTCRtpReceiveParameters& aParameters) const {
+  aParameters = mParameters;
 }
 
 already_AddRefed<Promise> RTCRtpReceiver::GetStats(ErrorResult& aError) {
@@ -871,6 +877,29 @@ void RTCRtpReceiver::SyncFromJsep(const JsepTransceiver& aJsepTransceiver) {
     return;
   }
 
+  if (GetJsepTransceiver().mRecvTrack.GetNegotiatedDetails()) {
+    const auto& details(
+        *GetJsepTransceiver().mRecvTrack.GetNegotiatedDetails());
+    mParameters.mCodecs.Reset();
+    mParameters.mCodecs.Construct();
+    if (details.GetEncodingCount()) {
+      for (const auto& jsepCodec : details.GetEncoding(0).GetCodecs()) {
+        RTCRtpCodecParameters codec;
+        RTCRtpTransceiver::ToDomRtpCodecParameters(*jsepCodec, &codec);
+        Unused << mParameters.mCodecs.Value().AppendElement(codec, fallible);
+        if (jsepCodec->Type() == SdpMediaSection::kVideo) {
+          const JsepVideoCodecDescription& videoJsepCodec =
+              static_cast<JsepVideoCodecDescription&>(*jsepCodec);
+          if (videoJsepCodec.mRtxEnabled) {
+            RTCRtpCodecParameters rtx;
+            RTCRtpTransceiver::ToDomRtpCodecParametersRtx(videoJsepCodec, &rtx);
+            Unused << mParameters.mCodecs.Value().AppendElement(rtx, fallible);
+          }
+        }
+      }
+    }
+  }
+
   // Spec says we set [[Receptive]] to true on sLD(sendrecv/recvonly), and to
   // false on sRD(recvonly/inactive), sLD(sendonly/inactive), or when stop()
   // is called.
@@ -884,7 +913,13 @@ void RTCRtpReceiver::SyncFromJsep(const JsepTransceiver& aJsepTransceiver) {
   }
 }
 
-void RTCRtpReceiver::SyncToJsep(JsepTransceiver& aJsepTransceiver) const {}
+void RTCRtpReceiver::SyncToJsep(JsepTransceiver& aJsepTransceiver) const {
+  if (!mTransceiver->GetPreferredCodecs().empty()) {
+    aJsepTransceiver.mRecvTrack.PopulateCodecs(
+        mTransceiver->GetPreferredCodecs(),
+        mTransceiver->GetPreferredCodecsInUse());
+  }
+}
 
 void RTCRtpReceiver::UpdateStreams(StreamAssociationChanges* aChanges) {
   // We don't sort and use set_difference, because we need to report the

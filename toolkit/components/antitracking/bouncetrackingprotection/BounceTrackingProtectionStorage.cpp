@@ -15,9 +15,8 @@
 #include "mozStorageCID.h"
 #include "mozilla/Components.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/AppShutdown.h"
+#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Services.h"
-#include "mozilla/ShutdownPhase.h"
 #include "nsCOMPtr.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIObserverService.h"
@@ -298,8 +297,11 @@ BounceTrackingProtectionStorage::DeleteDBEntriesByOriginAttributesPattern(
 NS_IMETHODIMP BounceTrackingProtectionStorage::BlockShutdown(
     nsIAsyncShutdownClient* aClient) {
   MOZ_ASSERT(NS_IsMainThread());
-  nsresult rv = WaitForInitialization();
-  NS_ENSURE_SUCCESS(rv, rv);
+  DebugOnly<nsresult> rv = WaitForInitialization();
+  // If init failed log a warning. This isn't an early return since we still
+  // need to try to tear down, including removing the shutdown blocker. A
+  // failure state shouldn't cause a shutdown hang.
+  NS_WARNING_ASSERTION(NS_FAILED(rv), "BlockShutdown: Init failed");
 
   MonitorAutoLock lock(mMonitor);
   mShuttingDown.Flip();
@@ -314,16 +316,20 @@ NS_IMETHODIMP BounceTrackingProtectionStorage::BlockShutdown(
             MOZ_ASSERT(self->mPendingWrites == 0);
 
             if (self->mDatabaseConnection) {
-              Unused << self->mDatabaseConnection->Close();
+              DebugOnly<nsresult> rv = self->mDatabaseConnection->Close();
+              NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                                   "Failed to close database connection");
               self->mDatabaseConnection = nullptr;
             }
 
             self->mFinalized.Flip();
             self->mMonitor.NotifyAll();
-            NS_DispatchToMainThread(NS_NewRunnableFunction(
+
+            nsresult rv = NS_DispatchToMainThread(NS_NewRunnableFunction(
                 "BounceTrackingProtectionStorage::BlockShutdown "
                 "- mainthread callback",
                 [self]() { self->Finalize(); }));
+            NS_ENSURE_SUCCESS_VOID(rv);
           }),
       NS_DISPATCH_EVENT_MAY_BLOCK);
 
@@ -426,6 +432,7 @@ nsresult BounceTrackingProtectionStorage::Init() {
   if (closed || NS_WARN_IF(NS_FAILED(rv))) {
     MonitorAutoLock lock(mMonitor);
     mShuttingDown.Flip();
+    mMonitor.NotifyAll();
     return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
 
@@ -464,19 +471,19 @@ nsresult BounceTrackingProtectionStorage::Init() {
                                nsresult rv = self->CreateDatabaseConnection();
                                if (NS_WARN_IF(NS_FAILED(rv))) {
                                  self->mErrored.Flip();
-                                 self->mMonitor.Notify();
+                                 self->mMonitor.NotifyAll();
                                  return;
                                }
 
                                rv = self->LoadMemoryStateFromDisk();
                                if (NS_WARN_IF(NS_FAILED(rv))) {
                                  self->mErrored.Flip();
-                                 self->mMonitor.Notify();
+                                 self->mMonitor.NotifyAll();
                                  return;
                                }
 
                                self->mInitialized.Flip();
-                               self->mMonitor.Notify();
+                               self->mMonitor.NotifyAll();
                              }),
       NS_DISPATCH_EVENT_MAY_BLOCK);
 

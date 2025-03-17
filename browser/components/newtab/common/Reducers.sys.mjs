@@ -103,6 +103,23 @@ export const INITIAL_STATE = {
   },
   Wallpapers: {
     wallpaperList: [],
+    highlightSeenCounter: 0,
+    categories: [],
+  },
+  Weather: {
+    initialized: false,
+    lastUpdated: null,
+    query: "",
+    suggestions: [],
+    locationData: {
+      city: "",
+      adminArea: "",
+      country: "",
+    },
+    // Display search input in Weather widget
+    searchActive: false,
+    locationSearchString: "",
+    suggestedLocations: [],
   },
 };
 
@@ -293,12 +310,13 @@ function TopSites(prevState = INITIAL_STATE.TopSites, action) {
       return Object.assign({}, prevState, { rows: newRows });
     case at.UPDATE_SEARCH_SHORTCUTS:
       return { ...prevState, searchShortcuts: action.data.searchShortcuts };
-    case at.SOV_UPDATED:
+    case at.SOV_UPDATED: {
       const sov = {
         ready: action.data.ready,
         positions: action.data.positions,
       };
       return { ...prevState, sov };
+    }
     default:
       return prevState;
   }
@@ -692,7 +710,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           loaded: true,
         },
       };
-    case at.DISCOVERY_STREAM_FEED_UPDATE:
+    case at.DISCOVERY_STREAM_FEED_UPDATE: {
       const newData = {};
       newData[action.data.url] = action.data.feed;
       return {
@@ -705,6 +723,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           },
         },
       };
+    }
     case at.DISCOVERY_STREAM_SPOCS_CAPS:
       return {
         ...prevState,
@@ -761,7 +780,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
             items.filter(item => item.url !== action.data.url)
           );
 
-    case at.PLACES_SAVED_TO_POCKET:
+    case at.PLACES_SAVED_TO_POCKET: {
       const addPocketInfo = item => {
         if (item.url === action.data.url) {
           return Object.assign({}, item, {
@@ -775,7 +794,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       return isNotReady()
         ? prevState
         : nextState(items => items.map(addPocketInfo));
-
+    }
     case at.DELETE_FROM_POCKET:
     case at.ARCHIVE_FROM_POCKET:
       return isNotReady()
@@ -784,7 +803,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
             items.filter(item => item.pocket_id !== action.data.pocket_id)
           );
 
-    case at.PLACES_BOOKMARK_ADDED:
+    case at.PLACES_BOOKMARK_ADDED: {
       const updateBookmarkInfo = item => {
         if (item.url === action.data.url) {
           const { bookmarkGuid, bookmarkTitle, dateAdded } = action.data;
@@ -800,8 +819,8 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       return isNotReady()
         ? prevState
         : nextState(items => items.map(updateBookmarkInfo));
-
-    case at.PLACES_BOOKMARKS_REMOVED:
+    }
+    case at.PLACES_BOOKMARKS_REMOVED: {
       const removeBookmarkInfo = item => {
         if (action.data.urls.includes(item.url)) {
           const newSite = Object.assign({}, item);
@@ -818,6 +837,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       return isNotReady()
         ? prevState
         : nextState(items => items.map(removeBookmarkInfo));
+    }
     case at.PREF_CHANGED:
       if (action.data.name === PREF_COLLECTION_DISMISSIBLE) {
         return {
@@ -847,7 +867,40 @@ function Search(prevState = INITIAL_STATE.Search, action) {
 function Wallpapers(prevState = INITIAL_STATE.Wallpapers, action) {
   switch (action.type) {
     case at.WALLPAPERS_SET:
-      return { wallpaperList: action.data };
+      return {
+        ...prevState,
+        wallpaperList: action.data,
+      };
+    case at.WALLPAPERS_FEATURE_HIGHLIGHT_COUNTER_INCREMENT:
+      return {
+        ...prevState,
+        highlightSeenCounter: action.data,
+      };
+    case at.WALLPAPERS_CATEGORY_SET:
+      return { ...prevState, categories: action.data };
+    default:
+      return prevState;
+  }
+}
+
+function Weather(prevState = INITIAL_STATE.Weather, action) {
+  switch (action.type) {
+    case at.WEATHER_UPDATE:
+      return {
+        ...prevState,
+        suggestions: action.data.suggestions,
+        lastUpdated: action.data.date,
+        locationData: action.data.locationData || prevState.locationData,
+        initialized: true,
+      };
+    case at.WEATHER_SEARCH_ACTIVE:
+      return { ...prevState, searchActive: action.data };
+    case at.WEATHER_LOCATION_SEARCH_UPDATE:
+      return { ...prevState, locationSearchString: action.data };
+    case at.WEATHER_LOCATION_SUGGESTIONS_UPDATE:
+      return { ...prevState, suggestedLocations: action.data };
+    case at.WEATHER_LOCATION_DATA_UPDATE:
+      return { ...prevState, locationData: action.data };
     default:
       return prevState;
   }
@@ -865,4 +918,5 @@ export const reducers = {
   DiscoveryStream,
   Search,
   Wallpapers,
+  Weather,
 };

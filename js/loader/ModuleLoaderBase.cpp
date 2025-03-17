@@ -623,11 +623,13 @@ nsresult ModuleLoaderBase::OnFetchComplete(ModuleLoadRequest* aRequest,
   if (NS_SUCCEEDED(rv)) {
     rv = CreateModuleScript(aRequest);
 
+#if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
     // If a module script was created, it should either have a module record
     // object or a parse error.
     if (ModuleScript* ms = aRequest->mModuleScript) {
       MOZ_DIAGNOSTIC_ASSERT(bool(ms->ModuleRecord()) != ms->HasParseError());
     }
+#endif
 
     aRequest->ClearScriptSource();
 
@@ -1299,8 +1301,7 @@ nsresult ModuleLoaderBase::EvaluateModuleInContext(
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (request->HasScriptLoadContext()) {
-    TRACE_FOR_TEST(aRequest->GetScriptLoadContext()->GetScriptElement(),
-                   "scriptloader_evaluate_module");
+    TRACE_FOR_TEST(aRequest, "scriptloader_evaluate_module");
   }
 
   JS::Rooted<JS::Value> rval(aCx);
@@ -1445,9 +1446,11 @@ void ModuleLoaderBase::RegisterImportMap(UniquePtr<ImportMap> aImportMap) {
           "Non-preload module loads should block import maps");
       MOZ_DIAGNOSTIC_ASSERT(!script->HadImportMap(),
                             "Only one import map can be registered");
+#if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
       if (JSObject* module = script->ModuleRecord()) {
         MOZ_DIAGNOSTIC_ASSERT(!JS::ModuleIsLinked(module));
       }
+#endif
       script->Shutdown();
     }
   }
@@ -1488,6 +1491,17 @@ void ModuleLoaderBase::MoveModulesTo(ModuleLoaderBase* aDest) {
   }
 
   mFetchedModules.Clear();
+}
+
+bool ModuleLoaderBase::IsFetchingAndHasWaitingRequest(
+    ModuleLoadRequest* aRequest) {
+  auto entry = mFetchingModules.Lookup(aRequest->mURI);
+  if (!entry) {
+    return false;
+  }
+
+  RefPtr<LoadingRequest> loadingRequest = entry.Data();
+  return !loadingRequest->mWaiting.IsEmpty();
 }
 
 #undef LOG

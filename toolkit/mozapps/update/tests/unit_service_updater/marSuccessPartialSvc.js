@@ -20,11 +20,11 @@ async function run_test() {
   await setupUpdaterTest(FILE_PARTIAL_MAR, false, "test/../");
   runUpdate(STATE_SUCCEEDED, false, 0, true);
   checkAppBundleModTime();
-  standardInit();
+  await testPostUpdateProcessing();
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateSuccess(getApplyDirFile);
   checkUpdateLogContents(LOG_PARTIAL_SUCCESS);
   await waitForUpdateXMLFiles();
-  checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
+  await checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
   checkCallbackLog();
 }

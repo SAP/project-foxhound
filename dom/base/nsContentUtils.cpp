@@ -114,6 +114,7 @@
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ScrollbarPreferences.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ShutdownPhase.h"
 #include "mozilla/Span.h"
 #include "mozilla/StaticAnalysisFunctions.h"
@@ -181,6 +182,7 @@
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/HTMLTemplateElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
 #include "mozilla/dom/IPCBlob.h"
 #include "mozilla/dom/IPCBlobUtils.h"
@@ -372,7 +374,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
-#include "nsStringBuffer.h"
 #include "nsStringBundle.h"
 #include "nsStringFlags.h"
 #include "nsStringFwd.h"
@@ -2660,7 +2661,7 @@ bool nsContentUtils::ShouldResistFingerprinting_dangerous(
       BasePrincipal::Cast(aPrincipal)->OriginAttributesRef();
   // With this check, we can ensure that the prefs and target say yes, so only
   // an exemption would cause us to return false.
-  bool isPBM = originAttributes.mPrivateBrowsingId ==
+  bool isPBM = originAttributes.mPrivateBrowsingId !=
                nsIScriptSecurityManager::DEFAULT_PRIVATE_BROWSING_ID;
   if (!ShouldResistFingerprinting_("Positive return check", isPBM, aTarget)) {
     MOZ_LOG(nsContentUtils::ResistFingerprintingLog(), LogLevel::Debug,
@@ -3046,6 +3047,18 @@ nsINode* nsContentUtils::GetCommonAncestorHelper(nsINode* aNode1,
 }
 
 /* static */
+nsINode* nsContentUtils::GetClosestCommonShadowIncludingInclusiveAncestor(
+    nsINode* aNode1, nsINode* aNode2) {
+  if (aNode1 == aNode2) {
+    return aNode1;
+  }
+
+  return GetCommonAncestorInternal(aNode1, aNode2, [](nsINode* aNode) {
+    return aNode->GetParentOrShadowHostNode();
+  });
+}
+
+/* static */
 nsIContent* nsContentUtils::GetCommonFlattenedTreeAncestorHelper(
     nsIContent* aContent1, nsIContent* aContent2) {
   return GetCommonAncestorInternal(
@@ -3056,6 +3069,10 @@ nsIContent* nsContentUtils::GetCommonFlattenedTreeAncestorHelper(
 /* static */
 nsIContent* nsContentUtils::GetCommonFlattenedTreeAncestorForSelection(
     nsIContent* aContent1, nsIContent* aContent2) {
+  if (aContent1 == aContent2) {
+    return aContent1;
+  }
+
   return GetCommonAncestorInternal(
       aContent1, aContent2, [](nsIContent* aContent) {
         return aContent->GetFlattenedTreeParentNodeForSelection();
@@ -3682,6 +3699,23 @@ nsresult nsContentUtils::NewURIWithDocumentCharset(nsIURI** aResult,
 }
 
 // static
+bool nsContentUtils::ContainsChar(nsAtom* aAtom, char aChar) {
+  const uint32_t len = aAtom->GetLength();
+  if (!len) {
+    return false;
+  }
+  const char16_t* name = aAtom->GetUTF16String();
+  uint32_t i = 0;
+  while (i < len) {
+    if (name[i] == aChar) {
+      return true;
+    }
+    i++;
+  }
+  return false;
+}
+
+// static
 bool nsContentUtils::IsNameWithDash(nsAtom* aName) {
   // A valid custom element name is a sequence of characters name which
   // must match the PotentialCustomElementName production:
@@ -4041,11 +4075,8 @@ imgLoader* nsContentUtils::GetImgLoaderForChannel(nsIChannel* aChannel,
   if (!aChannel) {
     return imgLoader::NormalLoader();
   }
-  nsCOMPtr<nsILoadContext> context;
-  NS_QueryNotificationCallbacks(aChannel, context);
-  return context && context->UsePrivateBrowsing()
-             ? imgLoader::PrivateBrowsingLoader()
-             : imgLoader::NormalLoader();
+  return NS_UsePrivateBrowsing(aChannel) ? imgLoader::PrivateBrowsingLoader()
+                                         : imgLoader::NormalLoader();
 }
 
 // static
@@ -4623,6 +4654,11 @@ bool nsContentUtils::IsChromeDoc(const Document* aDocument) {
   return aDocument && aDocument->NodePrincipal() == sSystemPrincipal;
 }
 
+bool nsContentUtils::IsAddonDoc(const Document* aDocument) {
+  return aDocument &&
+         aDocument->NodePrincipal()->GetIsAddonOrExpandedAddonPrincipal();
+}
+
 bool nsContentUtils::IsChildOfSameType(Document* aDoc) {
   if (BrowsingContext* bc = aDoc->GetBrowsingContext()) {
     return bc->GetParent();
@@ -4630,27 +4666,66 @@ bool nsContentUtils::IsChildOfSameType(Document* aDoc) {
   return false;
 }
 
+static bool IsJSONType(const nsACString& aContentType) {
+  return aContentType.EqualsLiteral(TEXT_JSON) ||
+         aContentType.EqualsLiteral(APPLICATION_JSON);
+}
+
+static bool IsNonPlainTextType(const nsACString& aContentType) {
+  // MIME type suffixes which should not be plain text.
+  static constexpr std::string_view kNonPlainTextTypes[] = {
+      "html",
+      "xml",
+      "xsl",
+      "calendar",
+      "x-calendar",
+      "x-vcalendar",
+      "vcalendar",
+      "vcard",
+      "x-vcard",
+      "directory",
+      "ldif",
+      "qif",
+      "x-qif",
+      "x-csv",
+      "x-vcf",
+      "rtf",
+      "comma-separated-values",
+      "csv",
+      "tab-separated-values",
+      "tsv",
+      "ofx",
+      "vnd.sun.j2me.app-descriptor",
+      "x-ms-iqy",
+      "x-ms-odc",
+      "x-ms-rqy",
+      "x-ms-contact"};
+
+  // Trim off the "text/" prefix for comparison.
+  MOZ_ASSERT(StringBeginsWith(aContentType, "text/"_ns));
+  std::string_view suffix = aContentType;
+  suffix.remove_prefix(5);
+
+  for (std::string_view type : kNonPlainTextTypes) {
+    if (type == suffix) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool nsContentUtils::IsPlainTextType(const nsACString& aContentType) {
-  // NOTE: if you add a type here, add it to the CONTENTDLF_CATEGORIES
-  // define in nsContentDLF.h as well.
-  return aContentType.EqualsLiteral(TEXT_PLAIN) ||
-         aContentType.EqualsLiteral(TEXT_CSS) ||
-         aContentType.EqualsLiteral(TEXT_CACHE_MANIFEST) ||
-         aContentType.EqualsLiteral(TEXT_VTT) ||
-         aContentType.EqualsLiteral(APPLICATION_JAVASCRIPT) ||
-         aContentType.EqualsLiteral(APPLICATION_XJAVASCRIPT) ||
-         aContentType.EqualsLiteral(TEXT_ECMASCRIPT) ||
-         aContentType.EqualsLiteral(APPLICATION_ECMASCRIPT) ||
-         aContentType.EqualsLiteral(TEXT_JAVASCRIPT) ||
-         aContentType.EqualsLiteral(APPLICATION_JSON) ||
-         aContentType.EqualsLiteral(TEXT_JSON);
+  // All `text/*`, any JSON type and any JavaScript type are considered "plain
+  // text" types for the purposes of how to render them as a document.
+  return (StringBeginsWith(aContentType, "text/"_ns) &&
+          !IsNonPlainTextType(aContentType)) ||
+         IsJSONType(aContentType) || IsJavascriptMIMEType(aContentType);
 }
 
 bool nsContentUtils::IsUtf8OnlyPlainTextType(const nsACString& aContentType) {
   // NOTE: This must be a subset of the list in IsPlainTextType().
-  return aContentType.EqualsLiteral(TEXT_CACHE_MANIFEST) ||
-         aContentType.EqualsLiteral(APPLICATION_JSON) ||
-         aContentType.EqualsLiteral(TEXT_JSON) ||
+  return IsJSONType(aContentType) ||
+         aContentType.EqualsLiteral(TEXT_CACHE_MANIFEST) ||
          aContentType.EqualsLiteral(TEXT_VTT);
 }
 
@@ -6721,6 +6796,16 @@ nsresult nsContentUtils::GetWebExposedOriginSerialization(nsIURI* aURI,
       return NS_OK;
     }
 
+    if (
+        // Schemes in spec. https://url.spec.whatwg.org/#origin
+        !uri->SchemeIs("http") && !uri->SchemeIs("https") &&
+        !uri->SchemeIs("file") && !uri->SchemeIs("resource") &&
+        // Our own schemes.
+        !uri->SchemeIs("moz-extension")) {
+      aOrigin.AssignLiteral("null");
+      return NS_OK;
+    }
+
     return GetWebExposedOriginSerialization(uri, aOrigin);
   }
 
@@ -7042,25 +7127,6 @@ bool nsContentUtils::PlatformToDOMLineBreaks(nsString& aString,
   return true;
 }
 
-void nsContentUtils::PopulateStringFromStringBuffer(nsStringBuffer* aBuf,
-                                                    nsAString& aResultString) {
-  MOZ_ASSERT(aBuf, "Expecting a non-null string buffer");
-
-  uint32_t stringLen = NS_strlen(static_cast<char16_t*>(aBuf->Data()));
-
-  // SANITY CHECK: In case the nsStringBuffer isn't correctly
-  // null-terminated, let's clamp its length using the allocated size, to be
-  // sure the resulting string doesn't sample past the end of the the buffer.
-  // (Note that StorageSize() is in units of bytes, so we have to convert that
-  // to units of PRUnichars, and subtract 1 for the null-terminator.)
-  uint32_t allocStringLen = (aBuf->StorageSize() / sizeof(char16_t)) - 1;
-  MOZ_ASSERT(stringLen <= allocStringLen,
-             "string buffer lacks null terminator!");
-  stringLen = std::min(stringLen, allocStringLen);
-
-  aBuf->ToString(stringLen, aResultString);
-}
-
 already_AddRefed<nsContentList> nsContentUtils::GetElementsByClassName(
     nsINode* aRootNode, const nsAString& aClasses) {
   MOZ_ASSERT(aRootNode, "Must have root node");
@@ -7234,9 +7300,12 @@ nsContentUtils::FindInternalDocumentViewer(const nsACString& aType,
     return docFactory.forget();
   }
 
-  if (DecoderTraits::IsSupportedInVideoDocument(aType)) {
-    docFactory =
-        do_GetService("@mozilla.org/content/document-loader-factory;1");
+  // If the type wasn't registered in `Gecko-Content-Viewers`, check if it's
+  // another type which we may dynamically support, such as `text/*` types or
+  // video document types. These types are all backed by the nsContentDLF.
+  if (IsPlainTextType(aType) ||
+      DecoderTraits::IsSupportedInVideoDocument(aType)) {
+    docFactory = do_GetService(CONTENT_DLF_CONTRACTID);
     if (docFactory && aLoaderType) {
       *aLoaderType = TYPE_CONTENT;
     }
@@ -7486,8 +7555,12 @@ int32_t nsContentUtils::GetAdjustedOffsetInTextControl(nsIFrame* aOffsetFrame,
 // static
 bool nsContentUtils::IsPointInSelection(
     const mozilla::dom::Selection& aSelection, const nsINode& aNode,
-    const uint32_t aOffset) {
-  if (aSelection.IsCollapsed()) {
+    const uint32_t aOffset, const bool aAllowCrossShadowBoundary) {
+  const bool selectionIsCollapsed =
+      !aAllowCrossShadowBoundary
+          ? aSelection.IsCollapsed()
+          : aSelection.AreNormalAndCrossShadowBoundaryRangesCollapsed();
+  if (selectionIsCollapsed) {
     return false;
   }
 
@@ -7501,7 +7574,8 @@ bool nsContentUtils::IsPointInSelection(
     }
 
     // Done when we find a range that we are in
-    if (range->IsPointInRange(aNode, aOffset, IgnoreErrors())) {
+    if (range->IsPointInRange(aNode, aOffset, IgnoreErrors(),
+                              aAllowCrossShadowBoundary)) {
       return true;
     }
   }
@@ -7941,32 +8015,40 @@ void nsContentUtils::DestroyMatchString(void* aData) {
   }
 }
 
-bool nsContentUtils::IsJavascriptMIMEType(const nsAString& aMIMEType) {
-  // Table ordered from most to least likely JS MIME types.
-  static const char* jsTypes[] = {"text/javascript",
-                                  "text/ecmascript",
-                                  "application/javascript",
-                                  "application/ecmascript",
-                                  "application/x-javascript",
-                                  "application/x-ecmascript",
-                                  "text/javascript1.0",
-                                  "text/javascript1.1",
-                                  "text/javascript1.2",
-                                  "text/javascript1.3",
-                                  "text/javascript1.4",
-                                  "text/javascript1.5",
-                                  "text/jscript",
-                                  "text/livescript",
-                                  "text/x-ecmascript",
-                                  "text/x-javascript",
-                                  nullptr};
+// Table ordered from most to least likely JS MIME types.
+static constexpr std::string_view kJavascriptMIMETypes[] = {
+    "text/javascript",
+    "text/ecmascript",
+    "application/javascript",
+    "application/ecmascript",
+    "application/x-javascript",
+    "application/x-ecmascript",
+    "text/javascript1.0",
+    "text/javascript1.1",
+    "text/javascript1.2",
+    "text/javascript1.3",
+    "text/javascript1.4",
+    "text/javascript1.5",
+    "text/jscript",
+    "text/livescript",
+    "text/x-ecmascript",
+    "text/x-javascript"};
 
-  for (uint32_t i = 0; jsTypes[i]; ++i) {
-    if (aMIMEType.LowerCaseEqualsASCII(jsTypes[i])) {
+bool nsContentUtils::IsJavascriptMIMEType(const nsAString& aMIMEType) {
+  for (std::string_view type : kJavascriptMIMETypes) {
+    if (aMIMEType.LowerCaseEqualsASCII(type.data(), type.length())) {
       return true;
     }
   }
+  return false;
+}
 
+bool nsContentUtils::IsJavascriptMIMEType(const nsACString& aMIMEType) {
+  for (std::string_view type : kJavascriptMIMETypes) {
+    if (aMIMEType.LowerCaseEqualsASCII(type.data(), type.length())) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -8257,7 +8339,7 @@ nsresult nsContentUtils::IPCTransferableToTransferable(
     aTransferable->SetCookieJarSettings(cookieJarSettings);
   }
   aTransferable->SetReferrerInfo(aIPCTransferable.referrerInfo());
-  aTransferable->SetRequestingPrincipal(aIPCTransferable.requestingPrincipal());
+  aTransferable->SetDataPrincipal(aIPCTransferable.dataPrincipal());
   aTransferable->SetContentPolicyType(aIPCTransferable.contentPolicyType());
 
   return NS_OK;
@@ -8348,7 +8430,7 @@ nsresult nsContentUtils::CalculateBufferSizeForImage(
 }
 
 static already_AddRefed<DataSourceSurface> BigBufferToDataSurface(
-    BigBuffer& aData, uint32_t aStride, const IntSize& aImageSize,
+    const BigBuffer& aData, uint32_t aStride, const IntSize& aImageSize,
     SurfaceFormat aFormat) {
   if (!aData.Size() || !aImageSize.width || !aImageSize.height) {
     return nullptr;
@@ -8371,22 +8453,13 @@ static already_AddRefed<DataSourceSurface> BigBufferToDataSurface(
 nsresult nsContentUtils::DeserializeTransferableDataImageContainer(
     const IPCTransferableDataImageContainer& aData,
     imgIContainer** aContainer) {
-  const IntSize size(aData.width(), aData.height());
-  size_t maxBufferSize = 0;
-  size_t usedBufferSize = 0;
-  nsresult rv = CalculateBufferSizeForImage(
-      aData.stride(), size, aData.format(), &maxBufferSize, &usedBufferSize);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (usedBufferSize > aData.data().Size()) {
-    return NS_ERROR_FAILURE;
-  }
-  RefPtr<DataSourceSurface> surface =
-      CreateDataSourceSurfaceFromData(size, aData.format(), aData.data().Data(),
-                                      static_cast<int32_t>(aData.stride()));
+  RefPtr<DataSourceSurface> surface = IPCImageToSurface(aData.image());
   if (!surface) {
     return NS_ERROR_FAILURE;
   }
-  RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(surface, size);
+
+  RefPtr<gfxDrawable> drawable =
+      new gfxSurfaceDrawable(surface, surface->GetSize());
   nsCOMPtr<imgIContainer> imageContainer =
       image::ImageOps::CreateFromDrawable(drawable);
   imageContainer.forget(aContainer);
@@ -8518,23 +8591,16 @@ void nsContentUtils::TransferableToIPCTransferableData(
         if (!dataSurface) {
           continue;
         }
-        size_t length;
-        int32_t stride;
-        Maybe<BigBuffer> surfaceData =
-            GetSurfaceData(*dataSurface, &length, &stride);
 
-        if (surfaceData.isNothing()) {
+        auto imageData = nsContentUtils::SurfaceToIPCImage(*dataSurface);
+        if (!imageData) {
           continue;
         }
 
         IPCTransferableDataItem* item =
             aTransferableData->items().AppendElement();
         item->flavor() = flavorStr;
-
-        mozilla::gfx::IntSize size = dataSurface->GetSize();
-        item->data() = IPCTransferableDataImageContainer(
-            std::move(*surfaceData), size.width, size.height, stride,
-            dataSurface->GetFormat());
+        item->data() = IPCTransferableDataImageContainer(std::move(*imageData));
         continue;
       }
 
@@ -8615,8 +8681,7 @@ void nsContentUtils::TransferableToIPCTransferable(
 
   aIPCTransferable->data() = std::move(ipcTransferableData);
   aIPCTransferable->isPrivateData() = aTransferable->GetIsPrivateData();
-  aIPCTransferable->requestingPrincipal() =
-      aTransferable->GetRequestingPrincipal();
+  aIPCTransferable->dataPrincipal() = aTransferable->GetDataPrincipal();
   aIPCTransferable->cookieJarSettings() = std::move(cookieJarSettingsArgs);
   aIPCTransferable->contentPolicyType() = aTransferable->GetContentPolicyType();
   aIPCTransferable->referrerInfo() = aTransferable->GetReferrerInfo();
@@ -8663,7 +8728,7 @@ Maybe<IPCImage> nsContentUtils::SurfaceToIPCImage(DataSourceSurface& aSurface) {
 }
 
 already_AddRefed<DataSourceSurface> nsContentUtils::IPCImageToSurface(
-    IPCImage&& aImage) {
+    const IPCImage& aImage) {
   return BigBufferToDataSurface(aImage.data(), aImage.stride(),
                                 aImage.size().ToUnknownSize(), aImage.format());
 }
@@ -9644,27 +9709,68 @@ static inline bool IsVoidTag(Element* aElement) {
   return FragmentOrElement::IsHTMLVoid(aElement->NodeInfo()->NameAtom());
 }
 
-bool nsContentUtils::SerializeNodeToMarkup(nsINode* aRoot,
-                                           bool aDescendantsOnly,
-                                           nsAString& aOut) {
-  // If you pass in a DOCUMENT_NODE, you must pass aDescendentsOnly as true
-  MOZ_ASSERT(aDescendantsOnly || aRoot->NodeType() != nsINode::DOCUMENT_NODE);
-
-  nsINode* current =
-      aDescendantsOnly ? aRoot->GetFirstChildOfTemplateOrNode() : aRoot;
-
-  if (!current) {
-    return true;
+static bool StartSerializingShadowDOM(
+    nsINode* aNode, StringBuilder& aBuilder, bool aSerializableShadowRoots,
+    const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots) {
+  ShadowRoot* shadow = aNode->GetShadowRoot();
+  if (!shadow || ((!aSerializableShadowRoots || !shadow->Serializable()) &&
+                  !aShadowRoots.Contains(shadow))) {
+    return false;
   }
 
-  StringBuilder builder;
+  aBuilder.Append(u"<template shadowrootmode=\"");
+  if (shadow->IsClosed()) {
+    aBuilder.Append(u"closed\"");
+  } else {
+    aBuilder.Append(u"open\"");
+  }
+
+  if (shadow->DelegatesFocus()) {
+    aBuilder.Append(u" shadowrootdelegatesfocus=\"\"");
+  }
+  if (shadow->Serializable()) {
+    aBuilder.Append(u" shadowrootserializable=\"\"");
+  }
+  if (shadow->Clonable()) {
+    aBuilder.Append(u" shadowrootclonable=\"\"");
+  }
+
+  aBuilder.Append(u">");
+
+  if (!shadow->HasChildren()) {
+    aBuilder.Append(u"</template>");
+    return false;
+  }
+  return true;
+}
+
+template <SerializeShadowRoots ShouldSerializeShadowRoots>
+static void SerializeNodeToMarkupInternal(
+    nsINode* aRoot, bool aDescendantsOnly, StringBuilder& aBuilder,
+    bool aSerializableShadowRoots,
+    const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots) {
+  nsINode* current =
+      aDescendantsOnly ? aRoot->GetFirstChildOfTemplateOrNode() : aRoot;
+  if (!current) {
+    return;
+  }
+
   nsIContent* next;
   while (true) {
     bool isVoid = false;
     switch (current->NodeType()) {
       case nsINode::ELEMENT_NODE: {
         Element* elem = current->AsElement();
-        StartElement(elem, builder);
+        StartElement(elem, aBuilder);
+
+        if constexpr (ShouldSerializeShadowRoots == SerializeShadowRoots::Yes) {
+          if (StartSerializingShadowDOM(
+                  current, aBuilder, aSerializableShadowRoots, aShadowRoots)) {
+            current = current->GetShadowRoot()->GetFirstChild();
+            continue;
+          }
+        }
+
         isVoid = IsVoidTag(elem);
         if (!isVoid && (next = current->GetFirstChildOfTemplateOrNode())) {
           current = next;
@@ -9678,58 +9784,75 @@ bool nsContentUtils::SerializeNodeToMarkup(nsINode* aRoot,
         const nsTextFragment* text = &current->AsText()->TextFragment();
         nsIContent* parent = current->GetParent();
         if (ShouldEscape(parent)) {
-          AppendEncodedCharacters(text, builder);
+          AppendEncodedCharacters(text, aBuilder);
         } else {
-          builder.Append(text);
+          aBuilder.Append(text);
         }
         break;
       }
 
       case nsINode::COMMENT_NODE: {
-        builder.Append(u"<!--");
-        builder.Append(static_cast<nsIContent*>(current)->GetText());
-        builder.Append(u"-->");
+        aBuilder.Append(u"<!--");
+        aBuilder.Append(static_cast<nsIContent*>(current)->GetText());
+        aBuilder.Append(u"-->");
         break;
       }
 
       case nsINode::DOCUMENT_TYPE_NODE: {
-        builder.Append(u"<!DOCTYPE ");
-        builder.Append(nsString(current->NodeName()));
-        builder.Append(u">");
+        aBuilder.Append(u"<!DOCTYPE ");
+        aBuilder.Append(nsString(current->NodeName()));
+        aBuilder.Append(u">");
         break;
       }
 
       case nsINode::PROCESSING_INSTRUCTION_NODE: {
-        builder.Append(u"<?");
-        builder.Append(nsString(current->NodeName()));
-        builder.Append(u" ");
-        builder.Append(static_cast<nsIContent*>(current)->GetText());
-        builder.Append(u">");
+        aBuilder.Append(u"<?");
+        aBuilder.Append(nsString(current->NodeName()));
+        aBuilder.Append(u" ");
+        aBuilder.Append(static_cast<nsIContent*>(current)->GetText());
+        aBuilder.Append(u">");
         break;
       }
     }
 
     while (true) {
       if (!isVoid && current->NodeType() == nsINode::ELEMENT_NODE) {
-        builder.Append(u"</");
+        aBuilder.Append(u"</");
         nsIContent* elem = static_cast<nsIContent*>(current);
         if (elem->IsHTMLElement() || elem->IsSVGElement() ||
             elem->IsMathMLElement()) {
-          builder.Append(elem->NodeInfo()->NameAtom());
+          aBuilder.Append(elem->NodeInfo()->NameAtom());
         } else {
-          builder.Append(nsString(current->NodeName()));
+          aBuilder.Append(nsString(current->NodeName()));
         }
-        builder.Append(u">");
+        aBuilder.Append(u">");
       }
       isVoid = false;
 
       if (current == aRoot) {
-        return builder.ToString(aOut);
+        return;
       }
 
       if ((next = current->GetNextSibling())) {
         current = next;
         break;
+      }
+
+      if constexpr (ShouldSerializeShadowRoots == SerializeShadowRoots::Yes) {
+        // If the current node is a shadow root, then we must go to its host.
+        // Since shadow DOMs are serialized declaratively as template elements,
+        // we serialize the end tag of the template before going back to
+        // serializing the shadow host.
+        if (current->IsShadowRoot()) {
+          current = current->GetContainingShadowHost();
+          aBuilder.Append(u"</template>");
+
+          if (current->HasChildren()) {
+            current = current->GetFirstChildOfTemplateOrNode();
+            break;
+          }
+          continue;
+        }
       }
 
       current = current->GetParentNode();
@@ -9746,11 +9869,47 @@ bool nsContentUtils::SerializeNodeToMarkup(nsINode* aRoot,
       }
 
       if (aDescendantsOnly && current == aRoot) {
-        return builder.ToString(aOut);
+        return;
       }
     }
   }
 }
+
+template <SerializeShadowRoots ShouldSerializeShadowRoots>
+bool nsContentUtils::SerializeNodeToMarkup(
+    nsINode* aRoot, bool aDescendantsOnly, nsAString& aOut,
+    bool aSerializableShadowRoots,
+    const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots) {
+  // If you pass in a DOCUMENT_NODE, you must pass aDescendentsOnly as true
+  MOZ_ASSERT(aDescendantsOnly || aRoot->NodeType() != nsINode::DOCUMENT_NODE);
+
+  StringBuilder builder;
+  if constexpr (ShouldSerializeShadowRoots == SerializeShadowRoots::Yes) {
+    if (aDescendantsOnly &&
+        StartSerializingShadowDOM(aRoot, builder, aSerializableShadowRoots,
+                                  aShadowRoots)) {
+      SerializeNodeToMarkupInternal<SerializeShadowRoots::Yes>(
+          aRoot->GetShadowRoot()->GetFirstChild(), false, builder,
+          aSerializableShadowRoots, aShadowRoots);
+      // The template tag is opened in StartSerializingShadowDOM, so we need
+      // to close it here before serializing any children of aRoot.
+      builder.Append(u"</template>");
+    }
+  }
+
+  SerializeNodeToMarkupInternal<ShouldSerializeShadowRoots>(
+      aRoot, aDescendantsOnly, builder, aSerializableShadowRoots, aShadowRoots);
+  return builder.ToString(aOut);
+}
+
+template bool nsContentUtils::SerializeNodeToMarkup<SerializeShadowRoots::No>(
+    nsINode* aRoot, bool aDescendantsOnly, nsAString& aOut,
+    bool aSerializableShadowRoots,
+    const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots);
+template bool nsContentUtils::SerializeNodeToMarkup<SerializeShadowRoots::Yes>(
+    nsINode* aRoot, bool aDescendantsOnly, nsAString& aOut,
+    bool aSerializableShadowRoots,
+    const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots);
 
 bool nsContentUtils::IsSpecificAboutPage(JSObject* aGlobal, const char* aUri) {
   // aUri must start with about: or this isn't the right function to be using.
@@ -10366,12 +10525,9 @@ void nsContentUtils::AppendDocumentLevelNativeAnonymousContentTo(
 #endif
 
   if (PresShell* presShell = aDocument->GetPresShell()) {
-    if (nsIFrame* scrollFrame = presShell->GetRootScrollFrame()) {
-      nsIAnonymousContentCreator* creator = do_QueryFrame(scrollFrame);
-      MOZ_ASSERT(
-          creator,
-          "scroll frame should always implement nsIAnonymousContentCreator");
-      creator->AppendAnonymousContentTo(aElements, 0);
+    if (ScrollContainerFrame* rootScrollContainerFrame =
+            presShell->GetRootScrollContainerFrame()) {
+      rootScrollContainerFrame->AppendAnonymousContentTo(aElements, 0);
     }
     if (nsCanvasFrame* canvasFrame = presShell->GetCanvasFrame()) {
       canvasFrame->AppendAnonymousContentTo(aElements, 0);
@@ -11534,6 +11690,7 @@ int32_t nsContentUtils::CompareTreePosition(const nsINode* aNode1,
 nsIContent* nsContentUtils::AttachDeclarativeShadowRoot(nsIContent* aHost,
                                                         ShadowRootMode aMode,
                                                         bool aIsClonable,
+                                                        bool aIsSerializable,
                                                         bool aDelegatesFocus) {
   RefPtr<Element> host = mozilla::dom::Element::FromNodeOrNull(aHost);
   if (!host || host->GetShadowRoot()) {
@@ -11546,6 +11703,7 @@ nsIContent* nsContentUtils::AttachDeclarativeShadowRoot(nsIContent* aHost,
   init.mDelegatesFocus = aDelegatesFocus;
   init.mSlotAssignment = SlotAssignmentMode::Named;
   init.mClonable = aIsClonable;
+  init.mSerializable = aIsSerializable;
 
   RefPtr shadowRoot = host->AttachShadow(init, IgnoreErrors());
   if (shadowRoot) {

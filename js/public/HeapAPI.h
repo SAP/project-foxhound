@@ -385,7 +385,7 @@ enum StackKind {
  * initial value. In the browser this configured by the
  * javascript.options.mem.nursery.max_kb pref.
  */
-const uint32_t DefaultNurseryMaxBytes = 16 * js::gc::ChunkSize;
+const uint32_t DefaultNurseryMaxBytes = 64 * js::gc::ChunkSize;
 
 /* Default maximum heap size in bytes to pass to JS_NewContext(). */
 const uint32_t DefaultHeapMaxBytes = 32 * 1024 * 1024;
@@ -653,6 +653,14 @@ MOZ_ALWAYS_INLINE bool IsInsideNursery(const TenuredCell* cell) {
   return false;
 }
 
+// Return whether |cell| is in the region of the nursery currently being
+// collected.
+MOZ_ALWAYS_INLINE bool InCollectedNurseryRegion(const Cell* cell) {
+  MOZ_ASSERT(cell);
+  return detail::GetCellChunkBase(cell)->getKind() ==
+         ChunkKind::NurseryFromSpace;
+}
+
 // Allow use before the compiler knows the derivation of JSObject, JSString, and
 // JS::BigInt.
 MOZ_ALWAYS_INLINE bool IsInsideNursery(const JSObject* obj) {
@@ -663,6 +671,9 @@ MOZ_ALWAYS_INLINE bool IsInsideNursery(const JSString* str) {
 }
 MOZ_ALWAYS_INLINE bool IsInsideNursery(const JS::BigInt* bi) {
   return IsInsideNursery(reinterpret_cast<const Cell*>(bi));
+}
+MOZ_ALWAYS_INLINE bool InCollectedNurseryRegion(const JSObject* obj) {
+  return InCollectedNurseryRegion(reinterpret_cast<const Cell*>(obj));
 }
 
 MOZ_ALWAYS_INLINE bool IsCellPointerValid(const void* ptr) {

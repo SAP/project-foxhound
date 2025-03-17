@@ -793,9 +793,9 @@ dependencies = [
 
 [[package]]
 name = "euclid"
-version = "0.22.6"
+version = "0.22.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da96828553a086d7b18dcebfc579bd9628b016f86590d7453c115e490fa74b80"
+checksum = "e0f0eb73b934648cd7a4a61f1b15391cd95dab0b4da6e2e66c2a072c144b4a20"
 dependencies = [
  "num-traits",
  "serde",
@@ -996,9 +996,9 @@ dependencies = [
 
 [[package]]
 name = "glean"
-version = "59.0.0"
+version = "60.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ceede8fb9c90ba1b77fb8290d3ae7b62bfcb422ad1d6e46bae1c8af3f22f12d"
+checksum = "0dc8ff10d489acea6e3e3165bcc5d903f2d4fe88faab6940a3e7de11ff862a5e"
 dependencies = [
  "glean-core",
  "inherent",
@@ -1009,9 +1009,9 @@ dependencies = [
 
 [[package]]
 name = "glean-core"
-version = "59.0.0"
+version = "60.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea06a592b1395e0a16a5f4d6872f009ca7c98acc5127a8119088f1b435b5aaae"
+checksum = "0933c00ca50c8b2c10ca9090c5d4a6fbadd4982005699b38e0c5f233983d3cd4"
 dependencies = [
  "android_logger",
  "bincode",
@@ -1818,9 +1818,9 @@ dependencies = [
 
 [[package]]
 name = "num-traits"
-version = "0.2.11"
+version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c62be47e61d1842b9170f0fdeec8eba98e60e90e5446449a0545e5152acd7096"
+checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
 ]
@@ -1986,7 +1986,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.25",
- "synstructure 0.13.0",
+ "synstructure 0.13.1",
  "unicode-xid",
 ]
 
@@ -2575,14 +2575,13 @@ dependencies = [
 
 [[package]]
 name = "synstructure"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "285ba80e733fac80aa4270fbcdf83772a79b80aa35c97075320abfee4a915b06"
+checksum = "c8af7666ab7b6390ab78131fb5b0fce11d6b7a6951602017c35fa82800708971"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.25",
- "unicode-xid",
 ]
 
 [[package]]

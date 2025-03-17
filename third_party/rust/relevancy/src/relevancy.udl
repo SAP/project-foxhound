@@ -8,12 +8,21 @@ interface RelevancyApiError {
 // Top-level class for the Relevancy component
 interface RelevancyStore {
     // Construct a new RelevancyStore
-    [Throws=RelevancyApiError]
+    //
+    // This is non-blocking since databases and other resources are lazily opened.
     constructor(string dbpath);
+
+    // Close any open resources (for example databases)
+    //
+    // Calling `close` will interrupt any in-progress queries on other threads.
+    void close();
+
+    // Interrupt any current database queries
+    void interrupt();
 
     // Ingest the top URLs by frequency to build up the user's interest vector
     [Throws=RelevancyApiError]
-    void ingest(sequence<string> top_urls);
+    InterestVector ingest(sequence<string> top_urls);
 
     // Calculate metrics for the user's interest vector in order to measure how strongly we're
     // identifying interests.  See the `InterestMetrics` struct for details.
@@ -39,7 +48,7 @@ enum Interest {
     "Finance",
     "Food",
     "Government",
-    "Health",
+    // "Health",
     "Hobbies",
     "Home",
     "News",
@@ -55,7 +64,7 @@ enum Interest {
 // the cosine similarity when comparing the user's interest against various interest vectors that
 // consumers may use.
 //
-// Cosine similary was chosen because it seems easy to calculate.  This was then matched against
+// Cosine similarly was chosen because it seems easy to calculate.  This was then matched against
 // some semi-plausible real-world interest vectors that consumers might use.  This is all up for
 // debate and we may decide to switch to some other metrics.
 //
@@ -93,7 +102,7 @@ dictionary InterestVector {
     u32 finance;
     u32 food;
     u32 government;
-    u32 health;
+    // u32 health;
     u32 hobbies;
     u32 home;
     u32 news;

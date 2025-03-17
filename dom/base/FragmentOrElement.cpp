@@ -76,7 +76,6 @@
 #include "nsGenericHTMLElement.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsView.h"
-#include "nsIScrollableFrame.h"
 #include "ChildIterator.h"
 #include "mozilla/dom/NodeListBinding.h"
 #include "mozilla/dom/MutationObservers.h"
@@ -108,8 +107,6 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-int32_t nsIContent::sTabFocusModel = eTabFocus_any;
-bool nsIContent::sTabFocusModelAppliesToXUL = false;
 uint64_t nsMutationGuard::sGeneration = 0;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsIContent)
@@ -1025,7 +1022,7 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   }
 }
 
-Element* nsIContent::GetAutofocusDelegate(bool aWithMouse) const {
+Element* nsIContent::GetAutofocusDelegate(IsFocusableFlags aFlags) const {
   for (nsINode* node = GetFirstChild(); node; node = node->GetNextNode(this)) {
     auto* descendant = Element::FromNode(*node);
     if (!descendant || !descendant->GetBoolAttr(nsGkAtoms::autofocus)) {
@@ -1033,14 +1030,14 @@ Element* nsIContent::GetAutofocusDelegate(bool aWithMouse) const {
     }
 
     nsIFrame* frame = descendant->GetPrimaryFrame();
-    if (frame && frame->IsFocusable(aWithMouse)) {
+    if (frame && frame->IsFocusable(aFlags)) {
       return descendant;
     }
   }
   return nullptr;
 }
 
-Element* nsIContent::GetFocusDelegate(bool aWithMouse) const {
+Element* nsIContent::GetFocusDelegate(IsFocusableFlags aFlags) const {
   const nsIContent* whereToLook = this;
   if (ShadowRoot* root = GetShadowRoot()) {
     if (!root->DelegatesFocus()) {
@@ -1058,7 +1055,7 @@ Element* nsIContent::GetFocusDelegate(bool aWithMouse) const {
       return {};
     }
 
-    return frame->IsFocusable(aWithMouse);
+    return frame->IsFocusable(aFlags);
   };
 
   Element* potentialFocus = nullptr;
@@ -1100,7 +1097,7 @@ Element* nsIContent::GetFocusDelegate(bool aWithMouse) const {
 
     if (auto* shadow = el->GetShadowRoot()) {
       if (shadow->DelegatesFocus()) {
-        if (Element* delegatedFocus = shadow->GetFocusDelegate(aWithMouse)) {
+        if (Element* delegatedFocus = shadow->GetFocusDelegate(aFlags)) {
           if (autofocus) {
             // This element has autofocus and we found an focus delegates
             // in its descendants, so use the focus delegates
@@ -1117,7 +1114,7 @@ Element* nsIContent::GetFocusDelegate(bool aWithMouse) const {
   return potentialFocus;
 }
 
-Focusable nsIContent::IsFocusableWithoutStyle(bool aWithMouse) {
+Focusable nsIContent::IsFocusableWithoutStyle(IsFocusableFlags) {
   // Default, not tabbable
   return {};
 }
@@ -1875,7 +1872,8 @@ void FragmentOrElement::GetMarkup(bool aIncludeSelf, nsAString& aMarkup) {
 
   Document* doc = OwnerDoc();
   if (IsInHTMLDocument()) {
-    nsContentUtils::SerializeNodeToMarkup(this, !aIncludeSelf, aMarkup);
+    nsContentUtils::SerializeNodeToMarkup(this, !aIncludeSelf, aMarkup, false,
+                                          {});
     return;
   }
 

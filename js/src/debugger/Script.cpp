@@ -1477,6 +1477,10 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Yield:
     case JSOp::Await:
     case JSOp::CanSkipAwait:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case JSOp::AddDisposable:
+    case JSOp::DisposeDisposables:
+#endif
       return true;
 
     case JSOp::Nop:
@@ -1620,6 +1624,7 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Object:
     case JSOp::Typeof:
     case JSOp::TypeofExpr:
+    case JSOp::TypeofEq:
     case JSOp::ToAsyncIter:
     case JSOp::ToPropertyKey:
     case JSOp::Lambda:

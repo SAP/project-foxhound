@@ -869,12 +869,6 @@ SVGBBox TextRenderedRun::GetRunUserSpaceRect(nsPresContext* aContext,
               fillInAppUnits.height),
       aContext);
 
-  if (vertical) {
-    fill.Scale(1.0, mLengthAdjustScaleFactor);
-  } else {
-    fill.Scale(mLengthAdjustScaleFactor, 1.0);
-  }
-
   // Scale the rectangle up due to any mFontSizeScaleFactor.
   fill.Scale(1.0 / mFontSizeScaleFactor);
 
@@ -3142,7 +3136,7 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
   while (run.mFrame) {
     nsTextFrame* frame = run.mFrame;
 
-    RefPtr<SVGContextPaintImpl> contextPaint = new SVGContextPaintImpl();
+    auto contextPaint = MakeRefPtr<SVGContextPaintImpl>();
     DrawMode drawMode = contextPaint->Init(&aDrawTarget, initialMatrix, frame,
                                            outerContextPaint, aImgParams);
     if (drawMode & DrawMode::GLYPH_STROKE) {
@@ -4576,7 +4570,7 @@ gfxFloat SVGTextFrame::GetStartOffset(nsIFrame* aTextPathFrame) {
                       100.0
                 : 0.0;
   }
-  float lengthValue = length->GetAnimValue(tp);
+  float lengthValue = length->GetAnimValueWithZoom(tp);
   // If offsetScale is infinity we want to return 0 not NaN
   return lengthValue == 0 ? 0.0 : lengthValue * GetOffsetScale(aTextPathFrame);
 }
@@ -4814,7 +4808,7 @@ void SVGTextFrame::DoGlyphPositioning() {
       element->EnumAttributes()[SVGTextContentElement::LENGTHADJUST]
           .GetAnimValue();
   bool adjustingTextLength = textLengthAttr->IsExplicitlySet();
-  float expectedTextLength = textLengthAttr->GetAnimValue(element);
+  float expectedTextLength = textLengthAttr->GetAnimValueWithZoom(element);
 
   if (adjustingTextLength &&
       (expectedTextLength < 0.0f || lengthAdjust == LENGTHADJUST_UNKNOWN)) {

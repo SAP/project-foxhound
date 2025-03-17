@@ -71,7 +71,6 @@ import org.mozilla.gecko.util.ProxySelector;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.geckoview.BuildConfig;
 import org.mozilla.geckoview.CrashHandler;
-import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.R;
 
 public class GeckoAppShell {
@@ -187,6 +186,13 @@ public class GeckoAppShell {
 
   // See also HardwareUtils.LOW_MEMORY_THRESHOLD_MB.
   private static final int HIGH_MEMORY_DEVICE_THRESHOLD_MB = 768;
+
+  /*
+   * Device RAM threshold requirement for adding additional headers.
+   * Keep in sync with RAM_THRESHOLD_MEGABYTES defined in
+   * https://searchfox.org/mozilla-central/rev/55944eaee1e358b5443eaedc8adcd37e3fd23fd3/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/FenixApplication.kt#120
+   */
+  private static final int ADDITIONAL_SEARCH_HEADER_RAM_THRESHOLD_MEGABYTES = 1024;
 
   private static int sDensityDpi;
   private static Float sDensity;
@@ -863,6 +869,12 @@ public class GeckoAppShell {
     }
 
     return sTotalRam;
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  private static synchronized boolean isDeviceRamThresholdOkay() {
+    final Context applicationContext = getApplicationContext();
+    return getTotalRam(applicationContext) > ADDITIONAL_SEARCH_HEADER_RAM_THRESHOLD_MEGABYTES;
   }
 
   private static boolean isHighMemoryDevice(final Context context) {
@@ -1583,12 +1595,8 @@ public class GeckoAppShell {
   @WrapForJNI
   public static native boolean isParentProcess();
 
-  /**
-   * Returns a GeckoResult that will be completed to true if the GPU process is enabled and false if
-   * it is disabled.
-   */
   @WrapForJNI
-  public static native GeckoResult<Boolean> isGpuProcessEnabled();
+  public static native boolean isGpuProcessEnabled();
 
   @SuppressLint("NewApi")
   public static boolean isIsolatedProcess() {

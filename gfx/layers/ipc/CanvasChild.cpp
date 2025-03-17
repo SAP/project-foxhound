@@ -206,13 +206,11 @@ class CanvasDataShmemHolder {
   }
 
   void Destroy() {
-    class DestroyRunnable final : public dom::WorkerRunnable {
+    class DestroyRunnable final : public dom::WorkerThreadRunnable {
      public:
       DestroyRunnable(dom::WorkerPrivate* aWorkerPrivate,
                       CanvasDataShmemHolder* aShmemHolder)
-          : dom::WorkerRunnable(aWorkerPrivate,
-                                "CanvasDataShmemHolder::Destroy",
-                                dom::WorkerRunnable::WorkerThread),
+          : dom::WorkerThreadRunnable("CanvasDataShmemHolder::Destroy"),
             mShmemHolder(aShmemHolder) {}
 
       bool WorkerRun(JSContext* aCx,
@@ -241,8 +239,9 @@ class CanvasDataShmemHolder {
       if (mWorkerRef) {
         if (!mWorkerRef->Private()->IsOnCurrentThread()) {
           auto task = MakeRefPtr<DestroyRunnable>(mWorkerRef->Private(), this);
+          dom::WorkerPrivate* worker = mWorkerRef->Private();
           mMutex.Unlock();
-          task->Dispatch();
+          task->Dispatch(worker);
           return;
         }
       } else if (!NS_IsMainThread()) {

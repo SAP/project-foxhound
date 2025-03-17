@@ -83,15 +83,11 @@ already_AddRefed<nsIURI> ParseURLFromDocument(Document* aDocument,
   MOZ_ASSERT(aDocument);
   MOZ_ASSERT(NS_IsMainThread());
 
-  // Taintfox: propagate taint
-  nsAutoCString input(aInput);
-  input.AssignTaint(aInput.Taint());
-
   nsCOMPtr<nsIURI> resolvedURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(resolvedURI), input, nullptr,
+  nsresult rv = NS_NewURI(getter_AddRefs(resolvedURI), aInput, nullptr,
                           aDocument->GetBaseURI());
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.ThrowTypeError<MSG_INVALID_URL>(input);
+    aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }
   return resolvedURI.forget();
 }
@@ -131,11 +127,8 @@ already_AddRefed<nsIURI> ParseURLFromChrome(const nsACString& aInput,
                                             ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  // Taintfox: propagate taint
-  nsAutoCString input(aInput);
-
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), input);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aInput);
   if (NS_FAILED(rv)) {
     aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }

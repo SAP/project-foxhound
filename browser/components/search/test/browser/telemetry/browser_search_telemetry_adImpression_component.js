@@ -103,9 +103,6 @@ add_setup(async function () {
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.serpEventTelemetry.enabled", true]],
-  });
 
   // The tests evaluate whether or not ads are visible depending on whether
   // they are within the view of the window. To ensure the test results
@@ -142,6 +139,7 @@ add_task(async function test_ad_impressions_with_one_carousel() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -186,6 +184,7 @@ add_task(async function test_ad_impressions_with_two_carousels() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -221,6 +220,7 @@ add_task(
           is_shopping_page: "false",
           is_private: "false",
           shopping_tab_displayed: "false",
+          is_signed_in: "false",
         },
         adImpressions: [
           {
@@ -272,6 +272,7 @@ add_task(async function test_ad_impressions_with_carousels_tabhistory() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -304,6 +305,7 @@ add_task(async function test_ad_impressions_with_hidden_carousels() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -338,6 +340,7 @@ add_task(async function test_ad_impressions_with_carousel_scrolled_left() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -372,6 +375,7 @@ add_task(async function test_ad_impressions_with_carousel_below_the_fold() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -404,6 +408,7 @@ add_task(async function test_ad_impressions_with_text_links() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -463,6 +468,7 @@ add_task(async function test_ad_visibility() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -495,6 +501,7 @@ add_task(async function test_impressions_without_ads() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -527,6 +534,7 @@ add_task(async function test_ad_impressions_with_cookie_banner() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {

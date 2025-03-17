@@ -715,7 +715,7 @@ nsIContent* ContentIteratorBase<NodeType>::GetNextSibling(
     // For shadow root, instead of getting to the sibling of the parent
     // directly, we need to get into the light tree of the parent to handle
     // slotted contents.
-    if (ShadowRoot* shadowRoot = ShadowRoot::FromNode(aNode)) {
+    if (aNode->IsShadowRoot()) {
       if (nsIContent* child = parent->GetFirstChild()) {
         return child;
       }
@@ -1225,8 +1225,11 @@ void ContentSubtreeIterator::Next() {
     if (!root) {
       nextNode = nextNode->GetFirstChild();
     } else {
-      nextNode = mRange->MayCrossShadowBoundary() ? root->GetFirstChild()
-                                                  : nextNode->GetFirstChild();
+      // If IterAllowCrossShadowBoundary() returns true, it means we should
+      // use shadow-including order for this iterator, that means the shadow
+      // root should always be iterated.
+      nextNode = IterAllowCrossShadowBoundary() ? root->GetFirstChild()
+                                                : nextNode->GetFirstChild();
     }
     NS_ASSERTION(nextNode, "Iterator error, expected a child node!");
 

@@ -362,6 +362,9 @@ TEST_F(FOGFixture, TestLabeledCounterWithLabelsWorks) {
   test_only::mabels_labeled_counters
       .EnumGet(test_only::MabelsLabeledCountersLabel::eClean)
       .Add(2);
+  test_only::mabels_labeled_counters
+      .EnumGet(test_only::MabelsLabeledCountersLabel::e1stCounter)
+      .Add(3);
   ASSERT_EQ(
       1, test_only::mabels_labeled_counters
              .EnumGet(test_only::MabelsLabeledCountersLabel::eNextToTheFridge)
@@ -370,6 +373,11 @@ TEST_F(FOGFixture, TestLabeledCounterWithLabelsWorks) {
              .ref());
   ASSERT_EQ(2, test_only::mabels_labeled_counters
                    .EnumGet(test_only::MabelsLabeledCountersLabel::eClean)
+                   .TestGetValue()
+                   .unwrap()
+                   .ref());
+  ASSERT_EQ(3, test_only::mabels_labeled_counters
+                   .EnumGet(test_only::MabelsLabeledCountersLabel::e1stCounter)
                    .TestGetValue()
                    .unwrap()
                    .ref());
@@ -485,3 +493,6 @@ TEST_F(FOGFixture, TestRustInGTest) { Rust_TestRustInGTest(); }
 
 extern "C" void Rust_TestJogfile();
 TEST_F(FOGFixture, TestJogfile) { Rust_TestJogfile(); }
+
+extern "C" void Rust_TestRideAlongPing();
+TEST_F(FOGFixture, TestRustRideAlongPing) { Rust_TestRideAlongPing(); }

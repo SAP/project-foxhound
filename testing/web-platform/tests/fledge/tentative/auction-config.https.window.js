@@ -12,7 +12,10 @@
 // META: variant=?31-35
 // META: variant=?36-40
 // META: variant=?40-45
-// META: variant=?46-last
+// META: variant=?46-50
+// META: variant=?51-55
+// META: variant=?56-60
+// META: variant=?61-last
 
 "use strict;"
 
@@ -110,6 +113,116 @@ const EXPECT_PROMISE_ERROR = auctionResult => {
 }
 
 makeTest({
+  name: 'deprecatedRenderURLReplacements without end bracket is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'${No_End_Bracket': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without percents and brackets.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'No_Wrapper': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without dollar sign.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'{No_Dollar_Sign}': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without start bracket is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'$No_Start_Bracket}': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements mix and match is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'${Bracket_And_Percent%%': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements missing start percent is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'%Missing_Start_Percents%%': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements single percents is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'%Single_Percents%': 'SSP'}}
+});
+
+makeTest({
+  name: 'deprecatedRenderURLReplacements without end percents is invalid.',
+  expect: EXPECT_PROMISE_ERROR,
+  expectPromiseError: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {deprecatedRenderURLReplacements: {'%%No_End_Percents': 'SSP'}}
+});
+
+makeTest({
+  name: 'sellerRealTimeReportingConfig has default local reporting type',
+  expect:  EXPECT_WINNER,
+  auctionConfigOverrides: {sellerRealTimeReportingConfig:
+                            {type: 'default-local-reporting'}}
+});
+
+makeTest({
+  name: 'sellerRealTimeReportingConfig has no type',
+  expect: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {sellerRealTimeReportingConfig:
+                            {notType: 'default-local-reporting'}}
+});
+
+makeTest({
+  name: 'sellerRealTimeReportingConfig has unknown type',
+  expect:  EXPECT_WINNER,
+  auctionConfigOverrides: {sellerRealTimeReportingConfig: {type: 'unknown type'}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig',
+  expect: EXPECT_WINNER,
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {'https://example.com': {type: 'default-local-reporting'}}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has invalid buyer',
+  expect: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {'http://example.com': {type: 'default-local-reporting'}}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has no type',
+  expect: EXPECT_EXCEPTION(TypeError),
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {'https://example.com': {notType: 'default-local-reporting'}}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has unknown type',
+  expect: EXPECT_WINNER,
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig:
+                            {'https://example.com': {type: 'unknown type'}}}
+});
+
+makeTest({
+  name: 'perBuyerRealTimeReportingConfig has no entry',
+  expect: EXPECT_WINNER,
+  auctionConfigOverrides: {perBuyerRealTimeReportingConfig: {}}
+});
+
+makeTest({
   name: 'no buyers => no winners',
   expect: EXPECT_NO_WINNER,
   auctionConfigOverrides: {interestGroupBuyers: []},
@@ -183,9 +296,12 @@ makeTest({
   }
 });
 
+// Cross-origin trustedScoringSignalsURL is fine, but it needs extra
+// headers to actually make it work. The auction here doesn't actually
+// care if the signals don't load.
 makeTest({
   name: 'trustedScoringSignalsURL is cross-origin with seller',
-  expect: EXPECT_EXCEPTION(TypeError),
+  expect: EXPECT_WINNER,
   auctionConfigOverrides: { trustedScoringSignalsURL: "https://example.com" },
 });
 

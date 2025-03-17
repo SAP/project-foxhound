@@ -115,25 +115,29 @@ import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.support.ktx.kotlin.getOrigin
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 import mozilla.components.support.locale.ActivityContextWrapper
+import mozilla.components.support.utils.ext.isLandscape
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.Events
+import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.GleanMetrics.MediaState
 import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.GleanMetrics.PullToRefreshInBrowser
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.NavGraphDirections
-import org.mozilla.fenix.OnBackLongPressedListener
+import org.mozilla.fenix.OnLongPressedListener
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.readermode.DefaultReaderModeController
 import org.mozilla.fenix.browser.tabstrip.TabStrip
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.FindInPageIntegration
 import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.components.toolbar.BrowserFragmentState
 import org.mozilla.fenix.components.toolbar.BrowserFragmentStore
@@ -146,10 +150,10 @@ import org.mozilla.fenix.components.toolbar.ToolbarMenu
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
 import org.mozilla.fenix.components.toolbar.interactor.DefaultBrowserToolbarInteractor
+import org.mozilla.fenix.components.toolbar.navbar.BottomToolbarContainerIntegration
 import org.mozilla.fenix.components.toolbar.navbar.BottomToolbarContainerView
 import org.mozilla.fenix.components.toolbar.navbar.BrowserNavBar
 import org.mozilla.fenix.components.toolbar.navbar.EngineViewClippingBehavior
-import org.mozilla.fenix.components.toolbar.navbar.NavbarIntegration
 import org.mozilla.fenix.components.toolbar.navbar.ToolbarContainerView
 import org.mozilla.fenix.compose.Divider
 import org.mozilla.fenix.crashes.CrashContentIntegration
@@ -165,6 +169,7 @@ import org.mozilla.fenix.ext.breadcrumb
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.hideToolbar
+import org.mozilla.fenix.ext.isTablet
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
 import org.mozilla.fenix.ext.registerForActivityResult
@@ -173,9 +178,12 @@ import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.secure
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.tabClosedUndoMessage
+import org.mozilla.fenix.ext.updateMicrosurveyPromptForConfigurationChange
+import org.mozilla.fenix.ext.updateNavBarForConfigurationChange
 import org.mozilla.fenix.home.HomeScreenViewModel
 import org.mozilla.fenix.home.SharedViewModel
 import org.mozilla.fenix.library.bookmarks.BookmarksSharedViewModel
+import org.mozilla.fenix.microsurvey.ui.MicrosurveyRequestPrompt
 import org.mozilla.fenix.perf.MarkersFragmentLifecycleCallbacks
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.biometric.BiometricPromptFeature
@@ -201,7 +209,7 @@ abstract class BaseBrowserFragment :
     Fragment(),
     UserInteractionHandler,
     ActivityResultHandler,
-    OnBackLongPressedListener,
+    OnLongPressedListener,
     AccessibilityManager.AccessibilityStateChangeListener {
 
     private var _binding: FragmentBrowserBinding? = null
@@ -212,7 +220,9 @@ abstract class BaseBrowserFragment :
     private lateinit var startForResult: ActivityResultLauncher<Intent>
 
     private var _browserToolbarInteractor: BrowserToolbarInteractor? = null
-    protected val browserToolbarInteractor: BrowserToolbarInteractor
+
+    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
+    internal val browserToolbarInteractor: BrowserToolbarInteractor
         get() = _browserToolbarInteractor!!
 
     @VisibleForTesting
@@ -239,7 +249,7 @@ abstract class BaseBrowserFragment :
     private val promptsFeature = ViewBoundFeatureWrapper<PromptFeature>()
     private val findInPageIntegration = ViewBoundFeatureWrapper<FindInPageIntegration>()
     private val toolbarIntegration = ViewBoundFeatureWrapper<ToolbarIntegration>()
-    private val navbarIntegration = ViewBoundFeatureWrapper<NavbarIntegration>()
+    private val bottomToolbarContainerIntegration = ViewBoundFeatureWrapper<BottomToolbarContainerIntegration>()
     private val sitePermissionsFeature = ViewBoundFeatureWrapper<SitePermissionsFeature>()
     private val fullScreenFeature = ViewBoundFeatureWrapper<FullScreenFeature>()
     private val swipeRefreshFeature = ViewBoundFeatureWrapper<SwipeRefreshFeature>()
@@ -268,6 +278,13 @@ abstract class BaseBrowserFragment :
     private val bookmarksSharedViewModel: BookmarksSharedViewModel by activityViewModels()
 
     private var currentStartDownloadDialog: StartDownloadDialog? = null
+
+    private lateinit var savedLoginsLauncher: ActivityResultLauncher<Intent>
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        savedLoginsLauncher = registerForActivityResult { navigateToSavedLoginsFragment() }
+    }
 
     @CallSuper
     override fun onCreateView(
@@ -415,10 +432,11 @@ abstract class BaseBrowserFragment :
             },
             onCloseTab = { closedSession ->
                 val closedTab = store.state.findTab(closedSession.id) ?: return@DefaultBrowserToolbarController
-                showUndoSnackbar(requireContext().tabClosedUndoMessage(closedTab.content.private))
+                showUndoSnackbar(context.tabClosedUndoMessage(closedTab.content.private))
             },
         )
         val browserToolbarMenuController = DefaultBrowserToolbarMenuController(
+            fragment = this,
             store = store,
             activity = activity,
             navController = findNavController(),
@@ -439,7 +457,8 @@ abstract class BaseBrowserFragment :
             tabCollectionStorage = requireComponents.core.tabCollectionStorage,
             topSitesStorage = requireComponents.core.topSitesStorage,
             pinnedSiteStorage = requireComponents.core.pinnedSiteStorage,
-            browserStore = store,
+            onShowPinVerification = { intent -> savedLoginsLauncher.launch(intent) },
+            onBiometricAuthenticationSuccessful = { navigateToSavedLoginsFragment() },
         )
 
         _browserToolbarInteractor = DefaultBrowserToolbarInteractor(
@@ -477,7 +496,7 @@ abstract class BaseBrowserFragment :
                             TabStripMetrics.selectTab.record()
                         },
                         onCloseTabClick = { isPrivate ->
-                            showUndoSnackbar(requireContext().tabClosedUndoMessage(isPrivate))
+                            showUndoSnackbar(context.tabClosedUndoMessage(isPrivate))
                             TabStripMetrics.closeTab.record()
                         },
                     )
@@ -485,15 +504,22 @@ abstract class BaseBrowserFragment :
             },
         )
 
-        if (IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
+        val shouldAddNavigationBar = shouldAddNavigationBar(context)
+        if (shouldAddNavigationBar) {
             initializeNavBar(
                 browserToolbar = browserToolbarView.view,
                 view = view,
                 context = context,
                 activity = activity,
             )
-        } else {
-            browserToolbarView.view.hidePageActionSeparator()
+        }
+
+        if (!shouldAddNavigationBar && shouldShowMicrosurveyPrompt()) {
+            initializeMicrosurveyPrompt(
+                browserToolbar = browserToolbarView.view,
+                view = view,
+                context = context,
+            )
         }
 
         toolbarIntegration.set(
@@ -756,6 +782,9 @@ abstract class BaseBrowserFragment :
                 loginValidationDelegate = DefaultLoginValidationDelegate(
                     context.components.core.lazyPasswordsStorage,
                 ),
+                isLoginAutofillEnabled = {
+                    context.settings().shouldAutofillLogins
+                },
                 isSaveLoginEnabled = {
                     context.settings().shouldPromptToSaveLogins
                 },
@@ -836,6 +865,7 @@ abstract class BaseBrowserFragment :
             feature = SessionFeature(
                 requireComponents.core.store,
                 requireComponents.useCases.sessionUseCases.goBack,
+                requireComponents.useCases.sessionUseCases.goForward,
                 binding.engineView,
                 customTabSessionId,
             ),
@@ -1005,7 +1035,9 @@ abstract class BaseBrowserFragment :
         )
 
         initializeEngineView(
-            topToolbarHeight = context.settings().getTopToolbarHeight(includeTabStrip = customTabSessionId == null),
+            topToolbarHeight = context.settings().getTopToolbarHeight(
+                includeTabStrip = customTabSessionId == null && context.isTabStripEnabled(),
+            ),
             bottomToolbarHeight = bottomToolbarHeight,
         )
     }
@@ -1212,7 +1244,7 @@ abstract class BaseBrowserFragment :
         if (isToolbarDynamic(context)) {
             getEngineView().setDynamicToolbarMaxHeight(topToolbarHeight + bottomToolbarHeight)
 
-            if (IncompleteRedesignToolbarFeature(context.settings()).isEnabled) {
+            if (IncompleteRedesignToolbarFeature(context.settings()).isEnabled || shouldShowMicrosurveyPrompt()) {
                 (getSwipeRefreshLayout().layoutParams as CoordinatorLayout.LayoutParams).behavior =
                     EngineViewClippingBehavior(
                         context = context,
@@ -1221,7 +1253,7 @@ abstract class BaseBrowserFragment :
                         topToolbarHeight = topToolbarHeight,
                     )
             } else {
-                val toolbarHeight = if (customTabSessionId == null && context.settings().isTabletAndTabStripEnabled) {
+                val toolbarHeight = if (customTabSessionId == null && context.isTabStripEnabled()) {
                     resources.getDimensionPixelSize(R.dimen.browser_toolbar_height) +
                         resources.getDimensionPixelSize(R.dimen.tab_strip_height)
                 } else {
@@ -1252,6 +1284,16 @@ abstract class BaseBrowserFragment :
         }
     }
 
+    /**
+     * We don't show the navigation bar for tablets and in landscape mode.
+     */
+    private fun shouldAddNavigationBar(context: Context) =
+        IncompleteRedesignToolbarFeature(context.settings()).isEnabled && !context.isLandscape() && !isTablet()
+
+    // TODO FXDROID-1970 detekt does not like inlining this
+    private val shouldShowMicrosurveyPrompt = false
+    private fun shouldShowMicrosurveyPrompt() = shouldShowMicrosurveyPrompt
+
     @Suppress("LongMethod")
     private fun initializeNavBar(
         browserToolbar: BrowserToolbar,
@@ -1259,8 +1301,7 @@ abstract class BaseBrowserFragment :
         context: Context,
         activity: HomeActivity,
     ) {
-        browserToolbar.showPageActionSeparator()
-        val isToolbarAtBottom = context.components.settings.toolbarPosition == ToolbarPosition.BOTTOM
+        val isToolbarAtBottom = isToolbarAtBottom(context)
 
         // The toolbar view has already been added directly to the container.
         // We should remove it and add the view to the navigation bar container.
@@ -1271,7 +1312,7 @@ abstract class BaseBrowserFragment :
         }
 
         // We need a second menu button, but we could reuse the existing builder.
-        val menuButton = MenuButton(requireContext()).apply {
+        val menuButton = MenuButton(context).apply {
             menuBuilder = browserToolbarView.menuToolbar.menuBuilder
             // We have to set colorFilter manually as the button isn't being managed by a [BrowserToolbarView].
             setColorFilter(
@@ -1290,6 +1331,10 @@ abstract class BaseBrowserFragment :
             composableContent = {
                 FirefoxTheme {
                     Column {
+                        if (shouldShowMicrosurveyPrompt()) {
+                            MicrosurveyRequestPrompt()
+                        }
+
                         if (isToolbarAtBottom) {
                             AndroidView(factory = { _ -> browserToolbar })
                         } else {
@@ -1348,7 +1393,9 @@ abstract class BaseBrowserFragment :
                             onMenuButtonClick = {
                                 findNavController().nav(
                                     R.id.browserFragment,
-                                    BrowserFragmentDirections.actionGlobalMenuDialogFragment(),
+                                    BrowserFragmentDirections.actionGlobalMenuDialogFragment(
+                                        accesspoint = MenuAccessPoint.Browser,
+                                    ),
                                 )
                             },
                         )
@@ -1357,8 +1404,8 @@ abstract class BaseBrowserFragment :
             },
         )
 
-        navbarIntegration.set(
-            feature = NavbarIntegration(
+        bottomToolbarContainerIntegration.set(
+            feature = BottomToolbarContainerIntegration(
                 toolbar = bottomToolbarContainerView.toolbarContainerView,
                 store = requireComponents.core.store,
                 appStore = requireComponents.appStore,
@@ -1369,6 +1416,54 @@ abstract class BaseBrowserFragment :
             view = view,
         )
     }
+
+    private fun initializeMicrosurveyPrompt(
+        browserToolbar: BrowserToolbar,
+        view: View,
+        context: Context,
+    ) {
+        val isToolbarAtBottom = isToolbarAtBottom(context)
+
+        // The toolbar view has already been added directly to the container.
+        // See initializeNavBar for more details on improving this.
+        if (isToolbarAtBottom) {
+            binding.browserLayout.removeView(browserToolbar)
+        }
+
+        _bottomToolbarContainerView = BottomToolbarContainerView(
+            context = context,
+            parent = binding.browserLayout,
+            hideOnScroll = isToolbarDynamic(context),
+            composableContent = {
+                FirefoxTheme {
+                    Column {
+                        MicrosurveyRequestPrompt()
+
+                        if (isToolbarAtBottom) {
+                            AndroidView(factory = { _ -> browserToolbar })
+                        } else {
+                            Divider()
+                        }
+                    }
+                }
+            },
+        )
+
+        bottomToolbarContainerIntegration.set(
+            feature = BottomToolbarContainerIntegration(
+                toolbar = bottomToolbarContainerView.toolbarContainerView,
+                store = requireComponents.core.store,
+                appStore = requireComponents.appStore,
+                bottomToolbarContainerView = bottomToolbarContainerView,
+                sessionId = customTabSessionId,
+            ),
+            owner = this,
+            view = view,
+        )
+    }
+
+    private fun isToolbarAtBottom(context: Context) =
+        context.components.settings.toolbarPosition == ToolbarPosition.BOTTOM
 
     private fun isToolbarDynamic(context: Context) =
         !context.settings().shouldUseFixedTopToolbar && context.settings().isDynamicToolbarEnabled
@@ -1513,6 +1608,11 @@ abstract class BaseBrowserFragment :
             removeSessionIfNeeded()
     }
 
+    @CallSuper
+    override fun onForwardPressed(): Boolean {
+        return sessionFeature.onForwardPressed()
+    }
+
     /**
      * Forwards activity results to the [ActivityResultHandler] features.
      */
@@ -1523,12 +1623,24 @@ abstract class BaseBrowserFragment :
         ).any { it.onActivityResult(requestCode, data, resultCode) }
     }
 
-    override fun onBackLongPressed(): Boolean {
+    /**
+     * Navigate to GlobalTabHistoryDialogFragment.
+     */
+    private fun navigateToGlobalTabHistoryDialogFragment() {
         findNavController().navigate(
             NavGraphDirections.actionGlobalTabHistoryDialogFragment(
                 activeSessionId = customTabSessionId,
             ),
         )
+    }
+
+    override fun onBackLongPressed(): Boolean {
+        navigateToGlobalTabHistoryDialogFragment()
+        return true
+    }
+
+    override fun onForwardLongPressed(): Boolean {
+        navigateToGlobalTabHistoryDialogFragment()
         return true
     }
 
@@ -1639,6 +1751,13 @@ abstract class BaseBrowserFragment :
     internal fun updateThemeForSession(session: SessionState) {
         val sessionMode = BrowsingMode.fromBoolean(session.content.private)
         (activity as HomeActivity).browsingModeManager.mode = sessionMode
+    }
+
+    /**
+     * A safe version of [getCurrentTab] that safely checks for context nullability.
+     */
+    protected fun getSafeCurrentTab(): SessionState? {
+        return context?.components?.core?.store?.state?.findCustomTabOrSelectedTab(customTabSessionId)
     }
 
     @VisibleForTesting
@@ -1773,7 +1892,7 @@ abstract class BaseBrowserFragment :
                 browserToolbarView.visible()
                 initializeEngineView(
                     topToolbarHeight = requireContext().settings().getTopToolbarHeight(
-                        includeTabStrip = customTabSessionId == null,
+                        includeTabStrip = customTabSessionId == null && requireContext().isTabStripEnabled(),
                     ),
                     bottomToolbarHeight = requireContext().settings().getBottomToolbarHeight(),
                 )
@@ -1787,6 +1906,44 @@ abstract class BaseBrowserFragment :
     @CallSuper
     internal open fun onUpdateToolbarForConfigurationChange(toolbar: BrowserToolbarView) {
         toolbar.dismissMenu()
+
+        // If the navbar feature could be visible, we should update it's state.
+        val shouldUpdateNavBarState =
+            IncompleteRedesignToolbarFeature(requireContext().settings()).isEnabled && !isTablet()
+        if (shouldUpdateNavBarState) {
+            updateNavBarForConfigurationChange(
+                parent = binding.browserLayout,
+                toolbarView = browserToolbarView.view,
+                bottomToolbarContainerView = _bottomToolbarContainerView?.toolbarContainerView,
+                reinitializeNavBar = ::reinitializeNavBar,
+            )
+        }
+
+        // If the microsurvey feature is visible, we should update it's state.
+        if (shouldShowMicrosurveyPrompt()) {
+            updateMicrosurveyPromptForConfigurationChange(
+                parent = binding.browserLayout,
+                bottomToolbarContainerView = _bottomToolbarContainerView?.toolbarContainerView,
+                reinitializeMicrosurveyPrompt = ::reinitializeMicrosurveyPrompt,
+            )
+        }
+    }
+
+    private fun reinitializeNavBar() {
+        initializeNavBar(
+            browserToolbar = browserToolbarView.view,
+            view = requireView(),
+            context = requireContext(),
+            activity = requireActivity() as HomeActivity,
+        )
+    }
+
+    private fun reinitializeMicrosurveyPrompt() {
+        initializeMicrosurveyPrompt(
+            browserToolbar = browserToolbarView.view,
+            view = requireView(),
+            context = requireContext(),
+        )
     }
 
     /*
@@ -1937,6 +2094,15 @@ abstract class BaseBrowserFragment :
                     saveLoginJob?.cancel()
                 }
             }
+        }
+    }
+
+    private fun navigateToSavedLoginsFragment() {
+        val navController = findNavController()
+        if (navController.currentDestination?.id == R.id.browserFragment) {
+            Logins.openLogins.record(NoExtras())
+            val directions = BrowserFragmentDirections.actionLoginsListFragment()
+            navController.navigate(directions)
         }
     }
 }

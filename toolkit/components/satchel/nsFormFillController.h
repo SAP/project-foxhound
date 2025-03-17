@@ -13,13 +13,11 @@
 #include "nsIAutoCompleteController.h"
 #include "nsIAutoCompletePopup.h"
 #include "nsIDOMEventListener.h"
-#include "nsIFormHistoryAutoComplete.h"
 #include "nsCOMPtr.h"
 #include "nsStubMutationObserver.h"
 #include "nsTHashMap.h"
 #include "nsInterfaceHashtable.h"
 #include "nsIDocShell.h"
-#include "nsILoginAutoCompleteSearch.h"
 #include "nsIMutationObserver.h"
 #include "nsIObserver.h"
 #include "nsCycleCollectionParticipant.h"
@@ -28,6 +26,7 @@ class nsFormHistory;
 class nsINode;
 
 namespace mozilla {
+class CancelableRunnable;
 namespace dom {
 class EventTarget;
 class HTMLInputElement;
@@ -83,6 +82,17 @@ class nsFormFillController final : public nsIFormFillController,
   MOZ_CAN_RUN_SCRIPT
   void MaybeStartControllingInput(mozilla::dom::HTMLInputElement* aElement);
 
+  // clears the reference mRestartAfterAttributeChangeTask before running
+  // MaybeStartControllingInput()
+  MOZ_CAN_RUN_SCRIPT
+  void MaybeStartControllingInputScheduled(
+      mozilla::dom::HTMLInputElement* aElement);
+
+  // cancels a scheduled AttributeChangeTask and clears the reference
+  // mRestartAfterAttributeChangeTask
+  MOZ_CAN_RUN_SCRIPT
+  void MaybeCancelAttributeChangeTask();
+
   void MaybeObserveDataListMutations();
 
   MOZ_CAN_RUN_SCRIPT void RevalidateDataList();
@@ -98,35 +108,25 @@ class nsFormFillController final : public nsIFormFillController,
 
   bool IsTextControl(nsINode* aNode);
 
-  MOZ_CAN_RUN_SCRIPT NS_IMETHODIMP isLoginManagerField(
-      mozilla::dom::HTMLInputElement* aInput, bool* isLoginManagerField);
-
   // members //////////////////////////////////////////
 
   nsCOMPtr<nsIAutoCompleteController> mController;
-  nsCOMPtr<nsILoginAutoCompleteSearch> mLoginManagerAC;
   mozilla::dom::HTMLInputElement* mFocusedInput;
+  RefPtr<mozilla::CancelableRunnable> mRestartAfterAttributeChangeTask;
 
   // mListNode is a <datalist> element which, is set, has the form fill
   // controller as a mutation observer for it.
   nsINode* mListNode;
   nsCOMPtr<nsIAutoCompletePopup> mFocusedPopup;
 
-  // Only used by tests.
-  nsInterfaceHashtable<nsRefPtrHashKey<mozilla::dom::Document>,
-                       nsIAutoCompletePopup>
-      mPopups;
-
   // The observer passed to StartSearch. It will be notified when the search
   // is complete or the data from a datalist changes.
   nsCOMPtr<nsIAutoCompleteObserver> mLastListener;
 
   // This is cleared by StopSearch().
-  nsCOMPtr<nsIFormHistoryAutoComplete> mLastFormHistoryAutoComplete;
   nsString mLastSearchString;
 
-  nsTHashMap<nsPtrHashKey<const nsINode>, bool> mPwmgrInputs;
-  nsTHashMap<nsPtrHashKey<const nsINode>, bool> mAutofillInputs;
+  nsTHashMap<nsPtrHashKey<const nsINode>, bool> mAutoCompleteInputs;
 
   uint16_t mFocusAfterRightClickThreshold;
   uint32_t mTimeout;

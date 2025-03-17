@@ -58,6 +58,7 @@ MSG_DEF(JSMSG_INCOMPATIBLE_PROTO2,     3, JSEXN_TYPEERR, "{0}.prototype[{1}] cal
 MSG_DEF(JSMSG_NO_CONSTRUCTOR,          1, JSEXN_TYPEERR, "{0} has no constructor")
 MSG_DEF(JSMSG_BAD_SORT_ARG,            0, JSEXN_TYPEERR, "invalid Array.prototype.sort argument")
 MSG_DEF(JSMSG_BAD_TOSORTED_ARG,      0, JSEXN_TYPEERR, "non-function passed to Array.prototype.toSorted")
+MSG_DEF(JSMSG_BAD_TYPEDARRAY_SORT_ARG, 0, JSEXN_TYPEERR, "invalid %TypedArray%.prototype.sort argument")
 MSG_DEF(JSMSG_READ_ONLY,               1, JSEXN_TYPEERR, "{0} is read-only")
 MSG_DEF(JSMSG_CANT_DELETE,             1, JSEXN_TYPEERR, "property {0} is non-configurable and can't be deleted")
 MSG_DEF(JSMSG_CANT_TRUNCATE_ARRAY,     0, JSEXN_TYPEERR, "can't delete non-configurable array element")
@@ -135,6 +136,8 @@ MSG_DEF(JSMSG_BAD_DERIVED_RETURN,      1, JSEXN_TYPEERR, "derived class construc
 MSG_DEF(JSMSG_BAD_HERITAGE,            2, JSEXN_TYPEERR, "class heritage {0} is {1}")
 MSG_DEF(JSMSG_NOT_OBJORNULL,           1, JSEXN_TYPEERR, "{0} is not an object or null")
 MSG_DEF(JSMSG_CONSTRUCTOR_DISABLED,    1, JSEXN_TYPEERR, "{0} is disabled")
+MSG_DEF(JSMSG_NO_DISPOSE_IN_USING,     0, JSEXN_TYPEERR, "'Symbol.dispose' property is not callable")
+MSG_DEF(JSMSG_DISPOSABLE_NOT_OBJ,      0, JSEXN_TYPEERR, "Value to be disposed is not an object")
 
 // JSON
 MSG_DEF(JSMSG_JSON_BAD_PARSE,          3, JSEXN_SYNTAXERR, "JSON.parse: {0} at line {1} column {2} of the JSON data")
@@ -400,6 +403,8 @@ MSG_DEF(JSMSG_ASSERT_STRING_LITERAL,   0, JSEXN_SYNTAXERR, "expected string lite
 MSG_DEF(JSMSG_ASSERT_KEY_EXPECTED,     0, JSEXN_SYNTAXERR, "expected assertion key")
 MSG_DEF(JSMSG_DECORATOR_NAME_EXPECTED, 0, JSEXN_SYNTAXERR, "expected property name in decorator expression")
 MSG_DEF(JSMSG_CLASS_EXPECTED,          0, JSEXN_SYNTAXERR, "expected class")
+MSG_DEF(JSMSG_NO_IN_WITH_USING,        0, JSEXN_SYNTAXERR, "'using' is not allowed in a for-in loop")
+MSG_DEF(JSMSG_USING_OUTSIDE_BLOCK_OR_MODULE, 0, JSEXN_SYNTAXERR, "'using' is only allowed in block statements or inside a module")
 
 // UTF-8 source text encoding errors
 MSG_DEF(JSMSG_BAD_LEADING_UTF8_UNIT,   1, JSEXN_SYNTAXERR, "{0} byte doesn't begin a valid UTF-8 code point")
@@ -469,6 +474,7 @@ MSG_DEF(JSMSG_WASM_BAD_IMPORT_ARG,     0, JSEXN_TYPEERR,     "second argument mu
 MSG_DEF(JSMSG_WASM_BAD_IMPORT_FIELD,   1, JSEXN_TYPEERR,     "import object field '{0}' is not an Object")
 MSG_DEF(JSMSG_WASM_BAD_REF_NONNULLABLE_VALUE,  0, JSEXN_TYPEERR,     "cannot pass null to non-nullable WebAssembly reference")
 MSG_DEF(JSMSG_WASM_BAD_FUNCREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass WebAssembly exported functions to funcref")
+MSG_DEF(JSMSG_WASM_BAD_NULL_EXNREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass null to nullexnref")
 MSG_DEF(JSMSG_WASM_BAD_NULL_EXTERNREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass null to nullexternref")
 MSG_DEF(JSMSG_WASM_BAD_NULL_FUNCREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass null to nullfuncref")
 MSG_DEF(JSMSG_WASM_BAD_NULL_ANYREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass null to nullref")
@@ -499,6 +505,15 @@ MSG_DEF(JSMSG_WASM_NONSHARED_WAIT,     0, JSEXN_WASMRUNTIMEERROR, "atomic wait o
 MSG_DEF(JSMSG_WASM_SUPPLY_ONLY_ONE,    2, JSEXN_TYPEERR,     "exactly one of {0} and {1} must be supplied")
 MSG_DEF(JSMSG_WASM_MISSING_REQUIRED,   1, JSEXN_TYPEERR,     "Missing required argument {0}")
 MSG_DEF(JSMSG_WASM_MODIFIED_GC_OBJECT,   0, JSEXN_TYPEERR,     "can't modify WebAssembly GC objects")
+
+// JSPI
+MSG_DEF(JSMSG_JSPI_ARG_POSITION,       0, JSEXN_TYPEERR,              "Invalid argument position value")
+MSG_DEF(JSMSG_JSPI_INVALID_SUSPENDER,  0, JSEXN_WASMRUNTIMEERROR,     "Invalid suspender")
+MSG_DEF(JSMSG_JSPI_INVALID_STATE,      0, JSEXN_WASMRUNTIMEERROR,     "Invalid state")
+MSG_DEF(JSMSG_JSPI_EXPECTED_SUSPENDER, 0, JSEXN_TYPEERR,              "Expected externref for suspender")
+MSG_DEF(JSMSG_JSPI_EXPECTED_PROMISE,   0, JSEXN_TYPEERR,              "Expected externref for returned promise")
+MSG_DEF(JSMSG_JSPI_SIGNATURE_MISMATCH, 0, JSEXN_TYPEERR,              "Signature mismatch")
+MSG_DEF(JSMSG_JSPI_SUSPENDER_LIMIT,    0, JSEXN_WASMRUNTIMEERROR,     "Too many suspenders")
 
 // Proxy
 MSG_DEF(JSMSG_BAD_GETPROTOTYPEOF_TRAP_RETURN,0,JSEXN_TYPEERR,"proxy getPrototypeOf handler returned a non-object, non-null value")
@@ -744,6 +759,10 @@ MSG_DEF(JSMSG_IMPORT_MAPS_IMPORTS_NOT_A_MAP, 0, JSEXN_TYPEERR, "the imports top-
 MSG_DEF(JSMSG_IMPORT_MAPS_SCOPES_NOT_A_MAP, 0, JSEXN_TYPEERR, "the scopes top-level key needs to be a JSON object")
 MSG_DEF(JSMSG_IMPORT_MAPS_SCOPE_VALUE_NOT_A_MAP, 1, JSEXN_TYPEERR, "the value of the scope with prefix '{0}' needs to be a JSON object")
 
+// Import Attributes
+MSG_DEF(JSMSG_IMPORT_ATTRIBUTES_STATIC_IMPORT_UNSUPPORTED_ATTRIBUTE, 1, JSEXN_SYNTAXERR, "Unsupported import attribute: {0}")
+MSG_DEF(JSMSG_IMPORT_ATTRIBUTES_DYNAMIC_IMPORT_UNSUPPORTED_ATTRIBUTE, 1, JSEXN_TYPEERR, "Unsupported import attribute: {0}")
+
 // Promise
 MSG_DEF(JSMSG_CANNOT_RESOLVE_PROMISE_WITH_ITSELF,       0, JSEXN_TYPEERR, "A promise cannot be resolved with itself.")
 MSG_DEF(JSMSG_PROMISE_CAPABILITY_HAS_SOMETHING_ALREADY, 0, JSEXN_TYPEERR, "GetCapabilitiesExecutor function already invoked with non-undefined values.")
@@ -866,12 +885,15 @@ MSG_DEF(JSMSG_TEMPORAL_TIMEZONE_INVALID_IDENTIFIER, 1, JSEXN_RANGEERR, "invalid 
 MSG_DEF(JSMSG_TEMPORAL_TIMEZONE_NANOS_RANGE,        1, JSEXN_RANGEERR, "nanoseconds out of range: {0}")
 MSG_DEF(JSMSG_TEMPORAL_TIMEZONE_INCOMPATIBLE,       2, JSEXN_RANGEERR, "time zones \"{0}\" and \"{1}\" aren't compatible")
 MSG_DEF(JSMSG_TEMPORAL_TIMEZONE_INSTANT_AMBIGUOUS,  0, JSEXN_RANGEERR, "instant is ambiguous")
+MSG_DEF(JSMSG_TEMPORAL_TIMEZONE_OFFSET_SHIFT_ONE_DAY, 0, JSEXN_RANGEERR, "time zone offset shift must not exceed a 24-hour span")
 MSG_DEF(JSMSG_TEMPORAL_DURATION_INVALID_SIGN,       2, JSEXN_RANGEERR, "duration value \"{0}\" has a mismatched sign: {1}")
 MSG_DEF(JSMSG_TEMPORAL_DURATION_INVALID_NON_FINITE, 2, JSEXN_RANGEERR, "duration value \"{0}\" is {1}")
+MSG_DEF(JSMSG_TEMPORAL_DURATION_INVALID_NORMALIZED_TIME, 0, JSEXN_RANGEERR, "time duration values must be lower than 2**53 seconds")
 MSG_DEF(JSMSG_TEMPORAL_DURATION_MISSING_UNIT,       0, JSEXN_TYPEERR, "Duration-like objects must have at least one duration unit")
 MSG_DEF(JSMSG_TEMPORAL_DURATION_NOT_INTEGER,        2, JSEXN_RANGEERR, "{0} isn't a valid {1} duration because it isn't an integer")
 MSG_DEF(JSMSG_TEMPORAL_DURATION_MISSING_UNIT_SPECIFIER, 0, JSEXN_RANGEERR, "at least one of \"smallestUnit\" and \"largestUnit\" must be present")
 MSG_DEF(JSMSG_TEMPORAL_DURATION_UNCOMPARABLE,       1, JSEXN_RANGEERR, "can't compare durations when \"{0}\" is undefined")
+MSG_DEF(JSMSG_TEMPORAL_DURATION_COMBINE_INVALID_SIGN, 0, JSEXN_RANGEERR, "can't combine date- and time-durations with different signs")
 MSG_DEF(JSMSG_TEMPORAL_CALENDAR_INVALID_ID,         1, JSEXN_RANGEERR, "invalid calendar: {0}")
 MSG_DEF(JSMSG_TEMPORAL_CALENDAR_MISSING_FIELD,      1, JSEXN_TYPEERR, "missing \"{0}\" calendar field")
 MSG_DEF(JSMSG_TEMPORAL_CALENDAR_INVALID_FIELD,      1, JSEXN_RANGEERR, "invalid calendar field name \"{0}\"")
@@ -888,8 +910,8 @@ MSG_DEF(JSMSG_TEMPORAL_PLAIN_TIME_CALENDAR_NOT_ISO8601, 1, JSEXN_RANGEERR, "Plai
 MSG_DEF(JSMSG_TEMPORAL_PLAIN_MONTH_DAY_INVALID,     0, JSEXN_RANGEERR, "year-month-day must be valid iso dates")
 MSG_DEF(JSMSG_TEMPORAL_PLAIN_YEAR_MONTH_INVALID,    0, JSEXN_RANGEERR, "year-month-day must be valid iso dates")
 MSG_DEF(JSMSG_TEMPORAL_ZONED_DATE_TIME_NO_TIME_FOUND, 0, JSEXN_RANGEERR, "date-time can't be represented in the given time zone")
-MSG_DEF(JSMSG_TEMPORAL_ZONED_DATE_TIME_NON_POSITIVE_DAY_LENGTH, 0, JSEXN_RANGEERR, "day length must be positive number")
 MSG_DEF(JSMSG_TEMPORAL_ZONED_DATE_TIME_INCORRECT_SIGN,  1, JSEXN_RANGEERR, "computed {0} has an incorrect sign")
+MSG_DEF(JSMSG_TEMPORAL_ZONED_DATE_TIME_INCONSISTENT_INSTANT, 0, JSEXN_RANGEERR, "time zone computed inconsistent instant values")
 MSG_DEF(JSMSG_TEMPORAL_PARSER_NEGATIVE_ZERO_YEAR,       0, JSEXN_RANGEERR, "year 0 must not start with \"-\"")
 MSG_DEF(JSMSG_TEMPORAL_PARSER_MISSING_EXTENDED_YEAR,    0, JSEXN_RANGEERR, "signed year must be followed by six digits")
 MSG_DEF(JSMSG_TEMPORAL_PARSER_MISSING_YEAR,             0, JSEXN_RANGEERR, "missing four digit year")

@@ -27,10 +27,14 @@ body {
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
-  background-image: var(--newtab-wallpaper-light, '');
+  background-image:
+    var(--newtab-wallpaper-light, ''),
+    linear-gradient(to right, var(--newtab-wallpaper-color, ''), var(--newtab-wallpaper-color, ''));
 
   @media (prefers-color-scheme: dark) {
-    background-image: var(--newtab-wallpaper-dark, '');
+    background-image:
+      var(--newtab-wallpaper-dark, ''),
+      linear-gradient(to right, var(--newtab-wallpaper-color, ''), var(--newtab-wallpaper-color, ''));
   }
 }
 
@@ -149,6 +153,7 @@ input {
 @import '../components/ConfirmDialog/ConfirmDialog';
 @import '../components/CustomizeMenu/CustomizeMenu';
 @import '../components/WallpapersSection/WallpapersSection';
+@import '../components/Weather/Weather';
 @import '../components/Card/Card';
 @import '../components/CollapsibleSection/CollapsibleSection';
 @import '../components/DiscoveryStreamAdmin/DiscoveryStreamAdmin';
@@ -180,6 +185,7 @@ input {
 @import '../components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight';
+@import '../components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight';
 
 // AS Router
 @import '../../../asrouter/content-src/components/Button/Button';

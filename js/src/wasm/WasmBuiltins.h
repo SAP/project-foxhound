@@ -146,8 +146,11 @@ enum class SymbolicAddress {
 #define VISIT_BUILTIN_FUNC(op, export, sa_name, ...) sa_name,
   FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
 #undef VISIT_BUILTIN_FUNC
+#ifdef ENABLE_WASM_JSPI
+      UpdateSuspenderState,
+#endif
 #ifdef WASM_CODEGEN_DEBUG
-      PrintI32,
+  PrintI32,
   PrintPtr,
   PrintF32,
   PrintF64,
@@ -280,6 +283,7 @@ extern const SymbolicAddressSignature SASigArrayNewElem;
 extern const SymbolicAddressSignature SASigArrayInitData;
 extern const SymbolicAddressSignature SASigArrayInitElem;
 extern const SymbolicAddressSignature SASigArrayCopy;
+extern const SymbolicAddressSignature SASigUpdateSuspenderState;
 #define VISIT_BUILTIN_FUNC(op, export, sa_name, ...) \
   extern const SymbolicAddressSignature SASig##sa_name;
 FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)

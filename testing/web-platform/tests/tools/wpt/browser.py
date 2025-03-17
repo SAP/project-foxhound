@@ -1452,7 +1452,7 @@ class ChromeAndroidBase(Browser):
         if browser_binary is None:
             browser_binary = self.find_binary(channel)
         chrome = Chrome(self.logger)
-        return chrome.install_webdriver_by_version(self.version(browser_binary), dest)
+        return chrome.install_webdriver_by_version(self.version(browser_binary), dest, channel)
 
     def version(self, binary=None, webdriver_binary=None):
         if not binary:
@@ -1487,20 +1487,6 @@ class ChromeAndroid(ChromeAndroidBase):
         if channel in ("beta", "dev", "canary"):
             return "com.chrome." + channel
         return "com.android.chrome"
-
-
-# TODO(aluo): This is largely copied from the AndroidWebView implementation.
-# Tests are not running for weblayer yet (crbug/1019521), this initial
-# implementation will help to reproduce and debug any issues.
-class AndroidWeblayer(ChromeAndroidBase):
-    """Weblayer-specific interface for Android."""
-
-    product = "android_weblayer"
-    # TODO(aluo): replace this with weblayer version after tests are working.
-    requirements = "requirements_chromium.txt"
-
-    def find_binary(self, venv_path=None, channel=None):
-        return "org.chromium.weblayer.shell"
 
 
 class AndroidWebview(ChromeAndroidBase):
@@ -1656,10 +1642,10 @@ class Opera(Browser):
             return m.group(0)
 
 
-class EdgeChromium(Browser):
+class Edge(Browser):
     """Microsoft Edge Chromium Browser class."""
 
-    product = "edgechromium"
+    product = "edge"
     requirements = "requirements_chromium.txt"
     platform = {
         "Linux": "linux",

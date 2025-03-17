@@ -657,13 +657,11 @@ const POLICIES_TESTS = [
   {
     policies: {
       UserMessaging: {
-        WhatsNew: false,
         SkipOnboarding: true,
         Locked: true,
       },
     },
     lockedPrefs: {
-      "browser.messaging-system.whatsNewPanel.enabled": false,
       "browser.aboutwelcome.enabled": false,
     },
   },
@@ -1097,6 +1095,56 @@ const POLICIES_TESTS = [
     },
     lockedPrefs: {
       "network.proxy.type": 5,
+    },
+  },
+
+  // POLICY: DisableEncryptedClientHello
+  {
+    policies: {
+      DisableEncryptedClientHello: true,
+    },
+    lockedPrefs: {
+      "network.dns.echconfig.enabled": false,
+      "network.dns.http3_echconfig.enabled": false,
+    },
+  },
+
+  // POLICY: PostQuantumKeyAgreementEnabled
+  {
+    policies: {
+      PostQuantumKeyAgreementEnabled: false,
+    },
+    lockedPrefs: {
+      "network.http.http3.enable_kyber": false,
+      "security.tls.enable_kyber": false,
+    },
+  },
+
+  // POLICY: HttpsOnlyMode
+  {
+    policies: {
+      HttpsOnlyMode: "enabled",
+    },
+    unlockedPrefs: {
+      "dom.security.https_only_mode": true,
+    },
+  },
+
+  {
+    policies: {
+      HttpsOnlyMode: "disallowed",
+    },
+    lockedPrefs: {
+      "dom.security.https_only_mode": false,
+    },
+  },
+
+  {
+    policies: {
+      HttpsOnlyMode: "force_enabled",
+    },
+    lockedPrefs: {
+      "dom.security.https_only_mode": true,
     },
   },
 ];

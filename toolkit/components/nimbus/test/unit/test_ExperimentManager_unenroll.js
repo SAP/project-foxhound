@@ -191,7 +191,7 @@ add_task(async function test_unenroll_uploadPref() {
   const recipe = ExperimentFakes.recipe("foo");
 
   await manager.onStartup();
-  await ExperimentFakes.enrollmentHelper(recipe, { manager }).enrollmentPromise;
+  await ExperimentFakes.enrollmentHelper(recipe, { manager });
 
   Assert.equal(
     manager.store.get(recipe.slug).active,
@@ -513,7 +513,9 @@ add_task(async function test_check_unseen_enrollments_telemetry_events() {
             featureId: "nimbusTelemetry",
             value: {
               gleanMetricConfiguration: {
-                "nimbus_events.enrollment_status": true,
+                metrics_enabled: {
+                  "nimbus_events.enrollment_status": true,
+                },
               },
             },
           },

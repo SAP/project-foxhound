@@ -254,10 +254,10 @@ LogicalSides nsTableRowGroupFrame::GetLogicalSkipSides() const {
   }
 
   if (GetPrevInFlow()) {
-    skip |= eLogicalSideBitsBStart;
+    skip += LogicalSide::BStart;
   }
   if (GetNextInFlow()) {
-    skip |= eLogicalSideBitsBEnd;
+    skip += LogicalSide::BEnd;
   }
   return skip;
 }
@@ -1626,10 +1626,8 @@ LogicalMargin nsTableRowGroupFrame::GetBCBorderWidth(WritingMode aWM) {
        rowFrame = rowFrame->GetNextRow()) {
     lastRowFrame = rowFrame;
   }
-  border.BStart(aWM) = PresContext()->DevPixelsToAppUnits(
-      firstRowFrame->GetBStartBCBorderWidth());
-  border.BEnd(aWM) =
-      PresContext()->DevPixelsToAppUnits(lastRowFrame->GetBEndBCBorderWidth());
+  border.BStart(aWM) = firstRowFrame->GetBStartBCBorderWidth();
+  border.BEnd(aWM) = lastRowFrame->GetBEndBCBorderWidth();
   return border;
 }
 

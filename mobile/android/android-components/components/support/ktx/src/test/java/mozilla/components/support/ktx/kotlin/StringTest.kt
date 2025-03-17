@@ -17,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 import java.util.Calendar
 import java.util.Calendar.MILLISECOND
 
@@ -181,24 +182,88 @@ class StringTest {
 
     @Test
     fun sanitizeFileName() {
-        var file = "/../../../../../../../../../../directory/file.......txt"
-        val fileName = "file.txt"
+        val testCases = listOf(
+            "/../../../../../../../../../../directory/file.......txt" to "file.txt",
+            "/root/directory/file.txt" to "file.txt",
+            "file" to "file",
+            "file.." to "file",
+            "file." to "file",
+            ".file" to "file",
+            "test.2020.12.01.txt" to "test.2020.12.01.txt",
+            "\u0000filename" to "_filename",
+            "file\u0001name" to "file_name",
+            "data\u0002stream" to "data_stream",
+            "end\u0003text" to "end_text",
+            "trans\u0004mission" to "trans_mission",
+            "query\u0005result" to "query_result",
+            "acknowledge\u0006signal" to "acknowledge_signal",
+            "bell\u0007sound" to "bell_sound",
+            "back\u0008space" to "back_space",
+            "horizontal\u0009tab" to "horizontal_tab",
+            "new\u000Aline" to "new_line",
+            "vertical\u000Btab" to "vertical_tab",
+            "form\u000Cfeed" to "form_feed",
+            "return\u000Dcarriage" to "return_carriage",
+            "shift\u000Eout" to "shift_out",
+            "shift\u000Fin" to "shift_in",
+            "escape\u0010data" to "escape_data",
+            "device\u0011control1" to "device_control1",
+            "device\u0012control2" to "device_control2",
+            "device\u0013control3" to "device_control3",
+            "less<than" to "less_than",
+            "greater>than" to "greater_than",
+            "asterisk*" to "asterisk_",
+            "quotation\"mark" to "quotation_mark",
+            "colon:" to "colon_",
+            "question?mark" to "question_mark",
+            "back\\slash" to "back_slash",
+            "vertical|bar" to "vertical_bar",
+        )
 
-        assertEquals(fileName, file.sanitizeFileName())
+        testCases.forEach { (raw, escaped) ->
+            assertEquals(escaped, raw.sanitizeFileName())
+        }
+    }
 
-        file = "/root/directory/file.txt"
+    @Test
+    fun `WHEN a string contains utf 8 encoded characters decode decodes it`() {
+        // List of pairs of encoded strings and their expected decoded results
+        val testCases = listOf(
+            "hello%20world" to "hello world",
+            "wow%21amazing" to "wow!amazing",
+            "quote%22here%22" to "quote\"here\"",
+            "hash%23tag" to "hash#tag",
+            "save%24money" to "save\$money",
+            "100%25complete" to "100%complete",
+            "you%26me" to "you&me",
+            "it%27s%20easy" to "it's easy",
+            "open%28now%29" to "open(now)",
+            "star%2Ashine" to "star*shine",
+            "add%2Bmore" to "add+more",
+            "comma%2Cseparated" to "comma,separated",
+            "dash%2Dbetween" to "dash-between",
+            "end%2Eperiod" to "end.period",
+            "path%2Fto%2Ffile" to "path/to/file",
+            "time%3A12%3A00" to "time:12:00",
+            "wait%3Bplease" to "wait;please",
+            "less%3Cthan" to "less<than",
+            "equals%3Dsign" to "equals=sign",
+            "greater%3Ethan" to "greater>than",
+            "what%3Fwhere" to "what?where",
+            "email%40domain.com" to "email@domain.com",
+            "bracket%5Bopen%5D" to "bracket[open]",
+            "escape%5Cbackslash" to "escape\\backslash",
+            "bracket%5Dclose%5D" to "bracket]close]",
+            "high%5Efive" to "high^five",
+            "accent%60grave" to "accent`grave",
+            "brace%7Bopenclose%7D" to "brace{openclose}",
+            "pipe%7Csymbol" to "pipe|symbol",
+            "tilde%7Ewave" to "tilde~wave",
+        )
 
-        assertEquals(fileName, file.sanitizeFileName())
-
-        assertEquals("file", "file".sanitizeFileName())
-
-        assertEquals("file", "file..".sanitizeFileName())
-
-        assertEquals("file", "file.".sanitizeFileName())
-
-        assertEquals("file", ".file".sanitizeFileName())
-
-        assertEquals("test.2020.12.01.txt", "test.2020.12.01.txt".sanitizeFileName())
+        testCases.forEach { (encoded, decoded) ->
+            assertEquals(decoded, encoded.decode())
+        }
     }
 
     @Test
@@ -412,12 +477,14 @@ class StringTest {
     }
 
     @Test
+    @Config(sdk = [28])
     fun `should not strip out www if not first subdomain`() {
         "http://foo.www.com" shortenedShouldBecome "foo.www.com"
         "http://www.foo.www.com" shortenedShouldBecome "foo.www.com"
     }
 
     @Test
+    @Config(sdk = [28])
     fun `should convert to lowercase`() {
         "HTTP://FOO.COM" shortenedShouldBecome "foo.com"
     }
@@ -438,6 +505,7 @@ class StringTest {
     }
 
     @Test
+    @Config(sdk = [28])
     fun `should return etld for www gov uk (www-only non-etld)`() {
         "https://www.gov.uk/countersigning" shortenedShouldBecome "gov.uk"
     }

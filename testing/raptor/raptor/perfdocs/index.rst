@@ -2,7 +2,7 @@
 Raptor
 ######
 
-Raptor is a performance-testing framework for running browser pageload and browser benchmark tests. Raptor is cross-browser compatible and is currently running in production on Firefox Desktop, Firefox Android GeckoView, Fenix, Reference Browser, Chromium, and Chrome.
+Raptor is a performance-testing framework for running browser pageload and browser benchmark tests. Raptor is cross-browser compatible and is currently running in production on Firefox Desktop, Firefox Android GeckoView, Fenix, Reference Browser, Chromium, Chrome, Chrome for Android, Safari, and Safari Technology Preview.
 
 - Contact: Dave Hunt [:davehunt]
 - Source code: https://searchfox.org/mozilla-central/source/testing/raptor
@@ -23,7 +23,7 @@ Locally, Raptor can be invoked with the following command:
    browsertime
    debugging
    contributing
-   metrics
+   {metrics_rst_name}
 
 .. contents::
    :depth: 2

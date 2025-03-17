@@ -43,10 +43,12 @@ impl PropertyCategory {
     fn of(id: &PropertyId) -> Self {
         match *id {
             PropertyId::NonCustom(id) => match id.longhand_or_shorthand() {
-                Ok(id) => if id.is_logical() {
-                    PropertyCategory::LogicalLonghand
-                } else {
-                    PropertyCategory::PhysicalLonghand
+                Ok(id) => {
+                    if id.is_logical() {
+                        PropertyCategory::LogicalLonghand
+                    } else {
+                        PropertyCategory::PhysicalLonghand
+                    }
                 },
                 Err(..) => PropertyCategory::Shorthand,
             },
@@ -273,6 +275,23 @@ where
     }
 }
 
+impl<T> ToAnimatedValue for thin_vec::ThinVec<T>
+where
+    T: ToAnimatedValue,
+{
+    type AnimatedValue = thin_vec::ThinVec<<T as ToAnimatedValue>::AnimatedValue>;
+
+    #[inline]
+    fn to_animated_value(self) -> Self::AnimatedValue {
+        self.into_iter().map(T::to_animated_value).collect()
+    }
+
+    #[inline]
+    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
+        animated.into_iter().map(T::from_animated_value).collect()
+    }
+}
+
 impl<T> ToAnimatedValue for Box<T>
 where
     T: ToAnimatedValue,
@@ -443,6 +462,16 @@ where
 }
 
 impl<T> ToAnimatedZero for Vec<T>
+where
+    T: ToAnimatedZero,
+{
+    #[inline]
+    fn to_animated_zero(&self) -> Result<Self, ()> {
+        self.iter().map(|v| v.to_animated_zero()).collect()
+    }
+}
+
+impl<T> ToAnimatedZero for thin_vec::ThinVec<T>
 where
     T: ToAnimatedZero,
 {

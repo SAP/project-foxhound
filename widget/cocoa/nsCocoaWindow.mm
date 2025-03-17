@@ -6,7 +6,6 @@
 
 #include "nsCocoaWindow.h"
 
-#include "AppearanceOverride.h"
 #include "NativeKeyBindings.h"
 #include "ScreenHelperCocoa.h"
 #include "TextInputHandler.h"
@@ -157,6 +156,13 @@ void nsCocoaWindow::DestroyNativeWindow() {
   // for us to finish a native transition that will have no listener once
   // we clear our delegate.
   EndOurNativeTransition();
+
+  // We are about to destroy mWindow. Before we do that, make sure that we
+  // hide the window using the Show() method, because it has several side
+  // effects that our parent and listeners might be expecting. If we don't
+  // do this now, then these side effects will never execute, though the
+  // window will definitely no longer be shown.
+  Show(false);
 
   [mWindow releaseJSObjects];
   // We want to unhook the delegate here because we don't want events
@@ -525,10 +531,6 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect& aRect,
   [WindowDataMap.sharedWindowDataMap ensureDataForWindow:mWindow];
   mWindowMadeHere = true;
 
-  // Make the window respect the global appearance, which follows the
-  // browser.theme.toolbar-theme pref.
-  mWindow.appearanceSource = MOZGlobalAppearance.sharedInstance;
-
   return NS_OK;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
@@ -771,6 +773,20 @@ void nsCocoaWindow::Show(bool aState) {
       mPopupContentView->Show(true);
     }
 
+    // We're about to show a window. If we are opening the new window while the
+    // user is in a fullscreen space, for example because the new window is
+    // opened from an existing fullscreen window, then macOS will open the new
+    // window in fullscreen, too. For some windows, this is not desirable. We
+    // want to prevent it for any popup, alert, or alwaysOnTop windows that
+    // aren't already in fullscreen. If the user already got the window into
+    // fullscreen somehow, that's fine, but we don't want the initial display to
+    // be in fullscreen.
+    bool savedValueForSupportsNativeFullscreen = GetSupportsNativeFullscreen();
+    if (!mInFullScreenMode &&
+        ((mWindowType == WindowType::Popup) || mAlwaysOnTop || mIsAlert)) {
+      SetSupportsNativeFullscreen(false);
+    }
+
     if (mWindowType == WindowType::Popup) {
       // For reasons that aren't yet clear, calls to [NSWindow orderFront:] or
       // [NSWindow makeKeyAndOrderFront:] can sometimes trigger "Error (1000)
@@ -834,6 +850,7 @@ void nsCocoaWindow::Show(bool aState) {
       NS_OBJC_END_TRY_IGNORE_BLOCK;
       SendSetZLevelEvent();
     }
+    SetSupportsNativeFullscreen(savedValueForSupportsNativeFullscreen);
   } else {
     // roll up any popups if a top-level window is going away
     if (mWindowType == WindowType::TopLevel ||
@@ -1969,7 +1986,6 @@ void nsCocoaWindow::BackingScaleFactorChanged() {
   if (PresShell* presShell = mWidgetListener->GetPresShell()) {
     presShell->BackingScaleFactorChanged();
   }
-  mWidgetListener->UIResolutionChanged();
 }
 
 int32_t nsCocoaWindow::RoundsWidgetCoordinatesTo() {
@@ -2327,9 +2343,11 @@ void nsCocoaWindow::SetColorScheme(const Maybe<ColorScheme>& aScheme) {
   if (!mWindow) {
     return;
   }
-
-  mWindow.appearance = aScheme ? NSAppearanceForColorScheme(*aScheme) : nil;
-
+  NSAppearance* appearance =
+      aScheme ? NSAppearanceForColorScheme(*aScheme) : nil;
+  if (mWindow.appearance != appearance) {
+    mWindow.appearance = appearance;
+  }
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
@@ -2430,6 +2448,11 @@ void nsCocoaWindow::SetShowsToolbarButton(bool aShow) {
   if (mWindow) [mWindow setShowsToolbarButton:aShow];
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
+}
+
+bool nsCocoaWindow::GetSupportsNativeFullscreen() {
+  return mWindow.collectionBehavior &
+         NSWindowCollectionBehaviorFullScreenPrimary;
 }
 
 void nsCocoaWindow::SetSupportsNativeFullscreen(
@@ -3071,10 +3094,6 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
 - (void)_setNeedsDisplayInRect:(NSRect)aRect;
 @end
 
-@interface NSView (NSVisualEffectViewSetMaskImage)
-- (void)setMaskImage:(NSImage*)image;
-@end
-
 @interface BaseWindow (Private)
 - (void)removeTrackingArea;
 - (void)cursorUpdated:(NSEvent*)aEvent;
@@ -3174,35 +3193,38 @@ static NSImage* GetMenuMaskImage() {
   return maskImage;
 }
 
-- (void)swapOutChildViewWrapper:(NSView*)aNewWrapper {
-  aNewWrapper.frame = self.contentView.frame;
+// Add an effect view wrapper if needed so that the OS draws the appropriate
+// vibrancy effect and window border.
+- (void)setEffectViewWrapperForStyle:(WindowShadow)aStyle {
+  NSView* wrapper = [&]() -> NSView* {
+    if (aStyle == WindowShadow::Menu || aStyle == WindowShadow::Tooltip) {
+      const bool isMenu = aStyle == WindowShadow::Menu;
+      auto* effectView =
+          [[NSVisualEffectView alloc] initWithFrame:self.contentView.frame];
+      effectView.material =
+          isMenu ? NSVisualEffectMaterialMenu : NSVisualEffectMaterialToolTip;
+      // Tooltip and menu windows are never "key", so we need to tell the
+      // vibrancy effect to look active regardless of window state.
+      effectView.state = NSVisualEffectStateActive;
+      effectView.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+      if (isMenu) {
+        // Turn on rounded corner masking.
+        effectView.maskImage = GetMenuMaskImage();
+      }
+      return effectView;
+    }
+    return [[NSView alloc] initWithFrame:self.contentView.frame];
+  }();
+
+  wrapper.wantsLayer = YES;
+  // Swap out our content view by the new view. Setting .contentView releases
+  // the old view.
   NSView* childView = [self.mainChildView retain];
   [childView removeFromSuperview];
-  [aNewWrapper addSubview:childView];
+  [wrapper addSubview:childView];
   [childView release];
-  [super setContentView:aNewWrapper];
-}
-
-- (void)setEffectViewWrapperForStyle:(WindowShadow)aStyle {
-  if (aStyle == WindowShadow::Menu || aStyle == WindowShadow::Tooltip) {
-    // Add an effect view wrapper so that the OS draws the appropriate
-    // vibrancy effect and window border.
-    BOOL isMenu = aStyle == WindowShadow::Menu;
-    NSView* effectView = VibrancyManager::CreateEffectView(
-        isMenu ? VibrancyType::MENU : VibrancyType::TOOLTIP, YES);
-    if (isMenu) {
-      // Turn on rounded corner masking.
-      [effectView setMaskImage:GetMenuMaskImage()];
-    }
-    [self swapOutChildViewWrapper:effectView];
-    [effectView release];
-  } else {
-    // Remove the existing wrapper.
-    NSView* wrapper = [[NSView alloc] initWithFrame:NSZeroRect];
-    [wrapper setWantsLayer:YES];
-    [self swapOutChildViewWrapper:wrapper];
-    [wrapper release];
-  }
+  super.contentView = wrapper;
+  [wrapper release];
 }
 
 - (NSTouchBar*)makeTouchBar {

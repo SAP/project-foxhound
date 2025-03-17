@@ -11,7 +11,7 @@ import {getJSON} from '../httpUtil.js';
 
 import {BrowserPlatform, type ProfileOptions} from './types.js';
 
-function archive(platform: BrowserPlatform, buildId: string): string {
+function archiveNightly(platform: BrowserPlatform, buildId: string): string {
   switch (platform) {
     case BrowserPlatform.LINUX:
       return `firefox-${buildId}.en-US.${platform}-x86_64.tar.bz2`;
@@ -24,48 +24,146 @@ function archive(platform: BrowserPlatform, buildId: string): string {
   }
 }
 
+function archive(platform: BrowserPlatform, buildId: string): string {
+  switch (platform) {
+    case BrowserPlatform.LINUX:
+      return `firefox-${buildId}.tar.bz2`;
+    case BrowserPlatform.MAC_ARM:
+    case BrowserPlatform.MAC:
+      return `Firefox ${buildId}.dmg`;
+    case BrowserPlatform.WIN32:
+    case BrowserPlatform.WIN64:
+      return `Firefox Setup ${buildId}.exe`;
+  }
+}
+
+function platformName(platform: BrowserPlatform): string {
+  switch (platform) {
+    case BrowserPlatform.LINUX:
+      return `linux-x86_64`;
+    case BrowserPlatform.MAC_ARM:
+    case BrowserPlatform.MAC:
+      return `mac`;
+    case BrowserPlatform.WIN32:
+    case BrowserPlatform.WIN64:
+      return platform;
+  }
+}
+
+function parseBuildId(buildId: string): [FirefoxChannel, string] {
+  for (const value of Object.values(FirefoxChannel)) {
+    if (buildId.startsWith(value + '_')) {
+      buildId = buildId.substring(value.length + 1);
+      return [value, buildId];
+    }
+  }
+  // Older versions do not have channel as the prefix.«
+  return [FirefoxChannel.NIGHTLY, buildId];
+}
+
 export function resolveDownloadUrl(
   platform: BrowserPlatform,
   buildId: string,
-  baseUrl = 'https://archive.mozilla.org/pub/firefox/nightly/latest-mozilla-central'
+  baseUrl?: string
 ): string {
-  return `${baseUrl}/${resolveDownloadPath(platform, buildId).join('/')}`;
+  const [channel, resolvedBuildId] = parseBuildId(buildId);
+  switch (channel) {
+    case FirefoxChannel.NIGHTLY:
+      baseUrl ??=
+        'https://archive.mozilla.org/pub/firefox/nightly/latest-mozilla-central';
+      break;
+    case FirefoxChannel.DEVEDITION:
+      baseUrl ??= 'https://archive.mozilla.org/pub/devedition/releases';
+      break;
+    case FirefoxChannel.BETA:
+    case FirefoxChannel.STABLE:
+    case FirefoxChannel.ESR:
+      baseUrl ??= 'https://archive.mozilla.org/pub/firefox/releases';
+      break;
+  }
+  switch (channel) {
+    case FirefoxChannel.NIGHTLY:
+      return `${baseUrl}/${resolveDownloadPath(platform, resolvedBuildId).join('/')}`;
+    case FirefoxChannel.DEVEDITION:
+    case FirefoxChannel.BETA:
+    case FirefoxChannel.STABLE:
+    case FirefoxChannel.ESR:
+      return `${baseUrl}/${resolvedBuildId}/${platformName(platform)}/en-US/${archive(platform, resolvedBuildId)}`;
+  }
 }
 
 export function resolveDownloadPath(
   platform: BrowserPlatform,
   buildId: string
 ): string[] {
-  return [archive(platform, buildId)];
+  return [archiveNightly(platform, buildId)];
 }
 
 export function relativeExecutablePath(
   platform: BrowserPlatform,
-  _buildId: string
+  buildId: string
 ): string {
-  switch (platform) {
-    case BrowserPlatform.MAC_ARM:
-    case BrowserPlatform.MAC:
-      return path.join('Firefox Nightly.app', 'Contents', 'MacOS', 'firefox');
-    case BrowserPlatform.LINUX:
-      return path.join('firefox', 'firefox');
-    case BrowserPlatform.WIN32:
-    case BrowserPlatform.WIN64:
-      return path.join('firefox', 'firefox.exe');
+  const [channel] = parseBuildId(buildId);
+  switch (channel) {
+    case FirefoxChannel.NIGHTLY:
+      switch (platform) {
+        case BrowserPlatform.MAC_ARM:
+        case BrowserPlatform.MAC:
+          return path.join(
+            'Firefox Nightly.app',
+            'Contents',
+            'MacOS',
+            'firefox'
+          );
+        case BrowserPlatform.LINUX:
+          return path.join('firefox', 'firefox');
+        case BrowserPlatform.WIN32:
+        case BrowserPlatform.WIN64:
+          return path.join('firefox', 'firefox.exe');
+      }
+    case FirefoxChannel.BETA:
+    case FirefoxChannel.DEVEDITION:
+    case FirefoxChannel.ESR:
+    case FirefoxChannel.STABLE:
+      switch (platform) {
+        case BrowserPlatform.MAC_ARM:
+        case BrowserPlatform.MAC:
+          return path.join('Firefox.app', 'Contents', 'MacOS', 'firefox');
+        case BrowserPlatform.LINUX:
+          return path.join('firefox', 'firefox');
+        case BrowserPlatform.WIN32:
+        case BrowserPlatform.WIN64:
+          return path.join('core', 'firefox.exe');
+      }
   }
 }
 
+export enum FirefoxChannel {
+  STABLE = 'stable',
+  ESR = 'esr',
+  DEVEDITION = 'devedition',
+  BETA = 'beta',
+  NIGHTLY = 'nightly',
+}
+
 export async function resolveBuildId(
-  channel: 'FIREFOX_NIGHTLY' = 'FIREFOX_NIGHTLY'
+  channel: FirefoxChannel = FirefoxChannel.NIGHTLY
 ): Promise<string> {
+  const channelToVersionKey = {
+    [FirefoxChannel.ESR]: 'FIREFOX_ESR',
+    [FirefoxChannel.STABLE]: 'LATEST_FIREFOX_VERSION',
+    [FirefoxChannel.DEVEDITION]: 'FIREFOX_DEVEDITION',
+    [FirefoxChannel.BETA]: 'FIREFOX_DEVEDITION',
+    [FirefoxChannel.NIGHTLY]: 'FIREFOX_NIGHTLY',
+  };
   const versions = (await getJSON(
     new URL('https://product-details.mozilla.org/1.0/firefox_versions.json')
   )) as Record<string, string>;
-  const version = versions[channel];
+  const version = versions[channelToVersionKey[channel]];
   if (!version) {
     throw new Error(`Channel ${channel} is not found.`);
   }
-  return version;
+  return channel + '_' + version;
 }
 
 export async function createProfile(options: ProfileOptions): Promise<void> {
@@ -308,20 +406,30 @@ function defaultProfilePreferences(
  * @param profilePath - Firefox profile to write the preferences to.
  */
 async function writePreferences(options: ProfileOptions): Promise<void> {
+  const prefsPath = path.join(options.path, 'prefs.js');
   const lines = Object.entries(options.preferences).map(([key, value]) => {
     return `user_pref(${JSON.stringify(key)}, ${JSON.stringify(value)});`;
   });
 
-  await fs.promises.writeFile(
-    path.join(options.path, 'user.js'),
-    lines.join('\n')
-  );
-
-  // Create a backup of the preferences file if it already exitsts.
-  const prefsPath = path.join(options.path, 'prefs.js');
-  if (fs.existsSync(prefsPath)) {
-    const prefsBackupPath = path.join(options.path, 'prefs.js.puppeteer');
-    await fs.promises.copyFile(prefsPath, prefsBackupPath);
+  // Use allSettled to prevent corruption
+  const result = await Promise.allSettled([
+    fs.promises.writeFile(path.join(options.path, 'user.js'), lines.join('\n')),
+    // Create a backup of the preferences file if it already exitsts.
+    fs.promises.access(prefsPath, fs.constants.F_OK).then(
+      async () => {
+        await fs.promises.copyFile(
+          prefsPath,
+          path.join(options.path, 'prefs.js.puppeteer')
+        );
+      },
+      // Swallow only if file does not exist
+      () => {}
+    ),
+  ]);
+  for (const command of result) {
+    if (command.status === 'rejected') {
+      throw command.reason;
+    }
   }
 }
 

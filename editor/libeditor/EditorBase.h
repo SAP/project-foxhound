@@ -1682,11 +1682,20 @@ class EditorBase : public nsIEditor,
    * @param aStringToInsert The string to insert.
    * @param aPointToInsert  The point to insert aStringToInsert.
    *                        Must be valid DOM point.
+   * @param aInsertTextTo   Whether forcibly creates a new `Text` node in
+   *                        specific condition or use existing `Text` if
+   *                        available.
    */
+  enum class InsertTextTo {
+    ExistingTextNodeIfAvailable,
+    ExistingTextNodeIfAvailableAndNotStart,
+    AlwaysCreateNewTextNode
+  };
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT virtual Result<InsertTextResult, nsresult>
   InsertTextWithTransaction(Document& aDocument,
                             const nsAString& aStringToInsert,
-                            const EditorDOMPoint& aPointToInsert);
+                            const EditorDOMPoint& aPointToInsert,
+                            InsertTextTo aInsertTextTo);
 
   /**
    * Insert aStringToInsert to aPointToInsert.
@@ -1744,6 +1753,19 @@ class EditorBase : public nsIEditor,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateElementResult, nsresult>
   InsertPaddingBRElementForEmptyLastLineWithTransaction(
       const EditorDOMPoint& aPointToInsert);
+
+  enum class BRElementType {
+    Normal,
+    PaddingForEmptyEditor,
+    PaddingForEmptyLastLine
+  };
+  /**
+   * Updates the type of aBRElement.  If it will be hidden or shown from
+   * IMEContentObserver and ContentEventHandler points of view, this temporarily
+   * removes the node and reconnect to the same position.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  UpdateBRElementType(dom::HTMLBRElement& aBRElement, BRElementType aNewType);
 
   /**
    * CloneAttributesWithTransaction() clones all attributes from

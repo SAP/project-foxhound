@@ -31,7 +31,8 @@ add_task(async function test_getFileSize() {
 });
 
 /**
- * Tests that BackupService.getDirectorySize will get the total size of all the files in a directory and it's children in kilobytes.
+ * Tests that BackupService.getDirectorySize will get the total size of all the
+ * files in a directory and it's children in kilobytes.
  */
 add_task(async function test_getDirectorySize() {
   let file = do_get_file("data/test_xulstore.json");
@@ -74,4 +75,176 @@ add_task(async function test_bytesToFuzzyKilobytes() {
   let smallSize = bytesToFuzzyKilobytes(3);
 
   Assert.equal(smallSize, 1, "Sizes under 10 kilobytes return 1 kilobyte");
+});
+
+/**
+ * Tests that BackupResource.copySqliteDatabases will call `backup` on a new
+ * read-only connection on each database file.
+ */
+add_task(async function test_copySqliteDatabases() {
+  let sandbox = sinon.createSandbox();
+  const SQLITE_PAGES_PER_STEP_PREF = "browser.backup.sqlite.pages_per_step";
+  const SQLITE_STEP_DELAY_MS_PREF = "browser.backup.sqlite.step_delay_ms";
+  const DEFAULT_SQLITE_PAGES_PER_STEP = Services.prefs.getIntPref(
+    SQLITE_PAGES_PER_STEP_PREF
+  );
+  const DEFAULT_SQLITE_STEP_DELAY_MS = Services.prefs.getIntPref(
+    SQLITE_STEP_DELAY_MS_PREF
+  );
+
+  let sourcePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "BackupResource-source-test"
+  );
+  let destPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "BackupResource-dest-test"
+  );
+  let pretendDatabases = ["places.sqlite", "favicons.sqlite"];
+  await createTestFiles(
+    sourcePath,
+    pretendDatabases.map(f => ({ path: f }))
+  );
+
+  let fakeConnection = {
+    backup: sandbox.stub().resolves(true),
+    close: sandbox.stub().resolves(true),
+  };
+  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
+
+  await BackupResource.copySqliteDatabases(
+    sourcePath,
+    destPath,
+    pretendDatabases
+  );
+
+  Assert.ok(
+    Sqlite.openConnection.calledTwice,
+    "Sqlite.openConnection called twice"
+  );
+  Assert.ok(
+    Sqlite.openConnection.firstCall.calledWith({
+      path: PathUtils.join(sourcePath, "places.sqlite"),
+      readOnly: true,
+    }),
+    "openConnection called with places.sqlite as read-only"
+  );
+  Assert.ok(
+    Sqlite.openConnection.secondCall.calledWith({
+      path: PathUtils.join(sourcePath, "favicons.sqlite"),
+      readOnly: true,
+    }),
+    "openConnection called with favicons.sqlite as read-only"
+  );
+
+  Assert.ok(
+    fakeConnection.backup.calledTwice,
+    "backup on an Sqlite connection called twice"
+  );
+  Assert.ok(
+    fakeConnection.backup.firstCall.calledWith(
+      PathUtils.join(destPath, "places.sqlite"),
+      DEFAULT_SQLITE_PAGES_PER_STEP,
+      DEFAULT_SQLITE_STEP_DELAY_MS
+    ),
+    "backup called with places.sqlite to the destination path with the right " +
+      "pages per step and step delay"
+  );
+  Assert.ok(
+    fakeConnection.backup.secondCall.calledWith(
+      PathUtils.join(destPath, "favicons.sqlite"),
+      DEFAULT_SQLITE_PAGES_PER_STEP,
+      DEFAULT_SQLITE_STEP_DELAY_MS
+    ),
+    "backup called with favicons.sqlite to the destination path with the " +
+      "right pages per step and step delay"
+  );
+
+  Assert.ok(
+    fakeConnection.close.calledTwice,
+    "close on an Sqlite connection called twice"
+  );
+
+  // Now check that we can override the default pages per step and step delay.
+  fakeConnection.backup.resetHistory();
+  const NEW_SQLITE_PAGES_PER_STEP = 10;
+  const NEW_SQLITE_STEP_DELAY_MS = 500;
+  Services.prefs.setIntPref(
+    SQLITE_PAGES_PER_STEP_PREF,
+    NEW_SQLITE_PAGES_PER_STEP
+  );
+  Services.prefs.setIntPref(
+    SQLITE_STEP_DELAY_MS_PREF,
+    NEW_SQLITE_STEP_DELAY_MS
+  );
+  await BackupResource.copySqliteDatabases(
+    sourcePath,
+    destPath,
+    pretendDatabases
+  );
+  Assert.ok(
+    fakeConnection.backup.calledTwice,
+    "backup on an Sqlite connection called twice"
+  );
+  Assert.ok(
+    fakeConnection.backup.firstCall.calledWith(
+      PathUtils.join(destPath, "places.sqlite"),
+      NEW_SQLITE_PAGES_PER_STEP,
+      NEW_SQLITE_STEP_DELAY_MS
+    ),
+    "backup called with places.sqlite to the destination path with the right " +
+      "pages per step and step delay"
+  );
+  Assert.ok(
+    fakeConnection.backup.secondCall.calledWith(
+      PathUtils.join(destPath, "favicons.sqlite"),
+      NEW_SQLITE_PAGES_PER_STEP,
+      NEW_SQLITE_STEP_DELAY_MS
+    ),
+    "backup called with favicons.sqlite to the destination path with the " +
+      "right pages per step and step delay"
+  );
+
+  await maybeRemovePath(sourcePath);
+  await maybeRemovePath(destPath);
+  sandbox.restore();
+});
+
+/**
+ * Tests that BackupResource.copyFiles will copy files from one directory to
+ * another.
+ */
+add_task(async function test_copyFiles() {
+  let sourcePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "BackupResource-source-test"
+  );
+  let destPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "BackupResource-dest-test"
+  );
+
+  const testFiles = [
+    { path: "file1.txt" },
+    { path: ["some", "nested", "file", "file2.txt"] },
+    { path: "file3.txt" },
+  ];
+
+  await createTestFiles(sourcePath, testFiles);
+
+  await BackupResource.copyFiles(sourcePath, destPath, [
+    "file1.txt",
+    "some",
+    "file3.txt",
+    "does-not-exist.txt",
+  ]);
+
+  await assertFilesExist(destPath, testFiles);
+  Assert.ok(
+    !(await IOUtils.exists(PathUtils.join(destPath, "does-not-exist.txt"))),
+    "does-not-exist.txt wasn't somehow written to."
+  );
+
+  await maybeRemovePath(sourcePath);
+  await maybeRemovePath(destPath);
 });

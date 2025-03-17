@@ -24,6 +24,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
@@ -42,11 +43,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FeatureGate: "resource://featuregates/FeatureGate.sys.mjs",
   FirefoxBridgeExtensionUtils:
     "resource:///modules/FirefoxBridgeExtensionUtils.sys.mjs",
+  FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
   Integration: "resource://gre/modules/Integration.sys.mjs",
   Interactions: "resource:///modules/Interactions.sys.mjs",
   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
+  LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
@@ -97,6 +100,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UIState: "resource://services-sync/UIState.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   WebChannel: "resource://gre/modules/WebChannel.sys.mjs",
+  WebProtocolHandlerRegistrar:
+    "resource:///modules/WebProtocolHandlerRegistrar.sys.mjs",
   WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
   WindowsGPOParser: "resource://gre/modules/policies/WindowsGPOParser.sys.mjs",
@@ -107,6 +112,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
 if (AppConstants.MOZ_UPDATER) {
   ChromeUtils.defineESModuleGetters(lazy, {
     UpdateListener: "resource://gre/modules/UpdateListener.sys.mjs",
+  });
+  XPCOMUtils.defineLazyServiceGetters(lazy, {
+    UpdateServiceStub: [
+      "@mozilla.org/updates/update-service-stub;1",
+      "nsIApplicationUpdateServiceStub",
+    ],
   });
 }
 if (AppConstants.MOZ_UPDATE_AGENT) {
@@ -124,11 +135,7 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
 ChromeUtils.defineLazyGetter(
   lazy,
   "accountsL10n",
-  () =>
-    new Localization(
-      ["browser/accounts.ftl", "toolkit/branding/accounts.ftl"],
-      true
-    )
+  () => new Localization(["browser/accounts.ftl"], true)
 );
 
 if (AppConstants.ENABLE_WEBDRIVER) {
@@ -424,6 +431,21 @@ let JSWINDOWACTORS = {
     // See Bug 1618306
     // Remove this preference check when we turn on separate about:welcome for all users.
     enablePreference: "browser.aboutwelcome.enabled",
+  },
+
+  BackupUI: {
+    parent: {
+      esModuleURI: "resource:///actors/BackupUIParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/BackupUIChild.sys.mjs",
+      events: {
+        "BackupUI:InitWidget": { wantUntrusted: true },
+        "BackupUI:ScheduledBackupsConfirm": { wantUntrusted: true },
+      },
+    },
+    matches: ["about:preferences*", "about:settings*"],
+    enablePreference: "browser.backup.preferences.ui.enabled",
   },
 
   BlockedSite: {
@@ -736,6 +758,7 @@ let JSWINDOWACTORS = {
         "Screenshots:OverlaySelection": {},
         "Screenshots:RecordEvent": {},
         "Screenshots:ShowPanel": {},
+        "Screenshots:FocusPanel": {},
       },
     },
     enablePreference: "screenshots.browser.component.enabled",
@@ -1149,6 +1172,9 @@ BrowserGlue.prototype = {
       case "fxaccounts:commands:open-uri":
         this._onDisplaySyncURIs(subject);
         break;
+      case "fxaccounts:commands:close-uri":
+        this._onIncomingCloseTabCommand(subject);
+        break;
       case "session-save":
         this._setPrefToSaveSession(true);
         subject.QueryInterface(Ci.nsISupportsPRBool);
@@ -1198,13 +1224,13 @@ BrowserGlue.prototype = {
       case "initial-migration-did-import-default-bookmarks":
         this._initPlaces(true);
         break;
-      case "handle-xul-text-link":
+      case "handle-xul-text-link": {
         let linkHandled = subject.QueryInterface(Ci.nsISupportsPRBool);
         if (!linkHandled.data) {
           let win = lazy.BrowserWindowTracker.getTopWindow();
           if (win) {
             data = JSON.parse(data);
-            let where = win.whereToOpenLink(data);
+            let where = lazy.BrowserUtils.whereToOpenLink(data);
             // Preserve legacy behavior of non-modifier left-clicks
             // opening in a new selected tab.
             if (where == "current") {
@@ -1215,13 +1241,14 @@ BrowserGlue.prototype = {
           }
         }
         break;
+      }
       case "profile-before-change":
         // Any component depending on Places should be finalized in
         // _onPlacesShutdown.  Any component that doesn't need to act after
         // the UI has gone should be finalized in _onQuitApplicationGranted.
         this._dispose();
         break;
-      case "keyword-search":
+      case "keyword-search": {
         // This notification is broadcast by the docshell when it "fixes up" a
         // URI that it's been asked to load into a keyword search.
         let engine = null;
@@ -1239,13 +1266,15 @@ BrowserGlue.prototype = {
           "urlbar"
         );
         break;
-      case "xpi-signature-changed":
+      }
+      case "xpi-signature-changed": {
         let disabledAddons = JSON.parse(data).disabled;
         let addons = await lazy.AddonManager.getAddonsByIDs(disabledAddons);
         if (addons.some(addon => addon)) {
           this._notifyUnsignedAddonsDisabled();
         }
         break;
+      }
       case "sync-ui-state:update":
         this._updateFxaBadges(lazy.BrowserWindowTracker.getTopWindow());
         break;
@@ -1263,7 +1292,7 @@ BrowserGlue.prototype = {
         lazy.DownloadsViewableInternally.register();
 
         break;
-      case "app-startup":
+      case "app-startup": {
         this._earlyBlankFirstPaint(subject);
         gThisInstanceIsTaskbarTab = subject.handleFlag("taskbar-tab", false);
         gThisInstanceIsLaunchOnLogin = subject.handleFlag(
@@ -1292,11 +1321,14 @@ BrowserGlue.prototype = {
             );
           }
           Services.prefs.setBoolPref(launchOnLoginPref, false);
-          // Only remove registry key, not shortcut here as we can assume
-          // if a user manually created a shortcut they want this behavior.
-          await lazy.WindowsLaunchOnLogin.removeLaunchOnLoginRegistryKey();
+          // To reduce confusion when running multiple Gecko profiles,
+          // delete launch on login shortcuts and registry keys so that
+          // users are not presented with the outdated profile selector
+          // dialog.
+          lazy.WindowsLaunchOnLogin.removeLaunchOnLogin();
         }
         break;
+      }
     }
   },
 
@@ -1316,6 +1348,7 @@ BrowserGlue.prototype = {
       "fxaccounts:verify_login",
       "fxaccounts:device_disconnected",
       "fxaccounts:commands:open-uri",
+      "fxaccounts:commands:close-uri",
       "session-save",
       "places-init-complete",
       "distribution-customization-complete",
@@ -1446,6 +1479,17 @@ BrowserGlue.prototype = {
       lazy.PdfJs.checkIsDefault(this._isNewProfile);
     }
 
+    if (!AppConstants.NIGHTLY_BUILD && this._isNewProfile) {
+      lazy.FormAutofillUtils.setOSAuthEnabled(
+        lazy.FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
+        false
+      );
+      lazy.LoginHelper.setOSAuthEnabled(
+        lazy.LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF,
+        false
+      );
+    }
+
     listeners.init();
 
     lazy.SessionStore.init();
@@ -1491,6 +1535,7 @@ BrowserGlue.prototype = {
         millisecondsIn24Hours;
 
       if (buildDate + acceptableAge < today) {
+        // This is asynchronous, but just kick it off rather than waiting.
         Cc["@mozilla.org/updates/update-service;1"]
           .getService(Ci.nsIApplicationUpdateService)
           .checkForBackgroundUpdates();
@@ -1630,7 +1675,9 @@ BrowserGlue.prototype = {
           "unsignedAddonsDisabled.learnMore.accesskey"
         ),
         callback() {
-          win.BrowserOpenAddonsMgr("addons://list/extension?unsigned=true");
+          win.BrowserAddonUI.openAddonsMgr(
+            "addons://list/extension?unsigned=true"
+          );
         },
       },
     ];
@@ -1813,44 +1860,7 @@ BrowserGlue.prototype = {
       }
     });
 
-    // Offer to reset a user's profile if it hasn't been used for 60 days.
-    const OFFER_PROFILE_RESET_INTERVAL_MS = 60 * 24 * 60 * 60 * 1000;
-    let lastUse = Services.appinfo.replacedLockTime;
-    let disableResetPrompt = Services.prefs.getBoolPref(
-      "browser.disableResetPrompt",
-      false
-    );
-
-    if (
-      !disableResetPrompt &&
-      lastUse &&
-      Date.now() - lastUse >= OFFER_PROFILE_RESET_INTERVAL_MS
-    ) {
-      this._resetProfileNotification("unused");
-    } else if (AppConstants.platform == "win" && !disableResetPrompt) {
-      // Check if we were just re-installed and offer Firefox Reset
-      let updateChannel;
-      try {
-        updateChannel = ChromeUtils.importESModule(
-          "resource://gre/modules/UpdateUtils.sys.mjs"
-        ).UpdateUtils.UpdateChannel;
-      } catch (ex) {}
-      if (updateChannel) {
-        let uninstalledValue = lazy.WindowsRegistry.readRegKey(
-          Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-          "Software\\Mozilla\\Firefox",
-          `Uninstalled-${updateChannel}`
-        );
-        let removalSuccessful = lazy.WindowsRegistry.removeRegKey(
-          Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
-          "Software\\Mozilla\\Firefox",
-          `Uninstalled-${updateChannel}`
-        );
-        if (removalSuccessful && uninstalledValue == "True") {
-          this._resetProfileNotification("uninstall");
-        }
-      }
-    }
+    this._maybeOfferProfileReset();
 
     this._checkForOldBuildUpdates();
 
@@ -1944,6 +1954,56 @@ BrowserGlue.prototype = {
       "browser.contentblocking.features.strict",
       this._setPrefExpectationsAndUpdate
     );
+  },
+
+  _maybeOfferProfileReset() {
+    // Offer to reset a user's profile if it hasn't been used for 60 days.
+    const OFFER_PROFILE_RESET_INTERVAL_MS = 60 * 24 * 60 * 60 * 1000;
+    let lastUse = Services.appinfo.replacedLockTime;
+    let disableResetPrompt = Services.prefs.getBoolPref(
+      "browser.disableResetPrompt",
+      false
+    );
+
+    // Also check prefs.js last modified timestamp as a backstop.
+    // This helps for cases where the lock file checks don't work,
+    // e.g. NFS or because the previous time Firefox ran, it ran
+    // for a very long time. See bug 1054947 and related bugs.
+    lastUse = Math.max(
+      lastUse,
+      Services.prefs.userPrefsFileLastModifiedAtStartup
+    );
+
+    if (
+      !disableResetPrompt &&
+      lastUse &&
+      Date.now() - lastUse >= OFFER_PROFILE_RESET_INTERVAL_MS
+    ) {
+      this._resetProfileNotification("unused");
+    } else if (AppConstants.platform == "win" && !disableResetPrompt) {
+      // Check if we were just re-installed and offer Firefox Reset
+      let updateChannel;
+      try {
+        updateChannel = ChromeUtils.importESModule(
+          "resource://gre/modules/UpdateUtils.sys.mjs"
+        ).UpdateUtils.UpdateChannel;
+      } catch (ex) {}
+      if (updateChannel) {
+        let uninstalledValue = lazy.WindowsRegistry.readRegKey(
+          Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
+          "Software\\Mozilla\\Firefox",
+          `Uninstalled-${updateChannel}`
+        );
+        let removalSuccessful = lazy.WindowsRegistry.removeRegKey(
+          Ci.nsIWindowsRegKey.ROOT_KEY_CURRENT_USER,
+          "Software\\Mozilla\\Firefox",
+          `Uninstalled-${updateChannel}`
+        );
+        if (removalSuccessful && uninstalledValue == "True") {
+          this._resetProfileNotification("uninstall");
+        }
+      }
+    }
   },
 
   _updateAutoplayPref() {
@@ -2708,11 +2768,9 @@ BrowserGlue.prototype = {
         name: "ensurePrivateBrowsingShortcutExists",
         condition:
           AppConstants.platform == "win" &&
-          // Pref'ed off until Private Browsing window separation is enabled by default
-          // to avoid a situation where a user pins the Private Browsing shortcut to
-          // the Taskbar, which will end up launching into a different Taskbar icon.
-          lazy.NimbusFeatures.majorRelease2022.getVariable(
-            "feltPrivacyWindowSeparation"
+          Services.prefs.getBoolPref(
+            "browser.privateWindowSeparation.enabled",
+            true
           ) &&
           // We don't want a shortcut if it's been disabled, eg: by enterprise policy.
           lazy.PrivateBrowsingUtils.enabled &&
@@ -2775,17 +2833,20 @@ BrowserGlue.prototype = {
         },
       },
 
-      // Report whether Firefox is the default handler for various files types,
-      // in particular, ".pdf".
+      // Report whether Firefox is the default handler for various files types
+      // and protocols, in particular, ".pdf" and "mailto"
       {
-        name: "IsDefaultHandlerForPDF",
+        name: "IsDefaultHandler",
         condition: AppConstants.platform == "win",
         task: () => {
-          Services.telemetry.keyedScalarSet(
-            "os.environment.is_default_handler",
-            ".pdf",
-            lazy.ShellService.isDefaultHandlerFor(".pdf")
-          );
+          [".pdf", "mailto"].every(x => {
+            Services.telemetry.keyedScalarSet(
+              "os.environment.is_default_handler",
+              x,
+              lazy.ShellService.isDefaultHandlerFor(x)
+            );
+            return true;
+          });
         },
       },
 
@@ -2870,6 +2931,13 @@ BrowserGlue.prototype = {
       },
 
       {
+        name: "webProtocolHandlerService.asyncInit",
+        task: () => {
+          lazy.WebProtocolHandlerRegistrar.prototype.init(true);
+        },
+      },
+
+      {
         name: "RFPHelper.init",
         task: () => {
           lazy.RFPHelper.init();
@@ -2935,7 +3003,7 @@ BrowserGlue.prototype = {
             let cfg = lazy.NimbusFeatures.gleanInternalSdk.getVariable(
               "gleanMetricConfiguration"
             );
-            Services.fog.setMetricsFeatureConfig(JSON.stringify(cfg));
+            Services.fog.applyServerKnobsConfig(JSON.stringify(cfg));
           });
 
           // Register Glean to listen for experiment updates releated to the
@@ -2944,7 +3012,7 @@ BrowserGlue.prototype = {
             let cfg = lazy.NimbusFeatures.glean.getVariable(
               "gleanMetricConfiguration"
             );
-            Services.fog.setMetricsFeatureConfig(JSON.stringify(cfg));
+            Services.fog.applyServerKnobsConfig(JSON.stringify(cfg));
           });
         },
       },
@@ -3007,16 +3075,11 @@ BrowserGlue.prototype = {
         name: "BackgroundUpdate",
         condition: AppConstants.MOZ_UPDATE_AGENT,
         task: async () => {
-          // Never in automation!  This is close to
-          // `UpdateService.disabledForTesting`, but without creating the
-          // service, which can perform a good deal of I/O in order to log its
-          // state.  Since this is in the startup path, we avoid all of that.
-          let disabledForTesting =
-            (Cu.isInAutomation ||
-              lazy.Marionette.running ||
-              lazy.RemoteAgent.running) &&
-            Services.prefs.getBoolPref("app.update.disabledForTesting", false);
-          if (!disabledForTesting) {
+          // Never in automation!
+          if (
+            AppConstants.MOZ_UPDATER &&
+            !lazy.UpdateServiceStub.updateDisabledForTesting
+          ) {
             try {
               await lazy.BackgroundUpdate.scheduleFirefoxMessagingSystemTargetingSnapshotting();
             } catch (e) {
@@ -3086,11 +3149,9 @@ BrowserGlue.prototype = {
 
       {
         name: "DAPTelemetrySender.startup",
-        condition:
-          lazy.TelemetryUtils.isTelemetryEnabled &&
-          lazy.NimbusFeatures.dapTelemetry.getVariable("enabled"),
-        task: () => {
-          lazy.DAPTelemetrySender.startup();
+        condition: lazy.TelemetryUtils.isTelemetryEnabled,
+        task: async () => {
+          await lazy.DAPTelemetrySender.startup();
         },
       },
 
@@ -3242,6 +3303,14 @@ BrowserGlue.prototype = {
 
       function reportInstallationTelemetry() {
         lazy.BrowserUsageTelemetry.reportInstallationTelemetry();
+      },
+
+      function trustObjectTelemetry() {
+        let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+          Ci.nsIX509CertDB
+        );
+        // countTrustObjects also logs the number of trust objects for telemetry purposes
+        certdb.countTrustObjects();
       },
     ];
 
@@ -3724,7 +3793,7 @@ BrowserGlue.prototype = {
 
   _onThisDeviceConnected() {
     const [title, body] = lazy.accountsL10n.formatValuesSync([
-      "account-connection-title",
+      "account-connection-title-2",
       "account-connection-connected",
     ]);
 
@@ -3769,19 +3838,13 @@ BrowserGlue.prototype = {
   _migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 144;
+    const UI_VERSION = 148;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     if (!Services.prefs.prefHasUserValue("browser.migration.version")) {
       // This is a new profile, nothing to migrate.
       Services.prefs.setIntPref("browser.migration.version", UI_VERSION);
       this._isNewProfile = true;
-
-      if (AppConstants.platform == "win") {
-        // Ensure that the Firefox Bridge protocols are registered for the new profile.
-        // No-op if they are registered for the user or the local machine already.
-        lazy.FirefoxBridgeExtensionUtils.maybeRegisterFirefoxBridgeProtocols();
-      }
 
       return;
     }
@@ -4383,24 +4446,7 @@ BrowserGlue.prototype = {
     }
 
     if (currentUIVersion < 143) {
-      if (AppConstants.platform == "win") {
-        // In Firefox 122, we enabled the firefox and firefox-private protocols.
-        // We switched over to using firefox-bridge and firefox-private-bridge,
-        // but we want to clean up the use of the other protocols.
-        lazy.FirefoxBridgeExtensionUtils.maybeDeleteBridgeProtocolRegistryEntries();
-
-        // Register the new firefox bridge related protocols now
-        lazy.FirefoxBridgeExtensionUtils.maybeRegisterFirefoxBridgeProtocols();
-
-        // Clean up the old user prefs from FX 122
-        Services.prefs.clearUserPref(
-          "network.protocol-handler.external.firefox"
-        );
-        Services.prefs.clearUserPref(
-          "network.protocol-handler.external.firefox-private"
-        );
-        Services.prefs.clearUserPref("browser.shell.customProtocolsRegistered");
-      }
+      // Version 143 has been superseded by version 145 below.
     }
 
     if (currentUIVersion < 144) {
@@ -4418,6 +4464,131 @@ BrowserGlue.prototype = {
         const filePath = PathUtils.join(PathUtils.profileDir, filename);
         IOUtils.remove(filePath, { ignoreAbsent: true }).catch(console.error);
       }
+    }
+
+    if (currentUIVersion < 145) {
+      if (AppConstants.platform == "win") {
+        // In Firefox 122, we enabled the firefox and firefox-private protocols.
+        // We switched over to using firefox-bridge and firefox-private-bridge,
+        // but we want to clean up the use of the other protocols.
+        lazy.FirefoxBridgeExtensionUtils.maybeDeleteBridgeProtocolRegistryEntries(
+          lazy.FirefoxBridgeExtensionUtils.OLD_PUBLIC_PROTOCOL,
+          lazy.FirefoxBridgeExtensionUtils.OLD_PRIVATE_PROTOCOL
+        );
+
+        // Clean up the old user prefs from FX 122
+        Services.prefs.clearUserPref(
+          "network.protocol-handler.external.firefox"
+        );
+        Services.prefs.clearUserPref(
+          "network.protocol-handler.external.firefox-private"
+        );
+
+        // In Firefox 126, we switched over to using native messaging so the
+        // protocols are no longer necessary even in firefox-bridge and
+        // firefox-private-bridge form
+        lazy.FirefoxBridgeExtensionUtils.maybeDeleteBridgeProtocolRegistryEntries(
+          lazy.FirefoxBridgeExtensionUtils.PUBLIC_PROTOCOL,
+          lazy.FirefoxBridgeExtensionUtils.PRIVATE_PROTOCOL
+        );
+        Services.prefs.clearUserPref(
+          "network.protocol-handler.external.firefox-bridge"
+        );
+        Services.prefs.clearUserPref(
+          "network.protocol-handler.external.firefox-private-bridge"
+        );
+        Services.prefs.clearUserPref("browser.shell.customProtocolsRegistered");
+      }
+    }
+
+    // Version 146 had a typo issue and thus it has been replaced by 147.
+
+    if (currentUIVersion < 147) {
+      // We're securing the boolean prefs for OS Authentication.
+      // This is achieved by converting them into a string pref and encrypting the values
+      // stored inside it.
+
+      // Note: we don't run this on nightly builds and we also do not run this
+      // for users with primary password enabled. That means both these sets of
+      // users will have the features turned on by default. For Nightly this is
+      // an intentional product decision; for primary password this is because
+      // we cannot encrypt the opt-out value without asking for the primary
+      // password, which in turn means we cannot migrate without doing so. It
+      // is also very difficult to postpone this migration because there is no
+      // way to know when the user has put in the primary password. We will
+      // probably reconsider some of this architecture in future, but for now
+      // this is the least-painful method considering the alternatives, cf.
+      // bug 1901899.
+      if (
+        !AppConstants.NIGHTLY_BUILD &&
+        !lazy.LoginHelper.isPrimaryPasswordSet()
+      ) {
+        const hasRunBetaMigration = Services.prefs
+          .getCharPref("browser.startup.homepage_override.mstone", "")
+          .startsWith("127.0");
+
+        // Version 146 UI migration wrote to a wrong `creditcards` pref when
+        // the feature was disabled, instead it should have used `creditCards`.
+        // The correct pref name is in AUTOFILL_CREDITCARDS_REAUTH_PREF.
+        // Note that we only wrote prefs if the feature was disabled.
+        let ccTypoDisabled = !lazy.FormAutofillUtils.getOSAuthEnabled(
+          "extensions.formautofill.creditcards.reauth.optout"
+        );
+        let ccCorrectPrefDisabled = !lazy.FormAutofillUtils.getOSAuthEnabled(
+          lazy.FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF
+        );
+        let ccPrevReauthPrefValue = Services.prefs.getBoolPref(
+          "extensions.formautofill.reauth.enabled",
+          false
+        );
+
+        let userHadEnabledCreditCardReauth =
+          // If we've run beta migration, and neither typo nor correct pref
+          // indicate disablement, the user enabled the pref:
+          (hasRunBetaMigration && !ccTypoDisabled && !ccCorrectPrefDisabled) ||
+          // Or if we never ran beta migration and the bool pref is set:
+          ccPrevReauthPrefValue;
+
+        lazy.FormAutofillUtils.setOSAuthEnabled(
+          lazy.FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
+          userHadEnabledCreditCardReauth
+        );
+
+        if (!hasRunBetaMigration) {
+          const passwordsPrevReauthPrefValue = Services.prefs.getBoolPref(
+            "signon.management.page.os-auth.enabled",
+            false
+          );
+          lazy.LoginHelper.setOSAuthEnabled(
+            lazy.LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF,
+            passwordsPrevReauthPrefValue
+          );
+        }
+      }
+
+      Services.prefs.clearUserPref("extensions.formautofill.reauth.enabled");
+      Services.prefs.clearUserPref("signon.management.page.os-auth.enabled");
+      Services.prefs.clearUserPref(
+        "extensions.formautofill.creditcards.reauth.optout"
+      );
+    }
+
+    if (currentUIVersion < 148) {
+      // The Firefox Translations addon is now a built-in Firefox feature.
+      let addonPromise;
+      try {
+        addonPromise = lazy.AddonManager.getAddonByID(
+          "firefox-translations-addon@mozilla.org"
+        );
+      } catch (error) {
+        // This always throws in xpcshell as the AddonManager is not initialized.
+        if (!Services.env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
+          console.error(
+            "Could not access the AddonManager to upgrade the profile."
+          );
+        }
+      }
+      addonPromise?.then(addon => addon?.uninstall()).catch(console.error);
     }
 
     // Update the migration version.
@@ -4515,10 +4686,7 @@ BrowserGlue.prototype = {
         return "disallow-postUpdate";
       }
 
-      const useMROnboarding =
-        lazy.NimbusFeatures.majorRelease2022.getVariable("onboarding");
       const showUpgradeDialog =
-        useMROnboarding ??
         lazy.NimbusFeatures.upgradeDialog.getVariable("enabled");
 
       return showUpgradeDialog ? "" : "disabled";
@@ -4774,6 +4942,32 @@ BrowserGlue.prototype = {
     }
   },
 
+  async _onIncomingCloseTabCommand(data) {
+    // The payload is wrapped weirdly because of how Sync does notifications.
+    const wrappedObj = data.wrappedJSObject.object;
+    let { urls } = wrappedObj[0];
+    let urisToClose = [];
+    urls.forEach(urlString => {
+      try {
+        urisToClose.push(Services.io.newURI(urlString));
+      } catch (ex) {
+        // The url was invalid so we ignore
+        console.error(ex);
+      }
+    });
+    for (let win of lazy.BrowserWindowTracker.orderedWindows) {
+      // Ensure we're operating on fully opened browser windows
+      if (!win.gBrowser) {
+        continue;
+      }
+      urisToClose = await win.gBrowser.closeTabsByURI(urisToClose);
+      // If we've successfully closed all the tabs, break early
+      if (!urisToClose.length) {
+        break;
+      }
+    }
+  },
+
   async _onVerifyLoginNotification({ body, title, url }) {
     let tab;
     let imageURL;
@@ -4812,7 +5006,7 @@ BrowserGlue.prototype = {
 
   _onDeviceConnected(deviceName) {
     const [title, body] = lazy.accountsL10n.formatValuesSync([
-      { id: "account-connection-title" },
+      { id: "account-connection-title-2" },
       deviceName
         ? { id: "account-connection-connected-with", args: { deviceName } }
         : { id: "account-connection-connected-with-noname" },
@@ -4849,7 +5043,7 @@ BrowserGlue.prototype = {
 
   _onDeviceDisconnected() {
     const [title, body] = lazy.accountsL10n.formatValuesSync([
-      "account-connection-title",
+      "account-connection-title-2",
       "account-connection-disconnected",
     ]);
 
@@ -5732,7 +5926,9 @@ export var AboutHomeStartupCache = {
 
     this.setDeferredResult(this.CACHE_RESULT_SCALARS.UNSET);
 
-    this._enabled = !!lazy.NimbusFeatures.abouthomecache.getVariable("enabled");
+    this._enabled = Services.prefs.getBoolPref(
+      "browser.startup.homepage.abouthome_cache.enabled"
+    );
 
     if (!this._enabled) {
       this.recordResult(this.CACHE_RESULT_SCALARS.DISABLED);

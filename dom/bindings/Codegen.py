@@ -8937,10 +8937,12 @@ def wrapTypeIntoCurrentCompartment(type, value, isMember=True):
         return CGList(memberWraps) if len(memberWraps) != 0 else None
 
     if type.isUnion():
-        memberWraps = []
+        origValue = value
+        origType = type
         if type.nullable():
             type = type.inner
             value = "%s.Value()" % value
+        memberWraps = []
         for member in type.flatMemberTypes:
             memberName = getUnionMemberName(member)
             memberWrap = wrapTypeIntoCurrentCompartment(
@@ -8949,7 +8951,12 @@ def wrapTypeIntoCurrentCompartment(type, value, isMember=True):
             if memberWrap:
                 memberWrap = CGIfWrapper(memberWrap, "%s.Is%s()" % (value, memberName))
                 memberWraps.append(memberWrap)
-        return CGList(memberWraps, "else ") if len(memberWraps) != 0 else None
+        if len(memberWraps) == 0:
+            return None
+        wrapCode = CGList(memberWraps, "else ")
+        if origType.nullable():
+            wrapCode = CGIfWrapper(wrapCode, "!%s.IsNull()" % origValue)
+        return wrapCode
 
     if (
         type.isUndefined()
@@ -8996,7 +9003,8 @@ class CGPerSignatureCall(CGThing):
        actual return value (e.g. this is an attribute setter) or an
        IDLType if there's an IDL type involved (including |void|).
     2) An argument list, which is allowed to be empty.
-    3) A name of a native method to call.
+    3) A name of a native method to call. It is ignored for methods
+       annotated with the "[WebExtensionStub=...]" extended attribute.
     4) Whether or not this method is static. Note that this only controls how
        the method is called (|self->nativeMethodName(...)| vs
        |nativeMethodName(...)|).
@@ -9370,7 +9378,7 @@ class CGPerSignatureCall(CGThing):
                     nativeMethodName,
                     argsPre,
                     args,
-                ] = self.processWebExtensionStubAttribute(idlNode, cgThings)
+                ] = self.processWebExtensionStubAttribute(cgThings)
             else:
                 args = self.getArguments()
 
@@ -9439,9 +9447,9 @@ class CGPerSignatureCall(CGThing):
     def getArguments(self):
         return list(zip(self.arguments, self.getArgumentNames()))
 
-    def processWebExtensionStubAttribute(self, idlNode, cgThings):
+    def processWebExtensionStubAttribute(self, cgThings):
         nativeMethodName = "CallWebExtMethod"
-        stubNameSuffix = idlNode.getExtendedAttribute("WebExtensionStub")
+        stubNameSuffix = self.idlNode.getExtendedAttribute("WebExtensionStub")
         if isinstance(stubNameSuffix, list):
             nativeMethodName += stubNameSuffix[0]
 
@@ -9454,7 +9462,7 @@ class CGPerSignatureCall(CGThing):
         if singleVariadicArg:
             argsPre = [
                 "cx",
-                'u"%s"_ns' % idlNode.identifier.name,
+                'u"%s"_ns' % self.idlNode.identifier.name,
                 "Constify(%s)" % "arg0",
             ]
             args = []
@@ -9462,7 +9470,7 @@ class CGPerSignatureCall(CGThing):
 
         argsPre = [
             "cx",
-            'u"%s"_ns' % idlNode.identifier.name,
+            'u"%s"_ns' % self.idlNode.identifier.name,
             "Constify(%s)" % "args_sequence",
         ]
         args = []
@@ -13621,12 +13629,14 @@ class ClassMethod(ClassItem):
         override=False,
         canRunScript=False,
         noDiscard=False,
+        delete=False,
     ):
         """
         override indicates whether to flag the method as override
         """
         assert not override or virtual
         assert not (override and static)
+        assert not (delete and body)
         self.returnType = returnType
         self.args = args
         self.inline = inline or bodyInHeader
@@ -13641,6 +13651,7 @@ class ClassMethod(ClassItem):
         self.override = override
         self.canRunScript = canRunScript
         self.noDiscard = noDiscard
+        self.delete = delete
         ClassItem.__init__(self, name, visibility)
 
     def getDecorators(self, declaring):
@@ -13672,7 +13683,9 @@ class ClassMethod(ClassItem):
             else ""
         )
         args = ", ".join([a.declare() for a in self.args])
-        if self.bodyInHeader:
+        if self.delete:
+            body = " = delete;\n"
+        elif self.bodyInHeader:
             body = indent(self.getBody())
             body = "\n{\n" + body + "}\n"
         else:
@@ -13695,7 +13708,7 @@ class ClassMethod(ClassItem):
         )
 
     def define(self, cgClass):
-        if self.bodyInHeader:
+        if self.delete or self.bodyInHeader:
             return ""
 
         templateArgs = cgClass.templateArgs
@@ -17683,23 +17696,48 @@ class CGDictionary(CGThing):
             body=body.define(),
         )
 
-    def canHaveEqualsOperator(self):
-        return all(
-            m.type.isString() or m.type.isPrimitive() for (m, _) in self.memberInfo
-        )
+    def equalityOperator(self):
+        # For now we only allow equality operators if our members have a string
+        # type, a primitive type or an enum type.
+        if not all(
+            m.type.isString() or m.type.isPrimitive() or m.type.isEnum()
+            for m in self.dictionary.members
+        ):
+            err = (
+                "[GenerateEqualityOperator] set on %s, but it"
+                % self.dictionary.needsEqualityOperator.identifier.name
+            )
+            if self.dictionary.needsEqualityOperator != self.dictionary:
+                err += "s ancestor %s" % self.dictionary.identifier.name
+            err += " contains types other than string, primitive or enum types."
+            raise TypeError(err)
 
-    def equalsOperator(self):
         body = CGList([])
+
+        if self.dictionary.parent:
+            # If we have a parent dictionary we have to call its equals
+            # operator.
+            parentTest = CGGeneric(
+                fill(
+                    """
+                    if (!${base}::operator==(aOther)) {
+                        return false;
+                    }
+                    """,
+                    base=self.makeClassName(self.dictionary.parent),
+                )
+            )
+            body.append(parentTest)
 
         for m, _ in self.memberInfo:
             memberName = self.makeMemberName(m.identifier.name)
             memberTest = CGGeneric(
                 fill(
                     """
-                if (${memberName} != aOther.${memberName}) {
-                    return false;
-                }
-                """,
+                    if (${memberName} != aOther.${memberName}) {
+                        return false;
+                    }
+                    """,
                     memberName=memberName,
                 )
             )
@@ -17821,8 +17859,22 @@ class CGDictionary(CGThing):
         else:
             disallowCopyConstruction = True
 
-        if self.canHaveEqualsOperator():
-            methods.append(self.equalsOperator())
+        if d.needsEqualityOperator:
+            methods.append(self.equalityOperator())
+        elif d.parent and d.parent.needsEqualityOperator:
+            methods.append(
+                ClassMethod(
+                    "operator==",
+                    "bool",
+                    [
+                        Argument(
+                            "const %s&" % self.makeClassName(self.dictionary), "aOther"
+                        )
+                    ],
+                    visibility="public",
+                    delete=True,
+                )
+            )
 
         struct = CGClass(
             selfName,

@@ -1805,6 +1805,74 @@ class PromptFeatureTest {
     }
 
     @Test
+    fun `WHEN login autofill is enabled THEN the select login prompt is shown`() {
+        val loginPickerView: SelectablePromptView<Login> = mock()
+
+        val login =
+            Login(guid = "A", origin = "origin", username = "user123", password = "password123")
+
+        val feature =
+            PromptFeature(
+                activity = mock<Activity>(),
+                store = store,
+                fileUploadsDirCleaner = mock(),
+                tabsUseCases = mock(),
+                fragmentManager = fragmentManager,
+                exitFullscreenUsecase = mock(),
+                loginDelegate = object : LoginDelegate {
+                    override val loginPickerView = loginPickerView
+                    override val onManageLogins = {}
+                },
+                isLoginAutofillEnabled = { true },
+            ) { }
+        feature.loginPicker = loginPicker
+        val onLoginDismiss: () -> Unit = {}
+        val onLoginConfirm: (Login) -> Unit = {}
+
+        val selectLoginRequest =
+            PromptRequest.SelectLoginPrompt(listOf(login), null, onLoginConfirm, onLoginDismiss)
+
+        feature.start()
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, selectLoginRequest))
+            .joinBlocking()
+
+        verify(loginPicker).handleSelectLoginRequest(selectLoginRequest)
+    }
+
+    @Test
+    fun `WHEN login autofill is disabled THEN the select login prompt is not shown`() {
+        val loginPickerView: SelectablePromptView<Login> = mock()
+
+        val login =
+            Login(guid = "A", origin = "origin", username = "user123", password = "password123")
+
+        val feature =
+            PromptFeature(
+                activity = mock<Activity>(),
+                store = store,
+                fileUploadsDirCleaner = mock(),
+                tabsUseCases = mock(),
+                fragmentManager = fragmentManager,
+                exitFullscreenUsecase = mock(),
+                loginDelegate = object : LoginDelegate {
+                    override val loginPickerView = loginPickerView
+                    override val onManageLogins = {}
+                },
+            ) { }
+        feature.loginPicker = loginPicker
+        val onLoginDismiss: () -> Unit = {}
+        val onLoginConfirm: (Login) -> Unit = {}
+
+        val selectLoginRequest =
+            PromptRequest.SelectLoginPrompt(listOf(login), null, onLoginConfirm, onLoginDismiss)
+
+        feature.start()
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, selectLoginRequest))
+            .joinBlocking()
+        verify(loginPicker, never()).handleSelectLoginRequest(selectLoginRequest)
+    }
+
+    @Test
     fun `When page is refreshed login dialog is dismissed`() {
         val loginPickerView: SelectablePromptView<Login> = mock()
         val feature =
@@ -1819,6 +1887,7 @@ class PromptFeatureTest {
                     override val loginPickerView = loginPickerView
                     override val onManageLogins = {}
                 },
+                isLoginAutofillEnabled = { true },
             ) { }
         feature.loginPicker = loginPicker
         val onLoginDismiss: () -> Unit = {}
@@ -2348,6 +2417,70 @@ class PromptFeatureTest {
     }
 
     @Test
+    fun `GIVEN saveLoginDialog is visible WHEN host doesn't change THEN keep saveLoginDialog visible`() {
+        val newUrlSameDomain = "https://www.mozilla.org/en-GB/firefox/browsers/mobile/android/"
+        val promptRequest = PromptRequest.Share(
+            data = mock(),
+            onSuccess = {},
+            onFailure = {},
+            onDismiss = {},
+        )
+        val saveLoginPrompt: SaveLoginDialogFragment = mock()
+
+        val feature = spy(
+            PromptFeature(
+                mock<Activity>(),
+                store = store,
+                tabsUseCases = mock(),
+                fragmentManager = fragmentManager,
+                fileUploadsDirCleaner = mock(),
+                exitFullscreenUsecase = mock(),
+                isSaveLoginEnabled = { true },
+                loginValidationDelegate = mock(),
+            ) { },
+        )
+        feature.start()
+
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, promptRequest)).joinBlocking()
+        feature.activePrompt = WeakReference(saveLoginPrompt)
+
+        store.dispatch(ContentAction.UpdateUrlAction(tabId, newUrlSameDomain)).joinBlocking()
+        verify(saveLoginPrompt, never()).dismiss()
+    }
+
+    @Test
+    fun `GIVEN saveLoginDialog is visible WHEN host changes THEN dismiss saveLoginDialog`() {
+        val newUrlDifferentDomain = "https://www.android.com/new-features-on-android/"
+        val promptRequest = PromptRequest.Share(
+            data = mock(),
+            onSuccess = {},
+            onFailure = {},
+            onDismiss = {},
+        )
+        val saveLoginPrompt: SaveLoginDialogFragment = mock()
+
+        val feature = spy(
+            PromptFeature(
+                activity = mock(),
+                store = store,
+                tabsUseCases = mock(),
+                fragmentManager = fragmentManager,
+                fileUploadsDirCleaner = mock(),
+                exitFullscreenUsecase = mock(),
+                isSaveLoginEnabled = { true },
+                shareDelegate = mock(),
+            ) { },
+        )
+        feature.start()
+
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, promptRequest)).joinBlocking()
+        feature.activePrompt = WeakReference(saveLoginPrompt)
+
+        store.dispatch(ContentAction.UpdateUrlAction(tabId, newUrlDifferentDomain)).joinBlocking()
+        verify(saveLoginPrompt, times(1)).dismiss()
+    }
+
+    @Test
     fun `prompt will always start the save login dialog with an icon`() {
         val feature = PromptFeature(
             activity = mock(),
@@ -2838,6 +2971,34 @@ class PromptFeatureTest {
 
         store.dispatch(ContentAction.ReplacePromptRequestAction(tabId, previousPrompt.uid, updatedPrompt)).joinBlocking()
         verify(fragment).dismiss()
+    }
+
+    @Test
+    fun `WHEN prompt request is a file THEN the active prompt should not be dismissed`() {
+        var onDismissWasCalled = false
+
+        val filePickerRequest =
+            PromptRequest.File(emptyArray(), true, { _, _ -> }, { _, _ -> }) {
+                onDismissWasCalled = true
+            }
+
+        val feature =
+            PromptFeature(
+                activity = mock(),
+                store = store,
+                fileUploadsDirCleaner = mock(),
+                tabsUseCases = mock(),
+                fragmentManager = fragmentManager,
+            ) { }
+
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, filePickerRequest))
+            .joinBlocking()
+
+        feature.start()
+        store.waitUntilIdle()
+
+        assertFalse(onDismissWasCalled)
+        assertTrue(tab()!!.content.promptRequests.isNotEmpty())
     }
 
     private fun mockFragmentManager(): FragmentManager {

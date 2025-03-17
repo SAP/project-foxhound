@@ -101,18 +101,6 @@ ${helpers.single_keyword(
         servo_restyle_damage="reflow",
         affects="layout",
     )}
-
-    ${helpers.predefined_type(
-        "justify-tracks",
-        "JustifyTracks",
-        "specified::JustifyTracks::default()",
-        engines="gecko",
-        gecko_pref="layout.css.grid-template-masonry-value.enabled",
-        animation_value_type="discrete",
-        servo_restyle_damage="reflow",
-        spec="https://github.com/w3c/csswg-drafts/issues/4650",
-        affects="layout",
-    )}
 % endif
 
 % if engine == "servo":
@@ -151,18 +139,6 @@ ${helpers.single_keyword(
         extra_prefixes="webkit",
         animation_value_type="discrete",
         servo_restyle_damage="reflow",
-        affects="layout",
-    )}
-
-    ${helpers.predefined_type(
-        "align-tracks",
-        "AlignTracks",
-        "specified::AlignTracks::default()",
-        engines="gecko",
-        gecko_pref="layout.css.grid-template-masonry-value.enabled",
-        animation_value_type="discrete",
-        servo_restyle_damage="reflow",
-        spec="https://github.com/w3c/csswg-drafts/issues/4650",
         affects="layout",
     )}
 
@@ -330,6 +306,65 @@ ${helpers.predefined_type(
         affects="layout",
     )}
 % endfor
+
+${helpers.predefined_type(
+    "position-anchor",
+    "PositionAnchor",
+    "computed::PositionAnchor::auto()",
+    engines="gecko",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#propdef-position-anchor",
+    affects="layout",
+)}
+
+${helpers.predefined_type(
+    "position-visibility",
+    "PositionVisibility",
+    "computed::PositionVisibility::ALWAYS",
+    engines="gecko",
+    initial_specified_value="specified::PositionVisibility::ALWAYS",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#propdef-position-visibility",
+    affects="layout",
+)}
+
+${helpers.predefined_type(
+    "inset-area",
+    "InsetArea",
+    "computed::InsetArea::none()",
+    engines="gecko",
+    initial_specified_value="specified::InsetArea::none()",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#typedef-inset-area",
+    affects="layout",
+)}
+
+${helpers.predefined_type(
+    "position-try-options",
+    "PositionTryOptions",
+    "computed::PositionTryOptions::none()",
+    engines="gecko",
+    initial_specified_value="specified::PositionTryOptions::none()",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#position-try-options",
+    affects="layout",
+)}
+
+${helpers.predefined_type(
+    "position-try-order",
+    "PositionTryOrder",
+    "computed::PositionTryOrder::normal()",
+    engines="gecko",
+    initial_specified_value="specified::PositionTryOrder::normal()",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#position-try-order-property",
+    affects="layout",
+)}
 
 ${helpers.single_keyword(
     "box-sizing",

@@ -126,6 +126,7 @@ EXPORTS.mozilla += [
     "ContentIterator.h",
     "CORSMode.h",
     "FlushType.h",
+    "FocusModel.h",
     "FullscreenChange.h",
     "GlobalTeardownObserver.h",
     "IdentifierMapEntry.h",
@@ -166,6 +167,7 @@ EXPORTS.mozilla.dom += [
     "CompressionStream.h",
     "ContentFrameMessageManager.h",
     "ContentProcessMessageManager.h",
+    "CrossShadowBoundaryRange.h",
     "CustomElementRegistry.h",
     "DecompressionStream.h",
     "DirectionalityUtils.h",
@@ -336,6 +338,7 @@ UNIFIED_SOURCES += [
     "ContentFrameMessageManager.cpp",
     "ContentIterator.cpp",
     "ContentProcessMessageManager.cpp",
+    "CrossShadowBoundaryRange.cpp",
     "Crypto.cpp",
     "CustomElementRegistry.cpp",
     "DirectionalityUtils.cpp",
@@ -597,6 +600,7 @@ LOCAL_INCLUDES += [
     "/security/manager/ssl",
     "/third_party/xsimd/include",
     "/widget",
+    "/xpcom/build",
     "/xpcom/ds",
 ]
 

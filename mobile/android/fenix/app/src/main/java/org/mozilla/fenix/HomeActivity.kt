@@ -115,6 +115,7 @@ import org.mozilla.fenix.home.intent.CrashReporterIntentProcessor
 import org.mozilla.fenix.home.intent.HomeDeepLinkIntentProcessor
 import org.mozilla.fenix.home.intent.OpenBrowserIntentProcessor
 import org.mozilla.fenix.home.intent.OpenPasswordManagerIntentProcessor
+import org.mozilla.fenix.home.intent.OpenRecentlyClosedIntentProcessor
 import org.mozilla.fenix.home.intent.OpenSpecificTabIntentProcessor
 import org.mozilla.fenix.home.intent.ReEngagementIntentProcessor
 import org.mozilla.fenix.home.intent.SpeechProcessingIntentProcessor
@@ -203,6 +204,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             OpenBrowserIntentProcessor(this, ::getIntentSessionId),
             OpenSpecificTabIntentProcessor(this),
             OpenPasswordManagerIntentProcessor(),
+            OpenRecentlyClosedIntentProcessor(),
             ReEngagementIntentProcessor(this, settings()),
         )
     }
@@ -780,7 +782,16 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
 
     private fun handleBackLongPress(): Boolean {
         supportFragmentManager.primaryNavigationFragment?.childFragmentManager?.fragments?.forEach {
-            if (it is OnBackLongPressedListener && it.onBackLongPressed()) {
+            if (it is OnLongPressedListener && it.onBackLongPressed()) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun handleForwardLongPress(): Boolean {
+        supportFragmentManager.primaryNavigationFragment?.childFragmentManager?.fragments?.forEach {
+            if (it is OnLongPressedListener && it.onForwardLongPressed()) {
                 return true
             }
         }
@@ -805,9 +816,16 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                 handleBackLongPress()
             }
         }
+
+        if (keyCode == KeyEvent.KEYCODE_FORWARD) {
+            event?.startTracking()
+            return true
+        }
+
         return super.onKeyDown(keyCode, event)
     }
 
+    @Suppress("ReturnCount")
     final override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (shouldUseCustomBackLongPress() && keyCode == KeyEvent.KEYCODE_BACK) {
             backLongPressJob?.cancel()
@@ -821,6 +839,20 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                 return true
             }
         }
+
+        if (keyCode == KeyEvent.KEYCODE_FORWARD) {
+            if (navHost.navController.hasTopDestination(TabHistoryDialogFragment.NAME)) {
+                // returning true avoids further processing of the KeyUp event
+                return true
+            }
+
+            supportFragmentManager.primaryNavigationFragment?.childFragmentManager?.fragments?.forEach {
+                if (it is UserInteractionHandler && it.onForwardPressed()) {
+                    return true
+                }
+            }
+        }
+
         return super.onKeyUp(keyCode, event)
     }
 
@@ -830,6 +862,11 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         if (!shouldUseCustomBackLongPress() && keyCode == KeyEvent.KEYCODE_BACK) {
             return handleBackLongPress()
         }
+
+        if (keyCode == KeyEvent.KEYCODE_FORWARD) {
+            return handleForwardLongPress()
+        }
+
         return super.onKeyLongPress(keyCode, event)
     }
 

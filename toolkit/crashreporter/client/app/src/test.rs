@@ -109,14 +109,14 @@ macro_rules! current_date {
     };
 }
 const MOCK_CURRENT_DATE: &str = current_date!();
-const MOCK_CURRENT_TIME: &str = concat!(current_date!(), "T12:34:56Z");
+const MOCK_CURRENT_TIME: &str = concat!(current_date!(), "T12:34:56.000Z");
 const MOCK_PING_UUID: uuid::Uuid = uuid::Uuid::nil();
 const MOCK_REMOTE_CRASH_ID: &str = "8cbb847c-def2-4f68-be9e-000000000000";
 
 fn current_datetime() -> time::OffsetDateTime {
     time::OffsetDateTime::parse(
         MOCK_CURRENT_TIME,
-        &time::format_description::well_known::Rfc3339,
+        &time::format_description::well_known::Iso8601::DEFAULT,
     )
     .unwrap()
 }
@@ -311,8 +311,8 @@ impl AssertFiles {
                 "type": "crash",
                 "id": MOCK_PING_UUID,
                 "version": 4,
-                "creation_date": MOCK_CURRENT_TIME,
-                "client_id": "telemetry_client",
+                "creationDate": MOCK_CURRENT_TIME,
+                "clientId": "telemetry_client",
                 "payload": {
                     "sessionId": "telemetry_session",
                     "version": 1,
@@ -329,6 +329,7 @@ impl AssertFiles {
                         "BuildID": "1234",
                         "ProductName": "Bar",
                         "ReleaseChannel": "release",
+                        "Version": "100.0",
                     }
                 },
                 "application": {

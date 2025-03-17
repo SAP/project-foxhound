@@ -60,7 +60,7 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-
+import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 class CustomTabsToolbarFeatureTest {
     @Test
@@ -127,7 +127,8 @@ class CustomTabsToolbarFeatureTest {
     }
 
     @Test
-    fun `initialize updates toolbar, window and text color`() {
+    @Config(sdk = [28])
+    fun `initialize updates toolbar, window and text color on SDK 28`() {
         val tab = createCustomTab(
             "https://www.mozilla.org",
             id = "mozilla",
@@ -166,6 +167,47 @@ class CustomTabsToolbarFeatureTest {
     }
 
     @Test
+    fun `initialize updates toolbar, window and text color`() {
+        val tab = createCustomTab(
+            "https://www.mozilla.org",
+            id = "mozilla",
+            config = CustomTabConfig(
+                colorSchemes = ColorSchemes(
+                    defaultColorSchemeParams = ColorSchemeParams(
+                        toolbarColor = Color.RED,
+                        navigationBarColor = Color.BLUE,
+                    ),
+                ),
+            ),
+        )
+
+        val store = BrowserStore(
+            BrowserState(
+                customTabs = listOf(tab),
+            ),
+        )
+        val toolbar = spy(BrowserToolbar(testContext))
+        val useCases = CustomTabsUseCases(
+            store = store,
+            loadUrlUseCase = SessionUseCases(store).loadUrl,
+        )
+        val window: Window = mock()
+        `when`(window.decorView).thenReturn(mock())
+        `when`(window.insetsController).thenReturn(mock())
+
+        val feature = CustomTabsToolbarFeature(store, toolbar, sessionId = "mozilla", useCases = useCases, window = window) {}
+
+        feature.init(tab.config)
+
+        verify(toolbar).setBackgroundColor(Color.RED)
+        verify(window).statusBarColor = Color.RED
+        verify(window).navigationBarColor = Color.BLUE
+
+        assertEquals(Color.WHITE, toolbar.display.colors.title)
+        assertEquals(Color.WHITE, toolbar.display.colors.text)
+    }
+
+    @Test
     fun `initialize does not update toolbar background if flag is set`() {
         val tab = createCustomTab(
             "https://www.mozilla.org",
@@ -189,6 +231,7 @@ class CustomTabsToolbarFeatureTest {
         )
         val window: Window = mock()
         `when`(window.decorView).thenReturn(mock())
+        `when`(window.insetsController).thenReturn(mock())
 
         run {
             val feature = CustomTabsToolbarFeature(
@@ -310,6 +353,108 @@ class CustomTabsToolbarFeatureTest {
     }
 
     @Test
+    fun `GIVEN default custom tabs setting THEN refresh button does not appear`() {
+        val tab = createCustomTab("https://www.mozilla.org", id = "mozilla", config = CustomTabConfig())
+        val store = BrowserStore(
+            BrowserState(
+                customTabs = listOf(tab),
+            ),
+        )
+        val toolbar = spy(BrowserToolbar(testContext))
+        val useCases = CustomTabsUseCases(
+            store = store,
+            loadUrlUseCase = SessionUseCases(store).loadUrl,
+        )
+        val feature = spy(
+            CustomTabsToolbarFeature(
+                store,
+                toolbar,
+                sessionId = "mozilla",
+                useCases = useCases,
+            ) {},
+        )
+
+        feature.start()
+
+        verify(feature, never()).addRefreshButton(anyInt())
+        verify(toolbar, never()).addBrowserAction(any())
+    }
+
+    @Test
+    fun `GIVEN custom tab setting with refresh listener and flag THEN refresh button does appear`() {
+        val tab = createCustomTab("https://www.mozilla.org", id = "mozilla", config = CustomTabConfig())
+        val store = BrowserStore(
+            BrowserState(
+                customTabs = listOf(tab),
+            ),
+        )
+        val toolbar = spy(BrowserToolbar(testContext))
+        val useCases = CustomTabsUseCases(
+            store = store,
+            loadUrlUseCase = SessionUseCases(store).loadUrl,
+        )
+        val feature = spy(
+            CustomTabsToolbarFeature(
+                store,
+                toolbar,
+                sessionId = "mozilla",
+                useCases = useCases,
+                customTabsToolbarListeners = CustomTabsToolbarListeners(
+                    refreshListener = {},
+                ),
+                customTabsToolbarButtonConfig = CustomTabsToolbarButtonConfig(
+                    showRefreshButton = true,
+                ),
+            ) {},
+        )
+
+        feature.start()
+
+        verify(feature).addRefreshButton(anyInt())
+    }
+
+    @Test
+    fun `GIVEN custom tabs setting with refresh button listener and flag THEN Refresh button uses custom refresh listener`() {
+        val tab = createCustomTab("https://www.mozilla.org", id = "mozilla", config = CustomTabConfig())
+        val store = BrowserStore(
+            BrowserState(
+                customTabs = listOf(tab),
+            ),
+        )
+        val toolbar = spy(BrowserToolbar(testContext))
+        val useCases = CustomTabsUseCases(
+            store = store,
+            loadUrlUseCase = SessionUseCases(store).loadUrl,
+        )
+        var clicked = false
+        val feature = spy(
+            CustomTabsToolbarFeature(
+                store,
+                toolbar,
+                sessionId = "mozilla",
+                useCases = useCases,
+                customTabsToolbarListeners = CustomTabsToolbarListeners(
+                    refreshListener = { clicked = true },
+                ),
+                customTabsToolbarButtonConfig = CustomTabsToolbarButtonConfig(
+                    showRefreshButton = true,
+                ),
+            ) {},
+        )
+
+        feature.start()
+
+        verify(feature).addRefreshButton(anyInt())
+
+        val captor = argumentCaptor<Toolbar.ActionButton>()
+        verify(toolbar).addBrowserAction(captor.capture())
+
+        val button = captor.value.createView(FrameLayout(testContext))
+        button.performClick()
+        assertTrue(clicked)
+    }
+
+    @Test
     fun `does not add share button by default`() {
         val tab = createCustomTab("https://www.mozilla.org", id = "mozilla", config = CustomTabConfig())
         val store = BrowserStore(
@@ -382,7 +527,9 @@ class CustomTabsToolbarFeatureTest {
             toolbar,
             sessionId = "mozilla",
             useCases = useCases,
-            shareListener = { clicked = true },
+            customTabsToolbarListeners = CustomTabsToolbarListeners(
+                shareListener = { clicked = true },
+            ),
         ) {}
 
         feature.start()

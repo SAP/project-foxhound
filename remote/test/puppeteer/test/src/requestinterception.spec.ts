@@ -22,23 +22,33 @@ describe('request interception', function () {
       const {page, server} = await getTestState();
 
       await page.setRequestInterception(true);
+      let requestError;
       page.on('request', request => {
         if (isFavicon(request)) {
           void request.continue();
           return;
         }
-        expect(request.url()).toContain('empty.html');
-        expect(request.headers()['user-agent']).toBeTruthy();
-        expect(request.headers()['accept']).toBeTruthy();
-        expect(request.method()).toBe('GET');
-        expect(request.postData()).toBe(undefined);
-        expect(request.isNavigationRequest()).toBe(true);
-        expect(request.resourceType()).toBe('document');
-        expect(request.frame() === page.mainFrame()).toBe(true);
-        expect(request.frame()!.url()).toBe('about:blank');
-        void request.continue();
+        try {
+          expect(request).toBeTruthy();
+          expect(request.url()).toContain('empty.html');
+          expect(request.headers()['user-agent']).toBeTruthy();
+          expect(request.method()).toBe('GET');
+          expect(request.postData()).toBe(undefined);
+          expect(request.isNavigationRequest()).toBe(true);
+          expect(request.frame()!.url()).toBe('about:blank');
+          expect(request.frame() === page.mainFrame()).toBe(true);
+        } catch (error) {
+          requestError = error;
+        } finally {
+          void request.continue();
+        }
       });
+
       const response = (await page.goto(server.EMPTY_PAGE))!;
+      if (requestError) {
+        throw requestError;
+      }
+
       expect(response.ok()).toBe(true);
       expect(response.remoteAddress().port).toBe(server.PORT);
     });
@@ -59,7 +69,7 @@ describe('request interception', function () {
       `);
       await Promise.all([
         page.$eval('form', form => {
-          return (form as HTMLFormElement).submit();
+          return form.submit();
         }),
         page.waitForNavigation(),
       ]);
@@ -76,7 +86,11 @@ describe('request interception', function () {
         });
         void request.continue({headers});
       });
-      await page.goto(server.PREFIX + '/rrredirect');
+      const [request] = await Promise.all([
+        server.waitForRequest('/empty.html'),
+        page.goto(server.PREFIX + '/rrredirect'),
+      ]);
+      expect(request.headers['foo']).toBe('bar');
     });
     // @see https://github.com/puppeteer/puppeteer/issues/4743
     it('should be able to remove headers', async () => {
@@ -162,11 +176,21 @@ describe('request interception', function () {
         foo: 'bar',
       });
       await page.setRequestInterception(true);
+      let requestError;
       page.on('request', request => {
-        expect(request.headers()['foo']).toBe('bar');
-        void request.continue();
+        try {
+          expect(request.headers()['foo']).toBe('bar');
+        } catch (error) {
+          requestError = error;
+        } finally {
+          void request.continue();
+        }
       });
+
       const response = (await page.goto(server.EMPTY_PAGE))!;
+      if (requestError) {
+        throw requestError;
+      }
       expect(response.ok()).toBe(true);
     });
     // @see https://github.com/puppeteer/puppeteer/issues/4337
@@ -192,11 +216,13 @@ describe('request interception', function () {
 
       await page.setExtraHTTPHeaders({referer: server.EMPTY_PAGE});
       await page.setRequestInterception(true);
-      page.on('request', request => {
-        expect(request.headers()['referer']).toBe(server.EMPTY_PAGE);
+      let request!: HTTPRequest;
+      page.on('request', req => {
+        request = req;
         void request.continue();
       });
       const response = (await page.goto(server.EMPTY_PAGE))!;
+      expect(request.headers()['referer']).toBe(server.EMPTY_PAGE);
       expect(response.ok()).toBe(true);
     });
     it('should be abortable', async () => {
@@ -267,7 +293,7 @@ describe('request interception', function () {
       if (isChrome) {
         expect(error.message).toContain('net::ERR_FAILED');
       } else {
-        expect(error.message).toContain('NS_ERROR_FAILURE');
+        expect(error.message).toContain('NS_ERROR_ABORT');
       }
     });
     it('should work with redirects', async () => {
@@ -298,7 +324,6 @@ describe('request interception', function () {
       expect(response.status()).toBe(200);
       expect(response.url()).toContain('empty.html');
       expect(requests).toHaveLength(5);
-      expect(requests[2]!.resourceType()).toBe('document');
       // Check redirect chain
       const redirectChain = response.request().redirectChain();
       expect(redirectChain).toHaveLength(4);
@@ -332,8 +357,6 @@ describe('request interception', function () {
       expect(response.status()).toBe(200);
       expect(response.url()).toContain('one-style.html');
       expect(requests).toHaveLength(5);
-      expect(requests[0]!.resourceType()).toBe('document');
-      expect(requests[1]!.resourceType()).toBe('stylesheet');
       // Check redirect chain
       const redirectChain = requests[1]!.redirectChain();
       expect(redirectChain).toHaveLength(3);
@@ -493,7 +516,7 @@ describe('request interception', function () {
       ))!;
       expect(response.status()).toBe(200);
     });
-    it('should work wit h encoded server - 2', async () => {
+    it('should work with encoded server - 2', async () => {
       const {page, server} = await getTestState();
 
       // The requestWillBeSent will report URL as-is, whereas interception will
@@ -523,7 +546,7 @@ describe('request interception', function () {
       void (page.$eval(
         'iframe',
         (frame, url) => {
-          return ((frame as HTMLIFrameElement).src = url as string);
+          return (frame.src = url);
         },
         server.EMPTY_PAGE
       ),
@@ -906,6 +929,38 @@ describe('request interception', function () {
       });
       await page.goto(server.PREFIX + '/empty.html');
       expect(error.message).toMatch(/Invalid header/);
+    });
+  });
+
+  describe('Request.resourceType', () => {
+    it('should work for document type', async () => {
+      const {page, server} = await getTestState();
+
+      await page.setRequestInterception(true);
+      page.on('request', request => {
+        void request.continue();
+      });
+      const response = await page.goto(server.EMPTY_PAGE);
+      const request = response!.request();
+      expect(request.resourceType()).toBe('document');
+    });
+
+    it('should work for stylesheets', async () => {
+      const {page, server} = await getTestState();
+
+      await page.setRequestInterception(true);
+      const cssRequests: HTTPRequest[] = [];
+      page.on('request', request => {
+        if (request.url().endsWith('css')) {
+          cssRequests.push(request);
+        }
+        void request.continue();
+      });
+      await page.goto(server.PREFIX + '/one-style.html');
+      expect(cssRequests).toHaveLength(1);
+      const request = cssRequests[0]!;
+      expect(request.url()).toContain('one-style.css');
+      expect(request.resourceType()).toBe('stylesheet');
     });
   });
 });

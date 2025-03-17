@@ -5,10 +5,12 @@
 
 #include "nsTableCellFrame.h"
 
+#include "celldata.h"
 #include "gfxContext.h"
 #include "gfxUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
@@ -22,7 +24,6 @@
 #include "nsIContent.h"
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
-#include "nsIScrollableFrame.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsHTMLParts.h"
@@ -378,10 +379,10 @@ LogicalSides nsTableCellFrame::GetLogicalSkipSides() const {
   }
 
   if (GetPrevInFlow()) {
-    skip |= eLogicalSideBitsBStart;
+    skip += LogicalSide::BStart;
   }
   if (GetNextInFlow()) {
-    skip |= eLogicalSideBitsBEnd;
+    skip += LogicalSide::BEnd;
   }
   return skip;
 }
@@ -532,7 +533,7 @@ static bool CellHasVisibleContent(nsTableFrame* aTableFrame,
 
 nsIFrame* nsTableCellFrame::CellContentFrame() const {
   nsIFrame* inner = mFrames.FirstChild();
-  if (nsIScrollableFrame* sf = do_QueryFrame(inner)) {
+  if (ScrollContainerFrame* sf = do_QueryFrame(inner)) {
     return sf->GetScrolledFrame();
   }
   return inner;
@@ -589,7 +590,7 @@ int32_t nsTableCellFrame::GetColSpan() {
   return colSpan;
 }
 
-nsIScrollableFrame* nsTableCellFrame::GetScrollTargetFrame() const {
+ScrollContainerFrame* nsTableCellFrame::GetScrollTargetFrame() const {
   return do_QueryFrame(mFrames.FirstChild());
 }
 
@@ -753,7 +754,7 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
   {
     const auto padding = aReflowInput.ComputedLogicalPadding(kidWM);
     kidReflowInput.Init(aPresContext, Nothing(), Nothing(), Some(padding));
-    if (firstKid->IsScrollFrame()) {
+    if (firstKid->IsScrollContainerFrame()) {
       // Propagate explicit block sizes to our inner frame, if it's a scroll
       // frame. Note that in table layout, explicit heights act as a minimum
       // height, see nsTableRowFrame::CalcCellActualBSize.
@@ -962,14 +963,12 @@ nsresult nsBCTableCellFrame::GetFrameName(nsAString& aResult) const {
 #endif
 
 LogicalMargin nsBCTableCellFrame::GetBorderWidth(WritingMode aWM) const {
-  int32_t d2a = PresContext()->AppUnitsPerDevPixel();
-  return LogicalMargin(aWM, BC_BORDER_END_HALF_COORD(d2a, mBStartBorder),
-                       BC_BORDER_START_HALF_COORD(d2a, mIEndBorder),
-                       BC_BORDER_START_HALF_COORD(d2a, mBEndBorder),
-                       BC_BORDER_END_HALF_COORD(d2a, mIStartBorder));
+  return LogicalMargin(
+      aWM, BC_BORDER_END_HALF(mBStartBorder), BC_BORDER_START_HALF(mIEndBorder),
+      BC_BORDER_START_HALF(mBEndBorder), BC_BORDER_END_HALF(mIStartBorder));
 }
 
-BCPixelSize nsBCTableCellFrame::GetBorderWidth(LogicalSide aSide) const {
+nscoord nsBCTableCellFrame::GetBorderWidth(LogicalSide aSide) const {
   switch (aSide) {
     case LogicalSide::BStart:
       return BC_BORDER_END_HALF(mBStartBorder);
@@ -982,7 +981,7 @@ BCPixelSize nsBCTableCellFrame::GetBorderWidth(LogicalSide aSide) const {
   }
 }
 
-void nsBCTableCellFrame::SetBorderWidth(LogicalSide aSide, BCPixelSize aValue) {
+void nsBCTableCellFrame::SetBorderWidth(LogicalSide aSide, nscoord aValue) {
   switch (aSide) {
     case LogicalSide::BStart:
       mBStartBorder = aValue;
@@ -1001,11 +1000,9 @@ void nsBCTableCellFrame::SetBorderWidth(LogicalSide aSide, BCPixelSize aValue) {
 /* virtual */
 nsMargin nsBCTableCellFrame::GetBorderOverflow() {
   WritingMode wm = GetWritingMode();
-  int32_t d2a = PresContext()->AppUnitsPerDevPixel();
-  LogicalMargin halfBorder(wm, BC_BORDER_START_HALF_COORD(d2a, mBStartBorder),
-                           BC_BORDER_END_HALF_COORD(d2a, mIEndBorder),
-                           BC_BORDER_END_HALF_COORD(d2a, mBEndBorder),
-                           BC_BORDER_START_HALF_COORD(d2a, mIStartBorder));
+  LogicalMargin halfBorder(
+      wm, BC_BORDER_START_HALF(mBStartBorder), BC_BORDER_END_HALF(mIEndBorder),
+      BC_BORDER_END_HALF(mBEndBorder), BC_BORDER_START_HALF(mIStartBorder));
   return halfBorder.GetPhysicalMargin(wm);
 }
 

@@ -92,6 +92,39 @@ BEGIN_TEST(testWeakCacheMap) {
 }
 END_TEST(testWeakCacheMap)
 
+BEGIN_TEST(testWeakCacheMapWithUniquePtr) {
+  JS::RootedObject tenured1(cx, JS_NewPlainObject(cx));
+  JS::RootedObject tenured2(cx, JS_NewPlainObject(cx));
+  JS_GC(cx);
+  JS::RootedObject nursery1(cx, JS_NewPlainObject(cx));
+  JS::RootedObject nursery2(cx, JS_NewPlainObject(cx));
+
+  using ObjectMap = js::GCHashMap<HeapPtr<JSObject*>, UniquePtr<uint32_t>,
+                                  js::StableCellHasher<HeapPtr<JSObject*>>>;
+  using Cache = WeakCache<ObjectMap>;
+  Cache cache(JS::GetObjectZone(tenured1), cx);
+
+  cache.put(tenured1, MakeUnique<uint32_t>(1));
+  cache.put(tenured2, MakeUnique<uint32_t>(2));
+  cache.put(nursery1, MakeUnique<uint32_t>(3));
+  cache.put(nursery2, MakeUnique<uint32_t>(4));
+
+  JS_GC(cx);
+  CHECK(cache.has(tenured1));
+  CHECK(cache.has(tenured2));
+  CHECK(cache.has(nursery1));
+  CHECK(cache.has(nursery2));
+
+  tenured2 = nursery2 = nullptr;
+  JS_GC(cx);
+  CHECK(cache.has(tenured1));
+  CHECK(cache.has(nursery1));
+  CHECK(cache.count() == 2);
+
+  return true;
+}
+END_TEST(testWeakCacheMapWithUniquePtr)
+
 // Exercise WeakCache<GCVector>.
 BEGIN_TEST(testWeakCacheGCVector) {
   // Create two objects tenured and two in the nursery. If zeal is on,
@@ -231,7 +264,7 @@ BEGIN_TEST(testIncrementalWeakCacheSweeping) {
   AutoLeaveZeal nozeal(cx);
 
   JS_SetGCParameter(cx, JSGC_INCREMENTAL_GC_ENABLED, true);
-  JS_SetGCZeal(cx, 17, 1000000);
+  JS::SetGCZeal(cx, 17, 1000000);
 
   CHECK(TestSet());
   CHECK(TestMap());
@@ -239,7 +272,7 @@ BEGIN_TEST(testIncrementalWeakCacheSweeping) {
   CHECK(TestReplaceDyingInMap());
   CHECK(TestUniqueIDLookups());
 
-  JS_SetGCZeal(cx, 0, 0);
+  JS::SetGCZeal(cx, 0, 0);
   JS_SetGCParameter(cx, JSGC_INCREMENTAL_GC_ENABLED, false);
 
   return true;

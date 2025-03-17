@@ -103,6 +103,9 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
 
   auto IsHighlightColor = [&] {
     switch (aID) {
+      case ColorID::MozButtonhoverface:
+      case ColorID::MozButtonactivetext:
+        return nsUXThemeData::IsHighContrastOn();
       case ColorID::MozMenuhover:
         return !UseNonNativeMenuColors(aScheme);
       case ColorID::Highlight:
@@ -120,6 +123,9 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
 
   auto IsHighlightTextColor = [&] {
     switch (aID) {
+      case ColorID::MozButtonhovertext:
+      case ColorID::MozButtonactiveface:
+        return nsUXThemeData::IsHighContrastOn();
       case ColorID::MozMenubarhovertext:
         if (UseNonNativeMenuColors(aScheme)) {
           return false;
@@ -365,6 +371,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::Mark:
     case ColorID::SpellCheckerUnderline:
     case ColorID::MozAutofillBackground:
+    case ColorID::TargetTextBackground:
+    case ColorID::TargetTextForeground:
       aColor = GetStandinForNativeColor(aID, aScheme);
       return NS_OK;
     default:

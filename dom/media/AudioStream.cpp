@@ -168,7 +168,12 @@ size_t AudioStream::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
 nsresult AudioStream::EnsureTimeStretcherInitialized() {
   AssertIsOnAudioThread();
   if (!mTimeStretcher) {
-    mTimeStretcher = new RLBoxSoundTouch();
+    auto timestretcher = MakeUnique<RLBoxSoundTouch>();
+    if (!timestretcher || !timestretcher->Init()) {
+      return NS_ERROR_FAILURE;
+    }
+    mTimeStretcher = timestretcher.release();
+
     mTimeStretcher->setSampleRate(mAudioClock.GetInputRate());
     mTimeStretcher->setChannels(mOutChannels);
     mTimeStretcher->setPitch(1.0);
@@ -316,7 +321,8 @@ void AudioStream::SetStreamName(const nsAString& aStreamName) {
   }
 
   MonitorAutoLock mon(mMonitor);
-  if (InvokeCubeb(cubeb_stream_set_name, aRawStreamName.get()) != CUBEB_OK) {
+  int r = InvokeCubeb(cubeb_stream_set_name, aRawStreamName.get());
+  if (r && r != CUBEB_ERROR_NOT_SUPPORTED) {
     LOGE("Could not set cubeb stream name.");
   }
 }

@@ -6,9 +6,13 @@ package mozilla.components.browser.state.reducer
 
 import mozilla.components.browser.state.action.TranslationsAction
 import mozilla.components.browser.state.selector.findTab
+import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TranslationsState
+import mozilla.components.concept.engine.translate.LanguageModel
+import mozilla.components.concept.engine.translate.ModelOperation
+import mozilla.components.concept.engine.translate.ModelState
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.concept.engine.translate.TranslationPageSettingOperation
@@ -62,11 +66,8 @@ internal object TranslationsStateReducer {
             }
 
             // Checking for if the translations engine is in the fully translated state or not based
-            // on the values of the translation pair.
-            if (action.translationEngineState.requestedTranslationPair == null ||
-                action.translationEngineState.requestedTranslationPair?.fromLanguage == null ||
-                action.translationEngineState.requestedTranslationPair?.toLanguage == null
-            ) {
+            // on if a visual change has occurred on the browser.
+            if (action.translationEngineState.hasVisibleChange != true) {
                 // In an untranslated state
                 var translationsError: TranslationError? = null
                 if (action.translationEngineState.detectedLanguages?.supportedDocumentLang == false) {
@@ -88,6 +89,7 @@ internal object TranslationsStateReducer {
                         isOfferTranslate = isOfferTranslate,
                         isExpectedTranslate = isExpectedTranslate,
                         isTranslated = true,
+                        isTranslateProcessing = false,
                         translationError = null,
                         translationEngineState = action.translationEngineState,
                     )
@@ -111,10 +113,9 @@ internal object TranslationsStateReducer {
         is TranslationsAction.TranslateSuccessAction -> {
             when (action.operation) {
                 TranslationOperation.TRANSLATE -> {
+                    // The isTranslated state will be identified on a translation state change.
                     state.copyWithTranslationsState(action.tabId) {
                         it.copy(
-                            isTranslated = true,
-                            isTranslateProcessing = false,
                             translationError = null,
                         )
                     }
@@ -163,6 +164,17 @@ internal object TranslationsStateReducer {
                     }
                 }
 
+                TranslationOperation.FETCH_OFFER_SETTING -> {
+                    // Reset the error state, and then generally expect
+                    // [TranslationsAction.SetGlobalOfferTranslateSettingAction] to update state in the
+                    // success case.
+                    state.copyWithTranslationsState(action.tabId) {
+                        it.copy(
+                            settingsError = null,
+                        )
+                    }
+                }
+
                 TranslationOperation.FETCH_AUTOMATIC_LANGUAGE_SETTINGS -> {
                     state.copy(
                         translationEngine = state.translationEngine.copy(
@@ -175,11 +187,11 @@ internal object TranslationsStateReducer {
                     // Reset the error state, and then generally expect
                     // [TranslationsAction.SetNeverTranslateSitesAction] to update
                     // state in the success case.
-                    state.copyWithTranslationsState(action.tabId) {
-                        it.copy(
+                    state.copy(
+                        translationEngine = state.translationEngine.copy(
                             neverTranslateSites = null,
-                        )
-                    }
+                        ),
+                    )
                 }
             }
         }
@@ -229,6 +241,14 @@ internal object TranslationsStateReducer {
                     }
                 }
 
+                TranslationOperation.FETCH_OFFER_SETTING -> {
+                    state.copyWithTranslationsState(action.tabId) {
+                        it.copy(
+                            translationError = action.translationError,
+                        )
+                    }
+                }
+
                 TranslationOperation.FETCH_AUTOMATIC_LANGUAGE_SETTINGS -> {
                     state.copyWithTranslationsState(action.tabId) {
                         it.copy(
@@ -240,7 +260,6 @@ internal object TranslationsStateReducer {
                 TranslationOperation.FETCH_NEVER_TRANSLATE_SITES -> {
                     state.copyWithTranslationsState(action.tabId) {
                         it.copy(
-                            neverTranslateSites = null,
                             settingsError = action.translationError,
                         )
                     }
@@ -277,20 +296,20 @@ internal object TranslationsStateReducer {
             }
 
         is TranslationsAction.SetNeverTranslateSitesAction ->
-            state.copyWithTranslationsState(action.tabId) {
-                it.copy(
+            state.copy(
+                translationEngine = state.translationEngine.copy(
                     neverTranslateSites = action.neverTranslateSites,
-                )
-            }
+                ),
+            )
 
         is TranslationsAction.RemoveNeverTranslateSiteAction -> {
-            val neverTranslateSites = state.findTab(action.tabId)?.translationsState?.neverTranslateSites
+            val neverTranslateSites = state.translationEngine.neverTranslateSites
             val updatedNeverTranslateSites = neverTranslateSites?.filter { it != action.origin }?.toList()
-            state.copyWithTranslationsState(action.tabId) {
-                it.copy(
+            state.copy(
+                translationEngine = state.translationEngine.copy(
                     neverTranslateSites = updatedNeverTranslateSites,
-                )
-            }
+                ),
+            )
         }
 
         is TranslationsAction.OperationRequestedAction ->
@@ -319,19 +338,32 @@ internal object TranslationsStateReducer {
                 }
 
                 TranslationOperation.FETCH_PAGE_SETTINGS -> {
-                    state.copyWithTranslationsState(action.tabId) {
-                        it.copy(
-                            pageSettings = null,
-                        )
+                    val tabId = action.tabId ?: state.selectedTab?.id
+                    if (tabId != null) {
+                        state.copyWithTranslationsState(tabId) {
+                            it.copy(
+                                pageSettings = null,
+                            )
+                        }
+                    } else {
+                        state
                     }
                 }
 
+                TranslationOperation.FETCH_OFFER_SETTING -> {
+                    state.copy(
+                        translationEngine = state.translationEngine.copy(
+                            offerTranslation = null,
+                        ),
+                    )
+                }
+
                 TranslationOperation.FETCH_NEVER_TRANSLATE_SITES -> {
-                    state.copyWithTranslationsState(action.tabId) {
-                        it.copy(
+                    state.copy(
+                        translationEngine = state.translationEngine.copy(
                             neverTranslateSites = null,
-                        )
-                    }
+                        ),
+                    )
                 }
                 TranslationOperation.TRANSLATE, TranslationOperation.RESTORE -> {
                     // No state change for these operations
@@ -400,6 +432,35 @@ internal object TranslationsStateReducer {
             }
         }
 
+        is TranslationsAction.UpdateLanguageSettingsAction -> {
+            val languageSettings = state.translationEngine.languageSettings?.toMutableMap()
+            // Only set when keys are present.
+            if (languageSettings?.get(action.languageCode) != null) {
+                languageSettings[action.languageCode] = action.setting
+            }
+            state.copy(
+                translationEngine = state.translationEngine.copy(
+                    languageSettings = languageSettings,
+                ),
+            )
+        }
+
+        is TranslationsAction.SetGlobalOfferTranslateSettingAction -> {
+            state.copy(
+                translationEngine = state.translationEngine.copy(
+                    offerTranslation = action.offerTranslation,
+                ),
+            )
+        }
+
+        is TranslationsAction.UpdateGlobalOfferTranslateSettingAction -> {
+            state.copy(
+                translationEngine = state.translationEngine.copy(
+                    offerTranslation = action.offerTranslation,
+                ),
+            )
+        }
+
         is TranslationsAction.SetEngineSupportedAction -> {
             state.copy(
                 translationEngine = state.translationEngine.copy(
@@ -430,6 +491,24 @@ internal object TranslationsStateReducer {
                 translationEngine = state.translationEngine.copy(
                     languageSettings = action.languageSettings,
                     engineError = null,
+                ),
+            )
+        }
+
+        is TranslationsAction.ManageLanguageModelsAction -> {
+            val processState = if (action.options.operation == ModelOperation.DOWNLOAD) {
+                ModelState.DOWNLOAD_IN_PROGRESS
+            } else {
+                ModelState.DELETION_IN_PROGRESS
+            }
+            val newModelState = LanguageModel.determineNewLanguageModelState(
+                currentLanguageModels = state.translationEngine.languageModels,
+                options = action.options,
+                newStatus = processState,
+            )
+            state.copy(
+                translationEngine = state.translationEngine.copy(
+                    languageModels = newModelState,
                 ),
             )
         }

@@ -14,7 +14,7 @@ use std::{
 
 use neqo_common::qlog::NeqoQlog;
 
-use crate::{path::PATH_MTU_V6, rtt::RttEstimate, tracking::SentPacket, Error};
+use crate::{path::PATH_MTU_V6, recovery::SentPacket, rtt::RttEstimate, Error};
 
 mod classic_cc;
 mod cubic;
@@ -52,6 +52,9 @@ pub trait CongestionControl: Display + Debug {
         pto: Duration,
         lost_packets: &[SentPacket],
     ) -> bool;
+
+    /// Returns true if the congestion window was reduced.
+    fn on_ecn_ce_received(&mut self, largest_acked_pkt: &SentPacket) -> bool;
 
     #[must_use]
     fn recovery_packet(&self) -> bool;

@@ -11,16 +11,12 @@
 #ifndef nsTSubstring_h
 #define nsTSubstring_h
 
-#include <iterator>
 #include <type_traits>
 
-#include "mozilla/Casting.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Span.h"
 #include "mozilla/Try.h"
@@ -39,7 +35,6 @@
 // memory checking. (Limited to avoid quadratic behavior.)
 const size_t kNsStringBufferMaxPoison = 16;
 
-class nsStringBuffer;
 template <typename T>
 class nsTSubstringSplitter;
 template <typename T>
@@ -293,7 +288,7 @@ class BulkWriteHandle final {
 template <typename T>
 class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   friend class mozilla::BulkWriteHandle<T>;
-  friend class nsStringBuffer;
+  friend class mozilla::StringBuffer;
 
  public:
   typedef nsTSubstring<T> self_type;
@@ -428,6 +423,21 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   void NS_FASTCALL Assign(const substring_tuple_type&);
   [[nodiscard]] bool NS_FASTCALL Assign(const substring_tuple_type&,
                                         const fallible_t&);
+
+  void Assign(mozilla::StringBuffer* aBuffer, size_type aLength) {
+    aBuffer->AddRef();
+    Assign(already_AddRefed<mozilla::StringBuffer>(aBuffer), aLength);
+  }
+  void NS_FASTCALL Assign(already_AddRefed<mozilla::StringBuffer> aBuffer,
+                          size_type aLength) {
+    mozilla::StringBuffer* buffer = aBuffer.take();
+    auto* data = reinterpret_cast<char_type*>(buffer->Data());
+    MOZ_DIAGNOSTIC_ASSERT(data[aLength] == char_type(0),
+                          "data should be null terminated");
+    Finalize();
+    SetData(data, aLength, DataFlags::REFCOUNTED | DataFlags::TERMINATED);
+    SetTaint(buffer->Taint());
+  }
 
 #if defined(MOZ_USE_CHAR16_WRAPPER)
   template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
@@ -1155,12 +1165,23 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
    * clears the pointer without releasing the buffer.
    */
   void ForgetSharedBuffer() {
-    if (base_string_type::mDataFlags & DataFlags::REFCOUNTED) {
+    if (this->mDataFlags & DataFlags::REFCOUNTED) {
       SetToEmptyBuffer();
 
       // TaintFox: clear taint here.
       base_string_type::mTaint.clear();
     }
+  }
+
+  /**
+   * If the string uses a reference-counted buffer, this method returns a
+   * pointer to it without incrementing the buffer's refcount.
+   */
+  mozilla::StringBuffer* GetStringBuffer() const {
+    if (this->mDataFlags & DataFlags::REFCOUNTED) {
+      return mozilla::StringBuffer::FromData(this->mData);
+    }
+    return nullptr;
   }
 
  protected:

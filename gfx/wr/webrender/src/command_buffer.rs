@@ -76,8 +76,9 @@ bitflags! {
     pub struct QuadFlags : u8 {
         const IS_OPAQUE = 1 << 0;
 
-        /// If true, the prim is 2d and we can apply a clip to the task rect in vertex shader
-        const APPLY_DEVICE_CLIP = 1 << 1;
+        /// If true, the prim is 2d and axis-aligned in device space. The render task rect can
+        /// cheaply be used as a device-space clip in the vertex shader.
+        const APPLY_RENDER_TASK_CLIP = 1 << 1;
 
         /// If true, the device-pixel scale is already applied, so ignore in vertex shaders
         const IGNORE_DEVICE_PIXEL_SCALE = 1 << 2;
@@ -85,8 +86,10 @@ bitflags! {
         /// If true, use segments for drawing the AA edges, to allow inner section to be opaque
         const USE_AA_SEGMENTS = 1 << 3;
 
-        /// If true, apply texture sample as mask
-        const SAMPLE_AS_MASK = 1 << 4;
+        /// If true, render as a mask. This ignores the blue, green and alpha channels and replaces
+        /// them with the red channel in the fragment shader. Used with multiply blending, on top
+        /// of premultiplied alpha content, it has the effect of applying a mask to the content under ir.
+        const IS_MASK = 1 << 4;
     }
 }
 

@@ -10,10 +10,13 @@
 #include "ImageContainer.h"
 #include "MediaContainerType.h"
 #include "MediaResource.h"
+#include "PDMFactory.h"
 #include "TimeUnits.h"
 #include "mozilla/Base64.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -27,6 +30,10 @@
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
+
+#ifdef XP_WIN
+#  include "WMFDecoderModule.h"
+#endif
 
 namespace mozilla {
 
@@ -1245,6 +1252,20 @@ void DetermineResolutionForTelemetry(const MediaInfo& aInfo,
     }
   }
   aResolutionOut.AppendASCII(resolution);
+}
+
+bool ContainHardwareCodecsSupported(
+    const media::MediaCodecsSupported& aSupport) {
+  return aSupport.contains(
+             mozilla::media::MediaCodecsSupport::H264HardwareDecode) ||
+         aSupport.contains(
+             mozilla::media::MediaCodecsSupport::VP8HardwareDecode) ||
+         aSupport.contains(
+             mozilla::media::MediaCodecsSupport::VP9HardwareDecode) ||
+         aSupport.contains(
+             mozilla::media::MediaCodecsSupport::AV1HardwareDecode) ||
+         aSupport.contains(
+             mozilla::media::MediaCodecsSupport::HEVCHardwareDecode);
 }
 
 }  // end namespace mozilla

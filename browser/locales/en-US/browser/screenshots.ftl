@@ -71,19 +71,15 @@ screenshots-component-cancel-button =
 
 # Variables
 #   $shortcut (String) - A keyboard shortcut for copying the screenshot.
-screenshots-component-copy-button =
+screenshots-component-copy-button-2 = Copy
   .title = Copy ({ $shortcut })
   .aria-label = Copy
 
-screenshots-component-copy-button-label = Copy
-
 # Variables
 #   $shortcut (String) - A keyboard shortcut for saving/downloading the screenshot.
-screenshots-component-download-button =
+screenshots-component-download-button-2 = Download
   .title = Download ({ $shortcut })
   .aria-label = Download
-
-screenshots-component-download-button-label = Download
 
 ## The below strings are used to capture keydown events so the strings should
 ## not be changed unless the keyboard layout in the locale requires it.
@@ -94,8 +90,8 @@ screenshots-component-copy-key = C
 ##
 
 # This string represents the selection size area
-# "x" here represents "by" (i.e 123 by 456)
+# "×" here represents "by" (i.e 123 by 456)
 # Variables:
 #   $width (Number) - The width of the selection region in pixels
 #   $height (Number) - The height of the selection region in pixels
-screenshots-overlay-selection-region-size-2 = { $width } x { $height }
+screenshots-overlay-selection-region-size-3 = { $width } × { $height }

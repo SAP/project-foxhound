@@ -87,7 +87,7 @@ TEST_F(TestDeviceInputTrack, DeviceInputConsumerTrack) {
   class TestDeviceInputConsumerTrack : public DeviceInputConsumerTrack {
    public:
     static TestDeviceInputConsumerTrack* Create(MediaTrackGraph* aGraph) {
-      MOZ_ASSERT(NS_IsMainThread());
+      MOZ_RELEASE_ASSERT(NS_IsMainThread());
       TestDeviceInputConsumerTrack* track =
           new TestDeviceInputConsumerTrack(aGraph->GraphRate());
       aGraph->AddTrack(track);
@@ -95,7 +95,7 @@ TEST_F(TestDeviceInputTrack, DeviceInputConsumerTrack) {
     }
 
     void Destroy() {
-      MOZ_ASSERT(NS_IsMainThread());
+      MOZ_RELEASE_ASSERT(NS_IsMainThread());
       DisconnectDeviceInput();
       DeviceInputConsumerTrack::Destroy();
     }
@@ -108,7 +108,7 @@ TEST_F(TestDeviceInputTrack, DeviceInputConsumerTrack) {
         return 0;
       }
       DeviceInputTrack* t = mInputs[0]->GetSource()->AsDeviceInputTrack();
-      MOZ_ASSERT(t);
+      MOZ_RELEASE_ASSERT(t);
       return t->NumberOfChannels();
     }
 
@@ -122,9 +122,14 @@ TEST_F(TestDeviceInputTrack, DeviceInputConsumerTrack) {
     TestAudioDataListener(uint32_t aChannelCount, bool aIsVoice)
         : mChannelCount(aChannelCount), mIsVoice(aIsVoice) {}
     // Graph thread APIs: AudioDataListenerInterface implementations.
-    uint32_t RequestedInputChannelCount(MediaTrackGraph* aGraph) override {
+    uint32_t RequestedInputChannelCount(
+        MediaTrackGraph* aGraph) const override {
       aGraph->AssertOnGraphThread();
       return mChannelCount;
+    }
+    cubeb_input_processing_params RequestedInputProcessingParams(
+        MediaTrackGraph*) const override {
+      return CUBEB_INPUT_PROCESSING_PARAM_NONE;
     }
     bool IsVoiceInput(MediaTrackGraph* aGraph) const override {
       return mIsVoice;
@@ -132,6 +137,11 @@ TEST_F(TestDeviceInputTrack, DeviceInputConsumerTrack) {
     void DeviceChanged(MediaTrackGraph* aGraph) override { /* Ignored */
     }
     void Disconnect(MediaTrackGraph* aGraph) override{/* Ignored */};
+    void NotifySetRequestedInputProcessingParamsResult(
+        MediaTrackGraph* aGraph, cubeb_input_processing_params aRequestedParams,
+        const Result<cubeb_input_processing_params, int>& aResult) override {
+      /* Ignored */
+    }
 
    private:
     ~TestAudioDataListener() = default;

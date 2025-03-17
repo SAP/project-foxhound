@@ -444,17 +444,18 @@ class WebExtensionSupportTest {
         val engine: Engine = mock()
         val ext: WebExtension = mock()
         val onPermissionsGranted: ((Boolean) -> Unit) = mock()
+        val permissions = listOf("permissions")
 
         val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
         WebExtensionSupport.initialize(engine, store)
         verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
 
         // Verify they we confirm the permission request
-        delegateCaptor.value.onInstallPermissionRequest(ext, onPermissionsGranted)
+        delegateCaptor.value.onInstallPermissionRequest(ext, permissions, onPermissionsGranted)
 
         verify(store).dispatch(
             WebExtensionAction.UpdatePromptRequestWebExtensionAction(
-                WebExtensionPromptRequest.AfterInstallation.Permissions.Required(ext, onPermissionsGranted),
+                WebExtensionPromptRequest.AfterInstallation.Permissions.Required(ext, permissions, onPermissionsGranted),
             ),
         )
     }
@@ -594,6 +595,25 @@ class WebExtensionSupportTest {
 
         delegateCaptor.value.onDisabled(ext)
         verify(store).dispatch(WebExtensionAction.UpdateWebExtensionEnabledAction(ext.id, false))
+        assertEquals(ext, WebExtensionSupport.installedExtensions[ext.id])
+    }
+
+    @Test
+    fun `reacts to optional permissions for an extension being changed`() {
+        val store = spy(BrowserStore())
+        val engine: Engine = mock()
+        val ext: WebExtension = mock()
+        whenever(ext.id).thenReturn("extensionId")
+        whenever(ext.url).thenReturn("url")
+
+        val delegateCaptor = argumentCaptor<WebExtensionDelegate>()
+        WebExtensionSupport.initialize(engine, store)
+        verify(engine).registerWebExtensionDelegate(delegateCaptor.capture())
+
+        assertNull(WebExtensionSupport.installedExtensions[ext.id])
+
+        delegateCaptor.value.onOptionalPermissionsChanged(ext)
+
         assertEquals(ext, WebExtensionSupport.installedExtensions[ext.id])
     }
 

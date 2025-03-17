@@ -17,7 +17,7 @@ from mach.mixin.logging import LoggingMixin
 from mozpack.chrome.manifest import Manifest
 
 from mozbuild.base import ExecutionSummary
-from mozbuild.util import OrderedDefaultDict, memoize
+from mozbuild.util import memoize
 
 from ..testing import REFTEST_FLAVORS, TEST_MANIFESTS, SupportFilesConverter
 from .context import Context, ObjDirPath, Path, SourcePath, SubContext
@@ -92,7 +92,7 @@ class TreeMetadataEmitter(LoggingMixin):
 
         self.info = dict(mozinfo.info)
 
-        self._libs = OrderedDefaultDict(list)
+        self._libs = defaultdict(list)
         self._binaries = OrderedDict()
         self._compile_dirs = set()
         self._host_compile_dirs = set()
@@ -1297,10 +1297,10 @@ class TreeMetadataEmitter(LoggingMixin):
             else:
                 path = deffile.target_basename
 
-            if context.config.substs.get("GNU_CC"):
-                computed_link_flags.resolve_flags("DEFFILE", [path])
-            else:
+            if context.config.substs.get("CC_TYPE") == "clang-cl":
                 computed_link_flags.resolve_flags("DEFFILE", ["-DEF:" + path])
+            else:
+                computed_link_flags.resolve_flags("DEFFILE", [path])
 
         dist_install = context["DIST_INSTALL"]
         if dist_install is True:
@@ -1312,9 +1312,10 @@ class TreeMetadataEmitter(LoggingMixin):
         # the moment because USE_STATIC_LIBS can be set after a template
         # returns. Eventually, with context-based templates, it will be
         # possible.
-        if context.config.substs.get(
-            "OS_ARCH"
-        ) == "WINNT" and not context.config.substs.get("GNU_CC"):
+        if (
+            context.config.substs.get("OS_ARCH") == "WINNT"
+            and context.config.substs.get("CC_TYPE") == "clang-cl"
+        ):
             use_static_lib = context.get(
                 "USE_STATIC_LIBS"
             ) and not context.config.substs.get("MOZ_ASAN")

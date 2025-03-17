@@ -12,6 +12,7 @@
   const lazy = {};
 
   ChromeUtils.defineESModuleGetters(lazy, {
+    BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
     FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
     SearchSuggestionController:
       "resource://gre/modules/SearchSuggestionController.sys.mjs",
@@ -317,7 +318,7 @@
         if (aEvent.button == 2) {
           return;
         }
-        where = whereToOpenLink(aEvent, false, true);
+        where = lazy.BrowserUtils.whereToOpenLink(aEvent, false, true);
         if (
           newTabPref &&
           !aEvent.altKey &&
@@ -794,6 +795,20 @@
           this.textbox.selectedButton.open = !this.textbox.selectedButton.open;
           return true;
         }
+        // Ignore blank search unless add search engine or
+        // settings button is selected, see bugs 1894910 and 1903608.
+        if (
+          !this.textbox.value &&
+          !(
+            this.textbox.selectedButton?.getAttribute("id") ==
+              "searchbar-anon-search-settings" ||
+            this.textbox.selectedButton?.classList.contains(
+              "searchbar-engine-one-off-add-engine"
+            )
+          )
+        ) {
+          return true;
+        }
         // Otherwise, "call super": do what the autocomplete binding's
         // handleEnter implementation does.
         return this.textbox.mController.handleEnter(false, event || null);
@@ -885,12 +900,13 @@
             goDoCommand("cmd_paste");
             this.handleSearchCommand(event);
             break;
-          case clearHistoryItem:
+          case clearHistoryItem: {
             let param = this.textbox.getAttribute("autocompletesearchparam");
             lazy.FormHistory.update({ op: "remove", fieldname: param });
             this.textbox.value = "";
             break;
-          default:
+          }
+          default: {
             let cmd = event.originalTarget.getAttribute("cmd");
             if (cmd) {
               let controller =
@@ -898,6 +914,7 @@
               controller.doCommand(cmd);
             }
             break;
+          }
         }
       });
     }

@@ -34,7 +34,7 @@ private const val KEY_POSITIVE_BUTTON_BACKGROUND_COLOR = "KEY_POSITIVE_BUTTON_BA
 private const val KEY_POSITIVE_BUTTON_TEXT_COLOR = "KEY_POSITIVE_BUTTON_TEXT_COLOR"
 private const val KEY_POSITIVE_BUTTON_RADIUS = "KEY_POSITIVE_BUTTON_RADIUS"
 private const val KEY_FOR_OPTIONAL_PERMISSIONS = "KEY_FOR_OPTIONAL_PERMISSIONS"
-internal const val KEY_OPTIONAL_PERMISSIONS = "KEY_OPTIONAL_PERMISSIONS"
+internal const val KEY_PERMISSIONS = "KEY_PERMISSIONS"
 private const val DEFAULT_VALUE = Int.MAX_VALUE
 
 /**
@@ -90,7 +90,7 @@ class PermissionsDialogFragment : AddonDialogFragment() {
         get() =
             safeArguments.getBoolean(KEY_FOR_OPTIONAL_PERMISSIONS)
 
-    internal val optionalPermissions get() = requireNotNull(safeArguments.getStringArray(KEY_OPTIONAL_PERMISSIONS))
+    internal val permissions get() = requireNotNull(safeArguments.getStringArray(KEY_PERMISSIONS))
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val sheetDialog = Dialog(requireContext())
@@ -153,9 +153,10 @@ class PermissionsDialogFragment : AddonDialogFragment() {
             },
             addon.translateName(requireContext()),
         )
-        rootView.findViewById<TextView>(R.id.optional_or_required_text).text = buildOptionalOrRequiredText()
-
         val listPermissions = buildPermissionsList()
+        rootView.findViewById<TextView>(R.id.optional_or_required_text).text =
+            buildOptionalOrRequiredText(listPermissions.isNotEmpty())
+
         val permissionsRecyclerView = rootView.findViewById<RecyclerView>(R.id.permissions)
         val positiveButton = rootView.findViewById<Button>(R.id.allow_button)
         val negativeButton = rootView.findViewById<Button>(R.id.deny_button)
@@ -207,17 +208,14 @@ class PermissionsDialogFragment : AddonDialogFragment() {
 
     @VisibleForTesting
     internal fun buildPermissionsList(): List<String> {
-        val permissionsList = if (forOptionalPermissions) {
-            Addon.localizePermissions(optionalPermissions.asList(), requireContext())
-        } else {
-            addon.translatePermissions(requireContext())
-        }
-
-        return permissionsList
+        return Addon.localizePermissions(permissions.asList(), requireContext())
     }
 
     @VisibleForTesting
-    internal fun buildOptionalOrRequiredText(): String {
+    internal fun buildOptionalOrRequiredText(hasPermissions: Boolean): String {
+        if (!hasPermissions) {
+            return ""
+        }
         val optionalOrRequiredText = if (forOptionalPermissions) {
             getString(R.string.mozac_feature_addons_optional_permissions_dialog_subtitle)
         } else {
@@ -233,16 +231,15 @@ class PermissionsDialogFragment : AddonDialogFragment() {
          * @param addon The addon to show in the dialog.
          * @param forOptionalPermissions Whether to show a permission dialog for optional permissions
          * requested by the extension.
-         * @param optionalPermissions The optional permissions requested by the extension. Only used
-         * when [forOptionalPermissions] is true.
+         * @param permissions The permissions requested by the extension.
          * @param promptsStyling Styling properties for the dialog.
          * @param onPositiveButtonClicked A lambda called when the allow button is clicked.
          * @param onNegativeButtonClicked A lambda called when the deny button is clicked.
          */
         fun newInstance(
             addon: Addon,
+            permissions: List<String>,
             forOptionalPermissions: Boolean = false,
-            optionalPermissions: List<String> = emptyList(),
             promptsStyling: PromptsStyling? = PromptsStyling(
                 gravity = Gravity.BOTTOM,
                 shouldWidthMatchParent = true,
@@ -256,7 +253,7 @@ class PermissionsDialogFragment : AddonDialogFragment() {
             arguments.apply {
                 putParcelable(KEY_ADDON, addon)
                 putBoolean(KEY_FOR_OPTIONAL_PERMISSIONS, forOptionalPermissions)
-                putStringArray(KEY_OPTIONAL_PERMISSIONS, optionalPermissions.toTypedArray())
+                putStringArray(KEY_PERMISSIONS, permissions.toTypedArray())
 
                 promptsStyling?.gravity?.apply {
                     putInt(KEY_DIALOG_GRAVITY, this)

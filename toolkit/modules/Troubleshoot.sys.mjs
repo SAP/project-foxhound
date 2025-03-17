@@ -5,8 +5,6 @@
 import { AddonManager } from "resource://gre/modules/AddonManager.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
-import { FeatureGate } from "resource://featuregates/FeatureGate.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -267,7 +265,11 @@ var dataProviders = {
     data.numTotalWindows = 0;
     data.numFissionWindows = 0;
     data.numRemoteWindows = 0;
-    for (let { docShell } of Services.wm.getEnumerator("navigator:browser")) {
+    for (let { docShell } of Services.wm.getEnumerator(
+      AppConstants.platform == "android"
+        ? "navigator:geckoview"
+        : "navigator:browser"
+    )) {
       docShell.QueryInterface(Ci.nsILoadContext);
       data.numTotalWindows++;
       if (docShell.useRemoteSubframes) {
@@ -466,10 +468,14 @@ var dataProviders = {
   },
 
   async experimentalFeatures(done) {
-    if (AppConstants.platform == "android") {
+    if (AppConstants.MOZ_BUILD_APP != "browser") {
       done();
       return;
     }
+    let { FeatureGate } = ChromeUtils.importESModule(
+      "resource://featuregates/FeatureGate.sys.mjs"
+    );
+
     let gates = await FeatureGate.all();
     done(
       gates.map(gate => {
@@ -1074,6 +1080,32 @@ var dataProviders = {
       nimbusExperiments,
       nimbusRollouts,
     });
+  },
+
+  async remoteSettings(done) {
+    const { RemoteSettings } = ChromeUtils.importESModule(
+      "resource://services-settings/remote-settings.sys.mjs"
+    );
+
+    let inspected;
+    try {
+      inspected = await RemoteSettings.inspect({ localOnly: true });
+    } catch (error) {
+      console.error(error);
+      done({ isSynchronizationBroken: true, history: { "settings-sync": [] } });
+      return;
+    }
+
+    // Show last check in standard format.
+    inspected.lastCheck = inspected.lastCheck
+      ? new Date(inspected.lastCheck * 1000).toISOString()
+      : "";
+    // Trim history entries.
+    for (let h of Object.values(inspected.history)) {
+      h.splice(10, Infinity);
+    }
+
+    done(inspected);
   },
 };
 

@@ -13,6 +13,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/IntegerPrintfMacros.h"
 #include "nsIInputStreamTee.h"
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"

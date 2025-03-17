@@ -161,29 +161,36 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(NotificationStorageCallback)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
+nsCOMPtr<nsINotificationStorage> GetNotificationStorage(bool isPrivate) {
+  return do_GetService(isPrivate ? NS_MEMORY_NOTIFICATION_STORAGE_CONTRACTID
+                                 : NS_NOTIFICATION_STORAGE_CONTRACTID);
+}
+
 class NotificationGetRunnable final : public Runnable {
+  bool mIsPrivate;
   const nsString mOrigin;
   const nsString mTag;
   nsCOMPtr<nsINotificationStorageCallback> mCallback;
 
  public:
   NotificationGetRunnable(const nsAString& aOrigin, const nsAString& aTag,
-                          nsINotificationStorageCallback* aCallback)
+                          nsINotificationStorageCallback* aCallback,
+                          bool aIsPrivate)
       : Runnable("NotificationGetRunnable"),
+        mIsPrivate(aIsPrivate),
         mOrigin(aOrigin),
         mTag(aTag),
         mCallback(aCallback) {}
 
   NS_IMETHOD
   Run() override {
-    nsresult rv;
     nsCOMPtr<nsINotificationStorage> notificationStorage =
-        do_GetService(NS_NOTIFICATION_STORAGE_CONTRACTID, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+        GetNotificationStorage(mIsPrivate);
+    if (NS_WARN_IF(!notificationStorage)) {
+      return NS_ERROR_UNEXPECTED;
     }
 
-    rv = notificationStorage->Get(mOrigin, mTag, mCallback);
+    nsresult rv = notificationStorage->Get(mOrigin, mTag, mCallback);
     // XXXnsm Is it guaranteed mCallback will be called in case of failure?
     Unused << NS_WARN_IF(NS_FAILED(rv));
     return rv;
@@ -236,7 +243,7 @@ class ReleaseNotificationControlRunnable final
 
  public:
   explicit ReleaseNotificationControlRunnable(Notification* aNotification)
-      : MainThreadWorkerControlRunnable(aNotification->mWorkerPrivate),
+      : MainThreadWorkerControlRunnable("ReleaseNotificationControlRunnable"),
         mNotification(aNotification) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
@@ -310,7 +317,7 @@ class NotificationWorkerRunnable : public MainThreadWorkerRunnable {
   explicit NotificationWorkerRunnable(
       WorkerPrivate* aWorkerPrivate,
       const char* aName = "NotificationWorkerRunnable")
-      : MainThreadWorkerRunnable(aWorkerPrivate, aName) {}
+      : MainThreadWorkerRunnable(aName) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     aWorkerPrivate->AssertIsOnWorkerThread();
@@ -426,10 +433,10 @@ class NotificationRef final {
         RefPtr<ReleaseNotificationRunnable> r =
             new ReleaseNotificationRunnable(notification);
 
-        if (!r->Dispatch()) {
+        if (!r->Dispatch(notification->mWorkerPrivate)) {
           RefPtr<ReleaseNotificationControlRunnable> r =
               new ReleaseNotificationControlRunnable(notification);
-          MOZ_ALWAYS_TRUE(r->Dispatch());
+          MOZ_ALWAYS_TRUE(r->Dispatch(notification->mWorkerPrivate));
         }
       } else {
         notification->AssertIsOnTargetThread();
@@ -801,7 +808,8 @@ Notification::ConstructFromFields(
   MOZ_ASSERT(aGlobal);
 
   RootedDictionary<NotificationOptions> options(RootingCx());
-  options.mDir = Notification::StringToDirection(nsString(aDir));
+  options.mDir = StringToEnum<NotificationDirection>(aDir).valueOr(
+      NotificationDirection::Auto);
   options.mLang = aLang;
   options.mBody = aBody;
   options.mTag = aTag;
@@ -822,15 +830,15 @@ Notification::ConstructFromFields(
 
 nsresult Notification::PersistNotification() {
   AssertIsOnMainThread();
-  nsresult rv;
+
   nsCOMPtr<nsINotificationStorage> notificationStorage =
-      do_GetService(NS_NOTIFICATION_STORAGE_CONTRACTID, &rv);
-  if (NS_FAILED(rv)) {
-    return rv;
+      GetNotificationStorage(IsInPrivateBrowsing());
+  if (NS_WARN_IF(!notificationStorage)) {
+    return NS_ERROR_UNEXPECTED;
   }
 
   nsString origin;
-  rv = GetOrigin(GetPrincipal(), origin);
+  nsresult rv = GetOrigin(GetPrincipal(), origin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -846,9 +854,9 @@ nsresult Notification::PersistNotification() {
     return NS_ERROR_FAILURE;
   }
 
-  rv = notificationStorage->Put(origin, id, mTitle, DirectionToString(mDir),
-                                mLang, mBody, mTag, mIconUrl, alertName,
-                                mDataAsBase64, behavior, mScope);
+  rv = notificationStorage->Put(origin, id, mTitle, GetEnumString(mDir), mLang,
+                                mBody, mTag, mIconUrl, alertName, mDataAsBase64,
+                                behavior, mScope);
 
   if (NS_FAILED(rv)) {
     return rv;
@@ -862,7 +870,7 @@ void Notification::UnpersistNotification() {
   AssertIsOnMainThread();
   if (IsStored()) {
     nsCOMPtr<nsINotificationStorage> notificationStorage =
-        do_GetService(NS_NOTIFICATION_STORAGE_CONTRACTID);
+        GetNotificationStorage(IsInPrivateBrowsing());
     if (notificationStorage) {
       nsString origin;
       nsresult rv = GetOrigin(GetPrincipal(), origin);
@@ -1005,9 +1013,10 @@ class ServiceWorkerNotificationObserver final : public nsIObserver {
 
   ServiceWorkerNotificationObserver(
       const nsAString& aScope, nsIPrincipal* aPrincipal, const nsAString& aID,
-      const nsAString& aTitle, const nsAString& aDir, const nsAString& aLang,
-      const nsAString& aBody, const nsAString& aTag, const nsAString& aIcon,
-      const nsAString& aData, const nsAString& aBehavior)
+      const nsAString& aTitle, NotificationDirection aDir,
+      const nsAString& aLang, const nsAString& aBody, const nsAString& aTag,
+      const nsAString& aIcon, const nsAString& aData,
+      const nsAString& aBehavior)
       : mScope(aScope),
         mID(aID),
         mPrincipal(aPrincipal),
@@ -1030,7 +1039,7 @@ class ServiceWorkerNotificationObserver final : public nsIObserver {
   const nsString mID;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   const nsString mTitle;
-  const nsString mDir;
+  const NotificationDirection mDir;
   const nsString mLang;
   const nsString mBody;
   const nsString mTag;
@@ -1067,15 +1076,16 @@ class NotificationClickWorkerRunnable final
                                    "NotificationClickWorkerRunnable"),
         mNotification(aNotification),
         mWindow(aWindow) {
-    MOZ_ASSERT_IF(mWorkerPrivate->IsServiceWorker(), !mWindow);
+    MOZ_ASSERT_IF(mNotification->mWorkerPrivate->IsServiceWorker(), !mWindow);
   }
 
   void WorkerRunInternal(WorkerPrivate* aWorkerPrivate) override {
     bool doDefaultAction = mNotification->DispatchClickEvent();
-    MOZ_ASSERT_IF(mWorkerPrivate->IsServiceWorker(), !doDefaultAction);
+    MOZ_ASSERT_IF(mNotification->mWorkerPrivate->IsServiceWorker(),
+                  !doDefaultAction);
     if (doDefaultAction) {
       RefPtr<FocusWindowRunnable> r = new FocusWindowRunnable(mWindow);
-      mWorkerPrivate->DispatchToMainThread(r.forget());
+      mNotification->mWorkerPrivate->DispatchToMainThread(r.forget());
     }
   }
 };
@@ -1175,7 +1185,7 @@ WorkerNotificationObserver::Observe(nsISupports* aSubject, const char* aTopic,
 
   MOZ_ASSERT(notification->mWorkerPrivate);
 
-  RefPtr<WorkerRunnable> r;
+  RefPtr<WorkerThreadRunnable> r;
   if (!strcmp("alertclickcallback", aTopic)) {
     nsPIDOMWindowInner* window = nullptr;
     if (!notification->mWorkerPrivate->IsServiceWorker()) {
@@ -1207,7 +1217,7 @@ WorkerNotificationObserver::Observe(nsISupports* aSubject, const char* aTopic,
   }
 
   MOZ_ASSERT(r);
-  if (!r->Dispatch()) {
+  if (!r->Dispatch(notification->mWorkerPrivate)) {
     NS_WARNING("Could not dispatch event to worker notification");
   }
   return NS_OK;
@@ -1234,14 +1244,16 @@ ServiceWorkerNotificationObserver::Observe(nsISupports* aSubject,
       }
 
       rv = swm->SendNotificationClickEvent(
-          originSuffix, NS_ConvertUTF16toUTF8(mScope), mID, mTitle, mDir, mLang,
-          mBody, mTag, mIcon, mData, mBehavior);
+          originSuffix, NS_ConvertUTF16toUTF8(mScope), mID, mTitle,
+          NS_ConvertASCIItoUTF16(GetEnumString(mDir)), mLang, mBody, mTag,
+          mIcon, mData, mBehavior);
       Unused << NS_WARN_IF(NS_FAILED(rv));
     } else {
       auto* cc = ContentChild::GetSingleton();
       NotificationEventData data(originSuffix, NS_ConvertUTF16toUTF8(mScope),
-                                 mID, mTitle, mDir, mLang, mBody, mTag, mIcon,
-                                 mData, mBehavior);
+                                 mID, mTitle,
+                                 NS_ConvertASCIItoUTF16(GetEnumString(mDir)),
+                                 mLang, mBody, mTag, mIcon, mData, mBehavior);
       Unused << cc->SendNotificationEvent(u"click"_ns, data);
     }
     return NS_OK;
@@ -1256,7 +1268,7 @@ ServiceWorkerNotificationObserver::Observe(nsISupports* aSubject,
 
     // Remove closed or dismissed persistent notifications.
     nsCOMPtr<nsINotificationStorage> notificationStorage =
-        do_GetService(NS_NOTIFICATION_STORAGE_CONTRACTID);
+        GetNotificationStorage(mPrincipal->GetPrivateBrowsingId() != 0);
     if (notificationStorage) {
       notificationStorage->Delete(origin, mID);
     }
@@ -1269,14 +1281,16 @@ ServiceWorkerNotificationObserver::Observe(nsISupports* aSubject,
       }
 
       rv = swm->SendNotificationCloseEvent(
-          originSuffix, NS_ConvertUTF16toUTF8(mScope), mID, mTitle, mDir, mLang,
-          mBody, mTag, mIcon, mData, mBehavior);
+          originSuffix, NS_ConvertUTF16toUTF8(mScope), mID, mTitle,
+          NS_ConvertASCIItoUTF16(GetEnumString(mDir)), mLang, mBody, mTag,
+          mIcon, mData, mBehavior);
       Unused << NS_WARN_IF(NS_FAILED(rv));
     } else {
       auto* cc = ContentChild::GetSingleton();
       NotificationEventData data(originSuffix, NS_ConvertUTF16toUTF8(mScope),
-                                 mID, mTitle, mDir, mLang, mBody, mTag, mIcon,
-                                 mData, mBehavior);
+                                 mID, mTitle,
+                                 NS_ConvertASCIItoUTF16(GetEnumString(mDir)),
+                                 mLang, mBody, mTag, mIcon, mData, mBehavior);
       Unused << cc->SendNotificationEvent(u"close"_ns, data);
     }
     return NS_OK;
@@ -1316,6 +1330,8 @@ bool Notification::IsInPrivateBrowsing() {
   return false;
 }
 
+// Step 4 of
+// https://notifications.spec.whatwg.org/#dom-notification-notification
 void Notification::ShowInternal() {
   AssertIsOnMainThread();
   MOZ_ASSERT(mTempRef,
@@ -1330,13 +1346,15 @@ void Notification::ShowInternal() {
   std::swap(ownership, mTempRef);
   MOZ_ASSERT(ownership->GetNotification() == this);
 
-  nsresult rv = PersistNotification();
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Could not persist Notification");
-  }
-
   nsCOMPtr<nsIAlertsService> alertService = components::Alerts::Service();
 
+  // Step 4.1: If the result of getting the notifications permission state is
+  // not "granted", then queue a task to fire an event named error on this, and
+  // abort these steps.
+  //
+  // XXX(krosylight): But this function is also triggered by
+  // Notification::ShowPersistentNotification which already does its own
+  // permission check. Can we split this?
   ErrorResult result;
   NotificationPermission permission = NotificationPermission::Denied;
   if (mWorkerPrivate) {
@@ -1351,18 +1369,33 @@ void Notification::ShowInternal() {
     if (mWorkerPrivate) {
       RefPtr<NotificationEventWorkerRunnable> r =
           new NotificationEventWorkerRunnable(this, u"error"_ns);
-      if (!r->Dispatch()) {
+      if (!r->Dispatch(mWorkerPrivate)) {
         NS_WARNING("Could not dispatch event to worker notification");
       }
     } else {
       DispatchTrustedEvent(u"error"_ns);
     }
+    mIsClosed = true;
     return;
   }
 
+  // Preparing for Step 4.2 the fetch steps. The actual work happens in
+  // nsIAlertNotification::LoadImage
   nsAutoString iconUrl;
   nsAutoString soundUrl;
   ResolveIconAndSoundURL(iconUrl, soundUrl);
+
+  // Step 4.3 the show steps, which are almost all about processing `tag` and
+  // then displaying the notification. Both are handled by
+  // nsIAlertsService::ShowAlert/PersistentNotification. The below is all about
+  // constructing the observer (for show and close events) right and ultimately
+  // call the alerts service function.
+
+  // XXX(krosylight): Non-persistent notifications probably don't need this
+  nsresult rv = PersistNotification();
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Could not persist Notification");
+  }
 
   bool isPersistent = false;
   nsCOMPtr<nsIObserver> observer;
@@ -1390,8 +1423,8 @@ void Notification::ShowInternal() {
       behavior.Truncate();
     }
     observer = new ServiceWorkerNotificationObserver(
-        mScope, GetPrincipal(), mID, mTitle, DirectionToString(mDir), mLang,
-        mBody, mTag, iconUrl, mDataAsBase64, behavior);
+        mScope, GetPrincipal(), mID, mTitle, mDir, mLang, mBody, mTag, iconUrl,
+        mDataAsBase64, behavior);
   }
   MOZ_ASSERT(observer);
   nsCOMPtr<nsIObserver> alertObserver =
@@ -1414,10 +1447,10 @@ void Notification::ShowInternal() {
       do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
   NS_ENSURE_TRUE_VOID(alert);
   nsIPrincipal* principal = GetPrincipal();
-  rv =
-      alert->Init(alertName, iconUrl, mTitle, mBody, true, uniqueCookie,
-                  DirectionToString(mDir), mLang, mDataAsBase64, GetPrincipal(),
-                  inPrivateBrowsing, requireInteraction, mSilent, mVibrate);
+  rv = alert->Init(alertName, iconUrl, mTitle, mBody, true, uniqueCookie,
+                   NS_ConvertASCIItoUTF16(GetEnumString(mDir)), mLang,
+                   mDataAsBase64, GetPrincipal(), inPrivateBrowsing,
+                   requireInteraction, mSilent, mVibrate);
   NS_ENSURE_SUCCESS_VOID(rv);
 
   if (isPersistent) {
@@ -1688,8 +1721,8 @@ already_AddRefed<Promise> Notification::Get(
   nsCOMPtr<nsINotificationStorageCallback> callback =
       new NotificationStorageCallback(aWindow->AsGlobal(), aScope, promise);
 
-  RefPtr<NotificationGetRunnable> r =
-      new NotificationGetRunnable(origin, aFilter.mTag, callback);
+  RefPtr<NotificationGetRunnable> r = new NotificationGetRunnable(
+      origin, aFilter.mTag, callback, doc->IsInPrivateBrowsing());
 
   aRv = aWindow->AsGlobal()->Dispatch(r.forget());
   if (NS_WARN_IF(aRv.Failed())) {
@@ -1765,7 +1798,7 @@ class WorkerGetCallback final : public ScopeCheckingGetCallback {
     RefPtr<WorkerGetResultRunnable> r = new WorkerGetResultRunnable(
         proxy->GetWorkerPrivate(), proxy, std::move(mStrings));
 
-    r->Dispatch();
+    r->Dispatch(proxy->GetWorkerPrivate());
     return NS_OK;
   }
 
@@ -1793,25 +1826,26 @@ class WorkerGetRunnable final : public Runnable {
   NS_IMETHOD
   Run() override {
     AssertIsOnMainThread();
-    nsCOMPtr<nsINotificationStorageCallback> callback =
-        new WorkerGetCallback(mPromiseProxy, mScope);
-
-    nsresult rv;
-    nsCOMPtr<nsINotificationStorage> notificationStorage =
-        do_GetService(NS_NOTIFICATION_STORAGE_CONTRACTID, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      callback->Done();
-      return rv;
-    }
 
     MutexAutoLock lock(mPromiseProxy->Lock());
     if (mPromiseProxy->CleanedUp()) {
       return NS_OK;
     }
 
+    auto* principal = mPromiseProxy->GetWorkerPrivate()->GetPrincipal();
+    auto isPrivate = principal->GetPrivateBrowsingId() != 0;
+
+    nsCOMPtr<nsINotificationStorageCallback> callback =
+        new WorkerGetCallback(mPromiseProxy, mScope);
+
+    nsCOMPtr<nsINotificationStorage> notificationStorage =
+        GetNotificationStorage(isPrivate);
+    if (NS_WARN_IF(!notificationStorage)) {
+      callback->Done();
+      return NS_ERROR_UNEXPECTED;
+    }
     nsString origin;
-    rv = Notification::GetOrigin(
-        mPromiseProxy->GetWorkerPrivate()->GetPrincipal(), origin);
+    nsresult rv = Notification::GetOrigin(principal, origin);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       callback->Done();
       return rv;

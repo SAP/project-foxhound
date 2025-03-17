@@ -60,7 +60,8 @@ WMFCDMCapabilites::GetCapabilities(
     RefPtr<MFCDMChild> cdm = new MFCDMChild(request.mKeySystem);
     promises.AppendElement(cdm->GetCapabilities(MFCDMCapabilitiesRequest{
         nsString{request.mKeySystem},
-        request.mDecryption == KeySystemConfig::DecryptionInfo::Hardware}));
+        request.mDecryption == KeySystemConfig::DecryptionInfo::Hardware,
+        request.mIsPrivateBrowsing}));
     mCDMs.AppendElement(std::move(cdm));
   }
 
@@ -91,16 +92,18 @@ WMFCDMCapabilites::GetCapabilities(
                       NS_ConvertUTF16toUTF8(capabilities.keySystem()).get(),
                       capabilities.isHardwareDecryption());
               for (const auto& v : capabilities.videoCapabilities()) {
-                EME_LOG("capabilities: video=%s",
-                        NS_ConvertUTF16toUTF8(v.contentType()).get());
+                for (const auto& scheme : v.encryptionSchemes()) {
+                  EME_LOG("capabilities: video=%s, scheme=%s",
+                          NS_ConvertUTF16toUTF8(v.contentType()).get(),
+                          CryptoSchemeToString(scheme));
+                }
               }
               for (const auto& a : capabilities.audioCapabilities()) {
-                EME_LOG("capabilities: audio=%s",
-                        NS_ConvertUTF16toUTF8(a.contentType()).get());
-              }
-              for (const auto& v : capabilities.encryptionSchemes()) {
-                EME_LOG("capabilities: encryptionScheme=%s",
-                        EncryptionSchemeStr(v));
+                for (const auto& scheme : a.encryptionSchemes()) {
+                  EME_LOG("capabilities: audio=%s, scheme=%s",
+                          NS_ConvertUTF16toUTF8(a.contentType()).get(),
+                          CryptoSchemeToString(scheme));
+                }
               }
               KeySystemConfig* config = outConfigs.AppendElement();
               MFCDMCapabilitiesIPDLToKeySystemConfig(capabilities, *config);

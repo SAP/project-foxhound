@@ -7,10 +7,11 @@ import os
 import six
 from mozlog.commandline import add_logging_group
 
-(FIREFOX, CHROME, SAFARI, CHROMIUM_RELEASE) = DESKTOP_APPS = [
+(FIREFOX, CHROME, SAFARI, SAFARI_TP, CHROMIUM_RELEASE) = DESKTOP_APPS = [
     "firefox",
     "chrome",
     "safari",
+    "safari-tp",
     "custom-car",
 ]
 (GECKOVIEW, REFBROW, FENIX) = FIREFOX_ANDROID_APPS = [
@@ -29,6 +30,7 @@ APPS = {
     FIREFOX: {"long_name": "Firefox Desktop"},
     CHROME: {"long_name": "Google Chrome Desktop"},
     SAFARI: {"long_name": "Safari Desktop"},
+    SAFARI_TP: {"long_name": "Safari Technology Preview Desktop"},
     CHROMIUM_RELEASE: {"long_name": "Custom Chromium-as-Release desktop"},
     GECKOVIEW: {
         "long_name": "Firefox GeckoView on Android",
@@ -198,7 +200,7 @@ def create_parser(mach_interface=False):
     add_arg(
         "--gecko-profile-interval",
         dest="gecko_profile_interval",
-        type=int,
+        type=float,
         help="How frequently to take samples (milliseconds)",
     )
     add_arg(

@@ -2073,7 +2073,8 @@ static bool ConsumeStream(JSContext* aCx, JS::Handle<JSObject*> aObj,
 static js::SliceBudget CreateGCSliceBudget(JS::GCReason aReason,
                                            int64_t aMillis) {
   return sScheduler->CreateGCSliceBudget(
-      mozilla::TimeDuration::FromMilliseconds(aMillis), false, false);
+      mozilla::TimeDuration::FromMilliseconds(aMillis), CCGCScheduler::eNotIdle,
+      CCGCScheduler::eNormalBudget, CCGCScheduler::eInterruptible);
 }
 
 void nsJSContext::EnsureStatics() {
@@ -2140,6 +2141,11 @@ void nsJSContext::EnsureStatics() {
       SetMemoryPrefChangedCallbackInt,
       "javascript.options.mem.gc_parallel_marking_threshold_mb",
       (void*)JSGC_PARALLEL_MARKING_THRESHOLD_MB);
+
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackInt,
+      "javascript.options.mem.gc_max_parallel_marking_threads",
+      (void*)JSGC_MAX_MARKING_THREADS);
 
   Preferences::RegisterCallbackAndCall(
       SetMemoryGCSliceTimePrefChangedCallback,

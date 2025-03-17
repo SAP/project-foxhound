@@ -7,10 +7,10 @@
 #include "mozilla/dom/MathMLElement.h"
 
 #include "base/compiler_specific.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/EventListenerManager.h"
-#include "mozilla/FontPropertyTypes.h"
 #include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/TextUtils.h"
 #include "nsGkAtoms.h"
@@ -20,7 +20,6 @@
 #include "nsStyleConsts.h"
 #include "mozilla/dom/Document.h"
 #include "nsPresContext.h"
-#include "mozAutoDocUpdate.h"
 #include "nsIScriptError.h"
 #include "nsContentUtils.h"
 #include "nsIURI.h"
@@ -396,7 +395,7 @@ void MathMLElement::MapMiAttributesInto(MappedDeclarationsBuilder& aBuilder) {
       str.CompressWhitespace();
       if (value->GetStringValue().LowerCaseEqualsASCII("normal")) {
         aBuilder.SetKeywordValue(eCSSProperty_text_transform,
-                                 StyleTextTransformCase::None);
+                                 StyleTextTransform::NONE._0);
       }
     }
   }
@@ -612,7 +611,7 @@ void MathMLElement::SetIncrementScriptLevel(bool aIncrementScriptLevel,
 int32_t MathMLElement::TabIndexDefault() { return IsLink() ? 0 : -1; }
 
 // XXX Bug 1586011: Share logic with other element classes.
-Focusable MathMLElement::IsFocusableWithoutStyle(bool aWithMouse) {
+Focusable MathMLElement::IsFocusableWithoutStyle(IsFocusableFlags) {
   if (!IsInComposedDoc() || IsInDesignMode()) {
     // In designMode documents we only allow focusing the document.
     return {};
@@ -637,7 +636,7 @@ Focusable MathMLElement::IsFocusableWithoutStyle(bool aWithMouse) {
     return {};
   }
 
-  if ((sTabFocusModel & eTabFocus_linksMask) == 0) {
+  if (!FocusModel::IsTabFocusable(TabFocusableType::Links)) {
     tabIndex = -1;
   }
 

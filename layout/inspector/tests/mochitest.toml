@@ -4,6 +4,7 @@ prefs = [
   "layout.css.basic-shape-shape.enabled=true",
   "layout.css.basic-shape-xywh.enabled=true",
   "layout.css.properties-and-values.enabled=true",
+  "layout.css.starting-style-at-rules.enabled=true",
   "layout.css.transition-behavior.enabled=true",
   "dom.customHighlightAPI.enabled=true",
 ]
@@ -56,6 +57,8 @@ support-files = [
 
 ["test_getCSSStyleRules_slotted.html"]
 
+["test_getCSSStyleRules_starting_style.html"]
+
 ["test_getRegisteredCssHighlights.html"]
 
 ["test_getRegisteredCustomProperties.html"]
@@ -65,6 +68,8 @@ support-files = [
 ["test_getRuleIndex.html"]
 
 ["test_get_all_style_sheets.html"]
+
+["test_isUsedColorSchemeDark.html"]
 
 ["test_is_element_themed.html"]
 skip-if = ["os == 'android'"]
@@ -86,3 +91,5 @@ skip-if = ["os == 'android'"]
 ["test_selectormatcheselement.html"]
 
 ["test_supports.html"]
+
+["test_valueMatchesSyntax.html"]

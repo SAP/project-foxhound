@@ -21,11 +21,7 @@ object FocusVersions {
     object AndroidX {
         const val constraint_layout_compose = "1.0.1"
         const val splashscreen = "1.0.1"
-        const val transition = "1.4.1"
-    }
-
-    object Google {
-        const val play = "1.10.3"
+        const val transition = "1.5.0"
     }
 
     object Testing {
@@ -47,8 +43,6 @@ object FocusDependencies {
 
     const val androidx_splashscreen = "androidx.core:core-splashscreen:${FocusVersions.AndroidX.splashscreen}"
     const val androidx_transition = "androidx.transition:transition:${FocusVersions.AndroidX.transition}"
-
-    const val google_play = "com.google.android.play:core:${FocusVersions.Google.play}"
 
     const val adjust = "com.adjust.sdk:adjust-android:${FocusVersions.Adjust.adjust}"
     const val install_referrer = "com.android.installreferrer:installreferrer:${FocusVersions.Adjust.install_referrer}"

@@ -713,9 +713,13 @@ class ConfigureCodec {
             static_cast<JsepVideoCodecDescription&>(*codec);
 
         if (videoCodec.mName == "H264") {
-          // Override level
-          videoCodec.mProfileLevelId &= 0xFFFF00;
-          videoCodec.mProfileLevelId |= mH264Level;
+          // Override level but not for the pure Baseline codec
+          if (JsepVideoCodecDescription::GetSubprofile(
+                  videoCodec.mProfileLevelId) ==
+              JsepVideoCodecDescription::kH264ConstrainedBaseline) {
+            videoCodec.mProfileLevelId &= 0xFFFF00;
+            videoCodec.mProfileLevelId |= mH264Level;
+          }
 
           videoCodec.mConstraints.maxBr = mH264MaxBr;
 
@@ -2246,6 +2250,8 @@ void PeerConnectionImpl::SendWarningToConsole(const nsCString& aWarning) {
 void PeerConnectionImpl::GetDefaultVideoCodecs(
     std::vector<UniquePtr<JsepCodecDescription>>& aSupportedCodecs,
     bool aUseRtx) {
+  const bool disableBaseline = Preferences::GetBool(
+      "media.navigator.video.disable_h264_baseline", false);
   // Supported video codecs.
   // Note: order here implies priority for building offers!
   aSupportedCodecs.emplace_back(
@@ -2256,6 +2262,15 @@ void PeerConnectionImpl::GetDefaultVideoCodecs(
       JsepVideoCodecDescription::CreateDefaultH264_1(aUseRtx));
   aSupportedCodecs.emplace_back(
       JsepVideoCodecDescription::CreateDefaultH264_0(aUseRtx));
+
+  // Only add Baseline if it hasn't been disabled.
+  if (!disableBaseline) {
+    aSupportedCodecs.emplace_back(
+        JsepVideoCodecDescription::CreateDefaultH264Baseline_1(aUseRtx));
+    aSupportedCodecs.emplace_back(
+        JsepVideoCodecDescription::CreateDefaultH264Baseline_0(aUseRtx));
+  }
+
   aSupportedCodecs.emplace_back(
       JsepVideoCodecDescription::CreateDefaultUlpFec());
   aSupportedCodecs.emplace_back(
@@ -2332,8 +2347,9 @@ void PeerConnectionImpl::GetCapabilities(
 
   const bool redUlpfecEnabled =
       Preferences::GetBool("media.navigator.video.red_ulpfec_enabled", false);
+  bool haveAddedRtx = false;
 
-  // Use the codecs for kind to fill out the RTCRtpCodecCapability
+  // Use the codecs for kind to fill out the RTCRtpCodec
   for (const auto& codec : codecs) {
     // To avoid misleading information on codec capabilities skip those
     // not signaled for audio/video (webrtc-datachannel)
@@ -2344,37 +2360,28 @@ void PeerConnectionImpl::GetCapabilities(
       continue;
     }
 
-    dom::RTCRtpCodecCapability capability;
-    capability.mMimeType = aKind + NS_ConvertASCIItoUTF16("/" + codec->mName);
-    capability.mClockRate = codec->mClock;
-
-    if (codec->mChannels) {
-      capability.mChannels.Construct(codec->mChannels);
-    }
-
-    UniquePtr<SdpFmtpAttributeList::Parameters> params;
-    codec->ApplyConfigToFmtp(params);
-
-    if (params != nullptr) {
-      std::ostringstream paramsString;
-      params->Serialize(paramsString);
-      nsTString<char16_t> fmtp;
-      fmtp.AssignASCII(paramsString.str());
-      capability.mSdpFmtpLine.Construct(fmtp);
-    }
+    dom::RTCRtpCodec capability;
+    RTCRtpTransceiver::ToDomRtpCodec(*codec, &capability);
 
     if (!aResult.SetValue().mCodecs.AppendElement(capability, fallible)) {
       mozalloc_handle_oom(0);
     }
-  }
 
-  // We need to manually add rtx for video.
-  if (mediaType == JsepMediaType::kVideo) {
-    dom::RTCRtpCodecCapability capability;
-    capability.mMimeType = aKind + NS_ConvertASCIItoUTF16("/rtx");
-    capability.mClockRate = 90000;
-    if (!aResult.SetValue().mCodecs.AppendElement(capability, fallible)) {
-      mozalloc_handle_oom(0);
+    // We need to manually add rtx for video.
+    // Spec says: There will only be a single entry in codecs for
+    // retransmission via RTX, with sdpFmtpLine not present.
+    if (mediaType == JsepMediaType::kVideo && !haveAddedRtx) {
+      const JsepVideoCodecDescription& videoCodec =
+          static_cast<JsepVideoCodecDescription&>(*codec);
+      if (videoCodec.mRtxEnabled) {
+        dom::RTCRtpCodec rtx;
+        RTCRtpTransceiver::ToDomRtpCodecRtx(videoCodec, &rtx);
+        rtx.mSdpFmtpLine.Reset();
+        if (!aResult.SetValue().mCodecs.AppendElement(rtx, fallible)) {
+          mozalloc_handle_oom(0);
+        }
+        haveAddedRtx = true;
+      }
     }
   }
 

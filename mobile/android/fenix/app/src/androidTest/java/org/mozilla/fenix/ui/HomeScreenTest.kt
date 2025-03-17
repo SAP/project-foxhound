@@ -27,7 +27,9 @@ import org.mozilla.fenix.ui.robots.searchScreen
 class HomeScreenTest : TestSetup() {
     @get:Rule(order = 0)
     val activityTestRule =
-        AndroidComposeTestRule(HomeActivityTestRule.withDefaultSettingsOverrides()) { it.activity }
+        AndroidComposeTestRule(
+            HomeActivityTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
     @Rule(order = 1)
     @JvmField
@@ -92,7 +94,7 @@ class HomeScreenTest : TestSetup() {
             verifyJumpBackInItemTitle(activityTestRule, firstWebPage.title)
             verifyJumpBackInItemWithUrl(activityTestRule, firstWebPage.url.toString())
             verifyJumpBackInShowAllButton()
-        }.clickJumpBackInShowAllButton {
+        }.clickJumpBackInShowAllButton(activityTestRule) {
             verifyExistingOpenTabs(firstWebPage.title)
         }.closeTabDrawer {
         }
@@ -105,7 +107,7 @@ class HomeScreenTest : TestSetup() {
             verifyJumpBackInSectionIsDisplayed()
             verifyJumpBackInItemTitle(activityTestRule, secondWebPage.title)
             verifyJumpBackInItemWithUrl(activityTestRule, secondWebPage.url.toString())
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTabWithTitle(secondWebPage.title)
         }.closeTabDrawer {
         }
@@ -114,7 +116,7 @@ class HomeScreenTest : TestSetup() {
             verifyJumpBackInSectionIsDisplayed()
             verifyJumpBackInItemTitle(activityTestRule, firstWebPage.title)
             verifyJumpBackInItemWithUrl(activityTestRule, firstWebPage.url.toString())
-        }.openTabDrawer {
+        }.openTabDrawer(activityTestRule) {
             closeTab()
         }
 

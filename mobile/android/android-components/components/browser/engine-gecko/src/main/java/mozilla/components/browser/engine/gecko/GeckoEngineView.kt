@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.util.AttributeSet
+import android.view.View
 import android.widget.FrameLayout
 import androidx.annotation.VisibleForTesting
 import androidx.core.view.ViewCompat
@@ -63,7 +64,7 @@ class GeckoEngineView @JvmOverloads constructor(
         // Explicitly mark this view as important for autofill. The default "auto" doesn't seem to trigger any
         // autofill behavior for us here.
         @Suppress("WrongConstant")
-        ViewCompat.setImportantForAutofill(this, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_YES)
+        ViewCompat.setImportantForAutofill(this, View.IMPORTANT_FOR_ACCESSIBILITY_YES)
     }
 
     internal fun setColorScheme(preferredColorScheme: PreferredColorScheme) {
@@ -205,29 +206,18 @@ class GeckoEngineView @JvmOverloads constructor(
         geckoView.activityContextDelegate = GeckoViewActivityContextDelegate(WeakReference(context))
     }
 
-    @Suppress("TooGenericExceptionCaught")
     override fun captureThumbnail(onFinish: (Bitmap?) -> Unit) {
-        try {
-            val geckoResult = geckoView.capturePixels()
-            geckoResult.then(
-                { bitmap ->
-                    onFinish(bitmap)
-                    GeckoResult<Void>()
-                },
-                {
-                    onFinish(null)
-                    GeckoResult<Void>()
-                },
-            )
-        } catch (e: Exception) {
-            // There's currently no reliable way for consumers of GeckoView to
-            // know whether or not the compositor is ready. So we have to add
-            // a catch-all here. In the future, GeckoView will invoke our error
-            // callback instead and this block can be removed:
-            // https://bugzilla.mozilla.org/show_bug.cgi?id=1645114
-            // https://github.com/mozilla-mobile/android-components/issues/6680
-            onFinish(null)
-        }
+        val geckoResult = geckoView.capturePixels()
+        geckoResult.then(
+            { bitmap ->
+                onFinish(bitmap)
+                GeckoResult()
+            },
+            {
+                onFinish(null)
+                GeckoResult<Void>()
+            },
+        )
     }
 
     override fun clearSelection() {

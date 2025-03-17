@@ -140,23 +140,7 @@
                   </menupopup>
                 </menu>
                 <menu id="viewSidebarMenuMenu" data-l10n-id="menu-view-sidebar">
-                  <menupopup id="viewSidebarMenu" onpopupshowing="SidebarUI.setMegalistMenubarVisibility(event);">
-                    <menuitem id="menu_bookmarksSidebar"
-                              type="checkbox"
-                              key="viewBookmarksSidebarKb"
-                              oncommand="SidebarUI.toggle('viewBookmarksSidebar');" data-l10n-id="menu-view-bookmarks"/>
-                    <menuitem id="menu_historySidebar"
-                              type="checkbox"
-                              key="key_gotoHistory"
-                              oncommand="SidebarUI.toggle('viewHistorySidebar');" data-l10n-id="menu-view-history-button"/>
-                    <menuitem id="menu_tabsSidebar"
-                              type="checkbox"
-                              class="sync-ui-item"
-                              oncommand="SidebarUI.toggle('viewTabsSidebar');" data-l10n-id="menu-view-synced-tabs-sidebar"/>
-                    <menuitem id="menu_megalistSidebar"
-                              type="checkbox"
-                              oncommand="SidebarUI.toggle('viewMegalistSidebar');" data-l10n-id="menu-view-megalist-sidebar"/>
-                  </menupopup>
+                  <menupopup id="viewSidebarMenu"/>
                 </menu>
                 <menuseparator/>
                 <menu id="viewFullZoomMenu" data-l10n-id="menu-view-full-zoom">
@@ -192,7 +176,7 @@
                 </menu>
                 <menuitem id="repair-text-encoding"
                           disabled="true"
-                          oncommand="BrowserForceEncodingDetection();"
+                          oncommand="BrowserCommands.forceEncodingDetection();"
                           data-l10n-id="menu-view-repair-text-encoding"/>
                 <menuseparator/>
 #ifdef XP_MACOSX

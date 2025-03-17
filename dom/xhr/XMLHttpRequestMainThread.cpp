@@ -87,7 +87,6 @@
 #include "nsIWindowWatcher.h"
 #include "nsIConsoleService.h"
 #include "nsAsyncRedirectVerifyHelper.h"
-#include "nsStringBuffer.h"
 #include "nsIFileChannel.h"
 #include "mozilla/Telemetry.h"
 #include "js/ArrayBuffer.h"  // JS::{Create,Release}MappedArrayBufferContents,New{,Mapped}ArrayBufferWithContents
@@ -3627,7 +3626,6 @@ XMLHttpRequestMainThread::AsyncOnChannelRedirect(
   // we need to strip Authentication headers for cross-origin requests
   // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch
   bool stripAuth =
-      StaticPrefs::network_fetch_redirect_stripAuthHeader() &&
       NS_ShouldRemoveAuthHeaderOnRedirect(aOldChannel, aNewChannel, aFlags);
 
   OnRedirectVerifyCallback(NS_OK, stripAuth);

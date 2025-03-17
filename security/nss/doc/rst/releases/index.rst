@@ -8,6 +8,9 @@ Releases
    :glob:
    :hidden:
 
+   nss_3_101_1.rst
+   nss_3_101.rst
+   nss_3_100.rst
    nss_3_99.rst
    nss_3_98.rst
    nss_3_97.rst
@@ -64,23 +67,12 @@ Releases
 
 .. note::
 
-   **NSS 3.99** is the latest version of NSS.
-   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_99_release_notes`
-
-   **NSS 3.90.2 (ESR)** is the latest version of NSS.
-   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_90_2_release_notes`
+   **NSS 3.101.1 (ESR)** is the latest ESR version of NSS.
+   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_101_1_release_notes`
 
 .. container::
 
-   Changes in 3.99 included in this release:
+   Changes in 3.101.1 included in this release:
 
- - Bug 1325335 - Removing check for message len in ed25519
- - Bug 1884276 - add ed25519 to SECU_ecName2params.
- - Bug 1325335 - add EdDSA wycheproof tests.
- - Bug 1325335 - nss/lib layer code for EDDSA.
- - Bug 1325335 - Adding EdDSA implementation.
- - Bug 1881027 - Exporting Certificate Compression types
- - Bug 1880857 - Updating ACVP docker to rust 1.74
- - Bug 1325335 - Updating HACL* to 0f136f28935822579c244f287e1d2a1908a7e552
- - Bug 1877730 - Add NSS_CMSRecipient_IsSupported.
-
+   - Bug 1901932 - missing sqlite header.
+   - Bug 1901080 - GLOBALTRUST 2020: Set Distrust After for TLS and S/MIME.
