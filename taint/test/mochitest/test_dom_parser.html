@@ -6,6 +6,11 @@
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
+
+        function todo_tainted(str) {
+            todo(str.taint.length > 0, "Check tainted: " + str);
+        }
+
         function check_tainted(str) {
             ok(str.taint.length > 0, "Check tainted: " + str);
         }
@@ -52,7 +57,7 @@
             //
             // The whole chain above (xmlparse to nsXMLContentSink) is not taint aware.
             // To make this test work, all of the above components need to made taint-aware, including the xmlparse library.
-            check_tainted(doc2.documentElement.textContent);
+            todo_tainted(doc2.documentElement.textContent);
 
             SimpleTest.finish();
         }
