@@ -21,6 +21,9 @@ _status() {
   echo -e "${POWDER_BLUE}${1}${NORMAL}"
 }
 
+# Check for essential programs
+command -v zip >/dev/null 2>&1 || _die "The zip command is required for the package step but unavailable."
+
 # Shared variables
 FOXHOUND_OBJ_DIR=
 FOXHOUND_NAME=
