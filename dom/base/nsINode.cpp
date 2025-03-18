@@ -975,13 +975,14 @@ void nsINode::Normalize() {
           "mutation events messed us up");
       if (!hasRemoveListeners || (target && target->NodeType() == TEXT_NODE)) {
         nsTextNode* t = static_cast<nsTextNode*>(target);
+        SafeStringTaint taint = text->Taint();
         if (text->Is2b()) {
-          t->AppendTextForNormalize(text->Get2b(), text->GetLength(), true,
+          t->AppendTextForNormalize(text->Get2b(), text->GetLength(), taint, true,
                                     node);
         } else {
           tmpStr.Truncate();
           text->AppendTo(tmpStr);
-          t->AppendTextForNormalize(tmpStr.get(), tmpStr.Length(), true, node);
+          t->AppendTextForNormalize(tmpStr.get(), tmpStr.Length(), taint, true, node);
         }
       }
     }

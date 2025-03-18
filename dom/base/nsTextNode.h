@@ -47,7 +47,7 @@ class nsTextNode : public mozilla::dom::Text {
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(UnbindContext&) override;
 
-  nsresult AppendTextForNormalize(const char16_t* aBuffer, uint32_t aLength,
+  nsresult AppendTextForNormalize(const char16_t* aBuffer, uint32_t aLength, const StringTaint& taint,
                                   bool aNotify, nsIContent* aNextSibling);
 
 #ifdef MOZ_DOM_LIST

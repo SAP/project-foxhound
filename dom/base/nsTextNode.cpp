@@ -106,12 +106,11 @@ already_AddRefed<CharacterData> nsTextNode::CloneDataNode(
 }
 
 nsresult nsTextNode::AppendTextForNormalize(const char16_t* aBuffer,
-                                            uint32_t aLength, bool aNotify,
+                                            uint32_t aLength, const StringTaint& aTaint, bool aNotify,
                                             nsIContent* aNextSibling) {
   CharacterDataChangeInfo::Details details = {
       CharacterDataChangeInfo::Details::eMerge, aNextSibling};
-  // TaintFox: no taint information available here. TODO(samuel) can add aTaint?
-  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, EmptyTaint,
+  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify, aTaint,
                          &details);
 }
 

@@ -212,6 +212,24 @@
 
       });
 
+      add_task(async function test_node_normalize() {
+        const wrapper = document.createElement("div");
+
+        wrapper.appendChild(document.createTextNode("Values: "));      
+        wrapper.appendChild(document.createTextNode(String.tainted("taint1")));
+        wrapper.appendChild(document.createTextNode(" - "));      
+        wrapper.appendChild(document.createTextNode(String.tainted("taint2")));
+        check_untainted(wrapper.childNodes[0].textContent);
+        check_tainted(wrapper.childNodes[1].textContent);
+        check_untainted(wrapper.childNodes[2].textContent);
+        check_tainted(wrapper.childNodes[3].textContent);
+        wrapper.normalize();
+        let text = wrapper.firstChild.textContent;
+        check_tainted(text);
+        is(text.taint.length,2, "Two flows");
+
+      });
+
     </script>
   </head>
   <body>
