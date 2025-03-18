@@ -653,6 +653,7 @@ void nsHtml5TreeOperation::SetFormElement(nsIContent* aNode,
 
 nsresult nsHtml5TreeOperation::FosterParentText(
     nsIContent* aStackParent, char16_t* aBuffer, uint32_t aLength,
+    const StringTaint& aTaint,
     nsIContent* aTable, nsHtml5DocumentBuilder* aBuilder) {
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
@@ -664,7 +665,7 @@ nsresult nsHtml5TreeOperation::FosterParentText(
 
     nsIContent* previousSibling = aTable->GetPreviousSibling();
     if (previousSibling && previousSibling->IsText()) {
-      return AppendTextToTextNode(aBuffer, aLength, EmptyTaint,
+      return AppendTextToTextNode(aBuffer, aLength, aTaint,
                                   previousSibling->GetAsText(), aBuilder);
     }
 
@@ -672,8 +673,7 @@ nsresult nsHtml5TreeOperation::FosterParentText(
         aStackParent->OwnerDoc()->NodeInfoManager();
     RefPtr<nsTextNode> text = new (nodeInfoManager) nsTextNode(nodeInfoManager);
     NS_ASSERTION(text, "Infallible malloc failed?");
-    // TaintFox: TODO(samuel) need taint here!
-    rv = text->SetText(aBuffer, aLength, false, EmptyTaint);
+    rv = text->SetText(aBuffer, aLength, false, aTaint);
     NS_ENSURE_SUCCESS(rv, rv);
 
     ErrorResult error;
@@ -686,30 +686,28 @@ nsresult nsHtml5TreeOperation::FosterParentText(
     return rv;
   }
 
-  // TODO(samuel)
-  return AppendText(aBuffer, aLength, EmptyTaint, aStackParent, aBuilder);
+  return AppendText(aBuffer, aLength, aTaint, aStackParent, aBuilder);
 }
 
 nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
                                              char16_t* aBuffer, int32_t aLength,
+                                             const StringTaint& aTaint,
                                              nsHtml5DocumentBuilder* aBuilder) {
   nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
   RefPtr<Comment> comment = new (nodeInfoManager) Comment(nodeInfoManager);
   NS_ASSERTION(comment, "Infallible malloc failed?");
-  // TaintFox: TODO(samuel) need taint here!
-  nsresult rv = comment->SetText(aBuffer, aLength, false, EmptyTaint);
+  nsresult rv = comment->SetText(aBuffer, aLength, false, aTaint);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return Append(comment, aParent, aBuilder);
 }
 
 nsresult nsHtml5TreeOperation::AppendCommentToDocument(
-    char16_t* aBuffer, int32_t aLength, nsHtml5DocumentBuilder* aBuilder) {
+    char16_t* aBuffer, int32_t aLength, const StringTaint& aTaint, nsHtml5DocumentBuilder* aBuilder) {
   RefPtr<Comment> comment = new (aBuilder->GetNodeInfoManager())
       Comment(aBuilder->GetNodeInfoManager());
   NS_ASSERTION(comment, "Infallible malloc failed?");
-  // TaintFox: TODO(samuel) need taint here!
-  nsresult rv = comment->SetText(aBuffer, aLength, false, EmptyTaint);
+  nsresult rv = comment->SetText(aBuffer, aLength, false, aTaint);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return AppendToDocument(comment, aBuilder);
@@ -908,20 +906,23 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       char16_t* buffer = aOperation.mBuffer;
       uint32_t length = aOperation.mLength;
       nsIContent* table = *aOperation.mTable;
-      return FosterParentText(stackParent, buffer, length, table, mBuilder);
+      const StringTaint taint = aOperation.mTaint;
+      return FosterParentText(stackParent, buffer, length, taint, table, mBuilder);
     }
 
     nsresult operator()(const opAppendComment& aOperation) {
       nsIContent* parent = *aOperation.mParent;
       char16_t* buffer = aOperation.mBuffer;
       uint32_t length = aOperation.mLength;
-      return AppendComment(parent, buffer, length, mBuilder);
+      const StringTaint taint = aOperation.mTaint;
+      return AppendComment(parent, buffer, length, taint, mBuilder);
     }
 
     nsresult operator()(const opAppendCommentToDocument& aOperation) {
       char16_t* buffer = aOperation.mBuffer;
       int32_t length = aOperation.mLength;
-      return AppendCommentToDocument(buffer, length, mBuilder);
+      const StringTaint taint = aOperation.mTaint;
+      return AppendCommentToDocument(buffer, length, taint, mBuilder);
     }
 
     nsresult operator()(const opAppendDoctypeToDocument& aOperation) {
