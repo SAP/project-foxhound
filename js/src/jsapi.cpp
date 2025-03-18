@@ -5097,7 +5097,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
 
 // Enable with ac_add_options --enable-jitspew
 #if defined (JS_JITSPEW)
-  MaybeSpewStringTaint(cx, str, retval);
+  MaybeSpewStringTaint(cx, str, retVal);
 #endif
 }
 
