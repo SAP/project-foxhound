@@ -9,15 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
       checks: write
     steps:
-    - uses: dorny/test-reporter@v1
+    - uses: dorny/test-reporter@v2
       with:
         artifact: foxhound-tests            # artifact name
         name: JavaScript Tests            # Name of the check run which will be created
         path: 'jstest_output.xml'                     # Path to test results (inside artifact .zip)
         reporter: java-junit              # Format of test results
-    - uses: dorny/test-reporter@v1
+    - uses: dorny/test-reporter@v2
       with:
         artifact: foxhound-tests            # artifact name
         name: Tainting Tests            # Name of the check run which will be created
