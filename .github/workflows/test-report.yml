@@ -14,6 +14,12 @@ jobs:
     - uses: dorny/test-reporter@v1
       with:
         artifact: foxhound-tests            # artifact name
-        name: Foxhound Tests            # Name of the check run which will be created
-        path: '*.xml'                     # Path to test results (inside artifact .zip)
+        name: JavaScript Tests            # Name of the check run which will be created
+        path: 'jstest_output.xml'                     # Path to test results (inside artifact .zip)
+        reporter: java-junit              # Format of test results
+    - uses: dorny/test-reporter@v1
+      with:
+        artifact: foxhound-tests            # artifact name
+        name: Tainting Tests            # Name of the check run which will be created
+        path: 'taint_test_output.xml'                     # Path to test results (inside artifact .zip)
         reporter: java-junit              # Format of test results
