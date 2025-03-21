@@ -39,10 +39,12 @@
 #include "mozilla/ScopeExit.h"
 
 #include <algorithm>
+#include <iostream>
 #include <memory>
 #include <utility>
 
 #include "jsdate.h"
+#include "jstaint.h"
 
 #include "builtin/DataViewObject.h"
 #include "builtin/MapObject.h"
@@ -152,6 +154,10 @@ enum StructuredDataType : uint32_t {
 
   SCTAG_RESIZABLE_ARRAY_BUFFER_OBJECT,
   SCTAG_GROWABLE_SHARED_ARRAY_BUFFER_OBJECT,
+
+  SCTAG_TAINT,
+  SCTAG_TAINTED_STRING,
+  SCTAG_TAINTED_STRING_OBJECT,
 
   SCTAG_TYPED_ARRAY_V1_MIN = 0xFFFF0100,
   SCTAG_TYPED_ARRAY_V1_INT8 = SCTAG_TYPED_ARRAY_V1_MIN + Scalar::Int8,
@@ -602,6 +608,7 @@ struct JSStructuredCloneWriter {
   bool writeTransferMap();
 
   bool writeString(uint32_t tag, JSString* str);
+  bool writeTaint(uint32_t tag, const StringTaint& taint);
   bool writeBigInt(uint32_t tag, BigInt* bi);
   bool writeArrayBuffer(HandleObject obj);
   bool writeTypedArray(HandleObject obj);
@@ -1257,6 +1264,12 @@ bool JSStructuredCloneWriter::reportDataCloneError(uint32_t errorId,
   ReportDataCloneError(context(), out.buf.callbacks_, errorId, out.buf.closure_,
                        std::forward<Args>(aArgs)...);
   return false;
+}
+bool JSStructuredCloneWriter::writeTaint(uint32_t tag, const StringTaint& taint) {
+
+  JS::RootedString str(context(), JS::SerializeTaint(context(), taint));
+  //std::cout << "Writing taint: " << JS_EncodeStringToUTF8(context(), str).release() << "\n";
+  return writeString(tag, str.get());
 }
 
 bool JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str) {
@@ -2038,7 +2051,12 @@ bool JSStructuredCloneWriter::writePrimitive(HandleValue v) {
   context()->check(v);
 
   if (v.isString()) {
-    return writeString(SCTAG_STRING, v.toString());
+    RootedString s(context(), v.toString());
+    if(s->isTainted()) {
+      //std::cout << "Cloning tainted string: " << JS_EncodeStringToUTF8(context(), s).release() << "\n";
+      return writeString(SCTAG_TAINTED_STRING, s.get()) && writeTaint(SCTAG_TAINT, s->Taint());
+    }
+    return writeString(SCTAG_STRING, s.get());
   } else if (v.isInt32()) {
     if (js::SupportDifferentialTesting()) {
       return out.writeDouble(v.toInt32());
@@ -2102,7 +2120,12 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
       if (!Unbox(context(), obj, &unboxed)) {
         return false;
       }
-      return writeString(SCTAG_STRING_OBJECT, unboxed.toString());
+      RootedString s(context(), unboxed.toString());
+      if(s->isTainted()) {
+        return writeString(SCTAG_TAINTED_STRING_OBJECT, s.get()) && writeTaint(SCTAG_TAINT, s->Taint());
+
+      }
+      return writeString(SCTAG_STRING_OBJECT, s.get());
     }
     case ESClass::Boolean: {
       RootedValue unboxed(context());
@@ -3025,7 +3048,34 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp,
         return false;
       }
       break;
-
+    case SCTAG_TAINTED_STRING_OBJECT:
+    case SCTAG_TAINTED_STRING: {
+      JS::RootedString str(context(), readString(data, atomizeStrings));
+      if (!str) {
+        return false;
+      }
+      vp.setString(str);
+      uint32_t tag2, taintData;
+      if (!in.readPair(&tag2, &taintData)) {
+        return false;
+      }
+      if (tag2 != SCTAG_TAINT) {
+        JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                                  JSMSG_SC_BAD_SERIALIZED_DATA, "taint");
+        return false;
+      }
+      JS::RootedString taint(context(), readString(taintData, DontAtomizeStrings));
+      if (!taint) {
+        return false;
+      }
+      //std::cout << "Read tainted string: " << JS_EncodeStringToUTF8(context(), str).release() << " with taint: " << JS_EncodeStringToUTF8(context(), taint).release() << "\n";
+      StringTaint taintValue = JS::DeserializeTaint(context(), taint);
+      str->setTaint(context(), taintValue);
+      if (tag == SCTAG_TAINTED_STRING_OBJECT && !PrimitiveToObject(context(), vp)) {
+        return false;
+      }
+      break;
+    }
     case SCTAG_STRING:
     case SCTAG_STRING_OBJECT: {
       JSString* str = readString(data, atomizeStrings);
@@ -4173,12 +4223,37 @@ JS_PUBLIC_API bool JS_ReadString(JSStructuredCloneReader* r,
   }
 
   if (tag == SCTAG_STRING) {
+
     if (JSString* s =
             r->readString(data, JSStructuredCloneReader::DontAtomizeStrings)) {
       str.set(s);
       return true;
     }
     return false;
+  }
+  if(tag == SCTAG_TAINTED_STRING) {
+
+    JSString* s =
+      r->readString(data, JSStructuredCloneReader::DontAtomizeStrings);
+      if(!s) return false;
+      uint32_t tag2, taintData;
+      if (!r->input().readPair(&tag2, &taintData)) {
+        return false;
+      }
+      if (tag2 != SCTAG_TAINT) {
+        JS_ReportErrorNumberASCII(r->context(), GetErrorMessage, nullptr,
+                                  JSMSG_SC_BAD_SERIALIZED_DATA, "taint");
+        return false;
+      }
+      JS::Rooted<JSString*> taint(r->context(), r->readString(taintData, JSStructuredCloneReader::DontAtomizeStrings));
+      if (!taint) {
+        return false;
+      }
+      StringTaint taintValue = JS::DeserializeTaint(r->context(), taint);
+      str->setTaint(r->context(), taintValue);
+      str.set(s);
+      //std::cout << "JS_ReadString(tainted): " << JS_EncodeStringToUTF8(r->context(),  str).release() << "\n";
+
   }
 
   JS_ReportErrorNumberASCII(r->context(), GetErrorMessage, nullptr,
@@ -4240,6 +4315,10 @@ JS_PUBLIC_API bool JS_WriteBytes(JSStructuredCloneWriter* w, const void* p,
 
 JS_PUBLIC_API bool JS_WriteString(JSStructuredCloneWriter* w,
                                   HandleString str) {
+  if(str->isTainted()) {
+    return w->writeString(SCTAG_TAINTED_STRING, str) && w->writeTaint(SCTAG_TAINT, str->Taint());
+  }
+
   return w->writeString(SCTAG_STRING, str);
 }
 

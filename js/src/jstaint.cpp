@@ -17,12 +17,15 @@
 #include "js/Array.h"
 #include "js/CharacterEncoding.h"
 #include "js/ErrorReport.h"
+#include "js/JSON.h"
+#include "js/StableStringChars.h"
 #include "js/UniquePtr.h"
 #include "util/GetPidProvider.h"  // getpid()
 #include "vm/FrameIter.h"
 #include "vm/JSAtomUtils.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
+#include "vm/JSONParser.h"
 #include "vm/JSONPrinter.h"
 #include "vm/StringType.h"
 
@@ -374,6 +377,339 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
       }
     }
   }
+}
+
+bool ReadStringFromObject(JSContext* cx, HandleObject obj, const char* name, js::MutableHandleString str) {
+  RootedValue v(cx);
+  if(!JS_GetProperty(cx, obj, name, &v)) {
+    JS_ReportWarningUTF8(cx, "Can't read property: %s\n", name);
+    return false;
+  }
+  if (!v.isString()) {
+    JS_ReportWarningUTF8(cx, "%s is not an string\n", name);
+    return false;
+  }
+  JS::Rooted<JSString*> string(cx, v.toString());
+  if (!string) {
+    JS_ReportWarningUTF8(cx, "Failed to convert property %s to string\n", name);
+    return false;
+  }
+  str.set(string);
+  return true;
+}
+
+bool ReadArrayFromObject(JSContext* cx, HandleObject obj, const char* name, uint32_t& length, js::MutableHandleObject array) {
+  RootedValue v(cx);
+  if(!JS_GetProperty(cx, obj, name, &v)) {
+    JS_ReportWarningUTF8(cx, "Can't read property: %s\n", name);
+    return false;
+  }
+  bool isArray;
+  if (!IsArrayObject(cx, v, &isArray)) {
+    JS_ReportWarningUTF8(cx, "%s is not an array\n", name);
+    return false;
+  }
+  if(!isArray) {
+    JS_ReportWarningUTF8(cx, "%s is not an array\n", name);
+    return false;
+  }
+  JS::Rooted<JSObject*> arrayObject(cx, ToObject(cx, v));
+  if (!GetArrayLength(cx, arrayObject, &length)) {
+    JS_ReportWarningUTF8(cx, "%s\n", "Can't read array length..");
+    return false;
+  }
+  array.set(arrayObject);
+  return true;
+}
+
+bool ReadIntFromObject(JSContext* cx, HandleObject obj, const char* name, uint32_t& out) {
+  RootedValue v(cx);
+  if(!JS_GetProperty(cx, obj, name, &v)) {
+    JS_ReportWarningUTF8(cx, "Can't read property: %s\n", name);
+    return false;
+  }
+  if(!v.isInt32()) {
+    JS_ReportWarningUTF8(cx, "Property is not an int\n");
+    return false;
+  }
+  out = v.toInt32();
+  return true;
+}
+
+bool ReadBooleanFromObject(JSContext* cx, HandleObject obj, const char* name, bool& out) {
+  RootedValue v(cx);
+  if(!JS_GetProperty(cx, obj, name, &v)) {
+    JS_ReportWarningUTF8(cx, "Can't read property: %s\n", name);
+    return false;
+  }
+  if(!v.isBoolean()) {
+    JS_ReportWarningUTF8(cx, "Property is not an boolean\n");
+    return false;
+  }
+  out = v.toBoolean();
+  return true;
+}
+
+std::vector<std::u16string> JSArrayToArgsVector(JSContext* cx, uint32_t args_length, HandleObject aArgs) {
+  std::vector<std::u16string> args;
+  for (uint32_t i = 0; i < args_length; ++i) {
+    RootedValue v(cx);
+    if (!JS_GetElement(cx, aArgs, i, &v)) {
+      JS_ReportWarningUTF8(cx, "Can't get operation argument at idx %d\n", i);
+      continue;
+    }
+    if(!v.isString()) {
+      JS_ReportWarningUTF8(cx, "Operation argument at idx %d isn't a string\n", i);
+      return {};
+    }
+    JS::Rooted<JSString*> arg(cx, v.toString());
+    args.emplace_back(taintarg_jsstring_full( cx, arg));
+  }
+  return args;
+}
+
+TaintMd5 convertHexStringToDigest(const std::string& str)
+{
+  if (str.length() != 32) {
+    std::cerr << str << " has the wrong length, expected 32 but got: " << str.length() << "\n";
+    return {};
+  }
+
+  TaintMd5 digest;
+  for (size_t i = 0; i < 16; ++i) {
+    std::stringstream ss;
+    ss << std::hex << str.substr(i * 2, 2);
+    int byte;
+    ss >> byte;
+    digest[i] = static_cast<unsigned char>(byte);
+  }
+  return digest;
+}
+
+TaintLocation JSObjectToTaintLocation(JSContext* cx, HandleObject aLocation) {
+  js::RootedString rFileName(cx);
+  if(!ReadStringFromObject(cx, aLocation, "filename", &rFileName)) {
+    JS_ReportWarningUTF8(cx, "Can't get string property %s\n", "filename");
+    return {};
+  }
+  std::u16string filename(taintarg_full(cx, rFileName));
+  uint32_t line, pos, scriptline;
+  if(!ReadIntFromObject(cx, aLocation, "line", line)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintOperation\n", "line");
+    return {};
+  }
+  if(!ReadIntFromObject(cx, aLocation, "pos", pos)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintOperation\n", "pos");
+    return {};
+  }
+  if(!ReadIntFromObject(cx, aLocation, "scriptline", scriptline)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintOperation\n", "scriptline");
+    return {};
+  }
+  js::RootedString rDigest(cx);
+  if(!ReadStringFromObject(cx, aLocation, "scripthash", &rDigest)) {
+    JS_ReportWarningUTF8(cx, "Can't get string property %s\n", "scripthash");
+    return {};
+  }
+  UniqueChars digest_chars = JS_EncodeStringToLatin1(cx, rDigest);
+  TaintMd5 digest(convertHexStringToDigest(digest_chars.get()));
+  js::RootedString rFunction(cx);
+  if(!ReadStringFromObject(cx, aLocation, "function", &rFunction)) {
+    JS_ReportWarningUTF8(cx, "Can't get string property %s\n", "function");
+    return {};
+  }
+  std::u16string function(taintarg_full(cx, rFunction));
+  return {filename, line, pos, scriptline, digest, function};
+}
+
+TaintOperation JSObjectToTaintOperation(JSContext* cx, HandleObject aOperation) {
+  js::RootedString rName(cx);
+  if(!ReadStringFromObject(cx, aOperation, "operation", &rName)) {
+    JS_ReportWarningUTF8(cx, "Can't get string property %s\n", "operation");
+    return {};
+  }
+  UniqueChars src = JS_EncodeStringToLatin1(cx, rName);
+  std::string name(src.get());
+
+  bool is_source = false;
+  if(!ReadBooleanFromObject(cx, aOperation, "source", is_source)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintOperation\n", "source");
+    return {};
+  }
+
+  bool is_native = false;
+  if(!ReadBooleanFromObject(cx, aOperation, "builtin", is_native)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintOperation\n", "builtin");
+    return {};
+  }
+
+  uint32_t args_length;
+  JS::Rooted<JSObject*> argsObj(cx);
+  if(!ReadArrayFromObject(cx, aOperation, "arguments", args_length, &argsObj)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintRange\n", "arguments");
+
+    return {};
+  }
+  std::vector<std::u16string> args(JSArrayToArgsVector(cx, args_length, argsObj));
+
+  RootedValue vLoc(cx);
+  if (!JS_GetProperty(cx, aOperation, "location", &vLoc)) {
+    JS_ReportWarningUTF8(cx, "Can't get %s from operation at idx\n", "location");
+    return {};
+  }
+  if(!vLoc.isObject()) {
+    JS_ReportWarningUTF8(cx, "%s\n", "location property isn't an object\n");
+    return {};
+  }
+  JS::Rooted<JSObject*> loc(cx, ToObject(cx, vLoc));
+  TaintLocation location = JSObjectToTaintLocation(cx,loc);
+
+  TaintOperation op(name.c_str(), is_native, location, args);
+  if(is_source) {
+    op.setSource();
+  }
+  return op;
+}
+
+TaintFlow JSObjectToTaintFlow(JSContext* cx, uint32_t flow_length, HandleObject aFlow) {
+  TaintFlow flow;
+  uint32_t start_idx = flow_length-1;
+  for (uint32_t i = 0; i < flow_length; ++i) {
+    RootedValue v(cx);
+    if (!JS_GetElement(cx, aFlow, start_idx - i, &v)) {
+      JS_ReportWarningUTF8(cx, "Can't get flow operation at idx %d\n", start_idx - i);
+      continue;;
+    }
+    if(!v.isObject()) {
+      JS_ReportWarningUTF8(cx, "Taint flow operation at idx %d isn't an object\n", start_idx - i);
+      return TaintFlow::getEmptyTaintFlow();
+    }
+    JS::Rooted<JSObject*> operation(cx, ToObject(cx, v));
+    flow = flow.extend(JSObjectToTaintOperation(cx, operation));
+  }
+  return flow;
+}
+
+TaintRange JSObjectToTaintRange(JSContext* cx, HandleObject range) {
+  uint32_t begin, end;
+  if(!ReadIntFromObject(cx, range, "begin", begin)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintRange\n", "begin");
+    return {};
+  }
+  if(!ReadIntFromObject(cx, range, "end", end)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintRange\n", "end");
+    return {};
+  }
+  uint32_t flow_length;
+  JS::Rooted<JSObject*> flows(cx);
+  if(!ReadArrayFromObject(cx, range, "flow", flow_length, &flows)) {
+    JS_ReportWarningUTF8(cx,"Failed to read %s property of TaintRange\n", "flow");
+    return {};
+  }
+  return {begin, end, JSObjectToTaintFlow(cx, flow_length, flows)};
+}
+
+StringTaint JS::DeserializeTaint(JSContext* cx, Handle<JSString*> string) {
+  JS::Rooted<JS::Value> jsonResult(cx);
+  if(!JS_ParseJSON(cx, string, &jsonResult)) {
+    JS_ReportWarningUTF8(cx,"Failed to parse JSON taint\n");
+    return EmptyTaint;
+  }
+  if(!jsonResult.isObject()) {
+    JS_ReportWarningUTF8(cx,"JSON result isn't an object\n");
+    return EmptyTaint;
+  }
+  JS::Rooted<JSObject*> jsonObj(cx, ToObject(cx, jsonResult));
+
+  JS::Rooted<Value> taintObj(cx);
+  if(!JS_GetProperty(cx, jsonObj, "taint", &taintObj)) {
+    JS_ReportWarningUTF8(cx, "Can't read %s property\n", "taint");
+    return EmptyTaint;
+  }
+  bool isArray;
+  if (!IsArrayObject(cx, taintObj, &isArray)) {
+    JS_ReportWarningUTF8(cx,"%s\n", "TaintObj is not an array");
+    return EmptyTaint;
+  }
+  if(!isArray) {
+    return EmptyTaint;
+  }
+  RootedObject taints(cx, &taintObj.toObject());
+  uint32_t length;
+  if (!GetArrayLength(cx, taints, &length)) {
+    return EmptyTaint;
+  }
+  StringTaint taint;
+  for (uint32_t i = 0; i < length; ++i) {
+    RootedValue v(cx);
+    if (!JS_GetElement(cx, taints, i, &v)) {
+      JS_ReportWarningUTF8(cx,"Can't read taint range at idx %d\n", i);
+      continue;
+    }
+    if(!v.isObject()) {
+      JS_ReportWarningUTF8(cx, "Taint range at index %d isn't an object\n", i);
+      continue;
+    }
+    JS::Rooted<JSObject*> range(cx, ToObject(cx, v));
+    taint.append(JSObjectToTaintRange(cx, range));
+  }
+
+  return taint;
+}
+
+
+JSString* JS::SerializeTaint(JSContext* cx, const StringTaint& taint) {
+  js::JSSprinter printer(cx);
+  if(!printer.init()) {
+    std::cerr << "Failed to init printer\n";
+  }
+  js::JSONPrinter jsonPrinter(printer);
+  WriteTaintToJSON(taint, jsonPrinter);
+  jsonPrinter.flush();
+  printer.flush();
+  return printer.release(cx);
+}
+
+void JS::WriteTaintToJSON(const StringTaint& taint, js::JSONPrinter& json) {
+  json.beginObject();
+  json.beginListProperty("taint");
+  for (const TaintRange& range : taint) {
+    json.beginObject();
+    json.property("begin", range.begin());
+    json.property("end", range.end());
+
+    json.beginListProperty("flow");
+    for (TaintNode& node : range.flow()) {
+      const TaintOperation& op = node.operation();
+      json.beginObject();
+      json.property("operation", op.name());
+      json.boolProperty("builtin", op.is_native());
+      json.boolProperty("source", op.isSource());
+
+      const TaintLocation& loc = op.location();
+      json.beginObjectProperty("location");
+      json.property("filename", loc.filename().c_str(), loc.filename().size());
+      json.property("function", loc.function().c_str(), loc.function().size());
+
+      json.property("line", loc.line());
+      json.property("pos", loc.pos());
+      json.property("scriptline", loc.scriptStartLine());
+      json.property("scripthash", JS::convertDigestToHexString(loc.scriptHash()).c_str());
+      json.endObject(); // Location
+
+      json.beginListProperty("arguments");
+      for (const auto& arg : op.arguments()) {
+        json.string(arg.c_str(), arg.size());
+      }
+      json.endList();
+
+      json.endObject(); // Operation
+    }
+    json.endList(); // flow
+    json.endObject(); // range
+  }
+  json.endList();
+  json.endObject();
 }
 
 #if defined(JS_JITSPEW)

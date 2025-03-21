@@ -85,6 +85,13 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool i
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
 
+// Format the taint object as JSON and write to the provided printer
+void WriteTaintToJSON(const StringTaint& taint, js::JSONPrinter& json);
+
+// Serialize the taint Object as a JSON string.
+JSString* SerializeTaint(JSContext* cx, const StringTaint& taint);
+StringTaint DeserializeTaint(JSContext* cx, Handle<JSString*> string);
+
 // Write the taint information to a StructuredSpewer
 // To enable this, set the 
 //     ac_add_options --enable-jitspew
