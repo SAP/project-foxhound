@@ -837,7 +837,7 @@ class TaintList
 
 // Set to true to enable various debug outputs regarding end2end tainting
 // throughout the engine.
-#define DEBUG_E2E_TAINTING (DEBUG)
+#define DEBUG_E2E_TAINTING (TAINT_DEBUG)
 
 /*
  * Deserialize taint information from its string representation. Required for
