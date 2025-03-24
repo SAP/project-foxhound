@@ -1268,7 +1268,7 @@ bool JSStructuredCloneWriter::reportDataCloneError(uint32_t errorId,
 bool JSStructuredCloneWriter::writeTaint(uint32_t tag, const StringTaint& taint) {
 
   JS::RootedString str(context(), JS::SerializeTaint(context(), taint));
-  //std::cout << "Writing taint: " << JS_EncodeStringToUTF8(context(), str).release() << "\n";
+  // std::cout << "Writing taint: " << JS_EncodeStringToUTF8(context(), str).release() << "\n";
   return writeString(tag, str.get());
 }
 
@@ -2067,7 +2067,7 @@ bool JSStructuredCloneWriter::writePrimitive(HandleValue v) {
   if (v.isString()) {
     RootedString s(context(), v.toString());
     if(s->isTainted()) {
-      //std::cout << "Cloning tainted string: " << JS_EncodeStringToUTF8(context(), s).release() << "\n";
+      // std::cout << "Cloning tainted string: " << JS_EncodeStringToUTF8(context(), s).release() << "\n";
       return writeString(SCTAG_TAINTED_STRING, s.get()) && writeTaint(SCTAG_TAINT, s->Taint());
     }
     return writeString(SCTAG_STRING, s.get());
@@ -3121,7 +3121,7 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp,
       if (!taint) {
         return false;
       }
-      //std::cout << "Read tainted string: " << JS_EncodeStringToUTF8(context(), str).release() << " with taint: " << JS_EncodeStringToUTF8(context(), taint).release() << "\n";
+      // std::cout << "Read tainted string: " << JS_EncodeStringToUTF8(context(), str).release() << " with taint: " << JS_EncodeStringToUTF8(context(), taint).release() << "\n";
       StringTaint taintValue = JS::DeserializeTaint(context(), taint);
       str->setTaint(context(), taintValue);
       if (tag == SCTAG_TAINTED_STRING_OBJECT && !PrimitiveToObject(context(), vp)) {
@@ -4286,9 +4286,7 @@ JS_PUBLIC_API bool JS_ReadString(JSStructuredCloneReader* r,
     return false;
   }
   if(tag == SCTAG_TAINTED_STRING) {
-
-    JSString* s =
-      r->readString(data, JSStructuredCloneReader::DontAtomizeStrings);
+      JS::Rooted<JSString*> s(r->context(), r->readString(data, JSStructuredCloneReader::DontAtomizeStrings));
       if(!s) return false;
       uint32_t tag2, taintData;
       if (!r->input().readPair(&tag2, &taintData)) {
@@ -4304,9 +4302,9 @@ JS_PUBLIC_API bool JS_ReadString(JSStructuredCloneReader* r,
         return false;
       }
       StringTaint taintValue = JS::DeserializeTaint(r->context(), taint);
-      str->setTaint(r->context(), taintValue);
       str.set(s);
-      //std::cout << "JS_ReadString(tainted): " << JS_EncodeStringToUTF8(r->context(),  str).release() << "\n";
+      str->setTaint(r->context(), taintValue);
+      // std::cout << "JS_ReadString(tainted): " << JS_EncodeStringToUTF8(r->context(),  str).release() << "\n";
 
   }
 
