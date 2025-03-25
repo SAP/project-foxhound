@@ -504,7 +504,7 @@ void JS::PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::
 
   // Dump additional information from the taintreport
   if (location.isObject()) {
-    JSObject* obj = ToObject(cx, location);
+    JS::Rooted<JSObject*> obj(cx, ToObject(cx, location));
     PrintJsonObject(cx, obj, json);
   }
 

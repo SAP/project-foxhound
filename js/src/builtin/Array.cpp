@@ -1376,7 +1376,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 8.
-  JSString* str = sb.finishString();
+  JS::Rooted<JSString*> str(cx, sb.finishString());
   if (!str) {
     return false;
   }

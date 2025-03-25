@@ -1357,7 +1357,7 @@ JSString* StringReplace(JSContext* cx, HandleString string,
   MOZ_ASSERT(pattern);
   MOZ_ASSERT(repl);
   // Foxhound: this will propagate the taint but not add the operation
-  JSString* str = str_replace_string_raw(cx, string, pattern, repl);
+  Rooted<JSString*> str(cx, str_replace_string_raw(cx, string, pattern, repl));
   if (str && str->taint().hasTaint()) {
     str->taint().extend(TaintOperationFromContext(cx, "replace", true, pattern, repl));
   }

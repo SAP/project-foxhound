@@ -2358,7 +2358,7 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
   // needs to support returning undefined. So this is a little awkward
   // for the API, because we want to support streaming writers.
   if (!sb.empty()) {
-    JSString* str = sb.finishString();
+    JS::Rooted<JSString*> str(cx, sb.finishString());
     if (!str) {
       return false;
     }

@@ -526,7 +526,7 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  JSString* res = newChars.toString(cx, newLength);
+  JS::Rooted<JSString*> res(cx, newChars.toString(cx, newLength));
   if (!res) {
     return false;
   }
@@ -1969,7 +1969,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     form = NormalizationForm::NFC;
   } else {
     // Step 4.
-    JSLinearString* formStr = ArgToLinearString(cx, args, 0);
+    JS::Rooted<JSLinearString*> formStr(cx, ArgToLinearString(cx, args, 0));
     if (!formStr) {
       return false;
     }
@@ -3312,7 +3312,7 @@ static JSLinearString* TrimString(JSContext* cx, JSString* str, bool trimStart,
                &end);
   }
 
-  JSLinearString* result = NewDependentString(cx, linear, begin, end - begin);
+  JS::Rooted<JSLinearString*> result(cx, NewDependentString(cx, linear, begin, end - begin));
 
   // TaintFox: Add trim operation to current taint flow.
   // the acutal trimming of taint ranges has been done in
@@ -4293,7 +4293,7 @@ static ArrayObject* CharSplitHelper(JSContext* cx, Handle<JSLinearString*> str,
 
   for (size_t i = 0; i < resultlen; ++i) {
     // TaintFox: code modified to avoid atoms.
-    JSString* sub = NewDependentString(cx, str, i, 1);
+    JS::Rooted<JSString*> sub(cx, NewDependentString(cx, str, i, 1));
     // was:
     // JSString* sub = staticStrings.getUnitStringForElement(cx, str, i);
     if (!sub) {
