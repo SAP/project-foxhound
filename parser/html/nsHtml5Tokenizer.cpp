@@ -281,7 +281,7 @@ void nsHtml5Tokenizer::appendStrBuf(char16_t* buffer, int32_t offset,
 
 void nsHtml5Tokenizer::emitComment(int32_t provisionalHyphens, int32_t pos) {
   RememberGt(pos);
-  tokenHandler->comment(strBuf, 0, strBufLen - provisionalHyphens);
+  tokenHandler->comment(strBuf, strBufTaint, 0, strBufLen - provisionalHyphens);
   clearStrBufAfterUse();
   cstart = pos + 1;
   suspendIfRequestedAfterCurrentNonTextToken();
@@ -4845,7 +4845,6 @@ void nsHtml5Tokenizer::eof() {
                            charRefBufLen - charRefBufMark,
                            charRefTaint);
             } else {
-                // TODO(samuel)
               tokenHandler->characters(charRefBuf, charRefTaint, charRefBufMark, charRefBufLen - charRefBufMark);
             }
           }
