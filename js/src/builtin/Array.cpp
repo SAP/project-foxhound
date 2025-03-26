@@ -1376,6 +1376,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 8.
+  // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
   JS::Rooted<JSString*> str(cx, sb.finishString());
   if (!str) {
     return false;
