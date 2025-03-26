@@ -97,13 +97,15 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
                                                    gc::Heap heap) {
   size_t len = length();
 
+  // Taintfox: Disable static string return
+  if (!this->taint()) {
+    if (JSAtom* staticStr = cx->staticStrings().lookup(begin<CharT>(), len)) {
+      return staticStr;
+    }
+  }
+
   // Taintfox: propagate taint
   SafeStringTaint taint = this->taint().safeCopy();
-
-  // Taintfox: Disable static string return
-  // if (JSAtom* staticStr = cx->staticStrings().lookup(begin<CharT>(), len)) {
-  //   return staticStr;
-  // }
 
   if (JSInlineString::lengthFits<CharT>(len)) {
     mozilla::Range<const CharT> range(begin<CharT>(), len);
