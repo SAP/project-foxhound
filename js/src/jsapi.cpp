@@ -5014,7 +5014,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   // slot of the current global object.
   RootedFunction report(cx);
 
-  JSObject* global = cx->global();
+  JS::Rooted<JSObject*> global(cx, cx->global());
 
   RootedValue slot(cx, JS::GetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT));
   if (slot.isUndefined()) {

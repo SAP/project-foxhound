@@ -526,7 +526,8 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  JSString* res = newChars.toString(cx, newLength);
+  // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+  JS::Rooted<JSString*> res(cx, newChars.toString(cx, newLength));
   if (!res) {
     return false;
   }
@@ -970,7 +971,7 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
   uint32_t len = lengthInt;
   // TaintFox
   SafeStringTaint newTaint = str->taint().safeSubTaint(begin, begin + len);
-  
+
   /*
    * Optimization for one level deep ropes.
    * This is common for the following pattern:
@@ -1969,7 +1970,8 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     form = NormalizationForm::NFC;
   } else {
     // Step 4.
-    JSLinearString* formStr = ArgToLinearString(cx, args, 0);
+    // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+    JS::Rooted<JSLinearString*> formStr(cx, ArgToLinearString(cx, args, 0));
     if (!formStr) {
       return false;
     }
@@ -3311,8 +3313,8 @@ static JSLinearString* TrimString(JSContext* cx, JSString* str, bool trimStart,
     TrimString(linear->twoByteChars(nogc), trimStart, trimEnd, length, &begin,
                &end);
   }
-
-  JSLinearString* result = NewDependentString(cx, linear, begin, end - begin);
+  // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+  JS::Rooted<JSLinearString*> result(cx, NewDependentString(cx, linear, begin, end - begin));
 
   // TaintFox: Add trim operation to current taint flow.
   // the acutal trimming of taint ranges has been done in
@@ -4292,8 +4294,8 @@ static ArrayObject* CharSplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   splits->ensureDenseInitializedLength(0, resultlen);
 
   for (size_t i = 0; i < resultlen; ++i) {
-    // TaintFox: code modified to avoid atoms.
-    JSString* sub = NewDependentString(cx, str, i, 1);
+    // TaintFox: code modified to avoid atoms, and added rooting because TaintLocationFromContext can trigger a GC.
+    JS::Rooted<JSString*> sub(cx, NewDependentString(cx, str, i, 1));
     // was:
     // JSString* sub = staticStrings.getUnitStringForElement(cx, str, i);
     if (!sub) {

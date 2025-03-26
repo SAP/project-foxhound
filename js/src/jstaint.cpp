@@ -417,7 +417,7 @@ void JS::WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location) {
 
   char suffix_path[2048] = {0};
   SprintfLiteral(suffix_path, "%s.%d.%u.json", filename, getpid(), counter++);
-  
+
   Fprinter output;
   if (!output.init(suffix_path)) {
     SEprinter p;
@@ -504,7 +504,7 @@ void JS::PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::
 
   // Dump additional information from the taintreport
   if (location.isObject()) {
-    JSObject* obj = ToObject(cx, location);
+    JS::Rooted<JSObject*> obj(cx, ToObject(cx, location));
     PrintJsonObject(cx, obj, json);
   }
 
