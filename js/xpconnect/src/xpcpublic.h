@@ -283,7 +283,7 @@ class XPCStringConvert {
       return false;
     }
 
-    // TaintFox: Transfer taint information to newly created JS string.
+    // Foxhound: Transfer taint information to newly created JS string.
     if (taint.hasTaint()) {
       JS_SetStringTaint(cx, str, taint);
     }
@@ -302,7 +302,7 @@ class XPCStringConvert {
       return false;
     }
 
-    // TaintFox: Transfer taint information to newly created JS string.
+    // Foxhound: Transfer taint information to newly created JS string.
     JS_SetStringTaint(cx, str, buf->Taint());
 
     rval.setString(str);
@@ -319,7 +319,7 @@ class XPCStringConvert {
       return false;
     }
 
-    // TaintFox: Transfer taint information to newly created JS string.
+    // Foxhound: Transfer taint information to newly created JS string.
     JS_SetStringTaint(cx, str, buf->Taint());
 
     rval.setString(str);
@@ -338,7 +338,7 @@ class XPCStringConvert {
       return false;
     }
 
-    // TaintFox: propagate taint
+    // Foxhound: propagate taint
     JS_SetStringTaint(cx, str, taint);
 
     rval.setString(str);
@@ -357,7 +357,7 @@ class XPCStringConvert {
       return false;
     }
 
-    // TaintFox: propagate taint
+    // Foxhound: propagate taint
     JS_SetStringTaint(cx, str, taint);
 
     rval.setString(str);
@@ -375,7 +375,7 @@ class XPCStringConvert {
       return false;
     }
 
-    // TaintFox: propagate taint
+    // Foxhound: propagate taint
     JS_SetStringTaint(cx, str, taint);
 
     rval.setString(str);

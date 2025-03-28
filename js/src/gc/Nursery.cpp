@@ -1914,7 +1914,7 @@ void js::Nursery::sweep() {
   CellSweepSet empty;
   std::swap(cellsToSweep, empty);
 
-  // Taintfox: clean up strings (mostly taint)
+  // Foxhound: clean up strings (mostly taint)
   sweepStrings();
   runtime()->caches().sweepAfterMinorGC(&trc);
 }

@@ -699,7 +699,7 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(Span<const uint8_t> aFromSegment,
   }
   // if we get here, there either was no BOM or the BOM sniffing isn't complete
   // yet
-  // TaintFox: TODO deal with this case
+  // Foxhound: TODO deal with this case
 
   MOZ_ASSERT(mCharsetSource != kCharsetFromByteOrderMark,
              "Should not come here if BOM was found.");
@@ -895,7 +895,7 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
       }
     }
 
-    // TaintFox: slight hack: propagate taint information after the conversion
+    // Foxhound: slight hack: propagate taint information after the conversion
     // (should be done during the conversion)
     if (aTaint.hasTaint()) {
 #if (DEBUG_E2E_TAINTING)
@@ -1636,7 +1636,7 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
                                               uint32_t aLength) {
   nsresult rv;
 
-  // TaintFox: see if there's taint information available.
+  // Foxhound: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInStream));
 #if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
@@ -1994,7 +1994,7 @@ void nsHtml5StreamParser::SwitchDecoderIfAsciiSoFar(
       continue;
     }
     size_t tailLength = nextSkipped - numAscii;
-    // Taintfox: TODO: check if EmptyTaint is correct here
+    // Foxhound: TODO: check if EmptyTaint is correct here
     WriteStreamBytes(Span<uint8_t>(buffer).From(buffer.Length() - tailLength), EmptyTaint);
     skipped = nextSkipped;
   }

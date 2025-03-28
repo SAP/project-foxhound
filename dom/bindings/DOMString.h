@@ -258,11 +258,11 @@ class MOZ_STACK_CLASS DOMString {
     } else {
       aString = AsAString();
     }
-    // Taintfox: propagate taint by hand here
+    // Foxhound: propagate taint by hand here
     aString.AssignTaint(Taint());
   }
 
-  // TaintFox: convenience method to assign taint information to a DOMString
+  // Foxhound: convenience method to assign taint information to a DOMString
   void AssignTaint(const StringTaint& aTaint) {
     if (IsNull() || IsEmpty()) {
       return;
@@ -277,7 +277,7 @@ class MOZ_STACK_CLASS DOMString {
     }
   }
 
-  // Taintfox: get taint object
+  // Foxhound: get taint object
   StringTaint& Taint() {
     if (IsNull() || IsEmpty()) {
       return mTaint;
@@ -292,7 +292,7 @@ class MOZ_STACK_CLASS DOMString {
     }
   }
 
-  // TaintFox: added for convenience
+  // Foxhound: added for convenience
   uint32_t Length() {
     if (IsNull()) {
       return 0;

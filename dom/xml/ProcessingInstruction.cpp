@@ -51,7 +51,7 @@ ProcessingInstruction::ProcessingInstruction(
   MOZ_ASSERT(mNodeInfo->NodeType() == nsINode::PROCESSING_INSTRUCTION_NODE,
              "Bad NodeType in aNodeInfo");
 
-  // TaintFox: pass taint information.
+  // Foxhound: pass taint information.
   SetTextInternal(0, mText.GetLength(),
                   aData.BeginReading(), aData.Length(),
                   false, aData.Taint());  // Don't notify (bug 420429).

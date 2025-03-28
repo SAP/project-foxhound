@@ -67,7 +67,7 @@ void MessageEvent::GetData(JSContext* aCx, JS::MutableHandle<JS::Value> aData,
     aRv.Throw(NS_ERROR_FAILURE);
   }
 
-  // Taintfox: MessageEvent source
+  // Foxhound: MessageEvent source
   MarkTaintSource(aCx, aData, "MessageEvent", mOrigin);
 }
 

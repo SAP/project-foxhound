@@ -33,7 +33,7 @@ LOCAL_INCLUDES += [
 # Don't use STL wrappers here (i.e. wrapped <new>); they require mozalloc
 DisableStlWrapping()
 
-# Add Taintfox build
+# Add Foxhound build
 USE_LIBS += [
     'taint',
 ]

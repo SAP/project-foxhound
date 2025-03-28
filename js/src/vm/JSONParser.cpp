@@ -776,7 +776,7 @@ void JSONFullParseHandlerAnyChar::trace(JSTracer* trc) {
 
 template <typename CharT>
 bool JSONFullParseHandler<CharT>::StringBuilder::append(char16_t c, const TaintFlow& taintFlow) {
-  // TaintFox: add taint information for next output character.
+  // Foxhound: add taint information for next output character.
   buffer.taint().append(TaintRange(buffer.length(), buffer.length() + 1, taintFlow));
   return buffer.append(c);
 }
@@ -841,7 +841,7 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
     const StringTaint& taint, const ParserT* parser) {
 
   TaintOperation op("JSON.parse");
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   if (ST != JSONStringType::PropertyName && taint.hasTaint()) {
     JSString* path = parser->CurrentJsonPath();
     RootedString jsonPath(cx, path);
@@ -859,7 +859,7 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
     return false;
   }
 
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   if (ST != JSONStringType::PropertyName && taint.hasTaint()) {
     str->setTaint(cx, taint);
     str->taint().extend(op);
@@ -875,7 +875,7 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
     StringBuilder& builder, mozilla::Span<const CharT>&& source, const ParserT* parser) {
 
   TaintOperation op("JSON.parse");
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   if (ST != JSONStringType::PropertyName && builder.buffer.taint()) {
     JSString* path = parser->CurrentJsonPath();
     RootedString jsonPath(cx, path);
@@ -893,7 +893,7 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
     return false;
   }
 
-  // TaintFox: Add taint operation.
+  // Foxhound: Add taint operation.
   if (str->taint().hasTaint()) {
     str->taint().extend(op);
   }

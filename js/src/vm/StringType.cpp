@@ -1138,7 +1138,7 @@ static JSLinearString* EnsureLinear(
   return linear;
 }
 
-// Taintfox: Concat without adding operations to taint flow
+// Foxhound: Concat without adding operations to taint flow
 template <AllowGC allowGC>
 JSString* js::ConcatStringsQuiet(
     JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,
@@ -1182,7 +1182,7 @@ JSString* js::ConcatStringsQuiet(
 
     AutoCheckCannotGC nogc;
 
-    // Taintfox: compute the taint here
+    // Foxhound: compute the taint here
     SafeStringTaint newTaint = left->taint().safeCopy();
     newTaint.concat(right->taint(), left->length());
 
@@ -1212,14 +1212,14 @@ JSString* js::ConcatStringsQuiet(
                             rightLinear->latin1Chars(nogc), rightLen);
       }
     }
-    // Taintfox
+    // Foxhound: Propagate taint
     if (str->length() > 0) {
         str->setTaint(cx, newTaint);
     }
     return str;
   }
 
-  // TaintFox: JSRope handles taint propagation itself.
+  // Foxhound: JSRope handles taint propagation itself.
   return JSRope::new_<allowGC>(cx, left, right, wholeLength, heap);
 }
 
@@ -1745,13 +1745,13 @@ JSLinearString* js::NewDependentString(JSContext* cx, JSString* baseArg,
     return nullptr;
   }
 
-  /* TaintFox: disabled. We need this function to return a new string instance
+  /* Foxhound: disabled. We need this function to return a new string instance
    * so we can cheaply copy strings (required for tainting).
   if (start == 0 && length == base->length())
       return base;
   */
 
-  /* TaintFox: Same here, we currently require a new instance in every case.
+  /* Foxhound: Same here, we currently require a new instance in every case.
    * TODO maybe fix this some time.
    */
   bool useInline;
@@ -1892,7 +1892,7 @@ template <AllowGC allowGC, typename CharT>
 JSLinearString* js::NewStringDontDeflate(
   JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length,
   gc::Heap heap) {
-  // TaintFox: TODO disabled for now, causes XPConnect string conversion to
+  // Foxhound: TODO disabled for now, causes XPConnect string conversion to
   // fail wrt taint propagation if this function returns a JSAtom.
   // if (JSLinearString* str = TryEmptyOrStaticString(cx, chars.get(), length)) {
   //   return str;

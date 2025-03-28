@@ -114,7 +114,7 @@ class StringBufferAllocPolicy {
  * buffer space) are guaranteed for strings built by this interface.
  * See |extractWellSized|.
  *
- * TaintFox: the StringBuffer class is taint aware.
+ * Foxhound: the StringBuffer class is taint aware.
  */
 class StringBuffer : public TaintableString {
  protected:
@@ -256,7 +256,7 @@ class StringBuffer : public TaintableString {
     return twoByteChars().append(c);
   }
   [[nodiscard]] bool append(const char16_t c, const TaintFlow& taintFlow) {
-    // TaintFox: append taint information.
+    // Foxhound: append taint information.
     taint_.concat(taintFlow, length());  
     return append(c);
   }
@@ -279,7 +279,7 @@ class StringBuffer : public TaintableString {
   }
 
   [[nodiscard]] bool append(const Latin1Char* begin, const Latin1Char* end, const StringTaint& taint) {
-    // TaintFox: append taint information.
+    // Foxhound: append taint information.
     appendTaintAt(length(), taint);
     return isLatin1() ? latin1Chars().append(begin, end)
                       : twoByteChars().append(begin, end);
@@ -442,7 +442,7 @@ inline bool StringBuffer::append(const char16_t* begin, const char16_t* end, con
 }
 
 inline bool StringBuffer::append(JSLinearString* str) {
-  // TaintFox: append taint information.
+  // Foxhound: append taint information.
   taint_.concat(str->taint(), length());
 
   JS::AutoCheckCannotGC nogc;
@@ -464,7 +464,7 @@ inline void StringBuffer::infallibleAppendSubstring(JSLinearString* base,
   MOZ_ASSERT(off + len <= base->length());
   MOZ_ASSERT_IF(base->hasTwoByteChars(), isTwoByte());
 
-  // TaintFox: append taint information.
+  // Foxhound: append taint information.
   taint_.concat(base->taint().safeSubTaint(off, off + len), length());
 
   JS::AutoCheckCannotGC nogc;
@@ -479,7 +479,7 @@ inline bool StringBuffer::appendSubstring(JSLinearString* base, size_t off,
                                           size_t len) {
   MOZ_ASSERT(off + len <= base->length());
 
-  // TaintFox: append taint information.
+  // Foxhound: append taint information.
   // This probably behaves incorrectly if the appendSubstring operation fails..
   taint_.concat(base->taint().safeSubTaint(off, off + len), length());
 

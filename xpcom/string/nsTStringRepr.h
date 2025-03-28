@@ -112,7 +112,7 @@ class nsTStringLengthStorage {
 // If you need to take a parameter, use [const] ns[C]Substring&.
 // If you need to instantiate a string, use ns[C]String or descendents.
 //
-// Taintfox: don't be tempted to inherit from TaintableString here, as it
+// Foxhound: don't be tempted to inherit from TaintableString here, as it
 // may mess up memory allocation asssumptions.
 //
 // NAMES:

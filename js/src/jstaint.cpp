@@ -76,7 +76,7 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str)
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(len));
   js::CopyChars(buf.get(), *linear);
   if(len > max_length) {
-    // Taintfox was crashing after startup after copying start and end
+    // Foxhound was crashing after startup after copying start and end
     // of the long strings, so disable copying here
     // TODO: work out why windows doesn't like this...
     // Update: this also caused issues with some URLs causing crashes
@@ -107,7 +107,7 @@ std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(len));
   js::CopyChars(buf.get(), *linear);
   if(len > max_length) {
-    // Taintfox was crashing after startup after copying start and end
+    // Foxhound was crashing after startup after copying start and end
     // of the long strings, so disable copying here
     // TODO: work out why windows doesn't like this...
     // Update: this also caused issues with some URLs causing crashes

@@ -1596,7 +1596,7 @@ class TokenStreamCharsShared {
   /** Information for parsing with a lifetime longer than the parser itself. */
   ParserAtomsTable* parserAtoms;
 
-  // Taintfox: TODO: link this taint to the charBuffer
+  // Foxhound: TODO: link this taint to the charBuffer
   SafeStringTaint _taint;
 
  protected:
@@ -2044,7 +2044,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
     newToken(TokenKind::BigInt, start, modifier, out);
   }
 
-  // TODO:  taintfox: atoms are not allowed
+  // TODO:  Foxhound: atoms are not allowed
   void newAtomToken(TokenKind kind, TaggedParserAtomIndex atom,
                     TokenStart start, TokenStreamShared::Modifier modifier,
                     TokenKind* out) {
@@ -2488,7 +2488,7 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   using GeneralCharsBase::internalComputeLineOfContext;
   using GeneralCharsBase::matchUnicodeEscapeIdent;
   using GeneralCharsBase::matchUnicodeEscapeIdStart;
-  // Taintfox: no Atoms
+  // Foxhound: no Atoms
   using GeneralCharsBase::newAtomToken;
   using GeneralCharsBase::newBigIntToken;
   using GeneralCharsBase::newNameToken;

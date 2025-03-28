@@ -3425,7 +3425,7 @@ void nsGlobalWindowOuter::GetNameOuter(nsAString& aName) {
     mDocShell->GetName(aName);
   }
 
-  // TaintFox: window.name taint source.
+  // Foxhound: window.name taint source.
   MarkTaintSource(aName, "window.name");
 }
 
@@ -5903,7 +5903,7 @@ void nsGlobalWindowOuter::PostMessageMozOuter(JSContext* aCx,
       callerInnerWindow ? callerInnerWindow->WindowID() : 0, callerURI,
       scriptLocation, callerAgentClusterId);
 
-  // Taintfox: window.postMessage sink
+  // Foxhound: window.postMessage sink
   ReportTaintSink(aCx, aMessage, "window.postMessage");
 
   JS::CloneDataPolicy clonePolicy;
@@ -6778,7 +6778,7 @@ nsresult nsGlobalWindowOuter::OpenInternal(
 
   NS_ASSERTION(mDocShell, "Must have docshell here");
 
-  // TaintFox window.open sink
+  // Foxhound window.open sink
   ReportTaintSink(aUrl, "window.open");
 
   NS_ConvertUTF16toUTF8 optionsUtf8(aOptions);

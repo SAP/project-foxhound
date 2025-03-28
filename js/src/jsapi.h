@@ -990,7 +990,7 @@ class MOZ_RAII AutoHideScriptedCaller {
 
 } /* namespace JS */
 
-// TaintFox: Get and set string taint information.
+// Foxhound: Get and set string taint information.
 //
 // We need this since JSStrings are opaque pointers outside the engine.
 extern JS_PUBLIC_API const StringTaint&
@@ -1005,15 +1005,15 @@ JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint);
 extern JS_PUBLIC_API void
 JS_SetTaint(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const StringTaint& taint);
 
-// Taintfox: Create new String Taint Location from the context
+// Foxhound: Create new String Taint Location from the context
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name, JS::HandleValue args);
 
-// Taintfox: Get Taint Operation with no argument length restrictions
+// Foxhound: Get Taint Operation with no argument length restrictions
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperationFullArgs(JSContext* cx, const char* name, JS::HandleValue args);
 
-// Taintfox: Create new String Taint Location from the context
+// Foxhound: Create new String Taint Location from the context
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name);
 
@@ -1023,7 +1023,7 @@ JS_MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const Tai
 JS_PUBLIC_API void
 JS_MarkTaintSource(JSContext* cx, JSString* str, const TaintOperation& operation);
 
-// TaintFox: Report tainted flows into a sink.
+// Foxhound: Report tainted flows into a sink.
 //
 // This will print to stdout and trigger a custom JavaScript event on the current page.
 extern JS_PUBLIC_API void

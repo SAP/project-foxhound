@@ -4,7 +4,7 @@
 
 #include "nsHtml5OwningUTF16Buffer.h"
 
-// TaintFox: no taint available here. TODO(samuel) taint needed?
+// Foxhound: no taint available here. TODO(samuel) taint needed?
 nsHtml5OwningUTF16Buffer::nsHtml5OwningUTF16Buffer(char16_t* aBuffer)
   : nsHtml5UTF16Buffer(aBuffer, EmptyTaint, 0),
     next(nullptr),

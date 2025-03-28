@@ -178,7 +178,7 @@ static bool EvalStringMightBeJSON(const mozilla::Range<const CharT> chars) {
   return (first == '[' && last == ']') || (first == '(' && last == ')');
 }
 
-// TaintFox: modified to accept input taint information as well.
+// Foxhound: modified to accept input taint information as well.
 template <typename CharT>
 static EvalJSONResult ParseEvalStringAsJSON(
     JSContext* cx, const mozilla::Range<const CharT> chars,
@@ -278,7 +278,7 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
     return ejr == EvalJSONResult::Success;
   }
 
-  // TaintFox: eval() sink.
+  // Foxhound: eval() sink.
   JS_ReportTaintSink(cx, str, "eval");
 
   EvalScriptGuard esg(cx);

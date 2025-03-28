@@ -295,12 +295,12 @@ static constexpr std::array<uint32_t, 256> BuildEscapeChars() {
 static constexpr std::array<uint32_t, 256> EscapeChars = BuildEscapeChars();
 
 static bool dontNeedEscape(unsigned char aChar, uint32_t aFlags) {
-  // Taintfox: option to skip escaping
+  // Foxhound: option to skip escaping
   if (!!(aFlags & esc_Never)) return true;
   return EscapeChars[(size_t)aChar] & aFlags;
 }
 static bool dontNeedEscape(uint16_t aChar, uint32_t aFlags) {
-  // Taintfox: option to skip escaping
+  // Foxhound: option to skip escaping
   if (!!(aFlags & esc_Never)) return true;
   return aChar < EscapeChars.size() ? (EscapeChars[(size_t)aChar] & aFlags)
                                     : false;
@@ -357,7 +357,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     if (aFilterMask && mozilla::ASCIIMask::IsMasked(*aFilterMask, c)) {
       if (!writing) {
 
-        // Taintfox: propagate taint before string append
+        // Foxhound: propagate taint before string append
         aResult.Taint().concat(aTaint.safeSubTaint(0, i), aResult.Length());
 
         if (!aResult.Append(aPart, i, mozilla::fallible)) {
@@ -390,7 +390,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     } else { /* do the escape magic */
       if (!writing) {
 
-        // Taintfox: propagate taint before string append
+        // Foxhound: propagate taint before string append
         aResult.Taint().concat(aTaint.safeSubTaint(0, i), aResult.Length());
 
         if (!aResult.Append(aPart, i, mozilla::fallible)) {
@@ -399,7 +399,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
         writing = true;
       }
       uint32_t len = ::AppendPercentHex(tempBuffer + tempBufferPos, c);
-      // Taintfox: propagate taint
+      // Foxhound: propagate taint
       if (aTaint.at(i)) {
         tempTaint.append(TaintRange(tempBufferPos, tempBufferPos + len, *aTaint.at(i)));
       }
@@ -411,7 +411,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     if (tempBufferPos >= mozilla::ArrayLength(tempBuffer) - ENCODE_MAX_LEN) {
       NS_ASSERTION(writing, "should be writing");
 
-      // Taintfox: append the taint (before actually appending the string)
+      // Foxhound: append the taint (before actually appending the string)
       aResult.Taint().concat(tempTaint, aResult.Length());
 
       if (!aResult.Append(tempBuffer, tempBufferPos, mozilla::fallible)) {
@@ -422,7 +422,7 @@ static nsresult T_EscapeURL(const typename T::char_type* aPart, size_t aPartLen,
     }
   }
   if (writing) {
-    // Taintfox: append the taint (before actually appending the string)
+    // Foxhound: append the taint (before actually appending the string)
     aResult.Taint().concat(tempTaint, aResult.Length());
 
     if (!aResult.Append(tempBuffer, tempBufferPos, mozilla::fallible)) {
@@ -583,7 +583,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
   MOZ_ASSERT(aResult.IsEmpty(),
              "Passing a non-empty string as an out parameter!");
 
-  // Taintfox: clear taint
+  // Foxhound: clear taint
   aResult.Taint().clear();
 
   uint32_t len;
@@ -639,7 +639,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
         if (p > last) {
           auto toCopy = p - last;
           memcpy(destPtr + destPos, last, toCopy);
-          // Taintfox: direct copy taint for unescaped chars
+          // Foxhound: direct copy taint for unescaped chars
           aResult.Taint().concat(aTaint.safeSubTaint(srcPos, srcPos + toCopy), destPos);
           destPos += toCopy;
           srcPos += toCopy;
@@ -647,7 +647,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
           last = p;
         }
         destPtr[destPos] = u;
-        // Taintfox: copy single taint from source
+        // Foxhound: copy single taint from source
         if (aTaint.hasTaint()) {
           SafeStringTaint charTaint = aTaint.safeSubTaint(srcPos, srcPos + 3);
           // Take the taintflow of the first tainted character
@@ -665,7 +665,7 @@ nsresult NS_UnescapeURL(const char* aStr, int32_t aLen, const StringTaint& aTain
     auto toCopy = end - last;
     memcpy(destPtr + destPos, last, toCopy);
 
-    // Taintfox: direct copy taint for unescaped chars
+    // Foxhound: direct copy taint for unescaped chars
     aResult.Taint().concat(aTaint.safeSubTaint(srcPos, srcPos + toCopy), destPos);
 
     destPos += toCopy;

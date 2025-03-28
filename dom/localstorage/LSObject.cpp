@@ -576,7 +576,7 @@ void LSObject::GetItem(const nsAString& aKey, nsAString& aResult,
 
   aResult = result;
 
-  // TaintFox: localStorage.getItem source
+  // Foxhound: localStorage.getItem source
   MarkTaintSource(aResult, "localStorage.getItem", aKey);
 }
 
@@ -615,7 +615,7 @@ void LSObject::SetItem(const nsAString& aKey, const nsAString& aValue,
     return;
   }
 
-  // TaintFox: localStorage.setItem sink.
+  // Foxhound: localStorage.setItem sink.
   ReportTaintSink(aValue, "localStorage.setItem", aKey);
   ReportTaintSink(aKey, "localStorage.setItem(key)", aValue);
 

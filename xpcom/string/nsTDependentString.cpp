@@ -40,7 +40,7 @@ void nsTDependentString<T>::Rebind(const string_type& str,
   DataFlags newDataFlags =
       str.GetDataFlags() & (DataFlags::TERMINATED | DataFlags::LITERAL);
   this->SetData(newData, newLen, newDataFlags);
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   this->AssignTaint(str.Taint().safeSubTaint(startPos, str.Length()));
 }
 

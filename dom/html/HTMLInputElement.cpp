@@ -1193,7 +1193,7 @@ nsresult HTMLInputElement::Clone(dom::NodeInfo* aNodeInfo,
 void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const {
   Element::SetTaintSourceGetAttr(aName, aResult);
   if (nsGkAtoms::value->Equals(aName)) {
-    // TaintFox: input.value source
+    // Foxhound: input.value source
     //
     // This will taint *all* input types, including those where the actual values
     // could be limited. Still, these inputs should still not change the syntax
@@ -1207,7 +1207,7 @@ void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, nsAString& 
 void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
   Element::SetTaintSourceGetAttr(aName, aResult);
   if (nsGkAtoms::value->Equals(aName)) {
-    // TaintFox: input.value source
+    // Foxhound: input.value source
     //
     // This will taint *all* input types, including those where the actual values
     // could be limited. Still, these inputs should still not change the syntax

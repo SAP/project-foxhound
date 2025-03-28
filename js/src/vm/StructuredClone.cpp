@@ -1282,7 +1282,7 @@ bool JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str) {
     return false;
   }
 
-  // TaintFox: TODO(samuel) Depending on the current context, this might be a sink.
+  // Foxhound: TODO(samuel) Depending on the current context, this might be a sink.
   // On the other hand, should probably just make the JSStructuredCloneWriter taint aware.
   //
   // TODO(tom) the structured clone can be used to send messages within the DOM

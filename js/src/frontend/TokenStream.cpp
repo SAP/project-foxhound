@@ -381,7 +381,7 @@ TokenStreamAnyChars::TokenStreamAnyChars(FrontendContext* fc,
   isExprEnding[size_t(TokenKind::RightCurly)] = true;
 }
 
-// Taintfox: add taint information to TokenStream?
+// Foxhound: add taint information to TokenStream?
 template <typename Unit>
 TokenStreamCharsBase<Unit>::TokenStreamCharsBase(FrontendContext* fc,
                                                  ParserAtomsTable* parserAtoms,
@@ -3248,7 +3248,7 @@ template <typename Unit, class AnyCharsAccess>
     return true;
   } while (true);
 }
-// Taintfox: TODO Add TaintFlow
+// Foxhound: TODO Add TaintFlow
 template <typename Unit, class AnyCharsAccess>
 bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
     char untilChar, Modifier modifier, TokenKind* out) {

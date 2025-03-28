@@ -150,7 +150,7 @@ void Location::GetHash(nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
     AppendUTF8toUTF16(ref, aHash);
   }
 
-  // TaintFox: location.hash source.
+  // Foxhound: location.hash source.
   MarkTaintSource(aHash, "location.hash");
 
   mCachedHash = aHash;
@@ -179,7 +179,7 @@ void Location::SetHash(const nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  // TaintFox: location.hash sink.
+  // Foxhound: location.hash sink.
   // TODO(samuel) why?
   ReportTaintSink(aHash, "location.hash");
 
@@ -208,7 +208,7 @@ void Location::GetHost(nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
     if (NS_SUCCEEDED(result)) {
       AppendUTF8toUTF16(hostport, aHost);
 
-      // TaintFox: location.host source.
+      // Foxhound: location.host source.
       MarkTaintSource(aHost, "location.host");
     }
   }
@@ -233,7 +233,7 @@ void Location::SetHost(const nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  // TaintFox: location.host sink.
+  // Foxhound: location.host sink.
   ReportTaintSink(aHost, "location.host");
 
   SetURI(uri, aSubjectPrincipal, aRv);
@@ -253,7 +253,7 @@ void Location::GetHostname(nsAString& aHostname,
   if (uri) {
     nsContentUtils::GetHostOrIPv6WithBrackets(uri, aHostname);
 
-    // TaintFox: location.hostname source.
+    // Foxhound: location.hostname source.
     MarkTaintSource(aHostname, "location.hostname");
   }
 }
@@ -297,7 +297,7 @@ nsresult Location::GetHref(nsAString& aHref) {
 
   AppendUTF8toUTF16(uriString, aHref);
 
-  // TaintFox: location.href source.
+  // Foxhound: location.href source.
   MarkTaintSource(aHref, "location.href");
 
   return NS_OK;
@@ -326,7 +326,7 @@ void Location::GetOrigin(nsAString& aOrigin, nsIPrincipal& aSubjectPrincipal,
 
   aOrigin = origin;
 
-  // TaintFox: location.origin source.
+  // Foxhound: location.origin source.
   MarkTaintSource(aOrigin, "location.origin");
 }
 
@@ -354,7 +354,7 @@ void Location::GetPathname(nsAString& aPathname,
 
   AppendUTF8toUTF16(file, aPathname);
 
-  // TaintFox: location.pathname source.
+  // Foxhound: location.pathname source.
   MarkTaintSource(aPathname, "location.pathname");
 }
 
@@ -378,7 +378,7 @@ void Location::SetPathname(const nsAString& aPathname,
     return;
   }
 
-  // Taintfox: location.pathname sink
+  // Foxhound: location.pathname sink
   ReportTaintSink(aPathname, "location.pathname");
 
   SetURI(uri, aSubjectPrincipal, aRv);
@@ -407,7 +407,7 @@ void Location::GetPort(nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
     nsAutoString portStr;
     portStr.AppendInt(port);
     aPort.Append(portStr);
-    // TaintFox: location.port source.
+    // Foxhound: location.port source.
     MarkTaintSource(aPort, "location.port");
   }
 }
@@ -443,7 +443,7 @@ void Location::SetPort(const nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  // TaintFox: location.port sink.
+  // Foxhound: location.port sink.
   ReportTaintSink(aPort, "location.port");
 
   SetURI(uri, aSubjectPrincipal, aRv);
@@ -474,7 +474,7 @@ void Location::GetProtocol(nsAString& aProtocol,
   CopyASCIItoUTF16(protocol, aProtocol);
   aProtocol.Append(char16_t(':'));
 
-  // TaintFox: location.protocol source.
+  // Foxhound: location.protocol source.
   MarkTaintSource(aProtocol, "location.protocol");
 }
 
@@ -491,7 +491,7 @@ void Location::SetProtocol(const nsAString& aProtocol,
     return;
   }
 
-  // TaintFox: location.protocol sink.
+  // Foxhound: location.protocol sink.
   ReportTaintSink(aProtocol, "location.protocol");
 
   nsAString::const_iterator start, end;
@@ -559,7 +559,7 @@ void Location::GetSearch(nsAString& aSearch, nsIPrincipal& aSubjectPrincipal,
       aSearch.Assign(char16_t('?'));
       AppendUTF8toUTF16(search, aSearch);
 
-      // TaintFox: location.search source.
+      // Foxhound: location.search source.
       MarkTaintSource(aSearch, "location.search");
     }
   }
@@ -585,7 +585,7 @@ void Location::SetSearch(const nsAString& aSearch,
     return;
   }
 
-  // TaintFox: location.search sink.
+  // Foxhound: location.search sink.
   ReportTaintSink(aSearch, "location.search");
 
   SetURI(uri, aSubjectPrincipal, aRv);
@@ -641,7 +641,7 @@ void Location::Assign(const nsAString& aUrl, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  // Taintfox: location.assign sink
+  // Foxhound: location.assign sink
   ReportTaintSink(aUrl, "location.assign");
 
   DoSetHref(aUrl, aSubjectPrincipal, false, aRv);

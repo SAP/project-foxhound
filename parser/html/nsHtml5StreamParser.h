@@ -36,7 +36,7 @@
 #include "nsTArray.h"
 #include "nscore.h"
 
-// TaintFox: parser modified to support taint propagation.
+// Foxhound: parser modified to support taint propagation.
  
 class nsCycleCollectionTraversalCallback;
 class nsHtml5OwningUTF16Buffer;

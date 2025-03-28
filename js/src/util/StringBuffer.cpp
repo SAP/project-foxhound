@@ -97,10 +97,10 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
                                                    gc::Heap heap) {
   size_t len = length();
 
-  // Taintfox: propagate taint
+  // Foxhound: propagate taint
   SafeStringTaint taint = this->taint().safeCopy();
 
-  // Taintfox: Disable static string return
+  // Foxhound: Disable static string return
   // if (JSAtom* staticStr = cx->staticStrings().lookup(begin<CharT>(), len)) {
   //   return staticStr;
   // }
@@ -109,9 +109,9 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
     mozilla::Range<const CharT> range(begin<CharT>(), len);
     JSLinearString* str = NewInlineString<CanGC>(cx, range);
 
-    // TaintFox: Propagate taint to newly created string.
+    // Foxhound: Propagate taint to newly created string.
     str->setTaint(cx, taint);
-    // Taintfox: clear the stringbuffer taint information
+    // Foxhound: clear the stringbuffer taint information
     clearTaint();
 
     return str;
@@ -130,9 +130,9 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
     return nullptr;
   }
 
-  // TaintFox: Propagate taint to newly created string.
+  // Foxhound: Propagate taint to newly created string.
   str->setTaint(cx, taint);
-  // Taintfox: clear the stringbuffer taint information
+  // Foxhound: clear the stringbuffer taint information
   clearTaint();
 
   return str;
@@ -176,7 +176,7 @@ JSAtom* StringBuffer::finishAtom() {
   JSAtom* atom = AtomizeChars(maybeCx_, twoByteChars().begin(), len);
   twoByteChars().clear();
 
-  // TaintFox: We loose taint here, can't taint atoms..
+  // Foxhound: We loose taint here, can't taint atoms..
   this->clearTaint();
 
   return atom;

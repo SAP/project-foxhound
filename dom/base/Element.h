@@ -1165,7 +1165,7 @@ class Element : public FragmentOrElement {
       return false;  // DOMString comes pre-emptied.
     }
     val->ToString(aResult);
-    // Taintfox element.getAttr source
+    // Foxhound: element.getAttr source
     if (doTainting && aResult.Length() > 0) {
       SetTaintSourceGetAttr(aName, aResult);
     }
@@ -1180,7 +1180,7 @@ class Element : public FragmentOrElement {
       return false;  // DOMString comes pre-emptied.
     }
     val->ToString(aResult);
-    // Taintfox element.getAttr source
+    // Foxhound: element.getAttr source
     if (doTainting && aResult.Length() > 0) {
       SetTaintSourceGetAttr(aNameSpaceID, aName, aResult);
     }
@@ -1196,7 +1196,7 @@ class Element : public FragmentOrElement {
     const nsAttrValue* val = mAttrs.GetAttr(aName);
     if (val) {
       val->ToString(aResult);
-      // Taintfox element.getAttr source
+      // Foxhound element.getAttr source
       if (doTainting && aResult.Length() > 0) {
         SetTaintSourceGetAttr(aName, aResult);
       }
@@ -1990,7 +1990,7 @@ class Element : public FragmentOrElement {
   void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                                      DOMString& aResult) const;
   /**
-   *  Taintfox: this method can be overriden by child classes to mark
+   *  Foxhound: this method can be overriden by child classes to mark
    * certain attributes as taint sources.
    */
   virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const;

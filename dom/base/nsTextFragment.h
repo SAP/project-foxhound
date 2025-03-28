@@ -38,7 +38,7 @@
  * This class does not have a virtual destructor therefore it is not
  * meant to be subclassed.
  *
- * TaintFox: nsTextFragment is taint aware.
+ * Foxhound: nsTextFragment is taint aware.
  * Various methods have been modified to accept a StringTaint argument for taint
  * propagation.
  */
@@ -161,7 +161,7 @@ class nsTextFragment final : public TaintableString {
    */
   [[nodiscard]] bool AppendTo(nsAString& aString,
                               const mozilla::fallible_t& aFallible) const {
-    // TaintFox: propagate taint when accessing text fragments.
+    // Foxhound: propagate taint when accessing text fragments.
     aString.AppendTaint(Taint());
 
     if (mState.mIs2b) {
@@ -196,7 +196,7 @@ class nsTextFragment final : public TaintableString {
   [[nodiscard]] bool AppendTo(nsAString& aString, uint32_t aOffset,
                               uint32_t aLength,
                               const mozilla::fallible_t& aFallible) const {
-    // TaintFox: propagate taint when accessing text fragments.
+    // Foxhound: propagate taint when accessing text fragments.
     aString.AppendTaint(Taint().safeSubTaint(aOffset, aOffset + aLength));
 
     if (mState.mIs2b) {

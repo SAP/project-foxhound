@@ -204,7 +204,7 @@ function String_pad(maxLength, fillString, padEnd) {
 
 function String_pad_start(maxLength, fillString = " ") {
   var ret = callFunction(String_pad, this, maxLength, fillString, false);
-  // Taintfox: generate new string and add taint
+  // Foxhound: generate new string and add taint
   var ret2 = CopyString(ret);
   AddTaintOperationNative(ret2, "padStart", maxLength, fillString);
   return ret2;
@@ -212,7 +212,7 @@ function String_pad_start(maxLength, fillString = " ") {
 
 function String_pad_end(maxLength, fillString = " ") {
   var ret = callFunction(String_pad, this, maxLength, fillString, true);
-  // Taintfox: generate new string and add taint
+  // Foxhound: generate new string and add taint
   var ret2 = CopyString(ret);
   AddTaintOperationNative(ret2, "padEnd", maxLength, fillString);
   return ret2;
@@ -265,7 +265,7 @@ function String_replace(searchValue, replaceValue) {
     // Step 2.b.
     if (replacer !== undefined) {
       var ret = callContentFunction(replacer, searchValue, this, replaceValue);
-      // Taintfox: ret could be a function, only taint strings.
+      // Foxhound: ret could be a function, only taint strings.
       if (typeof (ret) === "string") {
         AddTaintOperationNativeFull(ret, "replace", searchValue, replaceValue);
       }
@@ -297,7 +297,7 @@ function String_replace(searchValue, replaceValue) {
   // Step 7.
   var pos = callFunction(std_String_indexOf, string, searchString);
   if (pos === -1) {
-    // Taintfox: TODO new string
+    // Foxhound: return new string
     var ret = CopyString(string);
     AddTaintOperationNativeFull(ret, "replace", searchValue, replaceValue);
     return ret;
@@ -781,7 +781,7 @@ function String_repeat(count) {
   }
 
   // Step 2.
-  // Taintfox: copy string to prevent tainting "this"
+  // Foxhound: copy string to prevent tainting "this"
   var S = CopyString(ToString(this));
 
   // Step 3.

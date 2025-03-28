@@ -104,7 +104,7 @@ void SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
 
   mCache->GetItem(aKey, aResult);
 
-  // TaintFox: sessionStorage.getItem source
+  // Foxhound: sessionStorage.getItem source
   MarkTaintSource(aResult, "sessionStorage.getItem", aKey);
 }
 
@@ -128,7 +128,7 @@ void SessionStorage::GetSupportedNames(nsTArray<nsString>& aKeys) {
 void SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
                              nsIPrincipal& aSubjectPrincipal,
                              ErrorResult& aRv) {
-  // TaintFox: sessionStorage.setItem sink.
+  // Foxhound: sessionStorage.setItem sink.
   ReportTaintSink(aValue, "sessionStorage.setItem", aKey);
   ReportTaintSink(aKey, "sessionStorage.setItem(key)", aValue);
 

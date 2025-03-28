@@ -66,7 +66,7 @@ using mozilla::Variant;
 
 using JS::AutoStableStringChars;
 
-// TaintFox: expanding taint information
+// Foxhound: expanding taint information
 template <typename SrcCharT, typename DstCharT>
 static MOZ_ALWAYS_INLINE void appendTaintIfRequired(
               const StringTaint& srcTaint,
@@ -95,7 +95,7 @@ template <typename SrcCharT, typename DstCharT>
 static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuoteJSONString(
     RangedPtr<const SrcCharT> srcBegin, RangedPtr<const SrcCharT> srcEnd,
     RangedPtr<DstCharT> dstPtr,
-    // TaintFox: need to propgate Tainting information here
+    // Foxhound: need to propgate Tainting information here
     const StringTaint& srcTaint, StringTaint& dstTaint) {
   RangedPtr<const SrcCharT> src = srcBegin;
   RangedPtr<const SrcCharT> srcCharBegin = src;
@@ -211,7 +211,7 @@ static size_t QuoteJSONStringHelper(const JSLinearString& linear,
   RangedPtr<DstCharT> dstEnd =
       InfallibleQuoteJSONString(srcBegin, srcBegin + len, dstBegin + sbOffset, linear.taint(), taint);
 
-  // Taintfox: append the taint with the correct offset
+  // Foxhound: append the taint with the correct offset
   sb.taint().concat(taint, sbOffset);
 
   return dstEnd - dstBegin;
@@ -2058,7 +2058,7 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Taintfox: save the taint in a local variable
+  // Foxhound: save the taint in a local variable
   // Calling linear->taint() later is not valid
   SafeStringTaint taint = linear->taint().safeCopy();
 
@@ -2070,7 +2070,7 @@ static bool json_parse(JSContext* cx, unsigned argc, Value* vp) {
   HandleValue reviver = args.get(1);
 
   /* Steps 2-12. */
-  // TaintFox - pass the taint to the parser
+  // Foxhound - pass the taint to the parser
   return linearChars.isLatin1()
              ? ParseJSONWithReviver(cx, linearChars.latin1Range(), reviver,
                                     args.rval(), taint)
@@ -2364,7 +2364,7 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    // TaintFox: Add stringify operation to taint flows.
+    // Foxhound: Add stringify operation to taint flows.
     if(str->isTainted()) {
       str->taint().extend(TaintOperationFromContext(cx, "JSON.stringify", true));
     }

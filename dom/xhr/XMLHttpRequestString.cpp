@@ -65,7 +65,7 @@ class XMLHttpRequestStringBuffer final {
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT(aLength <= mData.Length());
 
-    // Taintfox: nsStringBuffer and DOMString should already be taint aware
+    // Foxhound: nsStringBuffer and DOMString should already be taint aware
     // XXX: Bug 1408793 suggests encapsulating the following sequence within
     //      DOMString.
     if (StringBuffer* buf = mData.GetStringBuffer()) {
@@ -79,7 +79,7 @@ class XMLHttpRequestStringBuffer final {
     // We can get here if mData is empty.  In that case it won't have an
     // nsStringBuffer....
     MOZ_ASSERT(mData.IsEmpty());
-    // Taintfox: if mData is empty, there is no taint...?
+    // Foxhound: if mData is empty, there is no taint...?
     return aString.AsAString().Assign(mData.BeginReading(), aLength,
                                       mozilla::fallible);
   }

@@ -573,7 +573,7 @@ static const uint32_t JSCLASS_FOREGROUND_FINALIZE =
 // the beginning of every global object's slots for use by the
 // application.
 //
-// TaintFox: Add one more reserved slot to all global objects to hold the
+// Foxhound: Add one more reserved slot to all global objects to hold the
 // compiled JavaScript reporting function. See JS_ReportTaintSink.
 static const uint32_t JSCLASS_GLOBAL_APPLICATION_SLOTS = 5 + 1;
 static const uint32_t JSCLASS_GLOBAL_SLOT_COUNT =

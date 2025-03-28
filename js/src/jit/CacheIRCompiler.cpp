@@ -4147,7 +4147,7 @@ bool CacheIRCompiler::emitLoadStringCharCodeResult(StringOperandId strId,
   if (!addFailurePath(&failure)) {
     return false;
   }
-  // TaintFox: bail out if thisv is tainted.
+  // Foxhound: bail out if thisv is tainted.
   masm.branchPtr(Assembler::NotEqual,
                  Address(str, JSString::offsetOfTaint()),
                  ImmPtr(nullptr),
