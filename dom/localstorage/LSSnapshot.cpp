@@ -341,7 +341,7 @@ nsresult LSSnapshot::SetItem(const nsAString& aKey, const nsAString& aValue,
 
   bool changed;
 
-  // Taintfox: if aValue and oldValue are the same the taint will not be
+  // Foxhound: if aValue and oldValue are the same the taint will not be
   // copied (the string comparison will be the same but taint is not compared).
   // taint will be lost if trying to write a tainted string to a key which
   // is not tainted.

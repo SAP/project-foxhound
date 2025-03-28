@@ -105,7 +105,7 @@ JSString* js::CopyStringPure(JSContext* cx, JSString* str) {
    */
 
   size_t len = str->length();
-  // Copy taint up here to avoid GC problems later
+  // Foxhound: Copy taint up here to avoid GC problems later
   SafeStringTaint taint = str->Taint();
   JSString* copy;
   if (str->isLinear()) {
@@ -119,7 +119,7 @@ JSString* js::CopyStringPure(JSContext* cx, JSString* str) {
           cx, str->asLinear().twoByteChars(nogc), len);
     }
     if (copy) {
-      // TaintFox: Here and below, propagate taint when wrapping strings.
+      // Foxhound: Here and below, propagate taint when wrapping strings.
       copy->setTaint(cx, taint);
       return copy;
     }

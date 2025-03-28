@@ -1024,7 +1024,7 @@ void nsINode::GetBaseURIFromJS(nsAString& aURI, CallerType aCallerType,
   }
   CopyUTF8toUTF16(spec, aURI);
 
-  // TaintFox: document.baseURI taint source.
+  // Foxhound: document.baseURI taint source.
   MarkTaintSource(aURI, "document.baseURI");
 }
 

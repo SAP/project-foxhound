@@ -260,7 +260,7 @@ class URLParams final {
   static bool Parse(const nsACString& aInput, bool aShouldDecode,
                     ParamHandler aParamHandler) {
     const char* start = aInput.BeginReading();
-    // Taintfox: keep track of start of the string
+    // Foxhound: keep track of start of the string
     const char* stringStart = start;
     const char* const end = aInput.EndReading();
 

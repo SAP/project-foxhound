@@ -92,7 +92,7 @@ void nsTextFragment::ReleaseText() {
   // Set mState.mIs2b, mState.mInHeap, and mState.mLength = 0 with mAllBits;
   mAllBits = 0;
 
-  // TaintFox: clear all taint.
+  // Foxhound: clear all taint.
   ClearTaint();
 }
 
@@ -129,7 +129,7 @@ nsTextFragment& nsTextFragment::operator=(const nsTextFragment& aOther) {
     mAllBits = aOther.mAllBits;
   }
 
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   AssignTaint(aOther.Taint());
 
   return *this;
@@ -206,7 +206,7 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, uint32_t aLength,
     return false;
   }
 
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   AssignTaint(aTaint);
 
   if (aForce2b && mState.mIs2b && !m2b->IsReadonly()) {
@@ -375,7 +375,7 @@ bool nsTextFragment::Append(const char16_t* aBuffer, uint32_t aLength,
 
   // Should we optimize for aData.Length() == 0?
 
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   AppendTaintAt(GetLength(), aTaint);
 
 

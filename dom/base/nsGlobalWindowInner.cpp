@@ -6243,7 +6243,7 @@ int32_t nsGlobalWindowInner::SetTimeoutOrInterval(JSContext* aCx,
       this, aIsInterval ? DebuggerNotificationType::SetInterval
                         : DebuggerNotificationType::SetTimeout);
 
-  // TaintFox: setInterval and setTimeout taint sinks.
+  // Foxhound: setInterval and setTimeout taint sinks.
   ReportTaintSink(aCx, aHandler, aIsInterval ? "setInterval" : "setTimeout");
 
   if (!GetContextInternal() || !HasJSGlobal()) {

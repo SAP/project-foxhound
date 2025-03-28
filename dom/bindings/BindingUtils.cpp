@@ -2755,7 +2755,7 @@ bool ConvertJSValueToByteString(BindingCallContext& cx, JS::Handle<JS::Value> v,
     return false;
   }
 
-  // Taintfox: Propagate taint
+  // Foxhound: Propagate taint
   result.AssignTaint(JS_GetStringTaint(s));
 
   return true;

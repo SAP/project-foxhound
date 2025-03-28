@@ -147,7 +147,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       if (!str) {
         return false;
       }
-      // Taintfox: taint propagated by NewDependentString, just need
+      // Foxhound: taint propagated by NewDependentString, just need
       // to add the operation here. Do this after adding to the rooted
       // array to avoid GC issues.
       if (str->taint().hasTaint()) {

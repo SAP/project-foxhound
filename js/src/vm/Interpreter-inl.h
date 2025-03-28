@@ -502,7 +502,7 @@ static MOZ_ALWAYS_INLINE bool GetElementOperationWithStackIndex(
   if (lref.isString() && IsDefinitelyIndex(rref, &index)) {
     JSString* str = lref.toString();
     if (index < str->length()) {
-      // TaintFox: code modified to avoid atoms.
+      // Foxhound: code modified to avoid atoms.
       str = NewDependentString(cx, str, index, 1);
       if (!str) {
         return false;

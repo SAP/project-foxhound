@@ -52,7 +52,7 @@ typedef nsresult (*nsWriteTaintedSegmentFun)(nsITaintawareInputStream* aInStream
 native nsWriteTaintedSegmentFun(nsWriteTaintedSegmentFun);
 
 /**
- * TaintFox: nsITaintawareInputStream
+ * Foxhound: nsITaintawareInputStream
  *
  * A taint-aware input stream.
  */

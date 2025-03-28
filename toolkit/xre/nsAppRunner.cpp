@@ -587,7 +587,7 @@ bool BrowserTabsRemoteAutostart() {
     }
   }
 
-  // Taintfox - additional override using a preference
+  // Foxhound - additional override using a preference
   if (Preferences::GetBool("browser.disable_e10s", false)) {
     gBrowserTabsRemoteAutostart = false;
     status = kE10sForceDisabled;

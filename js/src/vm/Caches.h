@@ -423,7 +423,7 @@ class StringToAtomCache {
  public:
   // Don't use the cache for short strings. Hashing them is less expensive.
   // But the length needs to long enough to cover common identifiers in React.
-  // Taintfox: need to increase this due to additional taint pointer
+  // Foxhound: need to increase this due to additional taint pointer
   static constexpr size_t MinStringLength = 39;
 
   JSAtom* lookupInMap(JSString* s) const {

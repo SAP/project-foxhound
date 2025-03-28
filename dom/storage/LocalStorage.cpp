@@ -103,7 +103,7 @@ void LocalStorage::GetItem(const nsAString& aKey, nsAString& aResult,
 
   aRv = mCache->GetItem(this, aKey, aResult);
 
-  // TaintFox: localStorage.getItem source
+  // Foxhound: localStorage.getItem source
   MarkTaintSource(aResult, "localStorage.getItem", aKey);
 }
 
@@ -121,7 +121,7 @@ void LocalStorage::SetItem(const nsAString& aKey, const nsAString& aData,
     return;
   }
 
-  // TaintFox: localStorage.setItem sink.
+  // Foxhound: localStorage.setItem sink.
   ReportTaintSink(data, "localStorage.setItem", aKey);
   ReportTaintSink(aKey, "localStorage.setItem(key)", data);
 

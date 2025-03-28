@@ -280,7 +280,7 @@ nsresult HTMLImageElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* a
                                                  const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None &&
       (aName == nsGkAtoms::src || aName == nsGkAtoms::srcset)) {
-    // Taintfox: img.src / img.srcset sink
+    // Foxhound: img.src / img.srcset sink
     const char* sink = (aName == nsGkAtoms::src) ? "img.src" : "img.srcset";
     ReportTaintSink(aValue, sink, this);
   }

@@ -180,7 +180,7 @@ struct nsPipeReadState {
   // completes, this flag indicate the drain should then be performed.
   bool mNeedDrain MOZ_GUARDED_VAR;
 
-  // TaintFox: Required for accessing the associated taint information.
+  // Foxhound: Required for accessing the associated taint information.
   int32_t mBytesRead MOZ_GUARDED_VAR;
 };
 
@@ -435,7 +435,7 @@ class nsPipe final {
   // |mStatus| is protected by |mReentrantMonitor|.
   nsresult mStatus MOZ_GUARDED_BY(mReentrantMonitor);
 
-  // TaintFox: taint information for all data in this pipe.
+  // Foxhound: taint information for all data in this pipe.
   // It would be cleaner to obtain the taint information through the
   // nsPipeOutputStream. However, besides the additional overhead,
   // providing all taint information at once is perfectly fine since
@@ -536,7 +536,7 @@ class MOZ_STACK_CLASS AutoReadSegment final {
   uint32_t mLength;
   uint32_t mOffset;
 
-  // TaintFox: taint information for the current segment
+  // Foxhound: taint information for the current segment
   SafeStringTaint mTaint;
 };
 
@@ -658,7 +658,7 @@ nsPipe::GetReadSegment(nsPipeReadState& aReadState, const char*& aSegment,
   aLength = aReadState.mReadLimit - aReadState.mReadCursor;
   MOZ_DIAGNOSTIC_ASSERT(aLength <= aReadState.mAvailable);
 
-  // Taintfox
+  // Foxhound: Propagate taint
   if (aTaint)
     *aTaint = mTaint.safeSubTaint(aReadState.mBytesRead, aReadState.mBytesRead + aLength);
 
@@ -693,7 +693,7 @@ void nsPipe::AdvanceReadCursor(nsPipeReadState& aReadState,
     LOG(("III advancing read cursor by %u\n", aBytesRead));
     MOZ_DIAGNOSTIC_ASSERT(aBytesRead <= mBuffer.GetSegmentSize());
 
-   // TaintFox: update total read count for taint access
+   // Foxhound: update total read count for taint access
     aReadState.mBytesRead += aBytesRead;
 
     aReadState.mReadCursor += aBytesRead;
@@ -1611,7 +1611,7 @@ nsresult nsPipeInputStream::Status() const {
 
 nsPipeInputStream::~nsPipeInputStream() { Close(); }
 
-// TaintFox
+// Foxhound
 NS_IMETHODIMP
 nsPipeInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
                                        void* aClosure,
@@ -1621,7 +1621,7 @@ nsPipeInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
   return ReadSegmentsInternal(nullptr, aWriter, aClosure, aCount, aReadCount);
 }
 
-// TaintFox
+// Foxhound
 NS_IMETHODIMP
 nsPipeInputStream::TaintedRead(char* aToBuf, uint32_t aBufLen, StringTaint* aTaint, uint32_t* aReadCount)
 {

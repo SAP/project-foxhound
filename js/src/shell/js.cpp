@@ -1758,7 +1758,7 @@ PrintTaintedString(JSContext* cx, RootedValue *result) {
 
   if (!result.isUndefined() && gOutFile->isOpen()) {
     // Print.
-    // Taintfox
+    // Foxhound
     if (result.isString() && result.toString()->isTainted()) {
       PrintTaintedString(cx, &result);
     } else {

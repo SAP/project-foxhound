@@ -67,7 +67,7 @@ struct FakeString {
 
   void Truncate() {
     InitData(string_type::char_traits::sEmptyBuffer, 0);
-    // TaintFox: clear previous taint information.
+    // Foxhound: clear previous taint information.
     mTaint.clear();
   }
 
@@ -77,10 +77,10 @@ struct FakeString {
     mDataFlags |= DataFlags::VOIDED;
   }
 
-  // TODO: Taintfox: is this still needed?
+  // TODO: Foxhound: is this still needed?
   const nsString::char_type* Data() const { return mData; }
 
-  // TaintFox: Helper function for Setting the Taint information
+  // Foxhound: Helper function for Setting the Taint information
   void AssignTaint(const StringTaint& aTaint)
   {
     mTaint = aTaint;
@@ -127,7 +127,7 @@ struct FakeString {
       AssignFromStringBuffer(buf.forget(), aLength);
     }
 
-    // TaintFox: this method should only be called on empty strings it seems.
+    // Foxhound: this method should only be called on empty strings it seems.
     MOZ_ASSERT(!mTaint.hasTaint());
 
     MOZ_ASSERT(mDataInitialized);

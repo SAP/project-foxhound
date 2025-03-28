@@ -31,7 +31,7 @@ void nsTDependentSubstring<T>::Rebind(const substring_type& str,
 
   DataFlags newDataFlags = DataFlags(0);
   this->SetData(newData, newLength, newDataFlags);
-  // TaintFox: propagate taint
+  // Foxhound: propagate taint
   this->AssignTaint(taint.safeSubTaint(startPos, startPos + newLength));
 }
 

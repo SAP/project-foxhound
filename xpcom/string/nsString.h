@@ -54,7 +54,7 @@ class NS_LossyConvertUTF16toASCII : public nsAutoCString {
 
   explicit NS_LossyConvertUTF16toASCII(const nsAString& aString) {
     LossyAppendUTF16toASCII(aString, *this);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     this->AssignTaint(aString.Taint());
   }
 
@@ -75,7 +75,7 @@ class NS_ConvertASCIItoUTF16 : public nsAutoString {
 
   explicit NS_ConvertASCIItoUTF16(const nsACString& aCString) {
     AppendASCIItoUTF16(aCString, *this);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     this->AssignTaint(aCString.Taint());
   }
 
@@ -104,7 +104,7 @@ class NS_ConvertUTF16toUTF8 : public nsAutoCString {
 
   explicit NS_ConvertUTF16toUTF8(const nsAString& aString) {
     AppendUTF16toUTF8(aString, *this);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     this->AssignTaint(aString.Taint());
   }
 
@@ -129,7 +129,7 @@ class NS_ConvertUTF8toUTF16 : public nsAutoString {
 
   explicit NS_ConvertUTF8toUTF16(const nsACString& aCString) {
     AppendUTF8toUTF16(aCString, *this);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     this->AssignTaint(aCString.Taint());
   }
 

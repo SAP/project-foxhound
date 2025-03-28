@@ -2242,7 +2242,7 @@ void CreateDependentString::generate(MacroAssembler& masm,
 
   masm.bind(&nonEmpty);
 
-  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  // Foxhound: if we detect a tainted string argument we bail out to the interpreter.
   masm.branchPtr(Assembler::NotEqual,
                  Address(base, JSString::offsetOfTaint()),
                  ImmPtr(nullptr),
@@ -2302,7 +2302,7 @@ void CreateDependentString::generate(MacroAssembler& masm,
 
     masm.store32(temp1_, Address(string_, JSString::offsetOfLength()));
 
-    // TaintFox: initialize taint information.
+    // Foxhound: initialize taint information.
     masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
 
     masm.push(string_);
@@ -2337,7 +2337,7 @@ void CreateDependentString::generate(MacroAssembler& masm,
 
     masm.store32(temp1_, Address(string_, JSString::offsetOfLength()));
 
-    // TaintFox: initialize taint information.
+    // Foxhound: initialize taint information.
     masm.storePtr(ImmPtr(nullptr), Address(string_, JSString::offsetOfTaint()));
 
     masm.loadNonInlineStringChars(base, temp1_, encoding_);
@@ -12866,7 +12866,7 @@ static void AllocateThinOrFatInlineString(MacroAssembler& masm, Register output,
   // Store length.
   masm.store32(length, Address(output, JSString::offsetOfLength()));
 
-  // TaintFox: initialize taint information.
+  // Foxhound: initialize taint information.
   masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
 }
 
@@ -12972,7 +12972,7 @@ void CodeGenerator::visitSubstr(LSubstr* lir) {
   // Substring from 0..|str.length|, return str.
   masm.bind(&nonZero);
 
-  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  // Foxhound: if we detect a tainted string argument we bail out to the interpreter.
   masm.branchPtr(Assembler::NotEqual,
                  Address(string, JSString::offsetOfTaint()),
                  ImmPtr(nullptr),
@@ -13102,7 +13102,7 @@ void CodeGenerator::visitSubstr(LSubstr* lir) {
 
     masm.store32(temp2, Address(output, JSString::offsetOfFlags()));
     masm.store32(length, Address(output, JSString::offsetOfLength()));
-    // TaintFox: initialize taint information.
+    // Foxhound: initialize taint information.
     masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
 
     auto initializeInlineString = [&](CharEncoding encoding) {
@@ -13137,7 +13137,7 @@ void CodeGenerator::visitSubstr(LSubstr* lir) {
     masm.bind(&notInline);
     masm.newGCString(output, temp0, gen->initialStringHeap(), slowPath);
     masm.store32(length, Address(output, JSString::offsetOfLength()));
-    // TaintFox: initialize taint information.
+    // Foxhound: initialize taint information.
     masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
     masm.storeDependentStringBase(string, output);
 
@@ -13207,7 +13207,7 @@ JitCode* JitZone::generateStringConcatStub(JSContext* cx) {
 
   masm.add32(temp1, temp2);
 
-  // TaintFox: Bail out to the interpreter if one of the arguments is tainted.
+  // Foxhound: Bail out to the interpreter if one of the arguments is tainted.
   // temp1 and temp3 are unused at this point, make sure they still are if this
   // code ever changes.
   masm.loadPtr(Address(lhs, JSString::offsetOfTaint()), temp1);
@@ -13255,7 +13255,7 @@ JitCode* JitZone::generateStringConcatStub(JSContext* cx) {
   masm.store32(temp1, Address(output, JSString::offsetOfFlags()));
   masm.store32(temp2, Address(output, JSString::offsetOfLength()));
 
-  // TaintFox: initialize taint information.
+  // Foxhound: initialize taint information.
   masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
   
   // Store left and right nodes.
@@ -13435,7 +13435,7 @@ void CodeGenerator::visitLinearizeString(LLinearizeString* lir) {
   auto* ool = oolCallVM<Fn, jit::LinearizeForCharAccess>(
       lir, ArgList(str), StoreRegisterTo(output));
 
-  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  // Foxhound: if we detect a tainted string argument we bail out to the interpreter.
   masm.branchPtr(Assembler::NotEqual,
                  Address(str, JSString::offsetOfTaint()),
                  ImmPtr(nullptr),
@@ -13501,7 +13501,7 @@ void CodeGenerator::visitCharCodeAt(LCharCodeAt* lir) {
   if (lir->index()->isBogus()) {
     auto* ool = oolCallVM<Fn, jit::CharCodeAt>(lir, ArgList(str, Imm32(0)),
                                                StoreRegisterTo(output));
-    // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+    // Foxhound: if we detect a tainted string argument we bail out to the interpreter.
     masm.branchPtr(Assembler::NotEqual,
                   Address(str, JSString::offsetOfTaint()),
                   ImmPtr(nullptr),
@@ -13514,7 +13514,7 @@ void CodeGenerator::visitCharCodeAt(LCharCodeAt* lir) {
 
     auto* ool = oolCallVM<Fn, jit::CharCodeAt>(lir, ArgList(str, index),
                                                StoreRegisterTo(output));
-    // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+    // Foxhound: if we detect a tainted string argument we bail out to the interpreter.
     masm.branchPtr(Assembler::NotEqual,
                   Address(str, JSString::offsetOfTaint()),
                   ImmPtr(nullptr),
@@ -13718,7 +13718,7 @@ void CodeGenerator::visitFromCodePoint(LFromCodePoint* lir) {
       masm.newGCString(output, temp0, gen->initialStringHeap(), ool->entry());
       masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
 
-      // TaintFox: initialize taint information.
+      // Foxhound: initialize taint information.
       masm.storePtr(ImmPtr(nullptr), Address(output, JSString::offsetOfTaint()));
     }
 
@@ -14190,7 +14190,7 @@ void CodeGenerator::visitStringToLowerCase(LStringToLowerCase* lir) {
   masm.and32(linearLatin1Bits, flags);
   masm.branch32(Assembler::NotEqual, flags, linearLatin1Bits, ool->entry());
 
-  // TaintFox: if we detect a tainted string argument we bail out to the interpreter.
+  // Foxhound: if we detect a tainted string argument we bail out to the interpreter.
   masm.branchPtr(Assembler::NotEqual,
                  Address(string, JSString::offsetOfTaint()),
                  ImmPtr(nullptr),

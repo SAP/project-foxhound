@@ -111,7 +111,7 @@ enum EscapeMask {
   esc_ExtHandler = 1u << 17,  /* For escaping external protocol handler urls.
                                * Escapes everything except:
                                * a-z, 0-9 and !#$&'()*+,-./:;=?@[]_~ */
-  esc_Never = 1u << 18        /* Taintfox: never do any escaping */
+  esc_Never = 1u << 18        /* Foxhound: never do any escaping */
 };
 
 /**

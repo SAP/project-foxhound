@@ -1886,7 +1886,7 @@ class CCGraphBuilder final : public nsCycleCollectionTraversalCallback,
   UniquePtr<NodePool::Enumerator> mCurrNode;
   uint32_t mNoteChildCount;
 
-  // Taintfox: this was 491, reducing to keep CCGraphBuilder size below 4096
+  // Foxhound: this was 491, reducing to keep CCGraphBuilder size below 4096
   struct PtrInfoCache : public MruCache<void*, PtrInfo*, PtrInfoCache, 487> {
     static HashNumber Hash(const void* aKey) { return HashGeneric(aKey); }
     static bool Match(const void* aKey, const PtrInfo* aVal) {

@@ -107,7 +107,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
                 "Shouldn't overflow here or in SetCapacity");
 
   if (XPCStringConvert::MaybeAssignUCStringChars(s, len, dest)) {
-    // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+    // Foxhound: copy taint when converting between JavaScript and Gecko strings.
     dest.AssignTaint(JS_GetStringTaint(s));
     return true;
   }
@@ -120,7 +120,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
     return false;
   }
 
-  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  // Foxhound: copy taint when converting between JavaScript and Gecko strings.
   dest.AssignTaint(JS_GetStringTaint(s));
 
   return JS::CopyStringChars(cx, dest.BeginWriting(), s, len);
@@ -134,7 +134,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   CheckedInt<size_t> bufLen(JS::GetStringLength(s));
 
   if (XPCStringConvert::MaybeAssignUTF8StringChars(s, bufLen.value(), dest)) {
-    // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+    // Foxhound: copy taint when converting between JavaScript and Gecko strings.
     dest.AssignTaint(JS_GetStringTaint(s));
     return true;
   }
@@ -176,7 +176,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   MOZ_ASSERT(read == JS::GetStringLength(s));
   handle.Finish(written, kAllowShrinking);
 
-  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  // Foxhound: copy taint when converting between JavaScript and Gecko strings.
   dest.AssignTaint(JS_GetStringTaint(s));
 
   return true;
@@ -189,7 +189,7 @@ inline void AssignJSLinearString(nsAString& dest, JSLinearString* s) {
   dest.SetLength(len);
   JS::CopyLinearStringChars(dest.BeginWriting(), s, len);
 
-  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  // Foxhound: copy taint when converting between JavaScript and Gecko strings.
   dest.AssignTaint(JS_GetStringTaint(s));
 }
 
@@ -200,7 +200,7 @@ inline void AssignJSLinearString(nsACString& dest, JSLinearString* s) {
   dest.SetLength(len);
   JS::LossyCopyLinearStringChars(dest.BeginWriting(), s, len);
 
-  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  // Foxhound: copy taint when converting between JavaScript and Gecko strings.
   dest.AssignTaint(JS_GetStringTaint(s));
 }
 

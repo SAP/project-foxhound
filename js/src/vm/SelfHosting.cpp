@@ -1781,7 +1781,7 @@ static bool intrinsic_ConstructorForTypedArray(JSContext* cx, unsigned argc,
   return true;
 }
 
-// TaintFox: Add taint operation to JSString.
+// Foxhound: Add taint operation to JSString.
 static bool
 taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
 {
@@ -1926,7 +1926,7 @@ taint_addTaintOperation_native(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-// TaintFox: Returns a copy of the given string.
+// Foxhound: Returns a copy of the given string.
 static bool
 taint_copyString(JSContext* cx, unsigned argc, Value* vp)
 {

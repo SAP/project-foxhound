@@ -234,7 +234,7 @@ namespace mozilla::dom {
 
 // Note that mozjemalloc uses a 16 byte quantum, so 64, 80 and 128 are
 // bucket sizes.
-// Taintfox - originally ASSERT_NODE_SIZE(Element, 128, 80);
+// Foxhound - originally ASSERT_NODE_SIZE(Element, 128, 80);
 // We needed to add additional 8 bytes for taint operations
 ASSERT_NODE_SIZE(Element, 136, 80);
 ASSERT_NODE_SIZE(HTMLDivElement, 136, 80);
@@ -243,7 +243,7 @@ ASSERT_NODE_SIZE(HTMLParagraphElement, 136, 80);
 ASSERT_NODE_SIZE(HTMLPreElement, 136, 80);
 ASSERT_NODE_SIZE(HTMLSpanElement, 136, 80);
 ASSERT_NODE_SIZE(HTMLTableCellElement, 136, 80);
-// TaintFox:
+// Foxhound:
 // Original: ASSERT_NODE_SIZE(Text, 120, 64);
 // Text is now a taintable string, so contains an
 // additional pointer (ie 120 + 8 or 64 + 4 bytes)
@@ -2436,7 +2436,7 @@ void Element::SetEventHandler(nsAtom* aEventName, const nsAString& aValue,
     return;
   }
 
-  // TaintFox: Event handler sink.
+  // Foxhound: Event handler sink.
   if (aValue.isTainted()) {
     nsAutoString eventName;
     aEventName->ToString(eventName);
@@ -2579,7 +2579,7 @@ nsresult Element::SetAttr(int32_t aNamespaceID, nsAtom* aName, nsAtom* aPrefix,
   nsAttrValue oldValue;
   bool oldValueSet;
 
-  // Taintfox: the script blocker below will prevent us from executing taint notifications!
+  // Foxhound: the script blocker below will prevent us from executing taint notifications!
   // So add our own callback to check the taint, even if value is not changing
   CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 
@@ -2987,7 +2987,7 @@ bool Element::GetAttr(const nsAtom* aName, nsAString& aResult, bool doTainting) 
     return false;
   }
   val->ToString(aResult);
-  // Taintfox: getAttribute source
+  // Foxhound: getAttribute source
   if (doTainting && aResult.Length() > 0) {
     SetTaintSourceGetAttr(aName, aResult);
   }
@@ -3002,7 +3002,7 @@ bool Element::GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
     return false;
   }
   val->ToString(aResult);
-  // Taintfox: getAttribute source
+  // Foxhound: getAttribute source
   if (doTainting && aResult.Length() > 0) {
     SetTaintSourceGetAttr(aName, aResult);
   }
@@ -4031,7 +4031,7 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
                            nsIPrincipal* aSubjectPrincipal,
                            ErrorResult& aError) {
 
-  // TaintFox: innerHTML sink - don't set for template elements
+  // Foxhound: innerHTML sink - don't set for template elements
   if (!IsTemplateElement()) {
     ReportTaintSink(aInnerHTML, "innerHTML", this);
   }
@@ -4058,7 +4058,7 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
     return;
   }
 
-  // TaintFox: outerHTML sink.
+  // Foxhound: outerHTML sink.
   ReportTaintSink(aOuterHTML, "outerHTML", this);
 
   if (OwnerDoc()->IsHTMLDocument()) {
@@ -4108,7 +4108,7 @@ enum nsAdjacentPosition { eBeforeBegin, eAfterBegin, eBeforeEnd, eAfterEnd };
 
 void Element::InsertAdjacentHTML(const nsAString& aPosition,
                                  const nsAString& aText, ErrorResult& aError) {
-  // TaintFox: insertAdjacentHTML sink
+  // Foxhound: insertAdjacentHTML sink
   ReportTaintSink(aText, "insertAdjacentHTML", this);
 
   nsAdjacentPosition position;
@@ -4239,7 +4239,7 @@ void Element::InsertAdjacentText(const nsAString& aWhere,
                                  const nsAString& aData, ErrorResult& aError) {
   RefPtr<nsTextNode> textNode = OwnerDoc()->CreateTextNode(aData);
 
-  // TaintFox: insertAdjacentHTML sink
+  // Foxhound: insertAdjacentHTML sink
   ReportTaintSink(aData, "insertAdjacentText", this);
 
   InsertAdjacent(aWhere, textNode, aError);

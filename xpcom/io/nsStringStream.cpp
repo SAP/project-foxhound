@@ -372,7 +372,7 @@ nsStringInputStream::IsNonBlocking(bool* aNonBlocking) {
   return NS_OK;
 }
 
-// TaintFox
+// Foxhound
 NS_IMETHODIMP
 nsStringInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
                                        void* aClosure,
@@ -382,7 +382,7 @@ nsStringInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
   return ReadSegmentsInternal(nullptr, aWriter, aClosure, aCount, aReadCount);
 }
 
-// TaintFox
+// Foxhound
 NS_IMETHODIMP
 nsStringInputStream::TaintedRead(char* aToBuf, uint32_t aBufLen, StringTaint* aTaint, uint32_t* aReadCount)
 {

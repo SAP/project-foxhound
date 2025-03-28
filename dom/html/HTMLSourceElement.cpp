@@ -77,7 +77,7 @@ nsresult HTMLSourceElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* 
                                                  const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None &&
       (aName == nsGkAtoms::src || aName == nsGkAtoms::srcset)) {
-    // Taintfox: img.src / img.srcset sink
+    // Foxhound: img.src / img.srcset sink
     const char* sink = (aName == nsGkAtoms::src) ? "source.src" : "source.srcset";
     ReportTaintSink(aValue, sink, this);
   }

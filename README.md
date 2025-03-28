@@ -114,8 +114,8 @@ The JavaScript public API (jsapi.h) has been extended to support access to taint
 `JS_ReportTaintSink` which takes care of reporting a flow of tainted data into a predefined sink.
 In this case a message will be written to stdout and a custom JavaScript Event will be triggered that can then be processed by a Firefox extension.
 
-All code related to taint tracking has been marked with a `// TaintFox` comment, making it easy to search for modifications in the source code.
-Finding the `location.hash` taint source becomes as easy as `git grep -n TaintFox | grep location.hash`.
+All code related to taint tracking has been marked with a `// Foxhound` comment, making it easy to search for modifications in the source code.
+Finding the `location.hash` taint source becomes as easy as `git grep -n Foxhound | grep location.hash`.
 
 Taint information is available in JavaScript via the `.taint` property of string instances:
 

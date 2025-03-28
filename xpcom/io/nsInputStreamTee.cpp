@@ -31,7 +31,7 @@ using namespace mozilla;
 static LazyLogModule sTeeLog("nsInputStreamTee");
 #define LOG(args) MOZ_LOG(sTeeLog, mozilla::LogLevel::Debug, args)
 
-// TaintFox: Tee input streams need to be taint aware since the underlying input
+// Foxhound: Tee input streams need to be taint aware since the underlying input
 // stream might contain taint information.
 class nsInputStreamTee final : public nsIInputStreamTee
                              , public nsITaintawareInputStream
@@ -157,7 +157,7 @@ void nsInputStreamTee::InvalidateSink() {
 }
 
 nsresult nsInputStreamTee::TeeSegment(const char* aBuf, const StringTaint& aTaint, uint32_t aCount) {
-  // TaintFox: TODO propagate taint here
+  // Foxhound: TODO propagate taint here
   if (!mSink) {
     return NS_OK;  // nothing to do
   }
@@ -237,7 +237,7 @@ bool nsInputStreamTee::SourceIsTaintAware() const
 
 //NS_IMPL_ISUPPORTS(nsInputStreamTee, nsIInputStreamTee, nsIInputStream)
 
-// TaintFox: Changed nsISupports implementation to support conditional QI to
+// Foxhound: Changed nsISupports implementation to support conditional QI to
 // nsITaintawareInputStream only if the source stream is taint aware.
 NS_IMPL_ADDREF(nsInputStreamTee)
 NS_IMPL_RELEASE(nsInputStreamTee)
@@ -378,7 +378,7 @@ nsInputStreamTee::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
   return source->TaintedReadSegments(WriteTaintedSegmentFun, this, aCount, aBytesRead);
 }
 
-// TaintFox
+// Foxhound
 NS_IMETHODIMP
 nsInputStreamTee::TaintedRead(char* aBuf, uint32_t aCount, StringTaint* aTaint, uint32_t* aBytesRead)
 {

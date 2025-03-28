@@ -64,7 +64,7 @@ class MOZ_STACK_CLASS JSONTokenizer {
   CharPtr current;
   const CharPtr begin, end;
 
-  // TaintFox: Copy of the taint information associated with the input string. Can be empty
+  // Foxhound: Copy of the taint information associated with the input string. Can be empty
   // since this class may have been constructed from raw character ranges that were never
   // associated with a string instance.
   const SafeStringTaint mTaint;
