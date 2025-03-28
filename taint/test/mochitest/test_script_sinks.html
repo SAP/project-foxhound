@@ -19,10 +19,13 @@
       
       SimpleTest.waitForExplicitFinish();
       addEventListener("__taintreport", (report) => {
-          SimpleTest.is(report.detail.str, "tainted=hello", "Check sink string content");
-
+        if(i == 0) {
+          SimpleTest.is(report.detail.str, "url", "Check sink string content");
+        } else {
+          SimpleTest.is(report.detail.str, "console.log();", "Check sink string content");
+        }
           let flow = report.detail.str.taint[0].flow;
-          SimpleTest.is(flow[2].operation, sink_names[i]);
+          SimpleTest.is(flow[2].operation, sink_names[i], `${sink_names[i]} sink test`);
 
           i += 1;
           if (i >= sink_names.length) {
@@ -30,18 +33,24 @@
           }
       }, false);
 
+      function setScriptProperty(text, f) {
+        let script = document.createElement("script");
+        script.id = "tempscript";
+        f(script, text);
+        document.body.appendChild(script);
+        document.body.removeChild(script);
+      }
+
       function startTest() {
-          let tainted = String.tainted("tainted=hello");
-          let script = document.getElementById("emptyScript");
-          script.src = tainted;
-          script.text = tainted;
-          script.innerHTML = tainted;
-          script.textContent = tainted;
+          let tainted = String.tainted("console.log();");
+          setScriptProperty(String.tainted("url"), (s,t) => s.src = t);
+          setScriptProperty(tainted, (s,t) => s.text = t);
+          setScriptProperty(tainted, (s,t) => s.innerHTML = t);
+          setScriptProperty(tainted, (s,t) => s.textContent = t);
       }
       
     </script>
-    <script id="emptyScript">
-    </script>
+
   </head>
 
   <body onload="startTest();">
