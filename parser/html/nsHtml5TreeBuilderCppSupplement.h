@@ -906,7 +906,7 @@ void nsHtml5TreeBuilder::appendChildrenToNewParent(
 }
 
 void nsHtml5TreeBuilder::insertFosterParentedCharacters(
-    char16_t* aBuffer, int32_t aStart, int32_t aLength,
+    char16_t* aBuffer, const StringTaint& aTaint, int32_t aStart, int32_t aLength,
     nsIContentHandle* aTable, nsIContentHandle* aStackParent) {
   MOZ_ASSERT(aBuffer, "Null buffer");
   MOZ_ASSERT(aTable, "Null table");
@@ -917,7 +917,7 @@ void nsHtml5TreeBuilder::insertFosterParentedCharacters(
     nsresult rv = nsHtml5TreeOperation::FosterParentText(
         static_cast<nsIContent*>(aStackParent),
         aBuffer,  // XXX aStart always ignored???
-        aLength, static_cast<nsIContent*>(aTable), mBuilder);
+        aLength, aTaint, static_cast<nsIContent*>(aTable), mBuilder);
     if (NS_FAILED(rv)) {
       MarkAsBrokenAndRequestSuspensionWithBuilder(rv);
     }
@@ -941,7 +941,7 @@ void nsHtml5TreeBuilder::insertFosterParentedCharacters(
     return;
   }
   opFosterParentText operation(aStackParent, bufferCopy.release(), aTable,
-                               aLength);
+                               aLength, aTaint);
   treeOp->Init(mozilla::AsVariant(operation));
 }
 
@@ -1021,7 +1021,7 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
 }
 
 void nsHtml5TreeBuilder::appendComment(nsIContentHandle* aParent,
-                                       char16_t* aBuffer, int32_t aStart,
+					char16_t* aBuffer, const StringTaint& aTaint, int32_t aStart,
                                        int32_t aLength) {
   MOZ_ASSERT(aBuffer, "Null buffer");
   MOZ_ASSERT(aParent, "Null parent");
@@ -1031,7 +1031,7 @@ void nsHtml5TreeBuilder::appendComment(nsIContentHandle* aParent,
     nsresult rv = nsHtml5TreeOperation::AppendComment(
         static_cast<nsIContent*>(aParent),
         aBuffer,  // XXX aStart always ignored???
-        aLength, mBuilder);
+         aLength, aTaint, mBuilder);
     if (NS_FAILED(rv)) {
       MarkAsBrokenAndRequestSuspensionWithBuilder(rv);
     }
@@ -1054,11 +1054,12 @@ void nsHtml5TreeBuilder::appendComment(nsIContentHandle* aParent,
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  opAppendComment operation(aParent, bufferCopy.release(), aLength);
+  opAppendComment operation(aParent, bufferCopy.release(), aLength, aTaint);
   treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::appendCommentToDocument(char16_t* aBuffer,
+						 const StringTaint& aTaint,
                                                  int32_t aStart,
                                                  int32_t aLength) {
   MOZ_ASSERT(aBuffer, "Null buffer");
@@ -1067,7 +1068,7 @@ void nsHtml5TreeBuilder::appendCommentToDocument(char16_t* aBuffer,
   if (mBuilder) {
     nsresult rv = nsHtml5TreeOperation::AppendCommentToDocument(
         aBuffer,  // XXX aStart always ignored???
-        aLength, mBuilder);
+        aLength, aTaint, mBuilder);
     if (NS_FAILED(rv)) {
       MarkAsBrokenAndRequestSuspensionWithBuilder(rv);
     }
@@ -1090,7 +1091,7 @@ void nsHtml5TreeBuilder::appendCommentToDocument(char16_t* aBuffer,
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  opAppendCommentToDocument data(bufferCopy.release(), aLength);
+  opAppendCommentToDocument data(bufferCopy.release(), aLength, aTaint);
   treeOp->Init(mozilla::AsVariant(data));
 }
 
