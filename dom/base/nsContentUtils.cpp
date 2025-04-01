@@ -9599,9 +9599,15 @@ static void AppendEncodedAttributeValue(const nsAttrValue& aValue,
                                         StringBuilder& aBuilder) {
   if (nsAtom* atom = aValue.GetStoredAtom()) {
     nsDependentAtomString atomStr(atom);
+    atomStr.AssignTaint(aValue.GetAtomTaint());
     auto space = ExtraSpaceNeededForAttrEncoding(atomStr);
     if (space.isValid() && !space.value()) {
-      aBuilder.Append(atom);
+      // Foxhound: Append as string instead of as atom
+      if(atomStr.isTainted()) {
+        aBuilder.Append(nsString(atomStr));
+      } else {
+        aBuilder.Append(atom);
+      }
     } else {
       aBuilder.AppendWithAttrEncode(nsString(atomStr),
                                     space + atomStr.Length());
