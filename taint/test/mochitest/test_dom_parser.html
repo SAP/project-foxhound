@@ -42,6 +42,11 @@
             doc1 = testDomParser("<div attr='" + String.tainted("value") + "'>" + tainted_str + "</div>");
             check_tainted(doc1.body.firstChild.getAttribute("attr"));
 
+            // SVG
+            doc1 = testDomParser("<div><svg><title id='" + String.tainted("taintid") + "'>"+ tainted_str + "</title></svg></div>");
+            let title_tag = doc1.body.firstChild.firstChild.firstChild;
+            check_tainted(title_tag.getAttribute("id"), `Title tag ${title_tag.outerHTML} has tainted id`);
+
             const parser = new DOMParser();
 
             const tainted_comment_str = "<div></div><!-- " + tainted_str + " -->";
