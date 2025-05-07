@@ -1532,6 +1532,10 @@ nsAtom* nsAttrValue::GetStoredAtom() const {
   return nullptr;
 }
 
+StringTaint nsAttrValue::GetAtomTaint() const {
+  return mTaint;
+}
+
 mozilla::StringBuffer* nsAttrValue::GetStoredStringBuffer() const {
   if (BaseType() == eStringBase) {
     return static_cast<mozilla::StringBuffer*>(GetPtr());

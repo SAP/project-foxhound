@@ -42,8 +42,22 @@
             doc1 = testDomParser("<div attr='" + String.tainted("value") + "'>" + tainted_str + "</div>");
             check_tainted(doc1.body.firstChild.getAttribute("attr"));
 
-            const tainted_xml_str = "<warning>" + tainted_str + "</warning>";
+            // SVG
+            doc1 = testDomParser("<div><svg><title id='" + String.tainted("taintid") + "'>"+ tainted_str + "</title></svg></div>");
+            let title_tag = doc1.body.firstChild.firstChild.firstChild;
+            check_tainted(title_tag.getAttribute("id"), `Title tag ${title_tag.outerHTML} has tainted id`);
+
             const parser = new DOMParser();
+
+            const tainted_comment_str = "<div></div><!-- " + tainted_str + " -->";
+            const doc_comment = parser.parseFromString(tainted_comment_str, "text/html");
+            check_tainted(doc_comment.body.childNodes[1].textContent);
+
+            const tainted_foster_str = "<table>" + tainted_str;
+            const doc_fostered = parser.parseFromString(tainted_foster_str, "text/html");
+            check_tainted(doc_fostered.body.childNodes[0].textContent);
+
+            const tainted_xml_str = "<warning>" + tainted_str + "</warning>";
             const doc2 = parser.parseFromString(tainted_xml_str, "application/xml");
 
             // This test is currently failing as the XML parser is not taint-aware

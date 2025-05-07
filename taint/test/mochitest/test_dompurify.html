@@ -1,0 +1,63 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Taint propagation through DOMPurify</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="purify.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+        function todo_tainted(str) {
+            todo(str?.taint?.length > 0, "Check tainted: " + str);
+        }
+
+        function check_tainted(str) {
+            ok(str?.taint?.length > 0, "Check tainted: " + str);
+        }
+
+        function check_untainted(str) {
+            ok(str?.taint?.length == 0, "Check untainted: " + str);
+        }
+
+        function check_range_poisition(str, range_index, begin, end, content = null) {
+            if(content != null) {
+                let sub = str.substring(begin, end);
+                ok(sub === content, `Check that '${sub}', i.e., str.substring(${begin}, ${end}) equals the expected value`);
+            }
+            ok(str.taint.length >= range_index+1, `Taint range at index ${range_index} exists`);
+            let range = str.taint[range_index];
+            ok(begin == range.begin, `Start index check ${range.begin}`);
+            ok(end == range.end, `End index check ${range.end}`);
+        }
+
+        add_task(async function test_svg_content() {
+            let str = String.tainted(`<div><svg><title>title</title><desc>description</desc></svg></div>`);
+            let sanitized = DOMPurify.sanitize(str);
+            check_tainted(sanitized);
+            check_range_poisition(sanitized, 0, 17, 22);
+            check_range_poisition(sanitized, 1, 36, 47);
+        });
+        add_task(async function test_svg_attribute() {
+            let str = String.tainted(`<div><svg><title id="foo">title</title></svg></div>`);
+            let sanitized = DOMPurify.sanitize(str);
+            check_tainted(sanitized);
+            check_range_poisition(sanitized, 0, 21, 24);
+            check_range_poisition(sanitized, 1, 26, 31);
+
+        });
+        add_task(async function test_mathml_with_tainted_attribute() {
+
+        let str = String.tainted(`<math display="block"><mroot><msqrt><mfrac><mn>1</mn><mn>2</mn></mfrac></msqrt><mn>3</mn></mroot></math>`);
+        let sanitized = DOMPurify.sanitize(str);
+        check_tainted(sanitized);
+        check_range_poisition(sanitized, 0, 15, 20, "block");
+        check_range_poisition(sanitized, 1, 47, 48, "1");
+        check_range_poisition(sanitized, 2, 57, 58, "2");
+        check_range_poisition(sanitized, 3, 83, 84, "3");
+        });
+    </script>
+  </head>
+  <body>
+  </body>
+</html>
