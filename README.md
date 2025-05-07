@@ -6,7 +6,13 @@ This is the repository for project "Foxhound", a Firefox fork capable of trackin
 
 Taint tracking makes it possible to automatically detect client-side cross-site-scripting flaws in websites by marking certain attacker-controlled strings (e.g. `location.hash`) as tainted and notifying the user when tainted data reaches a set of predefined sinks (e.g. `eval()`, `.innerHTML`, ...).
 
-Foxhound has been successfully used for a wide range of academic studies (e.g., the [publications](https://github.com/SAP/project-foxhound/wiki/Publications) listed in the Wiki) as well as for security testing in industrial use cases.
+:trophy: Foxhound has been rated the **best tool** for [Dynamic Security Analysis of JavaScript](https://www.dais.unive.it/~calzavara/papers/www25.pdf) by independent researchers! In their study, Foxhound **outperformed 18 other tools** in all of the categories considered, namely *compatibility* (95%), *transparency* (97%), *coverage* (94%) and *performance* (1.4x). To quote the paper:
+
+>
+> The only effective solution given the current state of the art is Project Foxhound.
+>
+
+In addition, Foxhound has been successfully used for a wide range of academic studies (e.g., the [publications](https://github.com/SAP/project-foxhound/wiki/Publications) listed in the Wiki) as well as for security testing in industrial use cases.
 
 ## Usage
 
