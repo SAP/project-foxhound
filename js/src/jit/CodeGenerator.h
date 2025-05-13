@@ -211,7 +211,10 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
 #ifdef ENABLE_WASM_JSPI
   void callWasmUpdateSuspenderState(wasm::UpdateSuspenderStateAction kind,
-                                    Register suspender);
+                                    Register suspender, Register temp);
+  // Stack switching trampoline requires two arguments (suspender and data) to
+  // be passed. The function prepares stack and registers according Wasm ABI.
+  void prepareWasmStackSwitchTrampolineCall(Register suspender, Register data);
 #endif
 
  private:
@@ -453,10 +456,9 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   uint32_t zoneStubsToReadBarrier_;
 
 #ifdef FUZZING_JS_FUZZILLI
-  void emitFuzzilliHashDouble(FloatRegister floatDouble, Register scratch,
-                              Register output);
   void emitFuzzilliHashObject(LInstruction* lir, Register obj, Register output);
-  void emitFuzzilliHashBigInt(Register bigInt, Register output);
+  void emitFuzzilliHashBigInt(LInstruction* lir, Register bigInt,
+                              Register output);
 #endif
 
 #define LIR_OP(op) void visit##op(L##op* ins);
@@ -496,11 +498,6 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   // Return true if the fuse is intact, andd if the fuse is intact note the
   // dependency
   bool hasSeenObjectEmulateUndefinedFuseIntactAndDependencyNoted() {
-    if (!JS::Prefs::use_emulates_undefined_fuse()) {
-      // if we're not active, simply pretend the fuse is popped.
-      return false;
-    }
-
     bool intact = gen->outerInfo().hasSeenObjectEmulateUndefinedFuseIntact();
     if (intact) {
       addHasSeenObjectEmulateUndefinedFuseDependency();

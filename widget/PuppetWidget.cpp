@@ -10,6 +10,7 @@
 #include "gfxPlatform.h"
 #include "nsRefreshDriver.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/layers/APZChild.h"
@@ -362,6 +363,9 @@ nsIWidget::ContentAndAPZEventStatus PuppetWidget::DispatchInputEvent(
   if (!mBrowserChild) {
     return status;
   }
+
+  MOZ_ASSERT(aEvent->mMessage != ePointerClick);
+  MOZ_ASSERT(aEvent->mMessage != ePointerAuxClick);
 
   switch (aEvent->mClass) {
     case eWheelEventClass:

@@ -18,6 +18,8 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 ChromeUtils.defineESModuleGetters(this, {
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
   ctypes: "resource://gre/modules/ctypes.sys.mjs",
+  TelemetryArchiveTesting:
+    "resource://testing-common/TelemetryArchiveTesting.sys.mjs",
 });
 
 const PREF_APP_UPDATE_AUTO = "app.update.auto";
@@ -73,7 +75,6 @@ const FILE_APPLICATION_INI = "application.ini";
 const FILE_BACKUP_UPDATE_CONFIG_JSON = "backup-update-config.json";
 const FILE_BACKUP_UPDATE_ELEVATED_LOG = "backup-update-elevated.log";
 const FILE_BACKUP_UPDATE_LOG = "backup-update.log";
-const FILE_BT_RESULT = "bt.result";
 const FILE_CHANNEL_PREFS =
   AppConstants.platform == "macosx" ? "ChannelPrefs" : "channel-prefs.js";
 const FILE_LAST_UPDATE_ELEVATED_LOG = "last-update-elevated.log";
@@ -364,17 +365,6 @@ function readStatusFailedCode() {
 }
 
 /**
- * Returns whether or not applying the current update resulted in an error
- * verifying binary transparency information.
- *
- * @return true if there was an error result and false otherwise
- */
-function updateHasBinaryTransparencyErrorResult() {
-  let file = getUpdateDirFile(FILE_BT_RESULT);
-  return file.exists();
-}
-
-/**
  * Reads text from a file and returns the string.
  *
  * @param  aFile
@@ -463,7 +453,6 @@ function getUpdateDirFile(aLeafName, aWhichDir = null) {
       file.append(DIR_UPDATES);
       file.append(aLeafName);
       return file;
-    case FILE_BT_RESULT:
     case FILE_UPDATE_LOG:
     case FILE_UPDATE_ELEVATED_LOG:
     case FILE_UPDATE_MAR:
@@ -535,7 +524,6 @@ function removeUpdateFiles(aRemoveLogFiles) {
   let files = [
     [FILE_ACTIVE_UPDATE_XML],
     [FILE_UPDATES_XML],
-    [FILE_BT_RESULT],
     [FILE_UPDATE_STATUS],
     [FILE_UPDATE_VERSION],
     [FILE_UPDATE_MAR],
@@ -932,4 +920,25 @@ async function continueFileHandler(leafName) {
         continueFile.path
     );
   });
+}
+
+async function waitForUpdatePing(archiveChecker, expectedProperties) {
+  // We cannot control when the ping will be generated/archived after we trigger
+  // an update, so let's make sure to have one before moving on with validation.
+  let updatePing;
+  await TestUtils.waitForCondition(
+    async function () {
+      // Check that the ping made it into the Telemetry archive.
+      // The test data is defined in ../data/sharedUpdateXML.js
+      updatePing = await archiveChecker.promiseFindPing(
+        "update",
+        expectedProperties
+      );
+      return !!updatePing;
+    },
+    "Wait for Update Ping to be generated",
+    500,
+    100
+  );
+  return updatePing;
 }

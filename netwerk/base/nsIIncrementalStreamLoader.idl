@@ -18,6 +18,14 @@ native StringTaint(StringTaint);
 interface nsIIncrementalStreamLoaderObserver : nsISupports
 {
     /**
+     * Same as nsIRequestObserver.onStartRequest.
+     * Called when the loader observes onStartRequest.
+     *
+     * @param aRequest request being observed
+     */
+    void onStartRequest(in nsIRequest aRequest);
+
+    /**
      * Called when new data has arrived on the stream.
      * Taintfox: this method has been extended to accept taint information.
      *

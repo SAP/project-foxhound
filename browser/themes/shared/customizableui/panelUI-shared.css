@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :root {
+  --panelui-subview-transition-duration: 150ms;
+
   --panel-item-hover-bgcolor: var(--button-hover-bgcolor);
   --panel-item-active-bgcolor: var(--button-active-bgcolor);
   --panel-banner-item-color: var(--button-color);
@@ -170,17 +172,47 @@ menupopup {
   font: menu;
 }
 
+panelmultiview {
+  align-items: flex-start;
+  min-width: 0;
+  min-height: 0;
+
+  &[transitioning] {
+    pointer-events: none;
+  }
+}
+
 panelview {
   flex-direction: column;
   padding: 0;
 
-  /* Prevent a scrollbar from appearing while the animation for transitioning from
-    one view to another runs, which would otherwise happen if the new view has
-    more height than the old one because that would mean that during the
-    animation the height of the multiview will be too short for the new view. */
-  &[transitioning] > .panel-viewcontainer > .panel-viewstack > panelview > .panel-subview-body {
-    overflow-y: hidden;
+  &:not([visible]) {
+    visibility: collapse;
   }
+}
+
+.panel-viewcontainer {
+  overflow: hidden;
+  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+
+  &[panelopen] {
+    transition-property: height;
+    transition-timing-function: var(--animation-easing-function);
+    transition-duration: var(--panelui-subview-transition-duration);
+    will-change: height;
+  }
+
+  &.offscreen {
+    display: block;
+  }
+}
+
+.panel-viewstack {
+  overflow: visible;
+  transition: height var(--panelui-subview-transition-duration);
 }
 
 .panel-subview-body {
@@ -233,6 +265,11 @@ panelview {
     fill: currentColor;
     padding: var(--arrowpanel-header-info-icon-padding);
   }
+}
+
+#widget-overflow-list:empty + #widget-overflow-fixed-separator,
+#widget-overflow:not([hasfixeditems]) #widget-overflow-fixed-separator {
+  display: none;
 }
 
 #wrapper-edit-controls:is([place="palette"],[place="panel"]) > #edit-controls,
@@ -328,6 +365,10 @@ panelview {
 
 #BMB_bookmarksPopup {
   max-width: 30em;
+}
+
+menupopup[emptyplacesresult] > .hide-if-empty-places-result {
+  display: none;
 }
 
 :is(.toolbar-menupopup, .toolbar-menupopup menupopup)[emptyplacesresult] > menuitem > .menu-accel-container > .menu-accel {
@@ -497,38 +538,11 @@ panelview[id^=PanelUI-webext-] {
   }
 }
 
-toolbarpaletteitem {
-  &[place="panel"] > .toolbarbutton-1 {
-    flex: 1;
-  }
-}
-
-/* Help webextension buttons fit in. */
-toolbarpaletteitem[place="palette"] > toolbarbutton[constrain-size="true"] > .toolbarbutton-icon,
-toolbarpaletteitem[place="palette"] > toolbarbutton[constrain-size="true"] > .toolbarbutton-badge-stack > .toolbarbutton-icon,
+/* Webextension buttons */
 toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-icon,
 toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badge-stack > .toolbarbutton-icon {
   height: var(--panel-and-palette-icon-size);
   width: var(--panel-and-palette-icon-size);
-}
-
-#customization-palette .toolbarbutton-1 {
-  appearance: none;
-  flex-direction: column;
-  padding: 12px 0 9px;
-  margin: 0;
-}
-
-/* above we treat the container as the icon for the margins, that is so the
-/* badge itself is positioned correctly. Here we make sure that the icon itself
-/* has the minimum size we want, but no padding/margin. */
-.customization-palette .toolbarbutton-1 > .toolbarbutton-badge-stack > .toolbarbutton-icon {
-  width: var(--panel-and-palette-icon-size);
-  height: var(--panel-and-palette-icon-size);
-  min-width: var(--panel-and-palette-icon-size);
-  min-height: var(--panel-and-palette-icon-size);
-  margin: 0;
-  padding: 0;
 }
 
 #zoom-in-button > .toolbarbutton-text,
@@ -700,7 +714,10 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 }
 
 .PanelUI-remotetabs-clientcontainer > label[itemtype="client"] {
+  color: var(--text-color-deemphasized);
   font-size: 11px;
+  margin-top: 6px;
+  margin-bottom: 2px;
 }
 
 #appMenu-fxa-status2 {
@@ -980,10 +997,6 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
   }
 }
 
-.PanelUI-remotetabs-clientcontainer > label[itemtype="client"] {
-  color: var(--text-color-deemphasized);
-}
-
 /* Collapse the non-active vboxes in the remotetabs deck to use only the
   height the active box needs */
 #PanelUI-remotetabs-deck {
@@ -1212,7 +1225,11 @@ panelview .toolbarbutton-1,
 
 .PanelUI-subView {
   .subviewbutton-nav-down::after {
+    -moz-context-properties: fill, fill-opacity;
     content: url(chrome://global/skin/icons/arrow-down.svg);
+    fill: currentColor;
+    fill-opacity: 0.6;
+    display: flex;
   }
 
   .toolbaritem-combined-buttons > .subviewbutton {
@@ -1319,46 +1336,70 @@ panelview .toolbarbutton-1 {
 #appMenu-fxa-label > .toolbarbutton-icon,
 #PanelUI-containersItems > .subviewbutton > .toolbarbutton-icon,
 .PanelUI-tabitem-container > toolbarbutton[itemtype="tab"] > .toolbarbutton-icon,
+.PanelUI-remotetabs-clientcontainer > toolbarbutton > .toolbarbutton-icon,
 #PanelUI-recentlyClosedWindows > toolbarbutton > .toolbarbutton-icon,
 #PanelUI-recentlyClosedTabs > toolbarbutton > .toolbarbutton-icon,
 #PanelUI-historyItems > toolbarbutton > .toolbarbutton-icon {
   width: 16px;
   height: 16px;
+
+  /* Apply crisp rendering for favicons at exactly 2x resolution */
+  @media (resolution: 2x) {
+    image-rendering: -moz-crisp-edges;
+  }
 }
 
 #PanelUI-fxa-remotetabs-tabspane {
   min-width: 0;
 }
 
-.PanelUI-tabitem-container > toolbarbutton[itemtype="tab"] {
-  flex: 1;
-  min-width: 0;
+.PanelUI-tabitem-container {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+
+  &.tabitem-removed {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  > toolbarbutton[itemtype="tab"] {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+
+    &[disabled="true"] {
+      pointer-events: none;
+    }
+  }
 }
 
-.remotetabs-close {
-  width: 18px;
-  margin-inline-end: 4px;
+toolbarbutton[itemtype="showmorebutton"],
+  toolbarbutton[itemtype="showinactivebutton"] {
+    padding-inline-start: 0;
+
+    > label {
+      /* Needed to properly left-align with the rest of list */
+      margin-inline-start: -8px;
+    }
+  }
+
+.remote-tabs-close-button {
+  .toolbarbutton-icon {
+      /* To match the nav elements in the panel */
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.6;
+  display: flex;
+
+  }
 }
+
+.remote-tabs-undo-button {
+  font-size: 0.8em;
+  font-weight: var(--font-weight-bold);
+}
+
 #PanelUI-fxa-menu-account-settings-button > .toolbarbutton-icon {
   border-radius: 50%;
-}
-
-toolbarpaletteitem {
-  &[place="palette"] > #search-container {
-    min-width: 7em;
-    width: 7em;
-    min-height: 37px;
-    max-height: 37px;
-  }
-
-  &[place="panel"],
-  &[place="panel"] > toolbaritem {
-    flex: 1;
-  }
-
-  &[place="menu-panel"] > .subviewbutton-nav::after {
-    opacity: 0.5;
-  }
 }
 
 .toolbaritem-combined-buttons {
@@ -1426,6 +1467,14 @@ toolbarpaletteitem {
     text-align: start;
     padding-inline-start: .5em;
   }
+
+  > #stop-reload-button > .toolbarbutton-1 {
+    flex: 1;
+  }
+}
+
+#widget-overflow-list > toolbarspring {
+  display: none;
 }
 
 #PanelUI-panicView > .panel-subview-body,

@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use inherent::inherent;
+use std::sync::Arc;
 
 use super::{CommonMetricData, MetricId};
 use glean::{DistributionData, ErrorType, HistogramType};
@@ -13,52 +14,52 @@ use glean::traits::CustomDistribution;
 /// A custom distribution metric.
 ///
 /// Custom distributions are used to record the distribution of arbitrary values.
+#[derive(Clone)]
 pub enum CustomDistributionMetric {
     Parent {
         /// The metric's ID.
         ///
         /// **TEST-ONLY** - Do not use unless gated with `#[cfg(test)]`.
         id: MetricId,
-        inner: glean::private::CustomDistributionMetric,
+        inner: Arc<glean::private::CustomDistributionMetric>,
     },
     Child(CustomDistributionMetricIpc),
 }
-#[derive(Debug)]
-pub struct CustomDistributionMetricIpc(MetricId);
+#[derive(Debug, Clone)]
+pub struct CustomDistributionMetricIpc(pub MetricId);
 
 impl CustomDistributionMetric {
-    /// Create a new timing distribution metric.
+    /// Create a new custom distribution metric.
     pub fn new(
         id: MetricId,
         meta: CommonMetricData,
-        range_min: u64,
-        range_max: u64,
-        bucket_count: u64,
+        range_min: i64,
+        range_max: i64,
+        bucket_count: i64,
         histogram_type: HistogramType,
     ) -> Self {
         if need_ipc() {
             CustomDistributionMetric::Child(CustomDistributionMetricIpc(id))
         } else {
-            debug_assert!(
-                range_min <= i64::MAX as u64,
-                "sensible limits enforced by glean_parser"
-            );
-            debug_assert!(
-                range_max <= i64::MAX as u64,
-                "sensible limits enforced by glean_parser"
-            );
-            debug_assert!(
-                bucket_count <= i64::MAX as u64,
-                "sensible limits enforced by glean_parser"
-            );
             let inner = glean::private::CustomDistributionMetric::new(
                 meta,
-                range_min as i64,
-                range_max as i64,
-                bucket_count as i64,
+                range_min,
+                range_max,
+                bucket_count,
                 histogram_type,
             );
-            CustomDistributionMetric::Parent { id, inner }
+            CustomDistributionMetric::Parent {
+                id,
+                inner: Arc::new(inner),
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metric_id(&self) -> MetricId {
+        match self {
+            CustomDistributionMetric::Parent { id, .. } => *id,
+            CustomDistributionMetric::Child(c) => c.0,
         }
     }
 

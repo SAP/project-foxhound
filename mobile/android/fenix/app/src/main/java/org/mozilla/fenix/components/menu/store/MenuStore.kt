@@ -28,12 +28,35 @@ private fun reducer(state: MenuState, action: MenuAction): MenuState {
     return when (action) {
         is MenuAction.InitAction,
         is MenuAction.AddBookmark,
+        is MenuAction.AddShortcut,
+        is MenuAction.RemoveShortcut,
         is MenuAction.DeleteBrowsingDataAndQuit,
+        is MenuAction.FindInPage,
+        is MenuAction.OpenInApp,
+        is MenuAction.OpenInFirefox,
+        is MenuAction.InstallAddon,
+        is MenuAction.CustomMenuItemAction,
+        is MenuAction.ToggleReaderView,
+        is MenuAction.CustomizeReaderView,
         is MenuAction.Navigate,
         -> state
 
+        is MenuAction.RequestDesktopSite -> state.copy(isDesktopMode = true)
+
+        is MenuAction.RequestMobileSite -> state.copy(isDesktopMode = false)
+
+        is MenuAction.UpdateExtensionState -> state.copyWithExtensionMenuState {
+            it.copy(
+                recommendedAddons = action.recommendedAddons,
+            )
+        }
+
         is MenuAction.UpdateBookmarkState -> state.copyWithBrowserMenuState {
             it.copy(bookmarkState = action.bookmarkState)
+        }
+
+        is MenuAction.UpdatePinnedState -> state.copyWithBrowserMenuState {
+            it.copy(isPinned = action.isPinned)
         }
     }
 }
@@ -43,4 +66,11 @@ internal inline fun MenuState.copyWithBrowserMenuState(
     crossinline update: (BrowserMenuState) -> BrowserMenuState,
 ): MenuState {
     return this.copy(browserMenuState = this.browserMenuState?.let { update(it) })
+}
+
+@VisibleForTesting
+internal inline fun MenuState.copyWithExtensionMenuState(
+    crossinline update: (ExtensionMenuState) -> ExtensionMenuState,
+): MenuState {
+    return this.copy(extensionMenuState = update(this.extensionMenuState))
 }

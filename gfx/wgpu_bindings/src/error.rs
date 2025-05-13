@@ -68,13 +68,25 @@ impl ErrorBuffer {
         }
 
         assert_ne!(self.message_capacity, 0);
+        // Since we need to store a nul terminator after the content, the
+        // content length must always be strictly less than the buffer's
+        // capacity.
         let length = if message.len() >= self.message_capacity {
+            // Thanks to the structure of UTF-8, `std::is_char_boundary` is
+            // O(1), so this should examine a few bytes at most.
+            //
+            // The largest value in this range is `self.message_capacity - 1`,
+            // which is a safe length.
+            let truncated_length = (0..self.message_capacity)
+                .rfind(|&offset| message.is_char_boundary(offset))
+                .unwrap_or(0);
             log::warn!(
-                "Error message's length {} reached capacity {}, truncating",
+                "Error message's length {} reached capacity {}, truncating to {}",
                 message.len(),
-                self.message_capacity
+                self.message_capacity,
+                truncated_length,
             );
-            self.message_capacity - 1
+            truncated_length
         } else {
             message.len()
         };
@@ -214,8 +226,8 @@ mod foreign {
                 BufferAccessError::Device(e) => e.error_type(),
 
                 BufferAccessError::Failed
-                | BufferAccessError::Invalid
-                | BufferAccessError::Destroyed
+                | BufferAccessError::InvalidBufferId(_)
+                | BufferAccessError::DestroyedResource(_)
                 | BufferAccessError::AlreadyMapped
                 | BufferAccessError::MapAlreadyPending
                 | BufferAccessError::MissingBufferUsage(_)
@@ -300,7 +312,7 @@ mod foreign {
             match self {
                 CreatePipelineLayoutError::Device(e) => e.error_type(),
 
-                CreatePipelineLayoutError::InvalidBindGroupLayout(_)
+                CreatePipelineLayoutError::InvalidBindGroupLayoutId(_)
                 | CreatePipelineLayoutError::MisalignedPushConstantRange { .. }
                 | CreatePipelineLayoutError::MissingFeatures(_)
                 | CreatePipelineLayoutError::MoreThanOnePushConstantRangePerStage { .. }
@@ -320,10 +332,9 @@ mod foreign {
                 CreateBindGroupError::Device(e) => e.error_type(),
 
                 CreateBindGroupError::InvalidLayout
-                | CreateBindGroupError::InvalidBuffer(_)
-                | CreateBindGroupError::InvalidTextureView(_)
-                | CreateBindGroupError::InvalidTexture(_)
-                | CreateBindGroupError::InvalidSampler(_)
+                | CreateBindGroupError::InvalidBufferId(_)
+                | CreateBindGroupError::InvalidTextureViewId(_)
+                | CreateBindGroupError::InvalidSamplerId(_)
                 | CreateBindGroupError::BindingArrayPartialLengthMismatch { .. }
                 | CreateBindGroupError::BindingArrayLengthMismatch { .. }
                 | CreateBindGroupError::BindingArrayZeroLength
@@ -348,7 +359,8 @@ mod foreign {
                 | CreateBindGroupError::WrongSamplerFiltering { .. }
                 | CreateBindGroupError::DepthStencilAspect
                 | CreateBindGroupError::StorageReadNotSupported(_)
-                | CreateBindGroupError::ResourceUsageConflict(_) => ErrorBufferType::Validation,
+                | CreateBindGroupError::ResourceUsageCompatibility(_)
+                | CreateBindGroupError::DestroyedResource(_) => ErrorBufferType::Validation,
 
                 // N.B: forced non-exhaustiveness
                 _ => ErrorBufferType::Validation,
@@ -437,8 +449,10 @@ mod foreign {
     impl HasErrorBufferType for DeviceError {
         fn error_type(&self) -> ErrorBufferType {
             match self {
-                DeviceError::Invalid | DeviceError::WrongDevice => ErrorBufferType::Validation,
-                DeviceError::InvalidQueueId => ErrorBufferType::Validation,
+                DeviceError::Invalid(_) | DeviceError::DeviceMismatch(_) => {
+                    ErrorBufferType::Validation
+                }
+                DeviceError::InvalidDeviceId => ErrorBufferType::Validation,
                 DeviceError::Lost => ErrorBufferType::DeviceLost,
                 DeviceError::OutOfMemory => ErrorBufferType::OutOfMemory,
                 DeviceError::ResourceCreationFailed => ErrorBufferType::Internal,
@@ -452,7 +466,7 @@ mod foreign {
             match self {
                 CreateTextureViewError::OutOfMemory => ErrorBufferType::OutOfMemory,
 
-                CreateTextureViewError::InvalidTexture
+                CreateTextureViewError::InvalidTextureId(_)
                 | CreateTextureViewError::InvalidTextureViewDimension { .. }
                 | CreateTextureViewError::InvalidMultisampledTextureViewDimension(_)
                 | CreateTextureViewError::InvalidCubemapTextureDepth { .. }
@@ -464,9 +478,8 @@ mod foreign {
                 | CreateTextureViewError::TooManyArrayLayers { .. }
                 | CreateTextureViewError::InvalidArrayLayerCount { .. }
                 | CreateTextureViewError::InvalidAspect { .. }
-                | CreateTextureViewError::FormatReinterpretation { .. } => {
-                    ErrorBufferType::Validation
-                }
+                | CreateTextureViewError::FormatReinterpretation { .. }
+                | CreateTextureViewError::DestroyedResource(_) => ErrorBufferType::Validation,
 
                 // N.B: forced non-exhaustiveness
                 _ => ErrorBufferType::Validation,
@@ -491,11 +504,9 @@ mod foreign {
             match self {
                 TransferError::MemoryInitFailure(e) => e.error_type(),
 
-                TransferError::InvalidBuffer(_)
-                | TransferError::InvalidTexture(_)
+                TransferError::InvalidBufferId(_)
+                | TransferError::InvalidTextureId(_)
                 | TransferError::SameSourceDestinationBuffer
-                | TransferError::MissingCopySrcUsageFlag
-                | TransferError::MissingCopyDstUsageFlag(_, _)
                 | TransferError::MissingRenderAttachmentUsageFlag(_)
                 | TransferError::BufferOverrun { .. }
                 | TransferError::TextureOverrun { .. }
@@ -547,7 +558,7 @@ mod foreign {
                 QueryError::Use(e) => e.error_type(),
                 QueryError::Resolve(e) => e.error_type(),
 
-                QueryError::InvalidBuffer(_) | QueryError::InvalidQuerySet(_) => {
+                QueryError::InvalidBufferId(_) | QueryError::InvalidQuerySetId(_) => {
                     ErrorBufferType::Validation
                 }
 
@@ -610,11 +621,11 @@ mod foreign {
                 QueueSubmitError::Unmap(e) => e.error_type(),
 
                 QueueSubmitError::StuckGpu => ErrorBufferType::Internal, // TODO: validate
-                QueueSubmitError::DestroyedBuffer(_)
-                | QueueSubmitError::DestroyedTexture(_)
+                QueueSubmitError::DestroyedResource(_)
                 | QueueSubmitError::BufferStillMapped(_)
                 | QueueSubmitError::SurfaceOutputDropped
-                | QueueSubmitError::SurfaceUnconfigured => ErrorBufferType::Validation,
+                | QueueSubmitError::SurfaceUnconfigured
+                | QueueSubmitError::InvalidQueueId => ErrorBufferType::Validation,
 
                 // N.B: forced non-exhaustiveness
                 _ => ErrorBufferType::Validation,

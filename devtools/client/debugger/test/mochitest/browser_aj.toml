@@ -282,7 +282,7 @@ skip-if = [
   "tsan", # Bug 1832135
 ]
 
-["browser_dbg-javascript-tracer-next-interation.js"]
+["browser_dbg-javascript-tracer-next-interaction.js"]
 skip-if = [
   "tsan", # Bug 1832135
 ]
@@ -290,6 +290,12 @@ skip-if = [
 ["browser_dbg-javascript-tracer-next-load.js"]
 skip-if = [
   "tsan", # Bug 1832135
+]
+
+["browser_dbg-javascript-tracer-sidebar.js"]
+skip-if = [
+  "tsan", # Bug 1832135
+  "a11y_checks", # The tracer tree isn't yet accessible
 ]
 
 ["browser_dbg-javascript-tracer-values.js"]

@@ -1,5 +1,8 @@
 [DEFAULT]
 support-files = ["head.js"]
+prefs = [
+  "sidebar.revamp=false",
+]
 
 ["browser_bookmarks_shortcut.js"]
 https_first_disabled = true

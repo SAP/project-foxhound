@@ -10,6 +10,7 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_transforms-inl.h"
 
 namespace jxl {

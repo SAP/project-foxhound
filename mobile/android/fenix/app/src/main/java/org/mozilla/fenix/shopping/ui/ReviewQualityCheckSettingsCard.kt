@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
+import org.mozilla.fenix.compose.ExpandableInfoCardContainer
 import org.mozilla.fenix.compose.SwitchWithLabel
 import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.button.SecondaryButton
@@ -46,7 +47,7 @@ fun ReviewQualityCheckSettingsCard(
     onExpandToggleClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ReviewQualityCheckExpandableCard(
+    ExpandableInfoCardContainer(
         modifier = modifier,
         title = stringResource(R.string.review_quality_check_settings_title),
         isExpanded = isExpanded,
@@ -73,9 +74,9 @@ private fun SettingsContent(
 
         if (productRecommendationsEnabled != null) {
             SwitchWithLabel(
+                label = stringResource(R.string.review_quality_check_settings_recommended_products),
                 checked = productRecommendationsEnabled,
                 onCheckedChange = onProductRecommendationsEnabledStateChange,
-                label = stringResource(R.string.review_quality_check_settings_recommended_products),
             )
 
             Spacer(modifier = Modifier.height(16.dp))

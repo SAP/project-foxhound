@@ -140,7 +140,7 @@ linux64-jdk-repack:
         toolchain-artifact: project/gecko/jdk/jdk-linux.tar.zst
         toolchain-alias: linux64-jdk
         toolchain-env:
-            JAVA_HOME: "/builds/worker/fetches/jdk/jdk-17.0.11+9"
+            JAVA_HOME: "/builds/worker/fetches/jdk/jdk-17.0.12+7"
 
 linux64-android-sdk-linux-repack:
     description: "Android SDK (Linux) repack toolchain build"
@@ -250,3 +250,15 @@ linux64-android-gradle-dependencies-lite:
             - linux64-android-sdk-linux-repack
             - linux64-jdk-repack
             - linux64-node
+
+linux64-android-xmlstarlet:
+    description: "Tool for finding xml paths on Android"
+    treeherder:
+        symbol: TL(xmlstarlet)
+    run:
+        script: android-xmlstarlet.sh
+        toolchain-artifact: public/build/android-xmlstarlet.tar.zst
+        toolchain-alias: android-xmlstarlet
+    fetches:
+        fetch:
+            - xmlstarlet-1.6.1

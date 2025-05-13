@@ -971,19 +971,6 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
     convertDoubleToInt32(src, dest, fail, negativeZeroCheck);
   }
 
-  void boolValueToDouble(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToDouble(operand.payloadReg(), dest);
-  }
-  void boolValueToFloat32(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToFloat32(operand.payloadReg(), dest);
-  }
-  void int32ValueToDouble(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToDouble(operand.payloadReg(), dest);
-  }
-  void int32ValueToFloat32(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToFloat32(operand.payloadReg(), dest);
-  }
-
   void loadConstantDouble(double d, FloatRegister dest);
   void loadConstantFloat32(float f, FloatRegister dest);
 
@@ -1165,20 +1152,17 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
     addl(Imm32(1), payloadOf(addr));
   }
 
-  inline void ensureDouble(const ValueOperand& source, FloatRegister dest,
-                           Label* failure);
-
  public:
   // Used from within an Exit frame to handle a pending exception.
-  void handleFailureWithHandlerTail(Label* profilerExitTail,
-                                    Label* bailoutTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail, Label* bailoutTail,
+                                    uint32_t* returnValueCheckOffset);
 
   // Instrumentation for entering and leaving the profiler.
   void profilerEnterFrame(Register framePtr, Register scratch);
   void profilerExitFrame();
 };
 
-typedef MacroAssemblerX86 MacroAssemblerSpecific;
+using MacroAssemblerSpecific = MacroAssemblerX86;
 
 }  // namespace jit
 }  // namespace js

@@ -33,6 +33,7 @@
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Components.h"
+#include "mozilla/IdentityCredentialRequestManager.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
@@ -1430,6 +1431,8 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvReloadWithHttpsOnlyException() {
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(insecureURI);
   loadState->SetTriggeringPrincipal(nsContentUtils::GetSystemPrincipal());
   loadState->SetLoadType(LOAD_NORMAL_REPLACE);
+  loadState->SetHttpsUpgradeTelemetry(
+      nsILoadInfo::HTTPS_ONLY_UPGRADE_DOWNGRADE);
 
   RefPtr<CanonicalBrowsingContext> topBC = BrowsingContext()->Top();
   topBC->LoadURI(loadState, /* setNavigating */ true);
@@ -1437,32 +1440,20 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvReloadWithHttpsOnlyException() {
   return IPC_OK();
 }
 
-IPCResult WindowGlobalParent::RecvDiscoverIdentityCredentialFromExternalSource(
+IPCResult WindowGlobalParent::RecvGetIdentityCredential(
     const IdentityCredentialRequestOptions& aOptions,
-    const DiscoverIdentityCredentialFromExternalSourceResolver& aResolver) {
-  IdentityCredential::DiscoverFromExternalSourceInMainProcess(
-      DocumentPrincipal(), this->BrowsingContext(), aOptions)
+    const CredentialMediationRequirement& aMediationRequirement,
+    const GetIdentityCredentialResolver& aResolver) {
+  IdentityCredential::GetCredentialInMainProcess(
+      DocumentPrincipal(), this->BrowsingContext(), aOptions,
+      aMediationRequirement)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [aResolver](const IPCIdentityCredential& aResult) {
-            return aResolver(Some(aResult));
-          },
-          [aResolver](nsresult aErr) { aResolver(Nothing()); });
-  return IPC_OK();
-}
-
-IPCResult WindowGlobalParent::RecvCollectIdentityCredentialFromCredentialStore(
-    const IdentityCredentialRequestOptions& aOptions,
-    const CollectIdentityCredentialFromCredentialStoreResolver& aResolver) {
-  IdentityCredential::CollectFromCredentialStoreInMainProcess(
-      DocumentPrincipal(), BrowsingContext(), aOptions)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [aResolver](const nsTArray<IPCIdentityCredential>& aResult) {
-            aResolver(aResult);
+            return aResolver({Some(aResult), NS_OK});
           },
           [aResolver](nsresult aErr) {
-            aResolver(nsTArray<IPCIdentityCredential>());
+            aResolver({Maybe<IPCIdentityCredential>(Nothing()), aErr});
           });
   return IPC_OK();
 }
@@ -1478,7 +1469,26 @@ IPCResult WindowGlobalParent::RecvStoreIdentityCredential(
   return IPC_OK();
 }
 
+IPCResult WindowGlobalParent::RecvPreventSilentAccess(
+    const PreventSilentAccessResolver& aResolver) {
+  nsIPrincipal* principal = DocumentPrincipal();
+  if (principal) {
+    nsCOMPtr<nsIPermissionManager> permissionManager =
+        components::PermissionManager::Service();
+    if (permissionManager) {
+      permissionManager->RemoveFromPrincipal(
+          principal, "credential-allow-silent-access"_ns);
+      aResolver(NS_OK);
+      return IPC_OK();
+    }
+  }
+
+  aResolver(NS_ERROR_NOT_AVAILABLE);
+  return IPC_OK();
+}
+
 IPCResult WindowGlobalParent::RecvGetStorageAccessPermission(
+    bool aIncludeIdentityCredential,
     GetStorageAccessPermissionResolver&& aResolve) {
   WindowGlobalParent* top = TopWindowContext();
   if (!top) {
@@ -1492,6 +1502,24 @@ IPCResult WindowGlobalParent::RecvGetStorageAccessPermission(
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aResolve(nsIPermissionManager::UNKNOWN_ACTION);
     return IPC_OK();
+  }
+  if (result == nsIPermissionManager::ALLOW_ACTION) {
+    aResolve(nsIPermissionManager::ALLOW_ACTION);
+    return IPC_OK();
+  }
+
+  if (aIncludeIdentityCredential) {
+    bool canCollect;
+    rv = IdentityCredential::CanSilentlyCollect(topPrincipal, principal,
+                                                &canCollect);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      aResolve(nsIPermissionManager::UNKNOWN_ACTION);
+      return IPC_OK();
+    }
+    if (canCollect) {
+      aResolve(nsIPermissionManager::ALLOW_ACTION);
+      return IPC_OK();
+    }
   }
 
   aResolve(result);
@@ -1579,7 +1607,7 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
       nsCOMPtr<nsILoadContext> loadContext = browserParent->GetLoadContext();
       if (loadContext && !loadContext->UsePrivateBrowsing() &&
           BrowsingContext()->IsTopContent()) {
-        GetContentBlockingLog()->ReportLog(DocumentPrincipal());
+        GetContentBlockingLog()->ReportLog();
 
         if (mDocumentURI && (net::SchemeIsHTTP(mDocumentURI) ||
                              net::SchemeIsHTTPS(mDocumentURI))) {
@@ -1713,7 +1741,8 @@ void WindowGlobalParent::SetShouldReportHasBlockedOpaqueResponse(
 
 IPCResult WindowGlobalParent::RecvSetCookies(
     const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-    nsIURI* aHost, bool aFromHttp, const nsTArray<CookieStruct>& aCookies) {
+    nsIURI* aHost, bool aFromHttp, bool aIsThirdParty,
+    const nsTArray<CookieStruct>& aCookies) {
   // Get CookieServiceParent via
   // ContentParent->NeckoParent->CookieServiceParent.
   ContentParent* contentParent = GetContentParent();
@@ -1728,7 +1757,7 @@ IPCResult WindowGlobalParent::RecvSetCookies(
   auto* cs = static_cast<net::CookieServiceParent*>(csParent);
 
   return cs->SetCookies(aBaseDomain, aOriginAttributes, aHost, aFromHttp,
-                        aCookies, GetBrowsingContext());
+                        aIsThirdParty, aCookies, GetBrowsingContext());
 }
 
 IPCResult WindowGlobalParent::RecvOnInitialStorageAccess() {

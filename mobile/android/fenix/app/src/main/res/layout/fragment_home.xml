@@ -86,6 +86,12 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/homepageView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/sessionControlRecyclerView"
         android:layout_width="match_parent"
@@ -178,8 +184,7 @@
             android:clipChildren="false"
             app:layout_constraintTop_toTopOf="@id/bottom_bar"
             app:layout_constraintBottom_toBottomOf="@id/bottom_bar"
-            app:layout_constraintEnd_toStartOf="@+id/menuButton"
-            app:layout_constraintStart_toEndOf="@id/toolbar_wrapper"/>
+            app:layout_constraintEnd_toStartOf="@+id/menuButton" />
 
         <mozilla.components.browser.menu.view.MenuButton
             android:id="@+id/menuButton"
@@ -199,5 +204,11 @@
             app:layout_constraintBottom_toTopOf="@id/bottom_bar" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <FrameLayout
+        android:id="@+id/dynamicSnackbarContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:elevation="@dimen/browser_fragment_toolbar_elevation"/>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

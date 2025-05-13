@@ -1488,6 +1488,24 @@
   operands:
     input: WordSized
 
+- name: DoubleToFloat16
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 1
+
+- name: Float32ToFloat16
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 1
+
+- name: Int32ToFloat16
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 1
+
 # Convert a value to a double.
 - name: ValueToDouble
   result_type: WordSized
@@ -1501,6 +1519,14 @@
   operands:
     input: BoxedValue
   mir_op: ToFloat32
+
+# Convert a value to a float16.
+- name: ValueToFloat16
+  result_type: WordSized
+  operands:
+    input: BoxedValue
+  num_temps: 1
+  mir_op: ToFloat16
 
 - name: ValueToInt32
   gen_boilerplate: false
@@ -2117,7 +2143,7 @@
   operands:
     elements: WordSized
     index: WordSized
-  num_temps: 1
+  num_temps: 2
   mir_op: true
 
 - name: LoadUnboxedBigInt
@@ -2132,6 +2158,7 @@
     elements: WordSized
     index: WordSized
     length: WordSized
+  num_temps: 1
   mir_op: true
 
 - name: LoadTypedArrayElementHoleBigInt
@@ -2142,6 +2169,7 @@
     elements: WordSized
     index: WordSized
     value: WordSized
+  num_temps: 1
   mir_op: true
 
 - name: StoreUnboxedBigInt
@@ -2975,6 +3003,23 @@
   call_instruction: true
   mir_op: true
 
+- name: MegamorphicLoadSlotPermissive
+  result_type: BoxedValue
+  operands:
+    object: WordSized
+  num_temps: 3
+  call_instruction: true
+  mir_op: true
+
+- name: MegamorphicLoadSlotByValuePermissive
+  result_type: BoxedValue
+  operands:
+    object: WordSized
+    id: BoxedValue
+  num_temps: 3
+  call_instruction: true
+  mir_op: true
+
 - name: MegamorphicStoreSlot
   operands:
     object: WordSized
@@ -3223,6 +3268,12 @@
   result_type: WordSized
   operands:
     input: WordSized
+  mir_op: true
+
+- name: WasmClampTable64Index
+  result_type: WordSized
+  operands:
+    index: Int64
   mir_op: true
 
 - name: WasmAlignmentCheck

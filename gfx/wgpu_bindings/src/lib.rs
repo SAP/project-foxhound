@@ -19,9 +19,7 @@ use nsstring::nsACString;
 
 type RawString = *const std::os::raw::c_char;
 
-//TODO: figure out why 'a and 'b have to be different here
-//TODO: remove this
-fn cow_label<'a, 'b>(raw: &'a RawString) -> Option<Cow<'b, str>> {
+fn cow_label(raw: &RawString) -> Option<Cow<'_, str>> {
     if raw.is_null() {
         None
     } else {
@@ -31,7 +29,7 @@ fn cow_label<'a, 'b>(raw: &'a RawString) -> Option<Cow<'b, str>> {
 }
 
 // Hides the repeated boilerplate of turning a `Option<&nsACString>` into a `Option<Cow<str>`.
-pub fn wgpu_string(gecko_string: Option<&nsACString>) -> Option<Cow<str>> {
+pub fn wgpu_string(gecko_string: Option<&nsACString>) -> Option<Cow<'_, str>> {
     gecko_string.map(|s| s.to_utf8())
 }
 
@@ -111,7 +109,7 @@ pub struct AdapterInformation<S> {
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ImplicitLayout<'a> {
     pipeline: id::PipelineLayoutId,
-    bind_groups: Cow<'a, [Option<id::BindGroupLayoutId>]>,
+    bind_groups: Cow<'a, [id::BindGroupLayoutId]>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

@@ -175,6 +175,10 @@ class WebExtensionPromptFeature(
                 }
             }
 
+            is WebExtensionInstallException.AdminInstallOnly -> {
+                context.getString(R.string.mozac_feature_addons_admin_install_only, addonName)
+            }
+
             is WebExtensionInstallException.NetworkFailure -> {
                 context.getString(R.string.mozac_feature_addons_extension_failed_to_install_network_error)
             }

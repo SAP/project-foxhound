@@ -2584,8 +2584,8 @@ static MOZ_ALWAYS_INLINE int StringMatch(const TextChar* text, uint32_t textLen,
                    text, textLen, pat, patLen);
 }
 
-static int32_t StringMatch(JSLinearString* text, JSLinearString* pat,
-                           uint32_t start = 0) {
+static int32_t StringMatch(const JSLinearString* text,
+                           const JSLinearString* pat, uint32_t start = 0) {
   MOZ_ASSERT(start <= text->length());
   uint32_t textLen = text->length() - start;
   uint32_t patLen = pat->length();
@@ -2613,12 +2613,12 @@ static int32_t StringMatch(JSLinearString* text, JSLinearString* pat,
 
 static const size_t sRopeMatchThresholdRatioLog2 = 4;
 
-int js::StringFindPattern(JSLinearString* text, JSLinearString* pat,
+int js::StringFindPattern(const JSLinearString* text, const JSLinearString* pat,
                           size_t start) {
   return StringMatch(text, pat, start);
 }
 
-typedef Vector<JSLinearString*, 16, SystemAllocPolicy> LinearStringVector;
+using LinearStringVector = Vector<JSLinearString*, 16, SystemAllocPolicy>;
 
 template <typename TextChar, typename PatChar>
 static int RopeMatchImpl(const AutoCheckCannotGC& nogc,
@@ -2685,7 +2685,7 @@ static int RopeMatchImpl(const AutoCheckCannotGC& nogc,
  * RopeMatch returns false on OOM and otherwise returns the match index through
  * the 'match' outparam (-1 for not found).
  */
-static bool RopeMatch(JSContext* cx, JSRope* text, JSLinearString* pat,
+static bool RopeMatch(JSContext* cx, JSRope* text, const JSLinearString* pat,
                       int* match) {
   uint32_t patLen = pat->length();
   if (patLen == 0) {
@@ -2957,8 +2957,8 @@ static int32_t LastIndexOfImpl(const TextChar* text, size_t textLen,
   return -1;
 }
 
-static int32_t LastIndexOf(JSLinearString* text, JSLinearString* searchStr,
-                           size_t start) {
+static int32_t LastIndexOf(const JSLinearString* text,
+                           const JSLinearString* searchStr, size_t start) {
   AutoCheckCannotGC nogc;
 
   size_t len = text->length();
@@ -3528,7 +3528,8 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
 template <typename CharT>
 static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
                                     size_t firstDollarIndex, size_t matchStart,
-                                    size_t matchLimit, JSLinearString* text,
+                                    size_t matchLimit,
+                                    const JSLinearString* text,
                                     const CharT* repChars, size_t repLength,
                                     const StringTaint& repTaint) {
   MOZ_ASSERT(firstDollarIndex < repLength);
@@ -3655,9 +3656,9 @@ static JSLinearString* InterpretDollarReplacement(
 }
 
 template <typename StrChar, typename RepChar>
-static bool StrFlatReplaceGlobal(JSContext* cx, JSLinearString* str,
-                                 JSLinearString* pat, JSLinearString* rep,
-                                 StringBuffer& sb) {
+static bool StrFlatReplaceGlobal(JSContext* cx, const JSLinearString* str,
+                                 const JSLinearString* pat,
+                                 const JSLinearString* rep, StringBuffer& sb) {
   MOZ_ASSERT(str->length() > 0);
 
   AutoCheckCannotGC nogc;
@@ -3836,9 +3837,9 @@ JSString* js::str_replace_string_raw(JSContext* cx, HandleString string,
 
 template <typename StrChar, typename RepChar>
 static bool ReplaceAllInternal(const AutoCheckCannotGC& nogc,
-                               JSLinearString* string,
-                               JSLinearString* searchString,
-                               JSLinearString* replaceString,
+                               const JSLinearString* string,
+                               const JSLinearString* searchString,
+                               const JSLinearString* replaceString,
                                const int32_t startPosition,
                                JSStringBuilder& result) {
   // Step 7.
@@ -3919,8 +3920,8 @@ static bool ReplaceAllInternal(const AutoCheckCannotGC& nogc,
 // are fused. GetSubstitution is optimized away when possible.
 template <typename StrChar, typename RepChar>
 static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
-                            JSLinearString* searchString,
-                            JSLinearString* replaceString) {
+                            const JSLinearString* searchString,
+                            const JSLinearString* replaceString) {
   // Step 7 moved into ReplaceAll_internal.
 
   // Step 8 (advanceBy is equal to searchLength when searchLength > 0).
@@ -3975,8 +3976,9 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
 
 template <typename StrChar, typename RepChar>
 static bool ReplaceAllInterleaveInternal(const AutoCheckCannotGC& nogc,
-                                         JSContext* cx, JSLinearString* string,
-                                         JSLinearString* replaceString,
+                                         JSContext* cx,
+                                         const JSLinearString* string,
+                                         const JSLinearString* replaceString,
                                          JSStringBuilder& result) {
   // Step 7.
   const size_t stringLength = string->length();
@@ -4050,8 +4052,9 @@ static bool ReplaceAllInterleaveInternal(const AutoCheckCannotGC& nogc,
 // The steps are quite different, for performance. Loops in steps 11 and 14
 // are fused. GetSubstitution is optimized away when possible.
 template <typename StrChar, typename RepChar>
-static JSString* ReplaceAllInterleave(JSContext* cx, JSLinearString* string,
-                                      JSLinearString* replaceString) {
+static JSString* ReplaceAllInterleave(JSContext* cx,
+                                      const JSLinearString* string,
+                                      const JSLinearString* replaceString) {
   // Step 7 moved into ReplaceAllInterleavedInternal.
 
   // Step 8 (advanceBy is 1 when searchString is the empty string).

@@ -16,9 +16,9 @@
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/Components.h"
-#include "mozilla/StaticPrefs_dom.h"
 
 #include "nsCycleCollectionParticipant.h"
+#include "nsGlobalWindowInner.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/SchedulerGroup.h"
@@ -200,6 +200,8 @@ already_AddRefed<nsIURI> GetBaseURIFromGlobal(nsIGlobalObject* aGlobal,
 already_AddRefed<Promise> ServiceWorkerContainer::Register(
     const nsAString& aScriptURL, const RegistrationOptions& aOptions,
     const CallerType aCallerType, ErrorResult& aRv) {
+  AUTO_PROFILER_MARKER_TEXT("SWC Register", DOM, {}, ""_ns);
+
   // Note, we can't use GetGlobalIfValid() from the start here.  If we
   // hit a storage failure we want to log a message with the final
   // scope string we put together below.
@@ -375,6 +377,8 @@ already_AddRefed<Promise> ServiceWorkerContainer::Register(
       [self,
        outer](const IPCServiceWorkerRegistrationDescriptorOrCopyableErrorResult&
                   aResult) {
+        AUTO_PROFILER_MARKER_TEXT("SWC Register (inner)", DOM, {}, ""_ns);
+
         if (aResult.type() ==
             IPCServiceWorkerRegistrationDescriptorOrCopyableErrorResult::
                 TCopyableErrorResult) {
@@ -678,7 +682,7 @@ void ServiceWorkerContainer::GetScopeForUrl(const nsAString& aUrl,
     return;
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
+  nsCOMPtr<nsPIDOMWindowInner> window = GetOwnerWindow();
   if (NS_WARN_IF(!window)) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
@@ -707,7 +711,7 @@ nsIGlobalObject* ServiceWorkerContainer::GetGlobalIfValid(
   // not exposed on worker globals yet.  The main thing we need
   // to fix here to support that is the storage access check via
   // the nsIGlobalObject.
-  nsPIDOMWindowInner* window = GetOwner();
+  nsGlobalWindowInner* window = GetOwnerWindow();
   if (NS_WARN_IF(!window)) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return nullptr;
@@ -753,10 +757,7 @@ void ServiceWorkerContainer::EnqueueReceivedMessageDispatch(
 
 template <typename F>
 void ServiceWorkerContainer::RunWithJSContext(F&& aCallable) {
-  nsCOMPtr<nsIGlobalObject> globalObject;
-  if (nsPIDOMWindowInner* const window = GetOwner()) {
-    globalObject = do_QueryInterface(window);
-  }
+  nsCOMPtr<nsIGlobalObject> globalObject = GetOwnerGlobal();
 
   // If AutoJSAPI::Init() fails then either global is nullptr or not
   // in a usable state.

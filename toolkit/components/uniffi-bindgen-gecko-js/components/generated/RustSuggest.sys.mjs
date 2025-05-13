@@ -204,9 +204,8 @@ function handleRustResult(result, liftCallback, liftErrCallback) {
             throw liftErrCallback(result.data);
 
         case "internal-error":
-            let message = result.internalErrorMessage;
-            if (message) {
-                throw new UniFFIInternalError(message);
+            if (result.data) {
+                throw new UniFFIInternalError(FfiConverterString.lift(result.data));
             } else {
                 throw new UniFFIInternalError("Unknown error");
             }
@@ -705,39 +704,30 @@ export class SuggestStoreBuilder {
         this[uniffiObjectPtr] = opts[constructUniffiObject];
     }
     /**
-     * An async constructor for SuggestStoreBuilder.
+     * A constructor for SuggestStoreBuilder.
      * 
-     * @returns {Promise<SuggestStoreBuilder>}: A promise that resolves
-     *      to a newly constructed SuggestStoreBuilder
+     * @returns { SuggestStoreBuilder }
      */
     static init() {
         const liftResult = (result) => FfiConverterTypeSuggestStoreBuilder.lift(result);
         const liftError = null;
         const functionCall = () => {
-            return UniFFIScaffolding.callAsync(
+            return UniFFIScaffolding.callSync(
                 23, // suggest:uniffi_suggest_fn_constructor_suggeststorebuilder_new
             )
         }
-        try {
-            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
-        }  catch (error) {
-            return Promise.reject(error)
-        }}
+        return handleRustResult(functionCall(), liftResult, liftError);}
 
     build() {
         const liftResult = (result) => FfiConverterTypeSuggestStore.lift(result);
         const liftError = (data) => FfiConverterTypeSuggestApiError.lift(data);
         const functionCall = () => {
-            return UniFFIScaffolding.callAsync(
+            return UniFFIScaffolding.callSync(
                 24, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_build
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
             )
         }
-        try {
-            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
-        }  catch (error) {
-            return Promise.reject(error)
-        }
+        return handleRustResult(functionCall(), liftResult, liftError);
     }
 
     cachePath(path) {
@@ -777,42 +767,64 @@ export class SuggestStoreBuilder {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
+            return UniFFIScaffolding.callSync(
                 26, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_data_path
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
                 FfiConverterString.lower(path),
             )
         }
-        try {
-            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
-        }  catch (error) {
-            return Promise.reject(error)
-        }
+        return handleRustResult(functionCall(), liftResult, liftError);
     }
 
-    remoteSettingsConfig(config) {
+    loadExtension(libraryName,entrypoint) {
         const liftResult = (result) => FfiConverterTypeSuggestStoreBuilder.lift(result);
         const liftError = null;
         const functionCall = () => {
             try {
-                FfiConverterTypeRemoteSettingsConfig.checkType(config)
+                FfiConverterString.checkType(libraryName)
             } catch (e) {
                 if (e instanceof UniFFITypeError) {
-                    e.addItemDescriptionPart("config");
+                    e.addItemDescriptionPart("libraryName");
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                27, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_remote_settings_config
+            try {
+                FfiConverterOptionalstring.checkType(entrypoint)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("entrypoint");
+                }
+                throw e;
+            }
+            return UniFFIScaffolding.callSync(
+                27, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_load_extension
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
-                FfiConverterTypeRemoteSettingsConfig.lower(config),
+                FfiConverterString.lower(libraryName),
+                FfiConverterOptionalstring.lower(entrypoint),
             )
         }
-        try {
-            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
-        }  catch (error) {
-            return Promise.reject(error)
+        return handleRustResult(functionCall(), liftResult, liftError);
+    }
+
+    remoteSettingsBucketName(bucketName) {
+        const liftResult = (result) => FfiConverterTypeSuggestStoreBuilder.lift(result);
+        const liftError = null;
+        const functionCall = () => {
+            try {
+                FfiConverterString.checkType(bucketName)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("bucketName");
+                }
+                throw e;
+            }
+            return UniFFIScaffolding.callSync(
+                28, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_remote_settings_bucket_name
+                FfiConverterTypeSuggestStoreBuilder.lower(this),
+                FfiConverterString.lower(bucketName),
+            )
         }
+        return handleRustResult(functionCall(), liftResult, liftError);
     }
 
     remoteSettingsServer(server) {
@@ -827,17 +839,13 @@ export class SuggestStoreBuilder {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                28, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_remote_settings_server
+            return UniFFIScaffolding.callSync(
+                29, // suggest:uniffi_suggest_fn_method_suggeststorebuilder_remote_settings_server
                 FfiConverterTypeSuggestStoreBuilder.lower(this),
                 FfiConverterTypeRemoteSettingsServer.lower(server),
             )
         }
-        try {
-            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
-        }  catch (error) {
-            return Promise.reject(error)
-        }
+        return handleRustResult(functionCall(), liftResult, liftError);
     }
 
 }
@@ -924,15 +932,7 @@ export class FfiConverterTypeSuggestGlobalConfig extends FfiConverterArrayBuffer
 }
 
 export class SuggestIngestionConstraints {
-    constructor({ maxSuggestions = null, providers = null, emptyOnly = false } = {}) {
-        try {
-            FfiConverterOptionalu64.checkType(maxSuggestions)
-        } catch (e) {
-            if (e instanceof UniFFITypeError) {
-                e.addItemDescriptionPart("maxSuggestions");
-            }
-            throw e;
-        }
+    constructor({ providers = null, emptyOnly = false } = {}) {
         try {
             FfiConverterOptionalSequenceTypeSuggestionProvider.checkType(providers)
         } catch (e) {
@@ -949,13 +949,11 @@ export class SuggestIngestionConstraints {
             }
             throw e;
         }
-        this.maxSuggestions = maxSuggestions;
         this.providers = providers;
         this.emptyOnly = emptyOnly;
     }
     equals(other) {
         return (
-            this.maxSuggestions == other.maxSuggestions &&
             this.providers == other.providers &&
             this.emptyOnly == other.emptyOnly
         )
@@ -966,20 +964,17 @@ export class SuggestIngestionConstraints {
 export class FfiConverterTypeSuggestIngestionConstraints extends FfiConverterArrayBuffer {
     static read(dataStream) {
         return new SuggestIngestionConstraints({
-            maxSuggestions: FfiConverterOptionalu64.read(dataStream),
             providers: FfiConverterOptionalSequenceTypeSuggestionProvider.read(dataStream),
             emptyOnly: FfiConverterBool.read(dataStream),
         });
     }
     static write(dataStream, value) {
-        FfiConverterOptionalu64.write(dataStream, value.maxSuggestions);
         FfiConverterOptionalSequenceTypeSuggestionProvider.write(dataStream, value.providers);
         FfiConverterBool.write(dataStream, value.emptyOnly);
     }
 
     static computeSize(value) {
         let totalSize = 0;
-        totalSize += FfiConverterOptionalu64.computeSize(value.maxSuggestions);
         totalSize += FfiConverterOptionalSequenceTypeSuggestionProvider.computeSize(value.providers);
         totalSize += FfiConverterBool.computeSize(value.emptyOnly);
         return totalSize
@@ -989,14 +984,6 @@ export class FfiConverterTypeSuggestIngestionConstraints extends FfiConverterArr
         super.checkType(value);
         if (!(value instanceof SuggestIngestionConstraints)) {
             throw new UniFFITypeError(`Expected 'SuggestIngestionConstraints', found '${typeof value}'`);
-        }
-        try {
-            FfiConverterOptionalu64.checkType(value.maxSuggestions);
-        } catch (e) {
-            if (e instanceof UniFFITypeError) {
-                e.addItemDescriptionPart(".maxSuggestions");
-            }
-            throw e;
         }
         try {
             FfiConverterOptionalSequenceTypeSuggestionProvider.checkType(value.providers);
@@ -1186,7 +1173,8 @@ export class Backoff extends SuggestApiError {
         seconds,
         ...params
     ) {
-        super(...params);
+        const message = `seconds: ${ seconds }`;
+        super(message, ...params);
         this.seconds = seconds;
     }
     toString() {
@@ -1200,7 +1188,8 @@ export class Network extends SuggestApiError {
         reason,
         ...params
     ) {
-        super(...params);
+        const message = `reason: ${ reason }`;
+        super(message, ...params);
         this.reason = reason;
     }
     toString() {
@@ -1214,7 +1203,8 @@ export class Other extends SuggestApiError {
         reason,
         ...params
     ) {
-        super(...params);
+        const message = `reason: ${ reason }`;
+        super(message, ...params);
         this.reason = reason;
     }
     toString() {
@@ -1472,6 +1462,30 @@ Suggestion.Weather = class extends Suggestion{
             this.score = score;
         }
 }
+Suggestion.Fakespot = class extends Suggestion{
+    constructor(
+        fakespotGrade,
+        productId,
+        rating,
+        title,
+        totalReviews,
+        url,
+        icon,
+        iconMimetype,
+        score
+        ) {
+            super();
+            this.fakespotGrade = fakespotGrade;
+            this.productId = productId;
+            this.rating = rating;
+            this.title = title;
+            this.totalReviews = totalReviews;
+            this.url = url;
+            this.icon = icon;
+            this.iconMimetype = iconMimetype;
+            this.score = score;
+        }
+}
 
 // Export the FFIConverter object to make external types work.
 export class FfiConverterTypeSuggestion extends FfiConverterArrayBuffer {
@@ -1539,6 +1553,18 @@ export class FfiConverterTypeSuggestion extends FfiConverterArrayBuffer {
                     );
             case 7:
                 return new Suggestion.Weather(
+                    FfiConverterF64.read(dataStream)
+                    );
+            case 8:
+                return new Suggestion.Fakespot(
+                    FfiConverterString.read(dataStream),
+                    FfiConverterString.read(dataStream),
+                    FfiConverterF64.read(dataStream),
+                    FfiConverterString.read(dataStream),
+                    FfiConverterI64.read(dataStream),
+                    FfiConverterString.read(dataStream),
+                    FfiConverterOptionalSequenceu8.read(dataStream),
+                    FfiConverterOptionalstring.read(dataStream),
                     FfiConverterF64.read(dataStream)
                     );
             default:
@@ -1618,6 +1644,19 @@ export class FfiConverterTypeSuggestion extends FfiConverterArrayBuffer {
             FfiConverterF64.write(dataStream, value.score);
             return;
         }
+        if (value instanceof Suggestion.Fakespot) {
+            dataStream.writeInt32(8);
+            FfiConverterString.write(dataStream, value.fakespotGrade);
+            FfiConverterString.write(dataStream, value.productId);
+            FfiConverterF64.write(dataStream, value.rating);
+            FfiConverterString.write(dataStream, value.title);
+            FfiConverterI64.write(dataStream, value.totalReviews);
+            FfiConverterString.write(dataStream, value.url);
+            FfiConverterOptionalSequenceu8.write(dataStream, value.icon);
+            FfiConverterOptionalstring.write(dataStream, value.iconMimetype);
+            FfiConverterF64.write(dataStream, value.score);
+            return;
+        }
         throw new UniFFITypeError("Unknown Suggestion variant");
     }
 
@@ -1688,6 +1727,18 @@ export class FfiConverterTypeSuggestion extends FfiConverterArrayBuffer {
             totalSize += FfiConverterF64.computeSize(value.score);
             return totalSize;
         }
+        if (value instanceof Suggestion.Fakespot) {
+            totalSize += FfiConverterString.computeSize(value.fakespotGrade);
+            totalSize += FfiConverterString.computeSize(value.productId);
+            totalSize += FfiConverterF64.computeSize(value.rating);
+            totalSize += FfiConverterString.computeSize(value.title);
+            totalSize += FfiConverterI64.computeSize(value.totalReviews);
+            totalSize += FfiConverterString.computeSize(value.url);
+            totalSize += FfiConverterOptionalSequenceu8.computeSize(value.icon);
+            totalSize += FfiConverterOptionalstring.computeSize(value.iconMimetype);
+            totalSize += FfiConverterF64.computeSize(value.score);
+            return totalSize;
+        }
         throw new UniFFITypeError("Unknown Suggestion variant");
     }
 
@@ -1709,6 +1760,7 @@ export const SuggestionProvider = {
     MDN: 6,
     WEATHER: 7,
     AMP_MOBILE: 8,
+    FAKESPOT: 9,
 };
 
 Object.freeze(SuggestionProvider);
@@ -1732,6 +1784,8 @@ export class FfiConverterTypeSuggestionProvider extends FfiConverterArrayBuffer 
                 return SuggestionProvider.WEATHER
             case 8:
                 return SuggestionProvider.AMP_MOBILE
+            case 9:
+                return SuggestionProvider.FAKESPOT
             default:
                 throw new UniFFITypeError("Unknown SuggestionProvider variant");
         }
@@ -1770,6 +1824,10 @@ export class FfiConverterTypeSuggestionProvider extends FfiConverterArrayBuffer 
             dataStream.writeInt32(8);
             return;
         }
+        if (value === SuggestionProvider.FAKESPOT) {
+            dataStream.writeInt32(9);
+            return;
+        }
         throw new UniFFITypeError("Unknown SuggestionProvider variant");
     }
 
@@ -1778,7 +1836,7 @@ export class FfiConverterTypeSuggestionProvider extends FfiConverterArrayBuffer 
     }
 
     static checkType(value) {
-      if (!Number.isInteger(value) || value < 1 || value > 8) {
+      if (!Number.isInteger(value) || value < 1 || value > 9) {
           throw new UniFFITypeError(`${value} is not a valid value for SuggestionProvider`);
       }
     }
@@ -1819,43 +1877,6 @@ export class FfiConverterOptionali32 extends FfiConverterArrayBuffer {
             return 1;
         }
         return 1 + FfiConverterI32.computeSize(value)
-    }
-}
-
-// Export the FFIConverter object to make external types work.
-export class FfiConverterOptionalu64 extends FfiConverterArrayBuffer {
-    static checkType(value) {
-        if (value !== undefined && value !== null) {
-            FfiConverterU64.checkType(value)
-        }
-    }
-
-    static read(dataStream) {
-        const code = dataStream.readUint8(0);
-        switch (code) {
-            case 0:
-                return null
-            case 1:
-                return FfiConverterU64.read(dataStream)
-            default:
-                throw UniFFIError(`Unexpected code: ${code}`);
-        }
-    }
-
-    static write(dataStream, value) {
-        if (value === null || value === undefined) {
-            dataStream.writeUint8(0);
-            return;
-        }
-        dataStream.writeUint8(1);
-        FfiConverterU64.write(dataStream, value)
-    }
-
-    static computeSize(value) {
-        if (value === null || value === undefined) {
-            return 1;
-        }
-        return 1 + FfiConverterU64.computeSize(value)
     }
 }
 
@@ -2255,7 +2276,7 @@ export function rawSuggestionUrlMatches(rawUrl,url) {
                 throw e;
             }
             return UniFFIScaffolding.callSync(
-                29, // suggest:uniffi_suggest_fn_func_raw_suggestion_url_matches
+                30, // suggest:uniffi_suggest_fn_func_raw_suggestion_url_matches
                 FfiConverterString.lower(rawUrl),
                 FfiConverterString.lower(url),
             )

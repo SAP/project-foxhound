@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -97,21 +98,18 @@ fun OnboardingScreen(
         }
     }
 
-    LaunchedEffect(isSignedIn.value) {
-        if (isSignedIn.value == true) {
+    val hasScrolledToNextPage = remember { mutableStateOf(false) }
+
+    LaunchedEffect(isSignedIn.value, isWidgetPinnedState) {
+        if ((isSignedIn.value == true || isWidgetPinnedState) && !hasScrolledToNextPage.value) {
             scrollToNextPageOrDismiss()
+            hasScrolledToNextPage.value = true
         }
     }
 
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { page ->
             onImpression(pagesToDisplay[page])
-        }
-    }
-
-    LaunchedEffect(isWidgetPinnedState) {
-        if (isWidgetPinnedState) {
-            scrollToNextPageOrDismiss()
         }
     }
 
@@ -277,7 +275,7 @@ private fun defaultPreviewPages() = listOf(
         type = OnboardingPageUiData.Type.SYNC_SIGN_IN,
         imageRes = R.drawable.ic_onboarding_sync,
         title = stringResource(R.string.juno_onboarding_sign_in_title_2),
-        description = stringResource(R.string.juno_onboarding_sign_in_description_2),
+        description = stringResource(R.string.juno_onboarding_sign_in_description_3),
         primaryButtonLabel = stringResource(R.string.juno_onboarding_sign_in_positive_button),
         secondaryButtonLabel = stringResource(R.string.juno_onboarding_sign_in_negative_button),
         privacyCaption = Caption(

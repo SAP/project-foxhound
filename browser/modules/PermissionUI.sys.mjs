@@ -706,7 +706,6 @@ class SitePermsAddonInstallRequest extends PermissionPromptForRequest {
         scriptError.initWithWindowID(
           errorMessage,
           null,
-          null,
           0,
           0,
           0,
@@ -1340,7 +1339,7 @@ class StorageAccessPermissionPrompt extends PermissionPromptForRequest {
 
   prettifyHostPort(hostport) {
     let [host, port] = hostport.split(":");
-    host = lazy.IDNService.convertToDisplayIDN(host, {});
+    host = lazy.IDNService.convertToDisplayIDN(host);
     if (port) {
       return `${host}:${port}`;
     }

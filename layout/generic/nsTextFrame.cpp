@@ -62,6 +62,7 @@
 #include "nsUnicodeProperties.h"
 #include "nsStyleUtil.h"
 #include "nsRubyFrame.h"
+#include "PresShellInlines.h"
 #include "TextDrawTarget.h"
 
 #include "nsTextFragment.h"
@@ -674,7 +675,8 @@ int32_t nsTextFrame::GetInFlowContentLength() {
           ? static_cast<FlowLengthProperty*>(
                 mContent->GetProperty(nsGkAtoms::flowlength))
           : nullptr;
-
+  MOZ_ASSERT(mContent->HasFlag(NS_HAS_FLOWLENGTH_PROPERTY) == !!flowLength,
+             "incorrect NS_HAS_FLOWLENGTH_PROPERTY flag");
   /**
    * This frame must start inside the cached flow. If the flow starts at
    * mContentOffset but this frame is empty, logically it might be before the
@@ -703,8 +705,9 @@ int32_t nsTextFrame::GetInFlowContentLength() {
             nsINode::DeleteProperty<FlowLengthProperty>))) {
       delete flowLength;
       flowLength = nullptr;
+    } else {
+      mContent->SetFlags(NS_HAS_FLOWLENGTH_PROPERTY);
     }
-    mContent->SetFlags(NS_HAS_FLOWLENGTH_PROPERTY);
   }
   if (flowLength) {
     flowLength->mStartOffset = mContentOffset;
@@ -3244,7 +3247,7 @@ nsTextFrame::PropertyProvider::PropertyProvider(
     const nsTextFragment* aFrag, nsTextFrame* aFrame,
     const gfxSkipCharsIterator& aStart, int32_t aLength,
     nsIFrame* aLineContainer, nscoord aOffsetFromBlockOriginForTabs,
-    nsTextFrame::TextRunType aWhichTextRun)
+    nsTextFrame::TextRunType aWhichTextRun, bool aAtStartOfLine)
     : mTextRun(aTextRun),
       mFontGroup(nullptr),
       mTextStyle(aTextStyle),
@@ -3265,6 +3268,9 @@ nsTextFrame::PropertyProvider::PropertyProvider(
       mReflowing(true),
       mWhichTextRun(aWhichTextRun) {
   NS_ASSERTION(mStart.IsInitialized(), "Start not initialized?");
+  if (aAtStartOfLine) {
+    mStartOfLineOffset = mStart.GetSkippedOffset();
+  }
 }
 
 nsTextFrame::PropertyProvider::PropertyProvider(
@@ -3722,11 +3728,13 @@ void nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
         after = mLetterSpacing - before;
         break;
     }
+    bool atStart = mStartOfLineOffset == start.GetSkippedOffset() &&
+                   !mFrame->IsInSVGTextSubtree();
     while (run.NextRun()) {
       uint32_t runOffsetInSubstring = run.GetSkippedOffset() - aRange.start;
       gfxSkipCharsIterator iter = run.GetPos();
       for (int32_t i = 0; i < run.GetRunLength(); ++i) {
-        if (before != 0.0 &&
+        if (!atStart && before != 0.0 &&
             CanAddSpacingBefore(mTextRun, run.GetSkippedOffset() + i,
                                 newlineIsSignificant)) {
           aSpacing[runOffsetInSubstring + i].mBefore += before;
@@ -3747,6 +3755,7 @@ void nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
           uint32_t runOffset = iter.GetSkippedOffset() - aRange.start;
           aSpacing[runOffset].mAfter += mWordSpacing;
         }
+        atStart = false;
       }
     }
   }
@@ -3970,6 +3979,9 @@ void nsTextFrame::PropertyProvider::InitializeForDisplay(bool aTrimAfter) {
                          : nsTextFrame::TrimmedOffsetFlags::NoTrimAfter));
   mStart.SetOriginalOffset(trimmed.mStart);
   mLength = trimmed.mLength;
+  if (mFrame->HasAnyStateBits(TEXT_START_OF_LINE)) {
+    mStartOfLineOffset = mStart.GetSkippedOffset();
+  }
   SetupJustificationSpacing(true);
 }
 
@@ -3978,6 +3990,9 @@ void nsTextFrame::PropertyProvider::InitializeForMeasure() {
       mFrag, nsTextFrame::TrimmedOffsetFlags::NotPostReflow);
   mStart.SetOriginalOffset(trimmed.mStart);
   mLength = trimmed.mLength;
+  if (mFrame->HasAnyStateBits(TEXT_START_OF_LINE)) {
+    mStartOfLineOffset = mStart.GetSkippedOffset();
+  }
   SetupJustificationSpacing(false);
 }
 
@@ -4238,9 +4253,13 @@ class nsContinuingTextFrame final : public nsTextFrame {
   };
 
   void AddInlineMinISize(gfxContext* aRenderingContext,
-                         InlineMinISizeData* aData) final;
+                         InlineMinISizeData* aData) final {
+    // Do nothing, since the first-in-flow accounts for everything.
+  }
   void AddInlinePrefISize(gfxContext* aRenderingContext,
-                          InlinePrefISizeData* aData) final;
+                          InlinePrefISizeData* aData) final {
+    // Do nothing, since the first-in-flow accounts for everything.
+  }
 
  protected:
   explicit nsContinuingTextFrame(ComputedStyle* aStyle,
@@ -4360,28 +4379,9 @@ nsIFrame* nsContinuingTextFrame::FirstInFlow() const {
 // XXX We really need to make :first-letter happen during frame
 // construction.
 
-// Needed for text frames in XUL.
-/* virtual */
-nscoord nsTextFrame::GetMinISize(gfxContext* aRenderingContext) {
-  return nsLayoutUtils::MinISizeFromInline(this, aRenderingContext);
-}
-
-// Needed for text frames in XUL.
-/* virtual */
-nscoord nsTextFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  return nsLayoutUtils::PrefISizeFromInline(this, aRenderingContext);
-}
-
-/* virtual */
-void nsContinuingTextFrame::AddInlineMinISize(gfxContext* aRenderingContext,
-                                              InlineMinISizeData* aData) {
-  // Do nothing, since the first-in-flow accounts for everything.
-}
-
-/* virtual */
-void nsContinuingTextFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
-                                               InlinePrefISizeData* aData) {
-  // Do nothing, since the first-in-flow accounts for everything.
+nscoord nsTextFrame::IntrinsicISize(gfxContext* aContext,
+                                    IntrinsicISizeType aType) {
+  return IntrinsicISizeFromInline(aContext, aType);
 }
 
 //----------------------------------------------------------------------
@@ -8598,7 +8598,7 @@ void nsTextFrame::MarkIntrinsicISizesDirty() {
 // XXX this doesn't handle characters shaped by line endings. We need to
 // temporarily override the "current line ending" settings.
 void nsTextFrame::AddInlineMinISizeForFlow(gfxContext* aRenderingContext,
-                                           nsIFrame::InlineMinISizeData* aData,
+                                           InlineMinISizeData* aData,
                                            TextRunType aTextRunType) {
   uint32_t flowEndInTextRun;
   gfxSkipCharsIterator iter =
@@ -8629,7 +8629,7 @@ void nsTextFrame::AddInlineMinISizeForFlow(gfxContext* aRenderingContext,
           iter.GetOriginalOffset();
   }
   PropertyProvider provider(textRun, textStyle, frag, this, iter, len, nullptr,
-                            0, aTextRunType);
+                            0, aTextRunType, aData->mAtStartOfLine);
 
   bool collapseWhitespace = !textStyle->WhiteSpaceIsSignificant();
   bool preformatNewlines = textStyle->NewlineIsSignificant(this);
@@ -8744,6 +8744,7 @@ void nsTextFrame::AddInlineMinISizeForFlow(gfxContext* aRenderingContext,
       } else {
         wordStart = i;
       }
+      provider.SetStartOfLine(iter);
     }
   }
 
@@ -8759,11 +8760,94 @@ bool nsTextFrame::IsCurrentFontInflation(float aInflation) const {
   return fabsf(aInflation - GetFontSizeInflation()) < 1e-6;
 }
 
+void nsTextFrame::MaybeSplitFramesForFirstLetter() {
+  if (!StaticPrefs::layout_css_intrinsic_size_first_letter_enabled()) {
+    return;
+  }
+
+  if (GetParent()->IsFloating() && GetContentLength() > 0) {
+    // We've already claimed our first-letter content, don't try again.
+    return;
+  }
+  if (GetPrevContinuation()) {
+    // This isn't the first part of the first-letter.
+    return;
+  }
+
+  // Find the length of the first-letter. We need a textrun for this; just bail
+  // out if we fail to create it.
+  // But in the floating first-letter case, the text is initially all in our
+  // next-in-flow, and the float itself is empty. So we need to look at that
+  // textrun instead of our own during FindFirstLetterRange.
+  nsTextFrame* f = GetParent()->IsFloating() ? GetNextInFlow() : this;
+  gfxSkipCharsIterator iter = f->EnsureTextRun(nsTextFrame::eInflated);
+  const gfxTextRun* textRun = f->GetTextRun(nsTextFrame::eInflated);
+
+  const nsTextFragment* frag = TextFragment();
+  const int32_t length = GetInFlowContentLength();
+  const int32_t offset = GetContentOffset();
+  int32_t firstLetterLength = length;
+  NewlineProperty* cachedNewlineOffset = nullptr;
+  int32_t newLineOffset = -1;  // this will be -1 or a content offset
+  // This will just return -1 if newlines are not significant.
+  int32_t contentNewLineOffset =
+      GetContentNewLineOffset(offset, cachedNewlineOffset);
+  if (contentNewLineOffset < offset + length) {
+    // The new line offset could be outside this frame if the frame has been
+    // split by bidi resolution. In that case we won't use it in this reflow
+    // (newLineOffset will remain -1), but we will still cache it in mContent
+    newLineOffset = contentNewLineOffset;
+    if (newLineOffset >= 0) {
+      firstLetterLength = newLineOffset - offset;
+    }
+  }
+
+  if (contentNewLineOffset >= 0 && contentNewLineOffset < offset) {
+    // We're in a first-letter frame's first in flow, so if there
+    // was a first-letter, we'd be it. However, for one reason
+    // or another (e.g., preformatted line break before this text),
+    // we're not actually supposed to have first-letter style. So
+    // just make a zero-length first-letter.
+    firstLetterLength = 0;
+  } else {
+    // We only pass a language code to FindFirstLetterRange if it was
+    // explicit in the content.
+    const nsStyleFont* styleFont = StyleFont();
+    const nsAtom* lang =
+        styleFont->mExplicitLanguage ? styleFont->mLanguage.get() : nullptr;
+    FindFirstLetterRange(frag, lang, textRun, offset, iter, &firstLetterLength);
+    if (newLineOffset >= 0) {
+      // Don't allow a preformatted newline to be part of a first-letter.
+      firstLetterLength = std::min(firstLetterLength, length - 1);
+    }
+  }
+  if (firstLetterLength) {
+    AddStateBits(TEXT_FIRST_LETTER);
+  }
+
+  // Change this frame's length to the first-letter length right now
+  // so that when we rebuild the textrun it will be built with the
+  // right first-letter boundary.
+  SetFirstLetterLength(firstLetterLength);
+}
+
+static bool IsUnreflowedLetterFrame(nsIFrame* aFrame) {
+  return aFrame->IsLetterFrame() &&
+         aFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW);
+}
+
 // XXX Need to do something here to avoid incremental reflow bugs due to
-// first-line and first-letter changing min-width
+// first-line changing min-width
 /* virtual */
 void nsTextFrame::AddInlineMinISize(gfxContext* aRenderingContext,
-                                    nsIFrame::InlineMinISizeData* aData) {
+                                    InlineMinISizeData* aData) {
+  // Check if this textframe belongs to a first-letter frame that has not yet
+  // been reflowed; if so, we need to deal with splitting off a continuation
+  // before we can measure the advance correctly.
+  if (IsUnreflowedLetterFrame(GetParent())) {
+    MaybeSplitFramesForFirstLetter();
+  }
+
   float inflation = nsLayoutUtils::FontSizeInflationFor(this);
   TextRunType trtype = (inflation == 1.0f) ? eNotInflated : eInflated;
 
@@ -8802,9 +8886,13 @@ void nsTextFrame::AddInlineMinISize(gfxContext* aRenderingContext,
 
 // XXX this doesn't handle characters shaped by line endings. We need to
 // temporarily override the "current line ending" settings.
-void nsTextFrame::AddInlinePrefISizeForFlow(
-    gfxContext* aRenderingContext, nsIFrame::InlinePrefISizeData* aData,
-    TextRunType aTextRunType) {
+void nsTextFrame::AddInlinePrefISizeForFlow(gfxContext* aRenderingContext,
+                                            InlinePrefISizeData* aData,
+                                            TextRunType aTextRunType) {
+  if (IsUnreflowedLetterFrame(GetParent())) {
+    MaybeSplitFramesForFirstLetter();
+  }
+
   uint32_t flowEndInTextRun;
   gfxSkipCharsIterator iter =
       EnsureTextRun(aTextRunType, aRenderingContext->GetDrawTarget(),
@@ -8820,7 +8908,7 @@ void nsTextFrame::AddInlinePrefISizeForFlow(
   const nsStyleText* textStyle = StyleText();
   const nsTextFragment* frag = TextFragment();
   PropertyProvider provider(textRun, textStyle, frag, this, iter, INT32_MAX,
-                            nullptr, 0, aTextRunType);
+                            nullptr, 0, aTextRunType, aData->mLineIsEmpty);
 
   // text-combine-upright frame is constantly 1em on inline-axis.
   if (Style()->IsTextCombined()) {
@@ -8836,6 +8924,9 @@ void nsTextFrame::AddInlinePrefISizeForFlow(
   gfxFloat tabWidth = -1;
   uint32_t start = FindStartAfterSkippingWhitespace(&provider, aData, textStyle,
                                                     &iter, flowEndInTextRun);
+  if (aData->mLineIsEmpty) {
+    provider.SetStartOfLine(iter);
+  }
 
   // XXX Should we consider hyphenation here?
   // If newlines and tabs aren't preformatted, nothing to do inside
@@ -8916,7 +9007,7 @@ void nsTextFrame::AddInlinePrefISizeForFlow(
 // first-line and first-letter changing pref-width
 /* virtual */
 void nsTextFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
-                                     nsIFrame::InlinePrefISizeData* aData) {
+                                     InlinePrefISizeData* aData) {
   float inflation = nsLayoutUtils::FontSizeInflationFor(this);
   TextRunType trtype = (inflation == 1.0f) ? eNotInflated : eInflated;
 
@@ -9243,6 +9334,39 @@ void nsTextFrame::SetLength(int32_t aLength, nsLineLayout* aLineLayout,
 #endif
 }
 
+void nsTextFrame::SetFirstLetterLength(int32_t aLength) {
+  if (aLength == GetContentLength()) {
+    return;
+  }
+
+  mContentLengthHint = aLength;
+  nsTextFrame* next = static_cast<nsTextFrame*>(GetNextInFlow());
+  if (!aLength && !next) {
+    return;
+  }
+
+  if (aLength > GetContentLength()) {
+    // Stealing some text from our next-in-flow; this happens with floating
+    // first-letter, which is initially given a zero-length range, with all
+    // the text being in its continuation.
+    if (!next) {
+      MOZ_ASSERT_UNREACHABLE("Expected a next-in-flow; first-letter broken?");
+      return;
+    }
+  } else if (!next) {
+    // We need to create a continuation for the parent first-letter frame,
+    // and move any kids after this frame to the new one; if there are none,
+    // a new continuing text frame will be created there.
+    MOZ_ASSERT(GetParent()->IsLetterFrame());
+    auto* letterFrame = static_cast<nsFirstLetterFrame*>(GetParent());
+    next = letterFrame->CreateContinuationForFramesAfter(this);
+  }
+
+  next->mContentOffset = GetContentOffset() + aLength;
+
+  ClearTextRuns();
+}
+
 bool nsTextFrame::IsFloatingFirstLetterChild() const {
   nsIFrame* frame = GetParent();
   return frame && frame->IsFloating() && frame->IsLetterFrame();
@@ -9254,11 +9378,33 @@ bool nsTextFrame::IsInitialLetterChild() const {
          frame->IsLetterFrame();
 }
 
-struct NewlineProperty {
+struct nsTextFrame::NewlineProperty {
   int32_t mStartOffset;
   // The offset of the first \n after mStartOffset, or -1 if there is none
   int32_t mNewlineOffset;
 };
+
+int32_t nsTextFrame::GetContentNewLineOffset(
+    int32_t aOffset, NewlineProperty*& aCachedNewlineOffset) {
+  int32_t contentNewLineOffset = -1;  // this will be -1 or a content offset
+  if (StyleText()->NewlineIsSignificant(this)) {
+    // Pointer to the nsGkAtoms::newline set on this frame's element
+    aCachedNewlineOffset = mContent->HasFlag(NS_HAS_NEWLINE_PROPERTY)
+                               ? static_cast<NewlineProperty*>(
+                                     mContent->GetProperty(nsGkAtoms::newline))
+                               : nullptr;
+    if (aCachedNewlineOffset && aCachedNewlineOffset->mStartOffset <= aOffset &&
+        (aCachedNewlineOffset->mNewlineOffset == -1 ||
+         aCachedNewlineOffset->mNewlineOffset >= aOffset)) {
+      contentNewLineOffset = aCachedNewlineOffset->mNewlineOffset;
+    } else {
+      contentNewLineOffset = FindChar(
+          TextFragment(), aOffset, GetContent()->TextLength() - aOffset, '\n');
+    }
+  }
+
+  return contentNewLineOffset;
+}
 
 void nsTextFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                          const ReflowInput& aReflowInput,
@@ -9379,35 +9525,21 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   int32_t offset = GetContentOffset();
 
   // Restrict preformatted text to the nearest newline
-  int32_t newLineOffset = -1;  // this will be -1 or a content offset
-  int32_t contentNewLineOffset = -1;
-  // Pointer to the nsGkAtoms::newline set on this frame's element
   NewlineProperty* cachedNewlineOffset = nullptr;
-  if (textStyle->NewlineIsSignificant(this)) {
-    cachedNewlineOffset = mContent->HasFlag(NS_HAS_NEWLINE_PROPERTY)
-                              ? static_cast<NewlineProperty*>(
-                                    mContent->GetProperty(nsGkAtoms::newline))
-                              : nullptr;
-    if (cachedNewlineOffset && cachedNewlineOffset->mStartOffset <= offset &&
-        (cachedNewlineOffset->mNewlineOffset == -1 ||
-         cachedNewlineOffset->mNewlineOffset >= offset)) {
-      contentNewLineOffset = cachedNewlineOffset->mNewlineOffset;
-    } else {
-      contentNewLineOffset =
-          FindChar(frag, offset, GetContent()->TextLength() - offset, '\n');
-    }
-    if (contentNewLineOffset < offset + length) {
-      /*
-        The new line offset could be outside this frame if the frame has been
-        split by bidi resolution. In that case we won't use it in this reflow
-        (newLineOffset will remain -1), but we will still cache it in mContent
-      */
-      newLineOffset = contentNewLineOffset;
-    }
-    if (newLineOffset >= 0) {
-      length = newLineOffset + 1 - offset;
-    }
+  int32_t newLineOffset = -1;  // this will be -1 or a content offset
+  // This will just return -1 if newlines are not significant.
+  int32_t contentNewLineOffset =
+      GetContentNewLineOffset(offset, cachedNewlineOffset);
+  if (contentNewLineOffset < offset + length) {
+    // The new line offset could be outside this frame if the frame has been
+    // split by bidi resolution. In that case we won't use it in this reflow
+    // (newLineOffset will remain -1), but we will still cache it in mContent
+    newLineOffset = contentNewLineOffset;
   }
+  if (newLineOffset >= 0) {
+    length = newLineOffset + 1 - offset;
+  }
+
   if ((atStartOfLine && !textStyle->WhiteSpaceIsSignificant()) ||
       HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML)) {
     // Skip leading whitespace. Make sure we don't skip a 'pre-line'
@@ -9542,7 +9674,8 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
           : -1;
   PropertyProvider provider(mTextRun, textStyle, frag, this, iter, length,
                             lineContainer, xOffsetForTabs,
-                            nsTextFrame::eInflated);
+                            nsTextFrame::eInflated,
+                            HasAnyStateBits(TEXT_START_OF_LINE));
 
   uint32_t transformedOffset = provider.GetStart().GetSkippedOffset();
 
@@ -10000,9 +10133,9 @@ nsTextFrame::TrimOutput nsTextFrame::TrimTrailingWhiteSpace(
     if (trimmedEnd < endOffset) {
       // We can't be dealing with tabs here ... they wouldn't be trimmed. So
       // it's OK to pass null for the line container.
-      PropertyProvider provider(mTextRun, textStyle, frag, this, start,
-                                contentLength, nullptr, 0,
-                                nsTextFrame::eInflated);
+      PropertyProvider provider(
+          mTextRun, textStyle, frag, this, start, contentLength, nullptr, 0,
+          nsTextFrame::eInflated, HasAnyStateBits(TEXT_START_OF_LINE));
       delta =
           mTextRun->GetAdvanceWidth(Range(trimmedEnd, endOffset), &provider);
       result.mChanged = true;

@@ -59,11 +59,15 @@ enum class Theme {
  * The theme for Mozilla Firefox for Android (Fenix).
  *
  * @param theme The current [Theme] that is displayed.
+ * @param size The palette of [AcornSize] tokens.
+ * @param windowSize The [AcornWindowSize] of the app window.
  * @param content The children composables to be laid out.
  */
 @Composable
 fun FirefoxTheme(
     theme: Theme = Theme.getTheme(),
+    size: AcornSize = AcornSize(),
+    windowSize: AcornWindowSize = AcornWindowSize.getWindowSize(),
     content: @Composable () -> Unit,
 ) {
     val colors = when (theme) {
@@ -72,7 +76,11 @@ fun FirefoxTheme(
         Theme.Private -> privateColorPalette
     }
 
-    ProvideFirefoxColors(colors) {
+    ProvideAcornTokens(
+        size = size,
+        windowSize = windowSize,
+        colors = colors,
+    ) {
         MaterialTheme(
             content = content,
         )
@@ -86,6 +94,18 @@ object FirefoxTheme {
 
     val typography: FenixTypography
         get() = defaultTypography
+
+    val size: AcornSize
+        @Composable
+        get() = localSize.current
+
+    val space: AcornSpace
+        @Composable
+        get() = localSpace.current
+
+    val windowSize: AcornWindowSize
+        @Composable
+        get() = localWindowSize.current
 }
 
 private val darkColorPalette = FirefoxColors(
@@ -100,7 +120,7 @@ private val darkColorPalette = FirefoxColors(
     layerAccentOpaque = Color(0xFF423262),
     layerScrim = PhotonColors.DarkGrey90A95,
     layerGradientStart = PhotonColors.Violet70,
-    layerGradientEnd = PhotonColors.Violet40,
+    layerGradientEnd = PhotonColors.Violet60,
     layerWarning = PhotonColors.Yellow70A77,
     layerSuccess = PhotonColors.Green80,
     layerCritical = PhotonColors.Pink80,
@@ -180,7 +200,7 @@ private val lightColorPalette = FirefoxColors(
     layerAccentOpaque = Color(0xFFEAE4F9),
     layerScrim = PhotonColors.DarkGrey30A95,
     layerGradientStart = PhotonColors.Violet70,
-    layerGradientEnd = PhotonColors.Violet40,
+    layerGradientEnd = PhotonColors.Violet60,
     layerWarning = PhotonColors.Yellow20,
     layerSuccess = PhotonColors.Green20,
     layerCritical = PhotonColors.Red10,
@@ -893,20 +913,46 @@ class FirefoxColors(
     )
 }
 
+/**
+ * This function is used to set the current value of [localWindowSize],
+ * [localSpace], [localSize], and [localFirefoxColors].
+ */
 @Composable
-fun ProvideFirefoxColors(
+fun ProvideAcornTokens(
+    size: AcornSize,
+    windowSize: AcornWindowSize,
     colors: FirefoxColors,
     content: @Composable () -> Unit,
 ) {
+    val space = AcornSpace.fromWindowSize(windowSize = windowSize)
     val colorPalette = remember {
         // Explicitly creating a new object here so we don't mutate the initial [colors]
         // provided, and overwrite the values set in it.
         colors.copy()
     }
     colorPalette.update(colors)
-    CompositionLocalProvider(localFirefoxColors provides colorPalette, content = content)
+
+    CompositionLocalProvider(
+        localWindowSize provides windowSize,
+        localSpace provides space,
+        localSize provides size,
+        localFirefoxColors provides colorPalette,
+        content = content,
+    )
 }
 
 private val localFirefoxColors = staticCompositionLocalOf<FirefoxColors> {
     error("No FirefoxColors provided")
+}
+
+private val localWindowSize = staticCompositionLocalOf<AcornWindowSize> {
+    error("No FirefoxWindowSize provided")
+}
+
+private val localSpace = staticCompositionLocalOf<AcornSpace> {
+    error("No FirefoxSpace provided")
+}
+
+private val localSize = staticCompositionLocalOf<AcornSize> {
+    error("No FirefoxSize provided")
 }

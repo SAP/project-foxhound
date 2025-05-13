@@ -1112,7 +1112,7 @@ class XPCShellTests(object):
 
         filters = []
         if test_tags:
-            filters.append(tags(test_tags))
+            filters.extend([tags(x) for x in test_tags])
 
         path_filter = None
         if test_paths:
@@ -1486,13 +1486,19 @@ class XPCShellTests(object):
         if sys.platform == "win32":
             binSuffix = ".exe"
         http3ServerPath = self.http3ServerPath
+        serverEnv = self.env.copy()
         if not http3ServerPath:
-            http3ServerPath = os.path.join(
-                SCRIPT_DIR, "http3server", "http3server" + binSuffix
-            )
-            if build:
+            if self.mozInfo["buildapp"] == "mobile/android":
+                # For android, use binary from host utilities.
+                http3ServerPath = os.path.join(self.xrePath, "http3server" + binSuffix)
+                serverEnv["LD_LIBRARY_PATH"] = self.xrePath
+            elif build:
                 http3ServerPath = os.path.join(
                     build.topobjdir, "dist", "bin", "http3server" + binSuffix
+                )
+            else:
+                http3ServerPath = os.path.join(
+                    SCRIPT_DIR, "http3server", "http3server" + binSuffix
                 )
         dbPath = os.path.join(SCRIPT_DIR, "http3server", "http3serverDB")
         if build:
@@ -1502,7 +1508,6 @@ class XPCShellTests(object):
         options["profilePath"] = dbPath
         options["isMochitest"] = False
         options["isWin"] = sys.platform == "win32"
-        serverEnv = self.env.copy()
         serverLog = self.env.get("MOZHTTP3_SERVER_LOG")
         if serverLog is not None:
             serverEnv["RUST_LOG"] = serverLog
@@ -1581,6 +1586,14 @@ class XPCShellTests(object):
         self.mozInfo["is_ubuntu"] = "Ubuntu" in platform.version()
 
         mozinfo.update(self.mozInfo)
+
+        # TODO: remove this when crashreporter is fixed on mac via bug 1910777
+        if self.mozInfo["os"] == "mac":
+            (release, versioninfo, machine) = platform.mac_ver()
+            versionNums = release.split(".")[:2]
+            os_version = "%s.%s" % (versionNums[0], versionNums[1].ljust(2, "0"))
+            if os_version == "14.40":
+                self.mozInfo["crashreporter"] = False
 
         return True
 
@@ -1806,9 +1819,6 @@ class XPCShellTests(object):
                 "full", self.appPath
             )
             options["self_test"] = False
-            if not options["test_tags"]:
-                options["test_tags"] = []
-            options["test_tags"].append("condprof")
 
         self.setAbsPath()
 
@@ -2037,6 +2047,11 @@ class XPCShellTests(object):
                 # Run tests sequentially, with MOZ_CHAOSMODE enabled.
                 sequential_tests = []
                 self.env["MOZ_CHAOSMODE"] = "0xfb"
+
+                # for android, adjust flags to avoid slow down
+                if self.env.get("MOZ_ANDROID_DATA_DIR", ""):
+                    self.env["MOZ_CHAOSMODE"] = "0x3b"
+
                 # chaosmode runs really slow, allow tests extra time to pass
                 kwargs["harness_timeout"] = self.harness_timeout * 2
                 for i in range(VERIFY_REPEAT):

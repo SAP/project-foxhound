@@ -24,6 +24,20 @@ void MacroAssembler::move64(Imm64 imm, Register64 dest) {
   move32(Imm32((imm.value >> 32) & 0xFFFFFFFFL), dest.high);
 }
 
+void MacroAssembler::moveFloat16ToGPR(FloatRegister src, Register dest) {
+  ma_vxfer(src, dest);
+
+  // Ensure the hi-word is zeroed.
+  as_uxth(dest, dest, 0);
+}
+
+void MacroAssembler::moveGPRToFloat16(Register src, FloatRegister dest) {
+  // Ensure the hi-word is zeroed.
+  as_uxth(src, src, 0);
+
+  ma_vxfer(src, dest);
+}
+
 void MacroAssembler::moveFloat32ToGPR(FloatRegister src, Register dest) {
   ma_vxfer(src, dest);
 }
@@ -342,7 +356,8 @@ void MacroAssembler::patchSub32FromStackPtr(CodeOffset offset, Imm32 imm) {
   ScratchRegisterScope scratch(*this);
   BufferInstructionIterator iter(BufferOffset(offset.offset()), &m_buffer);
   iter.maybeSkipAutomaticInstructions();
-  ma_mov_patch(imm, scratch, Always, HasMOVWT() ? L_MOVWT : L_LDR, iter);
+  ma_mov_patch(imm, scratch, Always, ARMFlags::HasMOVWT() ? L_MOVWT : L_LDR,
+               iter);
 }
 
 void MacroAssembler::addDouble(FloatRegister src, FloatRegister dest) {
@@ -523,7 +538,7 @@ void MacroAssembler::mulDoublePtr(ImmPtr imm, Register temp,
 
 void MacroAssembler::quotient32(Register rhs, Register srcDest,
                                 bool isUnsigned) {
-  MOZ_ASSERT(HasIDIV());
+  MOZ_ASSERT(ARMFlags::HasIDIV());
   if (isUnsigned) {
     ma_udiv(srcDest, rhs, srcDest);
   } else {
@@ -533,7 +548,7 @@ void MacroAssembler::quotient32(Register rhs, Register srcDest,
 
 void MacroAssembler::remainder32(Register rhs, Register srcDest,
                                  bool isUnsigned) {
-  MOZ_ASSERT(HasIDIV());
+  MOZ_ASSERT(ARMFlags::HasIDIV());
 
   ScratchRegisterScope scratch(*this);
   if (isUnsigned) {
@@ -2531,6 +2546,21 @@ FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
   BufferOffset offset = ma_vstr(src.asSingle(), addr.base, addr.index, scratch,
                                 scratch2, scale, addr.offset);
   return FaultingCodeOffset(offset.getOffset());
+}
+
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const Address& dest, Register scratch) {
+  ma_vxfer(src, scratch);
+
+  // store16 uses |strh|, which supports unaligned access.
+  return store16(scratch, dest);
+}
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const BaseIndex& dest, Register scratch) {
+  ma_vxfer(src, scratch);
+
+  // store16 uses |strh|, which supports unaligned access.
+  return store16(scratch, dest);
 }
 
 void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {

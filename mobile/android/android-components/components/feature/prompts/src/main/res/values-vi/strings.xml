@@ -13,7 +13,7 @@
     <!-- Text for the title of an authentication dialog. -->
     <string name="mozac_feature_prompt_sign_in">Đăng nhập</string>
     <!-- Text for username field in an authentication dialog. -->
-    <string name="mozac_feature_prompt_username_hint">Tên đăng nhập</string>
+    <string name="mozac_feature_prompt_username_hint">Tên người dùng</string>
     <!-- Text for password field in an authentication dialog. -->
     <string name="mozac_feature_prompt_password_hint">Mật khẩu</string>
     <!-- Negative confirmation that we should not save the new or updated login -->
@@ -49,7 +49,9 @@
     <!-- Prompt message displayed when app detects a user has entered a new password for an existing login and user decides if app should update the password. -->
     <string name="mozac_feature_prompt_login_update_headline_2">Cập nhật lại mật khẩu?</string>
     <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
-    <string name="mozac_feature_prompt_login_add_username_headline">Thêm tên người dùng vào mật khẩu đã lưu?</string>
+    <string name="mozac_feature_prompt_login_add_username_headline" moz:removedIn="130" tools:ignore="UnusedResources">Thêm tên người dùng vào mật khẩu đã lưu?</string>
+    <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
+    <string name="mozac_feature_prompt_login_add_username_headline_2">Cập nhật tên người dùng?</string>
     <!-- Text for a label for the field when prompt requesting a text is shown. -->
     <!-- For more info take a look here https://developer.mozilla.org/en-US/docs/Web/API/Window/prompt -->
     <string name="mozac_feature_prompts_content_description_input_label">Nhãn để nhập trường văn bản</string>
@@ -125,7 +127,10 @@
     <!-- Title for using the suggest strong password confirmation dialog -->
     <string name="mozac_feature_prompts_suggest_strong_password_title">Sử dụng mật khẩu mạnh?</string>
     <!-- Content description for the suggest strong password confirmation dialog -->
-    <string name="mozac_feature_prompts_suggest_strong_password_description">Bảo vệ tài khoản của bạn bằng cách sử dụng mật khẩu mạnh, được tạo ngẫu nhiên. Truy cập nhanh vào mật khẩu của bạn bằng cách lưu nó vào tài khoản của bạn.</string>
+    <string name="mozac_feature_prompts_suggest_strong_password_description" moz:removedIn="130" tools:ignore="UnusedResources">Bảo vệ tài khoản của bạn bằng cách sử dụng mật khẩu mạnh, được tạo ngẫu nhiên. Truy cập nhanh vào mật khẩu của bạn bằng cách lưu nó vào tài khoản của bạn.</string>
+    <!-- Content description for the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_description_2">Bảo vệ tài khoản của bạn bằng cách sử dụng mật khẩu mạnh, được tạo ngẫu nhiên. Nó sẽ được lưu vào tài khoản của bạn để sử dụng trong tương lai.</string>
+
     <!-- Pressing this will use the suggested strong password -->
     <string name="mozac_feature_prompts_suggest_strong_password_use_password">Sử dụng mật khẩu</string>
     <!-- Pressing this will dismiss the suggested strong password dialog -->
@@ -135,6 +140,9 @@
     <!-- Title for showing the suggest strong password updated confirmation snackbar -->
     <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Đã cập nhật mật khẩu</string>
 
+
+    <!-- Title for showing the username updated confirmation snackbar -->
+    <string name="mozac_feature_prompt_login_snackbar_username_updated">Đã cập nhật tên người dùng</string>
 
     <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
     <string name="mozac_feature_prompt_repost_title">Gửi lại dữ liệu cho trang web này?</string>

@@ -141,7 +141,7 @@ class nsHtml5String final {
   /**
    * Constructor from raw bits.
    */
-  explicit nsHtml5String(uintptr_t aBits) : mBits(aBits) {};
+  explicit nsHtml5String(uintptr_t aBits) : mBits(aBits), mTaint() {};
 
   explicit nsHtml5String(uintptr_t aBits, const StringTaint& aTaint) : mBits(aBits), mTaint(aTaint) {};
 

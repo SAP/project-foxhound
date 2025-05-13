@@ -37,7 +37,6 @@ class nsDocumentFragment;
 class nsFrameSelection;
 class nsHTMLDocument;
 class nsITransferable;
-class nsIClipboard;
 class nsRange;
 class nsStaticAtom;
 class nsStyledElement;
@@ -171,7 +170,7 @@ class HTMLEditor final : public EditorBase,
 
   bool IsEmpty() const final;
 
-  bool CanPaste(int32_t aClipboardType) const final;
+  bool CanPaste(nsIClipboard::ClipboardType aClipboardType) const final;
   using EditorBase::CanPaste;
 
   MOZ_CAN_RUN_SCRIPT NS_IMETHOD DeleteNode(nsINode* aNode,
@@ -246,9 +245,10 @@ class HTMLEditor final : public EditorBase,
    *                            JS.  If set to nullptr, will be treated as
    *                            called by system.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult PasteNoFormattingAsAction(
-      int32_t aClipboardType, DispatchPasteEvent aDispatchPasteEvent,
-      nsIPrincipal* aPrincipal = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  PasteNoFormattingAsAction(nsIClipboard::ClipboardType aClipboardType,
+                            DispatchPasteEvent aDispatchPasteEvent,
+                            nsIPrincipal* aPrincipal = nullptr);
 
   bool CanPasteTransferable(nsITransferable* aTransferable) final;
 
@@ -680,9 +680,15 @@ class HTMLEditor final : public EditorBase,
   }
 
   /**
-   * Return true if we're in designMode.
+   * Return true if this editor was notified of focus, but has not been notified
+   * of the blur.
    */
-  bool IsInDesignMode() const;
+  [[nodiscard]] bool HasFocus() const { return mHasFocus; }
+
+  /**
+   * Return true if this editor is in the designMode.
+   */
+  [[nodiscard]] bool IsInDesignMode() const { return mIsInDesignMode; }
 
   /**
    * Return true if entire the document is editable (although the document
@@ -1009,15 +1015,6 @@ class HTMLEditor final : public EditorBase,
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   DoJoinNodes(nsIContent& aContentToKeep, nsIContent& aContentToRemove);
-
-  /**
-   * Routines for managing the preservation of selection across
-   * various editor actions.
-   */
-  bool ArePreservingSelection() const;
-  void PreserveSelectionAcrossActions();
-  MOZ_CAN_RUN_SCRIPT nsresult RestorePreservedSelection();
-  void StopPreservingSelection();
 
   /**
    * Called when JoinNodesTransaction::DoTransaction() did its transaction.
@@ -3126,10 +3123,12 @@ class HTMLEditor final : public EditorBase,
    */
   Result<RefPtr<Element>, nsresult> GetFirstSelectedCellElementInTable() const;
 
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandlePaste(
-      AutoEditActionDataSetter& aEditActionData, int32_t aClipboardType) final;
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandlePasteAsQuotation(
-      AutoEditActionDataSetter& aEditActionData, int32_t aClipboardType) final;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  HandlePaste(AutoEditActionDataSetter& aEditActionData,
+              nsIClipboard::ClipboardType aClipboardType) final;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  HandlePasteAsQuotation(AutoEditActionDataSetter& aEditActionData,
+                         nsIClipboard::ClipboardType aClipboardType) final;
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   HandlePasteTransferable(AutoEditActionDataSetter& aEditActionData,
                           nsITransferable& aTransferable) final;
@@ -3142,7 +3141,8 @@ class HTMLEditor final : public EditorBase,
    * @param aClipboardType      nsIClipboard::kGlobalClipboard or
    *                            nsIClipboard::kSelectionClipboard.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult PasteInternal(int32_t aClipboardType);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  PasteInternal(nsIClipboard::ClipboardType aClipboardType);
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   InsertWithQuotationsAsSubAction(const nsAString& aQuotedText) final;
@@ -3716,7 +3716,8 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult SetSelectionAtDocumentStart();
 
   // Methods for handling plaintext quotations
-  MOZ_CAN_RUN_SCRIPT nsresult PasteAsPlaintextQuotation(int32_t aSelectionType);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  PasteAsPlaintextQuotation(nsIClipboard::ClipboardType aSelectionType);
 
   /**
    * Insert a string as quoted text, replacing the selected text (if any).
@@ -4332,44 +4333,6 @@ class HTMLEditor final : public EditorBase,
                                  const Element& aEditingHost);
 
   /**
-   * Stack based helper class for saving/restoring selection.  Note that this
-   * assumes that the nodes involved are still around afterwords!
-   */
-  class AutoSelectionRestorer final {
-   public:
-    AutoSelectionRestorer() = delete;
-    explicit AutoSelectionRestorer(const AutoSelectionRestorer& aOther) =
-        delete;
-    AutoSelectionRestorer(AutoSelectionRestorer&& aOther) = delete;
-
-    /**
-     * Constructor responsible for remembering all state needed to restore
-     * aSelection.
-     * XXX This constructor and the destructor should be marked as
-     *     `MOZ_CAN_RUN_SCRIPT`, but it's impossible due to this may be used
-     *     with `Maybe`.
-     */
-    MOZ_CAN_RUN_SCRIPT_BOUNDARY explicit AutoSelectionRestorer(
-        HTMLEditor& aHTMLEditor);
-
-    /**
-     * Destructor restores mSelection to its former state
-     */
-    MOZ_CAN_RUN_SCRIPT_BOUNDARY ~AutoSelectionRestorer();
-
-    /**
-     * Abort() cancels to restore the selection.
-     */
-    void Abort();
-
-    bool MaybeRestoreSelectionLater() const { return !!mHTMLEditor; }
-
-   protected:
-    // The lifetime must be guaranteed by the creator of this instance.
-    MOZ_KNOWN_LIVE HTMLEditor* mHTMLEditor = nullptr;
-  };
-
-  /**
    * Stack based helper class for calling EditorBase::EndTransactionInternal().
    * NOTE:  This does not suppress multiple input events.  In most cases,
    *        only one "input" event should be fired for an edit action rather
@@ -4501,13 +4464,16 @@ class HTMLEditor final : public EditorBase,
   ManualNACPtr mRemoveRowButton;
   ManualNACPtr mAddRowAfterButton;
 
-  void AddMouseClickListener(Element* aElement);
-  void RemoveMouseClickListener(Element* aElement);
+  void AddPointerClickListener(Element* aElement);
+  void RemovePointerClickListener(Element* aElement);
 
   bool mDisabledLinkHandling = false;
   bool mOldLinkHandlingEnabled = false;
 
   bool mHasBeforeInputBeenCanceled = false;
+
+  bool mHasFocus = false;
+  bool mIsInDesignMode = false;
 
   ParagraphSeparator mDefaultParagraphSeparator;
 
@@ -4515,6 +4481,7 @@ class HTMLEditor final : public EditorBase,
                                        // CollectNonEditableNodes
   friend class AutoRangeArray;  // RangeUpdaterRef, SplitNodeWithTransaction,
                                 // SplitInlineAncestorsAtRangeBoundaries
+  friend class AutoSelectionRestore;
   friend class AutoSelectionSetterAfterTableEdit;  // SetSelectionAfterEdit
   friend class
       AutoSetTemporaryAncestorLimiter;  // InitializeSelectionAncestorLimit

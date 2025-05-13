@@ -20,8 +20,6 @@
 #![allow(
     // It is much clearer to assert negative conditions with eq! false
     clippy::bool_assert_comparison,
-    // We use loops for getting early-out of scope without closures.
-    clippy::never_loop,
     // We don't use syntax sugar where it's not necessary.
     clippy::match_like_matches_macro,
     // Redundant matching is more explicit.
@@ -73,6 +71,7 @@ pub mod resource;
 mod snatch;
 pub mod storage;
 mod track;
+mod utils;
 // This is public for users who pre-compile shaders while still wanting to
 // preserve all run-time checks that `wgpu-core` does.
 // See <https://github.com/gfx-rs/wgpu/issues/3103>, after which this can be
@@ -98,14 +97,10 @@ pub type RawString = *const c_char;
 pub type Label<'a> = Option<Cow<'a, str>>;
 
 trait LabelHelpers<'a> {
-    fn borrow_option(&'a self) -> Option<&'a str>;
     fn to_hal(&'a self, flags: wgt::InstanceFlags) -> Option<&'a str>;
-    fn borrow_or_default(&'a self) -> &'a str;
+    fn to_string(&self) -> String;
 }
 impl<'a> LabelHelpers<'a> for Label<'a> {
-    fn borrow_option(&'a self) -> Option<&'a str> {
-        self.as_ref().map(|cow| cow.as_ref())
-    }
     fn to_hal(&'a self, flags: wgt::InstanceFlags) -> Option<&'a str> {
         if flags.contains(wgt::InstanceFlags::DISCARD_HAL_LABELS) {
             return None;
@@ -113,8 +108,8 @@ impl<'a> LabelHelpers<'a> for Label<'a> {
 
         self.as_ref().map(|cow| cow.as_ref())
     }
-    fn borrow_or_default(&'a self) -> &'a str {
-        self.borrow_option().unwrap_or_default()
+    fn to_string(&self) -> String {
+        self.as_ref().map(|cow| cow.to_string()).unwrap_or_default()
     }
 }
 

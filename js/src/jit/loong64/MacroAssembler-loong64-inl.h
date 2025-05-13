@@ -60,6 +60,14 @@ void MacroAssembler::moveGPRToFloat32(Register src, FloatRegister dest) {
   moveToFloat32(src, dest);
 }
 
+void MacroAssembler::moveFloat16ToGPR(FloatRegister src, Register dest) {
+  MOZ_CRASH("Not supported for this target");
+}
+
+void MacroAssembler::moveGPRToFloat16(Register src, FloatRegister dest) {
+  MOZ_CRASH("Not supported for this target");
+}
+
 void MacroAssembler::move8ZeroExtend(Register src, Register dest) {
   as_bstrpick_d(dest, src, 7, 0);
 }
@@ -2013,6 +2021,15 @@ FaultingCodeOffset MacroAssembler::storeUncanonicalizedDouble(
   return ma_fst_d(src, addr);
 }
 
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const Address& dest, Register) {
+  MOZ_CRASH("Not supported for this target");
+}
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const BaseIndex& dest, Register) {
+  MOZ_CRASH("Not supported for this target");
+}
+
 void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {
   if (barrier) {
     as_dbar(0);
@@ -2123,29 +2140,6 @@ void MacroAssemblerLOONG64Compat::retn(Imm32 n) {
   loadPtr(Address(StackPointer, 0), ra);
   asMasm().addPtr(n, StackPointer);
   as_jirl(zero, ra, BOffImm16(0));
-}
-
-// If source is a double, load into dest.
-// If source is int32, convert to double and store in dest.
-// Else, branch to failure.
-void MacroAssemblerLOONG64Compat::ensureDouble(const ValueOperand& source,
-                                               FloatRegister dest,
-                                               Label* failure) {
-  Label isDouble, done;
-  {
-    ScratchTagScope tag(asMasm(), source);
-    splitTagForTest(source, tag);
-    asMasm().branchTestDouble(Assembler::Equal, tag, &isDouble);
-    asMasm().branchTestInt32(Assembler::NotEqual, tag, failure);
-  }
-
-  convertInt32ToDouble(source.valueReg(), dest);
-  jump(&done);
-
-  bind(&isDouble);
-  unboxDouble(source, dest);
-
-  bind(&done);
 }
 
 }  // namespace jit

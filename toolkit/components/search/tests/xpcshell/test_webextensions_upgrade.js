@@ -3,15 +3,10 @@
 
 "use strict";
 
-const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
-
 add_setup(async function () {
   await SearchTestUtils.useTestEngines("data1");
-  await promiseStartupManager();
   await Services.search.init();
   await promiseAfterSettings();
-
-  registerCleanupFunction(promiseShutdownManager);
 });
 
 add_task(async function test_basic_upgrade() {
@@ -173,8 +168,8 @@ add_task(async function test_upgrade_to_existing_name_not_allowed() {
   await promise;
 
   Assert.equal(
-    Services.search.getEngineByName("engine1").getSubmission("").uri.spec,
-    "https://1.example.com/",
+    Services.search.getEngineByName("engine1").getSubmission("abc").uri.spec,
+    "https://1.example.com/search?q=abc",
     "Should have not changed the original engine"
   );
 

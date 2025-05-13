@@ -12,10 +12,12 @@
 #include "TextEvents.h"
 #include "TouchEvents.h"
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/InternalMutationEvent.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_mousewheel.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/WritingModes.h"
@@ -56,6 +58,119 @@ const char* ToChar(EventMessage aEventMessage) {
 #undef NS_EVENT_MESSAGE
     default:
       return "illegal event message";
+  }
+}
+
+bool IsPointerEventMessage(EventMessage aMessage) {
+  switch (aMessage) {
+    case ePointerDown:
+    case ePointerMove:
+    case ePointerUp:
+    case ePointerCancel:
+    case ePointerOver:
+    case ePointerOut:
+    case ePointerEnter:
+    case ePointerLeave:
+    case ePointerGotCapture:
+    case ePointerLostCapture:
+    case ePointerClick:
+    case ePointerAuxClick:
+    case eContextMenu:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool IsPointerEventMessageOriginallyMouseEventMessage(EventMessage aMessage) {
+  return aMessage == ePointerClick || aMessage == ePointerAuxClick ||
+         aMessage == eContextMenu;
+}
+
+bool IsForbiddenDispatchingToNonElementContent(EventMessage aMessage) {
+  switch (aMessage) {
+    // Keyboard event target should be an Element node
+    case eKeyDown:
+    case eKeyUp:
+    case eKeyPress:
+    // Mouse event target should be an Element node
+    case eMouseMove:
+    case eMouseUp:
+    case eMouseDown:
+    case eMouseEnterIntoWidget:
+    case eMouseExitFromWidget:
+    case eMouseDoubleClick:
+    case eMouseActivate:
+    case eMouseOver:
+    case eMouseOut:
+    case eMouseHitTest:
+    case eMouseEnter:
+    case eMouseLeave:
+    case eMouseTouchDrag:
+    case eMouseLongTap:
+    case eMouseExploreByTouch:
+    // Pointer event target should be an Element node
+    case ePointerClick:
+    case ePointerAuxClick:
+    case ePointerMove:
+    case ePointerUp:
+    case ePointerDown:
+    case ePointerOver:
+    case ePointerOut:
+    case ePointerEnter:
+    case ePointerLeave:
+    case ePointerCancel:
+    case ePointerGotCapture:
+    case ePointerLostCapture:
+    case eContextMenu:
+    // Drag event target should be an Element node
+    case eDragEnter:
+    case eDragOver:
+    case eDragExit:
+    case eDrag:
+    case eDragEnd:
+    case eDragStart:
+    case eDrop:
+    case eDragLeave:
+    // case mouse wheel related message target should be an Element node
+    case eLegacyMouseLineOrPageScroll:
+    case eLegacyMousePixelScroll:
+    case eWheel:
+    // Composition event message target should be an Element node
+    case eCompositionStart:
+    case eCompositionEnd:
+    case eCompositionUpdate:
+    case eCompositionChange:
+    case eCompositionCommitAsIs:
+    case eCompositionCommit:
+    case eCompositionCommitRequestHandled:
+    // Gesture event target should be an Element node
+    case eSwipeGestureMayStart:
+    case eSwipeGestureStart:
+    case eSwipeGestureUpdate:
+    case eSwipeGestureEnd:
+    case eSwipeGesture:
+    case eMagnifyGestureStart:
+    case eMagnifyGestureUpdate:
+    case eMagnifyGesture:
+    case eRotateGestureStart:
+    case eRotateGestureUpdate:
+    case eRotateGesture:
+    case eTapGesture:
+    case ePressTapGesture:
+    case eEdgeUIStarted:
+    case eEdgeUICanceled:
+    case eEdgeUICompleted:
+    // Touch event target should be an Element node
+    case eTouchStart:
+    case eTouchMove:
+    case eTouchEnd:
+    case eTouchCancel:
+    case eTouchPointerCancel:
+      return true;
+
+    default:
+      return false;
   }
 }
 
@@ -314,9 +429,7 @@ bool WidgetEvent::HasMouseEventMessage() const {
   switch (mMessage) {
     case eMouseDown:
     case eMouseUp:
-    case eMouseClick:
     case eMouseDoubleClick:
-    case eMouseAuxClick:
     case eMouseEnterIntoWidget:
     case eMouseExitFromWidget:
     case eMouseActivate:
@@ -325,9 +438,18 @@ bool WidgetEvent::HasMouseEventMessage() const {
     case eMouseHitTest:
     case eMouseMove:
       return true;
+    // TODO: Perhaps, we should rename this method.
+    case ePointerClick:
+    case ePointerAuxClick:
+      return true;
     default:
       return false;
   }
+}
+
+bool WidgetEvent::IsMouseEventClassOrHasClickRelatedPointerEvent() const {
+  return mClass == eMouseEventClass ||
+         IsPointerEventMessageOriginallyMouseEventMessage(mMessage);
 }
 
 bool WidgetEvent::HasDragEventMessage() const {
@@ -497,7 +619,8 @@ bool WidgetEvent::IsAllowedToDispatchInSystemGroup() const {
   // We don't expect to implement default behaviors with pointer events because
   // if we do, prevent default on mouse events can't prevent default behaviors
   // anymore.
-  return mClass != ePointerEventClass;
+  return mClass != ePointerEventClass ||
+         IsPointerEventMessageOriginallyMouseEventMessage(mMessage);
 }
 
 bool WidgetEvent::IsBlockedForFingerprintingResistance() const {
@@ -511,6 +634,10 @@ bool WidgetEvent::IsBlockedForFingerprintingResistance() const {
               keyboardEvent->mKeyNameIndex == KEY_NAME_INDEX_AltGraph);
     }
     case ePointerEventClass: {
+      if (IsPointerEventMessageOriginallyMouseEventMessage(mMessage)) {
+        return false;
+      }
+
       const WidgetPointerEvent* pointerEvent = AsPointerEvent();
 
       // We suppress the pointer events if it is not primary for fingerprinting
@@ -706,8 +833,9 @@ void WidgetMouseEvent::AssertContextMenuEventButtonConsistency() const {
 
 void WidgetDragEvent::InitDropEffectForTests() {
   MOZ_ASSERT(mFlags.mIsSynthesizedForTests);
+  MOZ_ASSERT(mWidget);
 
-  nsCOMPtr<nsIDragSession> session = nsContentUtils::GetDragSession();
+  nsCOMPtr<nsIDragSession> session = nsContentUtils::GetDragSession(mWidget);
   if (NS_WARN_IF(!session)) {
     return;
   }

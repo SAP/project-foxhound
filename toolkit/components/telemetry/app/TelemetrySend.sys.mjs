@@ -29,6 +29,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const Utils = TelemetryUtils;
+const PREF_TELEMETRY_ENABLED = "toolkit.telemetry.enabled";
 
 const LOGGER_NAME = "Toolkit.Telemetry";
 const LOGGER_PREFIX = "TelemetrySend::";
@@ -825,6 +826,7 @@ export var TelemetrySendImpl = {
         const crs = cr.getService(Ci.nsICrashReporter);
 
         let clientId = ClientID.getCachedClientID();
+        let profileGroupId = ClientID.getCachedProfileGroupID();
         let server =
           this._server ||
           Services.prefs.getStringPref(
@@ -838,9 +840,11 @@ export var TelemetrySendImpl = {
         ) {
           // If we cannot send pings then clear the crash annotations
           crs.removeCrashReportAnnotation("TelemetryClientId");
+          crs.removeCrashReportAnnotation("TelemetryProfileGroupId");
           crs.removeCrashReportAnnotation("TelemetryServerURL");
         } else {
           crs.annotateCrashReport("TelemetryClientId", clientId);
+          crs.annotateCrashReport("TelemetryProfileGroupId", profileGroupId);
           crs.annotateCrashReport("TelemetryServerURL", server);
         }
       }
@@ -1590,7 +1594,7 @@ export var TelemetrySendImpl = {
     }
 
     // Without unified Telemetry, the Telemetry enabled pref controls ping sending.
-    return Utils.isTelemetryEnabled;
+    return Services.prefs.getBoolPref(PREF_TELEMETRY_ENABLED, false) === true;
   },
 
   /**

@@ -12,7 +12,7 @@ Subject: Bug 1766646 - (fix-ae0d117d51) ifdef our Csrc impl vs upstream's
  5 files changed, 20 insertions(+)
 
 diff --git a/modules/rtp_rtcp/source/rtp_header_extensions.cc b/modules/rtp_rtcp/source/rtp_header_extensions.cc
-index c51692b818..13481ecb3b 100644
+index bcdc9a036b..cb6793f6d7 100644
 --- a/modules/rtp_rtcp/source/rtp_header_extensions.cc
 +++ b/modules/rtp_rtcp/source/rtp_header_extensions.cc
 @@ -181,6 +181,7 @@ bool AudioLevelExtension::Write(rtc::ArrayView<uint8_t> data,
@@ -48,18 +48,18 @@ index c51692b818..13481ecb3b 100644
  // Video Content Type.
  //
 diff --git a/modules/rtp_rtcp/source/rtp_header_extensions.h b/modules/rtp_rtcp/source/rtp_header_extensions.h
-index 9187cb97bc..f5de03e964 100644
+index 05e771a56d..9cafd4d6f6 100644
 --- a/modules/rtp_rtcp/source/rtp_header_extensions.h
 +++ b/modules/rtp_rtcp/source/rtp_header_extensions.h
-@@ -101,6 +101,7 @@ class AudioLevelExtension {
-                     uint8_t audio_level);
+@@ -104,6 +104,7 @@ class AudioLevelExtension {
+   static bool Write(rtc::ArrayView<uint8_t> data, const AudioLevel& extension);
  };
  
 +#if !defined(WEBRTC_MOZILLA_BUILD)
  class CsrcAudioLevel {
   public:
    static constexpr RTPExtensionType kId = kRtpExtensionCsrcAudioLevel;
-@@ -115,6 +116,7 @@ class CsrcAudioLevel {
+@@ -118,6 +119,7 @@ class CsrcAudioLevel {
    static bool Write(rtc::ArrayView<uint8_t> data,
                      rtc::ArrayView<const uint8_t> csrc_audio_levels);
  };
@@ -67,7 +67,7 @@ index 9187cb97bc..f5de03e964 100644
  
  class TransmissionOffset {
   public:
-@@ -305,6 +307,7 @@ class ColorSpaceExtension {
+@@ -308,6 +310,7 @@ class ColorSpaceExtension {
    static size_t WriteLuminance(uint8_t* data, float f, int denominator);
  };
  
@@ -75,7 +75,7 @@ index 9187cb97bc..f5de03e964 100644
  class CsrcAudioLevel {
   public:
    static constexpr RTPExtensionType kId = kRtpExtensionCsrcAudioLevel;
-@@ -319,6 +322,7 @@ class CsrcAudioLevel {
+@@ -322,6 +325,7 @@ class CsrcAudioLevel {
    static size_t ValueSize(const CsrcAudioLevelList& csrcAudioLevels);
    static bool Write(rtc::ArrayView<uint8_t> data, const CsrcAudioLevelList& csrcAudioLevels);
  };
@@ -111,7 +111,7 @@ index b152cdbd9e..7181b303e1 100644
    }
  }
 diff --git a/modules/rtp_rtcp/source/rtp_sender.cc b/modules/rtp_rtcp/source/rtp_sender.cc
-index e853507174..8bf0a7a4ab 100644
+index bf1ebfb412..eb67a1e3de 100644
 --- a/modules/rtp_rtcp/source/rtp_sender.cc
 +++ b/modules/rtp_rtcp/source/rtp_sender.cc
 @@ -104,7 +104,9 @@ bool IsNonVolatile(RTPExtensionType type) {
@@ -138,13 +138,13 @@ index e853507174..8bf0a7a4ab 100644
    RTC_CHECK_NOTREACHED();
  }
 diff --git a/test/fuzzers/rtp_packet_fuzzer.cc b/test/fuzzers/rtp_packet_fuzzer.cc
-index 371900eb2d..8bfd6cb3fd 100644
+index 23a1828915..9b90807a1e 100644
 --- a/test/fuzzers/rtp_packet_fuzzer.cc
 +++ b/test/fuzzers/rtp_packet_fuzzer.cc
 @@ -77,11 +77,13 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
-         uint8_t audio_level;
-         packet.GetExtension<AudioLevelExtension>(&voice_activity, &audio_level);
+         packet.GetExtension<AudioLevelExtension>(&audio_level);
          break;
+       }
 +#if !defined(WEBRTC_MOZILLA_BUILD)
        case kRtpExtensionCsrcAudioLevel: {
          std::vector<uint8_t> audio_levels;

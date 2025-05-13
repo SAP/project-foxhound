@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html } from "../vendor/lit.all.mjs";
+import { html, ifDefined } from "../vendor/lit.all.mjs";
 import { MozLitElement } from "../lit-utils.mjs";
 
 // eslint-disable-next-line import/no-unassigned-import
@@ -13,16 +13,30 @@ import "chrome://global/content/elements/moz-label.mjs";
  *
  * @tagname moz-checkbox
  * @property {string} label - The text of the label element
+ * @property {string} name - The name of the checkbox input control
+ * @property {string} value - The value of the checkbox input control
  * @property {boolean} checked - The state of the checkbox element,
  *  also controls whether the checkbox is initially rendered as
- *  being checked
+ *  being checked.
+ * @property {boolean} disabled - The disabled state of the checkbox input
+ * @property {string} iconSrc - The src for an optional icon
+ * @property {string} description - The text for the description element that helps describe the checkbox
  */
 export default class MozCheckbox extends MozLitElement {
   static properties = {
-    label: { type: String },
+    label: { type: String, fluent: true },
+    name: { type: String },
+    value: { type: String },
     iconSrc: { type: String },
     checked: { type: Boolean, reflect: true },
     disabled: { type: Boolean, reflect: true },
+    description: { type: String, fluent: true },
+    accessKeyAttribute: {
+      type: String,
+      attribute: "accesskey",
+      reflect: true,
+    },
+    accessKey: { type: String, state: true },
   };
 
   static get queries() {
@@ -30,6 +44,7 @@ export default class MozCheckbox extends MozLitElement {
       checkboxEl: "#moz-checkbox",
       labelEl: "label",
       icon: ".icon",
+      descriptionEl: "#description",
     };
   }
 
@@ -39,9 +54,8 @@ export default class MozCheckbox extends MozLitElement {
     this.disabled = false;
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.dataset.l10nAttrs = "label";
+  click() {
+    this.checkboxEl.click();
   }
 
   focus() {
@@ -70,11 +84,26 @@ export default class MozCheckbox extends MozLitElement {
     this.dispatchEvent(newEvent);
   }
 
+  willUpdate(changes) {
+    if (changes.has("accessKeyAttribute")) {
+      this.accessKey = this.accessKeyAttribute;
+      this.accessKeyAttribute = null;
+    }
+  }
+
   iconTemplate() {
     if (this.iconSrc) {
       return html`<img src=${this.iconSrc} role="presentation" class="icon" />`;
     }
     return "";
+  }
+
+  descriptionTemplate() {
+    return html`
+      <span id="description" class="description text-deemphasized">
+        ${this.description ?? html`<slot name="description"></slot>`}
+      </span>
+    `;
   }
 
   render() {
@@ -83,20 +112,30 @@ export default class MozCheckbox extends MozLitElement {
         rel="stylesheet"
         href="chrome://global/content/elements/moz-checkbox.css"
       />
-      <label is="moz-label" for="moz-checkbox">
+      <label
+        is="moz-label"
+        for="moz-checkbox"
+        part="label"
+        shownaccesskey=${ifDefined(this.accessKey)}
+      >
         <input
           id="moz-checkbox"
           type="checkbox"
+          name=${this.name}
+          value=${this.value}
           .checked=${this.checked}
           @click=${this.handleStateChange}
           @change=${this.redispatchEvent}
           .disabled=${this.disabled}
+          aria-describedby="description"
+          accesskey=${ifDefined(this.accessKey)}
         />
         <span class="label-content">
           ${this.iconTemplate()}
           <span class="text">${this.label}</span>
         </span>
       </label>
+      ${this.descriptionTemplate()}
     `;
   }
 }

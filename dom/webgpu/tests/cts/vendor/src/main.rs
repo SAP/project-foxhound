@@ -63,14 +63,15 @@ fn run(args: CliArgs) -> miette::Result<()> {
             cwd: Path::new("."),
             kind: FindUpKind::Dir,
         };
-        let find_up = |root_dir_name| {
+        let find_up = |repo_tech_name, root_dir_name| {
             let err = || {
                 miette!(
                     concat!(
-                        "failed to find a Mercurial repository ({:?}) in any of current ",
+                        "failed to find a {} repository ({:?}) in any of current ",
                         "working directory and its parent directories",
                     ),
-                    root_dir_name
+                    repo_tech_name,
+                    root_dir_name,
                 )
             };
             find_up_with(root_dir_name, find_up_opts())
@@ -82,16 +83,19 @@ fn run(args: CliArgs) -> miette::Result<()> {
                     dir
                 })
         };
-        let gecko_source_root = find_up(".hg").or_else(|e| match find_up(".git") {
-            Ok(path) => {
-                log::debug!("{e:?}");
-                Ok(path)
-            }
-            Err(e2) => {
-                log::warn!("{e:?}");
-                log::warn!("{e2:?}");
-                bail!("failed to find a Gecko repository root")
-            }
+        let gecko_source_root = find_up("Mercurial", ".hg").or_else(|hg_err| {
+            find_up("Git", ".git").or_else(|git_err| match find_up("Jujutsu", ".jj") {
+                Ok(path) => {
+                    log::debug!("{hg_err:?}");
+                    Ok(path)
+                }
+                Err(jj_err) => {
+                    log::warn!("{hg_err:?}");
+                    log::warn!("{git_err:?}");
+                    log::warn!("{jj_err:?}");
+                    bail!("failed to find a Gecko repository root")
+                }
+            })
         })?;
 
         let root = FileRoot::new("gecko", &gecko_source_root)?;

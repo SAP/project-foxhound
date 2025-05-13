@@ -54,7 +54,7 @@ class ContextMenusTest : TestSetup() {
     @JvmField
     val retryTestRule = RetryTestRule(3)
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243837
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243837
     @Test
     fun verifyOpenLinkNewTabContextMenuOptionTest() {
         val pageLinks =
@@ -78,7 +78,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/244655
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/244655
     @Test
     fun verifyOpenLinkInNewPrivateTabContextMenuOptionTest() {
         val pageLinks =
@@ -101,7 +101,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243832
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243832
     @Test
     fun verifyCopyLinkContextMenuOptionTest() {
         val pageLinks =
@@ -122,7 +122,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243838
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243838
     @Test
     fun verifyShareLinkContextMenuOptionTest() {
         val pageLinks =
@@ -138,11 +138,12 @@ class ContextMenusTest : TestSetup() {
             clickContextMenuItem("Share link")
             shareOverlay {
                 verifyShareLinkIntent(genericURL.url)
+                mDevice.pressBack()
             }
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243833
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243833
     @Test
     fun verifyOpenImageNewTabContextMenuOptionTest() {
         val pageLinks =
@@ -162,7 +163,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243834
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243834
     @Test
     fun verifyCopyImageLocationContextMenuOptionTest() {
         val pageLinks =
@@ -183,7 +184,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243835
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243835
     @Test
     fun verifySaveImageContextMenuOptionTest() {
         val pageLinks =
@@ -207,7 +208,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/352050
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/352050
     @Test
     fun verifyContextMenuLinkVariationsTest() {
         val pageLinks =
@@ -231,7 +232,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2333840
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2333840
     @Test
     fun verifyPDFContextMenuLinkVariationsTest() {
         val genericURL =
@@ -252,7 +253,7 @@ class ContextMenusTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/832094
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/832094
     @Test
     fun verifyOpenLinkInAppContextMenuOptionTest() {
         val defaultWebPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)

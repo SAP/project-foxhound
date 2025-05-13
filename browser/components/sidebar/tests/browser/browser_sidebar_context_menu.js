@@ -3,14 +3,13 @@
 
 "use strict";
 
-add_setup(() => SpecialPowers.pushPrefEnv({ set: [["sidebar.revamp", true]] }));
-
 add_task(async function test_sidebar_extension_context_menu() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
   await waitForBrowserWindowActive(win);
   const { document } = win;
   const sidebar = document.querySelector("sidebar-main");
-  ok(BrowserTestUtils.isVisible(sidebar), "Sidebar is shown.");
+  await sidebar.updateComplete;
+  ok(sidebar, "Sidebar is shown.");
 
   const manageStub = sinon.stub(sidebar, "manageExtension");
   const reportStub = sinon.stub(sidebar, "reportExtension");

@@ -1380,7 +1380,7 @@
   "GEOLOCATION_ACCURACY_EXPONENTIAL": {
     "record_in_processes": ["main", "content"],
     "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
+    "expires_in_version": "145",
     "kind": "exponential",
     "releaseChannelCollection": "opt-out",
     "bug_numbers": [1507925],
@@ -1392,22 +1392,25 @@
   "GEOLOCATION_ERROR": {
     "record_in_processes": ["main", "content"],
     "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
+    "expires_in_version": "145",
     "kind": "flag",
+    "releaseChannelCollection": "opt-out",
     "description": "Has seen location error"
   },
   "GEOLOCATION_WIN8_SOURCE_IS_MLS": {
     "record_in_processes": ["main", "content"],
     "products": ["firefox", "fennec"],
-    "expires_in_version": "default",
+    "expires_in_version": "145",
     "kind": "boolean",
+    "releaseChannelCollection": "opt-out",
     "description": "Geolocation on Win8 is either MLS or native"
   },
   "GEOLOCATION_OSX_SOURCE_IS_MLS": {
     "record_in_processes": ["main", "content"],
     "products": ["firefox", "fennec"],
-    "expires_in_version": "default",
+    "expires_in_version": "145",
     "kind": "boolean",
+    "releaseChannelCollection": "opt-out",
     "description": "Geolocation on OS X is either MLS or CoreLocation"
   },
   "GPU_PROCESS_LAUNCH_TIME_MS_2": {
@@ -3026,32 +3029,12 @@
     "kind": "boolean",
     "description": "Whether or not a new alt-svc mapping would change the target hostname of the existing mapping"
   },
-  "HTTP_SCHEME_UPGRADE_TYPE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "alert_emails": ["seceng-telemetry@mozilla.com", "freddyb@mozilla.com"],
-    "bug_numbers": [1340021, 1435733, 1722895],
-    "releaseChannelCollection": "opt-out",
-    "expires_in_version": "never",
-    "kind": "categorical",
-    "labels": [
-      "AlreadyHTTPS",
-      "NoReasonToUpgrade",
-      "PrefBlockedSTS",
-      "STS",
-      "CSP",
-      "BrowserDisplay",
-      "HTTPSOnly",
-      "HTTPSFirst"
-    ],
-    "description": "Was the URL upgraded to HTTPS?"
-  },
   "HTTP_RESPONSE_STATUS_CODE": {
     "record_in_processes": ["main", "content"],
     "products": ["firefox", "fennec"],
     "alert_emails": ["smayya@mozilla.com"],
     "bug_numbers": [1896350],
-    "expires_in_version": "134",
+    "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 12,
     "description": "Http response status (0=200, 1=301, 2=302, 3=304, 4=307, 5=308, 6=400, 7=401, 8=403, 9=404, 10=500, 11=other)"
@@ -3974,46 +3957,6 @@
     "kind": "enumerated",
     "n_values": 16,
     "description": "SSL Handshake Key Exchange Algorithm for resumed handshake (null=0, rsa=1, dh=2, fortezza=3, ecdh=4)"
-  },
-  "CRLITE_VS_OCSP_RESULT": {
-    "record_in_processes": ["main", "socket"],
-    "products": ["firefox"],
-    "alert_emails": ["seceng-telemetry@mozilla.com", "dkeeler@mozilla.com"],
-    "bug_numbers": [1675655, 1758827, 1817102, 1846898, 1876443],
-    "expires_in_version": "131",
-    "kind": "categorical",
-    "releaseChannelCollection": "opt-out",
-    "description": "Does CRLite and OCSP fetching agree when a certificate is revoked?",
-    "labels": [
-      "CRLiteOkOCSPFail",
-      "CRLiteRevOCSPFail",
-      "CRLiteOkOCSPOk",
-      "CRLiteOkOCSPRev",
-      "CRLiteRevOCSPOk",
-      "CRLiteRevOCSPRev",
-      "CRLiteOkOCSPUnk",
-      "CRLiteRevOCSPUnk",
-      "CRLiteOkOCSPSoft",
-      "CRLiteRevOCSPSoft"
-    ]
-  },
-  "CERT_REVOCATION_MECHANISMS": {
-    "record_in_processes": ["main", "socket"],
-    "products": ["firefox"],
-    "alert_emails": ["seceng-telemetry@mozilla.com", "jschanck@mozilla.com"],
-    "bug_numbers": [1794450, 1817101, 1846897, 1876442],
-    "expires_in_version": "never",
-    "kind": "categorical",
-    "releaseChannelCollection": "opt-out",
-    "description": "Which revocation checking mechanisms were used?",
-    "labels": [
-      "CRLite",
-      "StapledOCSP",
-      "CachedOCSP",
-      "OCSP",
-      "OneCRL",
-      "ShortValidity"
-    ]
   },
   "WEBSOCKETS_HANDSHAKE_TYPE": {
     "record_in_processes": ["main", "content"],
@@ -5684,7 +5627,7 @@
   "LOADED_TAB_COUNT": {
     "record_in_processes": ["main"],
     "products": ["firefox"],
-    "alert_emails": ["barret@mozilla.com", "perf-telemetry-alerts@mozilla.com"],
+    "alert_emails": ["beth@mozilla.com", "perf-telemetry-alerts@mozilla.com"],
     "bug_numbers": [1634508],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -8142,7 +8085,7 @@
     "n_buckets": 50,
     "description": "When a document is unloaded, report the highest number of site origins loaded simultaneously in that document.",
     "bug_numbers": [1603185],
-    "alert_emails": ["barret@mozilla.com", "perf-telemetry-alerts@mozilla.com"],
+    "alert_emails": ["beth@mozilla.com", "perf-telemetry-alerts@mozilla.com"],
     "releaseChannelCollection": "opt-out"
   },
   "FX_TAB_SWITCH_REQUEST_TAB_WARMING_STATE": {
@@ -8946,7 +8889,7 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["fx-search-telemetry@mozilla.com"],
-    "expires_in_version": "131",
+    "expires_in_version": "137",
     "kind": "exponential",
     "low": 16,
     "high": 5000,
@@ -9843,7 +9786,7 @@
     "high": 250000,
     "n_buckets": 10,
     "keyed": true,
-    "bug_numbers": [1347216],
+    "bug_numbers": [1347216, 1907945],
     "description": "a testing histogram; not meant to be touched"
   },
   "TELEMETRY_TEST_KEYED_CATEGORICAL": {
@@ -10212,6 +10155,34 @@
     "bug_numbers": [1498164],
     "description": "a testing histogram; not meant to be touched",
     "record_into_store": ["main", "sync"]
+  },
+  "TELEMETRY_TEST_MIRROR_FOR_LABELED_MEMORY": {
+    "record_in_processes": ["all"],
+    "products": ["firefox", "thunderbird"],
+    "releaseChannelCollection": "opt-out",
+    "alert_emails": ["telemetry-client-dev@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "linear",
+    "keyed": true,
+    "low": 1,
+    "high": 2147483646,
+    "n_buckets": 10,
+    "bug_numbers": [1498164],
+    "description": "a testing histogram; not meant to be touched"
+  },
+  "TELEMETRY_TEST_MIRROR_FOR_LABELED_TIMING": {
+    "record_in_processes": ["all"],
+    "products": ["firefox", "thunderbird"],
+    "releaseChannelCollection": "opt-out",
+    "alert_emails": ["telemetry-client-dev@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "linear",
+    "keyed": true,
+    "low": 1,
+    "high": 2147483646,
+    "n_buckets": 10,
+    "bug_numbers": [1907945],
+    "description": "a testing histogram; not meant to be touched"
   },
   "STARTUP_CRASH_DETECTED": {
     "record_in_processes": ["main", "content"],
@@ -12576,18 +12547,6 @@
     "n_buckets": 50,
     "description": "Time spent to read the missing part of the metadata from the cache entry file."
   },
-  "NETWORK_CACHE_METADATA_SIZE_2": {
-    "record_in_processes": ["main"],
-    "products": ["firefox", "fennec"],
-    "alert_emails": ["necko@mozilla.com", "mnovotny@mozilla.com"],
-    "bug_numbers": [1133739, 1495336],
-    "expires_in_version": "never",
-    "kind": "linear",
-    "low": 1024,
-    "high": 66560,
-    "n_buckets": 66,
-    "description": "Size of the metadata in bytes parsed from the disk."
-  },
   "NETWORK_CACHE_SIZE": {
     "record_in_processes": ["main"],
     "products": ["firefox", "fennec"],
@@ -12884,25 +12843,14 @@
     "releaseChannelCollection": "opt-out",
     "description": "If certificate verification failed in a TLS handshake, what was the error? (see MapCertErrorToProbeValue in security/manager/ssl/SSLServerCertVerification.cpp and the values in security/pkix/include/pkix/Result.h)"
   },
-  "SSL_CT_POLICY_COMPLIANT_CONNECTIONS_BY_CA": {
+  "SSL_CT_POLICY_NON_COMPLIANT_CONNECTIONS_BY_CA_2": {
     "record_in_processes": ["main"],
     "products": ["firefox"],
-    "alert_emails": ["seceng-telemetry@mozilla.com"],
+    "alert_emails": ["seceng-telemetry@mozilla.com", "dkeeler@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 256,
-    "bug_numbers": [1320567],
-    "releaseChannelCollection": "opt-out",
-    "description": "Number of successfully established TLS connections compliant with the Certificate Transparency Policy, by CA. See https://searchfox.org/mozilla-central/source/security/manager/ssl/RootHashes.inc for names of CAs. Bucket zero holds CAs not present in the list."
-  },
-  "SSL_CT_POLICY_NON_COMPLIANT_CONNECTIONS_BY_CA": {
-    "record_in_processes": ["main"],
-    "products": ["firefox"],
-    "alert_emails": ["seceng-telemetry@mozilla.com"],
-    "expires_in_version": "never",
-    "kind": "enumerated",
-    "n_values": 256,
-    "bug_numbers": [1320567],
+    "bug_numbers": [1320567, 1909978],
     "releaseChannelCollection": "opt-out",
     "description": "Number of successfully established TLS connections NOT compliant with the Certificate Transparency Policy, by CA. See https://searchfox.org/mozilla-central/source/security/manager/ssl/RootHashes.inc for names of CAs. Bucket zero holds CAs not present in the list."
   },
@@ -12978,22 +12926,22 @@
     "n_values": 10,
     "description": "EV status of a certificate, recorded on each TLS connection. 0=invalid, 1=DV, 2=EV"
   },
-  "CERT_VALIDATION_SUCCESS_BY_CA": {
+  "CERT_VALIDATION_SUCCESS_BY_CA_2": {
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "expires_in_version": "never",
-    "alert_emails": ["jjones@mozilla.com", "seceng-telemetry@mozilla.com"],
+    "alert_emails": ["seceng-telemetry@mozilla.com", "dkeeler@mozilla.com"],
     "releaseChannelCollection": "opt-out",
-    "bug_numbers": [1364159, 1369747, 1441550],
+    "bug_numbers": [1364159, 1369747, 1441550, 1909978],
     "kind": "enumerated",
     "n_values": 256,
     "description": "Successful SSL server cert validations by CA (see RootHashes.inc for names of CAs)"
   },
-  "CERT_PINNING_FAILURES_BY_CA": {
+  "CERT_PINNING_FAILURES_BY_CA_2": {
     "record_in_processes": ["main"],
     "products": ["firefox"],
-    "alert_emails": ["pinning@mozilla.org"],
-    "bug_numbers": [1862062],
+    "alert_emails": ["pinning@mozilla.org", "dkeeler@mozilla.com"],
+    "bug_numbers": [1862062, 1909978],
     "releaseChannelCollection": "opt-out",
     "expires_in_version": "never",
     "kind": "enumerated",
@@ -14018,18 +13966,6 @@
     "bug_numbers": [1454733, 1545172],
     "releaseChannelCollection": "opt-out",
     "record_into_store": ["main"]
-  },
-  "PWMGR_NUM_FORM_HAS_POSSIBLE_USERNAME_EVENT_PER_DOC": {
-    "record_in_processes": ["content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "130",
-    "kind": "linear",
-    "high": 21,
-    "n_buckets": 20,
-    "bug_numbers": [1708455, 1791929, 1822724],
-    "description": "The number of documents that receive >= bucket number 'DOMFormHasPossibleUsernameEvent' event",
-    "alert_emails": ["passwords-dev@mozilla.org"],
-    "releaseChannelCollection": "opt-out"
   },
   "PWMGR_NUM_SAVED_PASSWORDS": {
     "record_in_processes": ["main"],
@@ -17180,19 +17116,6 @@
     "keyed": true,
     "description": "The time between navigationStart and the first contentful paint of a foreground http or https root content document, in milliseconds. The contentful paint timestamp is taken during display list building and does not include rasterization or compositing of that paint. This is collected only on page load where the main document uses or supports Early Hints preload."
   },
-  "EH_PERF_CHANNEL_COMPLETION_TIME": {
-    "record_in_processes": ["content"],
-    "products": ["firefox"],
-    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
-    "expires_in_version": "130",
-    "releaseChannelCollection": "opt-out",
-    "kind": "exponential",
-    "high": 50000,
-    "n_buckets": 100,
-    "bug_numbers": [1838406],
-    "keyed": true,
-    "description": "The time between AsyncOpen and OnStopRequest for Early Hints preload request."
-  },
   "FX_PICTURE_IN_PICTURE_WINDOW_OPEN_DURATION": {
     "record_in_processes": ["main"],
     "products": ["firefox"],
@@ -17383,5 +17306,65 @@
     "n_buckets": 50,
     "bug_numbers": [1589554],
     "description": "Battery level when discharging and the wake lock was released"
+  },
+  "BROWSER_BACKUP_TOTAL_BACKUP_SIZE": {
+    "record_in_processes": ["main"],
+    "alert_emails": "mconley@mozilla.com",
+    "products": ["firefox"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 1,
+    "high": 10240,
+    "n_buckets": 50,
+    "bug_numbers": [1887765],
+    "description": "The total uncompressed size of all profile data included in a completed backup, in mebibytes"
+  },
+  "BROWSER_BACKUP_COMPRESSED_ARCHIVE_SIZE": {
+    "record_in_processes": ["main"],
+    "alert_emails": "mconley@mozilla.com",
+    "products": ["firefox"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 1,
+    "high": 10240,
+    "n_buckets": 50,
+    "bug_numbers": [1907625],
+    "description": "The total compressed size of a single-file profile data backup archive, in mebibytes"
+  },
+  "BROWSER_BACKUP_TOTAL_BACKUP_TIME_MS": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["mconley@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 1000,
+    "high": 3600000,
+    "n_buckets": 50,
+    "bug_numbers": [1891146],
+    "description": "Total time elapsed, in milliseconds, between the start and end of the profile backup creation process"
+  },
+  "BROWSER_BACKUP_PLACES_TIME_MS": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["mconley@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 100,
+    "high": 1800000,
+    "n_buckets": 50,
+    "bug_numbers": [1891146],
+    "description": "Total time, in milliseconds, required to back up a profile's places database"
+  },
+  "BROWSER_BACKUP_FAVICONS_TIME_MS": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["mconley@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 100,
+    "high": 1800000,
+    "n_buckets": 50,
+    "bug_numbers": [1891146],
+    "description": "Total time, in milliseconds, required to back up a profile's favicons database"
   }
 }

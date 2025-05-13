@@ -199,12 +199,16 @@ SelectContentHelper.prototype = {
   },
 
   dispatchMouseEvent(win, target, eventName) {
-    let mouseEvent = new win.MouseEvent(eventName, {
+    let dict = {
       view: win,
       bubbles: true,
       cancelable: true,
       composed: true,
-    });
+    };
+    let mouseEvent =
+      eventName == "click"
+        ? new win.PointerEvent(eventName, dict)
+        : new win.MouseEvent(eventName, dict);
     target.dispatchEvent(mouseEvent);
   },
 
@@ -250,11 +254,10 @@ SelectContentHelper.prototype = {
 
         // Fire input and change events when selected option changes
         {
-          let handlingUserInput = win.windowUtils.setHandlingUserInput(true);
+          let changed = this.initialSelection !== selectedOption;
+          let handlingUserInput = win.windowUtils.setHandlingUserInput(changed);
           try {
-            element.userFinishedInteracting(
-              this.initialSelection !== selectedOption
-            );
+            element.userFinishedInteracting(changed);
           } finally {
             handlingUserInput.destruct();
           }

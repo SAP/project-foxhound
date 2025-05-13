@@ -7,9 +7,11 @@
 #include "mozilla/Logging.h"
 #include "mozilla/MozPromise.h"
 #include "nsIBounceTrackingProtection.h"
-#include "nsIClearDataService.h"
+#include "nsIBTPRemoteExceptionList.h"
 #include "mozilla/Maybe.h"
-#include "ClearDataCallback.h"
+#include "nsIObserver.h"
+#include "nsWeakReference.h"
+#include "nsTHashSet.h"
 
 class nsIPrincipal;
 class nsITimer;
@@ -20,12 +22,22 @@ class BounceTrackingAllowList;
 class BounceTrackingState;
 class BounceTrackingStateGlobal;
 class BounceTrackingProtectionStorage;
+class ClearDataCallback;
 class OriginAttributes;
+
+namespace dom {
+class WindowContext;
+}
+
+using ClearDataMozPromise = MozPromise<nsCString, uint32_t, true>;
 
 extern LazyLogModule gBounceTrackingProtectionLog;
 
-class BounceTrackingProtection final : public nsIBounceTrackingProtection {
+class BounceTrackingProtection final : public nsIBounceTrackingProtection,
+                                       public nsIObserver,
+                                       public nsSupportsWeakReference {
   NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
   NS_DECL_NSIBOUNCETRACKINGPROTECTION
 
  public:
@@ -42,8 +54,17 @@ class BounceTrackingProtection final : public nsIBounceTrackingProtection {
   // Stores a user activation flag with a timestamp for the given principal. The
   // timestamp defaults to the current time, but can be overridden via
   // aActivationTime.
+  // Parent process only. Prefer the WindowContext variant if possible.
   [[nodiscard]] static nsresult RecordUserActivation(
       nsIPrincipal* aPrincipal, Maybe<PRTime> aActivationTime = Nothing());
+
+  // Same as above but can be called from any process given a WindowContext.
+  // Gecko callers should prefer this method because it takes care of IPC and
+  // gets the principal user activation. IPC messages from the content to parent
+  // passing a principal should be avoided for security reasons. aActivationTime
+  // defaults to PR_Now().
+  [[nodiscard]] static nsresult RecordUserActivation(
+      dom::WindowContext* aWindowContext);
 
   // Clears expired user interaction flags for the given state global. If
   // aStateGlobal == nullptr, clears expired user interaction flags for all
@@ -68,10 +89,24 @@ class BounceTrackingProtection final : public nsIBounceTrackingProtection {
   // Storage for user agent globals.
   RefPtr<BounceTrackingProtectionStorage> mStorage;
 
+  // Interface to remote settings exception list.
+  nsCOMPtr<nsIBTPRemoteExceptionList> mRemoteExceptionList;
+
+  // In-memory copy of the remote settings exception list.
+  nsTHashSet<nsCStringHashKey> mRemoteSiteHostExceptions;
+
+  // Lazily initializes the remote exception list.
+  RefPtr<GenericPromise> EnsureRemoteExceptionListService();
+
   // Clear state for classified bounce trackers. To be called on an interval.
   using PurgeBounceTrackersMozPromise =
       MozPromise<nsTArray<nsCString>, nsresult, true>;
   RefPtr<PurgeBounceTrackersMozPromise> PurgeBounceTrackers();
+
+  // Report purged trackers to the anti-tracking database via
+  // nsITrackingDBService.
+  static void ReportPurgedTrackersToAntiTrackingDB(
+      const nsTArray<nsCString>& aPurgedSiteHosts);
 
   // Clear state for classified bounce trackers for a specific state global.
   // aClearPromises is populated with promises for each host that is cleared.

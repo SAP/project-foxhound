@@ -35,7 +35,6 @@ add_setup(async function () {
 add_task(async function test_bad_nimbus_setting_on_init() {
   getVariableStub.withArgs("extraParams").returns({ foo: "bar" });
 
-  await AddonTestUtils.promiseStartupManager();
   await Services.search.init();
 
   Assert.ok(
@@ -67,9 +66,7 @@ add_task(async function test_switch_to_good_nimbus_setting() {
   const engine = Services.search.getEngineByName("engine-pref");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
-    SearchUtils.newSearchConfigEnabled
-      ? baseURLSearchConfigV2 + "code=supergood%26id%3Dunique123456&q=foo"
-      : baseURL + "&code=supergood%26id%3Dunique123456",
+    baseURLSearchConfigV2 + "code=supergood%26id%3Dunique123456&q=foo",
     "Should have got the submission URL with the updated code"
   );
 });

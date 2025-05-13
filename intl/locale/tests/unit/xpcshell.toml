@@ -1,7 +1,7 @@
 [DEFAULT]
 head =""
 support-files = [
-  "data/intl_on_workers_worker.js",
+  "data/intl_on_workers.worker.js",
   "data/chrome.manifest",
 ]
 
@@ -18,4 +18,3 @@ skip-if = ["os == 'android'"] # bug 1309447
 ["test_localeService_negotiateLanguages.js"]
 
 ["test_osPreferences.js"]
-skip-if = ["os == 'android'"] # bug 1344596

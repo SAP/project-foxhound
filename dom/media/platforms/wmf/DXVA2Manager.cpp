@@ -876,8 +876,12 @@ D3D11DXVA2Manager::CopyToImage(IMFSample* aVideoSample,
       auto* data = client->GetInternalData()->AsD3D11TextureData();
       MOZ_ASSERT(data);
       if (data) {
+        // If GPU is not NVIDIA GPU, ID3D11Query is used only for video overlay.
+        // See Bug 1910990 Intel GPU does not use ID3D11Query for waiting video
+        // frame copy.
+        const bool onlyForOverlay = mVendorID != 0x10DE;
         // Wait query happens only just before blitting for video overlay.
-        data->RegisterQuery(query);
+        data->RegisterQuery(query, onlyForOverlay);
       } else {
         gfxCriticalNoteOnce << "D3D11TextureData does not exist";
       }
@@ -1032,8 +1036,11 @@ D3D11DXVA2Manager::CopyToBGRATexture(ID3D11Texture2D* aInTexture,
     inTexture = newTexture;
   }
 
-  desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-  desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+  desc = CD3D11_TEXTURE2D_DESC(
+      DXGI_FORMAT_B8G8R8A8_UNORM, desc.Width, desc.Height, 1, 1,
+      D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE);
+  desc.MiscFlags =
+      D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED;
 
   hr = mDevice->CreateTexture2D(&desc, nullptr, getter_AddRefs(texture));
   NS_ENSURE_TRUE(SUCCEEDED(hr) && texture, E_FAIL);

@@ -23,7 +23,7 @@ class SettingsPrivacyTest : TestSetup() {
     @get:Rule
     val activityTestRule = HomeActivityTestRule.withDefaultSettingsOverrides(skipOnboarding = true)
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2092698
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2092698
     @Test
     fun settingsPrivacyItemsTest() {
         homeScreen {
@@ -47,7 +47,7 @@ class SettingsPrivacyTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/243362
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243362
     @Test
     fun verifyDataCollectionSettingsTest() {
         homeScreen {
@@ -56,17 +56,12 @@ class SettingsPrivacyTest : TestSetup() {
         }.openSettingsSubMenuDataCollection {
             verifyDataCollectionView(
                 true,
-                true,
                 "On",
             )
             clickUsageAndTechnicalDataToggle()
             verifyUsageAndTechnicalDataToggle(false)
             clickUsageAndTechnicalDataToggle()
             verifyUsageAndTechnicalDataToggle(true)
-            clickMarketingDataToggle()
-            verifyMarketingDataToggle(false)
-            clickMarketingDataToggle()
-            verifyMarketingDataToggle(true)
             clickStudiesOption()
             verifyStudiesToggle(true)
             clickStudiesToggle()
@@ -76,7 +71,7 @@ class SettingsPrivacyTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1024594
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1024594
     @Test
     fun verifyNotificationsSettingsTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)

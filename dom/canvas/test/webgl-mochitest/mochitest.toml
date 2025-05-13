@@ -18,13 +18,18 @@ support-files = [
 
 ["ensure-exts/test_EXT_color_buffer_half_float.html"]
 
+["ensure-exts/test_EXT_depth_clamp.html"]
+fail-if = [
+  "os == 'android'",
+  "os == 'win'",
+]
+
 ["ensure-exts/test_EXT_disjoint_timer_query.html"]
 fail-if = ["true"]
 
 ["ensure-exts/test_EXT_float_blend.html"]
 
 ["ensure-exts/test_EXT_frag_depth.html"]
-fail-if = ["os == 'android'"]
 
 ["ensure-exts/test_EXT_sRGB.html"]
 
@@ -119,6 +124,7 @@ fail-if = [
 ["test_backbuffer_channels.html"]
 
 ["test_backends.html"]
+tags = "os_integration"
 
 ["test_canvas_size.html"]
 
@@ -178,6 +184,7 @@ skip-if = [
 
 ["test_renderer_strings.html"]
 skip-if = ["display == 'wayland'"]
+tags = "os_integration"
 
 ["test_sab_with_webgl.html"]
 

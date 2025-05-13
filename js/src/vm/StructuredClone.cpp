@@ -1272,13 +1272,18 @@ bool JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str) {
   }
 #endif
 
-  static_assert(JSString::MAX_LENGTH <= INT32_MAX,
-                "String length must fit in 31 bits");
+  static_assert(JSString::MAX_LENGTH < (1 << 30),
+                "String length must fit in 30 bits");
+
+  // Try to share the underlying StringBuffer without copying the contents.
+  bool useBuffer = linear->hasStringBuffer() &&
+                   output().scope() == JS::StructuredCloneScope::SameProcess;
 
   uint32_t length = linear->length();
-  uint32_t lengthAndEncoding =
-      length | (uint32_t(linear->hasLatin1Chars()) << 31);
-  if (!out.writePair(tag, lengthAndEncoding)) {
+  bool isLatin1 = linear->hasLatin1Chars();
+  uint32_t lengthAndBits =
+      length | (uint32_t(isLatin1) << 31) | (uint32_t(useBuffer) << 30);
+  if (!out.writePair(tag, lengthAndBits)) {
     return false;
   }
 
@@ -1290,6 +1295,15 @@ bool JSStructuredCloneWriter::writeString(uint32_t tag, JSString* str) {
   // and the taint is getting lost.
   //
   // Need to add taint information to this serialization class
+  if (useBuffer) {
+    mozilla::StringBuffer* buffer = linear->stringBuffer();
+    if (!out.buf.stringBufferRefsHeld_.emplaceBack(buffer)) {
+      ReportOutOfMemory(context());
+      return false;
+    }
+    uintptr_t p = reinterpret_cast<uintptr_t>(buffer);
+    return out.writeBytes(&p, sizeof(p));
+  }
 
   JS::AutoCheckCannotGC nogc;
   return linear->hasLatin1Chars()
@@ -2539,13 +2553,47 @@ JSString* JSStructuredCloneReader::readStringImpl(
 
 JSString* JSStructuredCloneReader::readString(uint32_t data,
                                               ShouldAtomizeStrings atomize) {
-  uint32_t nchars = data & BitMask(31);
+  uint32_t nchars = data & BitMask(30);
   bool latin1 = data & (1 << 31);
+  bool hasBuffer = data & (1 << 30);
 
   if (nchars > JSString::MAX_LENGTH) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA, "string length");
     return nullptr;
+  }
+
+  if (hasBuffer) {
+    if (allowedScope > JS::StructuredCloneScope::SameProcess) {
+      JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
+                                JSMSG_SC_BAD_SERIALIZED_DATA,
+                                "invalid scope for string buffer");
+      return nullptr;
+    }
+
+    uintptr_t p;
+    if (!in.readBytes(&p, sizeof(p))) {
+      in.reportTruncated();
+      return nullptr;
+    }
+    RefPtr<mozilla::StringBuffer> buffer(
+        reinterpret_cast<mozilla::StringBuffer*>(p));
+    JSContext* cx = context();
+    if (atomize) {
+      if (latin1) {
+        return AtomizeChars(cx, static_cast<Latin1Char*>(buffer->Data()),
+                            nchars);
+      }
+      return AtomizeChars(cx, static_cast<char16_t*>(buffer->Data()), nchars);
+    }
+    if (latin1) {
+      Rooted<JSString::OwnedChars<Latin1Char>> owned(cx, std::move(buffer),
+                                                     nchars);
+      return JSLinearString::newValidLength<CanGC, Latin1Char>(cx, &owned,
+                                                               gcHeap);
+    }
+    Rooted<JSString::OwnedChars<char16_t>> owned(cx, std::move(buffer), nchars);
+    return JSLinearString::newValidLength<CanGC, char16_t>(cx, &owned, gcHeap);
   }
 
   return latin1 ? readStringImpl<Latin1Char>(nchars, atomize)
@@ -2593,7 +2641,7 @@ bool JSStructuredCloneReader::readTypedArray(uint32_t arrayType,
                                              uint64_t nelems,
                                              MutableHandleValue vp,
                                              bool v1Read) {
-  if (arrayType > (v1Read ? Scalar::Uint8Clamped : Scalar::BigUint64)) {
+  if (arrayType > (v1Read ? Scalar::Uint8Clamped : Scalar::Float16)) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA,
                               "unhandled typed array element type");
@@ -2998,6 +3046,11 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp,
                                         ShouldAtomizeStrings atomizeStrings) {
   uint32_t tag, data;
   bool alreadAppended = false;
+
+  AutoCheckRecursionLimit recursion(in.context());
+  if (!recursion.check(in.context())) {
+    return false;
+  }
 
   if (!in.readPair(&tag, &data)) {
     return false;
@@ -4099,6 +4152,7 @@ void JSAutoStructuredCloneBuffer::clear() {
   data_.discardTransferables();
   data_.ownTransferables_ = OwnTransferablePolicy::NoTransferables;
   data_.refsHeld_.releaseAll();
+  data_.stringBufferRefsHeld_.clear();
   data_.Clear();
   version_ = 0;
 }

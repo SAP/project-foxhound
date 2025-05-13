@@ -132,8 +132,10 @@ where
     false
 }
 
+/// Given the ancestor hashes from a selector, see if the current element,
+/// represented by the bloom filter, has a chance of matching at all.
 #[inline(always)]
-fn may_match(hashes: &AncestorHashes, bf: &BloomFilter) -> bool {
+pub fn selector_may_match(hashes: &AncestorHashes, bf: &BloomFilter) -> bool {
     // Check the first three hashes. Note that we can check for zero before
     // masking off the high bits, since if any of the first three hashes is
     // zero the fourth will be as well. We also take care to avoid the
@@ -281,7 +283,7 @@ where
     // Use the bloom filter to fast-reject.
     if let Some(hashes) = hashes {
         if let Some(filter) = context.bloom_filter {
-            if !may_match(hashes, filter) {
+            if !selector_may_match(hashes, filter) {
                 return KleeneValue::False;
             }
         }
@@ -619,12 +621,10 @@ fn do_match_relative_selectors<E: Element>(
     // to mark elements considered for :has matching. Additionally, we want to mark the elements themselves,
     // since we don't want to indiscriminately invalidate every element as a potential anchor.
     if rightmost == SubjectOrPseudoElement::Yes {
-        context.considered_relative_selector.considered_anchor();
         if context.needs_selector_flags() {
             element.apply_selector_flags(ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR);
         }
     } else {
-        context.considered_relative_selector.considered();
         if context.needs_selector_flags() {
             element
                 .apply_selector_flags(ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR_NON_SUBJECT);

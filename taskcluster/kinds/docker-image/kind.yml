@@ -20,6 +20,11 @@ transforms:
 tasks:
     image_builder:
         symbol: I(ib)
+    image_builder_arm64:
+        symbol: I(ib-a64)
+        definition: image_builder
+        args:
+            ARCH: arm64
     # Neither the ubuntu1804-*raw nor the ubuntu1804-*packages images can have
     # packages dependencies.
     ubuntu1804-raw:
@@ -61,6 +66,12 @@ tasks:
     ubuntu1804-build-python:
         symbol: I(ub18-build-python)
         parent: ubuntu1804-base
+        definition: build-python
+    ubuntu2204-arm64-build-python:
+        symbol: I(ub22-a64-build-python)
+        parent: ubuntu2204-arm64-base
+        definition: build-python
+        arch: arm64
     # Neither the ubuntu1804-*raw nor the ubuntu1804-*packages images can have
     # packages dependencies.
     ubuntu2004-raw:
@@ -73,6 +84,17 @@ tasks:
         definition: debian-raw
         args:
             BASE_IMAGE: ubuntu:jammy
+    ubuntu2204-arm64-raw:
+        symbol: I(ub22-a64-raw)
+        definition: debian-raw
+        args:
+            BASE_IMAGE: ubuntu:jammy
+        arch: arm64
+    ubuntu2204-arm64-packages:
+        symbol: I(ub22-a64-pkg)
+        definition: debian-packages
+        parent: ubuntu2204-arm64-raw
+        arch: arm64
     ubuntu2004-packages:
         symbol: I(ub20-pkg)
         definition: debian-packages
@@ -95,6 +117,14 @@ tasks:
         packages:
             - ub22-mercurial
             - ub22-python-zstandard
+    ubuntu2204-arm64-base:
+        symbol: I(ub22-a64-base)
+        definition: debian-base
+        parent: ubuntu2204-arm64-raw
+        packages:
+            - ub22-arm64-mercurial
+            - ub22-arm64-python-zstandard
+        arch: arm64
     # Neither the debian8-*raw nor the debian8-*packages images can have
     # packages dependencies.
     debian8-raw:
@@ -178,6 +208,9 @@ tasks:
         parent: debian12-raw
         packages:
             - deb12-python-zstandard
+    fetch-more:
+        symbol: I(fetch-more)
+        parent: fetch
     static-analysis-build:
         symbol: I(static-analysis-build)
         parent: debian12-base
@@ -247,4 +280,4 @@ tasks:
         parent: debian12-base
     android-ui-tests:
         symbol: I(android-ui-tests)
-        parent: android-components
+        parent: ubuntu2204-base

@@ -14,14 +14,9 @@ import { MozLitElement } from "../lit-utils.mjs";
  */
 export default class MozFieldset extends MozLitElement {
   static properties = {
-    label: { type: String },
-    description: { type: String },
+    label: { type: String, fluent: true },
+    description: { type: String, fluent: true },
   };
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.dataset.l10nAttrs = "label, description";
-  }
 
   render() {
     return html`
@@ -32,13 +27,13 @@ export default class MozFieldset extends MozLitElement {
       <fieldset
         aria-describedby=${ifDefined(this.description ? "description" : null)}
       >
-        <legend class="heading-medium">${this.label}</legend>
+        <legend part="label">${this.label}</legend>
         ${this.description
           ? html`<p id="description" class="text-deemphasized">
               ${this.description}
             </p>`
           : ""}
-        <div id="inputs">
+        <div id="inputs" part="inputs">
           <slot></slot>
         </div>
       </fieldset>

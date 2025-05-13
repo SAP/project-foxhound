@@ -23,6 +23,7 @@ ChromeUtils.defineESModuleGetters(this, {
   TELEMETRY_CATEGORIZATION_KEY:
     "resource:///modules/SearchSERPTelemetry.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
+  VISIBILITY_THRESHOLD: "resource:///actors/SearchSERPTelemetryChild.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
@@ -63,6 +64,11 @@ SearchTestUtils.init(this);
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function sleep(ms) {
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // sharedData messages are only passed to the child on idle. Therefore
 // we wait for a few idles to try and ensure the messages have been able
@@ -694,4 +700,14 @@ async function initSinglePageAppTest() {
       SPA_ADLINK_CHECK_TIMEOUT_MS
     );
   });
+}
+
+async function resizeWindow(win, width, height) {
+  let promise = BrowserTestUtils.waitForEvent(win, "resize");
+  win.resizeTo(width, height);
+  await promise;
+
+  // Wait two frames in hopes resizing is done.
+  await new Promise(resolve => win.requestAnimationFrame(resolve));
+  await new Promise(resolve => win.requestAnimationFrame(resolve));
 }

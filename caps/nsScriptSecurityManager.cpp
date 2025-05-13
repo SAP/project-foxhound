@@ -7,6 +7,7 @@
 #include "nsScriptSecurityManager.h"
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/SourceLocation.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StoragePrincipalHelper.h"
@@ -542,18 +543,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
   }
 
   if (reportViolation) {
-    JS::AutoFilename scriptFilename;
-    nsAutoString fileName;
-    uint32_t lineNum = 0;
-    JS::ColumnNumberOneOrigin columnNum;
-    if (JS::DescribeScriptedCaller(cx, &scriptFilename, &lineNum, &columnNum)) {
-      if (const char* file = scriptFilename.get()) {
-        CopyUTF8toUTF16(nsDependentCString(file), fileName);
-      }
-    } else {
-      MOZ_ASSERT(!JS_IsExceptionPending(cx));
-    }
-
+    auto caller = JSCallingLocation::Get(cx);
     nsAutoJSString scriptSample;
     if (aKind == JS::RuntimeCode::JS &&
         NS_WARN_IF(!scriptSample.init(cx, aCode))) {
@@ -566,8 +556,8 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
             : nsIContentSecurityPolicy::VIOLATION_TYPE_WASM_EVAL;
     csp->LogViolationDetails(violationType,
                              nullptr,  // triggering element
-                             cspEventListener, fileName, scriptSample, lineNum,
-                             columnNum.oneOriginValue(), u""_ns, u""_ns);
+                             cspEventListener, caller.FileName(), scriptSample,
+                             caller.mLine, caller.mColumn, u""_ns, u""_ns);
   }
 
   return evalOK;
@@ -741,8 +731,8 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
         if (reportErrors) {
           ReportError("CheckLoadURI", sourceURI, aTargetURI,
                       allowList.LastElement()
-                              ->OriginAttributesRef()
-                              .mPrivateBrowsingId > 0,
+                          ->OriginAttributesRef()
+                          .IsPrivateBrowsing(),
                       aInnerWindowID);
         }
         return NS_ERROR_DOM_BAD_URI;
@@ -794,8 +784,7 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
     // access:
     rv = CheckLoadURIFlags(
         sourceURI, aTargetURI, sourceBaseURI, targetBaseURI, aFlags,
-        aPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0,
-        aInnerWindowID);
+        aPrincipal->OriginAttributesRef().IsPrivateBrowsing(), aInnerWindowID);
     NS_ENSURE_SUCCESS(rv, rv);
     // Check the principal is allowed to load the target.
     if (aFlags & nsIScriptSecurityManager::DONT_REPORT_ERRORS) {
@@ -926,7 +915,7 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
         isExtensionMismatch) {
       return CheckLoadURIFlags(
           currentURI, currentOtherURI, sourceBaseURI, targetBaseURI, aFlags,
-          aPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0,
+          aPrincipal->OriginAttributesRef().IsPrivateBrowsing(),
           aInnerWindowID);
     }
     // Otherwise... check if we can nest another level:
@@ -972,8 +961,7 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
   nsresult rv = aTargetBaseURI->GetScheme(targetScheme);
   if (NS_FAILED(rv)) return rv;
 
-  // Check for system target URI.  Regular (non web accessible) extension
-  // URIs will also have URI_DANGEROUS_TO_LOAD.
+  // Check for system target URI.
   rv = DenyAccessIfURIHasFlags(aTargetURI,
                                nsIProtocolHandler::URI_DANGEROUS_TO_LOAD);
   if (NS_FAILED(rv)) {
@@ -985,31 +973,18 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
     return rv;
   }
 
-  // Used by ExtensionProtocolHandler to prevent loading extension resources
-  // in private contexts if the extension does not have permission.
-  if (aFromPrivateWindow) {
-    rv = DenyAccessIfURIHasFlags(
-        aTargetURI, nsIProtocolHandler::URI_DISALLOW_IN_PRIVATE_CONTEXT);
-    if (NS_FAILED(rv)) {
-      if (reportErrors) {
-        ReportError(errorTag, aSourceURI, aTargetURI, aFromPrivateWindow,
-                    aInnerWindowID);
-      }
-      return rv;
-    }
-  }
-
-  // If MV3 Extension uris are web accessible they have
-  // WEBEXT_URI_WEB_ACCESSIBLE.
-  bool maybeWebAccessible = false;
-  NS_URIChainHasFlags(aTargetURI, nsIProtocolHandler::WEBEXT_URI_WEB_ACCESSIBLE,
-                      &maybeWebAccessible);
+  // WebExtension URIs are only accessible if the ExtensionPolicyService allows
+  // the source URI to load them.
+  bool targetURIIsWebExtensionResource = false;
+  rv = NS_URIChainHasFlags(aTargetURI,
+                           nsIProtocolHandler::URI_IS_WEBEXTENSION_RESOURCE,
+                           &targetURIIsWebExtensionResource);
   NS_ENSURE_SUCCESS(rv, rv);
-  if (maybeWebAccessible) {
-    bool isWebAccessible = false;
+  if (targetURIIsWebExtensionResource) {
+    bool isAccessible = false;
     rv = ExtensionPolicyService::GetSingleton().SourceMayLoadExtensionURI(
-        aSourceURI, aTargetURI, &isWebAccessible);
-    if (NS_SUCCEEDED(rv) && isWebAccessible) {
+        aSourceURI, aTargetURI, aFromPrivateWindow, &isAccessible);
+    if (NS_SUCCEEDED(rv) && isAccessible) {
       return NS_OK;
     }
     if (reportErrors) {
@@ -1176,12 +1151,11 @@ nsresult nsScriptSecurityManager::ReportError(const char* aMessageTag,
   // using category of "SOP" so we can link to MDN
   if (aInnerWindowID != 0) {
     rv = error->InitWithWindowID(
-        message, u""_ns, u""_ns, 0, 0, nsIScriptError::errorFlag, "SOP"_ns,
+        message, ""_ns, 0, 0, nsIScriptError::errorFlag, "SOP"_ns,
         aInnerWindowID, true /* From chrome context */);
   } else {
-    rv = error->Init(message, u""_ns, u""_ns, 0, 0, nsIScriptError::errorFlag,
-                     "SOP"_ns, aFromPrivateWindow,
-                     true /* From chrome context */);
+    rv = error->Init(message, ""_ns, 0, 0, nsIScriptError::errorFlag, "SOP"_ns,
+                     aFromPrivateWindow, true /* From chrome context */);
   }
   NS_ENSURE_SUCCESS(rv, rv);
   console->LogMessage(error);
@@ -1241,7 +1215,7 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
                       nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS};
   for (uint32_t i = 0; i < ArrayLength(flags); ++i) {
     uint32_t fixupFlags = flags[i];
-    if (aPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0) {
+    if (aPrincipal->OriginAttributesRef().IsPrivateBrowsing()) {
       fixupFlags |= nsIURIFixup::FIXUP_FLAG_PRIVATE_CONTEXT;
     }
     nsCOMPtr<nsIURIFixupInfo> fixupInfo;

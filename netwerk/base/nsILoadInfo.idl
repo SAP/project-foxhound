@@ -547,6 +547,29 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean hasValidUserGestureActivation;
 
   /**
+   * Returns true if at the time of the loadinfo construction the document that
+   * triggered this load was user activated. This flag is being used to indicate
+   * whether a document load with a text fragment is allowed to scroll to the
+   * first text directive.
+   */
+  [infallible] attribute boolean textDirectiveUserActivation;
+
+  /**
+   * Returns true if the current load is a same-document navigation.
+   *
+   * Note: There exists no IPC plumbing for this field. If this object crosses
+   *       a process boundary, it is not same-document, and the value defaults
+   *       to false.
+   * Also note: This flag is only meant to be used for a specific case when
+   *            scrolling to a text fragment: If a same-doc load is triggered
+   *            during the initial document load, and the target text has not
+   *            been parsed.
+   *            The flag is not being reset. If you want to use this flag for
+   *            another reason, don't. Check Bug 1777171 for a stable solution.
+   */
+  [infallible] attribute boolean isSameDocumentNavigation;
+
+  /**
    * We disallow the SystemPrincipal to initiate requests to
    * the public web. This flag is to allow exceptions.
    */
@@ -1544,4 +1567,27 @@ interface nsILoadInfo : nsISupports
    * Whether the load has gone through the URL bar, where the fixup had to add * the protocol scheme.
    */
    [infallible] attribute boolean wasSchemelessInput;
+
+  cenum HTTPSUpgradeTelemetryType : 32 {
+    NOT_INITIALIZED = 0,
+    NO_UPGRADE = (1 << 0),
+    ALREADY_HTTPS = (1 << 1),
+    HSTS = (1 << 2),
+    HTTPS_ONLY_UPGRADE = (1 << 3),
+    HTTPS_ONLY_UPGRADE_DOWNGRADE = (1 << 4),
+    HTTPS_FIRST_UPGRADE = (1 << 5),
+    HTTPS_FIRST_UPGRADE_DOWNGRADE = (1 << 6),
+    HTTPS_FIRST_SCHEMELESS_UPGRADE = (1 << 7),
+    HTTPS_FIRST_SCHEMELESS_UPGRADE_DOWNGRADE = (1 << 8),
+    CSP_UIR = (1 << 9),
+    HTTPS_RR = (1 << 10),
+    WEB_EXTENSION_UPGRADE = (1 << 11),
+    UPGRADE_EXCEPTION = (1 << 12),
+  };
+
+  /**
+   * Solely for the use of collecting Telemetry for HTTPS upgrades.
+   */
+  [infallible] attribute nsILoadInfo_HTTPSUpgradeTelemetryType httpsUpgradeTelemetry;
+
 };

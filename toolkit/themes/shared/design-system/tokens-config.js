@@ -6,6 +6,8 @@
 
 const StyleDictionary = require("style-dictionary");
 const { createPropertyFormatter } = StyleDictionary.formatHelpers;
+const figmaConfig = require("./figma-tokens-config");
+
 const TOKEN_SECTIONS = {
   "Attention Dot": "attention-dot",
   "Background Color": "background-color",
@@ -19,6 +21,7 @@ const TOKEN_SECTIONS = {
   "Font Weight": "font-weight",
   Icon: "icon",
   "Input - Text": "input-text",
+  "Input - Space": "input-space",
   Link: "link",
   "Outline Color": "outline-color",
   Size: "size",
@@ -543,5 +546,6 @@ module.exports = {
         },
       ],
     },
+    figma: figmaConfig,
   },
 };

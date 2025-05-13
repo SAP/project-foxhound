@@ -1386,6 +1386,7 @@ const keyMappings = {
   debugger: { code: "s", modifiers: shiftOrAlt },
   // test conditional panel shortcut
   toggleCondPanel: { code: "b", modifiers: cmdShift },
+  toggleLogPanel: { code: "y", modifiers: cmdShift },
   inspector: { code: "c", modifiers: shiftOrAlt },
   quickOpen: { code: "p", modifiers: cmdOrCtrl },
   quickOpenFunc: { code: "o", modifiers: cmdShift },
@@ -1771,7 +1772,6 @@ const selectors = {
   stepOver: ".stepOver.active",
   stepOut: ".stepOut.active",
   stepIn: ".stepIn.active",
-  trace: ".debugger-trace-menu-button",
   prettyPrintButton: ".source-footer .prettyPrint",
   mappedSourceLink: ".source-footer .mapped-source",
   sourcesFooter: ".sources-panel .source-footer",
@@ -1799,6 +1799,7 @@ const selectors = {
   outlineItems: ".outline-list__element",
   conditionalPanel: ".conditional-breakpoint-panel",
   conditionalPanelInput: ".conditional-breakpoint-panel textarea",
+  logPanelInput: ".conditional-breakpoint-panel.log-point textarea",
   conditionalBreakpointInSecPane: ".breakpoint.is-conditional",
   logPointPanel: ".conditional-breakpoint-panel.log-point",
   logPointInSecPane: ".breakpoint.is-log",
@@ -2040,8 +2041,11 @@ async function assertContextMenuLabel(dbg, selector, expectedLabel) {
   );
 }
 
-async function typeInPanel(dbg, text) {
-  await waitForElement(dbg, "conditionalPanelInput");
+async function typeInPanel(dbg, text, inLogPanel = false) {
+  await waitForElement(
+    dbg,
+    inLogPanel ? "logPanelInput" : "conditionalPanelInput"
+  );
   // Position cursor reliably at the end of the text.
   pressKey(dbg, "End");
   type(dbg, text);
@@ -2202,7 +2206,7 @@ async function clickAtPos(dbg, pos) {
     `Clicking on token ${tokenEl.innerText} in line ${tokenEl.parentNode.innerText}`
   );
   tokenEl.dispatchEvent(
-    new MouseEvent("click", {
+    new PointerEvent("click", {
       bubbles: true,
       cancelable: true,
       view: dbg.win,
@@ -3147,4 +3151,24 @@ async function checkAdditionalThreadCount(dbg, count) {
  */
 function findFooterNotificationMessage(dbg) {
   return findElement(dbg, "editorNotificationFooter")?.innerText;
+}
+
+/**
+ * Toggle a JavaScript Tracer settings via the toolbox toolbar button's context menu.
+ *
+ * @param {Object} dbg
+ * @param {String} selector
+ *        Selector for the menu item of the settings defined in devtools/client/framework/definitions.js.
+ */
+async function toggleJsTracerMenuItem(dbg, selector) {
+  const button = dbg.toolbox.doc.getElementById("command-button-jstracer");
+  EventUtils.synthesizeMouseAtCenter(
+    button,
+    { type: "contextmenu" },
+    dbg.toolbox.win
+  );
+  const popup = await waitForContextMenu(dbg);
+  const onHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
+  selectContextMenuItem(dbg, selector);
+  await onHidden;
 }

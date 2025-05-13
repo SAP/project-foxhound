@@ -56,11 +56,14 @@ class CrossShadowBoundaryRange final : public StaticRange,
     return StaticRange::SetStartAndEnd(aStartBoundary, aEndBoundary);
   }
 
+  NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+  NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED
 
  private:
   explicit CrossShadowBoundaryRange(nsINode* aNode, nsRange* aOwner)
-      : StaticRange(aNode), mOwner(aOwner) {}
+      : StaticRange(aNode, RangeBoundaryIsMutationObserved::Yes),
+        mOwner(aOwner) {}
   virtual ~CrossShadowBoundaryRange() = default;
 
   /**

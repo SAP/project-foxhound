@@ -66,11 +66,6 @@ const NEVER_TRANSLATE_LANGS_PREF =
  * The data must support structural cloning and will be passed into the
  * content process.
  *
- * @param {(args: { dataForContent: T, selectors: Record<string, string> }) => Promise<void>} options.runInPage
- * This function must not capture any values, as it will be cloned in the content process.
- * Any required data should be passed in using the "dataForContent" parameter. The
- * "selectors" property contains any useful selectors for the content.
- *
  * @param {boolean} [options.disabled]
  * Disable the panel through a pref.
  *
@@ -79,13 +74,30 @@ const NEVER_TRANSLATE_LANGS_PREF =
  *
  * @param {Array<[string, string]>} options.prefs
  * Prefs to push on for the test.
+ *
+ * @param {boolean} [options.autoDownloadFromRemoteSettings=true]
+ * Initiate the mock model downloads when this function is invoked instead of
+ * waiting for the resolveDownloads or rejectDownloads to be externally invoked
+ *
+ * @returns {object} object
+ *
+ * @returns {(args: { dataForContent: T, selectors: Record<string, string> }) => Promise<void>} object.runInPage
+ * This function must not capture any values, as it will be cloned in the content process.
+ * Any required data should be passed in using the "dataForContent" parameter. The
+ * "selectors" property contains any useful selectors for the content.
+ *
+ * @returns {() => Promise<void>} object.cleanup
+ *
+ * @returns {(count: number) => Promise<void>} object.resolveDownloads
+ *
+ * @returns {(count: number) => Promise<void>} object.rejectDownloads
  */
 async function openAboutTranslations({
   dataForContent,
   disabled,
-  runInPage,
   languagePairs = LANGUAGE_PAIRS,
   prefs,
+  autoDownloadFromRemoteSettings = false,
 }) {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -107,6 +119,7 @@ async function openAboutTranslations({
     translationResult: "#translation-to",
     translationResultBlank: "#translation-to-blank",
     translationInfo: "#translation-info",
+    translationResultsPlaceholder: "#translation-results-placeholder",
     noSupportMessage: "[data-l10n-id='about-translations-no-support']",
   };
 
@@ -119,9 +132,7 @@ async function openAboutTranslations({
 
   const { removeMocks, remoteClients } = await createAndMockRemoteSettings({
     languagePairs,
-    // TODO(Bug 1814168) - Do not test download behavior as this is not robustly
-    // handled for about:translations yet.
-    autoDownloadFromRemoteSettings: true,
+    autoDownloadFromRemoteSettings,
   });
 
   // Now load the about:translations page, since the actor could be mocked.
@@ -131,24 +142,46 @@ async function openAboutTranslations({
   );
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
-  await remoteClients.translationsWasm.resolvePendingDownloads(1);
-  await remoteClients.translationModels.resolvePendingDownloads(
-    languagePairs.length * FILES_PER_LANGUAGE_PAIR
-  );
+  /**
+   * @param {number} count - Count of the language pairs expected.
+   */
+  const resolveDownloads = async count => {
+    await remoteClients.translationsWasm.resolvePendingDownloads(1);
+    await remoteClients.translationModels.resolvePendingDownloads(
+      FILES_PER_LANGUAGE_PAIR * count
+    );
+  };
 
-  await ContentTask.spawn(
-    tab.linkedBrowser,
-    { dataForContent, selectors },
-    runInPage
-  );
+  /**
+   * @param {number} count - Count of the language pairs expected.
+   */
+  const rejectDownloads = async count => {
+    await remoteClients.translationsWasm.rejectPendingDownloads(1);
+    await remoteClients.translationModels.rejectPendingDownloads(
+      FILES_PER_LANGUAGE_PAIR * count
+    );
+  };
 
-  await loadBlankPage();
-  BrowserTestUtils.removeTab(tab);
+  return {
+    runInPage(callback) {
+      return ContentTask.spawn(
+        tab.linkedBrowser,
+        { dataForContent, selectors }, // Data to inject.
+        callback
+      );
+    },
+    async cleanup() {
+      await loadBlankPage();
+      BrowserTestUtils.removeTab(tab);
 
-  await removeMocks();
-  await EngineProcess.destroyTranslationsEngine();
+      await removeMocks();
+      await EngineProcess.destroyTranslationsEngine();
 
-  await SpecialPowers.popPrefEnv();
+      await SpecialPowers.popPrefEnv();
+    },
+    resolveDownloads,
+    rejectDownloads,
+  };
 }
 
 /**
@@ -501,7 +534,7 @@ async function createAndMockRemoteSettings({
   // The TranslationsParent will pull the language pair values from the JSON dump
   // of Remote Settings. Clear these before mocking the translations engine.
   TranslationsParent.clearCache();
-  TranslationsPanelShared.clearCache();
+  TranslationsPanelShared.clearLanguageListsCache();
 
   TranslationsParent.mockTranslationsEngine(
     remoteClients.translationModels.client,
@@ -516,7 +549,7 @@ async function createAndMockRemoteSettings({
 
       TranslationsParent.unmockTranslationsEngine();
       TranslationsParent.clearCache();
-      TranslationsPanelShared.clearCache();
+      TranslationsPanelShared.clearLanguageListsCache();
     },
     remoteClients,
   };
@@ -922,6 +955,7 @@ function createRecordsForLanguagePair(fromLang, toLang) {
     filename: `model.${lang}.intgemm.alphas.bin`,
     location: `main-workspace/translations-models/${crypto.randomUUID()}.bin`,
     mimetype: "application/octet-stream",
+    isDownloaded: false,
   };
 
   if (models.length !== FILES_PER_LANGUAGE_PAIR) {
@@ -938,10 +972,25 @@ function createRecordsForLanguagePair(fromLang, toLang) {
       version: TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION + ".0",
       last_modified: Date.now(),
       schema: Date.now(),
-      attachment,
+      attachment: JSON.parse(JSON.stringify(attachment)), // Making a deep copy.
     });
   }
   return records;
+}
+
+/**
+ * Creates a new WASM record for the Bergamot Translator to store in Remote Settings.
+ *
+ * @returns {WasmRecord}
+ */
+function createWasmRecord() {
+  return {
+    id: crypto.randomUUID(),
+    name: "bergamot-translator",
+    version: TranslationsParent.BERGAMOT_MAJOR_VERSION + ".0",
+    last_modified: Date.now(),
+    schema: Date.now(),
+  };
 }
 
 /**
@@ -993,14 +1042,7 @@ async function createTranslationModelsRemoteClient(
 async function createTranslationsWasmRemoteClient(
   autoDownloadFromRemoteSettings
 ) {
-  const records = ["bergamot-translator"].map(name => ({
-    id: crypto.randomUUID(),
-    name,
-    version: TranslationsParent.BERGAMOT_MAJOR_VERSION + ".0",
-    last_modified: Date.now(),
-    schema: Date.now(),
-  }));
-
+  const records = [createWasmRecord()];
   const { RemoteSettings } = ChromeUtils.importESModule(
     "resource://services-settings/remote-settings.sys.mjs"
   );
@@ -1017,6 +1059,117 @@ async function createTranslationsWasmRemoteClient(
     mockedCollectionName,
     autoDownloadFromRemoteSettings
   );
+}
+
+/**
+ * Modifies the client's Remote Settings database to create, update, and delete records, then emits
+ * a "sync" event with the relevant changes for the Remote Settings client.
+ *
+ * Asserts that the list of records to create is disjoint from the list of records to delete.
+ * If your test case needs to create a record and then delete it, do it in separate transactions.
+ *
+ * @param {RemoteSettingsClient} remoteSettingsClient - The Remote Settings client whose database will be modified.
+ * @param {object} options
+ * @param {TranslationModelRecord[]} [options.recordsToCreate]
+ *  - A list of records to newly create or update. These records are automatically partitioned into
+ *    either the created array or the updated array based on whether they exist in the database yet.
+ * @param {TranslationModelRecord[]} [options.recordsToDelete]
+ *  - A list of records to delete from the database. Asserts that all of these records exist in the
+ *    database before deleting them.
+ * @param {number} [options.expectedCreatedRecordsCount]
+ *  - The expected count of records within the recordsToCreate parameter that are new to the database.
+ * @param {number} [options.expectedUpdatedRecordsCount]
+ *  - The expected count of records within the recordsToCreate parameter that are already in the database.
+ * @param {number} [options.expectedDeletedRecordsCount]
+ *  - The expected count of records within the recordsToDelete parameter that are already in the database.
+ */
+async function modifyRemoteSettingsRecords(
+  remoteSettingsClient,
+  {
+    recordsToCreate = [],
+    recordsToDelete = [],
+    expectedCreatedRecordsCount = 0,
+    expectedUpdatedRecordsCount = 0,
+    expectedDeletedRecordsCount = 0,
+  }
+) {
+  for (const recordToCreate of recordsToCreate) {
+    for (const recordToDelete of recordsToDelete) {
+      isnot(
+        recordToCreate.id,
+        recordToDelete.id,
+        `Attempt to both create and delete the same record from Remote Settings database: '${recordToCreate.name}'`
+      );
+    }
+  }
+
+  let created = [];
+  let updated = [];
+  let deleted = [];
+
+  const existingRecords = await remoteSettingsClient.get();
+
+  for (const newRecord of recordsToCreate) {
+    const existingRecord = existingRecords.find(
+      existingRecord => existingRecord.id === newRecord.id
+    );
+    if (existingRecord) {
+      updated.push({
+        old: existingRecord,
+        new: newRecord,
+      });
+    } else {
+      created.push(newRecord);
+    }
+  }
+
+  if (recordsToCreate.length) {
+    info("Storing new and updated records in mocked Remote Settings database");
+    await remoteSettingsClient.db.importChanges(
+      /* metadata */ {},
+      Date.now(),
+      recordsToCreate
+    );
+  }
+
+  if (recordsToDelete.length) {
+    info("Storing new and updated records in mocked Remote Settings database");
+    for (const recordToDelete of recordsToDelete) {
+      ok(
+        existingRecords.find(
+          existingRecord => existingRecord.id === recordToDelete.id
+        ),
+        `The record to delete '${recordToDelete.name}' should be found in the database.`
+      );
+      await remoteSettingsClient.db.delete(recordToDelete.id);
+      deleted.push(recordToDelete);
+    }
+  }
+
+  is(
+    created.length,
+    expectedCreatedRecordsCount,
+    "Expected the correct number of created records"
+  );
+  is(
+    updated.length,
+    expectedUpdatedRecordsCount,
+    "Expected the correct number of updated records"
+  );
+  is(
+    deleted.length,
+    expectedDeletedRecordsCount,
+    "Expected the correct number of deleted records"
+  );
+
+  info('Emitting a remote client "sync" event.');
+  await remoteSettingsClient.emit("sync", {
+    data: {
+      created,
+      updated,
+      deleted,
+    },
+  });
 }
 
 async function selectAboutPreferencesElements() {
@@ -1181,6 +1334,14 @@ async function setupAboutPreferences(
     true // waitForLoad
   );
 
+  let initTranslationsEvent;
+  if (Services.prefs.getBoolPref("browser.translations.newSettingsUI.enable")) {
+    initTranslationsEvent = BrowserTestUtils.waitForEvent(
+      document,
+      "translationsSettingsInit"
+    );
+  }
+
   const { remoteClients, removeMocks } = await createAndMockRemoteSettings({
     languagePairs,
   });
@@ -1192,6 +1353,10 @@ async function setupAboutPreferences(
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   const elements = await selectAboutPreferencesElements();
+
+  if (Services.prefs.getBoolPref("browser.translations.newSettingsUI.enable")) {
+    await initTranslationsEvent;
+  }
 
   async function cleanup() {
     await closeAllOpenPanelsAndMenus();
@@ -1221,32 +1386,46 @@ function waitForAppLocaleChanged() {
 }
 
 async function mockLocales({ systemLocales, appLocales, webLanguages }) {
-  const appLocaleChanged1 = waitForAppLocaleChanged();
+  if (systemLocales) {
+    TranslationsParent.mockedSystemLocales = systemLocales;
+  }
 
-  TranslationsParent.mockedSystemLocales = systemLocales;
   const { availableLocales, requestedLocales } = Services.locale;
 
-  info("Mocking locales, so expect potential .ftl resource errors.");
-  Services.locale.availableLocales = appLocales;
-  Services.locale.requestedLocales = appLocales;
+  if (appLocales) {
+    const appLocaleChanged = waitForAppLocaleChanged();
 
-  await appLocaleChanged1;
+    info("Mocking locales, so expect potential .ftl resource errors.");
+    Services.locale.availableLocales = appLocales;
+    Services.locale.requestedLocales = appLocales;
 
-  await SpecialPowers.pushPrefEnv({
-    set: [["intl.accept_languages", webLanguages.join(",")]],
-  });
+    await appLocaleChanged;
+  }
+
+  if (webLanguages) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["intl.accept_languages", webLanguages.join(",")]],
+    });
+  }
 
   return async () => {
-    const appLocaleChanged2 = waitForAppLocaleChanged();
-
     // Reset back to the originals.
-    TranslationsParent.mockedSystemLocales = null;
-    Services.locale.availableLocales = availableLocales;
-    Services.locale.requestedLocales = requestedLocales;
+    if (systemLocales) {
+      TranslationsParent.mockedSystemLocales = null;
+    }
 
-    await appLocaleChanged2;
+    if (appLocales) {
+      const appLocaleChanged = waitForAppLocaleChanged();
 
-    await SpecialPowers.popPrefEnv();
+      Services.locale.availableLocales = availableLocales;
+      Services.locale.requestedLocales = requestedLocales;
+
+      await appLocaleChanged;
+    }
+
+    if (webLanguages) {
+      await SpecialPowers.popPrefEnv();
+    }
   };
 }
 
@@ -1270,12 +1449,8 @@ class TestTranslationsTelemetry {
   static async assertCounter(name, counter, expectedCount) {
     // Ensures that glean metrics are collected from all child processes
     // so that calls to testGetValue() are up to date.
-    let count;
-    await waitForCondition(async () => {
-      await Services.fog.testFlushAllChildren();
-      count = counter.testGetValue() ?? 0;
-      return expectedCount === count;
-    });
+    await Services.fog.testFlushAllChildren();
+    const count = counter.testGetValue() ?? 0;
     is(
       count,
       expectedCount,
@@ -1324,15 +1499,9 @@ class TestTranslationsTelemetry {
   ) {
     // Ensures that glean metrics are collected from all child processes
     // so that calls to testGetValue() are up to date.
-    let events;
-    let eventCount;
-    await waitForCondition(async () => {
-      await Services.fog.testFlushAllChildren();
-      events = event.testGetValue() ?? [];
-      eventCount = events.length;
-      return expectedEventCount === eventCount;
-    });
-
+    await Services.fog.testFlushAllChildren();
+    const events = event.testGetValue() ?? [];
+    const eventCount = events.length;
     const name =
       eventCount > 0 ? `${events[0].category}.${events[0].name}` : null;
 

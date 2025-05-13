@@ -34,6 +34,10 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     "mousemove",
     "mousedown",
     "mouseup",
+    "mouseenter",
+    "mouseover",
+    "mouseout",
+    "mouseleave",
     "touchstart",
     "touchmove",
     "touchend",
@@ -41,6 +45,10 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     "auxclick",
     "keypress",
     "contextmenu",
+    "pointerenter",
+    "pointerover",
+    "pointerout",
+    "pointerleave",
   ];
 
   get overlay() {
@@ -68,7 +76,7 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
       case "Screenshots:AddEventListeners":
         return this.addEventListeners();
       case "Screenshots:MoveFocusToContent":
-        return this.focusOverlay();
+        return this.focusOverlay(message.data);
       case "Screenshots:ClearFocus":
         Services.focus.clearFocus(this.contentWindow);
         return null;
@@ -204,9 +212,9 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     return methodsUsed;
   }
 
-  focusOverlay() {
+  focusOverlay(direction) {
     this.contentWindow.focus();
-    this.#overlay.focus();
+    this.#overlay.focus(direction);
   }
 
   /**

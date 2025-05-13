@@ -6,11 +6,12 @@
 
 #include "MediaControlUtils.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/Telemetry.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {
@@ -78,8 +79,7 @@ void ContentMediaAgent::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
     return;
   }
 
-  LOG("Notify media %s in BC %" PRId64, ToMediaPlaybackStateStr(aState),
-      bc->Id());
+  LOG("Notify media %s in BC %" PRId64, ToString(aState).c_str(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
     Unused << contentChild->SendNotifyMediaPlaybackChanged(bc, aState);

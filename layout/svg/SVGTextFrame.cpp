@@ -2548,14 +2548,8 @@ void SVGTextDrawPathCallbacks::SetupContext() {
   // XXX This is copied from nsSVGGlyphFrame::Render, but cairo doesn't actually
   // seem to do anything with the antialias mode.  So we can perhaps remove it,
   // or make SetAntialiasMode set cairo text antialiasing too.
-  switch (mFrame->StyleText()->mTextRendering) {
-    case StyleTextRendering::Optimizespeed:
-      mContext.SetAntialiasMode(AntialiasMode::NONE);
-      break;
-    default:
-      mContext.SetAntialiasMode(AntialiasMode::SUBPIXEL);
-      break;
-  }
+  mContext.SetAntialiasMode(
+      SVGUtils::ToAntialiasMode(mFrame->StyleText()->mTextRendering));
 }
 
 void SVGTextDrawPathCallbacks::HandleTextGeometry() {
@@ -4512,7 +4506,8 @@ already_AddRefed<Path> SVGTextFrame::GetTextPath(nsIFrame* aTextPathFrame) {
   if (tp->mPath.IsRendered()) {
     // This is just an attribute so there's no transform that can apply
     // so we can just return the path directly.
-    return tp->mPath.GetAnimValue().BuildPathForMeasuring();
+    return tp->mPath.GetAnimValue().BuildPathForMeasuring(
+        aTextPathFrame->Style()->EffectiveZoom().ToFloat());
   }
 
   SVGGeometryElement* geomElement =
@@ -4733,8 +4728,8 @@ void SVGTextFrame::DoAnchoring() {
   }
 
   bool vertical = GetWritingMode().IsVertical();
-  uint32_t start = it.TextElementCharIndex();
-  while (start < mPositions.Length()) {
+  for (uint32_t start = it.TextElementCharIndex(); start < mPositions.Length();
+       start = it.TextElementCharIndex()) {
     it.AdvanceToCharacter(start);
     nsTextFrame* chunkFrame = it.TextFrame();
 
@@ -4770,8 +4765,6 @@ void SVGTextFrame::DoAnchoring() {
 
       ShiftAnchoredChunk(mPositions, start, end, left, right, anchor, vertical);
     }
-
-    start = it.TextElementCharIndex();
   }
 }
 
@@ -4834,15 +4827,19 @@ void SVGTextFrame::DoGlyphPositioning() {
   TruncateTo(deltas, charPositions);
   TruncateTo(mPositions, charPositions);
 
-  // Fill in an unspecified character position at index 0.
-  if (!mPositions[0].IsXSpecified()) {
-    mPositions[0].mPosition.x = 0.0;
+  // Fill in an unspecified position for the first addressable character.
+  uint32_t first = 0;
+  while (first + 1 < mPositions.Length() && mPositions[first].mUnaddressable) {
+    ++first;
   }
-  if (!mPositions[0].IsYSpecified()) {
-    mPositions[0].mPosition.y = 0.0;
+  if (!mPositions[first].IsXSpecified()) {
+    mPositions[first].mPosition.x = 0.0;
   }
-  if (!mPositions[0].IsAngleSpecified()) {
-    mPositions[0].mAngle = 0.0;
+  if (!mPositions[first].IsYSpecified()) {
+    mPositions[first].mPosition.y = 0.0;
+  }
+  if (!mPositions[first].IsAngleSpecified()) {
+    mPositions[first].mAngle = 0.0;
   }
 
   nsPresContext* presContext = PresContext();

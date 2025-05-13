@@ -909,7 +909,7 @@ nsStyleSVGReset::nsStyleSVGReset()
       mLightingColor(StyleColor::White()),
       mStopOpacity(1.0f),
       mFloodOpacity(1.0f),
-      mVectorEffect(StyleVectorEffect::None),
+      mVectorEffect(StyleVectorEffect::NONE),
       mMaskType(StyleMaskType::Luminance),
       mD(StyleDProperty::None()) {
   MOZ_COUNT_CTOR(nsStyleSVGReset);
@@ -1051,7 +1051,7 @@ nsStylePosition::nsStylePosition()
       mMaxHeight(StyleMaxSize::None()),
       mPositionAnchor(StylePositionAnchor::Auto()),
       mPositionVisibility(StylePositionVisibility::ALWAYS),
-      mPositionTryOptions(StylePositionTryOptions()),
+      mPositionTryFallbacks(StylePositionTryFallbacks()),
       mPositionTryOrder(StylePositionTryOrder::Normal),
       mInsetArea(StyleInsetArea{StyleInsetAreaKeyword::None,
                                 StyleInsetAreaKeyword::None}),
@@ -1103,7 +1103,7 @@ nsStylePosition::nsStylePosition(const nsStylePosition& aSource)
       mMaxHeight(aSource.mMaxHeight),
       mPositionAnchor(aSource.mPositionAnchor),
       mPositionVisibility(aSource.mPositionVisibility),
-      mPositionTryOptions(aSource.mPositionTryOptions),
+      mPositionTryFallbacks(aSource.mPositionTryFallbacks),
       mPositionTryOrder(aSource.mPositionTryOrder),
       mInsetArea(aSource.mInsetArea),
       mFlexBasis(aSource.mFlexBasis),
@@ -1289,7 +1289,7 @@ nsChangeHint nsStylePosition::CalcDifference(
   }
 
   if (mPositionVisibility != aNewData.mPositionVisibility ||
-      mPositionTryOptions != aNewData.mPositionTryOptions ||
+      mPositionTryFallbacks != aNewData.mPositionTryFallbacks ||
       mPositionTryOrder != aNewData.mPositionTryOrder ||
       mInsetArea != aNewData.mInsetArea) {
     hint |= nsChangeHint_NeutralChange;
@@ -2248,6 +2248,11 @@ static bool ScrollbarGenerationChanged(const nsStyleDisplay& aOld,
 static bool AppearanceValueAffectsFrames(StyleAppearance aAppearance,
                                          StyleAppearance aDefaultAppearance) {
   switch (aAppearance) {
+    case StyleAppearance::None:
+      // Checkbox / radio with appearance none doesn't construct an
+      // nsCheckboxRadioFrame.
+      return aDefaultAppearance == StyleAppearance::Checkbox ||
+             aDefaultAppearance == StyleAppearance::Radio;
     case StyleAppearance::Textfield:
       // This is for <input type=number/search> where we allow authors to
       // specify a |-moz-appearance:textfield| to get a control without buttons.
@@ -2275,9 +2280,11 @@ nsChangeHint nsStyleDisplay::CalcDifference(
   auto oldAppearance = EffectiveAppearance();
   auto newAppearance = aNewData.EffectiveAppearance();
   if (oldAppearance != newAppearance) {
-    // Changes to the relevant default appearance changes in
-    // AppearanceValueRequiresFrameReconstruction require reconstruction on
-    // their own, so we can just pick either the new or the old.
+    // Changes to the mDefaultAppearance values handled in
+    // AppearanceValueAffectsFrames reconstruct their frames via other means.
+    // E.g. switching the <input> type attribute reframes via
+    // GetAttributeChangeHint. Thus, it doesn't matter whether we pick
+    // mDefaultAppearance or aNewData.mDefaultAppearance for the check below.
     if (AppearanceValueAffectsFrames(oldAppearance, mDefaultAppearance) ||
         AppearanceValueAffectsFrames(newAppearance, mDefaultAppearance)) {
       return nsChangeHint_ReconstructFrame;
@@ -3113,7 +3120,8 @@ nsStyleUIReset::nsStyleUIReset()
           nsStyleAutoArray<StyleViewTimeline>::WITH_SINGLE_INITIAL_ELEMENT),
       mViewTimelineNameCount(1),
       mViewTimelineAxisCount(1),
-      mViewTimelineInsetCount(1) {
+      mViewTimelineInsetCount(1),
+      mFieldSizing(StyleFieldSizing::Fixed) {
   MOZ_COUNT_CTOR(nsStyleUIReset);
 }
 
@@ -3152,7 +3160,8 @@ nsStyleUIReset::nsStyleUIReset(const nsStyleUIReset& aSource)
       mViewTimelines(aSource.mViewTimelines.Clone()),
       mViewTimelineNameCount(aSource.mViewTimelineNameCount),
       mViewTimelineAxisCount(aSource.mViewTimelineAxisCount),
-      mViewTimelineInsetCount(aSource.mViewTimelineInsetCount) {
+      mViewTimelineInsetCount(aSource.mViewTimelineInsetCount),
+      mFieldSizing(aSource.mFieldSizing) {
   MOZ_COUNT_CTOR(nsStyleUIReset);
 }
 
@@ -3165,6 +3174,9 @@ nsChangeHint nsStyleUIReset::CalcDifference(
   }
   if (mMozSubtreeHiddenOnlyVisually != aNewData.mMozSubtreeHiddenOnlyVisually) {
     hint |= nsChangeHint_RepaintFrame;
+  }
+  if (mFieldSizing != aNewData.mFieldSizing) {
+    hint |= nsChangeHint_NeutralChange;
   }
   if (mScrollbarWidth != aNewData.mScrollbarWidth) {
     // For scrollbar-width change, we need some special handling similar
@@ -3535,6 +3547,13 @@ StyleContentVisibility nsStyleDisplay::ContentVisibility(
   if (PrecludesSizeContainmentOrContentVisibilityWithFrame(aFrame)) {
     return StyleContentVisibility::Visible;
   }
+  // If we're in print/print-preview, or being used as an image, we should
+  // always treat `auto` as `visible`.
+  if (mContentVisibility == StyleContentVisibility::Auto &&
+      (aFrame.PresContext()->IsPrintingOrPrintPreview() ||
+       aFrame.PresContext()->Document()->IsBeingUsedAsImage())) {
+    return StyleContentVisibility::Visible;
+  }
   return mContentVisibility;
 }
 
@@ -3603,12 +3622,12 @@ IntrinsicSize ContainSizeAxes::ContainIntrinsicSize(
     return aUncontainedSize;
   }
   IntrinsicSize result(aUncontainedSize);
-  const bool isVerticalWM = aFrame.GetWritingMode().IsVertical();
+  const auto wm = aFrame.GetWritingMode();
   if (Maybe<nscoord> containBSize = ContainIntrinsicBSize(aFrame)) {
-    (isVerticalWM ? result.width : result.height) = containBSize;
+    result.BSize(wm) = containBSize;
   }
   if (Maybe<nscoord> containISize = ContainIntrinsicISize(aFrame)) {
-    (isVerticalWM ? result.height : result.width) = containISize;
+    result.ISize(wm) = containISize;
   }
   return result;
 }

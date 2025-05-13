@@ -766,6 +766,27 @@ TRRLoadInfo::SetHasValidUserGestureActivation(
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetTextDirectiveUserActivation(
+    bool* aTextDirectiveUserActivation) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetTextDirectiveUserActivation(bool aTextDirectiveUserActivation) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetIsSameDocumentNavigation(bool* aTextDirectiveUserActivation) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsSameDocumentNavigation(bool aTextDirectiveUserActivation) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetInternalContentPolicyType(nsContentPolicyType* aResult) {
   *aResult = mInternalContentPolicyType;
   return NS_OK;
@@ -867,6 +888,18 @@ TRRLoadInfo::GetWasSchemelessInput(bool* aWasSchemelessInput) {
 
 NS_IMETHODIMP
 TRRLoadInfo::SetWasSchemelessInput(bool aWasSchemelessInput) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetHttpsUpgradeTelemetry(
+    nsILoadInfo::HTTPSUpgradeTelemetryType* aOutHttpsTelemetry) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetHttpsUpgradeTelemetry(
+    nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsTelemetry) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

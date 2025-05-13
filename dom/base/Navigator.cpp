@@ -829,12 +829,6 @@ bool Navigator::Vibrate(const nsTArray<uint32_t>& aPattern) {
 
   nsTArray<uint32_t> pattern = SanitizeVibratePattern(aPattern);
 
-  // The spec says we check dom.vibrator.enabled after we've done the sanity
-  // checking on the pattern.
-  if (!StaticPrefs::dom_vibrator_enabled()) {
-    return true;
-  }
-
   mRequestedVibrationPattern = std::move(pattern);
 
   PermissionDelegateHandler* permissionHandler =
@@ -2210,12 +2204,17 @@ already_AddRefed<Promise> Navigator::RequestMediaKeySystemAccess(
     return nullptr;
   }
 
+  GetOrCreateMediaKeySystemAccessManager()->Request(promise, aKeySystem,
+                                                    aConfigs);
+  return promise.forget();
+}
+
+MediaKeySystemAccessManager*
+Navigator::GetOrCreateMediaKeySystemAccessManager() {
   if (!mMediaKeySystemAccessManager) {
     mMediaKeySystemAccessManager = new MediaKeySystemAccessManager(mWindow);
   }
-
-  mMediaKeySystemAccessManager->Request(promise, aKeySystem, aConfigs);
-  return promise.forget();
+  return mMediaKeySystemAccessManager;
 }
 
 CredentialsContainer* Navigator::Credentials() {

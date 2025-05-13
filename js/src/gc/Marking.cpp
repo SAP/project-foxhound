@@ -38,6 +38,7 @@ using namespace js;
 using namespace js::gc;
 
 using JS::MapTypeToTraceKind;
+using JS::SliceBudget;
 
 using mozilla::DebugOnly;
 using mozilla::IntegerRange;
@@ -238,38 +239,41 @@ template void CheckTracedThing<wasm::AnyRef>(JSTracer*, const wasm::AnyRef&);
 
 static inline bool ShouldMarkCrossCompartment(GCMarker* marker, JSObject* src,
                                               Cell* dstCell, const char* name) {
-  MarkColor color = marker->markColor();
-
-  if (!dstCell->isTenured()) {
 #ifdef DEBUG
+  if (src->isMarkedGray() && !dstCell->isTenured()) {
     // Bug 1743098: This shouldn't be possible but it does seem to happen. Log
     // some useful information in debug builds.
-    if (color != MarkColor::Black) {
-      SEprinter printer;
-      printer.printf(
-          "ShouldMarkCrossCompartment: cross compartment edge '%s' from gray "
-          "object to nursery thing\n",
-          name);
-      printer.put("src: ");
-      src->dump(printer);
-      printer.put("dst: ");
-      dstCell->dump(printer);
-    }
+    SEprinter printer;
+    printer.printf(
+        "ShouldMarkCrossCompartment: cross compartment edge '%s' from gray "
+        "object to nursery thing\n",
+        name);
+    printer.put("src: ");
+    src->dump(printer);
+    printer.put("dst: ");
+    dstCell->dump(printer);
+    MOZ_CRASH("Found cross compartment edge from gray object to nursery thing");
+  }
 #endif
-    MOZ_ASSERT(color == MarkColor::Black);
+
+  CellColor targetColor = AsCellColor(marker->markColor());
+  CellColor currentColor = dstCell->color();
+  if (currentColor >= targetColor) {
+    // Cell is already sufficiently marked. Nothing to do.
     return false;
   }
-  TenuredCell& dst = dstCell->asTenured();
 
+  TenuredCell& dst = dstCell->asTenured();
   JS::Zone* dstZone = dst.zone();
   if (!src->zone()->isGCMarking() && !dstZone->isGCMarking()) {
     return false;
   }
 
-  if (color == MarkColor::Black) {
+  if (targetColor == CellColor::Black) {
     // Check our sweep groups are correct: we should never have to
     // mark something in a zone that we have started sweeping.
-    MOZ_ASSERT_IF(!dst.isMarkedBlack(), !dstZone->isGCSweeping());
+    MOZ_ASSERT(currentColor < CellColor::Black);
+    MOZ_ASSERT(!dstZone->isGCSweeping());
 
     /*
      * Having black->gray edges violates our promise to the cycle collector so
@@ -289,7 +293,7 @@ static inline bool ShouldMarkCrossCompartment(GCMarker* marker, JSObject* src,
      * We handle the first case before returning whereas the second case happens
      * as part of normal marking.
      */
-    if (dst.isMarkedGray() && !dstZone->isGCMarking()) {
+    if (currentColor == CellColor::Gray && !dstZone->isGCMarking()) {
       UnmarkGrayGCThingUnchecked(marker,
                                  JS::GCCellPtr(&dst, dst.getTraceKind()));
       return false;
@@ -299,7 +303,8 @@ static inline bool ShouldMarkCrossCompartment(GCMarker* marker, JSObject* src,
   }
 
   // Check our sweep groups are correct as above.
-  MOZ_ASSERT_IF(!dst.isMarkedAny(), !dstZone->isGCSweeping());
+  MOZ_ASSERT(currentColor == CellColor::White);
+  MOZ_ASSERT(!dstZone->isGCSweeping());
 
   if (dstZone->isGCMarkingBlackOnly()) {
     /*
@@ -307,9 +312,7 @@ static inline bool ShouldMarkCrossCompartment(GCMarker* marker, JSObject* src,
      * but it will be later, so record the cell so it can be marked gray
      * at the appropriate time.
      */
-    if (!dst.isMarkedAny()) {
-      DelayCrossCompartmentGrayMarking(marker, src);
-    }
+    DelayCrossCompartmentGrayMarking(marker, src);
     return false;
   }
 
@@ -1410,16 +1413,21 @@ static inline size_t NumUsedDynamicSlots(NativeObject* obj) {
 void GCMarker::updateRangesAtStartOfSlice() {
   for (MarkStackIter iter(stack); !iter.done(); iter.next()) {
     if (iter.isSlotsOrElementsRange()) {
-      MarkStack::SlotsOrElementsRange& range = iter.slotsOrElementsRange();
+      MarkStack::SlotsOrElementsRange range = iter.slotsOrElementsRange();
       JSObject* obj = range.ptr().asRangeObject();
       if (!obj->is<NativeObject>()) {
+        // The object owning the range was swapped with a non-native object by
+        // the mutator. The barriers at the end of JSObject::swap ensure that
+        // everything gets marked so there's nothing to do here.
         range.setEmpty();
+        iter.setSlotsOrElementsRange(range);
       } else if (range.kind() == SlotsOrElementsKind::Elements) {
         NativeObject* obj = &range.ptr().asRangeObject()->as<NativeObject>();
         size_t index = range.start();
         size_t numShifted = obj->getElementsHeader()->numShiftedElements();
         index -= std::min(numShifted, index);
         range.setStart(index);
+        iter.setSlotsOrElementsRange(range);
       }
     }
   }
@@ -1433,11 +1441,12 @@ void GCMarker::updateRangesAtStartOfSlice() {
 void GCMarker::updateRangesAtEndOfSlice() {
   for (MarkStackIter iter(stack); !iter.done(); iter.next()) {
     if (iter.isSlotsOrElementsRange()) {
-      MarkStack::SlotsOrElementsRange& range = iter.slotsOrElementsRange();
+      MarkStack::SlotsOrElementsRange range = iter.slotsOrElementsRange();
       if (range.kind() == SlotsOrElementsKind::Elements) {
         NativeObject* obj = &range.ptr().asRangeObject()->as<NativeObject>();
         size_t numShifted = obj->getElementsHeader()->numShiftedElements();
         range.setStart(range.start() + numShifted);
+        iter.setSlotsOrElementsRange(range);
       }
     }
   }
@@ -1685,11 +1694,16 @@ inline MarkStack::TaggedPtr::TaggedPtr(Tag tag, Cell* ptr)
   assertValid();
 }
 
-inline uintptr_t MarkStack::TaggedPtr::asBits() const { return bits; }
-
-inline uintptr_t MarkStack::TaggedPtr::tagUnchecked() const {
-  return bits & TagMask;
+/* static */
+inline MarkStack::TaggedPtr MarkStack::TaggedPtr::fromBits(uintptr_t bits) {
+  return TaggedPtr(bits);
 }
+
+inline MarkStack::TaggedPtr::TaggedPtr(uintptr_t bits) : bits(bits) {
+  assertValid();
+}
+
+inline uintptr_t MarkStack::TaggedPtr::asBits() const { return bits; }
 
 inline MarkStack::Tag MarkStack::TaggedPtr::tag() const {
   auto tag = Tag(bits & TagMask);
@@ -1734,6 +1748,19 @@ inline MarkStack::SlotsOrElementsRange::SlotsOrElementsRange(
   MOZ_ASSERT(start() == startArg);
 }
 
+/* static */
+inline MarkStack::SlotsOrElementsRange
+MarkStack::SlotsOrElementsRange::fromBits(uintptr_t startAndKind,
+                                          uintptr_t ptr) {
+  return SlotsOrElementsRange(startAndKind, ptr);
+}
+
+inline MarkStack::SlotsOrElementsRange::SlotsOrElementsRange(
+    uintptr_t startAndKind, uintptr_t ptr)
+    : startAndKind_(startAndKind), ptr_(TaggedPtr::fromBits(ptr)) {
+  assertValid();
+}
+
 inline void MarkStack::SlotsOrElementsRange::assertValid() const {
   ptr_.assertValid();
   MOZ_ASSERT(TagIsRangeTag(ptr_.tag()));
@@ -1753,7 +1780,11 @@ inline void MarkStack::SlotsOrElementsRange::setStart(size_t newStart) {
 }
 
 inline void MarkStack::SlotsOrElementsRange::setEmpty() {
-  TaggedPtr entry = TaggedPtr(ObjectTag, ptr().asRangeObject());
+  // Replace this SlotsOrElementsRange with something that's valid for marking
+  // but doesn't involve accessing this range, which is now invalid. This
+  // replaces the two-word range with two single-word entries for the owning
+  // object.
+  TaggedPtr entry(ObjectTag, ptr().asRangeObject());
   ptr_ = entry;
   startAndKind_ = entry.asBits();
 }
@@ -1762,12 +1793,24 @@ inline MarkStack::TaggedPtr MarkStack::SlotsOrElementsRange::ptr() const {
   return ptr_;
 }
 
+inline uintptr_t MarkStack::SlotsOrElementsRange::asBits0() const {
+  return startAndKind_;
+}
+
+inline uintptr_t MarkStack::SlotsOrElementsRange::asBits1() const {
+  return ptr_.asBits();
+}
+
 MarkStack::MarkStack() { MOZ_ASSERT(isEmpty()); }
 
-MarkStack::~MarkStack() { MOZ_ASSERT(isEmpty()); }
+MarkStack::~MarkStack() {
+  MOZ_ASSERT(isEmpty());
+  clearAndFreeStack();
+}
 
 void MarkStack::swap(MarkStack& other) {
   std::swap(stack_, other.stack_);
+  std::swap(capacity_, other.capacity_);
   std::swap(topIndex_, other.topIndex_);
 #ifdef JS_GC_ZEAL
   std::swap(maxCapacity_, other.maxCapacity_);
@@ -1823,7 +1866,7 @@ MOZ_ALWAYS_INLINE bool MarkStack::indexIsEntryBase(size_t index) const {
   // SlotsOrElementsRangeTag zero and all SlotsOrElementsKind tags non-zero.
 
   MOZ_ASSERT(index < position());
-  return stack()[index].tagUnchecked() != SlotsOrElementsRangeTag;
+  return (at(index) & TagMask) != SlotsOrElementsRangeTag;
 }
 
 /* static */
@@ -1863,7 +1906,7 @@ void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
   // part of the stack, in src words if this method stole from the bottom of
   // the stack rather than the top.
 
-  mozilla::PodCopy(dst.topPtr(), src.stack().begin() + targetPos, wordsToMove);
+  mozilla::PodCopy(dst.end(), src.stack_ + targetPos, wordsToMove);
   dst.topIndex_ += wordsToMove;
   dst.peekPtr().assertValid();
 
@@ -1877,18 +1920,17 @@ void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
 void MarkStack::clearAndResetCapacity() {
   // Fall back to the smaller initial capacity so we don't hold on to excess
   // memory between GCs.
-  stack().clear();
   topIndex_ = 0;
   (void)resetStackCapacity();
 }
 
 void MarkStack::clearAndFreeStack() {
   // Free all stack memory so we don't hold on to excess memory between GCs.
-  stack().clearAndFree();
+  js_free(stack_);
+  stack_ = nullptr;
+  capacity_ = 0;
   topIndex_ = 0;
 }
-
-inline MarkStack::TaggedPtr* MarkStack::topPtr() { return &stack()[topIndex_]; }
 
 template <typename T>
 inline bool MarkStack::push(T* ptr) {
@@ -1909,9 +1951,9 @@ inline bool MarkStack::push(const TaggedPtr& ptr) {
 }
 
 inline void MarkStack::infalliblePush(const TaggedPtr& ptr) {
-  *topPtr() = ptr;
+  MOZ_ASSERT(position() + 1 <= capacity());
+  *end() = ptr.asBits();
   topIndex_++;
-  MOZ_ASSERT(position() <= capacity());
 }
 
 inline void MarkStack::infalliblePush(JSObject* obj, SlotsOrElementsKind kind,
@@ -1920,14 +1962,15 @@ inline void MarkStack::infalliblePush(JSObject* obj, SlotsOrElementsKind kind,
 
   SlotsOrElementsRange array(kind, obj, start);
   array.assertValid();
-  *reinterpret_cast<SlotsOrElementsRange*>(topPtr()) = array;
+  end()[0] = array.asBits0();
+  end()[1] = array.asBits1();
   topIndex_ += ValueRangeWords;
   MOZ_ASSERT(TagIsRangeTag(peekTag()));
 }
 
-inline const MarkStack::TaggedPtr& MarkStack::peekPtr() const {
+inline MarkStack::TaggedPtr MarkStack::peekPtr() const {
   MOZ_ASSERT(!isEmpty());
-  return stack()[topIndex_ - 1];
+  return TaggedPtr::fromBits(at(topIndex_ - 1));
 }
 
 inline MarkStack::Tag MarkStack::peekTag() const {
@@ -1940,7 +1983,7 @@ inline MarkStack::TaggedPtr MarkStack::popPtr() {
   MOZ_ASSERT(!TagIsRangeTag(peekTag()));
   peekPtr().assertValid();
   topIndex_--;
-  return *topPtr();
+  return TaggedPtr::fromBits(*end());
 }
 
 inline MarkStack::SlotsOrElementsRange MarkStack::popSlotsOrElementsRange() {
@@ -1949,9 +1992,7 @@ inline MarkStack::SlotsOrElementsRange MarkStack::popSlotsOrElementsRange() {
   MOZ_ASSERT(position() >= ValueRangeWords);
 
   topIndex_ -= ValueRangeWords;
-  const auto& array = *reinterpret_cast<SlotsOrElementsRange*>(topPtr());
-  array.assertValid();
-  return array;
+  return SlotsOrElementsRange::fromBits(end()[0], end()[1]);
 }
 
 inline bool MarkStack::ensureSpace(size_t count) {
@@ -1980,11 +2021,20 @@ bool MarkStack::resize(size_t newCapacity) {
   MOZ_ASSERT(newCapacity != 0);
   MOZ_ASSERT(newCapacity >= position());
 
-  if (!stack().resize(newCapacity)) {
+  auto poisonOnExit = mozilla::MakeScopeExit([this]() { poisonUnused(); });
+
+  if (newCapacity == capacity_) {
+    return true;
+  }
+
+  uintptr_t* newStack =
+      js_pod_realloc<uintptr_t>(stack_, capacity_, newCapacity);
+  if (!newStack) {
     return false;
   }
 
-  poisonUnused();
+  stack_ = newStack;
+  capacity_ = newCapacity;
   return true;
 }
 
@@ -1993,13 +2043,14 @@ inline void MarkStack::poisonUnused() {
                 "The mark stack poison pattern must not look like a valid "
                 "tagged pointer");
 
-  AlwaysPoison(stack().begin() + topIndex_, JS_FRESH_MARK_STACK_PATTERN,
-               stack().capacity() - topIndex_, MemCheckKind::MakeUndefined);
+  MOZ_ASSERT(topIndex_ <= capacity_);
+  AlwaysPoison(stack_ + topIndex_, JS_FRESH_MARK_STACK_PATTERN,
+               capacity_ - topIndex_, MemCheckKind::MakeUndefined);
 }
 
 size_t MarkStack::sizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf) const {
-  return stack().sizeOfExcludingThis(mallocSizeOf);
+  return capacity_ * sizeof(uintptr_t);
 }
 
 MarkStackIter::MarkStackIter(MarkStack& stack)
@@ -2028,17 +2079,25 @@ inline MarkStack::Tag MarkStackIter::peekTag() const { return peekPtr().tag(); }
 
 inline MarkStack::TaggedPtr MarkStackIter::peekPtr() const {
   MOZ_ASSERT(!done());
-  return stack_.stack()[pos_ - 1];
+  return MarkStack::TaggedPtr::fromBits(stack_.at(pos_ - 1));
 }
 
-inline MarkStack::SlotsOrElementsRange& MarkStackIter::slotsOrElementsRange() {
+inline MarkStack::SlotsOrElementsRange MarkStackIter::slotsOrElementsRange()
+    const {
   MOZ_ASSERT(TagIsRangeTag(peekTag()));
   MOZ_ASSERT(position() >= ValueRangeWords);
 
-  MarkStack::TaggedPtr* ptr = &stack_.stack()[pos_ - ValueRangeWords];
-  auto& range = *reinterpret_cast<MarkStack::SlotsOrElementsRange*>(ptr);
-  range.assertValid();
-  return range;
+  uintptr_t* ptr = stack_.ptr(pos_ - ValueRangeWords);
+  return MarkStack::SlotsOrElementsRange::fromBits(ptr[0], ptr[1]);
+}
+
+inline void MarkStackIter::setSlotsOrElementsRange(
+    const MarkStack::SlotsOrElementsRange& range) {
+  MOZ_ASSERT(isSlotsOrElementsRange());
+
+  uintptr_t* ptr = stack_.ptr(pos_ - ValueRangeWords);
+  ptr[0] = range.asBits0();
+  ptr[1] = range.asBits1();
 }
 
 /*** GCMarker ***************************************************************/
@@ -2608,7 +2667,7 @@ namespace js::gc {
 
 template <typename T>
 JS_PUBLIC_API bool TraceWeakEdge(JSTracer* trc, JS::Heap<T>* thingp) {
-  return TraceEdgeInternal(trc, gc::ConvertToBase(thingp->unsafeGet()),
+  return TraceEdgeInternal(trc, gc::ConvertToBase(thingp->unsafeAddress()),
                            "JS::Heap edge");
 }
 
@@ -2799,7 +2858,6 @@ void UnmarkGrayTracer::unmark(JS::GCCellPtr cell) {
 
 bool js::gc::UnmarkGrayGCThingUnchecked(GCMarker* marker, JS::GCCellPtr thing) {
   MOZ_ASSERT(thing);
-  MOZ_ASSERT(thing.asCell()->isMarkedGray());
 
   mozilla::Maybe<AutoGeckoProfilerEntry> profilingStackFrame;
   if (JSContext* cx = TlsContext.get()) {
@@ -2822,6 +2880,7 @@ JS_PUBLIC_API bool JS::UnmarkGrayGCThingRecursively(JS::GCCellPtr thing) {
     return false;
   }
 
+  MOZ_ASSERT(thing.asCell()->isMarkedGray());
   return UnmarkGrayGCThingUnchecked(&rt->gc.marker(), thing);
 }
 
@@ -2842,7 +2901,10 @@ namespace js::debug {
 MarkInfo GetMarkInfo(void* vp) {
   GCRuntime& gc = TlsGCContext.get()->runtime()->gc;
   if (gc.nursery().isInside(vp)) {
-    return MarkInfo::NURSERY;
+    ChunkBase* chunk = js::gc::detail::GetGCAddressChunkBase(vp);
+    return chunk->getKind() == js::gc::ChunkKind::NurseryFromSpace
+               ? MarkInfo::NURSERY_FROMSPACE
+               : MarkInfo::NURSERY_TOSPACE;
   }
 
   if (!gc.isPointerWithinTenuredCell(vp)) {

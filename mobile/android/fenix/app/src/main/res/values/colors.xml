@@ -23,7 +23,7 @@
     <!-- Tooltip -->
     <color name="fx_mobile_layer_color_gradient_start">@color/photonViolet70</color>
     <!-- Tooltip -->
-    <color name="fx_mobile_layer_color_gradient_end">@color/photonViolet40</color>
+    <color name="fx_mobile_layer_color_gradient_end">@color/photonViolet60</color>
     <!-- Warning background -->
     <color name="fx_mobile_layer_color_warning" tools:ignore="UnusedResources">@color/photonYellow20</color>
     <!-- Confirmation background -->
@@ -236,7 +236,7 @@
 
     <!-- Icon -->
     <!-- Primary icon -->
-    <color name="fx_mobile_private_icon_color_primary" tools:ignore="UnusedResources">@color/photonLightGrey05</color>
+    <color name="fx_mobile_private_icon_color_primary">@color/photonLightGrey05</color>
     <!-- Inactive tab -->
     <color name="fx_mobile_private_icon_color_primary_inactive" tools:ignore="UnusedResources">@color/photonLightGrey05A60</color>
     <!-- Secondary icon -->
@@ -333,6 +333,9 @@
     <color name="sync_error_text_color">@color/photonYellow90</color>
     <color name="bottom_bar_shadow">#1A000000</color>
     <color name="snackbar_error_color">#B52645</color>
+
+    <!-- Prompt colors -->
+    <color name="mozac_feat_prompt_cancel_save_dialog_text_color" tools:ignore="UnusedResources">@color/photonViolet70A80</color>
 
     <!-- Reader View colors -->
     <color name="mozac_feature_readerview_text_color" tools:ignore="UnusedResources">@color/fx_mobile_icon_color_primary</color>

@@ -23,9 +23,10 @@ add_task(async function test_PanelTestProvider() {
     milestone_message: 0,
     update_action: 1,
     spotlight: 3,
-    feature_callout: 1,
+    feature_callout: 2,
     pb_newtab: 2,
     toast_notification: 3,
+    bookmarks_bar_button: 1,
   };
 
   const EXPECTED_TOTAL_MESSAGE_COUNT = Object.values(
@@ -60,6 +61,16 @@ add_task(async function test_PanelTestProvider() {
       EXPERIMENT_VALIDATOR,
       message,
       `Message ${message.id} validates as MessagingExperiment`
+    );
+
+    // Confirm the messages can't unintentionally be shown to users. This
+    // targeting expression will always be false as panel_local_testing is a
+    // local provider with no cohort property. PanelTestProvider assigns it to
+    // all messages to prevent them from matching.
+    Assert.stringContains(
+      message.targeting,
+      `providerCohorts.panel_local_testing == "SHOW_TEST"`,
+      "Message targeting should prevent showing to users"
     );
 
     messageCounts[message.template]++;

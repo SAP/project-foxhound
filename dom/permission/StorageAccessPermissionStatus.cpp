@@ -12,6 +12,7 @@
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/PermissionStatus.h"
 #include "mozilla/dom/PermissionStatusBinding.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIPermissionManager.h"
 
 namespace mozilla::dom {
@@ -22,7 +23,7 @@ StorageAccessPermissionStatus::StorageAccessPermissionStatus(
 
 RefPtr<PermissionStatus::SimplePromise>
 StorageAccessPermissionStatus::UpdateState() {
-  nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
+  nsGlobalWindowInner* window = GetOwnerWindow();
   if (NS_WARN_IF(!window)) {
     return SimplePromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
@@ -40,7 +41,7 @@ StorageAccessPermissionStatus::UpdateState() {
   }
 
   RefPtr<StorageAccessPermissionStatus> self(this);
-  return wgc->SendGetStorageAccessPermission()->Then(
+  return wgc->SendGetStorageAccessPermission(false)->Then(
       GetMainThreadSerialEventTarget(), __func__,
       [self](uint32_t aAction) {
         if (aAction == nsIPermissionManager::ALLOW_ACTION) {
@@ -63,7 +64,7 @@ bool StorageAccessPermissionStatus::MaybeUpdatedBy(
 
 bool StorageAccessPermissionStatus::MaybeUpdatedByNotifyOnly(
     nsPIDOMWindowInner* aInnerWindow) const {
-  nsPIDOMWindowInner* owner = GetOwner();
+  nsPIDOMWindowInner* owner = GetOwnerWindow();
   NS_ENSURE_TRUE(owner, false);
   NS_ENSURE_TRUE(aInnerWindow, false);
   return owner->WindowID() == aInnerWindow->WindowID();

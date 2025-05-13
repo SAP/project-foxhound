@@ -9,7 +9,10 @@ head = ""
 
 ["test_bug1321912.js"]
 
+["test_chips_partition_capping.js"]
+
 ["test_eviction.js"]
+prefs = ["dom.security.https_first=false"]
 
 ["test_getCookieSince.js"]
 

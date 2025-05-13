@@ -5,6 +5,7 @@
 //! Specified types for box properties.
 
 use crate::parser::{Parse, ParserContext};
+#[cfg(feature = "gecko")]
 use crate::properties::{LonghandId, PropertyDeclarationId, PropertyId};
 use crate::values::generics::box_::{
     GenericContainIntrinsicSize, GenericLineClamp, GenericPerspective, GenericVerticalAlign,
@@ -23,6 +24,10 @@ use style_traits::{SpecifiedValueInfo, StyleParseErrorKind, ToCss};
 fn flexbox_enabled() -> bool {
     true
 }
+#[cfg(not(feature = "servo"))]
+fn grid_enabled() -> bool {
+    true
+}
 
 #[cfg(feature = "servo")]
 fn flexbox_enabled() -> bool {
@@ -30,6 +35,10 @@ fn flexbox_enabled() -> bool {
         .get("layout.flexbox.enabled")
         .as_bool()
         .unwrap_or(false)
+}
+#[cfg(feature = "servo")]
+fn grid_enabled() -> bool {
+    style_config::get_bool("layout.grid.enabled")
 }
 
 /// Defines an element’s display type, which consists of
@@ -57,7 +66,6 @@ pub enum DisplayInside {
     Flow,
     FlowRoot,
     Flex,
-    #[cfg(feature = "gecko")]
     Grid,
     Table,
     TableRowGroup,
@@ -152,10 +160,8 @@ impl Display {
         Self(((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Flex as u16);
     pub const InlineFlex: Self =
         Self(((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Flex as u16);
-    #[cfg(feature = "gecko")]
     pub const Grid: Self =
         Self(((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Grid as u16);
-    #[cfg(feature = "gecko")]
     pub const InlineGrid: Self =
         Self(((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Grid as u16);
     pub const Table: Self =
@@ -326,7 +332,6 @@ impl Display {
     pub fn is_item_container(&self) -> bool {
         match self.inside() {
             DisplayInside::Flex => true,
-            #[cfg(feature = "gecko")]
             DisplayInside::Grid => true,
             _ => false,
         }
@@ -423,8 +428,7 @@ impl DisplayKeyword {
             "inline-table" => Full(Display::InlineTable),
             "-webkit-flex" if flexbox_enabled() => Full(Display::Flex),
             "inline-flex" | "-webkit-inline-flex" if flexbox_enabled() => Full(Display::InlineFlex),
-            #[cfg(feature = "gecko")]
-            "inline-grid" => Full(Display::InlineGrid),
+            "inline-grid" if grid_enabled() => Full(Display::InlineGrid),
             "table-caption" => Full(Display::TableCaption),
             "table-row-group" => Full(Display::TableRowGroup),
             "table-header-group" => Full(Display::TableHeaderGroup),
@@ -459,8 +463,7 @@ impl DisplayKeyword {
             "flex" if flexbox_enabled() => Inside(DisplayInside::Flex),
             "flow-root" => Inside(DisplayInside::FlowRoot),
             "table" => Inside(DisplayInside::Table),
-            #[cfg(feature = "gecko")]
-            "grid" => Inside(DisplayInside::Grid),
+            "grid" if grid_enabled() => Inside(DisplayInside::Grid),
             #[cfg(feature = "gecko")]
             "ruby" => Inside(DisplayInside::Ruby),
         })
@@ -481,7 +484,6 @@ impl ToCss for Display {
             Display::WebkitInlineBox => dest.write_str("-webkit-inline-box"),
             Display::TableCaption => dest.write_str("table-caption"),
             _ => match (outside, inside) {
-                #[cfg(feature = "gecko")]
                 (DisplayOutside::Inline, DisplayInside::Grid) => dest.write_str("inline-grid"),
                 (DisplayOutside::Inline, DisplayInside::Flex) => dest.write_str("inline-flex"),
                 (DisplayOutside::Inline, DisplayInside::Table) => dest.write_str("inline-table"),
@@ -1022,6 +1024,10 @@ bitflags! {
     }
 }
 
+#[cfg(feature="servo")]
+fn change_bits_for_longhand(longhand: LonghandId) -> WillChangeBits { WillChangeBits::empty() }
+
+#[cfg(feature = "gecko")]
 fn change_bits_for_longhand(longhand: LonghandId) -> WillChangeBits {
     match longhand {
         LonghandId::Opacity => WillChangeBits::OPACITY,
@@ -1244,6 +1250,7 @@ impl Parse for LineClamp {
     Parse,
     PartialEq,
     SpecifiedValueInfo,
+    ToAnimatedValue,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
@@ -1580,15 +1587,19 @@ pub enum Appearance {
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Tooltip,
 
+    /// Sidebar appearance.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozSidebar,
+
     /// Mac help button.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacHelpButton,
 
-    /// An appearance value for the root, so that we can get unified toolbar looks (which require a
-    /// transparent gecko background) without really using the whole transparency set-up which
-    /// otherwise loses window borders, see bug 1870481.
+    /// An appearance value for the root, so that we can get tinting and unified toolbar looks
+    /// (which require a transparent gecko background) without really using the whole transparency
+    /// set-up which otherwise loses window borders, see bug 1870481.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    MozMacUnifiedToolbarWindow,
+    MozMacWindow,
 
     /// Windows themed window frame elements.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
@@ -1657,6 +1668,7 @@ impl BreakBetween {
     /// Parse a legacy break-between value for `page-break-{before,after}`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    #[cfg_attr(feature = "servo", allow(unused))]
     #[inline]
     pub(crate) fn parse_legacy<'i>(
         _: &ParserContext,
@@ -1677,6 +1689,7 @@ impl BreakBetween {
     /// Serialize a legacy break-between value for `page-break-*`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    #[cfg_attr(feature = "servo", allow(unused))]
     pub(crate) fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
@@ -1722,6 +1735,7 @@ impl BreakWithin {
     /// Parse a legacy break-between value for `page-break-inside`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    #[cfg_attr(feature = "servo", allow(unused))]
     #[inline]
     pub(crate) fn parse_legacy<'i>(
         _: &ParserContext,
@@ -1739,6 +1753,7 @@ impl BreakWithin {
     /// Serialize a legacy break-between value for `page-break-inside`.
     ///
     /// See https://drafts.csswg.org/css-break/#page-break-properties.
+    #[cfg_attr(feature = "servo", allow(unused))]
     pub(crate) fn to_css_legacy<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,

@@ -35,15 +35,21 @@ var gSearchResultsPane = {
 
   searchResultsHighlighted: false,
 
+  searchableNodes: new Set([
+    "button",
+    "label",
+    "description",
+    "menulist",
+    "menuitem",
+    "checkbox",
+  ]),
+
   init() {
     if (this.inited) {
       return;
     }
     this.inited = true;
     this.searchInput = document.getElementById("searchInput");
-    this.searchInput.hidden = !Services.prefs.getBoolPref(
-      "browser.preferences.search"
-    );
 
     window.addEventListener("resize", () => {
       this._recomputeTooltipPositions();
@@ -331,7 +337,8 @@ var gSearchResultsPane = {
           child.classList.remove("visually-hidden");
 
           // Show the preceding search-header if one exists.
-          let groupbox = child.closest("groupbox");
+          let groupbox =
+            child.closest("groupbox") || child.closest("[data-category]");
           let groupHeader =
             groupbox && groupbox.querySelector(".search-header");
           if (groupHeader) {
@@ -414,13 +421,9 @@ var gSearchResultsPane = {
     let matchesFound = false;
     if (
       nodeObject.childElementCount == 0 ||
-      nodeObject.localName == "button" ||
-      nodeObject.localName == "label" ||
-      nodeObject.localName == "description" ||
-      nodeObject.localName == "menulist" ||
-      nodeObject.localName == "menuitem" ||
-      nodeObject.localName == "checkbox" ||
-      nodeObject.localName == "moz-toggle"
+      this.searchableNodes.has(nodeObject.localName) ||
+      (nodeObject.localName?.startsWith("moz-") &&
+        nodeObject.localName !== "moz-input-box")
     ) {
       let simpleTextNodes = this.textNodeDescendants(nodeObject);
       if (nodeObject.shadowRoot) {

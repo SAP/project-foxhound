@@ -3,7 +3,6 @@
 <head>
   <title>Notification Basics</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="text/javascript" src="MockServices.js"></script>
   <script type="text/javascript" src="NotificationTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -92,7 +91,11 @@
       is(notification.lang, options.lang, "lang should get set");
       is(notification.body, options.body, "body should get set");
       is(notification.tag, options.tag, "tag should get set");
-      is(notification.icon, options.icon, "icon should get set");
+      is(
+        notification.icon,
+        new URL(options.icon, location.href).toString(),
+        "icon should get set"
+      );
 
       // store notification in test context
       this.notification = notification;
@@ -116,10 +119,7 @@
     },
   ];
 
-  MockServices.register();
-  NotificationTest.run(steps, function() {
-    MockServices.unregister();
-  });
+  NotificationTest.run(steps);
 </script>
 </body>
 </html>

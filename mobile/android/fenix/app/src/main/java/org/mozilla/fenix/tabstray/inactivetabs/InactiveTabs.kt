@@ -6,6 +6,7 @@
 
 package org.mozilla.fenix.tabstray.inactivetabs
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -97,7 +98,9 @@ fun InactiveTabsList(
         ),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .animateContentSize()
+                .fillMaxWidth(),
         ) {
             InactiveTabsHeader(
                 expanded = expanded,
@@ -127,10 +130,10 @@ fun InactiveTabsList(
 
                         FaviconListItem(
                             label = tab.toDisplayTitle(),
+                            url = tabUrl,
                             description = tabUrl,
                             faviconPainter = faviconPainter,
                             onClick = { onTabClick(tab) },
-                            url = tabUrl,
                             iconPainter = painterResource(R.drawable.mozac_ic_cross_24),
                             iconDescription = stringResource(R.string.content_description_close_button),
                             onIconClick = { onTabCloseClick(tab) },
@@ -175,8 +178,6 @@ private fun InactiveTabsHeader(
             dismissButtonColor = FirefoxTheme.colors.iconOnColor.toArgb(),
             indicatorDirection = CFRPopup.IndicatorDirection.UP,
             popupVerticalOffset = (-12).dp,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = false,
         ),
         onCFRShown = onCFRShown,
         onDismiss = { onCFRDismiss() },

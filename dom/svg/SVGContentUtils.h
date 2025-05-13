@@ -197,6 +197,8 @@ class SVGContentUtils {
 
   static Matrix GetCTM(dom::SVGElement* aElement);
 
+  static Matrix GetOuterViewportCTM(dom::SVGElement* aElement);
+
   static Matrix GetScreenCTM(dom::SVGElement* aElement);
 
   /**
@@ -338,7 +340,7 @@ class SVGContentUtils {
    * string formatted as an SVG path
    */
   static already_AddRefed<mozilla::gfx::Path> GetPath(
-      const nsAString& aPathString);
+      const nsACString& aPathString);
 
   /**
    *  Returns true if aContent is one of the elements whose stroke is guaranteed

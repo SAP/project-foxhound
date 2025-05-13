@@ -4,24 +4,33 @@
 
 .wrapper {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto min-content min-content;
   box-sizing: border-box;
   height: 100%;
-  padding: var(--space-medium);
+  min-width: 50px;
+  padding: var(--space-small);
+  padding-inline-end: 0;
   border-inline-end: 1px solid var(--chrome-content-separator-color);
-  background-color: var(--sidebar-background-color);
-  color: var(--sidebar-text-color);
+  background-color: var(--toolbar-bgcolor);
+  color: var(--toolbar-color);
   :host([positionend]) & {
     border-inline-start: 1px solid var(--chrome-content-separator-color);
     border-inline-end: none;
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.verticalTabs") {
+    :host([expanded]) & {
+      min-width: 280px;
+    }
   }
 }
 
 .actions-list {
   display: flex;
   flex-direction: column;
-  justify-content: end;
-  gap: var(--space-xsmall);
+  justify-content: center;
+  padding-inline: var(--space-xsmall);
 }
 
 .expanded-button {
@@ -32,4 +41,12 @@
     font-weight: var(--font-weight);
     justify-content: flex-start;
   }
+}
+
+.tools-and-extensions {
+  align-self: start;
+}
+
+.bottom-actions {
+  align-self: end;
 }

@@ -453,7 +453,7 @@ static void AddCachedDirRule(sandbox::TargetPolicy* aPolicy,
   if (sandbox::SBOX_ALL_OK != result) {
     NS_ERROR("Failed to add file policy rule.");
     LOG_E("Failed (ResultCode %d) to add %d access to: %S", result, aAccess,
-          static_cast<const wchar_t*>(rulePath.get()));
+          rulePath.getW());
   }
 }
 
@@ -463,9 +463,6 @@ static void AddCachedDirRule(sandbox::TargetPolicy* aPolicy,
 // (e.g. when the launcher process is disabled), so the process should not
 // enable pre-spawn CIG.
 static const Maybe<Vector<const wchar_t*>>& GetPrespawnCigExceptionModules() {
-  // We enable pre-spawn CIG only in Nightly for now
-  // because it caused a compat issue (bug 1682304 and 1704373).
-#if defined(NIGHTLY_BUILD)
   // The shared section contains a list of dependent modules as a
   // null-delimited string.  We convert it to a string vector and
   // cache it to avoid converting the same data every time.
@@ -481,10 +478,6 @@ static const Maybe<Vector<const wchar_t*>>& GetPrespawnCigExceptionModules() {
   }();
 
   return sDependentModules;
-#else
-  static const Maybe<Vector<const wchar_t*>> sNothing = Nothing();
-  return sNothing;
-#endif
 }
 
 static sandbox::ResultCode AllowProxyLoadFromBinDir(
@@ -500,54 +493,58 @@ static sandbox::ResultCode AllowProxyLoadFromBinDir(
 
 static sandbox::ResultCode AddCigToPolicy(
     sandbox::TargetPolicy* aPolicy, bool aAlwaysProxyBinDirLoading = false) {
-  const Maybe<Vector<const wchar_t*>>& exceptionModules =
-      GetPrespawnCigExceptionModules();
-  if (exceptionModules.isNothing()) {
-    sandbox::MitigationFlags delayedMitigations =
-        aPolicy->GetDelayedProcessMitigations();
-    MOZ_ASSERT(delayedMitigations,
-               "Delayed mitigations should be set before AddCigToPolicy.");
-    MOZ_ASSERT(!(delayedMitigations & sandbox::MITIGATION_FORCE_MS_SIGNED_BINS),
-               "AddCigToPolicy should not be called twice.");
+  if (StaticPrefs::security_sandbox_cig_prespawn_enabled()) {
+    const Maybe<Vector<const wchar_t*>>& exceptionModules =
+        GetPrespawnCigExceptionModules();
+    if (exceptionModules.isSome()) {
+      sandbox::MitigationFlags mitigations = aPolicy->GetProcessMitigations();
+      MOZ_ASSERT(mitigations,
+                 "Mitigations should be set before AddCigToPolicy.");
+      MOZ_ASSERT(!(mitigations & sandbox::MITIGATION_FORCE_MS_SIGNED_BINS),
+                 "AddCigToPolicy should not be called twice.");
 
-    delayedMitigations |= sandbox::MITIGATION_FORCE_MS_SIGNED_BINS;
-    sandbox::ResultCode result =
-        aPolicy->SetDelayedProcessMitigations(delayedMitigations);
-    if (result != sandbox::SBOX_ALL_OK) {
-      return result;
-    }
+      mitigations |= sandbox::MITIGATION_FORCE_MS_SIGNED_BINS;
+      sandbox::ResultCode result = aPolicy->SetProcessMitigations(mitigations);
+      if (result != sandbox::SBOX_ALL_OK) {
+        return result;
+      }
 
-    if (aAlwaysProxyBinDirLoading) {
       result = AllowProxyLoadFromBinDir(aPolicy);
+      if (result != sandbox::SBOX_ALL_OK) {
+        return result;
+      }
+
+      for (const wchar_t* path : exceptionModules.ref()) {
+        result =
+            aPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_SIGNED_BINARY,
+                             sandbox::TargetPolicy::SIGNED_ALLOW_LOAD, path);
+        if (result != sandbox::SBOX_ALL_OK) {
+          return result;
+        }
+      }
+
+      return sandbox::SBOX_ALL_OK;
     }
-    return result;
   }
 
-  sandbox::MitigationFlags mitigations = aPolicy->GetProcessMitigations();
-  MOZ_ASSERT(mitigations, "Mitigations should be set before AddCigToPolicy.");
-  MOZ_ASSERT(!(mitigations & sandbox::MITIGATION_FORCE_MS_SIGNED_BINS),
+  sandbox::MitigationFlags delayedMitigations =
+      aPolicy->GetDelayedProcessMitigations();
+  MOZ_ASSERT(delayedMitigations,
+             "Delayed mitigations should be set before AddCigToPolicy.");
+  MOZ_ASSERT(!(delayedMitigations & sandbox::MITIGATION_FORCE_MS_SIGNED_BINS),
              "AddCigToPolicy should not be called twice.");
 
-  mitigations |= sandbox::MITIGATION_FORCE_MS_SIGNED_BINS;
-  sandbox::ResultCode result = aPolicy->SetProcessMitigations(mitigations);
+  delayedMitigations |= sandbox::MITIGATION_FORCE_MS_SIGNED_BINS;
+  sandbox::ResultCode result =
+      aPolicy->SetDelayedProcessMitigations(delayedMitigations);
   if (result != sandbox::SBOX_ALL_OK) {
     return result;
   }
 
-  result = AllowProxyLoadFromBinDir(aPolicy);
-  if (result != sandbox::SBOX_ALL_OK) {
-    return result;
+  if (aAlwaysProxyBinDirLoading) {
+    result = AllowProxyLoadFromBinDir(aPolicy);
   }
-
-  for (const wchar_t* path : exceptionModules.ref()) {
-    result = aPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_SIGNED_BINARY,
-                              sandbox::TargetPolicy::SIGNED_ALLOW_LOAD, path);
-    if (result != sandbox::SBOX_ALL_OK) {
-      return result;
-    }
-  }
-
-  return sandbox::SBOX_ALL_OK;
+  return result;
 }
 
 // Returns the most strict dynamic code mitigation flag that is compatible with
@@ -788,6 +785,11 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
     accessTokenLevel = sandbox::USER_LOCKDOWN;
     initialIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
     delayedIntegrityLevel = sandbox::INTEGRITY_LEVEL_UNTRUSTED;
+  } else if (aSandboxLevel >= 8) {
+    jobLevel = sandbox::JOB_LOCKDOWN;
+    accessTokenLevel = sandbox::USER_RESTRICTED;
+    initialIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
+    delayedIntegrityLevel = sandbox::INTEGRITY_LEVEL_UNTRUSTED;
   } else if (aSandboxLevel >= 7) {
     jobLevel = sandbox::JOB_LOCKDOWN;
     accessTokenLevel = sandbox::USER_LIMITED;
@@ -974,7 +976,7 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
       sandbox::SBOX_ALL_OK == result,
       "With these static arguments AddRule should never fail, what happened?");
 
-  if (aSandboxLevel >= 20) {
+  if (aSandboxLevel >= 8) {
     // Content process still needs to be able to read fonts.
     wchar_t* fontsPath;
     if (SUCCEEDED(
@@ -998,6 +1000,39 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
         NS_ERROR("Failed to add fonts read access policy rule.");
         LOG_E("Failed (ResultCode %d) to add read access to: %S", result,
               fontsStr.c_str());
+      }
+
+      // Read access for MF Media Source Activate and subkeys/values.
+      result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_REGISTRY,
+                                sandbox::TargetPolicy::REG_ALLOW_READONLY,
+                                L"HKEY_LOCAL_MACHINE\\Software\\Classes\\CLSID"
+                                L"\\{e79167d7-1b85-4d78-b603-798e0e1a4c67}*");
+      if (sandbox::SBOX_ALL_OK != result) {
+        NS_ERROR("Failed to add rule for MFStartup CLSID.");
+        LOG_E("Failed (ResultCode %d) to add rule for MFStartup CLSID.",
+              result);
+      }
+
+      // Read access for other Media Foundation Classes.
+      result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_REGISTRY,
+                                sandbox::TargetPolicy::REG_ALLOW_READONLY,
+                                L"HKEY_LOCAL_MACHINE\\"
+                                L"Software\\Classes\\MediaFoundation\\*");
+      if (sandbox::SBOX_ALL_OK != result) {
+        NS_ERROR("Failed to add rule for MFStartup CLSID.");
+        LOG_E("Failed (ResultCode %d) to add rule for MFStartup CLSID.",
+              result);
+      }
+
+      // Read access for MF H264 Encoder and subkeys/values.
+      result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_REGISTRY,
+                                sandbox::TargetPolicy::REG_ALLOW_READONLY,
+                                L"HKEY_LOCAL_MACHINE\\Software\\Classes\\CLSID"
+                                L"\\{6CA50344-051A-4DED-9779-A43305165E35}*");
+      if (sandbox::SBOX_ALL_OK != result) {
+        NS_ERROR("Failed to add rule for MF H264 Encoder CLSID.");
+        LOG_E("Failed (ResultCode %d) to add rule for MF H264 Encoder CLSID.",
+              result);
       }
     }
 

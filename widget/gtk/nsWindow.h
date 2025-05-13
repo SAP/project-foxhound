@@ -13,6 +13,7 @@
 
 #include "CompositorWidget.h"
 #include "MozContainer.h"
+#include "MozContainerSurfaceLock.h"
 #include "VsyncSource.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
@@ -54,6 +55,7 @@ extern mozilla::LazyLogModule gWidgetLog;
 extern mozilla::LazyLogModule gWidgetDragLog;
 extern mozilla::LazyLogModule gWidgetPopupLog;
 extern mozilla::LazyLogModule gWidgetVsync;
+extern mozilla::LazyLogModule gWidgetWaylandLog;
 
 #  define LOG(str, ...)                               \
     MOZ_LOG(IsPopup() ? gWidgetPopupLog : gWidgetLog, \
@@ -69,6 +71,8 @@ extern mozilla::LazyLogModule gWidgetVsync;
 #  define LOG_ENABLED()                                         \
     (MOZ_LOG_TEST(gWidgetPopupLog, mozilla::LogLevel::Debug) || \
      MOZ_LOG_TEST(gWidgetLog, mozilla::LogLevel::Debug))
+#  define LOG_WAYLAND(...) \
+    MOZ_LOG(gWidgetWaylandLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 
 #else
 
@@ -169,7 +173,6 @@ class nsWindow final : public nsBaseWidget {
               bool aRepaint) override;
   bool IsEnabled() const override;
 
-  void SetZIndex(int32_t aZIndex) override;
   nsSizeMode SizeMode() override { return mSizeMode; }
   void SetSizeMode(nsSizeMode aMode) override;
   void GetWorkspaceID(nsAString& workspaceID) override;
@@ -421,6 +424,8 @@ class nsWindow final : public nsBaseWidget {
   static bool IsToplevelWindowTransparent();
 
   static nsWindow* GetFocusedWindow();
+
+  mozilla::UniquePtr<MozContainerSurfaceLock> LockSurface();
 
 #ifdef MOZ_WAYLAND
   // Use xdg-activation protocol to transfer focus from gFocusWindow to aWindow.
@@ -799,7 +804,7 @@ class nsWindow final : public nsBaseWidget {
 
   InputRegion mInputRegion;
 
-  static bool DragInProgress(void);
+  bool DragInProgress(void);
 
   void DispatchMissedButtonReleases(GdkEventCrossing* aGdkEvent);
 

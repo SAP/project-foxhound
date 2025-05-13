@@ -1484,10 +1484,11 @@ class nsLayoutUtils {
   /**
    * Calls IntrinsicForAxis with aFrame's parent's inline physical axis.
    */
-  static nscoord IntrinsicForContainer(gfxContext* aRenderingContext,
-                                       nsIFrame* aFrame,
-                                       mozilla::IntrinsicISizeType aType,
-                                       uint32_t aFlags = 0);
+  static nscoord IntrinsicForContainer(
+      gfxContext* aRenderingContext, nsIFrame* aFrame,
+      mozilla::IntrinsicISizeType aType,
+      const mozilla::Maybe<LogicalSize>& aPercentageBasis = mozilla::Nothing(),
+      uint32_t aFlags = 0);
 
   /**
    * Get the definite size contribution of aFrame for the given physical axis.
@@ -1586,14 +1587,6 @@ class nsLayoutUtils {
   static nsSize ComputeAutoSizeWithIntrinsicDimensions(
       nscoord minWidth, nscoord minHeight, nscoord maxWidth, nscoord maxHeight,
       nscoord tentWidth, nscoord tentHeight);
-
-  // Implement nsIFrame::GetPrefISize in terms of nsIFrame::AddInlinePrefISize
-  static nscoord PrefISizeFromInline(nsIFrame* aFrame,
-                                     gfxContext* aRenderingContext);
-
-  // Implement nsIFrame::GetMinISize in terms of nsIFrame::AddInlineMinISize
-  static nscoord MinISizeFromInline(nsIFrame* aFrame,
-                                    gfxContext* aRenderingContext);
 
   // Get a suitable foreground color for painting aColor for aFrame.
   static nscolor DarkenColorIfNeeded(nsIFrame* aFrame, nscolor aColor);

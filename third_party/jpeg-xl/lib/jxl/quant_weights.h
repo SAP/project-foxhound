@@ -6,20 +6,21 @@
 #ifndef LIB_JXL_QUANT_WEIGHTS_H_
 #define LIB_JXL_QUANT_WEIGHTS_H_
 
-#include <jxl/memory_manager.h>
+#include <stdint.h>
+#include <string.h>
 
 #include <array>
-#include <cstdint>
-#include <cstring>
 #include <hwy/aligned_allocator.h>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/frame_dimensions.h"
+#include "lib/jxl/image.h"
 
 namespace jxl {
 
@@ -398,7 +399,7 @@ class DequantMatrices {
     }
   }
 
-  Status Decode(JxlMemoryManager* memory_manager, BitReader* br,
+  Status Decode(BitReader* br,
                 ModularFrameDecoder* modular_frame_decoder = nullptr);
   Status DecodeDC(BitReader* br);
 

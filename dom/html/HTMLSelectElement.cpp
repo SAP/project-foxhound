@@ -27,7 +27,6 @@
 #include "nsGkAtoms.h"
 #include "nsComboboxControlFrame.h"
 #include "mozilla/dom/Document.h"
-#include "nsIFormControlFrame.h"
 #include "nsIFrame.h"
 #include "nsListControlFrame.h"
 #include "nsISelectControlFrame.h"
@@ -201,11 +200,26 @@ void HTMLSelectElement::ShowPicker(ErrorResult& aRv) {
   }
 
   // Step 5. Show the picker, if applicable, for this.
+  // https://html.spec.whatwg.org/multipage/input.html#show-the-picker,-if-applicable
+  // To show the picker, if applicable for an input element element:
+  // We already checked if mutable and user activation earlier, so skip 1 & 2.
+
+  // Step 3. Consume user activation given element's relevant global object.
+  OwnerDoc()->ConsumeTransientUserGestureActivation();
+
+  // Step 5. Otherwise, the user agent should show any relevant user interface
+  // for selecting a value for element, in the way it normally would when the
+  // user interacts with the control.
 #if !defined(ANDROID)
   if (!IsCombobox()) {
     return;
   }
 #endif
+
+  if (!IsInActiveTab(OwnerDoc())) {
+    return;
+  }
+
   if (!OpenInParentProcess()) {
     RefPtr<Document> doc = OwnerDoc();
     nsContentUtils::DispatchChromeEvent(doc, this, u"mozshowdropdown"_ns,
@@ -546,15 +560,7 @@ int32_t HTMLSelectElement::GetFirstChildOptionIndex(nsIContent* aOptions,
 }
 
 nsISelectControlFrame* HTMLSelectElement::GetSelectFrame() {
-  nsIFormControlFrame* form_control_frame = GetFormControlFrame(false);
-
-  nsISelectControlFrame* select_frame = nullptr;
-
-  if (form_control_frame) {
-    select_frame = do_QueryFrame(form_control_frame);
-  }
-
-  return select_frame;
+  return do_QueryFrame(GetPrimaryFrame());
 }
 
 void HTMLSelectElement::Add(
@@ -1251,12 +1257,7 @@ nsMapRuleToAttributesFunc HTMLSelectElement::GetAttributeMappingFunction()
 }
 
 bool HTMLSelectElement::IsDisabledForEvents(WidgetEvent* aEvent) {
-  nsIFormControlFrame* formControlFrame = GetFormControlFrame(false);
-  nsIFrame* formFrame = nullptr;
-  if (formControlFrame) {
-    formFrame = do_QueryFrame(formControlFrame);
-  }
-  return IsElementDisabledForEvents(aEvent, formFrame);
+  return IsElementDisabledForEvents(aEvent, GetPrimaryFrame());
 }
 
 void HTMLSelectElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
@@ -1469,10 +1470,8 @@ HTMLSelectElement::SubmitNamesValues(FormData* aFormData) {
 }
 
 void HTMLSelectElement::DispatchContentReset() {
-  if (nsIFormControlFrame* formControlFrame = GetFormControlFrame(false)) {
-    if (nsListControlFrame* listFrame = do_QueryFrame(formControlFrame)) {
-      listFrame->OnContentReset();
-    }
+  if (nsListControlFrame* listFrame = do_QueryFrame(GetPrimaryFrame())) {
+    listFrame->OnContentReset();
   }
 }
 
@@ -1620,8 +1619,7 @@ void HTMLSelectElement::SetUserInteracted(bool aInteracted) {
 void HTMLSelectElement::SetPreviewValue(const nsAString& aValue) {
   mPreviewValue = aValue;
   nsContentUtils::RemoveNewlines(mPreviewValue);
-  nsIFormControlFrame* formControlFrame = GetFormControlFrame(false);
-  nsComboboxControlFrame* comboFrame = do_QueryFrame(formControlFrame);
+  nsComboboxControlFrame* comboFrame = do_QueryFrame(GetPrimaryFrame());
   if (comboFrame) {
     comboFrame->RedisplaySelectedText();
   }

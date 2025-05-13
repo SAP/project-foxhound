@@ -122,12 +122,15 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     this.setConfigValue = this.setConfigValue.bind(this);
     this.expireCache = this.expireCache.bind(this);
     this.refreshCache = this.refreshCache.bind(this);
+    this.showPlaceholder = this.showPlaceholder.bind(this);
     this.idleDaily = this.idleDaily.bind(this);
     this.systemTick = this.systemTick.bind(this);
     this.syncRemoteSettings = this.syncRemoteSettings.bind(this);
     this.onStoryToggle = this.onStoryToggle.bind(this);
     this.handleWeatherSubmit = this.handleWeatherSubmit.bind(this);
     this.handleWeatherUpdate = this.handleWeatherUpdate.bind(this);
+    this.refreshTopicSelectionCache =
+      this.refreshTopicSelectionCache.bind(this);
     this.state = {
       toggledStories: {},
       weatherQuery: "",
@@ -161,6 +164,15 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     );
   }
 
+  refreshTopicSelectionCache() {
+    this.props.dispatch(
+      ac.SetPref("discoverystream.topicSelection.onboarding.displayCount", 0)
+    );
+    this.props.dispatch(
+      ac.SetPref("discoverystream.topicSelection.onboarding.maybeDisplay", true)
+    );
+  }
+
   dispatchSimpleAction(type) {
     this.props.dispatch(
       ac.OnlyToMain({
@@ -175,6 +187,10 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
 
   expireCache() {
     this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE);
+  }
+
+  showPlaceholder() {
+    this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_SHOW_PLACEHOLDER);
   }
 
   idleDaily() {
@@ -391,6 +407,13 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
         <br />
         <button className="button" onClick={this.syncRemoteSettings}>
           Sync Remote Settings
+        </button>{" "}
+        <button className="button" onClick={this.refreshTopicSelectionCache}>
+          Refresh Topic selection count
+        </button>
+        <br />
+        <button className="button" onClick={this.showPlaceholder}>
+          Show Placeholder Cards
         </button>
         <table>
           <tbody>

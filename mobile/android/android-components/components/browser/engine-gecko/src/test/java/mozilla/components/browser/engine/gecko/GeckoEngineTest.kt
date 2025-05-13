@@ -3608,6 +3608,30 @@ class GeckoEngineTest {
         verify(mockRuntime.settings).setGlobalPrivacyControl(false)
     }
 
+    @Test
+    fun `WHEN Suspected Fingerprinting Protection value is set THEN setFingerprintingProtection is getting called on GeckoRuntime`() {
+        val mockRuntime = mock<GeckoRuntime>()
+        whenever(mockRuntime.settings).thenReturn(mock())
+
+        val engine = GeckoEngine(testContext, runtime = mockRuntime)
+
+        reset(mockRuntime.settings)
+        engine.settings.fingerprintingProtection = true
+        verify(mockRuntime.settings).setFingerprintingProtection(true)
+
+        reset(mockRuntime.settings)
+        engine.settings.fingerprintingProtection = false
+        verify(mockRuntime.settings).setFingerprintingProtection(false)
+
+        reset(mockRuntime.settings)
+        engine.settings.fingerprintingProtectionPrivateBrowsing = true
+        verify(mockRuntime.settings).setFingerprintingProtectionPrivateBrowsing(true)
+
+        reset(mockRuntime.settings)
+        engine.settings.fingerprintingProtectionPrivateBrowsing = false
+        verify(mockRuntime.settings).setFingerprintingProtectionPrivateBrowsing(false)
+    }
+
     private fun createSocialTrackersLogEntryList(): List<ContentBlockingController.LogEntry> {
         val blockedLogEntry = object : ContentBlockingController.LogEntry() {}
 
@@ -3638,8 +3662,10 @@ class GeckoEngineTest {
 
         val blockedTrackingContent = createBlockingData(Event.BLOCKED_TRACKING_CONTENT)
         val blockedFingerprintingContent = createBlockingData(Event.BLOCKED_FINGERPRINTING_CONTENT)
+        val blockedSuspiciousFingerprinting = createBlockingData(Event.BLOCKED_SUSPICIOUS_FINGERPRINTING)
         val blockedCyptominingContent = createBlockingData(Event.BLOCKED_CRYPTOMINING_CONTENT)
         val blockedSocialContent = createBlockingData(Event.BLOCKED_SOCIALTRACKING_CONTENT)
+        val purgedBounceTracker = createBlockingData(Event.PURGED_BOUNCETRACKER)
 
         val loadedTrackingLevel1Content = createBlockingData(Event.LOADED_LEVEL_1_TRACKING_CONTENT)
         val loadedTrackingLevel2Content = createBlockingData(Event.LOADED_LEVEL_2_TRACKING_CONTENT)
@@ -3654,11 +3680,13 @@ class GeckoEngineTest {
             loadedTrackingLevel2Content,
             blockedFingerprintingContent,
             loadedFingerprintingContent,
+            blockedSuspiciousFingerprinting,
             blockedCyptominingContent,
             loadedCyptominingContent,
             blockedCookiePermission,
             blockedSocialContent,
             loadedSocialContent,
+            purgedBounceTracker,
             loadedCookieSocialTracker,
             blockedCookieSocialTracker,
             unBlockedBySmartBlock,

@@ -24,8 +24,8 @@ buildscript {
     }
 
     dependencies {
-        classpath 'org.mozilla.apilint:apilint:0.5.2'
-        classpath 'com.android.tools.build:gradle:8.0.2'  // Bug 1881001 for using AC version
+        classpath 'org.mozilla.apilint:apilint:0.5.3'
+        classpath ComponentsDependencies.tools_androidgradle
         classpath 'org.apache.commons:commons-exec:1.3'
         classpath 'com.diffplug.spotless:spotless-plugin-gradle:6.25.0'
         classpath 'org.tomlj:tomlj:1.1.0'
@@ -149,7 +149,7 @@ allprojects {
     // Use the semanticdb-javac and semanticdb-kotlinc plugins to generate semanticdb files for Searchfox
     if (mozconfig.substs.ENABLE_MOZSEARCH_PLUGIN || mozconfig.substs.DOWNLOAD_ALL_GRADLE_DEPENDENCIES) {
         def targetRoot = new File(topobjdir, "mozsearch_java_index")
-        def semanticdbJavacVersion = "com.sourcegraph:semanticdb-javac:0.9.10"
+        def semanticdbJavacVersion = "com.sourcegraph:semanticdb-javac:0.10.0"
         def semanticdbKotlincVersion = "com.sourcegraph:semanticdb-kotlinc:0.4.0"
 
         afterEvaluate {
@@ -478,16 +478,14 @@ subprojects { project ->
                 ktlint('0.49.1')
             }
         }
-    } else {
-        afterEvaluate {
-            // Set the source and target compatibility for non-GeckoView projects only.
-            if (it.hasProperty('android')) {
-                android {
-                    compileOptions {
-                        sourceCompatibility JavaVersion.VERSION_17
-                        targetCompatibility JavaVersion.VERSION_17
-                    }
-                }
+    }
+
+    afterEvaluate {
+        // Our vendored copy of exoplayer2 hits build failures when targeting Java 17.
+        // Given our intent to remove it in the near future, just leave it alone here.
+        if (it.hasProperty('android') && projectName != 'exoplayer2') {
+            kotlin {
+                jvmToolchain(config.jvmTargetCompatibility)
             }
         }
     }

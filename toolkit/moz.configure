@@ -4,6 +4,100 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# App-specific project settings
+
+
+project_flag(
+    env="MOZ_APP_ID",
+    nargs=1,
+    help='used for application.ini\'s "ID" field, and crash reporter server url',
+)
+
+
+@depends("MOZ_APP_ID", build_project)
+def check_moz_app_id(moz_app_id, build_project):
+    if not moz_app_id:
+        die(f"No value for MOZ_APP_ID in project '{build_project}'")
+
+
+project_flag(
+    env="MOZ_APP_VENDOR",
+    nargs=1,
+    help='used for application.ini\'s "Vendor" field, which also impacts profile location and user-visible fields',
+)
+
+project_flag(
+    env="MOZ_APP_UA_NAME",
+    default="",
+    nargs=1,
+    help="application name in the User Agent string",
+)
+
+project_flag(
+    env="MOZ_DEVTOOLS",
+    default="server",
+    choices=("all", "server"),
+    nargs=1,
+    help="which devtools version should be built",
+)
+
+
+option(
+    env="MOZ_STUB_INSTALLER",
+    help="produce a stub installer",
+)
+set_config("MOZ_STUB_INSTALLER", True, when="MOZ_STUB_INSTALLER")
+
+
+project_flag(
+    env="MOZ_PROFILE_MIGRATOR",
+    help="enable profile migrator",
+)
+
+project_flag(
+    env="BROWSER_CHROME_URL",
+    default="",
+    nargs=1,
+    set_as_define=True,
+    help="markup for a single browser window",
+)
+set_define(
+    "BROWSER_CHROME_URL_QUOTED",
+    depends("BROWSER_CHROME_URL")(lambda v: f'"{v[0]}"' if v else ""),
+)
+
+# External builds (specifically Ubuntu) may drop the hg repo information, so we allow to
+# explicitly set the repository and changeset information in.
+option(env="MOZ_SOURCE_REPO", nargs=1, help="project source repository")
+set_config("MOZ_SOURCE_REPO", depends_if("MOZ_SOURCE_REPO")(lambda src: src[0]))
+option(env="MOZ_SOURCE_CHANGESET", nargs=1, help="source changeset")
+set_config("MOZ_SOURCE_CHANGESET", depends_if("MOZ_SOURCE_CHANGESET")(lambda v: v[0]))
+
+option(
+    env="MOZ_INCLUDE_SOURCE_INFO",
+    # Build revisions should always be present in official builds
+    default=mozilla_official,
+    help="include build repository informations",
+)
+set_config("MOZ_INCLUDE_SOURCE_INFO", True, when="MOZ_INCLUDE_SOURCE_INFO")
+
+option(
+    "--with-distribution-id",
+    nargs=1,
+    default="org.mozilla",
+    help="Set distribution-specific id",
+)
+set_config("MOZ_DISTRIBUTION_ID", depends("--with-distribution-id")(lambda v: v[0]))
+add_old_configure_assignment(
+    "MOZ_DISTRIBUTION_ID", depends("--with-distribution-id")(lambda v: v[0])
+)
+
+
+@depends("MOZ_APP_VENDOR", build_project)
+def check_moz_app_vendor(moz_app_vendor, build_project):
+    if not moz_app_vendor:
+        die(f"No value for MOZ_APP_VENDOR in project '{build_project}'")
+
 
 # Set the MOZ_CONFIGURE_OPTIONS variable with all the options that
 # were passed somehow (environment, command line, mozconfig)
@@ -1007,6 +1101,31 @@ project_flag(
     set_as_define=True,
 )
 
+
+# Child Process Name for IPC
+# ==============================================================
+@depends(toolkit, bin_suffix(target))
+def moz_child_process_name(toolkit, bin_suffix):
+    if toolkit != "android":
+        return f"plugin-container{bin_suffix}"
+    else:
+        # We want to let Android unpack the file at install time, but it only
+        # does so if the file is named libsomething.so. The lib/ path is also
+        # required because the unpacked file will be under the lib/ subdirectory
+        # and will need to be executed from that path.
+        return "libplugin-container.so"
+
+
+set_config("MOZ_CHILD_PROCESS_NAME", moz_child_process_name)
+
+with only_when(target_is_osx):
+    set_config("MOZ_CHILD_PROCESS_BUNDLE", "plugin-container.app/Contents/MacOS/")
+    set_config(
+        "MOZ_CHILD_PROCESS_BUNDLEID",
+        depends("--with-distribution-id")(lambda v: f"{v[0]}.plugincontainer"),
+    )
+    set_config("MOZ_CHILD_PROCESS_BUNDLENAME", "plugin-container.app")
+
 # Profile Management
 # ==============================================================
 # Selectable profiles are temporarily gated behind a build flag
@@ -1455,7 +1574,6 @@ option(
     help="{Enable|Disable} support for RAW media",
 )
 
-set_config("MOZ_RAW", depends_if("--enable-raw")(lambda _: True))
 set_define("MOZ_RAW", depends_if("--enable-raw")(lambda _: True))
 
 
@@ -1484,16 +1602,32 @@ def x11_libs(webrtc):
     return libs
 
 
-x11_headers = pkg_check_modules(
+x11 = pkg_check_modules(
     "MOZ_X11",
     x11_libs,
     allow_missing=toolkit_gtk_x11_optional,
     when=toolkit_gtk_x11,
+    config=False,  # set after the OpenBSD hook below
 )
 
 
-set_config("MOZ_X11", True, when=x11_headers)
-set_define("MOZ_X11", True, when=x11_headers)
+@depends(x11, target_is_openbsd)
+def moz_x11_libs(x11, target_is_openbsd):
+    if not x11:
+        return []
+    if target_is_openbsd:
+        rpath = tuple(
+            f"-Wl,-rpath-link,{flag[2:]}" for flag in x11.libs if flag.startswith("-L")
+        )
+    else:
+        rpath = ()
+    return x11.libs + rpath
+
+
+set_config("MOZ_X11_CFLAGS", x11.cflags)
+set_config("MOZ_X11_LIBS", moz_x11_libs)
+set_config("MOZ_X11", True, when=x11)
+set_define("MOZ_X11", True, when=x11)
 
 pkg_check_modules(
     "MOZ_X11_SM",
@@ -1602,7 +1736,6 @@ with only_when("--enable-compile-environment"):
     @checking("for -z pack-relative-relocs option to ld", bool)
     @imports(_from="__builtin__", _import="FileNotFoundError")
     @imports("os")
-    @imports(_from="tempfile", _import="mkstemp")
     @imports("textwrap")
     def has_pack_relative_relocs(
         c_compiler,
@@ -1610,10 +1743,7 @@ with only_when("--enable-compile-environment"):
         linker_ldflags,
         readelf,
     ):
-        try:
-            fd, path = mkstemp(prefix="conftest.")
-            os.close(fd)
-
+        with create_temporary_file(suffix=".out") as path:
             pack_rel_relocs = ["-Wl,-z,pack-relative-relocs"]
             if (
                 try_invoke_compiler(
@@ -1658,11 +1788,6 @@ with only_when("--enable-compile-environment"):
                             return pack_rel_relocs
                     else:
                         return pack_rel_relocs
-        finally:
-            try:
-                os.remove(path)
-            except FileNotFoundError:
-                pass
 
     @depends(
         has_pack_relative_relocs,
@@ -1687,8 +1812,6 @@ with only_when("--enable-compile-environment"):
             return None
         if may_use_pack_relative_relocs:
             return flags
-
-    add_old_configure_assignment("PACK_REL_RELOC_FLAGS", pack_relative_relocs_flags)
 
     @depends(
         select_linker,
@@ -3345,6 +3468,47 @@ set_define(
     when=depends("--enable-parental-controls")(lambda x: not x),
 )
 
+# Automation renaming
+# ==============================================================
+
+with only_when("MOZ_AUTOMATION"):
+    option(env="MOZ_SIMPLE_PACKAGE_NAME", nargs=1, help="Package name override")
+    set_config(
+        "MOZ_SIMPLE_PACKAGE_NAME", depends_if("MOZ_SIMPLE_PACKAGE_NAME")(lambda x: x[0])
+    )
+    option(env="MOZ_PKG_SPECIAL", nargs=1, help="Name of special moz flavor")
+    set_config("MOZ_PKG_SPECIAL", depends_if("MOZ_PKG_SPECIAL")(lambda x: x[0]))
+
+
+# OSX Packaging
+# ==============================================================
+
+with only_when(target_is_osx):
+    option(
+        "--with-macbundlename-prefix",
+        nargs=1,
+        help="prefix for the mac bundle name",
+    )
+
+    @depends_if("--with-macbundlename-prefix")
+    def mac_bundle_name(value):
+        return value[0]
+
+    add_old_configure_assignment("MOZ_MACBUNDLE_NAME_PREFIX", mac_bundle_name)
+
+    option(env="DMG_TOOL", nargs=1, help="Path to the dmg tool")
+    set_config("DMG_TOOL", depends_if("DMG_TOOL")(lambda x: x[0]))
+
+
+# JS Packaging
+# ==============================================================
+
+option(
+    env="MOZ_PACKAGE_JSSHELL",
+    help="whether the installer bundles the JS shell",
+)
+set_config("MOZ_PACKAGE_JSSHELL", depends_if("MOZ_PACKAGE_JSSHELL")(lambda x: bool(x)))
+
 
 # Sandboxing support
 # ==============================================================
@@ -3512,9 +3676,12 @@ with only_when(target_has_linux_kernel & compile_environment):
 
     set_config("MOZ_LINKER", True, when="MOZ_LINKER")
     set_define("MOZ_LINKER", True, when="MOZ_LINKER")
-    add_old_configure_assignment("MOZ_LINKER", True, when="MOZ_LINKER")
 
-    moz_linker = depends(when="MOZ_LINKER")(lambda: True)
+    # gold emits wrong sysv-style elf hash tables when building both sysv and
+    # GNU style tables. https://sourceware.org/bugzilla/show_bug.cgi?id=13597
+    # Since the linker only understands the sysv ones, no need to build the
+    # GNU style tables anyways.
+    check_and_add_linker_flag("-Wl,--hash-style=sysv", when="MOZ_LINKER")
 
 
 # 32-bits ethtool_cmd.speed

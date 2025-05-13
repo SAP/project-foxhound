@@ -1,17 +1,26 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
+/**
+ * @typedef {import("./Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
+ */
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
+  Progress: "chrome://global/content/ml/Utils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "console", () => {
   return console.createInstance({
     maxLogLevelPref: "browser.ml.logLevel",
-    prefix: "ML",
+    prefix: "ML:ModelHub",
   });
 });
 
@@ -23,8 +32,26 @@ const ALLOWED_HUBS = [
   "https://model-hub.mozilla.org",
 ];
 
-const ALLOWED_HEADERS_KEYS = ["Content-Type", "ETag", "status"];
+const ALLOWED_HEADERS_KEYS = [
+  "Content-Type",
+  "ETag",
+  "status",
+  "fileSize", // the size in bytes we store
+  "Content-Length", // the size we download (can be different when gzipped)
+];
 const DEFAULT_URL_TEMPLATE = "{model}/resolve/{revision}";
+
+// Default indexedDB revision.
+const DEFAULT_MODEL_REVISION = 2;
+
+// The origin to use for storage. If null uses system.
+const DEFAULT_PRINCIPAL_ORIGIN = null;
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "DEFAULT_MAX_CACHE_SIZE",
+  "browser.ml.modelCacheMaxSizeBytes"
+);
 
 /**
  * Checks if a given URL string corresponds to an allowed hub.
@@ -38,6 +65,10 @@ const DEFAULT_URL_TEMPLATE = "{model}/resolve/{revision}";
  * @returns {boolean} True if the URL is allowed; false otherwise.
  */
 function allowedHub(urlString) {
+  if (Services.env.exists("MOZ_ALLOW_EXTERNAL_ML_HUB")) {
+    return true;
+  }
+
   try {
     const url = new URL(urlString);
     // Check for username or password in the URL
@@ -83,13 +114,6 @@ export class IndexedDBCache {
   dbVersion = null;
 
   /**
-   * Total size of the files stored in the cache.
-   *
-   * @type {number}
-   */
-  totalSize = 0;
-
-  /**
    * Name of the database used by IndexedDB.
    *
    * @type {string}
@@ -98,6 +122,7 @@ export class IndexedDBCache {
 
   /**
    * Name of the object store for storing files.
+   * Files are expected to be unique for a given tuple of file name, model, file, revision
    *
    * @type {string}
    */
@@ -105,46 +130,89 @@ export class IndexedDBCache {
 
   /**
    * Name of the object store for storing headers.
+   * Headers are expected to be unique for a given triplet model, file, revision
    *
    * @type {string}
    */
   headersStoreName;
+
   /**
-   * Maximum size of the cache in bytes. Defaults to 1GB.
+   * Name of the object store for storing task names.
+   * Tasks are expected to be unique for a given tuple of task name, model, file, revision
+   *
+   * @type {string}
+   */
+  taskStoreName;
+
+  /**
+   * Name and KeyPath for indices to be created on object stores.
+   *
+   * @type {object}
+   */
+  #indices = {
+    modelRevisionIndex: {
+      name: "modelRevisionIndex",
+      keyPath: ["model", "revision"],
+    },
+    modelRevisionFileIndex: {
+      name: "modelRevisionFileIndex",
+      keyPath: ["model", "revision", "file"],
+    },
+    taskModelRevisionIndex: {
+      name: "taskModelRevisionIndex",
+      keyPath: ["taskName", "model", "revision"],
+    },
+  };
+  /**
+   * Maximum size of the cache in bytes. Defaults to "browser.ml.modelCacheMaxSizeBytes".
    *
    * @type {number}
    */
-  #maxSize = 1_073_741_824; // 1GB in bytes
+  #maxSize = lazy.DEFAULT_MAX_CACHE_SIZE;
 
   /**
    * Private constructor to prevent direct instantiation.
    * Use IndexedDBCache.init to create an instance.
    *
-   * @param {string} dbName - The name of the database file.
-   * @param {number} version - The version number of the database.
+   * @param {object} config
+   * @param {string} config.dbName - The name of the database file.
+   * @param {number} config.version - The version number of the database.
+   * @param {number} config.maxSize Maximum size of the cache in bytes. Defaults to "browser.ml.modelCacheMaxSizeBytes".
    */
-  constructor(dbName = "modelFiles", version = 1) {
+  constructor({
+    dbName = "modelFiles",
+    version = DEFAULT_MODEL_REVISION,
+    maxSize = lazy.DEFAULT_MAX_CACHE_SIZE,
+  } = {}) {
     this.dbName = dbName;
     this.dbVersion = version;
     this.fileStoreName = "files";
     this.headersStoreName = "headers";
+    this.taskStoreName = "tasks";
+    this.#maxSize = maxSize;
   }
 
   /**
    * Static method to create and initialize an instance of IndexedDBCache.
    *
-   * @param {string} [dbName="modelFiles"] - The name of the database.
-   * @param {number} [version=1] - The version number of the database.
+   * @param {object} config
+   * @param {string} [config.dbName="modelFiles"] - The name of the database.
+   * @param {number} [config.version] - The version number of the database.
+   * @param {number} config.maxSize Maximum size of the cache in bytes. Defaults to "browser.ml.modelCacheMaxSizeBytes".
    * @returns {Promise<IndexedDBCache>} An initialized instance of IndexedDBCache.
    */
-  static async init(dbName = "modelFiles", version = 1) {
-    const cacheInstance = new IndexedDBCache(dbName, version);
+  static async init({
+    dbName = "modelFiles",
+    version = DEFAULT_MODEL_REVISION,
+    maxSize = lazy.DEFAULT_MAX_CACHE_SIZE,
+  } = {}) {
+    const cacheInstance = new IndexedDBCache({
+      dbName,
+      version,
+      maxSize,
+    });
     cacheInstance.db = await cacheInstance.#openDB();
-    const storedSize = await cacheInstance.#getData(
-      cacheInstance.headersStoreName,
-      "totalSize"
-    );
-    cacheInstance.totalSize = storedSize ? storedSize.size : 0;
+
     return cacheInstance;
   }
 
@@ -159,6 +227,71 @@ export class IndexedDBCache {
     }
   }
 
+  #migrateStore(db, oldVersion) {
+    const newVersion = db.version;
+    // Delete all existing data when migrating from 1 to 2
+    if (oldVersion == 1 && newVersion == 2) {
+      // Version 1 may contains task depe
+      for (const name of [
+        this.fileStoreName,
+        this.headersStoreName,
+        this.taskStoreName,
+      ]) {
+        if (db.objectStoreNames.contains(name)) {
+          db.deleteObjectStore(name);
+        }
+      }
+    }
+  }
+
+  #createOrMigrateIndices({ store, name, keyPath }) {
+    if (store.indexNames.contains(name)) {
+      if (!lazy.ObjectUtils.deepEqual(store.index(name).keyPath, keyPath)) {
+        lazy.console.debug(
+          `Deleting and recreating index ${name} on store ${store.name}`
+        );
+        store.deleteIndex(name);
+        store.createIndex(name, keyPath);
+      }
+    } else {
+      // index does not exist, so create
+      lazy.console.debug(`Creating index ${name} on store ${store.name}`);
+      store.createIndex(name, keyPath);
+    }
+  }
+
+  /**
+   * Enable persistence for a principal.
+   *
+   * @param {Ci.nsIPrincipal} principal - The principal
+   * @returns {Promise<boolean>} Wether persistence was successfully enabled.
+   */
+
+  async #ensurePersistentStorage(principal) {
+    try {
+      const { promise, resolve, reject } = Promise.withResolvers();
+      const request = Services.qms.persist(principal);
+
+      request.callback = () => {
+        if (request.resultCode === Cr.NS_OK) {
+          resolve();
+        } else {
+          reject(
+            new Error(
+              `Failed to persist storage for principal: ${principal.originNoSuffix}`
+            )
+          );
+        }
+      };
+
+      await promise;
+      return true;
+    } catch (error) {
+      lazy.console.error("An unexpected error occurred:", error);
+      return false;
+    }
+  }
+
   /**
    * Opens or creates the IndexedDB database.
    *
@@ -166,16 +299,72 @@ export class IndexedDBCache {
    */
   async #openDB() {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.dbVersion);
+      const principal = DEFAULT_PRINCIPAL_ORIGIN
+        ? Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+            DEFAULT_PRINCIPAL_ORIGIN
+          )
+        : Services.scriptSecurityManager.getSystemPrincipal();
+
+      if (DEFAULT_PRINCIPAL_ORIGIN) {
+        this.#ensurePersistentStorage(principal);
+      }
+
+      const request = indexedDB.openForPrincipal(
+        principal,
+        this.dbName,
+        this.dbVersion
+      );
       request.onerror = event => reject(event.target.error);
-      request.onsuccess = event => resolve(event.target.result);
+      request.onsuccess = event => {
+        const db = event.target.result;
+        // This is called when a version upgrade event is sent from elsewhere
+        // for example from another tab/window from the same computer.
+        db.onversionchange = _onVersionChangeevent => {
+          lazy.console.debug(
+            "The version of this database is changing. Closing."
+          );
+          // Closing allow the change from elsewhere to go through and invalidate
+          // this version.
+          db.close();
+        };
+        return resolve(event.target.result);
+      };
+      // If you make any change to onupgradeneeded, then you must change
+      // the version of the database, otherwise, the changes would not apply.
       request.onupgradeneeded = event => {
         const db = event.target.result;
+
+        // Migrating is required anytime the keyPath for an existing store changes
+        this.#migrateStore(db, event.oldVersion);
+
         if (!db.objectStoreNames.contains(this.fileStoreName)) {
           db.createObjectStore(this.fileStoreName, { keyPath: "id" });
         }
         if (!db.objectStoreNames.contains(this.headersStoreName)) {
-          db.createObjectStore(this.headersStoreName, { keyPath: "id" });
+          db.createObjectStore(this.headersStoreName, {
+            keyPath: ["model", "revision", "file"],
+          });
+        }
+
+        const headerStore = request.transaction.objectStore(
+          this.headersStoreName
+        );
+
+        this.#createOrMigrateIndices({
+          store: headerStore,
+          name: this.#indices.modelRevisionIndex.name,
+          keyPath: this.#indices.modelRevisionIndex.keyPath,
+        });
+
+        if (!db.objectStoreNames.contains(this.taskStoreName)) {
+          db.createObjectStore(this.taskStoreName, {
+            keyPath: ["taskName", "model", "revision", "file"],
+          });
+        }
+
+        const taskStore = request.transaction.objectStore(this.taskStoreName);
+        for (const { name, keyPath } of Object.values(this.#indices)) {
+          this.#createOrMigrateIndices({ store: taskStore, name, keyPath });
         }
       };
     });
@@ -184,23 +373,81 @@ export class IndexedDBCache {
   /**
    * Generic method to get the data from a specified object store.
    *
-   * @param {string} storeName - The name of the object store.
-   * @param {string} key - The key within the object store to retrieve the data from.
-   * @returns {Promise<any>}
+   * @param {object} config
+   * @param {string} config.storeName - The name of the object store.
+   * @param {string} config.key - The key within the object store to retrieve the data from.
+   * @param {?string} config.indexName - The store index to use.
+   * @returns {Promise<Array<any>>}
    */
-  async #getData(storeName, key) {
+  async #getData({ storeName, key, indexName }) {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([storeName], "readonly");
       const store = transaction.objectStore(storeName);
-      const request = store.get(key);
+      const request = (indexName ? store.index(indexName) : store).getAll(key);
       request.onerror = event => reject(event.target.error);
       request.onsuccess = event => resolve(event.target.result);
     });
   }
 
+  /**
+   * Generic method to get the unique keys from a specified object store.
+   *
+   * @param {object} config
+   * @param {string} config.storeName - The name of the object store.
+   * @param {string} config.key - The key within the object store to retrieve the data from.
+   * @param {?string} config.indexName - The store index to use.
+   * @param {?function(IDBCursor):boolean} config.filterFn - A function to execute for each key found.
+   *  It should return a truthy value to keep the key, and a falsy value otherwise.
+   *
+   * @returns {Promise<Array<{primaryKey:any, key:any}>>}
+   */
+  async #getKeys({ storeName, key, indexName, filterFn }) {
+    const keys = [];
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([storeName], "readonly");
+      const store = transaction.objectStore(storeName);
+      const request = (
+        indexName ? store.index(indexName) : store
+      ).openKeyCursor(key, "nextunique");
+      request.onerror = event => reject(event.target.error);
+      request.onsuccess = event => {
+        const cursor = event.target.result;
+
+        if (cursor) {
+          if (!filterFn || filterFn(cursor)) {
+            keys.push({ primaryKey: cursor.primaryKey, key: cursor.key });
+          }
+
+          cursor.continue();
+        } else {
+          resolve(keys);
+        }
+      };
+    });
+  }
+
+  /**
+   * Generic method to check if data exists from a specified object store.
+   *
+   * @param {object} config
+   * @param {string} config.storeName - The name of the object store.
+   * @param {string} config.key - The key within the object store to retrieve the data from.
+   * @param {?string} config.indexName - The store index to use.
+   * @returns {Promise<boolean>} A promise that resolves with `true` if the key exists, otherwise `false`.
+   */
+  async #hasData({ storeName, key, indexName }) {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([storeName], "readonly");
+      const store = transaction.objectStore(storeName);
+      const request = (indexName ? store.index(indexName) : store).getKey(key);
+      request.onerror = event => reject(event.target.error);
+      request.onsuccess = event => resolve(event.target.result !== undefined);
+    });
+  }
+
   // Used in tests
   async _testGetData(storeName, key) {
-    return this.#getData(storeName, key);
+    return (await this.#getData({ storeName, key }))[0];
   }
 
   /**
@@ -238,88 +485,198 @@ export class IndexedDBCache {
   }
 
   /**
+   * Generate an indexedDB query to retrieve entries from a task,model,revision index.
+   *
+   * @param {object} config
+   * @param {?string} config.taskName - Name of the inference task.. If null, we retrieve all tasks.
+   * @param {?string} config.model - The model name (organization/name). If null, we retrieve all models.
+   * @param {?string} config.revision - The model revision. If null, we retrieve all revisions.
+   * @returns {?string} The query to use for retrieving entries from the index.
+   */
+  #getFileQuery({ taskName, model, revision }) {
+    // See https://developer.mozilla.org/en-US/docs/Web/API/IDBKeyRange
+    // for explanation on the query.
+    if (taskName && model && revision) {
+      // Query to retrieve all entries matching taskName, model and revision
+      return [taskName, model, revision];
+    }
+    if (taskName && !model && !revision) {
+      // Query to retrieve all entries with taskName
+      return IDBKeyRange.bound([taskName], [taskName, []]);
+    }
+    if (!taskName && model && revision) {
+      // Query to retrieve all entries matching model and revision
+      return IDBKeyRange.bound([0, model, revision], [[], model, revision]);
+    }
+    if (!taskName && !model && !revision) {
+      // Query to retrieve all entries
+      return null;
+    }
+    throw new Error(
+      "If the model is defined, so must the revision. If the model is not defined, neither should the revision."
+    );
+  }
+
+  /**
    * Checks if a specified model file exists in storage.
    *
-   * @param {string} model - The model name (organization/name)
-   * @param {string} revision - The model revision.
-   * @param {string} file - The file name.
+   * @param {object} config
+   * @param {string} config.model - The model name (organization/name)
+   * @param {string} config.revision - The model revision.
+   * @param {string} config.file - The file name.
    * @returns {Promise<boolean>} A promise that resolves with `true` if the key exists, otherwise `false`.
    */
-  async fileExists(model, revision, file) {
-    const storeName = this.fileStoreName;
-    const cacheKey = `${model}/${revision}/${file}`;
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([storeName], "readonly");
-      const store = transaction.objectStore(storeName);
-      const request = store.getKey(cacheKey);
-      request.onerror = event => reject(event.target.error);
-      request.onsuccess = event => resolve(event.target.result !== undefined);
+  async fileExists({ model, revision, file }) {
+    return this.#hasData({
+      storeName: this.fileStoreName,
+      key: this.#generatePrimaryKey({ model, revision, file }),
     });
+  }
+
+  /**
+   * Generate the primary key to uniquely identify a model file.
+   *
+   * @param {object} config
+   * @param {string} config.model - The model name (organization/name)
+   * @param {string} config.revision - The model revision.
+   * @param {string} config.file - The file name.
+   * @returns {string} The generated primary key.
+   */
+  #generatePrimaryKey({ model, revision, file }) {
+    return `${model}/${revision}/${file}`;
   }
 
   /**
    * Retrieves the headers for a specific cache entry.
    *
-   * @param {string} model - The model name (organization/name)
-   * @param {string} revision - The model revision.
-   * @param {string} file - The file name.
+   * @param {object} config
+   * @param {string} config.model - The model name (organization/name)
+   * @param {string} config.revision - The model revision.
+   * @param {string} config.file - The file name.
    * @returns {Promise<object|null>} The headers or null if not found.
    */
-  async getHeaders(model, revision, file) {
-    const headersKey = `${model}/${revision}`;
-    const cacheKey = `${model}/${revision}/${file}`;
-    const headers = await this.#getData(this.headersStoreName, headersKey);
-    if (headers && headers.files[cacheKey]) {
-      return headers.files[cacheKey];
-    }
-    return null; // Return null if no headers is found
+  async getHeaders({ model, revision, file }) {
+    return (
+      await this.#getData({
+        storeName: this.headersStoreName,
+        key: [model, revision, file],
+      })
+    )[0]?.headers;
   }
 
   /**
    * Retrieves the file for a specific cache entry.
    *
-   * @param {string} model - The model name (organization/name).
-   * @param {string} revision - The model version.
-   * @param {string} file - The file name.
+   * @param {object} config
+   * @param {string} config.model - The model name (organization/name)
+   * @param {string} config.revision - The model revision.
+   * @param {string} config.file - The file name.
    * @returns {Promise<[ArrayBuffer, object]|null>} The file ArrayBuffer and its headers or null if not found.
    */
-  async getFile(model, revision, file) {
-    const cacheKey = `${model}/${revision}/${file}`;
-    const stored = await this.#getData(this.fileStoreName, cacheKey);
+  async getFile({ model, revision, file }) {
+    const cacheKey = this.#generatePrimaryKey({ model, revision, file });
+    const stored = (
+      await this.#getData({ storeName: this.fileStoreName, key: cacheKey })
+    )[0];
     if (stored) {
-      const headers = await this.getHeaders(model, revision, file);
+      const headers = await this.getHeaders({ model, revision, file });
       return [stored.data, headers];
     }
     return null; // Return null if no file is found
   }
 
   /**
-   * Adds or updates a cache entry.
+   * Adds or updates task entry.
    *
-   * @param {string} model - The model name (organization/name).
-   * @param {string} revision - The model version.
-   * @param {string} file - The file name.
-   * @param {ArrayBuffer} arrayBuffer - The data to cache.
-   * @param {object} [headers] - The headers for the file.
+   * @param {object} config
+   * @param {string} config.taskName - name of the inference task.
+   * @param {string} config.model - The model name (organization/name).
+   * @param {string} config.revision - The model version.
+   * @param {string} config.file - The file name.
    * @returns {Promise<void>}
    */
-  async put(model, revision, file, arrayBuffer, headers = {}) {
-    const cacheKey = `${model}/${revision}/${file}`;
-    const newSize = this.totalSize + arrayBuffer.byteLength;
-    if (newSize > this.#maxSize) {
-      throw new Error("Exceeding total cache size limit of 1GB");
+  async updateTask({ taskName, model, revision, file }) {
+    await this.#updateData(this.taskStoreName, {
+      taskName,
+      model,
+      revision,
+      file,
+    });
+  }
+
+  /**
+   * Estimate the disk size in bytes for a domain origin. If no origin is provided, assume the system origin.
+   *
+   * @param {?string} origin - The origin.
+   * @returns {Promise<number>} The estimated size.
+   */
+  async #estimateUsageForOrigin(origin) {
+    const { promise, resolve, reject } = Promise.withResolvers();
+    try {
+      const principal = origin
+        ? Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+            origin
+          )
+        : Services.scriptSecurityManager.getSystemPrincipal();
+      Services.qms.getUsageForPrincipal(principal, request => {
+        if (request.resultCode == Cr.NS_OK) {
+          resolve(request.result.usage);
+        } else {
+          reject(new Error(request.resultCode));
+        }
+      });
+    } catch (error) {
+      reject(new Error(`An unexpected error occurred: ${error.message}`));
     }
 
-    const headersKey = `${model}/${revision}`;
-    const data = { id: cacheKey, data: arrayBuffer };
+    return promise;
+  }
+
+  /**
+   * Adds or updates a cache entry.
+   *
+   * @param {object} config
+   * @param {string} config.taskName - name of the inference task.
+   * @param {string} config.model - The model name (organization/name).
+   * @param {string} config.revision - The model version.
+   * @param {string} config.file - The file name.
+   * @param {Blob} config.data - The data to cache.
+   * @param {object} [config.headers] - The headers for the file.
+   * @returns {Promise<void>}
+   */
+  async put({ taskName, model, revision, file, data, headers }) {
+    const updatePromises = [];
+    const fileSize = data.size;
+    const cacheKey = this.#generatePrimaryKey({ model, revision, file });
+    const totalSize = await this.#estimateUsageForOrigin(
+      DEFAULT_PRINCIPAL_ORIGIN
+    );
+
+    if (totalSize + fileSize > this.#maxSize) {
+      throw new Error(`Exceeding cache size limit of ${this.#maxSize} bytes"`);
+    }
+
+    const fileEntry = { id: cacheKey, data };
 
     // Store the file data
-    await this.#updateData(this.fileStoreName, data);
+    lazy.console.debug(`Storing ${cacheKey} with size:`, file);
+    updatePromises.push(this.#updateData(this.fileStoreName, fileEntry));
+
+    // Store task metadata
+    updatePromises.push(
+      this.updateTask({
+        taskName,
+        model,
+        revision,
+        file,
+      })
+    );
 
     // Update headers store - whith defaults for ETag and Content-Type
     headers = headers || {};
     headers["Content-Type"] =
       headers["Content-Type"] ?? "application/octet-stream";
+    headers.fileSize = fileSize;
     headers.ETag = headers.ETag ?? NO_ETAG;
 
     // filter out any keys that are not allowed
@@ -330,81 +687,165 @@ export class IndexedDBCache {
         return obj;
       }, {});
 
-    const headersStore = (await this.#getData(
-      this.headersStoreName,
-      headersKey
-    )) || {
-      id: headersKey,
-      files: {},
-    };
-    headersStore.files[cacheKey] = headers;
-    await this.#updateData(this.headersStoreName, headersStore);
+    lazy.console.debug(`Storing ${cacheKey} with headers:`, headers);
 
-    // Update size
-    await this.#updateTotalSize(arrayBuffer.byteLength);
+    // Update headers
+    updatePromises.push(
+      this.#updateData(this.headersStoreName, {
+        model,
+        revision,
+        file,
+        headers,
+      })
+    );
+
+    await Promise.all(updatePromises);
   }
-
   /**
-   * Updates the total size of the cache.
+   * Deletes all data related to the specifed models.
    *
-   * @param {number} sizeToAdd - The size to add to the total.
+   * @param {object} config
+   *
+   * @param {?string} config.model - The model name (organization/name) to delete.
+   * @param {?string} config.revision - The model version to delete.
+   *  If both model and revision are null, delete models of any name and version.
+   *
+   * @param {?string} config.taskName - name of the inference task to delete.
+   *                                    If null, delete specified models for all tasks.
+   *
+   * @throws {Error} If a model is defined, the revision must also be defined.
+   *                 If the model is not defined, the revision should also not be defined.
+   *                 Otherwise, an error will be thrown.
+
    * @returns {Promise<void>}
    */
-  async #updateTotalSize(sizeToAdd) {
-    this.totalSize += sizeToAdd;
-    await this.#updateData(this.headersStoreName, {
-      id: "totalSize",
-      size: this.totalSize,
+  async deleteModels({ taskName, model, revision }) {
+    const tasks = await this.#getData({
+      storeName: this.taskStoreName,
+      indexName: this.#indices.taskModelRevisionIndex.name,
+      key: this.#getFileQuery({ taskName, model, revision }),
     });
-  }
-  /**
-   * Deletes all data related to a specific model.
-   *
-   * @param {string} model - The model name (organization/name).
-   * @param {string} revision - The model version.
-   * @returns {Promise<void>}
-   */
-  async deleteModel(model, revision) {
-    const headersKey = `${model}/${revision}`;
-    const headers = await this.#getData(this.headersStoreName, headersKey);
-    if (headers) {
-      for (const fileKey in headers.files) {
-        await this.#deleteData(this.fileStoreName, fileKey);
-      }
-      await this.#deleteData(this.headersStoreName, headersKey); // Remove headers entry after files are deleted
+
+    let deletePromises = [];
+    const filesToMaybeDelete = new Set();
+    for (const { taskName, model, revision, file } of tasks) {
+      filesToMaybeDelete.add(JSON.stringify([model, revision, file]));
+      deletePromises.push(
+        this.#deleteData(this.taskStoreName, [taskName, model, revision, file])
+      );
     }
+    await Promise.all(deletePromises);
+
+    deletePromises = [];
+
+    const remainingFileKeys = await this.#getKeys({
+      storeName: this.taskStoreName,
+      indexName: this.#indices.modelRevisionFileIndex.name,
+    });
+
+    const remainingFiles = new Set();
+
+    for (const { key } of remainingFileKeys) {
+      remainingFiles.add(JSON.stringify(key));
+    }
+
+    const filesToDelete = filesToMaybeDelete.difference(remainingFiles);
+
+    for (const key of filesToDelete) {
+      const [model, revision, file] = JSON.parse(key);
+
+      deletePromises.push(
+        this.#deleteData(
+          this.fileStoreName,
+          this.#generatePrimaryKey({ model, revision, file })
+        )
+      );
+
+      deletePromises.push(
+        this.#deleteData(this.headersStoreName, [model, revision, file])
+      );
+    }
+
+    await Promise.all(deletePromises);
+  }
+
+  /**
+   * Lists all files for a given model and revision stored in the cache.
+   *
+   * @param {object} config
+   * @param {?string} config.model - The model name (organization/name).
+   * @param {?string} config.revision - The model version.
+   * @param {?string} config.taskName - name of the inference :wtask.
+   * @returns {Promise<Array<{path:string, headers: object}>>} An array of file identifiers.
+   */
+  async listFiles({ taskName, model, revision }) {
+    let modelRevisions = [{ model, revision }];
+
+    if (taskName) {
+      // Get all model/revision associated to this task.
+      const data = await this.#getKeys({
+        storeName: this.taskStoreName,
+        indexName: this.#indices.taskModelRevisionIndex.name,
+        key: this.#getFileQuery({ taskName, model, revision }),
+      });
+
+      modelRevisions = [];
+      for (const { key } of data) {
+        modelRevisions.push({ model: key[1], revision: key[2] });
+      }
+    }
+
+    const filePromises = [];
+
+    for (const { model, revision } of modelRevisions) {
+      filePromises.push(
+        this.#getData({
+          storeName: this.headersStoreName,
+          indexName: this.#indices.modelRevisionIndex.name,
+          key: [model, revision],
+        })
+      );
+    }
+
+    const data = (await Promise.all(filePromises)).flat();
+
+    const files = [];
+    for (const { file: path, headers } of data) {
+      files.push({ path, headers });
+    }
+
+    return files;
   }
 
   /**
    * Lists all models stored in the cache.
    *
-   * @returns {Promise<Array<string>>} An array of model identifiers.
+   * @returns {Promise<Array<{name:string, revision:string}>>} An array of model identifiers.
    */
   async listModels() {
-    const models = [];
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction(
-        [this.headersStoreName],
-        "readonly"
-      );
-      const store = transaction.objectStore(this.headersStoreName);
-      const request = store.openCursor();
-      request.onerror = event => reject(event.target.error);
-      request.onsuccess = event => {
-        const cursor = event.target.result;
-        if (cursor) {
-          models.push(cursor.value.id); // Assuming id is the organization/modelName
-          cursor.continue();
-        } else {
-          resolve(models);
-        }
-      };
+    const modelRevisions = await this.#getKeys({
+      storeName: this.taskStoreName,
+      indexName: this.#indices.modelRevisionIndex.name,
     });
+
+    const models = [];
+
+    for (const { key } of modelRevisions) {
+      models.push({ name: key[0], revision: key[1] });
+    }
+    return models;
   }
 }
 
 export class ModelHub {
-  constructor({ rootUrl, urlTemplate = DEFAULT_URL_TEMPLATE }) {
+  /**
+   * Create an instance of ModelHub.
+   *
+   * @param {object} config
+   * @param {string} config.rootUrl - Root URL used to download models.
+   * @param {string} config.urlTemplate - The template to retrieve the full URL using a model name and revision.
+   */
+  constructor({ rootUrl, urlTemplate = DEFAULT_URL_TEMPLATE } = {}) {
     if (!allowedHub(rootUrl)) {
       throw new Error(`Invalid model hub root url: ${rootUrl}`);
     }
@@ -620,13 +1061,15 @@ export class ModelHub {
    * Given an organization, model, and version, fetch a model file in the hub as a Response.
    *
    * @param {object} config
-   * @param {string} config.model
-   * @param {string} config.revision
-   * @param {string} config.file
+   * @param {string} config.taskName - name of the inference task.
+   * @param {string} config.model - The model name (organization/name).
+   * @param {string} config.revision - The model revision.
+   * @param {string} config.file - The file name.
    * @returns {Promise<Response>} The file content
    */
-  async getModelFileAsResponse({ model, revision, file }) {
+  async getModelFileAsResponse({ taskName, model, revision, file }) {
     const [blob, headers] = await this.getModelFileAsBlob({
+      taskName,
       model,
       revision,
       file,
@@ -636,33 +1079,44 @@ export class ModelHub {
   }
 
   /**
-   * Given an organization, model, and version, fetch a model file in the hub as an ArrayBuffer.
+   * Given an organization, model, and version, fetch a model file in the hub as an blob.
    *
    * @param {object} config
-   * @param {string} config.model
-   * @param {string} config.revision
-   * @param {string} config.file
-   * @returns {Promise<[ArrayBuffer, headers]>} The file content
+   * @param {string} config.taskName - name of the inference task.
+   * @param {string} config.model - The model name (organization/name).
+   * @param {string} config.revision - The model revision.
+   * @param {string} config.file - The file name.
+   * @returns {Promise<[Blob, object]>} The file content
    */
-  async getModelFileAsArrayBuffer({ model, revision, file }) {
-    const [blob, headers] = await this.getModelFileAsBlob({
+  async getModelFileAsBlob({ taskName, model, revision, file }) {
+    const [buffer, headers] = await this.getModelFileAsArrayBuffer({
+      taskName,
       model,
       revision,
       file,
     });
-    return [await blob.arrayBuffer(), headers];
+    return [new Blob([buffer]), headers];
   }
 
   /**
-   * Given an organization, model, and version, fetch a model file in the hub as blob.
+   * Given an organization, model, and version, fetch a model file in the hub as an ArrayBuffer
+   * while supporting status callback.
    *
    * @param {object} config
-   * @param {string} config.model
-   * @param {string} config.revision
-   * @param {string} config.file
-   * @returns {Promise<[Blob, object]>} The file content
+   * @param {string} config.taskName - name of the inference task.
+   * @param {string} config.model - The model name (organization/name).
+   * @param {string} config.revision - The model revision.
+   * @param {string} config.file - The file name.
+   * @param {?function(ProgressAndStatusCallbackParams):void} config.progressCallback A function to call to indicate progress status.
+   * @returns {Promise<[ArrayBuffer, headers]>} The file content
    */
-  async getModelFileAsBlob({ model, revision, file }) {
+  async getModelFileAsArrayBuffer({
+    taskName,
+    model,
+    revision,
+    file,
+    progressCallback,
+  }) {
     // Make sure inputs are clean. We don't sanitize them but throw an exception
     let checkError = this.#checkInput(model, revision, file);
     if (checkError) {
@@ -681,7 +1135,11 @@ export class ModelHub {
       const hubETag = await this.getETag(url);
 
       // Storage ETag lookup
-      const cachedHeaders = await this.cache.getHeaders(model, revision, file);
+      const cachedHeaders = await this.cache.getHeaders({
+        model,
+        revision,
+        file,
+      });
       const cachedEtag = cachedHeaders ? cachedHeaders.ETag : null;
 
       // If we have something in store, and the hub ETag is null or it matches the cached ETag, return the cached response
@@ -689,38 +1147,130 @@ export class ModelHub {
         cachedEtag !== null && (hubETag === null || cachedEtag === hubETag);
     } else {
       // If we are dealing with a pinned revision, we ignore the ETag, to spare HEAD hits on every call
-      useCached = await this.cache.fileExists(model, revision, file);
+      useCached = await this.cache.fileExists({ model, revision, file });
     }
+
+    const progressInfo = {
+      progress: null,
+      totalLoaded: null,
+      currentLoaded: null,
+      total: null,
+    };
+
+    const statusInfo = {
+      metadata: { model, revision, file, url, taskName },
+      ok: true,
+      id: url,
+    };
 
     if (useCached) {
       lazy.console.debug(`Cache Hit for ${url}`);
-      return await this.cache.getFile(model, revision, file);
+      progressCallback?.(
+        new lazy.Progress.ProgressAndStatusCallbackParams({
+          ...statusInfo,
+          ...progressInfo,
+          type: lazy.Progress.ProgressType.LOAD_FROM_CACHE,
+          statusText: lazy.Progress.ProgressStatusText.INITIATE,
+        })
+      );
+      const [blob, headers] = await this.cache.getFile({
+        model,
+        revision,
+        file,
+      });
+
+      // Ensure that we indicate that the taskName is stored
+      await this.cache.updateTask({ taskName, model, revision, file });
+
+      progressCallback?.(
+        new lazy.Progress.ProgressAndStatusCallbackParams({
+          ...statusInfo,
+          ...progressInfo,
+          type: lazy.Progress.ProgressType.LOAD_FROM_CACHE,
+          statusText: lazy.Progress.ProgressStatusText.DONE,
+        })
+      );
+      return [await blob.arrayBuffer(), headers];
     }
+
+    progressCallback?.(
+      new lazy.Progress.ProgressAndStatusCallbackParams({
+        ...statusInfo,
+        ...progressInfo,
+        type: lazy.Progress.ProgressType.DOWNLOAD,
+        statusText: lazy.Progress.ProgressStatusText.INITIATE,
+      })
+    );
 
     lazy.console.debug(`Fetching ${url}`);
     try {
-      const response = await fetch(url);
+      let response = await fetch(url);
+      let isFirstCall = true;
+      let responseContentArray = await lazy.Progress.readResponse(
+        response,
+        progressData => {
+          progressCallback?.(
+            new lazy.Progress.ProgressAndStatusCallbackParams({
+              ...progressInfo,
+              ...progressData,
+              statusText: isFirstCall
+                ? lazy.Progress.ProgressStatusText.SIZE_ESTIMATE
+                : lazy.Progress.ProgressStatusText.IN_PROGRESS,
+              type: lazy.Progress.ProgressType.DOWNLOAD,
+              ...statusInfo,
+            })
+          );
+          isFirstCall = false;
+        }
+      );
+      let responseContent = responseContentArray.buffer.slice(
+        responseContentArray.byteOffset,
+        responseContentArray.byteLength + responseContentArray.byteOffset
+      );
+
       if (response.ok) {
-        const clone = response.clone();
         const headers = {
           // We don't store the boundary or the charset, just the content type,
           // so we drop what's after the semicolon.
           "Content-Type": response.headers.get("Content-Type").split(";")[0],
+          "Content-Length": response.headers.get("Content-Length"),
           ETag: response.headers.get("ETag"),
         };
 
-        await this.cache.put(
+        await this.cache.put({
+          taskName,
           model,
           revision,
           file,
-          await clone.blob(),
-          headers
+          data: new Blob([responseContent]),
+          headers,
+        });
+
+        progressCallback?.(
+          new lazy.Progress.ProgressAndStatusCallbackParams({
+            ...statusInfo,
+            ...progressInfo,
+            type: lazy.Progress.ProgressType.DOWNLOAD,
+            statusText: lazy.Progress.ProgressStatusText.DONE,
+          })
         );
-        return [await response.blob(), headers];
+
+        return [responseContent, headers];
       }
     } catch (error) {
       lazy.console.error(`Failed to fetch ${url}:`, error);
     }
+
+    // Indicate there is an error
+    progressCallback?.(
+      new lazy.Progress.ProgressAndStatusCallbackParams({
+        ...statusInfo,
+        ...progressInfo,
+        type: lazy.Progress.ProgressType.DOWNLOAD,
+        statusText: lazy.Progress.ProgressStatusText.DONE,
+        ok: false,
+      })
+    );
 
     throw new Error(`Failed to fetch the model file: ${url}`);
   }

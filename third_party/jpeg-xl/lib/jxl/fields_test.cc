@@ -5,24 +5,18 @@
 
 #include "lib/jxl/fields.h"
 
-#include <jxl/memory_manager.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include <cstddef>
-#include <cstdint>
+#include <array>
+#include <utility>
 
 #include "lib/jxl/base/common.h"
-#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_fields.h"
-#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
-#include "lib/jxl/image_metadata.h"
-#include "lib/jxl/test_memory_manager.h"
-#include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -30,10 +24,9 @@ namespace {
 
 // Ensures `value` round-trips and in exactly `expected_bits_written`.
 void TestU32Coder(const uint32_t value, const size_t expected_bits_written) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   const U32Enc enc(Val(0), Bits(4), Val(0x7FFFFFFF), Bits(32));
 
-  BitWriter writer{memory_manager};
+  BitWriter writer;
   BitWriter::Allotment allotment(
       &writer, RoundUpBitsToByteMultiple(U32Coder::MaxEncodedBits(enc)));
 
@@ -64,8 +57,7 @@ TEST(FieldsTest, U32CoderTest) {
 }
 
 void TestU64Coder(const uint64_t value, const size_t expected_bits_written) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
-  BitWriter writer{memory_manager};
+  BitWriter writer;
   BitWriter::Allotment allotment(
       &writer, RoundUpBitsToByteMultiple(U64Coder::MaxEncodedBits()));
 
@@ -165,13 +157,12 @@ TEST(FieldsTest, U64CoderTest) {
 }
 
 Status TestF16Coder(const float value) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   size_t max_encoded_bits;
   // It is not a fatal error if it can't be encoded.
   if (!F16Coder::CanEncode(value, &max_encoded_bits)) return false;
   EXPECT_EQ(F16Coder::MaxEncodedBits(), max_encoded_bits);
 
-  BitWriter writer{memory_manager};
+  BitWriter writer;
   BitWriter::Allotment allotment(&writer,
                                  RoundUpBitsToByteMultiple(max_encoded_bits));
 
@@ -205,7 +196,6 @@ TEST(FieldsTest, F16CoderTest) {
 
 // Ensures Read(Write()) returns the same fields.
 TEST(FieldsTest, TestRoundtripSize) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   for (int i = 0; i < 8; i++) {
     SizeHeader size;
     ASSERT_TRUE(size.Set(123 + 77 * i, 7 + i));
@@ -215,7 +205,7 @@ TEST(FieldsTest, TestRoundtripSize) {
     ASSERT_TRUE(Bundle::CanEncode(size, &extension_bits, &total_bits));
     EXPECT_EQ(0u, extension_bits);
 
-    BitWriter writer{memory_manager};
+    BitWriter writer;
     ASSERT_TRUE(WriteSizeHeader(size, &writer, 0, nullptr));
     EXPECT_EQ(total_bits, writer.BitsWritten());
     writer.ZeroPadToByte();
@@ -263,7 +253,6 @@ TEST(FieldsTest, TestPreview) {
 
 // Ensures Read(Write()) returns the same fields.
 TEST(FieldsTest, TestRoundtripFrame) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   CodecMetadata metadata;
   FrameHeader h(&metadata);
   h.extensions = 0x800;
@@ -272,7 +261,7 @@ TEST(FieldsTest, TestRoundtripFrame) {
   size_t total_bits = 999;  // Initialize as garbage.
   ASSERT_TRUE(Bundle::CanEncode(h, &extension_bits, &total_bits));
   EXPECT_EQ(0u, extension_bits);
-  BitWriter writer{memory_manager};
+  BitWriter writer;
   ASSERT_TRUE(WriteFrameHeader(h, &writer, nullptr));
   EXPECT_EQ(total_bits, writer.BitsWritten());
   writer.ZeroPadToByte();
@@ -356,7 +345,6 @@ struct NewBundle : public Fields {
 };
 
 TEST(FieldsTest, TestNewDecoderOldData) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   OldBundle old_bundle;
   old_bundle.old_large = 123;
   old_bundle.old_f = 3.75f;
@@ -364,7 +352,7 @@ TEST(FieldsTest, TestNewDecoderOldData) {
 
   // Write to bit stream
   const size_t kMaxOutBytes = 999;
-  BitWriter writer{memory_manager};
+  BitWriter writer;
   // Make sure values are initialized by code under test.
   size_t extension_bits = 12345;
   size_t total_bits = 12345;
@@ -401,7 +389,6 @@ TEST(FieldsTest, TestNewDecoderOldData) {
 }
 
 TEST(FieldsTest, TestOldDecoderNewData) {
-  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   NewBundle new_bundle;
   new_bundle.old_large = 123;
   new_bundle.extensions = 3;
@@ -410,7 +397,7 @@ TEST(FieldsTest, TestOldDecoderNewData) {
 
   // Write to bit stream
   constexpr size_t kMaxOutBytes = 999;
-  BitWriter writer{memory_manager};
+  BitWriter writer;
   // Make sure values are initialized by code under test.
   size_t extension_bits = 12345;
   size_t total_bits = 12345;

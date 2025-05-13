@@ -14,6 +14,10 @@ const {
   VIEW_NODE_SHAPE_POINT_TYPE,
 } = require("resource://devtools/client/inspector/shared/node-types.js");
 
+const { TYPES } = ChromeUtils.importESModule(
+  "resource://devtools/shared/highlighters.mjs"
+);
+
 loader.lazyRequireGetter(
   this,
   "parseURL",
@@ -52,16 +56,6 @@ loader.lazyGetter(this, "HighlightersBundle", () => {
 
 const DEFAULT_HIGHLIGHTER_COLOR = "#9400FF";
 const SUBGRID_PARENT_ALPHA = 0.5;
-
-const TYPES = {
-  BOXMODEL: "BoxModelHighlighter",
-  FLEXBOX: "FlexboxHighlighter",
-  GEOMETRY: "GeometryEditorHighlighter",
-  GRID: "CssGridHighlighter",
-  SHAPES: "ShapesHighlighter",
-  SELECTOR: "SelectorHighlighter",
-  TRANSFORM: "CssTransformHighlighter",
-};
 
 /**
  * While refactoring to an abstracted way to show and hide highlighters,
@@ -1291,7 +1285,7 @@ class HighlightersOverlay {
    */
   async showGeometryEditor(node) {
     const highlighter = await this._getHighlighterTypeForNode(
-      "GeometryEditorHighlighter",
+      TYPES.GEOMETRY,
       node
     );
     if (!highlighter) {
@@ -1317,7 +1311,7 @@ class HighlightersOverlay {
 
     const highlighter =
       this.geometryEditorHighlighterShown.inspectorFront.getKnownHighlighter(
-        "GeometryEditorHighlighter"
+        TYPES.GEOMETRY
       );
 
     if (!highlighter) {
@@ -1435,7 +1429,7 @@ class HighlightersOverlay {
     switch (type) {
       case "shapesEditor":
         const highlighter = await this._getHighlighterTypeForNode(
-          "ShapesHighlighter",
+          TYPES.SHAPES,
           node
         );
         if (!highlighter) {
@@ -1732,7 +1726,7 @@ class HighlightersOverlay {
       this._isRuleViewTransform(nodeInfo) ||
       this._isComputedViewTransform(nodeInfo)
     ) {
-      type = "CssTransformHighlighter";
+      type = TYPES.TRANSFORM;
     }
 
     if (type) {

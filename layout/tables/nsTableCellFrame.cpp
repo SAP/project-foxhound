@@ -594,19 +594,10 @@ ScrollContainerFrame* nsTableCellFrame::GetScrollTargetFrame() const {
   return do_QueryFrame(mFrames.FirstChild());
 }
 
-/* virtual */
-nscoord nsTableCellFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nsIFrame* inner = mFrames.FirstChild();
-  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, inner,
-                                              IntrinsicISizeType::MinISize,
-                                              nsLayoutUtils::IGNORE_PADDING);
-}
-
-/* virtual */
-nscoord nsTableCellFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nsIFrame* inner = mFrames.FirstChild();
-  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, inner,
-                                              IntrinsicISizeType::PrefISize,
+nscoord nsTableCellFrame::IntrinsicISize(gfxContext* aContext,
+                                         IntrinsicISizeType aType) {
+  return nsLayoutUtils::IntrinsicForContainer(aContext, mFrames.FirstChild(),
+                                              aType, Nothing(),
                                               nsLayoutUtils::IGNORE_PADDING);
 }
 
@@ -889,6 +880,14 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
   PushDirtyBitToAbsoluteFrames();
 }
 
+void nsBCTableCellFrame::Reflow(nsPresContext* aPresContext,
+                                ReflowOutput& aDesiredSize,
+                                const ReflowInput& aReflowInput,
+                                nsReflowStatus& aStatus) {
+  nsTableCellFrame::Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
+  mLastUsedBorder = GetUsedBorder();
+}
+
 /* ----- global methods ----- */
 
 NS_QUERYFRAME_HEAD(nsTableCellFrame)
@@ -944,9 +943,7 @@ nsresult nsTableCellFrame::GetFrameName(nsAString& aResult) const {
 
 nsBCTableCellFrame::nsBCTableCellFrame(ComputedStyle* aStyle,
                                        nsTableFrame* aTableFrame)
-    : nsTableCellFrame(aStyle, aTableFrame, kClassID) {
-  mBStartBorder = mIEndBorder = mBEndBorder = mIStartBorder = 0;
-}
+    : nsTableCellFrame(aStyle, aTableFrame, kClassID) {}
 
 nsBCTableCellFrame::~nsBCTableCellFrame() = default;
 

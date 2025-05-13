@@ -2233,6 +2233,7 @@ struct GlobalProperties {
   bool fetch : 1;
   bool storage : 1;
   bool structuredClone : 1;
+  bool locks : 1;
   bool indexedDB : 1;
   bool isSecureContext : 1;
   bool rtcIdentityProvider : 1;
@@ -2442,8 +2443,9 @@ nsresult EvalInSandbox(JSContext* cx, JS::HandleObject sandbox,
 nsresult GetSandboxMetadata(JSContext* cx, JS::HandleObject sandboxArg,
                             JS::MutableHandleValue rval);
 
-nsresult SetSandboxMetadata(JSContext* cx, JS::HandleObject sandboxArg,
-                            JS::HandleValue metadata);
+[[nodiscard]] nsresult SetSandboxMetadata(JSContext* cx,
+                                          JS::HandleObject sandboxArg,
+                                          JS::HandleValue metadata);
 
 bool CreateObjectIn(JSContext* cx, JS::HandleValue vobj,
                     CreateObjectInOptions& options,
@@ -2806,6 +2808,7 @@ void DestructValue(const nsXPTType& aType, void* aValue,
 bool SandboxCreateCrypto(JSContext* cx, JS::Handle<JSObject*> obj);
 bool SandboxCreateFetch(JSContext* cx, JS::Handle<JSObject*> obj);
 bool SandboxCreateStructuredClone(JSContext* cx, JS::Handle<JSObject*> obj);
+bool SandboxCreateLocks(JSContext* cx, JS::Handle<JSObject*> obj);
 
 }  // namespace xpc
 

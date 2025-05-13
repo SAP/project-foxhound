@@ -359,7 +359,7 @@ bool IsPrincipalInfoPrivate(const PrincipalInfo& aPrincipalInfo) {
   }
 
   const ContentPrincipalInfo& info = aPrincipalInfo.get_ContentPrincipalInfo();
-  return !!info.attrs().mPrivateBrowsingId;
+  return info.attrs().IsPrivateBrowsing();
 }
 
 already_AddRefed<nsIRedirectHistoryEntry> RHEntryInfoToRHEntry(
@@ -576,10 +576,10 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetIsFormSubmission(), aLoadInfo->GetSendCSPViolationEvents(),
       aLoadInfo->GetOriginAttributes(), redirectChainIncludingInternalRedirects,
       redirectChain, aLoadInfo->GetHasInjectedCookieForCookieBannerHandling(),
-      aLoadInfo->GetWasSchemelessInput(), ipcClientInfo, ipcReservedClientInfo,
-      ipcInitialClientInfo, ipcController, aLoadInfo->CorsUnsafeHeaders(),
-      aLoadInfo->GetForcePreflight(), aLoadInfo->GetIsPreflight(),
-      aLoadInfo->GetLoadTriggeredFromExternal(),
+      aLoadInfo->GetWasSchemelessInput(), aLoadInfo->GetHttpsUpgradeTelemetry(),
+      ipcClientInfo, ipcReservedClientInfo, ipcInitialClientInfo, ipcController,
+      aLoadInfo->CorsUnsafeHeaders(), aLoadInfo->GetForcePreflight(),
+      aLoadInfo->GetIsPreflight(), aLoadInfo->GetLoadTriggeredFromExternal(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
@@ -587,6 +587,7 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       integrityMetadata, aLoadInfo->GetSkipContentSniffing(),
       aLoadInfo->GetHttpsOnlyStatus(), aLoadInfo->GetHstsStatus(),
       aLoadInfo->GetHasValidUserGestureActivation(),
+      aLoadInfo->GetTextDirectiveUserActivation(),
       aLoadInfo->GetAllowDeprecatedSystemRequests(),
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
       aLoadInfo->GetIsFromProcessingFrameAttributes(),
@@ -877,6 +878,10 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
       loadInfoArgs.cspNonce(), loadInfoArgs.integrityMetadata(),
       loadInfoArgs.skipContentSniffing(), loadInfoArgs.httpsOnlyStatus(),
       loadInfoArgs.hstsStatus(), loadInfoArgs.hasValidUserGestureActivation(),
+      loadInfoArgs.textDirectiveUserActivation(),
+      // This function is only called for moving LoadInfo across processes.
+      // Same-document navigation won't cross process boundaries.
+      /* aIsSameDocumentNavigation */ false,
       loadInfoArgs.allowDeprecatedSystemRequests(),
       loadInfoArgs.isInDevToolsContext(), loadInfoArgs.parserCreatedScript(),
       loadInfoArgs.storagePermission(), overriddenFingerprintingSettings,
@@ -885,7 +890,7 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
       loadInfoArgs.originTrialCoepCredentiallessEnabledForTopLevel(),
       loadInfoArgs.unstrippedURI(), interceptionInfo,
       loadInfoArgs.hasInjectedCookieForCookieBannerHandling(),
-      loadInfoArgs.wasSchemelessInput());
+      loadInfoArgs.wasSchemelessInput(), loadInfoArgs.httpsUpgradeTelemetry());
 
   if (loadInfoArgs.isFromProcessingFrameAttributes()) {
     loadInfo->SetIsFromProcessingFrameAttributes();
@@ -953,7 +958,9 @@ void LoadInfoToParentLoadInfoForwarder(
   *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
       aLoadInfo->GetAllowInsecureRedirectToDataURI(), ipcController, tainting,
       aLoadInfo->GetSkipContentSniffing(), aLoadInfo->GetHttpsOnlyStatus(),
+      aLoadInfo->GetWasSchemelessInput(), aLoadInfo->GetHttpsUpgradeTelemetry(),
       aLoadInfo->GetHstsStatus(), aLoadInfo->GetHasValidUserGestureActivation(),
+      aLoadInfo->GetTextDirectiveUserActivation(),
       aLoadInfo->GetAllowDeprecatedSystemRequests(),
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
       aLoadInfo->GetTriggeringSandboxFlags(),
@@ -989,11 +996,21 @@ nsresult MergeParentLoadInfoForwarder(
   } else {
     aLoadInfo->MaybeIncreaseTainting(aForwarderArgs.tainting());
   }
+  rv = aLoadInfo->SetTextDirectiveUserActivation(
+      aForwarderArgs.textDirectiveUserActivation());
+  NS_ENSURE_SUCCESS(rv, rv);
 
   rv = aLoadInfo->SetSkipContentSniffing(aForwarderArgs.skipContentSniffing());
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = aLoadInfo->SetHttpsOnlyStatus(aForwarderArgs.httpsOnlyStatus());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aLoadInfo->SetWasSchemelessInput(aForwarderArgs.wasSchemelessInput());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aLoadInfo->SetHttpsUpgradeTelemetry(
+      aForwarderArgs.httpsUpgradeTelemetry());
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = aLoadInfo->SetHstsStatus(aForwarderArgs.hstsStatus());

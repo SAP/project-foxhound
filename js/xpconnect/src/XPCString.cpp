@@ -33,9 +33,6 @@ using mozilla::StringBuffer;
 const XPCStringConvert::LiteralExternalString
     XPCStringConvert::sLiteralExternalString;
 
-const XPCStringConvert::DOMStringExternalString
-    XPCStringConvert::sDOMStringExternalString;
-
 void XPCStringConvert::LiteralExternalString::finalize(
     JS::Latin1Char* aChars) const {
   // Nothing to do.
@@ -57,69 +54,19 @@ size_t XPCStringConvert::LiteralExternalString::sizeOfBuffer(
   return 0;
 }
 
-void XPCStringConvert::DOMStringExternalString::finalize(
-    JS::Latin1Char* aChars) const {
-  StringBuffer* buf = StringBuffer::FromData(aChars);
-  buf->Release();
-}
-
-void XPCStringConvert::DOMStringExternalString::finalize(
-    char16_t* aChars) const {
-  StringBuffer* buf = StringBuffer::FromData(aChars);
-  buf->Release();
-}
-
-size_t XPCStringConvert::DOMStringExternalString::sizeOfBuffer(
-    const JS::Latin1Char* aChars, mozilla::MallocSizeOf aMallocSizeOf) const {
-  // We promised the JS engine we would not GC.  Enforce that:
-  JS::AutoCheckCannotGC autoCannotGC;
-
-  const StringBuffer* buf =
-      StringBuffer::FromData(const_cast<JS::Latin1Char*>(aChars));
-  // We want sizeof including this, because the entire string buffer is owned by
-  // the external string.  But only report here if we're unshared; if we're
-  // shared then we don't know who really owns this data.
-  return buf->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
-}
-
-size_t XPCStringConvert::DOMStringExternalString::sizeOfBuffer(
-    const char16_t* aChars, mozilla::MallocSizeOf aMallocSizeOf) const {
-  // We promised the JS engine we would not GC.  Enforce that:
-  JS::AutoCheckCannotGC autoCannotGC;
-
-  const StringBuffer* buf =
-      StringBuffer::FromData(const_cast<char16_t*>(aChars));
-  // We want sizeof including this, because the entire string buffer is owned by
-  // the external string.  But only report here if we're unshared; if we're
-  // shared then we don't know who really owns this data.
-  return buf->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
-}
-
-// convert a readable to a JSString, copying string data
+// convert a string to a JSString, either copying or sharing string data
 // static
-bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
-                                       StringBuffer** sharedBuffer,
-                                       MutableHandleValue vp) {
-  *sharedBuffer = nullptr;
-
+bool xpc::NonVoidStringToJsval(JSContext* cx, const nsAString& readable,
+                               MutableHandleValue vp) {
   uint32_t length = readable.Length();
 
   if (readable.IsLiteral()) {
-    return StringLiteralToJSVal(cx, readable.BeginReading(), length, readable.Taint(), vp);
+    return XPCStringConvert::StringLiteralToJSVal(cx, readable.BeginReading(),
+                                                  length, readable.Taint(), vp);
   }
 
   if (StringBuffer* buf = readable.GetStringBuffer()) {
-    bool shared;
-    if (!UCStringBufferToJSVal(cx, buf, length, vp, &shared)) {
-      return false;
-    }
-    if (shared) {
-      *sharedBuffer = buf;
-    }
-    if (readable.isTainted()) {
-      JS_SetTaint(cx, vp, readable.Taint());
-    }
-    return true;
+    return XPCStringConvert::UCStringBufferToJSVal(cx, buf, readable.Taint(), length, vp);
   }
 
   // blech, have to copy.
@@ -138,31 +85,18 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
   return true;
 }
 
-bool XPCStringConvert::Latin1ToJSVal(JSContext* cx, const nsACString& latin1,
-                                     StringBuffer** sharedBuffer,
+bool xpc::NonVoidLatin1StringToJsval(JSContext* cx, const nsACString& latin1,
                                      MutableHandleValue vp) {
-  *sharedBuffer = nullptr;
-
   uint32_t length = latin1.Length();
 
   if (latin1.IsLiteral()) {
-    return StringLiteralToJSVal(
+    return XPCStringConvert::StringLiteralToJSVal(
         cx, reinterpret_cast<const JS::Latin1Char*>(latin1.BeginReading()),
         length, latin1.Taint(), vp);
   }
 
   if (StringBuffer* buf = latin1.GetStringBuffer()) {
-    bool shared;
-    if (!Latin1StringBufferToJSVal(cx, buf, length, vp, &shared)) {
-      return false;
-    }
-    if (shared) {
-      *sharedBuffer = buf;
-    }
-    if (latin1.isTainted()) {
-      JS_SetTaint(cx, vp, latin1.Taint());
-    }
-    return true;
+    return XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, latin1.Taint(), length, vp);
   }
 
   JSString* str = JS_NewStringCopyN(cx, latin1.BeginReading(), length);
@@ -179,30 +113,17 @@ bool XPCStringConvert::Latin1ToJSVal(JSContext* cx, const nsACString& latin1,
   return true;
 }
 
-bool XPCStringConvert::UTF8ToJSVal(JSContext* cx, const nsACString& utf8,
-                                   StringBuffer** sharedBuffer,
+bool xpc::NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& utf8,
                                    MutableHandleValue vp) {
-  *sharedBuffer = nullptr;
-
   uint32_t length = utf8.Length();
 
   if (utf8.IsLiteral()) {
-    return UTF8StringLiteralToJSVal(
+    return XPCStringConvert::UTF8StringLiteralToJSVal(
         cx, JS::UTF8Chars(utf8.BeginReading(), length), utf8.Taint(), vp);
   }
 
   if (StringBuffer* buf = utf8.GetStringBuffer()) {
-    bool shared;
-    if (!UTF8StringBufferToJSVal(cx, buf, length, vp, &shared)) {
-      return false;
-    }
-    if (shared) {
-      *sharedBuffer = buf;
-    }
-    if (utf8.isTainted()) {
-      JS_SetTaint(cx, vp, utf8.Taint());
-    }
-    return true;
+    return XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, utf8.Taint(), vp);
   }
 
   JSString* str =
@@ -219,94 +140,3 @@ bool XPCStringConvert::UTF8ToJSVal(JSContext* cx, const nsACString& utf8,
   vp.setString(str);
   return true;
 }
-
-namespace xpc {
-
-bool NonVoidStringToJsval(JSContext* cx, nsAString& str,
-                          MutableHandleValue rval) {
-  StringBuffer* sharedBuffer;
-  if (!XPCStringConvert::ReadableToJSVal(cx, str, &sharedBuffer, rval)) {
-    return false;
-  }
-
-  if (sharedBuffer) {
-    // The string was shared but ReadableToJSVal didn't addref it.
-    // Move the ownership from str to jsstr.
-    str.ForgetSharedBuffer();
-  }
-  return true;
-}
-
-bool NonVoidStringToJsval(JSContext* cx, const nsAString& str,
-                          MutableHandleValue rval) {
-  StringBuffer* sharedBuffer;
-  if (!XPCStringConvert::ReadableToJSVal(cx, str, &sharedBuffer, rval)) {
-    return false;
-  }
-
-  if (sharedBuffer) {
-    // The string was shared but ReadableToJSVal didn't addref it.
-    sharedBuffer->AddRef();
-  }
-  return true;
-}
-
-bool NonVoidLatin1StringToJsval(JSContext* cx, nsACString& str,
-                                MutableHandleValue rval) {
-  StringBuffer* sharedBuffer;
-  if (!XPCStringConvert::Latin1ToJSVal(cx, str, &sharedBuffer, rval)) {
-    return false;
-  }
-
-  if (sharedBuffer) {
-    // The string was shared but Latin1ToJSVal didn't addref it.
-    // Move the ownership from str to jsstr.
-    str.ForgetSharedBuffer();
-  }
-  return true;
-}
-
-bool NonVoidLatin1StringToJsval(JSContext* cx, const nsACString& str,
-                                MutableHandleValue rval) {
-  StringBuffer* sharedBuffer;
-  if (!XPCStringConvert::Latin1ToJSVal(cx, str, &sharedBuffer, rval)) {
-    return false;
-  }
-
-  if (sharedBuffer) {
-    // The string was shared but Latin1ToJSVal didn't addref it.
-    sharedBuffer->AddRef();
-  }
-  return true;
-}
-
-bool NonVoidUTF8StringToJsval(JSContext* cx, nsACString& str,
-                              MutableHandleValue rval) {
-  StringBuffer* sharedBuffer;
-  if (!XPCStringConvert::UTF8ToJSVal(cx, str, &sharedBuffer, rval)) {
-    return false;
-  }
-
-  if (sharedBuffer) {
-    // The string was shared but UTF8ToJSVal didn't addref it.
-    // Move the ownership from str to jsstr.
-    str.ForgetSharedBuffer();
-  }
-  return true;
-}
-
-bool NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& str,
-                              MutableHandleValue rval) {
-  StringBuffer* sharedBuffer;
-  if (!XPCStringConvert::UTF8ToJSVal(cx, str, &sharedBuffer, rval)) {
-    return false;
-  }
-
-  if (sharedBuffer) {
-    // The string was shared but UTF8ToJSVal didn't addref it.
-    sharedBuffer->AddRef();
-  }
-  return true;
-}
-
-}  // namespace xpc

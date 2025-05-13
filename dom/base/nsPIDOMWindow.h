@@ -21,11 +21,6 @@
 #include "nsILoadInfo.h"
 #include "mozilla/MozPromise.h"
 
-// Only fired for inner windows.
-#define DOM_WINDOW_DESTROYED_TOPIC "dom-window-destroyed"
-#define DOM_WINDOW_FROZEN_TOPIC "dom-window-frozen"
-#define DOM_WINDOW_THAWED_TOPIC "dom-window-thawed"
-
 class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
 class nsIArray;
@@ -354,10 +349,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   bool IsDocumentLoaded() const;
 
-  mozilla::dom::TimeoutManager& TimeoutManager();
-
-  bool IsRunningTimeout();
-
   // To cache top inner-window if available after constructed for tab-wised
   // indexedDB counters.
   void TryToCacheTopInnerWindow();
@@ -578,7 +569,7 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
    * Indicates that the page in the window has been hidden. This is used to
    * reset the focus state.
    */
-  virtual void PageHidden() = 0;
+  virtual void PageHidden(bool aIsEnteringBFCacheInParent) = 0;
 
   /**
    * Instructs this window to asynchronously dispatch a hashchange event.  This
@@ -1066,7 +1057,7 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
    * Indicates that the page in the window has been hidden. This is used to
    * reset the focus state.
    */
-  virtual void PageHidden() = 0;
+  virtual void PageHidden(bool aIsEnteringBFCacheInParent) = 0;
 
   /**
    * Return the window id of this window

@@ -35,6 +35,7 @@
 #include "nsWindowsHelpers.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define LOGV(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Verbose, (__VA_ARGS__))
 
 using mozilla::layers::Image;
 using mozilla::layers::IMFYCbCrImage;
@@ -73,6 +74,8 @@ WMFVideoMFTManager::WMFVideoMFTManager(
       mZeroCopyNV12Texture(false),
       mFramerate(aFramerate),
       mLowLatency(aOptions.contains(CreateDecoderParams::Option::LowLatency)),
+      mKeepOriginalPts(
+          aOptions.contains(CreateDecoderParams::Option::KeepOriginalPts)),
       mTrackingId(std::move(aTrackingId))
 // mVideoStride, mVideoWidth, mVideoHeight, mUseHwAccel are initialized in
 // Init().
@@ -498,6 +501,8 @@ WMFVideoMFTManager::Input(MediaRawData* aSample) {
       aSample->mTime.ToMicroseconds(), aSample->mDuration.ToMicroseconds(),
       &inputSample);
   NS_ENSURE_TRUE(SUCCEEDED(hr) && inputSample != nullptr, hr);
+  LOGV("WMFVIdeoMFTManager(%p)::Input: %s", this,
+       aSample->mDuration.ToString().get());
 
   if (!mColorSpace && aSample->mTrackInfo) {
     // The colorspace definition is found in the H264 SPS NAL, available out of
@@ -507,6 +512,10 @@ WMFVideoMFTManager::Input(MediaRawData* aSample) {
     mColorRange = aSample->mTrackInfo->GetAsVideoInfo()->mColorRange;
   }
   mLastDuration = aSample->mDuration;
+
+  if (mKeepOriginalPts) {
+    mPTSQueue.InsertElementSorted(aSample->mTime.ToMicroseconds());
+  }
 
   // Forward sample data to the decoder.
   return mDecoder->Input(inputSample);
@@ -666,7 +675,10 @@ WMFVideoMFTManager::CreateBasicVideoFrame(IMFSample* aSample,
   b.mColorRange = mColorRange;
 
   TimeUnit pts = GetSampleTime(aSample);
-  NS_ENSURE_TRUE(pts.IsValid(), E_FAIL);
+  if (!pts.IsValid() && mKeepOriginalPts) {
+    LOG("Couldn't get pts from IMFSample, falling back on container pts");
+    pts = TimeUnit::Zero();
+  }
   TimeUnit duration = GetSampleDurationOrLastKnownDuration(aSample);
   NS_ENSURE_TRUE(duration.IsValid(), E_FAIL);
   gfx::IntRect pictureRegion = mVideoInfo.ScaledImageRect(
@@ -747,6 +759,10 @@ WMFVideoMFTManager::CreateD3DVideoFrame(IMFSample* aSample,
   gfx::IntSize size = image->GetSize();
 
   TimeUnit pts = GetSampleTime(aSample);
+  if (!pts.IsValid() && mKeepOriginalPts) {
+    LOG("Couldn't get pts from IMFSample, falling back on container pts");
+    pts = TimeUnit::Zero();
+  }
   NS_ENSURE_TRUE(pts.IsValid(), E_FAIL);
   TimeUnit duration = GetSampleDurationOrLastKnownDuration(aSample);
   NS_ENSURE_TRUE(duration.IsValid(), E_FAIL);
@@ -793,10 +809,12 @@ WMFVideoMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
   while (true) {
     hr = mDecoder->Output(&sample);
     if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
+      LOGV("WMFVideoMFTManager(%p)::Output: need more input", this);
       return MF_E_TRANSFORM_NEED_MORE_INPUT;
     }
 
     if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
+      LOGV("WMFVideoMFTManager(%p)::Output: transform stream change", this);
       MOZ_ASSERT(!sample);
       // Video stream output type change, probably geometric aperture change or
       // pixel type.
@@ -879,6 +897,11 @@ WMFVideoMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
         continue;
       }
       TimeUnit pts = GetSampleTime(sample);
+      if (!pts.IsValid() && mKeepOriginalPts) {
+        LOG("Couldn't get pts from IMFSample, falling back on container pts");
+        pts = TimeUnit::Zero();
+      }
+      LOG("WMFVIdeoMFTManager(%p)::Output: %s", this, pts.ToString().get());
       TimeUnit duration = GetSampleDurationOrLastKnownDuration(sample);
 
       // AV1 MFT fix: Sample duration after seeking is always equal to the
@@ -925,6 +948,15 @@ WMFVideoMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
   MOZ_ASSERT((frame != nullptr) == SUCCEEDED(hr));
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
   NS_ENSURE_TRUE(frame, E_FAIL);
+
+  if (mKeepOriginalPts) {
+    MOZ_ASSERT(!mPTSQueue.IsEmpty());
+    int64_t originalPts = mPTSQueue[0];
+    mPTSQueue.RemoveElementAt(0);
+    LOG("Overriding decoded pts of %s with original pts of %" PRId64,
+        frame->mTime.ToString().get(), originalPts);
+    frame->mTime = TimeUnit::FromMicroseconds(originalPts);
+  }
 
   aOutData = frame;
 
@@ -995,7 +1027,7 @@ nsCString WMFVideoMFTManager::GetDescriptionName() const {
   }();
 
   return nsPrintfCString("wmf %s codec %s video decoder - %s, %s",
-                         StreamTypeToString(mStreamType),
+                         EnumValueToString(mStreamType),
                          hw ? "hardware" : "software", dxvaName, formatName);
 }
 nsCString WMFVideoMFTManager::GetCodecName() const {
@@ -1013,6 +1045,14 @@ nsCString WMFVideoMFTManager::GetCodecName() const {
     default:
       return "unknown"_ns;
   };
+}
+
+bool WMFVideoMFTManager::UseZeroCopyVideoFrame() const {
+  if (mZeroCopyNV12Texture && mDXVA2Manager &&
+      mDXVA2Manager->SupportsZeroCopyNV12Texture()) {
+    return true;
+  }
+  return false;
 }
 
 }  // namespace mozilla

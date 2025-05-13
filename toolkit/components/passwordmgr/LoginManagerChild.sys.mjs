@@ -771,21 +771,21 @@ export class LoginFormState {
    * 2. Only contains one input field whose type is username compatible.
    * 3. The username compatible input field looks like a username field
    *    or the form itself looks like a sign-in or sign-up form.
+   * Additionally, if an input is formless and its autocomplete attribute is
+   * set to 'username' (this check is done in the DOM to avoid firing excessive events),
+   * we construct a FormLike object using this input and perform the same logic
+   * described above to determine if the new FormLike object is username-only.
    *
-   * @param {Element} formElement
+   * @param {FormLike} form
    *                  the form to check.
    * @param {Object}  recipe=null
    *                  A relevant field override recipe to use.
    * @returns {Element} The username field or null (if the form is not a
    *                    username-only form).
    */
-  getUsernameFieldFromUsernameOnlyForm(formElement, recipe = null) {
-    if (!HTMLFormElement.isInstance(formElement)) {
-      return null;
-    }
-
+  getUsernameFieldFromUsernameOnlyForm(form, recipe = null) {
     let candidate = null;
-    for (let element of formElement.elements) {
+    for (let element of form.elements) {
       // We are looking for a username-only form, so if there is a password
       // field in the form, this is NOT a username-only form.
       if (element.hasBeenTypePassword) {
@@ -811,10 +811,9 @@ export class LoginFormState {
       }
       candidate = element;
     }
-
     if (
       candidate &&
-      this.#isProbablyAUsernameLoginForm(formElement, candidate)
+      this.#isProbablyAUsernameLoginForm(form.rootElement, candidate)
     ) {
       return candidate;
     }
@@ -1109,7 +1108,7 @@ export class LoginFormState {
       }
 
       usernameField = this.getUsernameFieldFromUsernameOnlyForm(
-        form.rootElement,
+        form,
         fieldOverrideRecipe
       );
 
@@ -1525,8 +1524,8 @@ export class LoginManagerChild extends JSWindowActorChild {
         lazy.InsecurePasswordUtils.reportInsecurePasswords(formLike);
         break;
       }
-      case "DOMFormHasPossibleUsername": {
-        this.#onDOMFormHasPossibleUsername(event);
+      case "DOMPossibleUsernameInputAdded": {
+        this.#onDOMPossibleUsernameInputAdded(event);
         break;
       }
       case "DOMInputPasswordAdded": {
@@ -1797,48 +1796,56 @@ export class LoginManagerChild extends JSWindowActorChild {
     this._fetchLoginsFromParentAndFillForm(formLike);
   }
 
-  #onDOMFormHasPossibleUsername(event) {
+  #onDOMPossibleUsernameInputAdded(event) {
     if (!event.isTrusted) {
       return;
     }
     const isPrimaryPasswordSet = this.#getIsPrimaryPasswordSet();
-    let document = event.target.ownerDocument;
+
+    let document;
+    if (HTMLFormElement.isInstance(event.target)) {
+      document = event.target.ownerDocument;
+    } else {
+      document = event.target;
+    }
 
     lazy.log(
-      `#onDOMFormHasPossibleUsername: visibilityState: ${document.visibilityState}, isPrimaryPasswordSet: ${isPrimaryPasswordSet}.`
+      `#onDomPossibleUsernameInputAdded: visibilityState: ${document.visibilityState}, isPrimaryPasswordSet: ${isPrimaryPasswordSet}.`
     );
 
     // For simplicity, the result of the telemetry is stacked. This means if a
-    // document receives two `DOMFormHasPossibleEvent`, we add one counter to both
+    // document receives two `DOMPossibleUsernameInputAdded`, we add one counter to both
     // bucket 1 & 2.
     let docState = this.stateForDocument(document);
-    Services.telemetry
-      .getHistogramById("PWMGR_NUM_FORM_HAS_POSSIBLE_USERNAME_EVENT_PER_DOC")
-      .add(++docState.numFormHasPossibleUsernameEvent);
 
     // Infer whether a form is a username-only form is expensive, so we restrict the
     // number of form looked up per document.
     if (
-      docState.numFormHasPossibleUsernameEvent >
+      ++docState.numFormHasPossibleUsernameEvent >
       lazy.LoginHelper.usernameOnlyFormLookupThreshold
     ) {
       return;
     }
 
     if (document.visibilityState == "visible" || isPrimaryPasswordSet) {
-      this._processDOMFormHasPossibleUsernameEvent(event);
+      this._processDOMPossibleUsernameInputAddedEvent(event);
     } else {
       // wait until the document becomes visible before handling this event
       this._deferHandlingEventUntilDocumentVisible(event, document, () => {
-        this._processDOMFormHasPossibleUsernameEvent(event);
+        this._processDOMPossibleUsernameInputAddedEvent(event);
       });
     }
   }
 
-  _processDOMFormHasPossibleUsernameEvent(event) {
-    let form = event.target;
-    let formLike = lazy.LoginFormFactory.createFromForm(form);
-
+  _processDOMPossibleUsernameInputAddedEvent(event) {
+    let formLike;
+    if (HTMLFormElement.isInstance(event.target)) {
+      formLike = lazy.LoginFormFactory.createFromForm(event.target);
+    } else {
+      formLike = lazy.LoginFormFactory.createFromDocumentRoot(
+        event.target.documentElement
+      );
+    }
     // If the form contains a passoword field, `getUsernameFieldFromUsernameOnlyForm` returns
     // null, so we don't trigger autofill for those forms here. In this function,
     // we only care about username-only forms. For forms contain a password, they'll be handled
@@ -1847,8 +1854,12 @@ export class LoginManagerChild extends JSWindowActorChild {
     // We specifically set the recipe to empty here to avoid loading site recipes during page loads.
     // This is okay because if we end up finding a username-only form that should be ignore by
     // the site recipe, the form will be skipped while autofilling later.
-    let docState = this.stateForDocument(form.ownerDocument);
-    let usernameField = docState.getUsernameFieldFromUsernameOnlyForm(form, {});
+    let docState = this.stateForDocument(formLike.ownerDocument);
+    let usernameField = docState.getUsernameFieldFromUsernameOnlyForm(
+      formLike,
+      {}
+    );
+
     if (usernameField) {
       // Autofill the username-only form.
       lazy.log("A username-only form is found.");
@@ -3129,7 +3140,7 @@ export class LoginManagerChild extends JSWindowActorChild {
   /**
    * Get the search options when searching for autocomplete entries in the parent
    *
-   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @param {HTMLInputElement} input - The input element to search for autocomplete entries
    * @returns {object} the search options for the input
    */
   getAutoCompleteSearchOption(input, searchString) {
@@ -3176,7 +3187,7 @@ export class LoginManagerChild extends JSWindowActorChild {
    * Ask the provider whether it might have autocomplete entry to show
    * for the given input.
    *
-   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @param {HTMLInputElement} input - The input element to search for autocomplete entries
    * @returns {boolean} true if we shold search for autocomplete entries
    */
   shouldSearchForAutoComplete(input, searchString) {
@@ -3209,7 +3220,7 @@ export class LoginManagerChild extends JSWindowActorChild {
    * Convert the search result to autocomplete results
    *
    * @param {string} searchString - The string to search for
-   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @param {HTMLInputElement} input - The input element to search for autocomplete entries
    * @param {Array<object>} records - autocomplete records
    * @returns {AutocompleteResult}
    */

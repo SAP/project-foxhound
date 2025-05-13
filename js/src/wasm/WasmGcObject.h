@@ -89,8 +89,8 @@ class WasmGcObject : public JSObject {
   // single contiguous area of memory:
   //
   // * If the object in question is a WasmStructObject, it is the value of
-  //   `wasm::StructField::offset` for the relevant field, without regard to
-  //   the inline/outline split.
+  //   `wasm::StructType::fieldOffset()` for the relevant field, without regard
+  //   to the inline/outline split.
   //
   // * If the object in question is a WasmArrayObject, then
   //   - u32 == UINT32_MAX (0xFFFF'FFFF) means the "length" property
@@ -220,7 +220,11 @@ class WasmArrayObject : public WasmGcObject,
     storageBytes += gc::CellAlignBytes - (storageBytes % gc::CellAlignBytes);
     return storageBytes;
   }
-  static uint32_t calcStorageBytes(uint32_t elemSize, uint32_t numElements) {
+  // Calculate the byte length of the array's data storage, without checking for
+  // overflow. This includes the data header, data, and any extra space for
+  // alignment with GC sizes.
+  static uint32_t calcStorageBytesUnchecked(uint32_t elemSize,
+                                            uint32_t numElements) {
     CheckedUint32 storageBytes = calcStorageBytesChecked(elemSize, numElements);
     MOZ_ASSERT(storageBytes.isValid());
     return storageBytes.value();

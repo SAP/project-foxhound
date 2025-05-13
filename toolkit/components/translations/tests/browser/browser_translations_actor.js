@@ -69,7 +69,7 @@ add_task(async function test_pivot_language_behavior() {
     );
   }
 
-  return cleanup();
+  await cleanup();
 });
 
 /**
@@ -175,9 +175,9 @@ add_task(async function test_language_support_checks() {
 
 async function usingAppLocale(locale, callback) {
   info(`Mocking the locale "${locale}", expect missing resource errors.`);
-  const { availableLocales, requestedLocales } = Services.locale;
-  Services.locale.availableLocales = [locale];
-  Services.locale.requestedLocales = [locale];
+  const cleanupLocales = await mockLocales({
+    appLocales: [locale],
+  });
 
   if (Services.locale.appLocaleAsBCP47 !== locale) {
     throw new Error("Unable to change the app locale.");
@@ -185,8 +185,7 @@ async function usingAppLocale(locale, callback) {
   await callback();
 
   // Reset back to the originals.
-  Services.locale.availableLocales = availableLocales;
-  Services.locale.requestedLocales = requestedLocales;
+  await cleanupLocales();
 }
 
 add_task(async function test_translating_to_and_from_app_language() {
@@ -228,14 +227,14 @@ add_task(async function test_translating_to_and_from_app_language() {
     requested,
     message,
     languagePairs,
-    isForDeletion,
+    includePivotRecords,
   }) {
     return usingAppLocale(app, async () => {
       Assert.deepEqual(
         getUniqueLanguagePairs(
           await TranslationsParent.getRecordsForTranslatingToAndFromAppLanguage(
             requested,
-            isForDeletion
+            includePivotRecords
           )
         ),
         languagePairs,
@@ -249,6 +248,7 @@ add_task(async function test_translating_to_and_from_app_language() {
       "When the app locale is the pivot language, download another language.",
     app: PIVOT_LANGUAGE,
     requested: "fr",
+    includePivotRecords: true,
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "fr" },
       { fromLang: "fr", toLang: PIVOT_LANGUAGE },
@@ -259,6 +259,7 @@ add_task(async function test_translating_to_and_from_app_language() {
     message: "When a pivot language is required, they are both downloaded.",
     app: "fr",
     requested: "pl",
+    includePivotRecords: true,
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "fr" },
       { fromLang: PIVOT_LANGUAGE, toLang: "pl" },
@@ -272,6 +273,7 @@ add_task(async function test_translating_to_and_from_app_language() {
       "When downloading the pivot language, only download the one for the app's locale.",
     app: "es",
     requested: PIVOT_LANGUAGE,
+    includePivotRecords: true,
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "es" },
       { fromLang: "es", toLang: PIVOT_LANGUAGE },
@@ -283,7 +285,7 @@ add_task(async function test_translating_to_and_from_app_language() {
       "Delete just the requested language when the app locale is the pivot language",
     app: PIVOT_LANGUAGE,
     requested: "fr",
-    isForDeletion: true,
+    includePivotRecords: false,
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "fr" },
       { fromLang: "fr", toLang: PIVOT_LANGUAGE },
@@ -294,7 +296,7 @@ add_task(async function test_translating_to_and_from_app_language() {
     message: "Delete just the requested language, and not the pivot.",
     app: "fr",
     requested: "pl",
-    isForDeletion: true,
+    includePivotRecords: false,
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "pl" },
       { fromLang: "pl", toLang: PIVOT_LANGUAGE },
@@ -305,7 +307,7 @@ add_task(async function test_translating_to_and_from_app_language() {
     message: "Delete just the requested language, and not the pivot.",
     app: "fr",
     requested: "pl",
-    isForDeletion: true,
+    includePivotRecords: false,
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "pl" },
       { fromLang: "pl", toLang: PIVOT_LANGUAGE },
@@ -316,7 +318,7 @@ add_task(async function test_translating_to_and_from_app_language() {
     message: "Delete just the pivot → app and app → pivot.",
     app: "es",
     requested: PIVOT_LANGUAGE,
-    isForDeletion: true,
+    includePivotRecords: false,
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "es" },
       { fromLang: "es", toLang: PIVOT_LANGUAGE },
@@ -328,10 +330,11 @@ add_task(async function test_translating_to_and_from_app_language() {
       "If the app and request language are the same, nothing is returned.",
     app: "fr",
     requested: "fr",
+    includePivotRecords: true,
     languagePairs: [],
   });
 
-  return cleanup();
+  await cleanup();
 });
 
 add_task(async function test_firstVisualChange() {
@@ -357,5 +360,5 @@ add_task(async function test_firstVisualChange() {
     "A change occurred."
   );
 
-  return cleanup();
+  await cleanup();
 });

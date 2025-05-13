@@ -210,6 +210,9 @@ class AttachmentDownloader extends Downloader {
       prune: async excludeIds => {
         return this._client.db.pruneAttachments(excludeIds);
       },
+      hasData: async () => {
+        return this._client.db.hasAttachments();
+      },
     };
     Object.defineProperty(this, "cacheImpl", { value: cacheImpl });
     return cacheImpl;
@@ -235,6 +238,7 @@ class AttachmentDownloader extends Downloader {
       // If the file failed to be downloaded, report it as such in Telemetry.
       await lazy.UptakeTelemetry.report(TELEMETRY_COMPONENT, status, {
         source: this._client.identifier,
+        errorName: err.name,
       });
       throw err;
     }

@@ -196,6 +196,7 @@ abstract class AbstractFetchDownloadService : Service() {
                     ACTION_TRY_AGAIN -> {
                         removeNotification(context, currentDownloadJobState)
                         currentDownloadJobState.lastNotificationUpdate = System.currentTimeMillis()
+                        currentDownloadJobState.currentBytesCopied = 0
                         setDownloadJobStatus(currentDownloadJobState, DOWNLOADING)
 
                         currentDownloadJobState.job = CoroutineScope(IO).launch {
@@ -319,6 +320,7 @@ abstract class AbstractFetchDownloadService : Service() {
     @VisibleForTesting
     internal fun cancelDownloadJob(
         currentDownloadJobState: DownloadJobState,
+        coroutineScope: CoroutineScope = CoroutineScope(IO),
     ) {
         currentDownloadJobState.lastNotificationUpdate = System.currentTimeMillis()
         setDownloadJobStatus(
@@ -326,10 +328,12 @@ abstract class AbstractFetchDownloadService : Service() {
             CANCELLED,
         )
         currentDownloadJobState.job?.cancel()
-        currentDownloadJobState.job = CoroutineScope(IO).launch {
-            deleteDownloadingFile(currentDownloadJobState.state)
-            currentDownloadJobState.downloadDeleted =
-                true
+        currentDownloadJobState.job?.invokeOnCompletion {
+            currentDownloadJobState.job = coroutineScope.launch {
+                deleteDownloadingFile(currentDownloadJobState.state)
+                currentDownloadJobState.downloadDeleted =
+                    true
+            }
         }
     }
 
@@ -466,7 +470,10 @@ abstract class AbstractFetchDownloadService : Service() {
 
     internal fun deleteDownloadingFile(downloadState: DownloadState) {
         val downloadedFile = File(downloadState.filePath)
-        downloadedFile.delete()
+        val deleted = downloadedFile.delete()
+        if (!deleted) {
+            logger.error("Unable to delete file with path: " + downloadState.filePath)
+        }
     }
 
     /**
@@ -716,7 +723,7 @@ abstract class AbstractFetchDownloadService : Service() {
 
         var isUsingHttpClient = false
         val request = Request(
-            download.url.sanitizeURL(),
+            url = download.url.sanitizeURL(),
             headers = headers,
             private = download.private,
             referrerUrl = download.referrerUrl,
@@ -878,7 +885,7 @@ abstract class AbstractFetchDownloadService : Service() {
         updateDownloadState(downloadWithUniqueFileName)
 
         if (shouldUseScopedStorage()) {
-            useFileStreamScopedStorage(downloadWithUniqueFileName, block)
+            useFileStreamScopedStorage(downloadWithUniqueFileName, append, block)
         } else {
             useFileStreamLegacy(downloadWithUniqueFileName, append, block)
         }
@@ -912,23 +919,43 @@ abstract class AbstractFetchDownloadService : Service() {
         download: DownloadState,
         append: Boolean,
     ): DownloadState {
-        if (append) {
+        val fileName = download.fileName
+        if (append || fileName == null) {
             return download
         }
 
-        return download.fileName?.let {
-            download.copy(
-                fileName = DownloadUtils.uniqueFileName(
-                    Environment.getExternalStoragePublicDirectory(download.destinationDirectory),
-                    it,
-                ),
-            )
-        } ?: download
+        val path = Environment.getExternalStoragePublicDirectory(download.destinationDirectory)
+        var potentialFile = File(path, fileName)
+        val fileBaseName = potentialFile.nameWithoutExtension
+        val fileExtension = potentialFile.extension.let { extension ->
+            if (extension.isNotEmpty()) ".$extension" else ""
+        }
+
+        var copyVersionNumber = 1
+
+        while (potentialFile.exists() || fileNameExistsInCurrentDownloads(potentialFile.name, download, downloadJobs)) {
+            potentialFile = File(path, "$fileBaseName(${copyVersionNumber++})$fileExtension")
+        }
+
+        return download.copy(
+            fileName = potentialFile.name,
+        )
     }
+
+    private fun fileNameExistsInCurrentDownloads(
+        fileName: String,
+        download: DownloadState,
+        downloadJobs: Map<String, DownloadJobState>,
+    ): Boolean =
+        downloadJobs.values.any {
+            it.state.id != download.id && it.state.fileName == fileName && (
+                it.status == DOWNLOADING || it.status == PAUSED
+                )
+        }
 
     @TargetApi(Build.VERSION_CODES.Q)
     @VisibleForTesting
-    internal fun useFileStreamScopedStorage(download: DownloadState, block: (OutputStream) -> Unit) {
+    internal fun useFileStreamScopedStorage(download: DownloadState, append: Boolean, block: (OutputStream) -> Unit) {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, download.fileName)
             put(
@@ -948,7 +975,8 @@ abstract class AbstractFetchDownloadService : Service() {
         }
 
         downloadUri?.let {
-            val pfd = resolver.openFileDescriptor(it, "w")
+            val writingMode = if (append) "wa" else "w"
+            val pfd = resolver.openFileDescriptor(it, writingMode)
             ParcelFileDescriptor.AutoCloseOutputStream(pfd).use(block)
 
             values.clear()

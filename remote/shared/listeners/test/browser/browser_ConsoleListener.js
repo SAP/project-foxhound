@@ -56,7 +56,7 @@ add_task(async function test_stacktrace() {
     stacktrace[3],
     "chrome://mochitests/content/browser/remote/shared/listeners/test/browser/head.js",
     "",
-    34,
+    53,
     29
   );
 
@@ -81,7 +81,6 @@ function logConsoleMessage(options = {}) {
     scriptError.initWithWindowID(
       _options.message,
       _options.sourceName || "sourceName",
-      null,
       _options.lineNumber || 0,
       _options.columnNumber || 0,
       levelToFlags[level],

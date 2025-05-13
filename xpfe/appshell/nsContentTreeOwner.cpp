@@ -544,6 +544,7 @@ nsContentTreeOwner::ProvideWindow(
 
   if (openLocation != nsIBrowserDOMWindow::OPEN_NEWTAB &&
       openLocation != nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND &&
+      openLocation != nsIBrowserDOMWindow::OPEN_NEWTAB_FOREGROUND &&
       openLocation != nsIBrowserDOMWindow::OPEN_CURRENTWINDOW &&
       openLocation != nsIBrowserDOMWindow::OPEN_PRINT_BROWSER) {
     // Just open a window normally
@@ -615,8 +616,7 @@ nsContentTreeOwner::Blur() {
     nsCOMPtr<nsIWindowMediator> windowMediator(
         do_GetService(kWindowMediatorCID));
     if (windowMediator) {
-      windowMediator->GetZOrderAppWindowEnumerator(
-          nullptr, true, getter_AddRefs(windowEnumerator));
+      windowMediator->GetEnumerator(nullptr, getter_AddRefs(windowEnumerator));
     }
   }
 

@@ -36,7 +36,15 @@ union Utf8Unit;
 
 namespace JS {
 
-enum class ModuleType : uint32_t { Unknown = 0, JavaScript, JSON };
+// This enum is used to index into an array, and we assume that we have
+// sequential numbers starting at zero for the unknown type.
+enum class ModuleType : uint32_t {
+  Unknown = 0,
+  JavaScript,
+  JSON,
+
+  Limit = JSON,
+};
 
 /**
  * The HostResolveImportedModule hook.

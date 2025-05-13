@@ -2,37 +2,42 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::sync::OnceLock;
+
 use crate::{
-    benchmarks::{
-        client::{RemoteSettingsBenchmarkClient, RemoteSettingsWarmUpClient},
-        BenchmarkWithInput,
-    },
+    benchmarks::{client::RemoteSettingsBenchmarkClient, unique_db_filename, BenchmarkWithInput},
     rs::SuggestRecordType,
     store::SuggestStoreInner,
     SuggestIngestionConstraints,
 };
-use std::sync::atomic::{AtomicU32, Ordering};
-
-static DB_FILE_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 pub struct IngestBenchmark {
     temp_dir: tempfile::TempDir,
     client: RemoteSettingsBenchmarkClient,
     record_type: SuggestRecordType,
+    reingest: bool,
+}
+
+/// Get a benchmark client to use for the tests
+///
+/// Uses OnceLock to ensure we only construct it once.
+fn get_benchmark_client() -> RemoteSettingsBenchmarkClient {
+    static CELL: OnceLock<RemoteSettingsBenchmarkClient> = OnceLock::new();
+    CELL.get_or_init(|| {
+        RemoteSettingsBenchmarkClient::new()
+            .unwrap_or_else(|e| panic!("Error creating benchmark client {e}"))
+    })
+    .clone()
 }
 
 impl IngestBenchmark {
-    pub fn new(record_type: SuggestRecordType) -> Self {
+    pub fn new(record_type: SuggestRecordType, reingest: bool) -> Self {
         let temp_dir = tempfile::tempdir().unwrap();
-        let store = SuggestStoreInner::new(
-            temp_dir.path().join("warmup.sqlite"),
-            RemoteSettingsWarmUpClient::new(),
-        );
-        store.benchmark_ingest_records_by_type(record_type);
         Self {
-            client: RemoteSettingsBenchmarkClient::from(store.into_settings_client()),
+            client: get_benchmark_client(),
             temp_dir,
             record_type,
+            reingest,
         }
     }
 }
@@ -46,12 +51,13 @@ impl BenchmarkWithInput for IngestBenchmark {
     type Input = InputType;
 
     fn generate_input(&self) -> Self::Input {
-        let data_path = self.temp_dir.path().join(format!(
-            "db{}.sqlite",
-            DB_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
-        let store = SuggestStoreInner::new(data_path, self.client.clone());
+        let data_path = self.temp_dir.path().join(unique_db_filename());
+        let store = SuggestStoreInner::new(data_path, vec![], self.client.clone());
         store.ensure_db_initialized();
+        if self.reingest {
+            store.benchmark_ingest_records_by_type(self.record_type);
+            store.force_reingest();
+        }
         InputType(store)
     }
 
@@ -64,23 +70,85 @@ impl BenchmarkWithInput for IngestBenchmark {
 /// Get IngestBenchmark instances for all record types
 pub fn all_benchmarks() -> Vec<(&'static str, IngestBenchmark)> {
     vec![
-        ("icon", IngestBenchmark::new(SuggestRecordType::Icon)),
         (
-            "amp-wikipedia",
-            IngestBenchmark::new(SuggestRecordType::AmpWikipedia),
-        ),
-        ("amo", IngestBenchmark::new(SuggestRecordType::Amo)),
-        ("pocket", IngestBenchmark::new(SuggestRecordType::Pocket)),
-        ("yelp", IngestBenchmark::new(SuggestRecordType::Yelp)),
-        ("mdn", IngestBenchmark::new(SuggestRecordType::Mdn)),
-        ("weather", IngestBenchmark::new(SuggestRecordType::Weather)),
-        (
-            "global-config",
-            IngestBenchmark::new(SuggestRecordType::GlobalConfig),
+            "ingest-icon",
+            IngestBenchmark::new(SuggestRecordType::Icon, false),
         ),
         (
-            "amp-mobile",
-            IngestBenchmark::new(SuggestRecordType::AmpMobile),
+            "ingest-again-icon",
+            IngestBenchmark::new(SuggestRecordType::Icon, true),
+        ),
+        (
+            "ingest-amp-wikipedia",
+            IngestBenchmark::new(SuggestRecordType::AmpWikipedia, false),
+        ),
+        (
+            "ingest-again-amp-wikipedia",
+            IngestBenchmark::new(SuggestRecordType::AmpWikipedia, true),
+        ),
+        (
+            "ingest-amo",
+            IngestBenchmark::new(SuggestRecordType::Amo, false),
+        ),
+        (
+            "ingest-again-amo",
+            IngestBenchmark::new(SuggestRecordType::Amo, true),
+        ),
+        (
+            "ingest-pocket",
+            IngestBenchmark::new(SuggestRecordType::Pocket, false),
+        ),
+        (
+            "ingest-again-pocket",
+            IngestBenchmark::new(SuggestRecordType::Pocket, true),
+        ),
+        (
+            "ingest-yelp",
+            IngestBenchmark::new(SuggestRecordType::Yelp, false),
+        ),
+        (
+            "ingest-again-yelp",
+            IngestBenchmark::new(SuggestRecordType::Yelp, true),
+        ),
+        (
+            "ingest-mdn",
+            IngestBenchmark::new(SuggestRecordType::Mdn, false),
+        ),
+        (
+            "ingest-again-mdn",
+            IngestBenchmark::new(SuggestRecordType::Mdn, true),
+        ),
+        (
+            "ingest-weather",
+            IngestBenchmark::new(SuggestRecordType::Weather, false),
+        ),
+        (
+            "ingest-again-weather",
+            IngestBenchmark::new(SuggestRecordType::Weather, true),
+        ),
+        (
+            "ingest-global-config",
+            IngestBenchmark::new(SuggestRecordType::GlobalConfig, false),
+        ),
+        (
+            "ingest-again-global-config",
+            IngestBenchmark::new(SuggestRecordType::GlobalConfig, true),
+        ),
+        (
+            "ingest-amp-mobile",
+            IngestBenchmark::new(SuggestRecordType::AmpMobile, false),
+        ),
+        (
+            "ingest-again-amp-mobile",
+            IngestBenchmark::new(SuggestRecordType::AmpMobile, true),
+        ),
+        (
+            "ingest-fakespot",
+            IngestBenchmark::new(SuggestRecordType::Fakespot, false),
+        ),
+        (
+            "ingest-again-fakespot",
+            IngestBenchmark::new(SuggestRecordType::Fakespot, true),
         ),
     ]
 }
@@ -89,29 +157,26 @@ pub fn print_debug_ingestion_sizes() {
     viaduct_reqwest::use_reqwest_backend();
     let store = SuggestStoreInner::new(
         "file:debug_ingestion_sizes?mode=memory&cache=shared",
-        RemoteSettingsWarmUpClient::new(),
+        vec![],
+        RemoteSettingsBenchmarkClient::new().unwrap(),
     );
     store
-        .ingest(SuggestIngestionConstraints::default())
+        .ingest(SuggestIngestionConstraints {
+            // Uncomment to measure the size for a specific provider
+            // providers: Some(vec![crate::SuggestionProvider::Fakespot]),
+            ..SuggestIngestionConstraints::default()
+        })
         .unwrap();
     let table_row_counts = store.table_row_counts();
+    let db_size = store.db_size();
     let client = store.into_settings_client();
-    let total_attachment_size: usize = client
-        .get_records_responses
-        .lock()
-        .values()
-        .flat_map(|records| {
-            records.iter().map(|r| match &r.attachment_data {
-                Some(d) => d.len(),
-                None => 0,
-            })
-        })
-        .sum();
+    let total_attachment_size: usize = client.attachments.values().map(|a| a.len()).sum();
 
     println!(
         "Total attachment size: {}kb",
         (total_attachment_size + 500) / 1000
     );
+    println!("Total database size: {}kb", (db_size + 500) / 1000);
     println!();
     println!("Database table row counts");
     println!("-------------------------");

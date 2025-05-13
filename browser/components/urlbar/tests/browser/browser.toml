@@ -14,15 +14,12 @@ prefs = [
   "browser.urlbar.trending.featureGate=false",
   "extensions.screenshots.disabled=false",
   "screenshots.browser.component.enabled=true",
+  "sidebar.revamp=false",
 ]
 
 ["browser_UrlbarInput_formatValue.js"]
 
 ["browser_UrlbarInput_formatValue_detachedTab.js"]
-skip-if = [
-  "apple_catalina", # Bug 1756585
-  "os == 'win'", # Bug 1756585
-]
 
 ["browser_UrlbarInput_formatValue_strikeout.js"]
 support-files = ["mixed_active.html"]
@@ -44,6 +41,8 @@ support-files = ["mixed_active.html"]
 ["browser_UrlbarInput_searchTerms_moveTab.js"]
 
 ["browser_UrlbarInput_searchTerms_popup.js"]
+
+["browser_UrlbarInput_searchTerms_remote_settings_sync.js"]
 
 ["browser_UrlbarInput_searchTerms_revert.js"]
 
@@ -67,6 +66,9 @@ skip-if = ["apple_catalina && debug"] # Bug 1773790
 
 ["browser_UrlbarInput_trimURLs.js"]
 https_first_disabled = true
+support-files = [
+  "slow_loading_page.sjs"
+]
 
 ["browser_UrlbarInput_untrimOnUserInteraction.js"]
 
@@ -380,7 +382,6 @@ support-files = [
 ["browser_raceWithTabs.js"]
 
 ["browser_recentsearches.js"]
-support-files = ["search-engines"]
 
 ["browser_redirect_error.js"]
 support-files = ["redirect_error.sjs"]
@@ -395,6 +396,8 @@ https_first_disabled = true
 ["browser_remove_match.js"]
 
 ["browser_restoreEmptyInput.js"]
+
+["browser_restrict_keywords.js"]
 
 ["browser_resultSpan.js"]
 
@@ -413,6 +416,8 @@ https_first_disabled = true
 ["browser_searchFunction.js"]
 
 ["browser_searchHistoryLimit.js"]
+
+["browser_searchModeSwitcher_basic.js"]
 
 ["browser_searchMode_alias_replacement.js"]
 support-files = [
@@ -451,6 +456,8 @@ support-files = [
 ["browser_searchMode_newWindow.js"]
 
 ["browser_searchMode_no_results.js"]
+
+["browser_searchMode_omnibox.js"]
 
 ["browser_searchMode_oneOffButton.js"]
 
@@ -500,7 +507,7 @@ support-files = [
 ["browser_search_bookmarks_from_bookmarks_menu.js"]
 
 ["browser_search_continuation.js"]
-support-files = ["search-engines", "../../../search/test/browser/trendingSuggestionEngine.sjs"]
+support-files = ["../../../search/test/browser/trendingSuggestionEngine.sjs"]
 
 ["browser_search_history_from_history_panel.js"]
 
@@ -599,6 +606,8 @@ support-files = ["moz.png"]
 
 ["browser_tabToSearch.js"]
 
+["browser_text_dont_shift_on_mousedown.js"]
+
 ["browser_textruns.js"]
 
 ["browser_tokenAlias.js"]
@@ -622,6 +631,7 @@ https_first_disabled = true
 https_first_disabled = true
 
 ["browser_urlbar_annotation.js"]
+https_first_disabled = true
 support-files = ["redirect_to.sjs"]
 
 ["browser_urlbar_selection.js"]

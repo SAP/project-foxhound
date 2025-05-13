@@ -94,7 +94,7 @@ class StencilXDR;
 
 class ScriptCounts {
  public:
-  typedef mozilla::Vector<PCCounts, 0, SystemAllocPolicy> PCCountsVector;
+  using PCCountsVector = mozilla::Vector<PCCounts, 0, SystemAllocPolicy>;
 
   inline ScriptCounts();
   inline explicit ScriptCounts(PCCountsVector&& jumpTargets);
@@ -1093,7 +1093,8 @@ class ScriptSource {
 
   [[nodiscard]] bool startIncrementalEncoding(
       JSContext* cx,
-      UniquePtr<frontend::ExtensibleCompilationStencil>&& initial);
+      UniquePtr<frontend::ExtensibleCompilationStencil>&& initial,
+      bool& alreadyStarted);
 
   [[nodiscard]] bool addDelazificationToIncrementalEncoding(
       JSContext* cx, const frontend::CompilationStencil& stencil);
@@ -1102,6 +1103,8 @@ class ScriptSource {
   // |xdrEncodeTopLevel|, and free the XDR encoder.  In case of errors, the
   // |buffer| is considered undefined.
   bool xdrFinalizeEncoder(JSContext* cx, JS::TranscodeBuffer& buffer);
+
+  bool xdrFinalizeEncoder(JSContext* cx, JS::Stencil** stencilOut);
 
   // Discard the incremental encoding data and free the XDR encoder.
   void xdrAbortEncoder();

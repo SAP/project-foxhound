@@ -10,7 +10,11 @@ import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.ext.recordNewImpression
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.appstate.readerview.ReaderViewStateReducer
+import org.mozilla.fenix.components.appstate.reducer.FindInPageStateReducer
 import org.mozilla.fenix.components.appstate.shopping.ShoppingStateReducer
+import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
+import org.mozilla.fenix.components.appstate.snackbar.SnackbarStateReducer
 import org.mozilla.fenix.ext.filterOutTab
 import org.mozilla.fenix.ext.getFilteredStories
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesSelectedCategory
@@ -18,6 +22,7 @@ import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem.RecentHistoryGroup
 import org.mozilla.fenix.messaging.state.MessagingReducer
+import org.mozilla.fenix.share.ShareActionReducer
 
 /**
  * Reducer for [AppStore].
@@ -238,12 +243,46 @@ internal object AppStoreReducer {
             standardSnackbarError = action.standardSnackbarError,
         )
 
-        is AppAction.ShoppingAction -> ShoppingStateReducer.reduce(state, action)
-
         is AppAction.TabStripAction.UpdateLastTabClosed -> state.copy(
             wasLastTabClosedPrivate = action.private,
         )
+
         is AppAction.UpdateSearchDialogVisibility -> state.copy(isSearchDialogVisible = action.isVisible)
+
+        is AppAction.TranslationsAction.TranslationStarted -> state.copy(
+            snackbarState = SnackbarState.TranslationInProgress(sessionId = action.sessionId),
+        )
+
+        is AppAction.BookmarkAction.BookmarkAdded -> state.copy(
+            snackbarState = SnackbarState.BookmarkAdded(guidToEdit = action.guidToEdit),
+        )
+
+        is AppAction.BookmarkAction.BookmarkDeleted -> state.copy(
+            snackbarState = SnackbarState.BookmarkDeleted(title = action.title),
+        )
+
+        is AppAction.DeleteAndQuitStarted -> {
+            state.copy(snackbarState = SnackbarState.DeletingBrowserDataInProgress)
+        }
+
+        is AppAction.OpenInFirefoxStarted -> {
+            state.copy(openInFirefoxRequested = true)
+        }
+
+        is AppAction.OpenInFirefoxFinished -> {
+            state.copy(openInFirefoxRequested = false)
+        }
+
+        is AppAction.UserAccountAuthenticated -> state.copy(
+            snackbarState = SnackbarState.UserAccountAuthenticated,
+        )
+
+        is AppAction.ShareAction -> ShareActionReducer.reduce(state, action)
+        is AppAction.FindInPageAction -> FindInPageStateReducer.reduce(state, action)
+        is AppAction.ReaderViewAction -> ReaderViewStateReducer.reduce(state, action)
+        is AppAction.ShortcutAction -> ShortcutStateReducer.reduce(state, action)
+        is AppAction.ShoppingAction -> ShoppingStateReducer.reduce(state, action)
+        is AppAction.SnackbarAction -> SnackbarStateReducer.reduce(state, action)
     }
 }
 

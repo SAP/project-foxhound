@@ -86,46 +86,40 @@ export class UrlbarValueFormatter {
     // Apply new formatting.  Formatter methods should return true if they
     // successfully formatted the value and false if not.  We apply only
     // one formatter at a time, so we stop at the first successful one.
-    this._formattingApplied = this._formatURL() || this._formatSearchAlias();
+    this.window.requestAnimationFrame(() => {
+      if (this._updateInstance != instance) {
+        return;
+      }
+      this._formattingApplied = this._formatURL() || this._formatSearchAlias();
+    });
   }
 
-  _ensureFormattedHostVisible(urlMetaData) {
-    // Used to avoid re-entrance in the requestAnimationFrame callback.
-    let instance = (this._formatURLInstance = {});
-
+  #ensureFormattedHostVisible(urlMetaData) {
     // Make sure the host is always visible. Since it is aligned on
     // the first strong directional character, we set scrollLeft
     // appropriately to ensure the domain stays visible in case of an
     // overflow.
-    this.window.requestAnimationFrame(() => {
-      // Check for re-entrance. On focus change this formatting code is
-      // invoked regardless, thus this should be enough.
-      if (this._formatURLInstance != instance) {
-        return;
-      }
-
-      // In the future, for example in bug 525831, we may add a forceRTL
-      // char just after the domain, and in such a case we should not
-      // scroll to the left.
-      urlMetaData = urlMetaData || this._getUrlMetaData();
-      if (!urlMetaData) {
-        this.urlbarInput.removeAttribute("domaindir");
-        return;
-      }
-      let { url, preDomain, domain } = urlMetaData;
-      let directionality = this.window.windowUtils.getDirectionFromText(domain);
-      if (
-        directionality == this.window.windowUtils.DIRECTION_RTL &&
-        url[preDomain.length + domain.length] != "\u200E"
-      ) {
-        this.urlbarInput.setAttribute("domaindir", "rtl");
-        this.inputField.scrollLeft = this.inputField.scrollLeftMax;
-      } else {
-        this.urlbarInput.setAttribute("domaindir", "ltr");
-        this.inputField.scrollLeft = 0;
-      }
-      this.urlbarInput.updateTextOverflow();
-    });
+    // In the future, for example in bug 525831, we may add a forceRTL
+    // char just after the domain, and in such a case we should not
+    // scroll to the left.
+    urlMetaData = urlMetaData || this._getUrlMetaData();
+    if (!urlMetaData) {
+      this.urlbarInput.removeAttribute("domaindir");
+      return;
+    }
+    let { url, preDomain, domain } = urlMetaData;
+    let directionality = this.window.windowUtils.getDirectionFromText(domain);
+    if (
+      directionality == this.window.windowUtils.DIRECTION_RTL &&
+      url[preDomain.length + domain.length] != "\u200E"
+    ) {
+      this.urlbarInput.setAttribute("domaindir", "rtl");
+      this.inputField.scrollLeft = this.inputField.scrollLeftMax;
+    } else {
+      this.urlbarInput.setAttribute("domaindir", "ltr");
+      this.inputField.scrollLeft = 0;
+    }
+    this.urlbarInput.updateTextOverflow();
   }
 
   _getUrlMetaData() {
@@ -270,6 +264,47 @@ export class UrlbarValueFormatter {
   }
 
   /**
+   * Whether formatting is enabled.
+   *
+   * @returns {boolean}
+   */
+  get formattingEnabled() {
+    return lazy.UrlbarPrefs.get("formatting.enabled");
+  }
+
+  /**
+   * Whether a striked out active mixed content protocol will show for the
+   * currently loaded input field value.
+   *
+   * @param {string} val The value to evaluate. If it's not the currently
+   *   loaded page, this will return false, as we cannot know if a page has
+   *   active mixed content until it's loaded.
+   * @returns {boolean}
+   */
+  willShowFormattedMixedContentProtocol(val) {
+    return (
+      this.formattingEnabled &&
+      !lazy.UrlbarPrefs.get("security.insecure_connection_text.enabled") &&
+      val.startsWith("https://") &&
+      val == this.urlbarInput.value &&
+      this.#showingMixedContentLoadedPageUrl
+    );
+  }
+
+  /**
+   * Whether the currently loaded page is in mixed content mode.
+   *
+   * @returns {boolean} whether the loaded page has active mixed content.
+   */
+  get #showingMixedContentLoadedPageUrl() {
+    return (
+      this.urlbarInput.getAttribute("pageproxystate") == "valid" &&
+      this.window.gBrowser.securityUI.state &
+        Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT
+    );
+  }
+
+  /**
    * If the input value is a URL and the input is not focused, this
    * formatter method highlights the domain, and if mixed content is present,
    * it crosses out the https scheme.  It also ensures that the host is
@@ -287,27 +322,20 @@ export class UrlbarValueFormatter {
     let { domain, origin, preDomain, schemeWSlashes, trimmedLength, url } =
       urlMetaData;
 
-    let isMixedContent =
-      schemeWSlashes == "https://" &&
-      this.urlbarInput.value.startsWith("https://") &&
-      this.urlbarInput.getAttribute("pageproxystate") == "valid" &&
-      this.window.gBrowser.securityUI.state &
-        Ci.nsIWebProgressListener.STATE_LOADED_MIXED_ACTIVE_CONTENT;
-    let isUnformattedMixedContent =
-      isMixedContent && !lazy.UrlbarPrefs.get("formatting.enabled");
-
     // When RTL domains cause the address bar to overflow to the left, the
     // protocol may get hidden, if it was not trimmed. We then set the
     // `--urlbar-scheme-size` property to show the protocol in a floating box.
     // We don't show the floating protocol box if:
+    //  - The insecure label is enabled, as it is a sufficient indicator.
+    //  - The current page is mixed content but formatting is disabled, as it
+    //    may be confusing for the user to see a non striked out protocol.
     //  - The protocol was trimmed.
-    //  - We're in mixed mode, but formatting is disabled. The not struck out
-    //    box may make the user think the connection is fully secure.
-    //  - The insecure label is active. The label is a sufficient indicator.
+    let isUnformattedMixedContent =
+      this.#showingMixedContentLoadedPageUrl && !this.formattingEnabled;
     if (
-      this.urlbarInput.value.startsWith(schemeWSlashes) &&
+      !lazy.UrlbarPrefs.get("security.insecure_connection_text.enabled") &&
       !isUnformattedMixedContent &&
-      !lazy.UrlbarPrefs.get("security.insecure_connection_text.enabled")
+      this.urlbarInput.value.startsWith(schemeWSlashes)
     ) {
       this.scheme.value = schemeWSlashes;
       this.inputField.style.setProperty(
@@ -316,9 +344,9 @@ export class UrlbarValueFormatter {
       );
     }
 
-    this._ensureFormattedHostVisible(urlMetaData);
+    this.#ensureFormattedHostVisible(urlMetaData);
 
-    if (!lazy.UrlbarPrefs.get("formatting.enabled")) {
+    if (!this.formattingEnabled) {
       return false;
     }
 
@@ -329,9 +357,9 @@ export class UrlbarValueFormatter {
 
     let textNode = editor.rootElement.firstChild;
 
-    // Strike out the "https" part if mixed active content is loaded and https
-    // is not trimmed.
-    if (isMixedContent) {
+    // Strike out the "https" part if mixed active content status should be
+    // shown.
+    if (this.willShowFormattedMixedContentProtocol(this.urlbarInput.value)) {
       let range = this.document.createRange();
       range.setStart(textNode, 0);
       range.setEnd(textNode, 5);
@@ -351,6 +379,8 @@ export class UrlbarValueFormatter {
         let IDNService = Cc["@mozilla.org/network/idn-service;1"].getService(
           Ci.nsIIDNService
         );
+        // XXX This should probably convert to display IDN instead.
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1906048
         baseDomain = IDNService.convertACEtoUTF8(baseDomain);
       }
     } catch (e) {}
@@ -411,7 +441,7 @@ export class UrlbarValueFormatter {
    *   True if formatting was applied and false if not.
    */
   _formatSearchAlias() {
-    if (!lazy.UrlbarPrefs.get("formatting.enabled")) {
+    if (!this.formattingEnabled) {
       return false;
     }
 
@@ -535,7 +565,12 @@ export class UrlbarValueFormatter {
     }
     this._resizeThrottleTimeout = this.window.setTimeout(() => {
       this._resizeThrottleTimeout = null;
-      this._ensureFormattedHostVisible();
+      let instance = (this._resizeInstance = {});
+      this.window.requestAnimationFrame(() => {
+        if (instance == this._resizeInstance) {
+          this.#ensureFormattedHostVisible();
+        }
+      });
     }, 100);
   }
 }

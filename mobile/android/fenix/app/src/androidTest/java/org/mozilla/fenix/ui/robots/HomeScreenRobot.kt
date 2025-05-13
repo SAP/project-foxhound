@@ -44,6 +44,7 @@ import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import androidx.test.uiautomator.Until.findObject
+import com.google.android.material.textfield.TextInputEditText
 import org.hamcrest.CoreMatchers.allOf
 import org.hamcrest.CoreMatchers.containsString
 import org.hamcrest.CoreMatchers.instanceOf
@@ -148,6 +149,7 @@ class HomeScreenRobot {
             allOf(
                 withId(R.id.counter_text),
                 withText(numberOfOpenTabs),
+                withEffectiveVisibility(Visibility.VISIBLE),
             ),
         ).check(matches(isDisplayed()))
 
@@ -231,7 +233,7 @@ class HomeScreenRobot {
             Log.i(TAG, "verifyThirdOnboardingCard: Verified that the third onboarding screen title exists")
             Log.i(TAG, "verifyThirdOnboardingCard: Trying to verify that the  third onboarding screen description exists")
             it.onNodeWithText(
-                getStringResource(R.string.juno_onboarding_sign_in_description_2),
+                getStringResource(R.string.juno_onboarding_sign_in_description_3),
             ).assertExists()
             Log.i(TAG, "verifyThirdOnboardingCard: Verified that the third onboarding screen description exists")
             Log.i(TAG, "verifyThirdOnboardingCard: Trying to verify that the first onboarding \"Sign in\" button exists")
@@ -409,6 +411,9 @@ class HomeScreenRobot {
             waitingTime,
         )
     }
+    fun verifyTopSiteContextMenuUrlErrorMessage() {
+        assertUIObjectExists(itemContainingText(getStringResource(R.string.top_sites_edit_dialog_url_error)))
+    }
 
     fun verifyJumpBackInSectionIsDisplayed() {
         scrollToElementByText(getStringResource(R.string.recent_tabs_header))
@@ -584,13 +589,22 @@ class HomeScreenRobot {
         }
     }
 
-    fun verifyJumpBackInMessage(composeTestRule: ComposeTestRule) {
-        Log.i(TAG, "verifyJumpBackInMessage: Trying to verify jump back in contextual message")
-        composeTestRule
-            .onNodeWithText(
-                getStringResource(R.string.onboarding_home_screen_jump_back_contextual_hint_2),
-            ).assertExists()
-        Log.i(TAG, "verifyJumpBackInMessage: Verified jump back in contextual message")
+    fun verifyJumpBackInMessage(composeTestRule: ComposeTestRule, exists: Boolean) {
+        if (exists) {
+            Log.i(TAG, "verifyJumpBackInMessage: Trying to verify that the jump back in contextual message exists")
+            composeTestRule
+                .onNodeWithText(
+                    getStringResource(R.string.onboarding_home_screen_jump_back_contextual_hint_2),
+                ).assertExists()
+            Log.i(TAG, "verifyJumpBackInMessage: Verified that the jump back in contextual message exists")
+        } else {
+            Log.i(TAG, "verifyJumpBackInMessage: Trying to verify that the jump back in contextual message does not exist")
+            composeTestRule
+                .onNodeWithText(
+                    getStringResource(R.string.onboarding_home_screen_jump_back_contextual_hint_2),
+                ).assertDoesNotExist()
+            Log.i(TAG, "verifyJumpBackInMessage: Verified that the jump back in contextual message does not exist")
+        }
     }
 
     fun getProvokingStoryPublisher(position: Int): String {
@@ -818,19 +832,27 @@ class HomeScreenRobot {
             return BrowserRobot.Transition()
         }
 
-        fun renameTopSite(title: String, interact: HomeScreenRobot.() -> Unit): Transition {
-            Log.i(TAG, "renameTopSite: Trying to click context menu \"Rename\" button")
-            onView(withText("Rename"))
+        fun editTopSite(
+            title: String,
+            url: String,
+            interact: HomeScreenRobot.() -> Unit,
+        ): Transition {
+            Log.i(TAG, "editTopSite: Trying to click context menu \"Edit\" button")
+            onView(withText("Edit"))
                 .check((matches(withEffectiveVisibility(Visibility.VISIBLE))))
                 .perform(click())
-            Log.i(TAG, "renameTopSite: Clicked context menu \"Rename\" button")
-            Log.i(TAG, "renameTopSite: Trying to set top site title to: $title")
+            Log.i(TAG, "editTopSite: Clicked context menu \"Edit\" button")
+            Log.i(TAG, "editTopSite: Trying to set top site title to: $title")
             onView(Matchers.allOf(withId(R.id.top_site_title), instanceOf(EditText::class.java)))
                 .perform(ViewActions.replaceText(title))
-            Log.i(TAG, "renameTopSite: Set top site title to: $title")
-            Log.i(TAG, "renameTopSite: Trying to click \"Ok\" rename top site dialog button")
+            Log.i(TAG, "editTopSite: Set top site title to: $title")
+            Log.i(TAG, "editTopSite: Trying to set top site URL to: $url")
+            onView(Matchers.allOf(withId(R.id.top_site_url), instanceOf(TextInputEditText::class.java)))
+                .perform(ViewActions.replaceText(url))
+            Log.i(TAG, "editTopSite: Set top site title to: $title")
+            Log.i(TAG, "editTopSite: Trying to click \"Save\" edit top site dialog button")
             onView(withId(android.R.id.button1)).perform((click()))
-            Log.i(TAG, "renameTopSite: Clicked \"Ok\" rename top site dialog button")
+            Log.i(TAG, "editTopSite: Clicked \"Save\" edit top site dialog button")
 
             HomeScreenRobot().interact()
             return Transition()

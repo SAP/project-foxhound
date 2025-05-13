@@ -19,7 +19,7 @@ body,
 
 body {
   background-color: var(--newtab-background-color);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Ubuntu, 'Helvetica Neue', sans-serif;
+  font-family: system-ui;
   font-size: 16px;
 
   // rules for HNT wallpapers
@@ -161,6 +161,7 @@ input {
 @import '../components/MoreRecommendations/MoreRecommendations';
 @import '../components/DiscoveryStreamBase/DiscoveryStreamBase';
 @import '../components/ModalOverlay/ModalOverlay';
+@import '../components/Notifications/Notifications';
 
 // Discovery Stream Components
 @import '../components/DiscoveryStreamComponents/CardGrid/CardGrid';
@@ -179,6 +180,7 @@ input {
 @import '../components/DiscoveryStreamImpressionStats/ImpressionStats';
 @import '../components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState';
 @import '../components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo';
+@import '../components/DiscoveryStreamComponents/DSThumbsUpDownButtons/DSThumbsUpDownButtons';
 @import '../components/DiscoveryStreamComponents/DSSignup/DSSignup';
 @import '../components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal';
 @import '../components/DiscoveryStreamComponents/PrivacyLink/PrivacyLink';
@@ -186,7 +188,5 @@ input {
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight';
-
-// AS Router
-@import '../../../asrouter/content-src/components/Button/Button';
+@import '../components/DiscoveryStreamComponents/TopicSelection/TopicSelection';
 // stylelint-enable no-invalid-position-at-import-rule

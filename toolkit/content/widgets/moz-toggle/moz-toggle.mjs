@@ -22,18 +22,14 @@ import "chrome://global/content/elements/moz-label.mjs";
  *  Custom event indicating that the toggle's pressed state has changed.
  */
 export default class MozToggle extends MozLitElement {
-  static shadowRootOptions = {
-    ...MozLitElement.shadowRootOptions,
-    delegatesFocus: true,
-  };
-
   static properties = {
     pressed: { type: Boolean, reflect: true },
     disabled: { type: Boolean, reflect: true },
     label: { type: String },
     description: { type: String },
     ariaLabel: { type: String, attribute: "aria-label" },
-    accessKey: { type: String, attribute: "accesskey" },
+    accessKeyAttribute: { type: String, attribute: "accesskey", reflect: true },
+    accessKey: { type: String, state: true },
   };
 
   static get queries() {
@@ -63,6 +59,18 @@ export default class MozToggle extends MozLitElement {
   // Delegate clicks on the host to the input element
   click() {
     this.buttonEl.click();
+  }
+
+  // Delegate focus to the input element
+  focus() {
+    this.buttonEl.focus();
+  }
+
+  willUpdate(changes) {
+    if (changes.has("accessKeyAttribute")) {
+      this.accessKey = this.accessKeyAttribute;
+      this.accessKeyAttribute = null;
+    }
   }
 
   descriptionTemplate() {
@@ -98,6 +106,7 @@ export default class MozToggle extends MozLitElement {
         aria-describedby=${ifDefined(
           description ? "moz-toggle-description" : undefined
         )}
+        accesskey=${ifDefined(this.accessKey)}
         @click=${handleClick}
       ></button>
     `;
@@ -116,7 +125,7 @@ export default class MozToggle extends MozLitElement {
               id="moz-toggle-label"
               part="label"
               for="moz-toggle-button"
-              accesskey=${ifDefined(this.accessKey)}
+              shownaccesskey=${ifDefined(this.accessKey)}
             >
               <span>
                 ${this.label}

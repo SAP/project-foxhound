@@ -5,7 +5,6 @@
 
 #include "lib/jxl/render_pipeline/stage_upsampling.h"
 
-#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -13,6 +12,7 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
+#include "lib/jxl/sanitizers.h"
 #include "lib/jxl/simd_util-inl.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -110,7 +110,7 @@ class UpsamplingStage : public RenderPipelineStage {
                       ssize_t x0, ssize_t x1) const {
     static HWY_FULL(float) df;
     using V = hwy::HWY_NAMESPACE::Vec<HWY_FULL(float)>;
-    V ups0, ups1, ups2, ups3, ups4, ups5, ups6, ups7;  // NOLINT
+    V ups0, ups1, ups2, ups3, ups4, ups5, ups6, ups7;
     (void)ups2, (void)ups3, (void)ups4, (void)ups5, (void)ups6, (void)ups7;
     // Once we have C++17 available, change this back to `V* ups[N]` and
     // initialize using `if constexpr` below.

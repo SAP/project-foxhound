@@ -52,6 +52,7 @@ namespace wasm {
 
 using mozilla::Atomic;
 
+struct FuncDefInstanceData;
 class FuncImport;
 struct FuncImportInstanceData;
 struct MemoryDesc;
@@ -93,9 +94,9 @@ class alignas(16) Instance {
   // See "Linear memory addresses and bounds checking" in WasmMemory.cpp.
   uintptr_t memory0BoundsCheckLimit_;
 
-  // Null or a pointer to a per-process builtin thunk that will invoke the Debug
+  // Null or a pointer to a per-module builtin stub that will invoke the Debug
   // Trap Handler.
-  void* debugTrapHandler_;
+  void* debugStub_;
 
   // The containing JS::Realm.
   JS::Realm* realm_;
@@ -121,6 +122,10 @@ class alignas(16) Instance {
 
   // Set to 1 when wasm should call CheckForInterrupt.
   Atomic<uint32_t, mozilla::Relaxed> interrupt_;
+
+  // Boolean value set to true when instance code is executed on a suspendable
+  // stack. Aligned to int32_t to be used on JIT code.
+  int32_t onSuspendableStack_;
 
   // The address of the realm()->zone()->needsIncrementalBarrier(). This is
   // specific to this instance and not a process wide field, and so it cannot
@@ -204,12 +209,17 @@ class alignas(16) Instance {
   const void* addressOfGCZealModeBits_;
 #endif
 
+  // Pointer to a per-module builtin stub that will request tier-up for the
+  // wasm function that calls it.
+  void* requestTierUpStub_ = nullptr;
+
   // The data must be the last field.  Globals for the module start here
   // and are inline in this structure.  16-byte alignment is required for SIMD
   // data.
   MOZ_ALIGNED_DECL(16, char data_);
 
   // Internal helpers:
+  FuncDefInstanceData* funcDefInstanceData(uint32_t funcIndex) const;
   TypeDefInstanceData* typeDefInstanceData(uint32_t typeIndex) const;
   const void* addressOfGlobalCell(const GlobalDesc& globalDesc) const;
   FuncImportInstanceData& funcImportInstanceData(const FuncImport& fi);
@@ -277,8 +287,11 @@ class alignas(16) Instance {
   static constexpr size_t offsetOfMemory0BoundsCheckLimit() {
     return offsetof(Instance, memory0BoundsCheckLimit_);
   }
-  static constexpr size_t offsetOfDebugTrapHandler() {
-    return offsetof(Instance, debugTrapHandler_);
+  static constexpr size_t offsetOfDebugStub() {
+    return offsetof(Instance, debugStub_);
+  }
+  static constexpr size_t offsetOfRequestTierUpStub() {
+    return offsetof(Instance, requestTierUpStub_);
   }
 
   static constexpr size_t offsetOfRealm() { return offsetof(Instance, realm_); }
@@ -297,6 +310,9 @@ class alignas(16) Instance {
   }
   static constexpr size_t offsetOfInterrupt() {
     return offsetof(Instance, interrupt_);
+  }
+  static constexpr size_t offsetOfOnSuspendableStack() {
+    return offsetof(Instance, onSuspendableStack_);
   }
   static constexpr size_t offsetOfAddressOfNeedsIncrementalBarrier() {
     return offsetof(Instance, addressOfNeedsIncrementalBarrier_);
@@ -336,8 +352,9 @@ class alignas(16) Instance {
 #endif
 
   JSContext* cx() const { return cx_; }
-  void* debugTrapHandler() const { return debugTrapHandler_; }
-  void setDebugTrapHandler(void* newHandler) { debugTrapHandler_ = newHandler; }
+  void* debugStub() const { return debugStub_; }
+  void setDebugStub(void* newStub) { debugStub_ = newStub; }
+  void setRequestTierUpStub(void* newStub) { requestTierUpStub_ = newStub; }
   JS::Realm* realm() const { return realm_; }
   bool debugEnabled() const { return !!maybeDebug_; }
   DebugState& debug() { return *maybeDebug_; }
@@ -360,14 +377,14 @@ class alignas(16) Instance {
   void setTemporaryStackLimit(JS::NativeStackLimit limit);
   void resetTemporaryStackLimit(JSContext* cx);
 
+  void resetHotnessCounter(uint32_t funcIndex);
+
   bool debugFilter(uint32_t funcIndex) const;
   void setDebugFilter(uint32_t funcIndex, bool value);
 
   const Code& code() const { return *code_; }
-  inline const CodeTier& code(Tier t) const;
-  inline uint8_t* codeBase(Tier t) const;
-  inline const MetadataTier& metadata(Tier t) const;
-  inline const Metadata& metadata() const;
+  inline const CodeMetadata& codeMeta() const;
+  inline const CodeMetadataForAsmJS* codeMetaForAsmJS() const;
   inline bool isAsmJS() const;
 
   // This method returns a pointer to the GC object that owns this Instance.
@@ -455,7 +472,9 @@ class alignas(16) Instance {
 
   // about:memory reporting:
 
-  void addSizeOfMisc(MallocSizeOf mallocSizeOf, SeenSet<Metadata>* seenMetadata,
+  void addSizeOfMisc(MallocSizeOf mallocSizeOf,
+                     SeenSet<CodeMetadata>* seenCodeMeta,
+                     SeenSet<CodeMetadataForAsmJS>* seenCodeMetaForAsmJS,
                      SeenSet<Code>* seenCode, SeenSet<Table>* seenTables,
                      size_t* code, size_t* data) const;
 
@@ -592,8 +611,7 @@ class alignas(16) Instance {
   static int32_t stringTest(Instance* instance, void* stringArg);
   static void* stringCast(Instance* instance, void* stringArg);
   static void* stringFromCharCodeArray(Instance* instance, void* arrayArg,
-                                       uint32_t arrayStart,
-                                       uint32_t arrayCount);
+                                       uint32_t arrayStart, uint32_t arrayEnd);
   static int32_t stringIntoCharCodeArray(Instance* instance, void* stringArg,
                                          void* arrayArg, uint32_t arrayStart);
   static void* stringFromCharCode(Instance* instance, uint32_t charCode);

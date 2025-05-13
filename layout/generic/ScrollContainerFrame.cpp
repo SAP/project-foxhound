@@ -32,7 +32,6 @@
 #include "nsScrollbarFrame.h"
 #include "nsINode.h"
 #include "nsIScrollbarMediator.h"
-#include "nsITextControlFrame.h"
 #include "nsILayoutHistoryState.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
@@ -1275,27 +1274,19 @@ static bool IsMarqueeScrollbox(const nsIFrame& aScrollFrame) {
   return HTMLMarqueeElement::FromNodeOrNull(aScrollFrame.GetContent());
 }
 
-/* virtual */
-nscoord ScrollContainerFrame::GetMinISize(gfxContext* aRenderingContext) {
+nscoord ScrollContainerFrame::IntrinsicISize(gfxContext* aContext,
+                                             IntrinsicISizeType aType) {
   nscoord result = [&] {
     if (const Maybe<nscoord> containISize = ContainIntrinsicISize()) {
       return *containISize;
     }
-    if (MOZ_UNLIKELY(IsMarqueeScrollbox(*this))) {
+    if (aType == IntrinsicISizeType::MinISize &&
+        MOZ_UNLIKELY(IsMarqueeScrollbox(*this))) {
       return 0;
     }
-    return mScrolledFrame->GetMinISize(aRenderingContext);
+    return mScrolledFrame->IntrinsicISize(aContext, aType);
   }();
 
-  return result + IntrinsicScrollbarGutterSizeAtInlineEdges();
-}
-
-/* virtual */
-nscoord ScrollContainerFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  const Maybe<nscoord> containISize = ContainIntrinsicISize();
-  nscoord result = containISize
-                       ? *containISize
-                       : mScrolledFrame->GetPrefISize(aRenderingContext);
   return NSCoordSaturatingAdd(result,
                               IntrinsicScrollbarGutterSizeAtInlineEdges());
 }
@@ -3823,18 +3814,15 @@ void ScrollContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   const bool isRootContent =
       mIsRoot && PresContext()->IsRootContentDocumentCrossProcess();
 
-  nsRect effectiveScrollPort = mScrollPort;
-  if (isRootContent && PresContext()->HasDynamicToolbar()) {
-    // Expand the scroll port to the size including the area covered by dynamic
-    // toolbar in the case where the dynamic toolbar is being used since
-    // position:fixed elements attached to this root scroller might be taller
-    // than its scroll port (e.g 100vh). Even if the dynamic toolbar covers the
-    // taller area, it doesn't mean the area is clipped by the toolbar because
-    // the dynamic toolbar is laid out outside of our topmost window and it
-    // transitions without changing our topmost window size.
-    effectiveScrollPort.SizeTo(nsLayoutUtils::ExpandHeightForDynamicToolbar(
-        PresContext(), effectiveScrollPort.Size()));
-  }
+  // Expand the scroll port to the size including the area covered by dynamic
+  // toolbar in the case where the dynamic toolbar is being used since
+  // position:fixed elements attached to this root scroller might be taller
+  // than its scroll port (e.g 100vh). Even if the dynamic toolbar covers the
+  // taller area, it doesn't mean the area is clipped by the toolbar because
+  // the dynamic toolbar is laid out outside of our topmost window and it
+  // transitions without changing our topmost window size.
+  const nsRect effectiveScrollPort =
+      GetScrollPortRectAccountingForMaxDynamicToolbar();
 
   // It's safe to get this value before the DecideScrollableLayer call below
   // because that call cannot create a displayport for root scroll frames,
@@ -5135,8 +5123,7 @@ static nsSize GetScrollPortSizeExcludingHeadersAndFooters(
       StickyScrollContainer::GetStickyScrollContainerForScrollFrame(
           aScrollFrame);
   if (ssc) {
-    const nsTArray<nsIFrame*>& stickyFrames = ssc->GetFrames();
-    for (nsIFrame* f : stickyFrames) {
+    for (nsIFrame* f : ssc->GetFrames().IterFromShallowest()) {
       // If it's acting like fixed position.
       if (ssc->IsStuckInYDirection(f)) {
         AddToListIfHeaderFooter(f, aScrollFrame, aScrollPort, list);
@@ -7322,6 +7309,8 @@ static void AppendScrollPositionsForSnap(
                                  // what we need here is (0, 0), so we use an
                                  // empty size.
                                  nsSize());
+  logicalScrollRange = logicalScrollRange.ConvertTo(
+      writingMode, aWritingModeOnScroller, nsSize());
 
   Maybe<nscoord> blockDirectionPosition;
   const nsStyleDisplay* styleDisplay = aFrame->StyleDisplay();
@@ -7329,11 +7318,14 @@ static void AppendScrollPositionsForSnap(
   switch (styleDisplay->mScrollSnapAlign.block) {
     case StyleScrollSnapAlignKeyword::None:
       break;
-    case StyleScrollSnapAlignKeyword::Start:
-      blockDirectionPosition.emplace(
-          writingMode.IsVerticalRL() ? -logicalTargetRect.BStart(writingMode)
-                                     : logicalTargetRect.BStart(writingMode));
+    case StyleScrollSnapAlignKeyword::Start: {
+      nscoord candidate = std::clamp(logicalTargetRect.BStart(writingMode),
+                                     logicalScrollRange.BStart(writingMode),
+                                     logicalScrollRange.BEnd(writingMode));
+      blockDirectionPosition.emplace(writingMode.IsVerticalRL() ? -candidate
+                                                                : candidate);
       break;
+    }
     case StyleScrollSnapAlignKeyword::End: {
       nscoord candidate = std::clamp(
           // What we need here is the scroll position instead of the snap
@@ -7370,12 +7362,14 @@ static void AppendScrollPositionsForSnap(
   switch (styleDisplay->mScrollSnapAlign.inline_) {
     case StyleScrollSnapAlignKeyword::None:
       break;
-    case StyleScrollSnapAlignKeyword::Start:
+    case StyleScrollSnapAlignKeyword::Start: {
+      nscoord candidate = std::clamp(logicalTargetRect.IStart(writingMode),
+                                     logicalScrollRange.IStart(writingMode),
+                                     logicalScrollRange.IEnd(writingMode));
       inlineDirectionPosition.emplace(
-          writingMode.IsInlineReversed()
-              ? -logicalTargetRect.IStart(writingMode)
-              : logicalTargetRect.IStart(writingMode));
+          writingMode.IsInlineReversed() ? -candidate : candidate);
       break;
+    }
     case StyleScrollSnapAlignKeyword::End: {
       nscoord candidate = std::clamp(
           // Same as above BEnd case, we subtract containerISize.

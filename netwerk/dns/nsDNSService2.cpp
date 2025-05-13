@@ -28,6 +28,7 @@
 #include "prio.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsNetAddr.h"
+#include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 #include "nsQueryObject.h"
 #include "nsIObserverService.h"
@@ -60,6 +61,8 @@ static const char kPrefDnsLocalDomains[] = "network.dns.localDomains";
 static const char kPrefDnsForceResolve[] = "network.dns.forceResolve";
 static const char kPrefDnsOfflineLocalhost[] = "network.dns.offline-localhost";
 static const char kPrefDnsNotifyResolution[] = "network.dns.notifyResolution";
+static const char kPrefDnsMockHTTPSRRDomain[] =
+    "network.dns.mock_HTTPS_RR_domain";
 
 //-----------------------------------------------------------------------------
 
@@ -498,6 +501,11 @@ void nsDNSAsyncRequest::OnResolveHostComplete(nsHostResolver* resolver,
   if (NS_SUCCEEDED(status) ||
       mFlags & nsIDNSService::RESOLVE_WANT_RECORD_ON_ERROR) {
     MOZ_ASSERT(hostRecord, "no host record");
+    if (!hostRecord) {
+      mListener->OnLookupComplete(this, nullptr, NS_ERROR_UNKNOWN_HOST);
+      mListener = nullptr;
+      return;
+    }
     if (hostRecord->type != nsDNSService::RESOLVE_TYPE_DEFAULT) {
       rec = new nsDNSByTypeRecord(hostRecord);
     } else {
@@ -825,6 +833,17 @@ void nsDNSService::ReadPrefs(const char* name) {
     Preferences::GetCString(kPrefDnsForceResolve, mForceResolve);
     mForceResolveOn = !mForceResolve.IsEmpty();
   }
+  if (!name || !strcmp(name, kPrefDnsMockHTTPSRRDomain)) {
+    nsCString mockHTTPSRRDomain;
+    Preferences::GetCString(kPrefDnsMockHTTPSRRDomain, mockHTTPSRRDomain);
+    if (mockHTTPSRRDomain.IsEmpty()) {
+      mHasMockHTTPSRRDomainSet = false;
+    } else {
+      mHasMockHTTPSRRDomainSet = true;
+      MutexAutoLock lock(mLock);
+      mMockHTTPSRRDomain = mockHTTPSRRDomain;
+    }
+  }
 }
 
 NS_IMETHODIMP
@@ -863,6 +882,7 @@ nsDNSService::Init() {
     prefs->AddObserver(kPrefDnsOfflineLocalhost, this, false);
     prefs->AddObserver(kPrefBlockDotOnion, this, false);
     prefs->AddObserver(kPrefDnsNotifyResolution, this, false);
+    prefs->AddObserver(kPrefDnsMockHTTPSRRDomain, this, false);
     AddPrefObserver(prefs);
   }
 
@@ -877,9 +897,6 @@ nsDNSService::Init() {
   if (NS_FAILED(mTrrService->Init(mResolver->IsNativeHTTPSEnabled()))) {
     mTrrService = nullptr;
   }
-
-  nsCOMPtr<nsIIDNService> idn = do_GetService(NS_IDNSERVICE_CONTRACTID);
-  mIDN = idn;
 
   return NS_OK;
 }
@@ -939,7 +956,6 @@ already_AddRefed<nsHostResolver> nsDNSService::GetResolverLocked() {
 
 nsresult nsDNSService::PreprocessHostname(bool aLocalDomain,
                                           const nsACString& aInput,
-                                          nsIIDNService* aIDN,
                                           nsACString& aACE) {
   // Enforce RFC 7686
   if (mBlockDotOnion && StringEndsWith(aInput, ".onion"_ns)) {
@@ -964,12 +980,7 @@ nsresult nsDNSService::PreprocessHostname(bool aLocalDomain,
     }
   }
 
-  if (!aIDN || IsAscii(aInput)) {
-    aACE = aInput;
-    return NS_OK;
-  }
-
-  if (!(IsUtf8(aInput) && NS_SUCCEEDED(aIDN->ConvertUTF8toACE(aInput, aACE)))) {
+  if (!NS_SUCCEEDED(NS_DomainToASCIIAllowAnyGlyphfulASCII(aInput, aACE))) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
@@ -992,7 +1003,6 @@ nsresult nsDNSService::AsyncResolveInternal(
   // grab reference to global host resolver and IDN service.  beware
   // simultaneous shutdown!!
   RefPtr<nsHostResolver> res;
-  nsCOMPtr<nsIIDNService> idn;
   nsCOMPtr<nsIEventTarget> target = target_;
   nsCOMPtr<nsIDNSListener> listener = aListener;
   bool localDomain = false;
@@ -1004,7 +1014,6 @@ nsresult nsDNSService::AsyncResolveInternal(
     }
 
     res = mResolver;
-    idn = mIDN;
 
     localDomain = IsLocalDomain(aHostname);
   }
@@ -1030,7 +1039,7 @@ nsresult nsDNSService::AsyncResolveInternal(
   }
 
   nsCString hostname;
-  nsresult rv = PreprocessHostname(localDomain, aHostname, idn, hostname);
+  nsresult rv = PreprocessHostname(localDomain, aHostname, hostname);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1061,6 +1070,13 @@ nsresult nsDNSService::AsyncResolveInternal(
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
+  if (type == RESOLVE_TYPE_HTTPSSVC && mHasMockHTTPSRRDomainSet) {
+    MutexAutoLock lock(mLock);
+    if (req->mHost == mMockHTTPSRRDomain) {
+      flags |= nsIDNSService::RESOLVE_CREATE_MOCK_HTTPS_RR;
+    }
+  }
+
   rv = res->ResolveHost(req->mHost, DNSAdditionalInfo::URL(aInfo),
                         DNSAdditionalInfo::Port(aInfo), type,
                         req->mOriginAttributes, flags, af, req);
@@ -1075,7 +1091,6 @@ nsresult nsDNSService::CancelAsyncResolveInternal(
   // grab reference to global host resolver and IDN service.  beware
   // simultaneous shutdown!!
   RefPtr<nsHostResolver> res;
-  nsCOMPtr<nsIIDNService> idn;
   bool localDomain = false;
   {
     MutexAutoLock lock(mLock);
@@ -1085,7 +1100,6 @@ nsresult nsDNSService::CancelAsyncResolveInternal(
     }
 
     res = mResolver;
-    idn = mIDN;
     localDomain = IsLocalDomain(aHostname);
   }
   if (!res) {
@@ -1093,7 +1107,7 @@ nsresult nsDNSService::CancelAsyncResolveInternal(
   }
 
   nsCString hostname;
-  nsresult rv = PreprocessHostname(localDomain, aHostname, idn, hostname);
+  nsresult rv = PreprocessHostname(localDomain, aHostname, hostname);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1216,12 +1230,10 @@ nsresult nsDNSService::ResolveInternal(
   // grab reference to global host resolver and IDN service.  beware
   // simultaneous shutdown!!
   RefPtr<nsHostResolver> res;
-  nsCOMPtr<nsIIDNService> idn;
   bool localDomain = false;
   {
     MutexAutoLock lock(mLock);
     res = mResolver;
-    idn = mIDN;
     localDomain = IsLocalDomain(aHostname);
   }
 
@@ -1232,7 +1244,7 @@ nsresult nsDNSService::ResolveInternal(
   NS_ENSURE_TRUE(res, NS_ERROR_OFFLINE);
 
   nsCString hostname;
-  nsresult rv = PreprocessHostname(localDomain, aHostname, idn, hostname);
+  nsresult rv = PreprocessHostname(localDomain, aHostname, hostname);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1415,11 +1427,12 @@ nsDNSService::ClearCache(bool aTrrToo) {
   return NS_OK;
 }
 
+// For testing purposes only
 NS_IMETHODIMP
 nsDNSService::ReloadParentalControlEnabled() {
   if (mTrrService) {
     mTrrService->mParentalControlEnabled =
-        TRRService::GetParentalControlEnabledInternal();
+        TRRService::ReloadParentalControlsEnabled();
   }
   return NS_OK;
 }

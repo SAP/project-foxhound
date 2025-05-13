@@ -10,10 +10,16 @@ Services.scriptloader.loadSubScript(
 );
 
 const MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
-MockFilePicker.returnValue = MockFilePicker.returnOK;
 const file = new FileUtils.File(getTestFilePath("moz.png"));
-MockFilePicker.setFiles([file]);
+
+add_setup(async function () {
+  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.setFiles([file]);
+  MockFilePicker.returnValue = MockFilePicker.returnOK;
+  registerCleanupFunction(function () {
+    MockFilePicker.cleanup();
+  });
+});
 
 // Test telemetry.
 add_task(async function test() {
@@ -64,7 +70,7 @@ add_task(async function test() {
         "Should have no stamp"
       );
 
-      await enableEditor(browser, "Stamp");
+      await enableEditor(browser, "Stamp", 1);
       await clickOn(browser, `#editorStampAddImage`);
       await waitForSelector(browser, ".altText");
 
@@ -209,11 +215,8 @@ add_task(async function test() {
         "Should have 1 alt_text_keyboard"
       );
 
-      await SpecialPowers.spawn(browser, [], async function () {
-        const viewer = content.wrappedJSObject.PDFViewerApplication;
-        viewer.pdfDocument.annotationStorage.resetModified();
-        await viewer.close();
-      });
+      await waitForPdfJSClose(browser);
+      await SpecialPowers.popPrefEnv();
     }
   );
 });

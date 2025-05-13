@@ -262,8 +262,9 @@ class GetPermissionRunnable final : public WorkerMainThreadRunnable {
 
   bool MainThreadRun() override {
     ErrorResult result;
+    MOZ_ASSERT(mWorkerRef);
     mPermission = Notification::GetPermissionInternal(
-        mWorkerPrivate->GetPrincipal(), result);
+        mWorkerRef->Private()->GetPrincipal(), result);
     return true;
   }
 
@@ -490,10 +491,8 @@ NotificationPermissionRequest::Run() {
   bool blocked = false;
   if (isSystem) {
     mPermission = NotificationPermission::Granted;
-  } else if (
-      mPrincipal->GetPrivateBrowsingId() != 0 &&
-      !StaticPrefs::
-          dom_webnotifications_privateBrowsing_enableDespiteLimitations()) {
+  } else if (mPrincipal->GetIsInPrivateBrowsing() &&
+             !StaticPrefs::dom_webnotifications_privateBrowsing_enabled()) {
     mPermission = NotificationPermission::Denied;
     blocked = true;
   } else {
@@ -721,21 +720,14 @@ Notification::Notification(nsIGlobalObject* aGlobal, const nsAString& aID,
   }
 }
 
-nsresult Notification::MaybeObserveWindowFrozenOrDestroyed() {
+nsresult Notification::MaybeObserveWindowFrozen() {
   // NOTE: Non-persistent notifications can also be opened from workers, but we
   // don't care and nobody else cares. And it's not clear whether we even should
   // do this for window at all, see
   // https://github.com/whatwg/notifications/issues/204.
-  // TODO: Somehow extend GlobalTeardownObserver to deal with FROZEN_TOPIC?
+  // NOTE: Also GlobalFreezeObserver is only supported for window now.
   if (!mWorkerPrivate) {
-    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-    NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
-
-    nsresult rv = obs->AddObserver(this, DOM_WINDOW_DESTROYED_TOPIC, true);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = obs->AddObserver(this, DOM_WINDOW_FROZEN_TOPIC, true);
-    NS_ENSURE_SUCCESS(rv, rv);
+    GlobalFreezeObserver::BindToOwner(GetOwnerGlobal());
   }
 
   return NS_OK;
@@ -788,8 +780,7 @@ already_AddRefed<Notification> Notification::Constructor(
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
-  if (NS_WARN_IF(
-          NS_FAILED(notification->MaybeObserveWindowFrozenOrDestroyed()))) {
+  if (NS_WARN_IF(NS_FAILED(notification->MaybeObserveWindowFrozen()))) {
     return nullptr;
   }
 
@@ -882,6 +873,7 @@ void Notification::UnpersistNotification() {
   }
 }
 
+// https://notifications.spec.whatwg.org/#create-a-notification
 already_AddRefed<Notification> Notification::CreateInternal(
     nsIGlobalObject* aGlobal, const nsAString& aID, const nsAString& aTitle,
     const NotificationOptions& aOptions, ErrorResult& aRv) {
@@ -903,6 +895,7 @@ already_AddRefed<Notification> Notification::CreateInternal(
     id = convertedID;
   }
 
+  // Step 20: Set notification’s silent preference to options["silent"].
   bool silent = false;
   if (StaticPrefs::dom_webnotifications_silent_enabled()) {
     silent = aOptions.mSilent;
@@ -911,12 +904,16 @@ already_AddRefed<Notification> Notification::CreateInternal(
   nsTArray<uint32_t> vibrate;
   if (StaticPrefs::dom_webnotifications_vibrate_enabled() &&
       aOptions.mVibrate.WasPassed()) {
+    // Step 4: If options["silent"] is true and options["vibrate"] exists, then
+    // throw a TypeError.
     if (silent) {
       aRv.ThrowTypeError(
           "Silent notifications must not specify vibration patterns.");
       return nullptr;
     }
 
+    // Step 17: If options["vibrate"] exists, then validate and normalize it and
+    // set notification’s vibration pattern to the return value.
     const OwningUnsignedLongOrUnsignedLongSequence& value =
         aOptions.mVibrate.Value();
     if (value.IsUnsignedLong()) {
@@ -928,10 +925,17 @@ already_AddRefed<Notification> Notification::CreateInternal(
     }
   }
 
+  // Step 15: If options["icon"] exists, then parse it using baseURL, and if
+  // that does not return failure, set notification’s icon URL to the return
+  // value. (Otherwise icon URL is not set.)
+  nsString iconUrl = aOptions.mIcon;
+  NotificationBehavior behavior{aOptions.mMozbehavior};
+  ResolveIconAndSoundURL(aGlobal, iconUrl, behavior.mSoundFile);
+
   RefPtr<Notification> notification = new Notification(
       aGlobal, id, aTitle, aOptions.mBody, aOptions.mDir, aOptions.mLang,
-      aOptions.mTag, aOptions.mIcon, aOptions.mRequireInteraction, silent,
-      std::move(vibrate), aOptions.mMozbehavior);
+      aOptions.mTag, iconUrl, aOptions.mRequireInteraction, silent,
+      std::move(vibrate), behavior);
   return notification.forget();
 }
 
@@ -946,7 +950,6 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(Notification)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Notification,
                                                 DOMEventTargetHelper)
   tmp->mData.setUndefined();
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(Notification,
@@ -962,19 +965,16 @@ NS_IMPL_ADDREF_INHERITED(Notification, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(Notification, DOMEventTargetHelper)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Notification)
-  NS_INTERFACE_MAP_ENTRY(nsIObserver)
-  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 nsIPrincipal* Notification::GetPrincipal() {
   AssertIsOnMainThread();
   if (mWorkerPrivate) {
     return mWorkerPrivate->GetPrincipal();
-  } else {
-    nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(GetOwner());
-    NS_ENSURE_TRUE(sop, nullptr);
-    return sop->GetPrincipal();
   }
+  nsGlobalWindowInner* win = GetOwnerWindow();
+  NS_ENSURE_TRUE(win, nullptr);
+  return win->GetPrincipal();
 }
 
 class WorkerNotificationObserver final : public MainThreadNotificationObserver {
@@ -1149,7 +1149,7 @@ MainThreadNotificationObserver::Observe(nsISupports* aSubject,
   Notification* notification = mNotificationRef->GetNotification();
   MOZ_ASSERT(notification);
   if (!strcmp("alertclickcallback", aTopic)) {
-    nsCOMPtr<nsPIDOMWindowInner> window = notification->GetOwner();
+    nsCOMPtr<nsPIDOMWindowInner> window = notification->GetOwnerWindow();
     if (NS_WARN_IF(!window || !window->IsCurrentInnerWindow())) {
       // Window has been closed, this observer is not valid anymore
       return NS_ERROR_FAILURE;
@@ -1189,12 +1189,7 @@ WorkerNotificationObserver::Observe(nsISupports* aSubject, const char* aTopic,
   if (!strcmp("alertclickcallback", aTopic)) {
     nsPIDOMWindowInner* window = nullptr;
     if (!notification->mWorkerPrivate->IsServiceWorker()) {
-      WorkerPrivate* top = notification->mWorkerPrivate;
-      while (top->GetParent()) {
-        top = top->GetParent();
-      }
-
-      window = top->GetWindow();
+      window = notification->mWorkerPrivate->GetAncestorWindow();
       if (NS_WARN_IF(!window || !window->IsCurrentInnerWindow())) {
         // Window has been closed, this observer is not valid anymore
         return NS_ERROR_FAILURE;
@@ -1268,7 +1263,7 @@ ServiceWorkerNotificationObserver::Observe(nsISupports* aSubject,
 
     // Remove closed or dismissed persistent notifications.
     nsCOMPtr<nsINotificationStorage> notificationStorage =
-        GetNotificationStorage(mPrincipal->GetPrivateBrowsingId() != 0);
+        GetNotificationStorage(mPrincipal->GetIsInPrivateBrowsing());
     if (notificationStorage) {
       notificationStorage->Delete(origin, mID);
     }
@@ -1306,8 +1301,8 @@ bool Notification::IsInPrivateBrowsing() {
 
   if (mWorkerPrivate) {
     doc = mWorkerPrivate->GetDocument();
-  } else if (GetOwner()) {
-    doc = GetOwner()->GetExtantDoc();
+  } else if (nsGlobalWindowInner* win = GetOwnerWindow()) {
+    doc = win->GetExtantDoc();
   }
 
   if (doc) {
@@ -1360,7 +1355,7 @@ void Notification::ShowInternal() {
   if (mWorkerPrivate) {
     permission = GetPermissionInternal(mWorkerPrivate->GetPrincipal(), result);
   } else {
-    permission = GetPermissionInternal(GetOwner(), result);
+    permission = GetPermissionInternal(GetOwnerWindow(), result);
   }
   // We rely on GetPermissionInternal returning Denied on all failure codepaths.
   MOZ_ASSERT_IF(result.Failed(), permission == NotificationPermission::Denied);
@@ -1378,12 +1373,6 @@ void Notification::ShowInternal() {
     mIsClosed = true;
     return;
   }
-
-  // Preparing for Step 4.2 the fetch steps. The actual work happens in
-  // nsIAlertNotification::LoadImage
-  nsAutoString iconUrl;
-  nsAutoString soundUrl;
-  ResolveIconAndSoundURL(iconUrl, soundUrl);
 
   // Step 4.3 the show steps, which are almost all about processing `tag` and
   // then displaying the notification. Both are handled by
@@ -1423,7 +1412,7 @@ void Notification::ShowInternal() {
       behavior.Truncate();
     }
     observer = new ServiceWorkerNotificationObserver(
-        mScope, GetPrincipal(), mID, mTitle, mDir, mLang, mBody, mTag, iconUrl,
+        mScope, GetPrincipal(), mID, mTitle, mDir, mLang, mBody, mTag, mIconUrl,
         mDataAsBase64, behavior);
   }
   MOZ_ASSERT(observer);
@@ -1447,7 +1436,7 @@ void Notification::ShowInternal() {
       do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
   NS_ENSURE_TRUE_VOID(alert);
   nsIPrincipal* principal = GetPrincipal();
-  rv = alert->Init(alertName, iconUrl, mTitle, mBody, true, uniqueCookie,
+  rv = alert->Init(alertName, mIconUrl, mTitle, mBody, true, uniqueCookie,
                    NS_ConvertASCIItoUTF16(GetEnumString(mDir)), mLang,
                    mDataAsBase64, GetPrincipal(), inPrivateBrowsing,
                    requireInteraction, mSilent, mVibrate);
@@ -1543,7 +1532,7 @@ NotificationPermission Notification::GetPermission(nsIGlobalObject* aGlobal,
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(worker);
     RefPtr<GetPermissionRunnable> r = new GetPermissionRunnable(worker);
-    r->Dispatch(Canceling, aRv);
+    r->Dispatch(worker, Canceling, aRv);
     if (aRv.Failed()) {
       return NotificationPermission::Denied;
     }
@@ -1568,9 +1557,8 @@ NotificationPermission Notification::GetPermissionInternal(
     return NotificationPermission::Denied;
   }
 
-  if (principal->GetPrivateBrowsingId() != 0 &&
-      !StaticPrefs::
-          dom_webnotifications_privateBrowsing_enableDespiteLimitations()) {
+  if (principal->GetIsInPrivateBrowsing() &&
+      !StaticPrefs::dom_webnotifications_privateBrowsing_enabled()) {
     return NotificationPermission::Denied;
   }
   // Disallow showing notification if our origin is not the same origin as the
@@ -1599,15 +1587,6 @@ NotificationPermission Notification::GetPermissionInternal(
     // Allow files to show notifications by default.
     if (aPrincipal->SchemeIs("file")) {
       return NotificationPermission::Granted;
-    }
-  }
-
-  // We also allow notifications is they are pref'ed on.
-  if (Preferences::GetBool("notification.prompt.testing", false)) {
-    if (Preferences::GetBool("notification.prompt.testing.allow", true)) {
-      return NotificationPermission::Granted;
-    } else {
-      return NotificationPermission::Denied;
     }
   }
 
@@ -1640,12 +1619,12 @@ NotificationPermission Notification::TestPermission(nsIPrincipal* aPrincipal) {
   }
 }
 
-nsresult Notification::ResolveIconAndSoundURL(nsString& iconUrl,
+nsresult Notification::ResolveIconAndSoundURL(nsIGlobalObject* aGlobal,
+                                              nsString& iconUrl,
                                               nsString& soundUrl) {
-  AssertIsOnMainThread();
   nsresult rv = NS_OK;
 
-  nsIURI* baseUri = nullptr;
+  nsCOMPtr<nsIURI> baseUri = nullptr;
 
   // XXXnsm If I understand correctly, the character encoding for resolving
   // URIs in new specs is dictated by the URL spec, which states that unless
@@ -1657,33 +1636,31 @@ nsresult Notification::ResolveIconAndSoundURL(nsString& iconUrl,
   // thread.
   auto encoding = UTF_8_ENCODING;
 
-  if (mWorkerPrivate) {
-    baseUri = mWorkerPrivate->GetBaseURI();
-  } else {
-    Document* doc = GetOwner() ? GetOwner()->GetExtantDoc() : nullptr;
-    if (doc) {
+  if (nsCOMPtr<nsPIDOMWindowInner> window = aGlobal->GetAsInnerWindow()) {
+    if (RefPtr<Document> doc = window->GetExtantDoc()) {
       baseUri = doc->GetBaseURI();
       encoding = doc->GetDocumentCharacterSet();
     } else {
       NS_WARNING("No document found for main thread notification!");
       return NS_ERROR_FAILURE;
     }
+  } else if (WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate()) {
+    baseUri = workerPrivate->GetBaseURI();
   }
 
   if (baseUri) {
-    if (mIconUrl.Length() > 0) {
+    if (iconUrl.Length() > 0) {
       nsCOMPtr<nsIURI> srcUri;
-      rv = NS_NewURI(getter_AddRefs(srcUri), mIconUrl, encoding, baseUri);
+      rv = NS_NewURI(getter_AddRefs(srcUri), iconUrl, encoding, baseUri);
       if (NS_SUCCEEDED(rv)) {
         nsAutoCString src;
         srcUri->GetSpec(src);
         CopyUTF8toUTF16(src, iconUrl);
       }
     }
-    if (mBehavior.mSoundFile.Length() > 0) {
+    if (soundUrl.Length() > 0) {
       nsCOMPtr<nsIURI> srcUri;
-      rv = NS_NewURI(getter_AddRefs(srcUri), mBehavior.mSoundFile, encoding,
-                     baseUri);
+      rv = NS_NewURI(getter_AddRefs(srcUri), soundUrl, encoding, baseUri);
       if (NS_SUCCEEDED(rv)) {
         nsAutoCString src;
         srcUri->GetSpec(src);
@@ -1833,7 +1810,7 @@ class WorkerGetRunnable final : public Runnable {
     }
 
     auto* principal = mPromiseProxy->GetWorkerPrivate()->GetPrincipal();
-    auto isPrivate = principal->GetPrivateBrowsingId() != 0;
+    auto isPrivate = principal->GetIsInPrivateBrowsing();
 
     nsCOMPtr<nsINotificationStorageCallback> callback =
         new WorkerGetCallback(mPromiseProxy, mScope);
@@ -2104,7 +2081,7 @@ bool Notification::CreateWorkerRef() {
         RefPtr<CloseNotificationRunnable> r =
             new CloseNotificationRunnable(self);
         ErrorResult rv;
-        r->Dispatch(Killing, rv);
+        r->Dispatch(self->mWorkerPrivate, Killing, rv);
         // XXXbz I'm told throwing and returning false from here is pointless
         // (and also that doing sync stuff from here is really weird), so I
         // guess we just suppress the exception on rv, if any.
@@ -2151,8 +2128,9 @@ class CheckLoadRunnable final : public WorkerMainThreadRunnable {
         mDescriptor(aDescriptor) {}
 
   bool MainThreadRun() override {
-    nsIPrincipal* principal = mWorkerPrivate->GetPrincipal();
-    mRv = CheckScope(principal, mScope, mWorkerPrivate->WindowID());
+    MOZ_ASSERT(mWorkerRef);
+    nsIPrincipal* principal = mWorkerRef->Private()->GetPrincipal();
+    mRv = CheckScope(principal, mScope, mWorkerRef->Private()->WindowID());
 
     if (NS_FAILED(mRv)) {
       return true;
@@ -2161,7 +2139,7 @@ class CheckLoadRunnable final : public WorkerMainThreadRunnable {
     auto activeWorker = mDescriptor.GetActive();
 
     if (!activeWorker ||
-        activeWorker.ref().Id() != mWorkerPrivate->ServiceWorkerID()) {
+        activeWorker.ref().Id() != mWorkerRef->Private()->ServiceWorkerID()) {
       mRv = NS_ERROR_NOT_AVAILABLE;
     }
 
@@ -2217,7 +2195,7 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
 
     RefPtr<CheckLoadRunnable> loadChecker = new CheckLoadRunnable(
         worker, NS_ConvertUTF16toUTF8(aScope), aDescriptor);
-    loadChecker->Dispatch(Canceling, aRv);
+    loadChecker->Dispatch(worker, Canceling, aRv);
     if (aRv.Failed()) {
       return nullptr;
     }
@@ -2339,27 +2317,19 @@ nsresult Notification::OpenSettings(nsIPrincipal* aPrincipal) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-Notification::Observe(nsISupports* aSubject, const char* aTopic,
-                      const char16_t* aData) {
-  AssertIsOnMainThread();
-
-  if (!strcmp(aTopic, DOM_WINDOW_DESTROYED_TOPIC) ||
-      !strcmp(aTopic, DOM_WINDOW_FROZEN_TOPIC)) {
-    nsCOMPtr<nsPIDOMWindowInner> window = GetOwner();
-    if (SameCOMIdentity(aSubject, window)) {
-      nsCOMPtr<nsIObserverService> obs =
-          mozilla::services::GetObserverService();
-      if (obs) {
-        obs->RemoveObserver(this, DOM_WINDOW_DESTROYED_TOPIC);
-        obs->RemoveObserver(this, DOM_WINDOW_FROZEN_TOPIC);
-      }
-
-      CloseInternal(true);
-    }
+void Notification::DisconnectFromOwner() {
+  // Unregister the backend handler if it's non-persistent.
+  // XXX(krosylight): CloseInternal currently assumes main thread, will be
+  // fixed by IPC migration (bug 1891807)
+  if (NS_IsMainThread() && mScope.IsEmpty()) {
+    CloseInternal(true);
   }
+  DOMEventTargetHelper::DisconnectFromOwner();
+}
 
-  return NS_OK;
+void Notification::FrozenCallback(nsIGlobalObject* aOwner) {
+  CloseInternal(true);
+  DisconnectFreezeObserver();
 }
 
 nsresult Notification::DispatchToMainThread(

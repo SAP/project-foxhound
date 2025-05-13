@@ -5,30 +5,51 @@
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/backup/password-validation-inputs.mjs";
+
 /**
  * The widget for showing available options when users want to turn on
  * scheduled backups.
  */
 export default class TurnOnScheduledBackups extends MozLitElement {
+  #placeholderIconURL = "chrome://global/skin/icons/page-portrait.svg";
+
   static properties = {
-    backupFilePath: { type: String },
-    showPasswordOptions: { type: Boolean, reflect: true },
+    defaultIconURL: { type: String, reflect: true },
+    defaultLabel: { type: String, reflect: true },
+    defaultPath: { type: String, reflect: true },
+    _newIconURL: { type: String },
+    _newLabel: { type: String },
+    _newPath: { type: String },
+    _showPasswordOptions: { type: Boolean, reflect: true, state: true },
+    _passwordsMatch: { type: Boolean, state: true },
+    _inputPassValue: { type: String, state: true },
+    supportBaseLink: { type: String },
   };
 
   static get queries() {
     return {
       cancelButtonEl: "#backup-turn-on-scheduled-cancel-button",
       confirmButtonEl: "#backup-turn-on-scheduled-confirm-button",
+      filePathButtonEl: "#backup-location-filepicker-button",
+      filePathInputCustomEl: "#backup-location-filepicker-input-custom",
+      filePathInputDefaultEl: "#backup-location-filepicker-input-default",
       passwordOptionsCheckboxEl: "#sensitive-data-checkbox-input",
       passwordOptionsExpandedEl: "#passwords",
-      recommendedFolderInputEl: "#backup-location-filepicker-input",
     };
   }
 
   constructor() {
     super();
-    this.backupFilePath = null;
-    this.showPasswordOptions = false;
+    this.defaultIconURL = "";
+    this.defaultLabel = "";
+    this.defaultPath = "";
+    this._newIconURL = "";
+    this._newLabel = "";
+    this._newPath = "";
+    this._showPasswordOptions = false;
+    this._passwordsMatch = false;
   }
 
   /**
@@ -40,65 +61,138 @@ export default class TurnOnScheduledBackups extends MozLitElement {
     this.dispatchEvent(
       new CustomEvent("BackupUI:InitWidget", { bubbles: true })
     );
+
+    this.addEventListener("BackupUI:SelectNewFilepickerPath", this);
+    this.addEventListener("ValidPasswordsDetected", this);
+    this.addEventListener("InvalidPasswordsDetected", this);
   }
 
-  handleChooseLocation() {
-    // TODO: show file picker (bug 1895943)
+  handleEvent(event) {
+    if (event.type == "BackupUI:SelectNewFilepickerPath") {
+      let { path, filename, iconURL } = event.detail;
+      this._newPath = path;
+      this._newLabel = filename;
+      this._newIconURL = iconURL;
+    } else if (event.type == "ValidPasswordsDetected") {
+      let { password } = event.detail;
+      this._passwordsMatch = true;
+      this._inputPassValue = password;
+    } else if (event.type == "InvalidPasswordsDetected") {
+      this._passwordsMatch = false;
+      this._inputPassValue = "";
+    }
+  }
+
+  async handleChooseLocation() {
+    this.dispatchEvent(
+      new CustomEvent("BackupUI:ShowFilepicker", {
+        bubbles: true,
+        detail: {
+          win: window.browsingContext,
+        },
+      })
+    );
   }
 
   handleCancel() {
     this.dispatchEvent(
-      new CustomEvent("scheduledBackupsCancel", {
+      new CustomEvent("dialogCancel", {
         bubbles: true,
         composed: true,
       })
     );
-    this.showPasswordOptions = false;
-    this.passwordOptionsCheckboxEl.checked = false;
+    this.resetChanges();
   }
 
   handleConfirm() {
-    /**
-     * TODO:
-     * We should pass save location to BackupUIParent here (bug 1895943).
-     * If encryption is enabled via this dialog, ensure a password is set and pass it to BackupUIParent (bug 1895981).
-     * Before confirmation, verify passwords match and FxA format rules (bug 1896772).
-     */
+    let detail = {
+      parentDirPath: this._newPath || this.defaultPath,
+    };
+
+    if (this._showPasswordOptions && this._passwordsMatch) {
+      detail.password = this._inputPassValue;
+    }
+
     this.dispatchEvent(
-      new CustomEvent("scheduledBackupsConfirm", {
+      new CustomEvent("turnOnScheduledBackups", {
         bubbles: true,
         composed: true,
+        detail,
       })
     );
-    this.showPasswordOptions = false;
-    this.passwordOptionsCheckboxEl.checked = false;
+    this.resetChanges();
   }
 
   handleTogglePasswordOptions() {
-    this.showPasswordOptions = this.passwordOptionsCheckboxEl?.checked;
+    this._showPasswordOptions = this.passwordOptionsCheckboxEl?.checked;
+    this._passwordsMatch = false;
+  }
+
+  resetChanges() {
+    this._newPath = "";
+    this._newIconURL = "";
+    this._newLabel = "";
+    this._showPasswordOptions = false;
+    this.passwordOptionsCheckboxEl.checked = false;
+    this._passwordsMatch = false;
+    this._inputPassValue = "";
+
+    if (this.passwordOptionsExpandedEl) {
+      this.passwordOptionsExpandedEl.dispatchEvent(
+        new CustomEvent("resetInputs", { bubbles: true, composed: true })
+      );
+    }
+  }
+
+  defaultFilePathInputTemplate() {
+    let filename = this.defaultLabel;
+    let iconURL = this.defaultIconURL || this.#placeholderIconURL;
+
+    return html`
+      <input
+        id="backup-location-filepicker-input-default"
+        class="backup-location-filepicker-input"
+        type="text"
+        readonly
+        data-l10n-id="turn-on-scheduled-backups-location-default-folder"
+        data-l10n-args=${JSON.stringify({
+          recommendedFolder: filename,
+        })}
+        data-l10n-attrs="value"
+        style=${`background-image: url(${iconURL})`}
+      />
+    `;
+  }
+
+  customFilePathInputTemplate() {
+    let filename = this._newLabel;
+    let iconURL = this._newIconURL || this.#placeholderIconURL;
+
+    return html`
+      <input
+        id="backup-location-filepicker-input-custom"
+        class="backup-location-filepicker-input"
+        type="text"
+        readonly
+        value=${filename}
+        style=${`background-image: url(${iconURL})`}
+      />
+    `;
   }
 
   allOptionsTemplate() {
     return html`
       <fieldset id="all-controls">
-        <fieldset id="backup-location-controls">
+        <div id="backup-location-controls">
           <label
             id="backup-location-label"
             for="backup-location-filepicker-input"
             data-l10n-id="turn-on-scheduled-backups-location-label"
           ></label>
-          <!-- TODO: show folder icon (bug 1895943) -->
           <div id="backup-location-filepicker">
-            <input
-              id="backup-location-filepicker-input"
-              type="text"
-              readonly
-              data-l10n-id="turn-on-scheduled-backups-location-default-folder"
-              data-l10n-args=${JSON.stringify({
-                recommendedFolder: this.backupFilePath,
-              })}
-              data-l10n-attrs="value"
-            />
+            ${!this._newPath
+              ? this.defaultFilePathInputTemplate()
+              : this.customFilePathInputTemplate()}
             <moz-button
               id="backup-location-filepicker-button"
               @click=${this.handleChooseLocation}
@@ -106,7 +200,7 @@ export default class TurnOnScheduledBackups extends MozLitElement {
               aria-controls="backup-location-filepicker-input"
             ></moz-button>
           </div>
-        </fieldset>
+        </div>
 
         <fieldset id="sensitive-data-controls">
           <div id="sensitive-data-checkbox">
@@ -114,11 +208,11 @@ export default class TurnOnScheduledBackups extends MozLitElement {
               id="sensitive-data-checkbox-label"
               for="sensitive-data-checkbox-input"
               aria-controls="passwords"
-              aria-expanded=${this.showPasswordOptions}
+              aria-expanded=${this._showPasswordOptions}
             >
               <input
                 id="sensitive-data-checkbox-input"
-                value=${this.showPasswordOptions}
+                value=${this._showPasswordOptions}
                 @click=${this.handleTogglePasswordOptions}
                 type="checkbox"
               />
@@ -133,36 +227,31 @@ export default class TurnOnScheduledBackups extends MozLitElement {
             ></span>
           </div>
 
-          ${this.showPasswordOptions ? this.passwordOptionsTemplate() : null}
+          ${this._showPasswordOptions ? this.passwordsTemplate() : null}
         </fieldset>
       </fieldset>
     `;
   }
 
-  passwordOptionsTemplate() {
+  passwordsTemplate() {
     return html`
-    <fieldset id="passwords">
-      <label id="new-password-label" for="new-password-input">
-        <span id="new-password-span" data-l10n-id="turn-on-scheduled-backups-encryption-create-password-label"></span>
-        <input type="password" id="new-password-input"/>
-    </label>
-      <label id="repeat-password-label" for="repeat-password-input">
-        <span id="repeat-password-span" data-l10n-id="turn-on-scheduled-backups-encryption-repeat-password-label"></span>
-        <input type="password" id="repeat-password-input"/>
-      </label>
-    </fieldset>
-  </fieldset>`;
+      <password-validation-inputs
+        id="passwords"
+        .supportBaseLink=${this.supportBaseLink}
+      ></password-validation-inputs>
+    `;
   }
 
   contentTemplate() {
     return html`
-      <div
+      <form
         id="backup-turn-on-scheduled-wrapper"
         aria-labelledby="backup-turn-on-scheduled-header"
         aria-describedby="backup-turn-on-scheduled-description"
       >
         <h1
           id="backup-turn-on-scheduled-header"
+          class="heading-medium"
           data-l10n-id="turn-on-scheduled-backups-header"
         ></h1>
         <main id="backup-turn-on-scheduled-content">
@@ -171,6 +260,7 @@ export default class TurnOnScheduledBackups extends MozLitElement {
               id="backup-turn-on-scheduled-description-span"
               data-l10n-id="turn-on-scheduled-backups-description"
             ></span>
+            <!--TODO: finalize support page links (bug 1900467)-->
             <a
               id="backup-turn-on-scheduled-learn-more-link"
               is="moz-support-link"
@@ -189,12 +279,14 @@ export default class TurnOnScheduledBackups extends MozLitElement {
           ></moz-button>
           <moz-button
             id="backup-turn-on-scheduled-confirm-button"
+            form="backup-turn-on-scheduled-wrapper"
             @click=${this.handleConfirm}
             type="primary"
             data-l10n-id="turn-on-scheduled-backups-confirm-button"
+            ?disabled=${this._showPasswordOptions && !this._passwordsMatch}
           ></moz-button>
         </moz-button-group>
-      </div>
+      </form>
     `;
   }
 

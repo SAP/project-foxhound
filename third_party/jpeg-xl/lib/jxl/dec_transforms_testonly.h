@@ -8,7 +8,8 @@
 
 // Facade for (non-inlined) inverse integral transforms.
 
-#include <cstddef>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"

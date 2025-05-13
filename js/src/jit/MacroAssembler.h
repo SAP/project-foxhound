@@ -49,8 +49,6 @@
 #include "vm/FunctionFlags.h"
 #include "vm/Opcodes.h"
 #include "vm/RealmFuses.h"
-#include "wasm/WasmCodegenTypes.h"
-#include "wasm/WasmFrame.h"
 
 // [SMDOC] MacroAssembler multi-platform overview
 //
@@ -242,8 +240,6 @@ class CalleeDesc;
 class CallSiteDesc;
 class BytecodeOffset;
 class MemoryAccessDesc;
-
-struct ModuleEnvironment;
 
 enum class FailureMode : uint8_t;
 enum class SimdOp;
@@ -668,6 +664,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // simple CodeOffset instead of a CodeOffsetJump).
   CodeOffset farJumpWithPatch() PER_SHARED_ARCH;
   void patchFarJump(CodeOffset farJump, uint32_t targetOffset) PER_SHARED_ARCH;
+  static void patchFarJump(uint8_t* farJump, uint8_t* target)
+      DEFINED_ON(arm, arm64, x86_shared, loong64, mips_shared);
 
   // Emit a nop that can be patched to and from a nop and a call with int32
   // relative displacement.
@@ -982,6 +980,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   inline void move64(Imm64 imm, Register64 dest) PER_ARCH;
   inline void move64(Register64 src, Register64 dest) PER_ARCH;
+
+  inline void moveFloat16ToGPR(FloatRegister src,
+                               Register dest) PER_SHARED_ARCH;
+  // Clears the high words of `src`.
+  inline void moveGPRToFloat16(Register src,
+                               FloatRegister dest) PER_SHARED_ARCH;
 
   inline void moveFloat32ToGPR(FloatRegister src,
                                Register dest) PER_SHARED_ARCH;
@@ -2259,6 +2263,15 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   template <class T>
   inline FaultingCodeOffset storeFloat32(FloatRegister src, const T& dest);
+
+  inline FaultingCodeOffset storeUncanonicalizedFloat16(FloatRegister src,
+                                                        const Address& dest,
+                                                        Register scratch)
+      DEFINED_ON(x86_shared, arm, arm64, mips_shared, loong64, riscv64, wasm32);
+  inline FaultingCodeOffset storeUncanonicalizedFloat16(FloatRegister src,
+                                                        const BaseIndex& dest,
+                                                        Register scratch)
+      DEFINED_ON(x86_shared, arm, arm64, mips_shared, loong64, riscv64, wasm32);
 
   template <typename T>
   void storeUnboxedValue(const ConstantOrRegister& value, MIRType valueType,
@@ -3904,6 +3917,10 @@ class MacroAssembler : public MacroAssemblerSpecific {
       DEFINED_ON(x86, x64, arm, arm64, loong64, mips64, riscv64);
 #endif
 
+#ifdef ENABLE_WASM_MEMORY64
+  void wasmClampTable64Index(Register64 index, Register out);
+#endif
+
   // WasmTableCallIndexReg must contain the index of the indirect call.  This is
   // for wasm calls only.
   //
@@ -5122,8 +5139,14 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void storeCallInt32Result(Register reg);
 
   void storeCallFloatResult(FloatRegister reg) {
-    if (reg != ReturnDoubleReg) {
-      moveDouble(ReturnDoubleReg, reg);
+    if (reg.isSingle()) {
+      if (reg != ReturnFloat32Reg) {
+        moveFloat32(ReturnFloat32Reg, reg);
+      }
+    } else {
+      if (reg != ReturnDoubleReg) {
+        moveDouble(ReturnDoubleReg, reg);
+      }
     }
   }
 
@@ -5211,14 +5234,24 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void boxUint32(Register source, ValueOperand dest, Uint32Mode uint32Mode,
                  Label* fail);
 
+  static bool LoadRequiresCall(Scalar::Type type) {
+    return type == Scalar::Float16 && !MacroAssembler::SupportsFloat32To16();
+  }
+
+  static bool StoreRequiresCall(Scalar::Type type) {
+    return type == Scalar::Float16 && !MacroAssembler::SupportsFloat32To16();
+  }
+
   template <typename T>
   void loadFromTypedArray(Scalar::Type arrayType, const T& src,
-                          AnyRegister dest, Register temp, Label* fail);
+                          AnyRegister dest, Register temp1, Register temp2,
+                          Label* fail, LiveRegisterSet volatileLiveReg);
 
   template <typename T>
   void loadFromTypedArray(Scalar::Type arrayType, const T& src,
                           const ValueOperand& dest, Uint32Mode uint32Mode,
-                          Register temp, Label* fail);
+                          Register temp, Label* fail,
+                          LiveRegisterSet volatileLiveReg);
 
   template <typename T>
   void loadFromTypedBigIntArray(Scalar::Type arrayType, const T& src,
@@ -5247,9 +5280,11 @@ class MacroAssembler : public MacroAssemblerSpecific {
   }
 
   void storeToTypedFloatArray(Scalar::Type arrayType, FloatRegister value,
-                              const BaseIndex& dest);
+                              const BaseIndex& dest, Register temp,
+                              LiveRegisterSet volatileLiveRegs);
   void storeToTypedFloatArray(Scalar::Type arrayType, FloatRegister value,
-                              const Address& dest);
+                              const Address& dest, Register temp,
+                              LiveRegisterSet volatileLiveRegs);
 
   void storeToTypedBigIntArray(Scalar::Type arrayType, Register64 value,
                                const BaseIndex& dest);
@@ -5258,6 +5293,34 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   void memoryBarrierBefore(Synchronization sync);
   void memoryBarrierAfter(Synchronization sync);
+
+  using MacroAssemblerSpecific::convertDoubleToFloat16;
+  using MacroAssemblerSpecific::convertFloat32ToFloat16;
+  using MacroAssemblerSpecific::convertInt32ToFloat16;
+  using MacroAssemblerSpecific::loadFloat16;
+
+  void convertDoubleToFloat16(FloatRegister src, FloatRegister dest,
+                              Register temp, LiveRegisterSet volatileLiveRegs);
+
+  void convertFloat32ToFloat16(FloatRegister src, FloatRegister dest,
+                               Register temp, LiveRegisterSet volatileLiveRegs);
+
+  void convertInt32ToFloat16(Register src, FloatRegister dest, Register temp,
+                             LiveRegisterSet volatileLiveRegs);
+
+  template <typename T>
+  void loadFloat16(const T& src, FloatRegister dest, Register temp1,
+                   Register temp2, LiveRegisterSet volatileLiveRegs);
+
+  template <typename T>
+  void storeFloat16(FloatRegister src, const T& dest, Register temp,
+                    LiveRegisterSet volatileLiveRegs);
+
+  void moveFloat16ToGPR(FloatRegister src, Register dest,
+                        LiveRegisterSet volatileLiveRegs);
+
+  void moveGPRToFloat16(Register src, FloatRegister dest, Register temp,
+                        LiveRegisterSet volatileLiveRegs);
 
   void debugAssertIsObject(const ValueOperand& val);
   void debugAssertObjHasFixedSlots(Register obj, Register scratch);
@@ -5460,11 +5523,15 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void loadSetObjectSize(Register setObj, Register result);
   void loadMapObjectSize(Register mapObj, Register result);
 
-  // Inline version of js_TypedArray_uint8_clamp_double.
+  // Inline version of js::ClampDoubleToUint8.
   // This function clobbers the input register.
   void clampDoubleToUint8(FloatRegister input, Register output) PER_ARCH;
 
-  using MacroAssemblerSpecific::ensureDouble;
+  // If source is a double, load into dest.
+  // If source is int32, convert to double and store in dest.
+  // Else, branch to failure.
+  inline void ensureDouble(const ValueOperand& source, FloatRegister dest,
+                           Label* failure);
 
   template <typename S>
   void ensureDouble(const S& source, FloatRegister dest, Label* failure) {
@@ -5838,49 +5905,38 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void printf(const char* output);
   void printf(const char* output, Register value);
 
-#define DISPATCH_FLOATING_POINT_OP(method, type, arg1d, arg1f, arg2) \
-  MOZ_ASSERT(IsFloatingPointType(type));                             \
-  if (type == MIRType::Double)                                       \
-    method##Double(arg1d, arg2);                                     \
-  else                                                               \
-    method##Float32(arg1f, arg2);
-
-  void loadConstantFloatingPoint(double d, float f, FloatRegister dest,
-                                 MIRType destType) {
-    DISPATCH_FLOATING_POINT_OP(loadConstant, destType, d, f, dest);
-  }
-  void boolValueToFloatingPoint(ValueOperand value, FloatRegister dest,
-                                MIRType destType) {
-    DISPATCH_FLOATING_POINT_OP(boolValueTo, destType, value, value, dest);
-  }
-  void int32ValueToFloatingPoint(ValueOperand value, FloatRegister dest,
-                                 MIRType destType) {
-    DISPATCH_FLOATING_POINT_OP(int32ValueTo, destType, value, value, dest);
-  }
-  void convertInt32ToFloatingPoint(Register src, FloatRegister dest,
-                                   MIRType destType) {
-    DISPATCH_FLOATING_POINT_OP(convertInt32To, destType, src, src, dest);
-  }
-
-#undef DISPATCH_FLOATING_POINT_OP
-
-  void convertValueToFloatingPoint(ValueOperand value, FloatRegister output,
-                                   Label* fail, MIRType outputType);
-
   void outOfLineTruncateSlow(FloatRegister src, Register dest,
                              bool widenFloatToDouble, bool compilingWasm,
                              wasm::BytecodeOffset callOffset);
 
   void convertInt32ValueToDouble(ValueOperand val);
 
+ private:
+  enum class FloatingPointType { Double, Float32, Float16 };
+
+  void convertValueToFloatingPoint(ValueOperand value, FloatRegister output,
+                                   Register maybeTemp,
+                                   LiveRegisterSet volatileLiveRegs,
+                                   Label* fail, FloatingPointType outputType);
+
+ public:
   void convertValueToDouble(ValueOperand value, FloatRegister output,
                             Label* fail) {
-    convertValueToFloatingPoint(value, output, fail, MIRType::Double);
+    convertValueToFloatingPoint(value, output, InvalidReg, LiveRegisterSet{},
+                                fail, FloatingPointType::Double);
   }
 
-  void convertValueToFloat(ValueOperand value, FloatRegister output,
-                           Label* fail) {
-    convertValueToFloatingPoint(value, output, fail, MIRType::Float32);
+  void convertValueToFloat32(ValueOperand value, FloatRegister output,
+                             Label* fail) {
+    convertValueToFloatingPoint(value, output, InvalidReg, LiveRegisterSet{},
+                                fail, FloatingPointType::Float32);
+  }
+
+  void convertValueToFloat16(ValueOperand value, FloatRegister output,
+                             Register maybeTemp,
+                             LiveRegisterSet volatileLiveRegs, Label* fail) {
+    convertValueToFloatingPoint(value, output, maybeTemp, volatileLiveRegs,
+                                fail, FloatingPointType::Float16);
   }
 
   //
@@ -5959,6 +6015,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // the value in the low bits.
   void debugAssertCanonicalInt32(Register r);
 #endif
+
+#ifdef FUZZING_JS_FUZZILLI
+  void fuzzilliHashDouble(FloatRegister src, Register result, Register temp);
+
+  void fuzzilliStoreHash(Register value, Register temp1, Register temp2);
+#endif
 };
 
 // StackMacroAssembler checks no GC will happen while it's on the stack.
@@ -5974,9 +6036,6 @@ class MOZ_RAII StackMacroAssembler : public MacroAssembler {
 class MOZ_RAII WasmMacroAssembler : public MacroAssembler {
  public:
   explicit WasmMacroAssembler(TempAllocator& alloc, bool limitedSize = true);
-  explicit WasmMacroAssembler(TempAllocator& alloc,
-                              const wasm::ModuleEnvironment& env,
-                              bool limitedSize = true);
   ~WasmMacroAssembler() { assertNoGCThings(); }
 };
 

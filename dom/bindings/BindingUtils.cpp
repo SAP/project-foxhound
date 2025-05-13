@@ -3668,8 +3668,8 @@ bool GetDesiredProto(JSContext* aCx, const JS::CallArgs& aCallArgs,
     // JS::GetRealmGlobalOrNull should not be returning null here, because we
     // have live objects in the Realm.
     JSAutoRealm ar(aCx, JS::GetRealmGlobalOrNull(realm));
-    aDesiredProto.set(
-        GetPerInterfaceObjectHandle(aCx, aProtoId, aCreator, true));
+    aDesiredProto.set(GetPerInterfaceObjectHandle(
+        aCx, aProtoId, aCreator, DefineInterfaceProperty::CheckExposure));
     if (!aDesiredProto) {
       return false;
     }
@@ -3800,8 +3800,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   // makes sense to start with: https://github.com/whatwg/html/issues/3575
   {
     JSAutoRealm ar(aCx, newTarget);
-    JS::Handle<JSObject*> constructor =
-        GetPerInterfaceObjectHandle(aCx, aConstructorId, aCreator, true);
+    JS::Handle<JSObject*> constructor = GetPerInterfaceObjectHandle(
+        aCx, aConstructorId, aCreator, DefineInterfaceProperty::CheckExposure);
     if (!constructor) {
       return false;
     }
@@ -4051,7 +4051,7 @@ static const char* kDeprecatedOperations[] = {
 
 void ReportDeprecation(nsIGlobalObject* aGlobal, nsIURI* aURI,
                        DeprecatedOperations aOperation,
-                       const nsAString& aFileName,
+                       const nsACString& aFileName,
                        const Nullable<uint32_t>& aLineNumber,
                        const Nullable<uint32_t>& aColumnNumber) {
   MOZ_ASSERT(aURI);
@@ -4102,13 +4102,7 @@ class DeprecationWarningRunnable final
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(aWorkerPrivate);
 
-    // Walk up to our containing page
-    WorkerPrivate* wp = aWorkerPrivate;
-    while (wp->GetParent()) {
-      wp = wp->GetParent();
-    }
-
-    nsPIDOMWindowInner* window = wp->GetWindow();
+    nsPIDOMWindowInner* window = aWorkerPrivate->GetAncestorWindow();
     if (window && window->GetExtantDoc()) {
       window->GetExtantDoc()->WarnOnceAbout(mOperation);
     }
@@ -4165,21 +4159,18 @@ void MaybeReportDeprecation(const GlobalObject& aGlobal,
     return;
   }
 
-  nsAutoString fileName;
+  auto location = JSCallingLocation::Get(aGlobal.Context());
   Nullable<uint32_t> lineNumber;
   Nullable<uint32_t> columnNumber;
-  uint32_t line = 0;
-  uint32_t column = 1;
-  if (nsJSUtils::GetCallingLocation(aGlobal.Context(), fileName, &line,
-                                    &column)) {
-    lineNumber.SetValue(line);
-    columnNumber.SetValue(column);
+  if (location) {
+    lineNumber.SetValue(location.mLine);
+    columnNumber.SetValue(location.mColumn);
   }
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(global);
 
-  ReportDeprecation(global, uri, aOperation, fileName, lineNumber,
+  ReportDeprecation(global, uri, aOperation, location.FileName(), lineNumber,
                     columnNumber);
 }
 
@@ -4214,7 +4205,7 @@ JSObject* UnprivilegedJunkScopeOrWorkerGlobal(const fallible_t&) {
 
 JS::Handle<JSObject*> GetPerInterfaceObjectHandle(
     JSContext* aCx, size_t aSlotId, CreateInterfaceObjectsMethod aCreator,
-    bool aDefineOnGlobal) {
+    DefineInterfaceProperty aDefineOnGlobal) {
   /* Make sure our global is sane.  Hopefully we can remove this sometime */
   JSObject* global = JS::CurrentGlobalOrNull(aCx);
   if (!(JS::GetClass(global)->flags & JSCLASS_DOM_GLOBAL)) {
@@ -4242,7 +4233,7 @@ JS::Handle<JSObject*> GetPerInterfaceObjectHandle(
   const JS::Heap<JSObject*>& entrySlot =
       protoAndIfaceCache.EntrySlotMustExist(aSlotId);
   JS::AssertObjectIsNotGray(entrySlot);
-  return JS::Handle<JSObject*>::fromMarkedLocation(entrySlot.address());
+  return JS::Handle<JSObject*>::fromMarkedLocation(entrySlot.unsafeAddress());
 }
 
 namespace binding_detail {

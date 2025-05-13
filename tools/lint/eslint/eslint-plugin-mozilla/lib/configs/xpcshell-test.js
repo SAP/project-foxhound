@@ -49,21 +49,15 @@ module.exports = {
       },
     },
   ],
+  plugins: ["mozilla", "@microsoft/sdl"],
 
   rules: {
     // Turn off no-insecure-url as it is not considered necessary for xpcshell
     // level tests.
     "@microsoft/sdl/no-insecure-url": "off",
 
-    "mozilla/import-headjs-globals": "error",
-    "mozilla/mark-test-function-used": "error",
-    "mozilla/no-arbitrary-setTimeout": "error",
     "mozilla/no-comparison-or-assignment-inside-ok": "error",
     "mozilla/no-useless-run-test": "error",
     "no-shadow": "error",
-    // Turn off no-unsanitized for tests, as we do want to be able to use
-    // these for testing.
-    "no-unsanitized/method": "off",
-    "no-unsanitized/property": "off",
   },
 };

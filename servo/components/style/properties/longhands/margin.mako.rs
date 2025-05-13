@@ -3,7 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
-<% from data import ALL_SIDES, DEFAULT_RULES_AND_PAGE, maybe_moz_logical_alias %>
+<% from data import ALL_SIDES, DEFAULT_RULES, DEFAULT_RULES_AND_PAGE, maybe_moz_logical_alias %>
 
 % for side in ALL_SIDES:
     <%
@@ -18,11 +18,10 @@
         engines="gecko servo",
         aliases=maybe_moz_logical_alias(engine, side, "-moz-margin-%s"),
         allow_quirks="No" if side[1] else "Yes",
-        animation_value_type="ComputedValue",
         logical=side[1],
         logical_group="margin",
         spec=spec,
-        rule_types_allowed=DEFAULT_RULES_AND_PAGE,
+        rule_types_allowed=DEFAULT_RULES if side[1] else DEFAULT_RULES_AND_PAGE,
         servo_restyle_damage="reflow",
         affects="layout",
     )}
@@ -35,7 +34,6 @@ ${helpers.predefined_type(
     parse_method="parse_non_negative",
     engines="gecko",
     spec="https://drafts.csswg.org/css-overflow/#propdef-overflow-clip-margin",
-    animation_value_type="ComputedValue",
     affects="overflow",
 )}
 
@@ -48,7 +46,6 @@ ${helpers.predefined_type(
         logical=side[1],
         logical_group="scroll-margin",
         spec="https://drafts.csswg.org/css-scroll-snap-1/#propdef-scroll-margin-%s" % side[0],
-        animation_value_type="ComputedValue",
         affects="",
     )}
 % endfor

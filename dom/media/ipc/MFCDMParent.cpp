@@ -11,23 +11,23 @@
 #include <propkeydef.h>   // For DEFINE_PROPERTYKEY() definition
 #include <propvarutil.h>  // For InitPropVariantFrom*()
 
-#include "mozilla/dom/MediaKeysBinding.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/KeySystemNames.h"
-#include "mozilla/ipc/UtilityAudioDecoderChild.h"
-#include "mozilla/ipc/UtilityProcessManager.h"
-#include "mozilla/ipc/UtilityProcessParent.h"
-#include "mozilla/EMEUtils.h"
-#include "mozilla/StaticMutex.h"
-#include "mozilla/StaticPrefs_media.h"
-#include "mozilla/KeySystemConfig.h"
-#include "mozilla/WindowsVersion.h"
 #include "MFCDMProxy.h"
 #include "MFMediaEngineUtils.h"
-#include "nsTHashMap.h"
 #include "RemoteDecodeUtils.h"       // For GetCurrentSandboxingKind()
 #include "SpecialSystemDirectory.h"  // For temp dir
 #include "WMFUtils.h"
+#include "mozilla/EMEUtils.h"
+#include "mozilla/KeySystemConfig.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/WindowsVersion.h"
+#include "mozilla/dom/KeySystemNames.h"
+#include "mozilla/dom/MediaKeysBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/ipc/UtilityAudioDecoderChild.h"
+#include "mozilla/ipc/UtilityProcessManager.h"
+#include "mozilla/ipc/UtilityProcessParent.h"
+#include "nsTHashMap.h"
 
 #ifdef MOZ_WMF_CDM_LPAC_SANDBOX
 #  include "sandboxBroker.h"
@@ -884,7 +884,7 @@ void MFCDMParent::GetCapabilities(const nsString& aKeySystem,
                                   convertCodecToFourCC(codec), nsCString(""),
                                   additionalFeature, isHardwareDecryption);
         MFCDM_PARENT_SLOG("clearlead %s IV 8 bytes %s %s",
-                          CryptoSchemeToString(scheme), codec.get(),
+                          EnumValueToString(scheme), codec.get(),
                           rv ? "supported" : "not supported");
         if (rv) {
           supportedScheme += scheme;
@@ -896,7 +896,7 @@ void MFCDMParent::GetCapabilities(const nsString& aKeySystem,
                              nsCString(""), additionalFeature,
                              isHardwareDecryption);
         MFCDM_PARENT_SLOG("clearlead %s IV 16 bytes %s %s",
-                          CryptoSchemeToString(scheme), codec.get(),
+                          EnumValueToString(scheme), codec.get(),
                           rv ? "supported" : "not supported");
 
         if (rv) {

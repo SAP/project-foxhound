@@ -38,17 +38,10 @@ use serde::{Deserialize, Deserializer};
 
 use crate::{error::Error, provider::SuggestionProvider, Result};
 
-/// The Suggest Remote Settings collection name.
-pub(crate) const REMOTE_SETTINGS_COLLECTION: &str = "quicksuggest";
-
-/// The maximum number of suggestions in a Suggest record's attachment.
-///
-/// This should be the same as the `BUCKET_SIZE` constant in the
-/// `mozilla-services/quicksuggest-rs` repo.
-pub(crate) const SUGGESTIONS_PER_ATTACHMENT: u64 = 200;
-
 /// A list of default record types to download if nothing is specified.
-/// This currently defaults to all of the record types.
+/// This defaults to all record types available as-of Fx128.
+/// Consumers should specify provider types in `SuggestIngestionConstraints` if they want a
+/// different set.
 pub(crate) const DEFAULT_RECORDS_TYPES: [SuggestRecordType; 9] = [
     SuggestRecordType::Icon,
     SuggestRecordType::AmpWikipedia,
@@ -69,17 +62,58 @@ pub(crate) trait Client {
     fn get_records(&self, request: RecordRequest) -> Result<Vec<Record>>;
 }
 
-impl Client for remote_settings::Client {
+/// Implements the [Client] trait using a real remote settings client
+pub struct RemoteSettingsClient {
+    // Create a separate client for each collection name
+    quicksuggest_client: remote_settings::Client,
+    fakespot_client: remote_settings::Client,
+}
+
+impl RemoteSettingsClient {
+    pub fn new(
+        server: Option<remote_settings::RemoteSettingsServer>,
+        bucket_name: Option<String>,
+        server_url: Option<String>,
+    ) -> Result<Self> {
+        Ok(Self {
+            quicksuggest_client: remote_settings::Client::new(
+                remote_settings::RemoteSettingsConfig {
+                    server: server.clone(),
+                    bucket_name: bucket_name.clone(),
+                    collection_name: "quicksuggest".to_owned(),
+                    server_url: server_url.clone(),
+                },
+            )?,
+            fakespot_client: remote_settings::Client::new(remote_settings::RemoteSettingsConfig {
+                server,
+                bucket_name,
+                collection_name: "fakespot-suggest-products".to_owned(),
+                server_url,
+            })?,
+        })
+    }
+
+    fn client_for_record_type(&self, record_type: &str) -> &remote_settings::Client {
+        match record_type {
+            "fakespot-suggestions" => &self.fakespot_client,
+            _ => &self.quicksuggest_client,
+        }
+    }
+}
+
+impl Client for RemoteSettingsClient {
     fn get_records(&self, request: RecordRequest) -> Result<Vec<Record>> {
+        let client = self.client_for_record_type(request.record_type.as_str());
         let options = request.into();
-        self.get_records_with_options(&options)?
+        client
+            .get_records_with_options(&options)?
             .records
             .into_iter()
             .map(|record| {
                 let attachment_data = record
                     .attachment
                     .as_ref()
-                    .map(|a| self.get_attachment(&a.location))
+                    .map(|a| client.get_attachment(&a.location))
                     .transpose()?;
                 Ok(Record::new(record, attachment_data))
             })
@@ -89,9 +123,8 @@ impl Client for remote_settings::Client {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct RecordRequest {
-    pub record_type: Option<String>,
+    pub record_type: String,
     pub last_modified: Option<u64>,
-    pub limit: Option<u64>,
 }
 
 impl From<RecordRequest> for GetItemsOptions {
@@ -103,18 +136,10 @@ impl From<RecordRequest> for GetItemsOptions {
         // so that we can eventually resume downloading where we left off.
         options.sort("last_modified", SortOrder::Ascending);
 
-        if let Some(record_type) = value.record_type {
-            options.filter_eq("type", record_type);
-        }
+        options.filter_eq("type", value.record_type);
 
         if let Some(last_modified) = value.last_modified {
             options.filter_gt("last_modified", last_modified.to_string());
-        }
-
-        if let Some(limit) = value.limit {
-            // Each record's attachment has 200 suggestions, so download enough
-            // records to cover the requested maximum.
-            options.limit((limit.saturating_sub(1) / SUGGESTIONS_PER_ATTACHMENT) + 1);
         }
         options
     }
@@ -180,6 +205,8 @@ pub(crate) enum SuggestRecord {
     GlobalConfig(DownloadedGlobalConfig),
     #[serde(rename = "amp-mobile-suggestions")]
     AmpMobile,
+    #[serde(rename = "fakespot-suggestions")]
+    Fakespot,
 }
 
 /// Enum for the different record types that can be consumed.
@@ -196,10 +223,11 @@ pub enum SuggestRecordType {
     Weather,
     GlobalConfig,
     AmpMobile,
+    Fakespot,
 }
 
-impl From<SuggestRecord> for SuggestRecordType {
-    fn from(suggest_record: SuggestRecord) -> Self {
+impl From<&SuggestRecord> for SuggestRecordType {
+    fn from(suggest_record: &SuggestRecord) -> Self {
         match suggest_record {
             SuggestRecord::Amo => Self::Amo,
             SuggestRecord::AmpWikipedia => Self::AmpWikipedia,
@@ -210,6 +238,7 @@ impl From<SuggestRecord> for SuggestRecordType {
             SuggestRecord::Yelp => Self::Yelp,
             SuggestRecord::GlobalConfig(_) => Self::GlobalConfig,
             SuggestRecord::AmpMobile => Self::AmpMobile,
+            SuggestRecord::Fakespot => Self::Fakespot,
         }
     }
 }
@@ -226,6 +255,7 @@ impl fmt::Display for SuggestRecordType {
             Self::Weather => write!(f, "weather"),
             Self::GlobalConfig => write!(f, "configuration"),
             Self::AmpMobile => write!(f, "amp-mobile-suggestions"),
+            Self::Fakespot => write!(f, "fakespot-suggestions"),
         }
     }
 }
@@ -476,6 +506,20 @@ pub(crate) struct DownloadedMdnSuggestion {
     pub score: f64,
 }
 
+/// A Fakespot suggestion to ingest from an attachment
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct DownloadedFakespotSuggestion {
+    pub fakespot_grade: String,
+    pub product_id: String,
+    pub keywords: String,
+    pub product_type: String,
+    pub rating: f64,
+    pub score: f64,
+    pub title: String,
+    pub total_reviews: i64,
+    pub url: String,
+}
+
 /// Weather data to ingest from a weather record
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct DownloadedWeatherData {
@@ -623,38 +667,5 @@ mod test {
                 },
             ],
         );
-    }
-
-    #[test]
-    fn test_remote_settings_limits() {
-        fn check_limit(suggestion_limit: Option<u64>, expected_record_limit: Option<&str>) {
-            let request = RecordRequest {
-                limit: suggestion_limit,
-                ..RecordRequest::default()
-            };
-            let options: GetItemsOptions = request.into();
-            let actual_record_limit = options
-                .iter_query_pairs()
-                .find_map(|(name, value)| (name == "_limit").then(|| value.to_string()));
-            assert_eq!(
-                actual_record_limit.as_deref(),
-                expected_record_limit,
-                "expected record limit = {:?} for suggestion limit {:?}; actual = {:?}",
-                expected_record_limit,
-                suggestion_limit,
-                actual_record_limit
-            );
-        }
-
-        check_limit(None, None);
-        // 200 suggestions per record, so test with numbers around that
-        // boundary.
-        check_limit(Some(0), Some("1"));
-        check_limit(Some(199), Some("1"));
-        check_limit(Some(200), Some("1"));
-        check_limit(Some(201), Some("2"));
-        check_limit(Some(300), Some("2"));
-        check_limit(Some(400), Some("2"));
-        check_limit(Some(401), Some("3"));
     }
 }

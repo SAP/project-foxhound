@@ -105,6 +105,10 @@ RefPtr<DecoderAgent::ConfigurePromise> DecoderAgent::Configure(
     params.mOptions += CreateDecoderParams::Option::LowLatency;
   }
 
+  // Always even use the pts that were set on the input samples when returning
+  // decoded video frames.
+  params.mOptions += CreateDecoderParams::Option::KeepOriginalPts;
+
   LOG("DecoderAgent #%d (%p) is creating a decoder - PreferSW: %s, "
       "low-latency: %s",
       mId, this, aPreferSoftwareDecoder ? "yes" : "no",
@@ -453,33 +457,10 @@ void DecoderAgent::SetState(State aState) {
     return false;
   };
 
-  auto stateToString = [](State aState) -> const char* {
-    switch (aState) {
-      case State::Unconfigured:
-        return "Unconfigured";
-      case State::Configuring:
-        return "Configuring";
-      case State::Configured:
-        return "Configured";
-      case State::Decoding:
-        return "Decoding";
-      case State::Flushing:
-        return "Flushing";
-      case State::ShuttingDown:
-        return "ShuttingDown";
-      case State::Error:
-        return "Error";
-      default:
-        break;
-    }
-    MOZ_ASSERT_UNREACHABLE("Unhandled state type");
-    return "Unknown";
-  };
-
   DebugOnly<bool> isValid = validateStateTransition(mState, aState);
   MOZ_ASSERT(isValid);
   LOG("DecoderAgent #%d (%p) state change: %s -> %s", mId, this,
-      stateToString(mState), stateToString(aState));
+      EnumValueToString(mState), EnumValueToString(aState));
   mState = aState;
 }
 

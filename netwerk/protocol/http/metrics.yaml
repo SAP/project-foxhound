@@ -54,81 +54,51 @@ netwerk:
       - necko@mozilla.com
       - manuel@mozilla.com
     expires: never
+  parent_connect_timeout:
+    type: counter
+    description: >
+      Counts how often the parent-connect-timeout timer is necessary to clear up EarlyHintPreloader
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1813630
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1813630
+    notification_emails:
+      - necko@mozilla.com
+      - manuel@mozilla.com
+    expires: never
+
+  eh_response_version:
+    type: labeled_counter
+    description: >
+      HTTP protocol version from Early Hints response
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1851437
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1851437
+    notification_emails:
+      - necko@mozilla.com
+    expires: never
+    labels:
+      - unknown
+      - http_1
+      - http_2
+      - http_3
 
 network:
-  data_size_per_type:
+  byte_range_request:
     type: labeled_counter
     labels:
-      - text_html
-      - text_css
-      - text_json
-      - text_plain
-      - text_javascript
-      - text_other
-      - audio
-      - video
-      - multipart
-      - icon
-      - image
-      - ocsp
-      - xpinstall
-      - wasm
-      - pdf
-      - octet_stream
-      - proxy
-      - compressed
-      - x509
-      - application_other
+      - cacheable
+      - not_cacheable
     description: >
-      Number of KB we transferred keyed by "contentType"
+      Counts of cacheable/non-cacheable byte-range requests
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1808695
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898737
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1808695
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898737
     notification_emails:
       - necko@mozilla.com
-      - rtestard@mozilla.com
-    expires: 130
-    telemetry_mirror: NETWORKING_DATA_TRANSFERRED_PER_CONTENT_TYPE
-    no_lint:
-      - COMMON_PREFIX
-
-  data_size_pb_per_type:
-    type: labeled_counter
-    labels:
-      - text_html
-      - text_css
-      - text_json
-      - text_plain
-      - text_javascript
-      - text_other
-      - audio
-      - video
-      - multipart
-      - icon
-      - image
-      - ocsp
-      - xpinstall
-      - wasm
-      - pdf
-      - octet_stream
-      - proxy
-      - compressed
-      - x509
-      - application_other
-    description: >
-      Number of KB we transferred keyed by "contentType"
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1808695
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1808695
-    notification_emails:
-      - necko@mozilla.com
-      - rtestard@mozilla.com
-    expires: 130
-    telemetry_mirror: NETWORKING_DATA_TRANSFERRED_PB_PER_CONTENT_TYPE
-    no_lint:
-      - COMMON_PREFIX
+    expires: never
 
   cors_authorization_header:
     type: labeled_counter
@@ -141,12 +111,13 @@ network:
       `Access-Control-Request-Headers` header and the possible outcomes.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1687364
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1902182
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1687364
     notification_emails:
       - necko@mozilla.com
       - kershaw@mozilla.com
-    expires: 130
+    expires: 140
 
   cache_hit_time:
     type: timing_distribution
@@ -254,6 +225,67 @@ network:
       - necko@mozilla.com
       - vgosu@mozilla.com
     expires: never
+
+  tls_early_data_negotiated:
+    type: labeled_counter
+    labels:
+      - not_available
+      - available_and_used
+      - available_but_not_used
+    description: >
+      Sending TLS early data was not possible, possible and used, or possible but not used.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1296288
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1654309
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1749881
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898018
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898018
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    expires: never
+
+  tls_early_data_accepted:
+    type: labeled_counter
+    labels:
+      - accepted
+      - rejected
+    description: >
+      TLS early data was used and it was accepted or rejected by the remote host.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1296288
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1654309
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1749881
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898018
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898018
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    expires: never
+
+  tls_early_data_bytes_written:
+    type: custom_distribution
+    unit: byte
+    range_min: 0
+    range_max: 60000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+      Amount of bytes sent using TLS early data at the start of a TLS connection for a given channel.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1296288
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1654309
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1749881
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898018
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898018
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    expires: never
+    telemetry_mirror: TLS_EARLY_DATA_BYTES_WRITTEN
 
   tls_handshake:
     type: timing_distribution

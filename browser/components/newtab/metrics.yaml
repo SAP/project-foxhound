@@ -233,6 +233,94 @@ newtab:
     send_in_pings:
       - newtab
 
+  topic_selection_open:
+    type: event
+    description: >
+      Recorded when the topic selection modal is opened
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  topic_selection_dismiss:
+    type: event
+    description: >
+      Recorded when the topic selection modal is dismissed (topics are not saved)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  topic_selection_topics_saved:
+    type: event
+    description: >
+      Recorded when topics are saved from the topics selection modal
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      topics:
+        description: >
+          list of topics that were saved by user
+        type: string
+      previous_topics:
+        description: >
+          list of previous topics that were saved, an empty string
+          means no previous topics were saved
+        type: string
+      first_save:
+        description: >
+          whether or not it is the user's first time setting topics
+        type: boolean
+    send_in_pings:
+      - newtab
+
+  selected_topics:
+      type: string_list
+      description: >
+        The list of topics the user selected
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1907152
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1907152
+      data_sensitivity:
+        - interaction
+      notification_emails:
+        - nbarrett@mozilla.com
+        - mcrawford@mozilla.com
+      expires: never
+      send_in_pings:
+        - newtab
+      lifetime: application
+
   wallpaper_click:
     type: event
     description: >
@@ -474,7 +562,7 @@ newtab.handoff_preference:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892148
     data_sensitivity:
       - interaction
-    expires: 131
+    expires: 137
     notification_emails:
       - fx-search-telemetry@mozilla.com
 
@@ -865,6 +953,7 @@ pocket:
       - mmccorquodale@mozilla.com
       - najiang@mozilla.com
       - lina@mozilla.com
+      - sdowne@mozilla.com
     expires: never
     extra_keys:
       newtab_visit_id: *newtab_visit_id
@@ -886,6 +975,27 @@ pocket:
           Pocket's recommendation systems.
           For sponsored Pocket content it is Kevel's "ad ID".
         type: quantity
+      scheduled_corpus_item_id: &scheduled_corpus_item_id
+        description: >
+          A content identifier.
+          For organic Pocket recommendations it is an opaque id produced by
+          Pocket's recommendation systems.
+          For sponsored Pocket content it is Kevel's "ad ID".
+          This is the replacement for tile_id.
+        type: string
+      received_rank: &received_rank
+        description: The rank or order of the recommendation at the time it was sent to the client.
+        type: quantity
+      recommended_at: &recommended_at
+        description: The time in milliseconds the recomendation was recommended at.
+        type: quantity
+      topic:
+        description: The topic of the recommendation. Like "entertainment".
+        type: string
+      selected_topics:
+        description: >
+          The list of topics the user selected
+        type: string
     send_in_pings:
       - newtab
 
@@ -912,6 +1022,7 @@ pocket:
       - mmccorquodale@mozilla.com
       - najiang@mozilla.com
       - lina@mozilla.com
+      - sdowne@mozilla.com
     expires: never
     extra_keys:
       newtab_visit_id: *newtab_visit_id
@@ -919,6 +1030,46 @@ pocket:
       position: *pocket_position
       recommendation_id: *recommendation_id
       tile_id: *pocket_tile_id
+      scheduled_corpus_item_id: *scheduled_corpus_item_id
+      received_rank: *received_rank
+      recommended_at: *recommended_at
+      matches_selected_topic:
+        description: >
+          Returns value based on if a the topic of the pocket recommendation matches one
+          of the user-selected topic categories
+        type: string
+      topic:
+        description: The topic of the recommendation. Like "entertainment".
+        type: string
+      selected_topics:
+        description: >
+          The list of topics the user selected
+        type: string
+    send_in_pings:
+      - newtab
+
+  dismiss:
+    type: event
+    description: >
+      Recorded when a pocket tile is dismissed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1786612
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1786612
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sdowne@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      is_sponsored: *is_sponsored_pocket
+      position: *pocket_position
+      recommendation_id: *recommendation_id
+      tile_id: *pocket_tile_id
+      scheduled_corpus_item_id: *scheduled_corpus_item_id
+      received_rank: *received_rank
+      recommended_at: *recommended_at
     send_in_pings:
       - newtab
 
@@ -946,6 +1097,7 @@ pocket:
       - mmccorquodale@mozilla.com
       - najiang@mozilla.com
       - lina@mozilla.com
+      - mcrawford@mozilla.com
     expires: never
     extra_keys:
       newtab_visit_id: *newtab_visit_id
@@ -953,6 +1105,22 @@ pocket:
       position: *pocket_position
       recommendation_id: *recommendation_id
       tile_id: *pocket_tile_id
+      scheduled_corpus_item_id: *scheduled_corpus_item_id
+      received_rank: *received_rank
+      recommended_at: *recommended_at
+      topic:
+        description: The topic of the recommendation. Like "entertainment".
+        type: string
+      matches_selected_topic:
+        description: >
+          Returns value based on if a the topic of the pocket recommendation matches one
+          of the user-selected topic categories
+        type: string
+      selected_topics:
+        description: >
+          The list of topics the user selected
+        type: string
+
     send_in_pings:
       - newtab
 
@@ -1047,6 +1215,42 @@ pocket:
     expires: never
     send_in_pings:
       - spoc
+
+  thumb_voting_interaction:
+    type: event
+    description: >
+      Recorded when a thumbs up/down on a tile is clicked.
+      Only happens on click. Not on middle-click. Not on "Open in new Tab"-like
+      options in the context menu.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1902099
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1902099
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      recommendation_id: *recommendation_id
+      tile_id: *pocket_tile_id
+      thumbs_up:
+        description: >
+          If the user clicked thumbs up.
+        type: boolean
+      thumbs_down:
+        description: >
+          If the user clicked thumbs down.
+        type: boolean
+      scheduled_corpus_item_id: *scheduled_corpus_item_id
+      received_rank: *received_rank
+      recommended_at: *recommended_at
+      topic:
+        description: The topic of the recommendation. Like "entertainment".
+        type: string
+    send_in_pings:
+      - newtab
 
 messaging_system:
   event_context_parse_error:

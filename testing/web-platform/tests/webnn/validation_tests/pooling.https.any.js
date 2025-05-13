@@ -162,6 +162,26 @@ const tests = [
     },
   },
   {
+    name: 'Throw if outputSizes[0] is not greater than 0.',
+    input: {dataType: 'float32', dimensions: [1, 2, 5, 5]},
+    options: {
+      windowDimensions: [2, 2],
+      padding: [2, 2, 2, 2],
+      strides: [2, 2],
+      outputSizes: [0, 4],
+    },
+  },
+  {
+    name: 'Throw if outputSizes[1] is not greater than 0.',
+    input: {dataType: 'float32', dimensions: [1, 2, 5, 5]},
+    options: {
+      windowDimensions: [2, 2],
+      padding: [2, 2, 2, 2],
+      strides: [2, 2],
+      outputSizes: [4, 0],
+    },
+  },
+  {
     name: 'Throw if the length of window dimensions is not 2.',
     input: {dataType: 'float32', dimensions: [1, 2, 5, 5]},
     options: {
@@ -258,6 +278,7 @@ const tests = [
 
 tests.forEach(
     test => promise_test(async t => {
+      const builder = new MLGraphBuilder(context);
       const input = builder.input(
           'input',
           {dataType: test.input.dataType, dimensions: test.input.dimensions});
@@ -275,6 +296,7 @@ tests.forEach(
 
 ['int32', 'uint32', 'int8', 'uint8'].forEach(
     dataType => promise_test(async t => {
+      const builder = new MLGraphBuilder(context);
       const input = builder.input(
           'input', {dataType: dataType, dimensions: [1, 3, 4, 4]});
       const output = builder.maxPool2d(input);
@@ -283,12 +305,14 @@ tests.forEach(
     }, `[maxPool2d] Test maxPool2d with data type ${dataType}`));
 
 promise_test(async t => {
+  const builder = new MLGraphBuilder(context);
   const input =
       builder.input('input', {dataType: 'int64', dimensions: [1, 2, 3, 3]});
   assert_throws_js(TypeError, () => builder.averagePool2d(input));
 }, '[averagePool2d] Throw if the input data type is not floating point');
 
 promise_test(async t => {
+  const builder = new MLGraphBuilder(context);
   const input =
       builder.input('input', {dataType: 'uint8', dimensions: [1, 2, 4, 4]});
   assert_throws_js(TypeError, () => builder.l2Pool2d(input));

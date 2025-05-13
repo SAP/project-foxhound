@@ -937,10 +937,9 @@ pub unsafe extern "C" fn Servo_AnimationValue_Transform(
 
 #[no_mangle]
 pub unsafe extern "C" fn Servo_AnimationValue_OffsetPath(
-    p: &computed::motion::OffsetPath,
+    p: &computed::OffsetPath,
 ) -> Strong<AnimationValue> {
-    use style::values::animated::ToAnimatedValue;
-    Arc::new(AnimationValue::OffsetPath(p.clone().to_animated_value())).into()
+    Arc::new(AnimationValue::OffsetPath(std::mem::transmute(p.clone()))).into()
 }
 
 #[no_mangle]
@@ -1226,13 +1225,18 @@ fn is_transitionable(prop: PropertyDeclarationId, behavior: computed::Transition
     }
 }
 
+// Note: |new| is the after-change style; however, |old| is the computed values as of the previous
+// style change event, and it includes the running transitions and animations.
 #[no_mangle]
 pub extern "C" fn Servo_ComputedValues_ShouldTransition(
     old: &ComputedValues,
     new: &ComputedValues,
     prop: &structs::AnimatedPropertyID,
     behavior: computed::TransitionBehavior,
-    old_transition_value: Option<&AnimationValue>,
+    old_transition_end_value: Option<&AnimationValue>,
+    current_start_value: Option<&AnimationValue>,
+    current_end_value: Option<&AnimationValue>,
+    progress: Option<&f64>,
     start: &mut structs::RefPtr<AnimationValue>,
     end: &mut structs::RefPtr<AnimationValue>,
 ) -> ShouldTransitionResult {
@@ -1248,8 +1252,11 @@ pub extern "C" fn Servo_ComputedValues_ShouldTransition(
         return Default::default();
     };
 
-    if let Some(old_transition_value) = old_transition_value {
-        if *old_transition_value == new_value {
+    // If the element has a running transition for the property, there is a matching
+    // transition-property value, and the end value of the running transition is not equal to the
+    // value of the property in the after-change style.
+    if let Some(old_transition_end_value) = old_transition_end_value {
+        if *old_transition_end_value == new_value {
             return ShouldTransitionResult {
                 should_animate: false,
                 old_transition_value_matches: true,
@@ -1260,14 +1267,50 @@ pub extern "C" fn Servo_ComputedValues_ShouldTransition(
     let Some(old_value) = AnimationValue::from_computed_values(prop, old) else {
         return Default::default();
     };
-    if old_value == new_value ||
-        (matches!(behavior, computed::TransitionBehavior::Normal) &&
-            !old_value.interpolable_with(&new_value))
+
+    // For main thread animations, it's fine to use |old_value| because it represents the value in
+    // before-change style [1] if not transitions and animations, or the current value [2] if it
+    // has a running transition.
+    // If this property has a running transition on the compositor, |old_value| may be invalid, and
+    // we have to compute the current value here to make sure the check of
+    // `current_or_old_value == new_value` below makes sense.
+    //
+    // Note: For compositor animaitons, in we may only compose the transition rule only once when
+    // creating the transition on the main thread. And then we throttle the animations, so the
+    // transition rules in |old| are out-of-date. This means |old_value| is not equal to current
+    // value. In some cases, it could be equal to the start value of the running transition. This
+    // situation prevent us from creating a reversing transition. Therefore, it's necessay to
+    // compute current value if needed, for compositor animations.
+    //
+    // [1] https://drafts.csswg.org/css-transitions-1/#before-change-style
+    // [2] https://drafts.csswg.org/css-transitions-1/#current-value
+    let current_value = match (current_start_value, current_end_value, progress) {
+        (Some(from), Some(to), Some(p)) => {
+            // Compute the current value for the compositor animations.
+            from.animate(to, Procedure::Interpolate { progress: *p }).ok()
+        },
+        _ => None,
+    };
+
+    // Per spec (https://drafts.csswg.org/css-transitions-1/#starting):
+    // 1. If the element does not have a running transition for the property, we have to check if
+    //    the before-change style is different from the after-change style for that property, and
+    //    if the values for the property are transitionable.
+    // ...
+    // 4. If the element has a running transition for the property, there is a matching
+    //    transition-property value, and the end value is not equal to the value of the property
+    //    in the after-change style. Also, if the **current value** of the property in the
+    //    running transition is equal to the value of the property in the after-change style, or
+    //    if these two values are not transitionable. In this case, we don't create new
+    //    transition and we will cancel the running transition.
+    let current_or_old_value = current_value.unwrap_or(old_value);
+    if current_or_old_value == new_value ||
+        matches!(behavior, computed::TransitionBehavior::Normal if !current_or_old_value.interpolable_with(&new_value))
     {
         return Default::default();
     }
 
-    start.set_arc(Arc::new(old_value));
+    start.set_arc(Arc::new(current_or_old_value));
     end.set_arc(Arc::new(new_value));
 
     ShouldTransitionResult {
@@ -5618,25 +5661,77 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
 pub extern "C" fn Servo_DeclarationBlock_SetPathValue(
     declarations: &LockedDeclarationBlock,
     property: nsCSSPropertyID,
-    path: &nsTArray<f32>,
+    path: &specified::SVGPathData,
 ) {
     use style::properties::PropertyDeclaration;
     use style::values::specified::DProperty;
 
-    // 1. Decode the path data from SVG.
-    let path = match specified::SVGPathData::decode_from_f32_array(path) {
-        Ok(p) => p,
-        Err(()) => return,
-    };
-
     // 2. Set decoded path into style.
     let long = get_longhand_from_id!(property);
     let prop = match_wrap_declared! { long,
-        D => if path.0.is_empty() { DProperty::None } else { DProperty::Path(path) },
+        D => if path.0.is_empty() { DProperty::None } else { DProperty::Path(path.clone()) },
     };
     write_locked_arc(declarations, |decls: &mut PropertyDeclarationBlock| {
         decls.push(prop, Importance::Normal);
     })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_SVGPathData_Add(
+    dest: &mut specified::SVGPathData,
+    to_add: &specified::SVGPathData,
+    count: u32,
+) -> bool {
+    match dest.animate(to_add, Procedure::Accumulate { count: count as u64 }) {
+        Ok(r) => {
+            *dest = r;
+            true
+        }
+        Err(..) => false,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_SVGPathData_Parse(input: &nsACString, dest: &mut specified::SVGPathData) -> bool {
+    let (path, ret) = specified::SVGPathData::parse_bytes(input.as_ref());
+    *dest = path;
+    ret
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_SVGPathData_ToString(path: &specified::SVGPathData, dest: &mut nsACString) {
+    path.to_css(&mut CssWriter::new(dest), /* quote = */ false).unwrap();
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_SVGPathData_Interpolate(
+    left: Option<&specified::SVGPathData>,
+    right: &specified::SVGPathData,
+    progress: f64,
+    dest: &mut specified::SVGPathData,
+) -> bool {
+    let zero;
+    let left = match left {
+        Some(l) => l,
+        None => {
+            zero = match right.to_animated_zero() {
+                Ok(z) => z,
+                Err(..) => {
+                    debug_assert!(false, "how?");
+                    return false;
+                }
+            };
+            &zero
+        }
+    };
+
+    match left.animate(right, Procedure::Interpolate { progress }) {
+        Ok(r) => {
+            *dest = r;
+            true
+        }
+        Err(..) => false,
+    }
 }
 
 #[no_mangle]
@@ -6130,6 +6225,8 @@ pub extern "C" fn Servo_ResolveStartingStyle(
     };
 
     let element = GeckoElement(element);
+    context.thread_local.bloom_filter.rebuild(element);
+
     let mut resolver = StyleResolverForElement::new(
         element,
         &mut context,
@@ -6396,7 +6493,7 @@ pub extern "C" fn Servo_GetComputedKeyframeValues(
 
             let declarations = unsafe { &*property.mServoDeclarationBlock.mRawPtr };
             let guard = declarations.read_with(&guard);
-            let iter = guard.to_animation_value_iter(&mut context, &default_values);
+            let iter = guard.to_animation_value_iter(&mut context, style, &default_values);
 
             for value in iter {
                 maybe_append_animation_value(value.id(), Some(value.clone()));
@@ -6439,7 +6536,7 @@ pub extern "C" fn Servo_GetAnimationValues(
     let guard = global_style_data.shared_lock.read();
 
     let guard = declarations.read_with(&guard);
-    let iter = guard.to_animation_value_iter(&mut context, &default_values);
+    let iter = guard.to_animation_value_iter(&mut context, style, &default_values);
     animation_values.extend(iter.map(|v| structs::RefPtr::from_arc(Arc::new(v))));
 }
 
@@ -6490,7 +6587,7 @@ pub extern "C" fn Servo_AnimationValue_Compute(
         .next()
     {
         Some((decl, imp)) if imp == Importance::Normal => {
-            let animation = AnimationValue::from_declaration(decl, &mut context, default_values);
+            let animation = AnimationValue::from_declaration(decl, &mut context, style, default_values);
             animation.map_or(Strong::null(), |value| Arc::new(value).into())
         },
         _ => Strong::null(),
@@ -9158,6 +9255,35 @@ pub extern "C" fn Servo_GetRegisteredCustomProperties(
             },
         ))
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Servo_GetRegisteredCustomProperty(
+    per_doc_data: &PerDocumentStyleData,
+    name: &nsACString,
+    custom_property: &mut PropDef,
+) -> bool {
+    let name = name.as_str_unchecked();
+    if !name.starts_with("--") {
+        return false;
+    }
+    // We store registered property names without the leading "--".
+    let name = Atom::from(&name[2..]);
+
+    let stylist = &per_doc_data.borrow().stylist;
+    if let Some(property_registration) = stylist.custom_property_script_registry().get(&name) {
+        *custom_property = PropDef::new(name, property_registration, /* from_js */ true);
+        return true;
+    }
+
+    for (cascade_data, _) in stylist.iter_origins() {
+        if let Some(property_registration) = cascade_data.custom_property_registrations().get(&name) {
+            *custom_property = PropDef::new(name, property_registration, /* from_js */ false);
+            return true;
+        }
+    }
+
+    false
 }
 
 

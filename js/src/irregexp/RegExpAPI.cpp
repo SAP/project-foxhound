@@ -109,9 +109,11 @@ static uint32_t ErrorNumber(RegExpError err) {
       return JSMSG_INVALID_QUANTIFIER;
     case RegExpError::kInvalidGroup:
       return JSMSG_INVALID_GROUP;
-    case RegExpError::kMultipleFlagDashes:
     case RegExpError::kRepeatedFlag:
+      return JSMSG_REPEATED_FLAG;
     case RegExpError::kInvalidFlagGroup:
+      return JSMSG_INVALID_FLAG_GROUP;
+    case RegExpError::kMultipleFlagDashes:
       // V8 contains experimental support for turning regexp flags on
       // and off in the middle of a regular expression. Unless it
       // becomes standardized, SM does not support this feature.
@@ -131,7 +133,7 @@ static uint32_t ErrorNumber(RegExpError err) {
     case RegExpError::kInvalidNamedCaptureReference:
       return JSMSG_INVALID_NAMED_CAPTURE_REF;
     case RegExpError::kInvalidClassEscape:
-      return JSMSG_RANGE_WITH_CLASS_ESCAPE;
+      return JSMSG_INVALID_DECIMAL_ESCAPE;
     case RegExpError::kInvalidClassPropertyName:
       return JSMSG_INVALID_CLASS_PROPERTY_NAME;
     case RegExpError::kInvalidCharacterClass:
@@ -884,7 +886,7 @@ RegExpRunStatus ExecuteRaw(jit::JitCode* code, const CharT* chars,
   static_assert(static_cast<int32_t>(RegExpRunStatus::Success_NotFound) ==
                 v8::internal::RegExp::kInternalRegExpFailure);
 
-  typedef int (*RegExpCodeSignature)(InputOutputData*);
+  using RegExpCodeSignature = int (*)(InputOutputData*);
   auto function = reinterpret_cast<RegExpCodeSignature>(code->raw());
   {
     JS::AutoSuppressGCAnalysis nogc;

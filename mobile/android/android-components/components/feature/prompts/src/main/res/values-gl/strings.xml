@@ -49,7 +49,9 @@
     <!-- Prompt message displayed when app detects a user has entered a new password for an existing login and user decides if app should update the password. -->
     <string name="mozac_feature_prompt_login_update_headline_2">Actualizar o contrasinal?</string>
     <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
-    <string name="mozac_feature_prompt_login_add_username_headline">Engadir nome de usuario ao contrasinal gardado?</string>
+    <string name="mozac_feature_prompt_login_add_username_headline" moz:removedIn="130" tools:ignore="UnusedResources">Engadir nome de usuario ao contrasinal gardado?</string>
+    <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
+    <string name="mozac_feature_prompt_login_add_username_headline_2">Actualizar o nome de usuario?</string>
     <!-- Text for a label for the field when prompt requesting a text is shown. -->
     <!-- For more info take a look here https://developer.mozilla.org/en-US/docs/Web/API/Window/prompt -->
     <string name="mozac_feature_prompts_content_description_input_label">Etiqueta para introducir un campo de entrada de texto</string>
@@ -126,9 +128,12 @@
     <!-- Title for using the suggest strong password confirmation dialog -->
     <string name="mozac_feature_prompts_suggest_strong_password_title">Usar un contrasinal seguro?</string>
     <!-- Content description for the suggest strong password confirmation dialog -->
-    <string name="mozac_feature_prompts_suggest_strong_password_description">Protexa as súas contas mediante un contrasinal seguro e xerado aleatoriamente. Obtén acceso rápido aos teus contrasinais gardalos na túa conta.</string>
+    <string name="mozac_feature_prompts_suggest_strong_password_description" moz:removedIn="130" tools:ignore="UnusedResources">Protexa as súas contas mediante un contrasinal seguro e xerado aleatoriamente. Obteña acceso rápido aos seus contrasinais gardándoos na súa conta.</string>
+    <!-- Content description for the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_description_2">Protexa as súas contas mediante un contrasinal seguro e xerado aleatoriamente. Gardarase na túa conta para uso futuro.</string>
+
     <!-- Pressing this will use the suggested strong password -->
-    <string name="mozac_feature_prompts_suggest_strong_password_use_password">Usa contrasinal</string>
+    <string name="mozac_feature_prompts_suggest_strong_password_use_password">Usar contrasinal</string>
     <!-- Pressing this will dismiss the suggested strong password dialog -->
     <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Agora non</string>
     <!-- Title for showing the suggest strong password saved confirmation snackbar -->
@@ -136,6 +141,9 @@
     <!-- Title for showing the suggest strong password updated confirmation snackbar -->
     <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Contrasinal actualizado</string>
 
+
+    <!-- Title for showing the username updated confirmation snackbar -->
+    <string name="mozac_feature_prompt_login_snackbar_username_updated">Nome de usuario actualizado</string>
 
     <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
     <string name="mozac_feature_prompt_repost_title">Reenviar os datos a este sitio?</string>

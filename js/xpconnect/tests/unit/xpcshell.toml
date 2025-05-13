@@ -299,9 +299,19 @@ skip-if = [
 
 ["test_js_weak_references.js"]
 
+["test_json_parse_with_source.js"]
+prefs = [
+  "javascript.options.experimental.json_parse_with_source=true",
+]
+skip-if = [
+  "!nightly_build",
+]
+
 ["test_loadedESModules.js"]
 
 ["test_localeCompare.js"]
+
+["test_locks.js"]
 
 ["test_malformed_utf8.js"]
 
@@ -386,6 +396,12 @@ skip-if = [
 ["test_want_components.js"]
 
 ["test_wasm_tailcalls_profiler.js"]
+skip-if = [
+  "tsan",
+  "!nightly_build",
+]
+
+["test_wasm_jspi_profiler.js"]
 skip-if = [
   "tsan",
   "!nightly_build",

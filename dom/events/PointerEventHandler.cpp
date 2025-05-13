@@ -17,6 +17,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/MouseEventBinding.h"
+#include "nsUserCharacteristics.h"
 
 namespace mozilla {
 
@@ -564,10 +565,14 @@ void PointerEventHandler::InitPointerEventFromTouch(
                         ? aTouchEvent.mButtons
                         : MouseButtonsFlag::ePrimaryFlag;
 
-  // Only the first touch would be the primary pointer.
-  aPointerEvent.mIsPrimary = aTouchEvent.mMessage == eTouchStart
-                                 ? !HasActiveTouchPointer()
-                                 : GetPointerPrimaryState(aTouch.Identifier());
+  // XXX: This doesn't support multi pen scenario (bug 1904865)
+  if (aTouchEvent.mInputSource == MouseEvent_Binding::MOZ_SOURCE_TOUCH) {
+    // Only the first touch would be the primary pointer.
+    aPointerEvent.mIsPrimary =
+        aTouchEvent.mMessage == eTouchStart
+            ? !HasActiveTouchPointer()
+            : GetPointerPrimaryState(aTouch.Identifier());
+  }
   aPointerEvent.pointerId = aTouch.Identifier();
   aPointerEvent.mRefPoint = aTouch.mRefPoint;
   aPointerEvent.mModifiers = aTouchEvent.mModifiers;
@@ -725,6 +730,7 @@ void PointerEventHandler::DispatchPointerFromMouseOrTouch(
       }
     }
   }
+  nsUserCharacteristics::StealPointerEvent(aMouseOrTouchEvent);
 }
 
 /* static */

@@ -5,14 +5,16 @@
 
 #include "lib/jxl/enc_ans.h"
 
-#include <jxl/memory_manager.h>
 #include <jxl/types.h>
+#include <stdint.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numeric>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -437,7 +439,6 @@ uint32_t ComputeBestMethod(
 // Returns an estimate of the cost of encoding this histogram and the
 // corresponding data.
 size_t BuildAndStoreANSEncodingData(
-    JxlMemoryManager* memory_manager,
     HistogramParams::ANSHistogramStrategy ans_histogram_strategy,
     const ANSHistBin* histogram, size_t alphabet_size, size_t log_alpha_size,
     bool use_prefix_code, ANSEncSymbolInfo* info, BitWriter* writer) {
@@ -453,7 +454,7 @@ size_t BuildAndStoreANSEncodingData(
       std::vector<uint8_t> depths(alphabet_size);
       std::vector<uint16_t> bits(alphabet_size);
       if (writer == nullptr) {
-        BitWriter tmp_writer{memory_manager};
+        BitWriter tmp_writer;
         BitWriter::Allotment allotment(
             &tmp_writer, 8 * alphabet_size + 8);  // safe upper bound
         BuildAndStoreHuffmanTree(histo.data(), alphabet_size, depths.data(),
@@ -714,7 +715,7 @@ class HistogramBuilder {
 
   // NOTE: `layer` is only for clustered_entropy; caller does ReclaimAndCharge.
   size_t BuildAndStoreEntropyCodes(
-      JxlMemoryManager* memory_manager, const HistogramParams& params,
+      const HistogramParams& params,
       const std::vector<std::vector<Token>>& tokens, EntropyEncodingData* codes,
       std::vector<uint8_t>* context_map, BitWriter* writer, size_t layer,
       AuxOut* aux_out) const {
@@ -809,15 +810,14 @@ class HistogramBuilder {
       codes->encoding_info.back().resize(alphabet_size);
       BitWriter* histo_writer = writer;
       if (params.streaming_mode) {
-        codes->encoded_histograms.emplace_back(memory_manager);
+        codes->encoded_histograms.emplace_back();
         histo_writer = &codes->encoded_histograms.back();
       }
       BitWriter::Allotment allotment(histo_writer, 256 + alphabet_size * 24);
       cost += BuildAndStoreANSEncodingData(
-          memory_manager, params.ans_histogram_strategy,
-          clustered_histograms[c].data_.data(), alphabet_size, log_alpha_size,
-          codes->use_prefix_code, codes->encoding_info.back().data(),
-          histo_writer);
+          params.ans_histogram_strategy, clustered_histograms[c].data_.data(),
+          alphabet_size, log_alpha_size, codes->use_prefix_code,
+          codes->encoding_info.back().data(), histo_writer);
       allotment.FinishedHistogram(histo_writer);
       allotment.ReclaimAndCharge(histo_writer, layer, aux_out);
       if (params.streaming_mode) {
@@ -1535,11 +1535,13 @@ void EncodeHistograms(const std::vector<uint8_t>& context_map,
   allotment.ReclaimAndCharge(writer, layer, aux_out);
 }
 
-size_t BuildAndEncodeHistograms(
-    JxlMemoryManager* memory_manager, const HistogramParams& params,
-    size_t num_contexts, std::vector<std::vector<Token>>& tokens,
-    EntropyEncodingData* codes, std::vector<uint8_t>* context_map,
-    BitWriter* writer, size_t layer, AuxOut* aux_out) {
+size_t BuildAndEncodeHistograms(const HistogramParams& params,
+                                size_t num_contexts,
+                                std::vector<std::vector<Token>>& tokens,
+                                EntropyEncodingData* codes,
+                                std::vector<uint8_t>* context_map,
+                                BitWriter* writer, size_t layer,
+                                AuxOut* aux_out) {
   size_t total_bits = 0;
   codes->lz77.nonserialized_distance_context = num_contexts;
   std::vector<std::vector<Token>> tokens_lz77;
@@ -1653,20 +1655,19 @@ size_t BuildAndEncodeHistograms(
         CreateFlatHistogram(alphabet_size, ANS_TAB_SIZE);
     codes->encoding_info.emplace_back();
     codes->encoding_info.back().resize(alphabet_size);
-    codes->encoded_histograms.emplace_back(memory_manager);
+    codes->encoded_histograms.emplace_back();
     BitWriter* histo_writer = &codes->encoded_histograms.back();
     BitWriter::Allotment allotment(histo_writer, 256 + alphabet_size * 24);
     BuildAndStoreANSEncodingData(
-        memory_manager, params.ans_histogram_strategy, counts.data(),
-        alphabet_size, log_alpha_size, codes->use_prefix_code,
+        params.ans_histogram_strategy, counts.data(), alphabet_size,
+        log_alpha_size, codes->use_prefix_code,
         codes->encoding_info.back().data(), histo_writer);
     allotment.ReclaimAndCharge(histo_writer, 0, nullptr);
   }
 
   // Encode histograms.
-  total_bits +=
-      builder.BuildAndStoreEntropyCodes(memory_manager, params, tokens, codes,
-                                        context_map, writer, layer, aux_out);
+  total_bits += builder.BuildAndStoreEntropyCodes(
+      params, tokens, codes, context_map, writer, layer, aux_out);
   allotment.FinishedHistogram(writer);
   allotment.ReclaimAndCharge(writer, layer, aux_out);
 

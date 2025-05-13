@@ -147,6 +147,8 @@ namespace jit {
   _(js::jit::BigIntNumberCompare<ComparisonKind::GreaterThanOrEqual>) \
   _(js::jit::EqualStringsHelperPure)                                  \
   _(js::jit::FinishBailoutToBaseline)                                 \
+  _(js::jit::Float16ToFloat32)                                        \
+  _(js::jit::Float32ToFloat16)                                        \
   _(js::jit::FrameIsDebuggeeCheck)                                    \
   _(js::jit::GetContextSensitiveInterpreterStub)                      \
   _(js::jit::GetIndexFromString)                                      \
@@ -191,6 +193,7 @@ namespace jit {
   _(js::ProxyGetProperty)                                             \
   _(js::RegExpInstanceOptimizableRaw)                                 \
   _(js::RegExpPrototypeOptimizableRaw)                                \
+  _(js::RoundFloat16)                                                 \
   _(js::SetIteratorObject::next)                                      \
   _(js::StringToNumberPure)                                           \
   _(js::TypedArraySortFromJit)                                        \
@@ -206,7 +209,11 @@ namespace jit {
 // is not overloaded, you should prefer adding the function to
 // ABIFUNCTION_LIST instead. This list must be sorted with the name of the C++
 // function.
-#define ABIFUNCTION_AND_TYPE_LIST(_) _(JS::ToInt32, int32_t (*)(double))
+#define ABIFUNCTION_AND_TYPE_LIST(_)                    \
+  _(JS::ToInt32, int32_t (*)(double))                   \
+  _(js::jit::RoundFloat16ToFloat32, float (*)(int32_t)) \
+  _(js::jit::RoundFloat16ToFloat32, float (*)(float))   \
+  _(js::jit::RoundFloat16ToFloat32, float (*)(double))
 
 // List of all ABI function signature which are using a computed function
 // pointer instead of a statically known function pointer.

@@ -7,6 +7,7 @@
 #include "jit/TypePolicy.h"
 
 #include "jit/JitAllocPolicy.h"
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
@@ -620,36 +621,19 @@ template bool CacheIdPolicy<1>::staticAdjustInputs(TempAllocator& alloc,
 
 bool ToDoublePolicy::staticAdjustInputs(TempAllocator& alloc,
                                         MInstruction* ins) {
-  MOZ_ASSERT(ins->isToDouble() || ins->isToFloat32());
+  MOZ_ASSERT(ins->isToDouble() || ins->isToFloat32() || ins->isToFloat16());
 
   MDefinition* in = ins->getOperand(0);
-  MToFPInstruction::ConversionKind conversion;
-  if (ins->isToDouble()) {
-    conversion = ins->toToDouble()->conversion();
-  } else {
-    conversion = ins->toToFloat32()->conversion();
-  }
-
   switch (in->type()) {
     case MIRType::Int32:
     case MIRType::Float32:
     case MIRType::Double:
     case MIRType::Value:
-      // No need for boxing for these types.
-      return true;
     case MIRType::Null:
-      // No need for boxing, when we will convert.
-      if (conversion == MToFPInstruction::NonStringPrimitives) {
-        return true;
-      }
-      break;
     case MIRType::Undefined:
     case MIRType::Boolean:
-      // No need for boxing, when we will convert.
-      if (conversion == MToFPInstruction::NonStringPrimitives) {
-        return true;
-      }
-      break;
+      // No need for boxing for these types.
+      return true;
     case MIRType::Object:
     case MIRType::String:
     case MIRType::Symbol:
@@ -697,9 +681,6 @@ bool ToInt32Policy::staticAdjustInputs(TempAllocator& alloc,
     case MIRType::Boolean:
       // No need for boxing, when we will convert.
       if (conversion == IntConversionInputKind::Any) {
-        return true;
-      }
-      if (conversion == IntConversionInputKind::NumbersOrBoolsOnly) {
         return true;
       }
       break;
@@ -923,6 +904,10 @@ bool StoreUnboxedScalarPolicy::adjustValueInput(TempAllocator& alloc,
     case Scalar::Uint8Clamped:
       // The transpiler should have inserted MClampToUint8.
       MOZ_ASSERT(value->type() == MIRType::Int32);
+      break;
+    case Scalar::Float16:
+      value = MToFloat16::New(alloc, value);
+      ins->block()->insertBefore(ins, value->toInstruction());
       break;
     case Scalar::Float32:
       if (value->type() != MIRType::Float32) {

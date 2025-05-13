@@ -227,12 +227,17 @@ class MacroAssemblerMIPSShared : public Assembler {
   void loadDouble(const Address& addr, FloatRegister dest);
   void loadDouble(const BaseIndex& src, FloatRegister dest);
 
-  // Load a float value into a register, then expand it to a double.
-  void loadFloatAsDouble(const Address& addr, FloatRegister dest);
-  void loadFloatAsDouble(const BaseIndex& src, FloatRegister dest);
-
   void loadFloat32(const Address& addr, FloatRegister dest);
   void loadFloat32(const BaseIndex& src, FloatRegister dest);
+
+  FaultingCodeOffset loadFloat16(const Address& addr, FloatRegister dest,
+                                 Register) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  FaultingCodeOffset loadFloat16(const BaseIndex& src, FloatRegister dest,
+                                 Register) {
+    MOZ_CRASH("Not supported for this target");
+  }
 
   void outOfLineWasmTruncateToInt32Check(FloatRegister input, Register output,
                                          MIRType fromType, TruncFlags flags,

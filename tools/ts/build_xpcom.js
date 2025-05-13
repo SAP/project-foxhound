@@ -16,6 +16,7 @@ const URL = "https://searchfox.org/mozilla-central/source/";
 const HEADER = `/**
  * NOTE: Do not modify this file by hand.
  * Content was generated from source XPCOM .idl files.
+ * If you're updating some of the sources, see README for instructions.
  */
 `;
 
@@ -121,7 +122,7 @@ function ts_link(dir, files) {
   lines.push("");
 
   // Include xpcom builtins.
-  lines.push(fs.readFileSync(`${__dirname}/fixtures/intrinsics.d.ts`, "utf8"));
+  lines.push(fs.readFileSync(`${__dirname}/config/intrinsics.d.ts`, "utf8"));
   return lines;
 }
 

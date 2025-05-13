@@ -8,6 +8,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_places.h"
+#include "mozilla/glean/GleanMetrics.h"
 
 #include "Database.h"
 
@@ -53,6 +54,11 @@
 
 // Whether on corruption we should try to fix the database by cloning it.
 #define PREF_DATABASE_CLONEONCORRUPTION "places.database.cloneOnCorruption"
+
+#define PREF_DATABASE_FAVICONS_LASTCORRUPTION \
+  "places.database.lastFaviconsCorruptionInDaysFromEpoch"
+#define PREF_DATABASE_PLACES_LASTCORRUPTION \
+  "places.database.lastPlacesCorruptionInDaysFromEpoch"
 
 // Set to specify the size of the places database growth increments in kibibytes
 #define PREF_GROWTH_INCREMENT_KIB "places.database.growthIncrementKiB"
@@ -102,6 +108,8 @@
 // Legacy item annotation used by the old Sync engine.
 #define SYNC_PARENT_ANNO "sync/parent"
 
+#define USEC_PER_DAY 86400000000LL
+
 using namespace mozilla;
 
 namespace mozilla::places {
@@ -138,6 +146,25 @@ bool isRecentCorruptFile(const nsCOMPtr<nsIFile>& aCorruptFile) {
   return NS_SUCCEEDED(aCorruptFile->GetLastModifiedTime(&lastMod)) &&
          lastMod > 0 && (PR_Now() - lastMod) <= RECENT_BACKUP_TIME_MICROSEC;
 }
+
+// Defines the stages in the process of replacing a corrupt database.
+enum eCorruptDBReplaceStage : int8_t {
+  stage_closing = 0,
+  stage_removing,
+  stage_reopening,
+  stage_replaced,
+  stage_cloning,
+  stage_cloned,
+  stage_count
+};
+
+/**
+ * Maps a database replacement stage (eCorruptDBReplaceStage) to its string
+ * representation.
+ */
+static constexpr nsLiteralCString sCorruptDBStages[stage_count] = {
+    "stage_closing"_ns,  "stage_removing"_ns, "stage_reopening"_ns,
+    "stage_replaced"_ns, "stage_cloning"_ns,  "stage_cloned"_ns};
 
 /**
  * Removes a file, optionally adding a suffix to the file name.
@@ -334,6 +361,18 @@ nsresult AttachDatabase(nsCOMPtr<mozIStorageConnection>& aDBConn,
   Unused << aDBConn->ExecuteSimpleSQL(journalSizePragma);
 
   return NS_OK;
+}
+
+PRTime GetNow() {
+  nsNavHistory* history = nsNavHistory::GetHistoryService();
+  PRTime now;
+  if (history) {
+    // Optimization to avoid calling PR_Now() too often.
+    now = history->GetNow();
+  } else {
+    now = PR_Now();
+  }
+  return now;
 }
 
 }  // namespace
@@ -573,6 +612,12 @@ nsresult Database::EnsureConnection() {
     if (NS_SUCCEEDED(rv) && !databaseExisted) {
       mDatabaseStatus = nsINavHistoryService::DATABASE_STATUS_CREATE;
     } else if (rv == NS_ERROR_FILE_CORRUPTED) {
+      // Set places last corruption time in prefs for troubleshooting.
+      CheckedInt<int32_t> daysSinceEpoch = GetNow() / USEC_PER_DAY;
+      if (daysSinceEpoch.isValid()) {
+        Preferences::SetInt(PREF_DATABASE_PLACES_LASTCORRUPTION,
+                            daysSinceEpoch.value());
+      }
       // The database is corrupt, backup and replace it with a new one.
       rv = BackupAndReplaceDatabaseFile(storage, DATABASE_FILENAME, true, true);
       // Fallback to catch-all handler.
@@ -615,6 +660,16 @@ nsresult Database::EnsureConnection() {
       // Some errors may not indicate a database corruption, for those cases we
       // just bail out without throwing away a possibly valid places.sqlite.
       if (rv == NS_ERROR_FILE_CORRUPTED) {
+        // Set places and favicons last corruption time in prefs for
+        // troubleshooting.
+        CheckedInt<int32_t> daysSinceEpoch = GetNow() / USEC_PER_DAY;
+        if (daysSinceEpoch.isValid()) {
+          Preferences::SetInt(PREF_DATABASE_PLACES_LASTCORRUPTION,
+                              daysSinceEpoch.value());
+          Preferences::SetInt(PREF_DATABASE_FAVICONS_LASTCORRUPTION,
+                              daysSinceEpoch.value());
+        }
+
         // Since we don't know which database is corrupt, we must replace both.
         rv = BackupAndReplaceDatabaseFile(storage, DATABASE_FAVICONS_FILENAME,
                                           false, false);
@@ -806,14 +861,6 @@ nsresult Database::BackupAndReplaceDatabaseFile(
   // The only thing we can try to do is to replace the database on the next
   // startup, and report the problem through telemetry.
   {
-    enum eCorruptDBReplaceStage : int8_t {
-      stage_closing = 0,
-      stage_removing,
-      stage_reopening,
-      stage_replaced,
-      stage_cloning,
-      stage_cloned
-    };
     eCorruptDBReplaceStage stage = stage_closing;
     auto guard = MakeScopeExit([&]() {
       // In case we failed to close the connection or remove the database file,
@@ -825,6 +872,10 @@ nsresult Database::BackupAndReplaceDatabaseFile(
       Telemetry::Accumulate(
           Telemetry::PLACES_DATABASE_CORRUPTION_HANDLING_STAGE,
           static_cast<int8_t>(stage));
+
+      glean::places::places_database_corruption_handling_stage
+          .Get(NS_ConvertUTF16toUTF8(aDbFilename))
+          .Set(sCorruptDBStages[stage]);
     });
 
     // Close database connection if open.
@@ -1061,7 +1112,15 @@ nsresult Database::SetupDatabaseConnection(
   // Attach the favicons database to the main connection.
   rv = EnsureFaviconsDatabaseAttached(aStorage);
   if (NS_FAILED(rv)) {
-    // The favicons database may be corrupt. Try to replace and reattach it.
+    // The favicons database may be corrupt.
+    // Set last corruption time in prefs for troubleshooting.
+    CheckedInt<int32_t> daysSinceEpoch = GetNow() / USEC_PER_DAY;
+    if (daysSinceEpoch.isValid()) {
+      Preferences::SetInt(PREF_DATABASE_FAVICONS_LASTCORRUPTION,
+                          daysSinceEpoch.value());
+    }
+
+    // Try to replace and reattach it.
     nsCOMPtr<nsIFile> iconsFile;
     rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
                                 getter_AddRefs(iconsFile));

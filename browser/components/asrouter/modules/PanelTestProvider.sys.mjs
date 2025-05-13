@@ -2,7 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// We use importESModule here instead of static import so that
+// the Karma test environment won't choke on this module. This
+// is because the Karma test environment already stubs out
+// AppConstants, and overrides importESModule to be a no-op (which
+// can't be done for a static import statement).
+
+// eslint-disable-next-line mozilla/use-static-import
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
 const TWO_DAYS = 2 * 24 * 3600 * 1000;
+const isMSIX =
+  AppConstants.platform === "win" &&
+  Services.sysinfo.getProperty("hasWinPackageId", false);
 
 const MESSAGES = () => [
   {
@@ -81,6 +95,28 @@ const MESSAGES = () => [
     },
   },
   {
+    id: "TEST_BMB_BUTTON",
+    groups: [],
+    template: "bookmarks_bar_button",
+    content: {
+      label: {
+        raw: "Getting Started",
+        tooltiptext: "Getting started with Firefox",
+      },
+      action: {
+        type: "OPEN_URL",
+        data: {
+          args: "https://www.mozilla.org",
+          where: "tab",
+        },
+        navigate: true,
+      },
+    },
+    frequency: { lifetime: 100 },
+    trigger: { id: "defaultBrowserCheck" },
+    targeting: "true",
+  },
+  {
     id: "MULTISTAGE_SPOTLIGHT_MESSAGE",
     groups: ["panel-test-provider"],
     template: "spotlight",
@@ -112,11 +148,23 @@ const MESSAGES = () => [
             },
             primary_button: {
               label: {
-                string_id: "mr2022-onboarding-pin-primary-button-label",
+                string_id: isMSIX
+                  ? "mr2022-onboarding-pin-primary-button-label-msix"
+                  : "mr2022-onboarding-pin-primary-button-label",
               },
               action: {
+                type: "MULTI_ACTION",
                 navigate: true,
-                type: "PIN_FIREFOX_TO_TASKBAR",
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "PIN_FIREFOX_TO_START_MENU",
+                    },
+                  ],
+                },
               },
             },
             secondary_button: {
@@ -341,7 +389,7 @@ const MESSAGES = () => [
         },
       },
     },
-    groups: ["panel-test-provider"],
+    groups: ["panel-test-provider", "pbNewtab"],
     targeting: "region != 'CN' && !hasActiveEnterprisePolicies",
     frequency: { lifetime: 3 },
   },
@@ -383,6 +431,9 @@ const MESSAGES = () => [
               },
               {
                 type: "PIN_FIREFOX_TO_TASKBAR",
+              },
+              {
+                type: "PIN_FIREFOX_TO_START_MENU",
               },
               {
                 type: "BLOCK_MESSAGE",
@@ -623,6 +674,116 @@ const MESSAGES = () => [
             },
             dismiss_button: {
               action: { dismiss: true },
+            },
+          },
+        },
+      ],
+    },
+  },
+  {
+    id: "EXPERIMENT_L10N_TEST",
+    template: "feature_callout",
+    description:
+      "Test ASRouter support for flattening experiment-translated messages into plain English text. See bug 1899439.",
+    content: {
+      id: "EXPERIMENT_L10N_TEST",
+      template: "multistage",
+      backdrop: "transparent",
+      transitions: false,
+      disableHistoryUpdates: true,
+      metrics: "block",
+      screens: [
+        {
+          id: "EXPERIMENT_L10N_TEST_1",
+          anchors: [
+            {
+              selector: "#PanelUI-menu-button",
+              panel_position: {
+                anchor_attachment: "bottomcenter",
+                callout_attachment: "topright",
+              },
+            },
+          ],
+          content: {
+            position: "callout",
+            layout: "survey",
+            width: "min-content",
+            padding: "16",
+            title: {
+              raw: {
+                $l10n: {
+                  id: "question-title",
+                  text: "Help Firefox improve this page",
+                  comment:
+                    "The title of a popup asking the user to give feedback by answering a short survey",
+                },
+              },
+              marginInline: "0 42px",
+              whiteSpace: "nowrap",
+            },
+            title_logo: {
+              imageURL: "chrome://branding/content/about-logo.png",
+              alignment: "top",
+            },
+            subtitle: {
+              raw: {
+                $l10n: {
+                  id: "relevance-question",
+                  text: "How relevant are the contents of this Firefox page to you?",
+                  comment: "Survey question about relevance",
+                },
+              },
+            },
+            secondary_button: {
+              label: {
+                raw: {
+                  $l10n: {
+                    id: "advance-button-label",
+                    text: "Next",
+                    comment:
+                      "Label for the button that submits the user's response to question 1 and advances to question 2",
+                  },
+                },
+              },
+              style: "primary",
+              action: { navigate: true },
+              disabled: "hasActiveMultiSelect",
+            },
+            dismiss_button: {
+              size: "small",
+              marginBlock: "12px 0",
+              marginInline: "0 12px",
+              action: { dismiss: true },
+            },
+            tiles: {
+              type: "multiselect",
+              style: { flexDirection: "column", alignItems: "flex-start" },
+              data: [
+                {
+                  id: "radio-no-opinion",
+                  type: "radio",
+                  group: "radios",
+                  defaultValue: true,
+                  icon: {
+                    style: {
+                      width: "14px",
+                      height: "14px",
+                      marginInline: "0 0.5em",
+                    },
+                  },
+                  label: {
+                    raw: {
+                      $l10n: {
+                        id: "radio-no-opinion-label",
+                        text: "No opinion",
+                        comment:
+                          "Answer choice indicating that the user has no opinion about how relevant the New Tab Page is",
+                      },
+                    },
+                  },
+                  action: { navigate: true },
+                },
+              ],
             },
           },
         },

@@ -18,6 +18,8 @@ export class NetworkResponse {
   #decodedBodySize;
   #encodedBodySize;
   #fromCache;
+  #fromServiceWorker;
+  #isDataURL;
   #headersTransmittedSize;
   #status;
   #statusMessage;
@@ -31,13 +33,17 @@ export class NetworkResponse {
    * @param {object} params
    * @param {boolean} params.fromCache
    *     Whether the response was read from the cache or not.
+   * @param {boolean} params.fromServiceWorker
+   *     Whether the response is coming from a service worker or not.
    * @param {string=} params.rawHeaders
    *     The response's raw (ie potentially compressed) headers
    */
   constructor(channel, params) {
     this.#channel = channel;
-    const { fromCache, rawHeaders = "" } = params;
+    const { fromCache, fromServiceWorker, rawHeaders = "" } = params;
     this.#fromCache = fromCache;
+    this.#fromServiceWorker = fromServiceWorker;
+    this.#isDataURL = this.#channel instanceof Ci.nsIDataChannel;
     this.#wrappedChannel = ChannelWrapper.get(channel);
 
     this.#decodedBodySize = 0;
@@ -50,8 +56,12 @@ export class NetworkResponse {
     // responseStarted event, and then (200, OK) during the responseCompleted
     // event.
     // For now consider them as immutable and store them on startup.
-    this.#status = this.#channel.responseStatus;
-    this.#statusMessage = this.#channel.responseStatusText;
+    // According to the fetch spec for data URLs we can just hardcode
+    // status `200` and statusMessage `OK`.
+    this.#status = this.#isDataURL ? 200 : this.#channel.responseStatus;
+    this.#statusMessage = this.#isDataURL
+      ? "OK"
+      : this.#channel.responseStatusText;
   }
 
   get decodedBodySize() {
@@ -68,6 +78,10 @@ export class NetworkResponse {
 
   get fromCache() {
     return this.#fromCache;
+  }
+
+  get fromServiceWorker() {
+    return this.#fromServiceWorker;
   }
 
   get protocol() {
@@ -90,12 +104,6 @@ export class NetworkResponse {
     return this.#totalTransmittedSize;
   }
 
-  addResponseContent(responseContent) {
-    this.#decodedBodySize = responseContent.decodedBodySize;
-    this.#encodedBodySize = responseContent.bodySize;
-    this.#totalTransmittedSize = responseContent.transferredSize;
-  }
-
   getComputedMimeType() {
     // TODO: DevTools NetworkObserver is computing a similar value in
     // addResponseContent, but uses an inconsistent implementation in
@@ -105,7 +113,11 @@ export class NetworkResponse {
     let mimeType = "";
 
     try {
-      mimeType = this.#wrappedChannel.contentType;
+      if (this.#isDataURL) {
+        mimeType = this.#channel.contentType;
+      } else {
+        mimeType = this.#wrappedChannel.contentType;
+      }
       const contentCharset = this.#channel.contentCharset;
       if (contentCharset) {
         mimeType += `;charset=${contentCharset}`;
@@ -120,12 +132,40 @@ export class NetworkResponse {
   getHeadersList() {
     const headers = [];
 
-    this.#channel.visitOriginalResponseHeaders({
-      visitHeader(name, value) {
-        headers.push([name, value]);
-      },
-    });
+    // According to the fetch spec for data URLs we can just hardcode
+    // "Content-Type" header.
+    if (this.#isDataURL) {
+      headers.push(["Content-Type", this.#channel.contentType]);
+    } else {
+      this.#channel.visitOriginalResponseHeaders({
+        visitHeader(name, value) {
+          headers.push([name, value]);
+        },
+      });
+    }
 
     return headers;
+  }
+
+  /**
+   * Set the various response sizes for this response. Depending on how the
+   * completion was monitored (DevTools NetworkResponseListener or ChannelWrapper
+   * event), sizes need to be retrieved differently.
+   * There this is a simple setter and the actual logic to retrieve sizes is in
+   * NetworkEventRecord.
+   *
+   * @param {object} sizes
+   * @param {number} sizes.decodedBodySize
+   *     The decoded body size.
+   * @param {number} sizes.encodedBodySize
+   *     The encoded body size.
+   * @param {number} sizes.totalTransmittedSize
+   *     The total transmitted size.
+   */
+  setResponseSizes(sizes) {
+    const { decodedBodySize, encodedBodySize, totalTransmittedSize } = sizes;
+    this.#decodedBodySize = decodedBodySize;
+    this.#encodedBodySize = encodedBodySize;
+    this.#totalTransmittedSize = totalTransmittedSize;
   }
 }

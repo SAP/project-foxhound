@@ -27,6 +27,7 @@
 
 #include "jit/AtomicOperations.h"
 #include "jit/InlinableNatives.h"
+#include "jit/JitRuntime.h"
 #include "jit/MacroAssembler.h"
 #include "jit/ProcessExecutableMemory.h"
 #include "jit/Simulator.h"
@@ -503,7 +504,7 @@ static bool WasmHandleDebugTrap() {
   Frame* fp = activation->wasmExitFP();
   Instance* instance = GetNearestEffectiveInstance(fp);
   const Code& code = instance->code();
-  MOZ_ASSERT(code.metadata().debugEnabled);
+  MOZ_ASSERT(code.codeMeta().debugEnabled);
 
   // The debug trap stub is the innermost frame. It's return address is the
   // actual trap site.
@@ -639,14 +640,13 @@ static WasmExceptionObject* GetOrWrapWasmException(JitActivation* activation,
   return nullptr;
 }
 
-static const wasm::TryNote* FindNonDelegateTryNote(const wasm::Code& code,
-                                                   const uint8_t* pc,
-                                                   Tier* tier) {
-  const wasm::TryNote* tryNote = code.lookupTryNote((void*)pc, tier);
+static const wasm::TryNote* FindNonDelegateTryNote(
+    const wasm::Code& code, const uint8_t* pc, const CodeBlock** codeBlock) {
+  const wasm::TryNote* tryNote = code.lookupTryNote((void*)pc, codeBlock);
   while (tryNote && tryNote->isDelegate()) {
-    const wasm::CodeTier& codeTier = code.codeTier(*tier);
-    pc = codeTier.segment().base() + tryNote->delegateOffset();
-    const wasm::TryNote* delegateTryNote = code.lookupTryNote((void*)pc, tier);
+    pc = (*codeBlock)->segment->base() + tryNote->delegateOffset();
+    const wasm::TryNote* delegateTryNote =
+        code.lookupTryNote((void*)pc, codeBlock);
     MOZ_RELEASE_ASSERT(delegateTryNote == nullptr ||
                        delegateTryNote->tryBodyBegin() <
                            tryNote->tryBodyBegin());
@@ -655,19 +655,73 @@ static const wasm::TryNote* FindNonDelegateTryNote(const wasm::Code& code,
   return tryNote;
 }
 
-// Unwind the entire activation in response to a thrown exception. This function
-// is responsible for notifying the debugger of each unwound frame. The return
-// value is the new stack address which the calling stub will set to the sp
-// register before executing a return instruction.
-//
-// This function will also look for try-catch handlers and, if not trapping or
-// throwing an uncatchable exception, will write the handler info in the return
-// argument and return true.
-//
-// Returns false if a handler isn't found or shouldn't be used (e.g., traps).
+// Request tier-2 compilation for the calling wasm function.
 
-bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
-                       jit::ResumeFromException* rfe) {
+static void WasmHandleRequestTierUp(Instance* instance) {
+  JSContext* cx = instance->cx();
+
+  // Don't turn this into a release assert - TlsContext.get() can be expensive.
+  MOZ_ASSERT(cx == TlsContext.get());
+
+  // Neither this routine nor the stub that calls it make any attempt to
+  // communicate roots to the GC.  This is OK because we will only be
+  // compiling code here, which shouldn't GC.  Nevertheless ..
+  JS::AutoAssertNoGC nogc(cx);
+
+  JitActivation* activation = CallingActivation(cx);
+  Frame* fp = activation->wasmExitFP();
+
+  // Similarly, don't turn this into a release assert.
+  MOZ_ASSERT(instance == GetNearestEffectiveInstance(fp));
+
+  // Figure out the requesting funcIndex.  We could add a field to the
+  // Instance and, in the slow path of BaseCompiler::addHotnessCheck, write it
+  // in there.  That would avoid having to call LookupCodeBlock here, but (1)
+  // LookupCodeBlock is pretty cheap and (2) this would make hotness checks
+  // larger.  It doesn't seem like a worthwhile tradeoff.
+  void* resumePC = fp->returnAddress();
+  const CodeRange* codeRange;
+  const CodeBlock* codeBlock = LookupCodeBlock(resumePC, &codeRange);
+  MOZ_RELEASE_ASSERT(codeBlock && codeRange);
+
+  uint32_t funcIndex = codeRange->funcIndex();
+
+  // Function `funcIndex` is requesting tier-up.  This can go one of three ways:
+  // - the request is a duplicate -- ignore
+  // - tier-up compilation succeeds -- we hope
+  // - tier-up compilation fails (eg, OOMs).
+  //   We have no feasible way to recover.
+  //
+  // Regardless of the outcome, we want to defer duplicate requests as long as
+  // possible.  So set the counter to "infinity" right now.
+  instance->resetHotnessCounter(funcIndex);
+
+  // Try to Ion-compile it.  Note that `ok == true` signifies either
+  // "duplicate request" or "not a duplicate, and compilation succeeded".
+  bool ok = codeBlock->code->requestTierUp(funcIndex);
+
+  // If compilation failed, there's no feasible way to recover.
+  if (!ok) {
+    wasm::Log(cx, "Failed to tier-up function=%d in instance=%p.", funcIndex,
+              instance);
+  }
+}
+
+// Unwind the activation in response to a thrown exception. This function is
+// responsible for notifying the debugger of each unwound frame.
+//
+// This function will look for try-catch handlers and, if not trapping or
+// throwing an uncatchable exception, will write the handler info in |*rfe|.
+//
+// If no try-catch handler is found, return to the caller to continue unwinding
+// JS JIT frames.
+void wasm::HandleExceptionWasm(JSContext* cx, JitFrameIter& iter,
+                               jit::ResumeFromException* rfe) {
+  MOZ_ASSERT(iter.isWasm());
+  MOZ_ASSERT(CallingActivation(cx) == iter.activation());
+  MOZ_ASSERT(cx->activation()->asJit()->hasWasmExitFP());
+  MOZ_ASSERT(rfe->kind == ExceptionResumeKind::EntryFrame);
+
   // WasmFrameIter iterates down wasm frames in the activation starting at
   // JitActivation::wasmExitFP(). Calling WasmFrameIter::startUnwinding pops
   // JitActivation::wasmExitFP() once each time WasmFrameIter is incremented,
@@ -676,7 +730,6 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
   // we just called onLeaveFrame (which would lead to the frame being re-added
   // to the map of live frames, right as it becomes trash).
 
-  MOZ_ASSERT(CallingActivation(cx) == iter.activation());
 #ifdef DEBUG
   auto onExit = mozilla::MakeScopeExit([cx] {
     MOZ_ASSERT(!cx->activation()->asJit()->isWasmTrapping(),
@@ -687,33 +740,25 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
 #endif
 
   MOZ_ASSERT(!iter.done());
-  iter.setUnwind(WasmFrameIter::Unwind::True);
-
-  // Live wasm code on the stack is kept alive (in TraceJitActivation) by
-  // marking the instance of every wasm::Frame found by WasmFrameIter.
-  // However, as explained above, we're popping frames while iterating which
-  // means that a GC during this loop could collect the code of frames whose
-  // code is still on the stack. This is actually mostly fine: as soon as we
-  // return to the throw stub, the entire stack will be popped as a whole,
-  // returning to the C++ caller. However, we must keep the throw stub alive
-  // itself which is owned by the innermost instance.
-  Rooted<WasmInstanceObject*> keepAlive(cx, iter.instance()->object());
+  iter.asWasm().setUnwind(WasmFrameIter::Unwind::True);
 
   JitActivation* activation = CallingActivation(cx);
   Rooted<WasmExceptionObject*> wasmExn(cx,
                                        GetOrWrapWasmException(activation, cx));
 
-  for (; !iter.done(); ++iter) {
+  for (; !iter.done() && iter.isWasm(); ++iter) {
     // Wasm code can enter same-compartment realms, so reset cx->realm to
     // this frame's realm.
-    cx->setRealmForJitExceptionHandler(iter.instance()->realm());
+    WasmFrameIter& wasmFrame = iter.asWasm();
+    cx->setRealmForJitExceptionHandler(wasmFrame.instance()->realm());
 
     // Only look for an exception handler if there's a catchable exception.
     if (wasmExn) {
-      Tier tier;
-      const wasm::Code& code = iter.instance()->code();
-      const uint8_t* pc = iter.resumePCinCurrentFrame();
-      const wasm::TryNote* tryNote = FindNonDelegateTryNote(code, pc, &tier);
+      const wasm::Code& code = wasmFrame.instance()->code();
+      const uint8_t* pc = wasmFrame.resumePCinCurrentFrame();
+      const wasm::CodeBlock* codeBlock = nullptr;
+      const wasm::TryNote* tryNote =
+          FindNonDelegateTryNote(code, pc, &codeBlock);
 
       if (tryNote) {
 #ifdef ENABLE_WASM_TAIL_CALLS
@@ -726,33 +771,31 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
 #endif
 
         cx->clearPendingException();
-        MOZ_ASSERT(iter.instance() == iter.instance());
-        iter.instance()->setPendingException(wasmExn);
+        wasmFrame.instance()->setPendingException(wasmExn);
 
         rfe->kind = ExceptionResumeKind::WasmCatch;
-        rfe->framePointer = (uint8_t*)iter.frame();
-        rfe->instance = iter.instance();
+        rfe->framePointer = (uint8_t*)wasmFrame.frame();
+        rfe->instance = wasmFrame.instance();
 
         rfe->stackPointer =
             (uint8_t*)(rfe->framePointer - tryNote->landingPadFramePushed());
         rfe->target =
-            iter.instance()->codeBase(tier) + tryNote->landingPadEntryPoint();
+            codeBlock->segment->base() + tryNote->landingPadEntryPoint();
 
         // Make sure to clear trapping state if we got here due to a trap.
         if (activation->isWasmTrapping()) {
           activation->finishWasmTrap();
         }
         activation->setWasmExitFP(nullptr);
-
-        return true;
+        return;
       }
     }
 
-    if (!iter.debugEnabled()) {
+    if (!wasmFrame.debugEnabled()) {
       continue;
     }
 
-    DebugFrame* frame = iter.debugFrame();
+    DebugFrame* frame = wasmFrame.debugFrame();
     frame->clearReturnJSValue();
 
     // Assume ResumeMode::Terminate if no exception is pending --
@@ -794,25 +837,14 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
                        .isWrappedJSValue());
   }
 #endif
-
-  // In case of no handler, exit wasm via ret().
-  // FailInstanceReg signals to wasm stub to do a failure return.
-  rfe->kind = ExceptionResumeKind::Wasm;
-  rfe->framePointer = (uint8_t*)iter.unwoundCallerFP();
-  rfe->stackPointer = (uint8_t*)iter.unwoundAddressOfReturnAddress();
-  rfe->instance = (Instance*)FailInstanceReg;
-  rfe->target = nullptr;
-  return false;
 }
 
 static void* WasmHandleThrow(jit::ResumeFromException* rfe) {
-  JSContext* cx = TlsContext.get();  // Cold code
-  JitActivation* activation = CallingActivation(cx);
-  WasmFrameIter iter(activation);
-  // We can ignore the return result here because the throw stub code
-  // can just check the resume kind to see if a handler was found or not.
-  HandleThrow(cx, iter, rfe);
-  return rfe;
+  jit::HandleException(rfe);
+  // Return a pointer to the exception handler trampoline code to jump to from
+  // the throw stub.
+  JSContext* cx = TlsContext.get();
+  return cx->runtime()->jitRuntime()->getExceptionTailReturnValueCheck().value;
 }
 
 // Has the same return-value convention as HandleTrap().
@@ -965,14 +997,12 @@ static void* BoxValue_Anyref(Value* rawVal) {
   return result.get().forCompiledCode();
 }
 
-static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* instance,
+static int32_t CoerceInPlace_JitEntry(int funcIndex, Instance* instance,
                                       Value* argv) {
   JSContext* cx = TlsContext.get();  // Cold code
 
   const Code& code = instance->code();
-  const FuncExport& fe =
-      code.metadata(code.stableTier()).funcExports[funcExportIndex];
-  const FuncType& funcType = code.metadata().getFuncExportType(fe);
+  const FuncType& funcType = code.codeMeta().getFuncType(funcIndex);
 
   for (size_t i = 0; i < funcType.args().length(); i++) {
     HandleValue arg = HandleValue::fromMarkedLocation(&argv[i]);
@@ -1171,6 +1201,9 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
     case SymbolicAddress::HandleDebugTrap:
       *abiType = Args_General0;
       return FuncCast(WasmHandleDebugTrap, *abiType);
+    case SymbolicAddress::HandleRequestTierUp:
+      *abiType = Args_General1;
+      return FuncCast(WasmHandleRequestTierUp, *abiType);
     case SymbolicAddress::HandleThrow:
       *abiType = Args_General1;
       return FuncCast(WasmHandleThrow, *abiType);
@@ -1593,7 +1626,8 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     // No thunk, because some work has to be done within the activation before
     // the activation exit: when called, arbitrary wasm registers are live and
     // must be saved, and the stack pointer may not be aligned for any ABI.
-    case SymbolicAddress::HandleDebugTrap:  // GenerateDebugTrapStub
+    case SymbolicAddress::HandleDebugTrap:      // GenerateDebugStub
+    case SymbolicAddress::HandleRequestTierUp:  // GenerateRequestTierUpStub
 
     // No thunk, because their caller manages the activation exit explicitly
     case SymbolicAddress::CallImport_General:      // GenerateImportInterpExit
@@ -1906,6 +1940,12 @@ Mutex initBuiltinThunks(mutexid::WasmInitBuiltinThunks);
 Atomic<const BuiltinThunks*> builtinThunks;
 
 bool wasm::EnsureBuiltinThunksInitialized() {
+  AutoMarkJitCodeWritableForThread writable;
+  return EnsureBuiltinThunksInitialized(writable);
+}
+
+bool wasm::EnsureBuiltinThunksInitialized(
+    AutoMarkJitCodeWritableForThread& writable) {
   LockGuard<Mutex> guard(initBuiltinThunks);
   if (builtinThunks) {
     return true;
@@ -2009,8 +2049,6 @@ bool wasm::EnsureBuiltinThunksInitialized() {
   if (!thunks->codeBase) {
     return false;
   }
-
-  AutoMarkJitCodeWritableForThread writable;
 
   masm.executableCopy(thunks->codeBase);
   memset(thunks->codeBase + masm.bytesNeeded(), 0,
@@ -2148,7 +2186,7 @@ void* wasm::MaybeGetBuiltinThunk(JSFunction* f, const FuncType& funcType) {
 }
 
 bool wasm::LookupBuiltinThunk(void* pc, const CodeRange** codeRange,
-                              uint8_t** codeBase) {
+                              const uint8_t** codeBase) {
   if (!builtinThunks) {
     return false;
   }

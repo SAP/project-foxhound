@@ -36,9 +36,6 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-// Static members
-nsListControlFrame* nsListControlFrame::mFocused = nullptr;
-
 //---------------------------------------------------------
 nsListControlFrame* NS_NewListControlFrame(PresShell* aPresShell,
                                            ComputedStyle* aStyle) {
@@ -105,6 +102,10 @@ HTMLOptionElement* nsListControlFrame::GetCurrentOption() const {
   return mEventListener->GetCurrentOption();
 }
 
+bool nsListControlFrame::IsFocused() const {
+  return Select().State().HasState(ElementState::FOCUS);
+}
+
 /**
  * This is called by the SelectsAreaFrame, which is the same
  * as the frame returned by GetOptionsContainer. It's the frame which is
@@ -113,7 +114,9 @@ HTMLOptionElement* nsListControlFrame::GetCurrentOption() const {
  * frame
  */
 void nsListControlFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
-  if (mFocused != this) return;
+  if (!IsFocused()) {
+    return;
+  }
 
   nsIFrame* containerFrame = GetOptionsContainer();
   if (!containerFrame) return;
@@ -157,16 +160,12 @@ void nsListControlFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
 }
 
 void nsListControlFrame::InvalidateFocus() {
-  if (mFocused != this) return;
-
-  nsIFrame* containerFrame = GetOptionsContainer();
-  if (containerFrame) {
+  if (nsIFrame* containerFrame = GetOptionsContainer()) {
     containerFrame->InvalidateFrame();
   }
 }
 
 NS_QUERYFRAME_HEAD(nsListControlFrame)
-  NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
   NS_QUERYFRAME_ENTRY(nsISelectControlFrame)
   NS_QUERYFRAME_ENTRY(nsListControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(ScrollContainerFrame)
@@ -228,34 +227,21 @@ nscoord nsListControlFrame::CalcBSizeOfARow() {
   return rowBSize;
 }
 
-nscoord nsListControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  // Always add scrollbar inline sizes to the pref-inline-size of the
+nscoord nsListControlFrame::IntrinsicISize(gfxContext* aContext,
+                                           IntrinsicISizeType aType) {
+  // Always add scrollbar inline sizes to the intrinsic isize of the
   // scrolled content. Combobox frames depend on this happening in the
   // dropdown, and standalone listboxes are overflow:scroll so they need
   // it too.
   WritingMode wm = GetWritingMode();
-  Maybe<nscoord> containISize = ContainIntrinsicISize();
-  nscoord result = containISize
-                       ? *containISize
-                       : GetScrolledFrame()->GetPrefISize(aRenderingContext);
+  nscoord result;
+  if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
+    result = *containISize;
+  } else {
+    result = GetScrolledFrame()->IntrinsicISize(aContext, aType);
+  }
   LogicalMargin scrollbarSize(wm, GetDesiredScrollbarSizes());
   result = NSCoordSaturatingAdd(result, scrollbarSize.IStartEnd(wm));
-  return result;
-}
-
-nscoord nsListControlFrame::GetMinISize(gfxContext* aRenderingContext) {
-  // Always add scrollbar inline sizes to the min-inline-size of the
-  // scrolled content. Combobox frames depend on this happening in the
-  // dropdown, and standalone listboxes are overflow:scroll so they need
-  // it too.
-  WritingMode wm = GetWritingMode();
-  Maybe<nscoord> containISize = ContainIntrinsicISize();
-  nscoord result = containISize
-                       ? *containISize
-                       : GetScrolledFrame()->GetMinISize(aRenderingContext);
-  LogicalMargin scrollbarSize(wm, GetDesiredScrollbarSizes());
-  result += scrollbarSize.IStartEnd(wm);
-
   return result;
 }
 
@@ -739,16 +725,10 @@ void nsListControlFrame::ResetList(bool aAllowScrolling) {
   // Combobox will redisplay itself with the OnOptionSelected event
 }
 
-void nsListControlFrame::SetFocus(bool aOn, bool aRepaint) {
-  InvalidateFocus();
-
-  if (aOn) {
-    mFocused = this;
-  } else {
-    mFocused = nullptr;
+void nsListControlFrame::ElementStateChanged(ElementState aStates) {
+  if (aStates.HasState(ElementState::FOCUS)) {
+    InvalidateFocus();
   }
-
-  InvalidateFocus();
 }
 
 void nsListControlFrame::GetOptionText(uint32_t aIndex, nsAString& aStr) {
@@ -957,21 +937,6 @@ class AsyncReset final : public Runnable {
   bool mScroll;
 };
 
-nsresult nsListControlFrame::SetFormProperty(nsAtom* aName,
-                                             const nsAString& aValue) {
-  if (nsGkAtoms::selected == aName) {
-    return NS_ERROR_INVALID_ARG;  // Selected is readonly according to spec.
-  } else if (nsGkAtoms::selectedindex == aName) {
-    // You shouldn't be calling me for this!!!
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  // We should be told about selectedIndex by the DOM element through
-  // OnOptionSelected
-
-  return NS_OK;
-}
-
 void nsListControlFrame::DidReflow(nsPresContext* aPresContext,
                                    const ReflowInput* aReflowInput) {
   bool wasInterrupted = !mHasPendingInterruptAtStartOfReflow &&
@@ -1026,6 +991,11 @@ nscoord nsListControlFrame::CalcFallbackRowBSize(float aFontSizeInflation) {
 
 nscoord nsListControlFrame::CalcIntrinsicBSize(nscoord aBSizeOfARow,
                                                int32_t aNumberOfOptions) {
+  if (Style()->StyleUIReset()->mFieldSizing == StyleFieldSizing::Content) {
+    int32_t length = GetNumberOfRows();
+    return length * aBSizeOfARow;
+  }
+
   mNumDisplayRows = Select().Size();
   if (mNumDisplayRows < 1) {
     mNumDisplayRows = 4;
@@ -1035,7 +1005,7 @@ nscoord nsListControlFrame::CalcIntrinsicBSize(nscoord aBSizeOfARow,
 
 #ifdef ACCESSIBILITY
 void nsListControlFrame::FireMenuItemActiveEvent(nsIContent* aPreviousOption) {
-  if (mFocused != this) {
+  if (!IsFocused()) {
     return;
   }
 

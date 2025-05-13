@@ -50,6 +50,7 @@
 #include "wasm/WasmJS.h"              // for WasmInstanceObject
 #include "wasm/WasmTypeDecls.h"       // for Bytes
 
+#include "gc/Marking-inl.h"       // for MaybeForwardedObjectIs
 #include "vm/BytecodeUtil-inl.h"  // for BytecodeRangeWithPosition
 #include "vm/JSAtomUtils-inl.h"   // for PrimitiveValueToId
 #include "vm/JSObject-inl.h"  // for NewBuiltinClassInstance, NewObjectWithGivenProto, NewTenuredObjectWithGivenProto
@@ -94,7 +95,7 @@ void DebuggerScript::trace(JSTracer* trc) {
       TraceManuallyBarrieredCrossCompartmentEdge(
           trc, this, &wasm, "Debugger.Script wasm referent");
       if (wasm != cell->as<JSObject>()) {
-        MOZ_ASSERT(wasm->is<WasmInstanceObject>());
+        MOZ_ASSERT(gc::MaybeForwardedObjectIs<WasmInstanceObject>(wasm));
         setReservedSlotGCThingAsPrivateUnbarriered(SCRIPT_SLOT, wasm);
       }
     }
@@ -1500,6 +1501,9 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Try:
     case JSOp::Throw:
     case JSOp::ThrowWithStack:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case JSOp::ThrowWithStackWithoutJump:
+#endif
     case JSOp::Goto:
     case JSOp::TableSwitch:
     case JSOp::Case:
