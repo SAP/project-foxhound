@@ -529,7 +529,21 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
   }
 
   // It's an actual XPCOM string
+  return NonVoidStringToJsval(cx, str.AsAString(), rval);
+}
+
+MOZ_ALWAYS_INLINE
+bool StringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
+                   JS::MutableHandle<JS::Value> rval) {
+  if (str.IsNull()) {
+    rval.setNull();
+    return true;
+  }
+  return NonVoidStringToJsval(cx, str, rval);
+}
+
 /**
+ * As above, but for nsACString with latin-1 (non-UTF8) content.
  */
 bool NonVoidLatin1StringToJsval(JSContext* cx, const nsACString& str,
                                 JS::MutableHandle<JS::Value> rval);

@@ -139,7 +139,7 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
   }
   static already_AddRefed<StringBuffer> Create(const unsigned char* aData,
                                                size_t aLength) {
-    return DoCreate(aData, aLength);
+    return DoCreate(aData, aLength, EmptyTaint);
   }
 
   /**
