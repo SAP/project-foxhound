@@ -637,7 +637,7 @@ class ScriptSource {
   // True if an associated SourceCompressionTask was ever created.
   bool hadCompressionTask_ = false;
 
-  // Taintfox: keep a record of the MD5 checksum of the source
+  // Foxhound: keep a record of the MD5 checksum of the source
   TaintMd5 md5_;
 
   //
@@ -905,7 +905,7 @@ class ScriptSource {
   };
 
  public:
-  // Taintfox: compute the MD5 of script source
+  // Foxhound: compute the MD5 of script source
   TaintMd5 md5Checksum(JSContext* cx);
 
   size_t length() const {

@@ -28,7 +28,7 @@ extern bool str_fromCodePoint(JSContext* cx, unsigned argc, Value* vp);
 
 // String methods exposed so they can be installed in the self-hosting global.
 
-// TaintFox: Exported for the js shell: taint(str).
+// Foxhound: Exported for the js shell: taint(str).
 bool str_tainted(JSContext* cx, unsigned argc, Value* vp);
 
 extern bool str_includes(JSContext* cx, unsigned argc, Value* vp);

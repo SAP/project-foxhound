@@ -1270,7 +1270,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsACString& aOutput) {
 
       if (first != end && second != end && asciiHexDigit(*first) &&
           asciiHexDigit(*second)) {
-        // Taintfox: this is an approximation as we compress the taint of 3 chars (e.g. %40) into just one
+        // Foxhound: this is an approximation as we compress the taint of 3 chars (e.g. %40) into just one
         aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, first)), aOutput.Length());
         aOutput.Append(hexDigit(*first) * 16 + hexDigit(*second));
         iter = second + 1;
@@ -1282,7 +1282,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsACString& aOutput) {
 
       continue;
     }
-    // Taintfox: append single char taint
+    // Foxhound: append single char taint
     aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), aOutput.Length());
     aOutput.Append(*iter);
     ++iter;
@@ -1300,13 +1300,13 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
   const char* const iter = std::find(aStart, aEnd, '&');
   if (iter != aEnd) {
     string.Rebind(aStart, iter);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     string.AssignTaint(aTaint.safeSubTaint(std::distance(stringStart, aStart),
                                            std::distance(stringStart, iter)));
     aStart = iter + 1;
   } else {
     string.Rebind(aStart, aEnd);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     string.AssignTaint(aTaint.safeSubTaint(std::distance(stringStart, aStart),
                                            std::distance(stringStart, aEnd)));
     aStart = aEnd;
@@ -1325,15 +1325,15 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
 
   if (eqIter != eqEnd) {
     name.Rebind(eqStart, eqIter);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     name.AssignTaint(string.Taint().safeSubTaint(std::distance(eqStart, eqStart),
                                                  std::distance(eqStart, eqIter)));
     value.Rebind(eqIter + 1, eqEnd);
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     value.AssignTaint(string.Taint().safeSubTaint(std::distance(eqStart, eqIter + 1),
                                                   std::distance(eqStart, eqEnd)));
   } else {
-    // Taintfox: taint should be propagated here
+    // Foxhound: taint should be propagated here
     name.Rebind(string, 0);
   }
 
@@ -1377,7 +1377,7 @@ void URLParams::SerializeString(const nsACString& aInput, nsACString& aValue) {
   const unsigned char* p = (const unsigned char*)aInput.BeginReading();
   const unsigned char* end = p + aInput.Length();
   size_t oi = 0;
-  // Taintfox: Keeps track of position on where to insert
+  // Foxhound: Keeps track of position on where to insert
   size_t ti = 0;
   auto in_taint = aInput.Taint();
   auto current = in_taint.begin();

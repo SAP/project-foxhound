@@ -3702,7 +3702,7 @@ JS_PUBLIC_API bool JS::ToJSONMaybeSafely(JSContext* cx, JS::HandleObject input,
   return callback(sb.rawTwoByteBegin(), sb.length(), data);
 }
 
-// TODO: taintfox: check whether we need to propagate taint here
+// TODO: Foxhound: check whether we need to propagate taint here
 JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const char16_t* chars,
                                 uint32_t len, MutableHandleValue vp) {
   AssertHeapIsIdle();
@@ -3716,7 +3716,7 @@ JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, HandleString str,
   return JS_ParseJSONWithReviver(cx, str, NullHandleValue, vp);
 }
 
-// TODO: taintfox: check whether we need to propagate taint here
+// TODO: Foxhound: check whether we need to propagate taint here
 JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const Latin1Char* chars,
                                 uint32_t len, MutableHandleValue vp) {
   AssertHeapIsIdle();
@@ -4881,7 +4881,7 @@ JS_PUBLIC_API void JS::detail::AssertArgumentsAreSane(JSContext* cx,
 }
 #endif /* JS_DEBUG */
 
-// TaintFox: Taint related JSAPI code.
+// Foxhound: Taint related JSAPI code.
 JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSString* str)
 {
@@ -5017,7 +5017,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   // slot of the current global object.
   RootedFunction report(cx);
 
-  JSObject* global = cx->global();
+  JS::Rooted<JSObject*> global(cx, cx->global());
 
   RootedValue slot(cx, JS::GetReservedSlot(global, TAINT_REPORT_FUNCTION_SLOT));
   if (slot.isUndefined()) {

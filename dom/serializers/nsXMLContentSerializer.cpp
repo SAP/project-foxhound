@@ -156,7 +156,7 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
   if (frag->Is2b()) {
     const char16_t* strStart = frag->Get2b() + aStartOffset;
     if (aTranslateEntities) {
-      // Taintfox: propagate taint
+      // Foxhound: propagate taint
       aStr.Taint().concat(frag->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(AppendAndTranslateEntities(
                          Substring(strStart, strStart + length), aStr),
@@ -176,7 +176,7 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
       NS_ENSURE_TRUE(AppendAndTranslateEntities(utf16, aStr),
                      NS_ERROR_OUT_OF_MEMORY);
     } else {
-      // Taintfox: propagate taint
+      // Foxhound: propagate taint
       aStr.Taint().concat(frag->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(aStr.Append(utf16, mozilla::fallible),
                      NS_ERROR_OUT_OF_MEMORY);
@@ -1230,7 +1230,7 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
   uint32_t advanceLength = 0;
   nsReadingIterator<char16_t> iter;
 
-  // Taintfox: keep track of start of chunk
+  // Foxhound: keep track of start of chunk
   uint32_t chunkStart = 0;
   
   for (aStr.BeginReading(iter); iter != done_reading;
@@ -1241,7 +1241,7 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
     const char16_t* fragmentEnd = c + fragmentLength;
     const char* entityText = nullptr;
 
-    // Taintfox: keep track of start of chunk within string
+    // Foxhound: keep track of start of chunk within string
     chunkStart += advanceLength;
     
     advanceLength = 0;
@@ -1255,7 +1255,7 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
       }
     }
 
-    // Taintfox: propagate taint for non replaced chars
+    // Foxhound: propagate taint for non replaced chars
     aOutputStr.Taint().concat(
                               aStr.Taint().safeSubTaint(chunkStart, chunkStart + advanceLength),
                               aOutputStr.Length());
@@ -1264,7 +1264,7 @@ bool nsXMLContentSerializer::AppendAndTranslateEntities(
         aOutputStr.Append(fragmentStart, advanceLength, mozilla::fallible),
         false);
     if (entityText) {
-      // Taintfox: propagate taint for replaced chars
+      // Foxhound: propagate taint for replaced chars
       const TaintFlow* flow = aStr.Taint().at(chunkStart + advanceLength);
       if (flow) {
         aOutputStr.Taint().append(

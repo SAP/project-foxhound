@@ -371,7 +371,7 @@ class PLDHashTable {
   // sizeof(PLDHashTable) is 20. On 64-bit platforms, sizeof(PLDHashTable) is
   // 32; 28 bytes of data followed by 4 bytes of padding for alignment.
   //
-  // Taintfox: We get some entries which are 256 bytes in size, which
+  // Foxhound: We get some entries which are 256 bytes in size, which
   // overflows the byte value and causes a MOZ_CRASH in the PLDHashTable
   // constuctor.
   // Increased mEntrySize to 16 bit and shifted variables to help alignment.

@@ -45,7 +45,7 @@ struct String {
   uint32_t length_;
 #endif
 
-  // TaintFox: make shadow::String compatible with JSString.
+  // Foxhound: make shadow::String compatible with JSString.
   SafeStringTaint taint;
 
   union {

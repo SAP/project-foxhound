@@ -207,7 +207,7 @@ PushSubscription::PushSubscription(nsIGlobalObject* aGlobal,
 #endif
   }
   mOptions = new PushSubscriptionOptions(mGlobal, std::move(aAppServerKey));
-  // Taintfox: mark all PushSubscription objects to identify push events
+  // Foxhound: mark all PushSubscription objects to identify push events
   MarkTaintSource(mEndpoint, "PushSubscription.endpoint");
 }
 

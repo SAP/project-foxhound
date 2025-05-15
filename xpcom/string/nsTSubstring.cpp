@@ -285,7 +285,7 @@ void nsTSubstring<T>::FinishBulkWriteImpl(size_type aLength) {
 
 template <typename T>
 void nsTSubstring<T>::Finalize() {
-  // TaintFox: clear taint.
+  // Foxhound: clear taint.
   this->mTaint.clear();
   ReleaseData(this->mData, this->mDataFlags);
   // this->mData, this->mLength, and this->mDataFlags are purposefully left
@@ -329,7 +329,7 @@ bool nsTSubstring<T>::ReplacePrepInternal(index_type aCutStart,
     return false;
   }
 
-  // TaintFox: remove and adjust taint information.
+  // Foxhound: remove and adjust taint information.
   if (this->isTainted()) {
     this->mTaint.replace(aCutStart, aCutStart + aCutLen, aFragLen, EmptyTaint);
   }
@@ -403,7 +403,7 @@ bool nsTSubstring<T>::Assign(char_type aChar, const fallible_t&) {
   *this->mData = aChar;
   FinishBulkWriteImpl(1);
 
-  // TaintFox: clear taint
+  // Foxhound: clear taint
   this->mTaint.clear();
 
   return true;
@@ -447,7 +447,7 @@ bool nsTSubstring<T>::Assign(const char_type* aData, size_type aLength,
   char_traits::copy(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);
 
-  // TaintFox: clear taint
+  // Foxhound: clear taint
   this->mTaint.clear();
 
   return true;
@@ -481,7 +481,7 @@ bool nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength,
   char_traits::copyASCII(this->mData, aData, aLength);
   FinishBulkWriteImpl(aLength);
 
-  // TaintFox: clear taint
+  // Foxhound: clear taint
   this->mTaint.clear();
 
   return true;
@@ -518,7 +518,7 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
     return true;
   }
 
-  // Taintfox: clear Taint
+  // Foxhound: clear Taint
   this->mTaint.clear();
 
   if (aStr.mDataFlags & DataFlags::REFCOUNTED) {
@@ -544,7 +544,7 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
 
     AssignLiteral(aStr.mData, aStr.mLength);
 
-    // TaintFox: propagate taint information.
+    // Foxhound: propagate taint information.
     this->mTaint = aStr.mTaint;
 
     return true;
@@ -553,7 +553,7 @@ bool nsTSubstring<T>::Assign(const self_type& aStr,
   // else, treat this like an ordinary assignment.
   bool ok = Assign(aStr.Data(), aStr.Length(), aFallible);
 
-  // TaintFox: propagate taint information.
+  // Foxhound: propagate taint information.
   this->mTaint = aStr.mTaint;
 
   return ok;
@@ -580,12 +580,12 @@ void nsTSubstring<T>::AssignOwned(self_type&& aStr) {
 
   ReleaseData(this->mData, this->mDataFlags);
 
-  // Taintfox: clear Taint
+  // Foxhound: clear Taint
   this->mTaint.clear();
 
   SetData(aStr.mData, aStr.mLength, aStr.mDataFlags);
 
-  // Taintfox: do not make a new copy, just copy references
+  // Foxhound: do not make a new copy, just copy references
   this->mTaint = std::move(aStr.mTaint);
 
   aStr.SetToEmptyBuffer();
@@ -636,7 +636,7 @@ bool nsTSubstring<T>::AssignNonDependent(const substring_tuple_type& aTuple,
 
   aTuple.WriteTo(this->mData, aTupleLength);
 
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   this->mTaint = aTuple.Taint();
 
   FinishBulkWriteImpl(aTupleLength);
@@ -666,7 +666,7 @@ void nsTSubstring<T>::Adopt(char_type* aData, size_type aLength) {
   if (aData) {
     ReleaseData(this->mData, this->mDataFlags);
 
-    // TaintFox: remove taint here.
+    // Foxhound: remove taint here.
     // Caller is responsible to propagate taint in this case.
     this->mTaint.clear();
 
@@ -768,7 +768,7 @@ void nsTSubstring<T>::Replace(index_type aCutStart, size_type aCutLength,
 
   if (ReplacePrep(aCutStart, aCutLength, tupleLength) && tupleLength > 0) {
     aTuple.WriteTo(this->mData + aCutStart, tupleLength);
-    // TaintFox: propagate taint.
+    // Foxhound: propagate taint.
     this->mTaint.replace(aCutStart, aCutStart + aCutLength, tupleLength, aTuple.Taint());
   }
 }
@@ -807,7 +807,7 @@ bool nsTSubstring<T>::Append(char_type aChar, const fallible_t& aFallible) {
   this->mData[oldLen] = aChar;
   FinishBulkWriteImpl(newLen);
 
-  // Taintfox: single chars aren't tainted, so might loose taint info here
+  // Foxhound: single chars aren't tainted, so might loose taint info here
 
   return true;
 }
@@ -850,7 +850,7 @@ bool nsTSubstring<T>::Append(const char_type* aData, size_type aLength,
   char_traits::copy(this->mData + oldLen, aData, aLength);
   FinishBulkWriteImpl(newLen.value());
 
-  // Taintfox: might loose taint info here
+  // Foxhound: might loose taint info here
 
   return true;
 }
@@ -988,13 +988,13 @@ bool nsTSubstring<T>::SetCapacity(size_type aCapacity, const fallible_t&) {
     // not attempt to zero-terminate it.
     AssertValid();
 
-    // TaintFox: clear taint.
+    // Foxhound: clear taint.
     this->mTaint.clear();
 
     return true;
   }
 
-  // TaintFox: remove taint at the end.
+  // Foxhound: remove taint at the end.
   this->mTaint.clearAfter(length);
 
   // FinishBulkWriteImpl with argument zero releases
@@ -1023,7 +1023,7 @@ bool nsTSubstring<T>::SetLength(size_type aLength,
   if (r.isErr()) {
     return false;
   }
-  // TaintFox: resize the taint ranges
+  // Foxhound: resize the taint ranges
   base_string_type::mTaint.subtaint(0, aLength);
 
   FinishBulkWriteImpl(aLength);
@@ -1069,7 +1069,7 @@ void nsTSubstring<T>::StripChar(char_type aChar) {
     if (aChar != theChar) {
       *to++ = theChar;
     } else {
-      // TaintFox: remove taint information for the removed character.
+      // Foxhound: remove taint information for the removed character.
       if (this->isTainted()) {
         this->mTaint.clearAt(from - this->mData - 1);
       }
@@ -1105,7 +1105,7 @@ void nsTSubstring<T>::StripChars(const char_type* aChars) {
       // Not stripped, copy this char.
       *to++ = theChar;
     } else {
-      // TaintFox: remove taint information for the removed character.
+      // Foxhound: remove taint information for the removed character.
       if (this->isTainted()) {
         this->mTaint.clearAt(from - this->mData - 1);
       }
@@ -1149,7 +1149,7 @@ void nsTSubstring<T>::StripTaggedASCII(const ASCIIMaskArray& aToStrip) {
       // Not stripped, copy this char.
       *to++ = (char_type)theChar;
     } else {
-      // TaintFox: remove taint information for the removed character.
+      // Foxhound: remove taint information for the removed character.
       if (this->isTainted()) {
         this->mTaint.clearAt(from - this->mData - 1);
       }

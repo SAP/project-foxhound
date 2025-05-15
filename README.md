@@ -6,7 +6,13 @@ This is the repository for project "Foxhound", a Firefox fork capable of trackin
 
 Taint tracking makes it possible to automatically detect client-side cross-site-scripting flaws in websites by marking certain attacker-controlled strings (e.g. `location.hash`) as tainted and notifying the user when tainted data reaches a set of predefined sinks (e.g. `eval()`, `.innerHTML`, ...).
 
-Foxhound has been successfully used for a wide range of academic studies (e.g., the [publications](https://github.com/SAP/project-foxhound/wiki/Publications) listed in the Wiki) as well as for security testing in industrial use cases.
+:trophy: Foxhound has been rated the **best tool** for [Dynamic Security Analysis of JavaScript](https://www.dais.unive.it/~calzavara/papers/www25.pdf) by independent researchers! In their study, Foxhound **outperformed 17 other tools** in all of the categories considered, namely *compatibility* (95%), *transparency* (97%), *coverage* (94%) and *performance* (1.4x). To quote the paper:
+
+>
+> The only effective solution given the current state of the art is Project Foxhound.
+>
+
+In addition, Foxhound has been successfully used for a wide range of academic studies (e.g., the [publications](https://github.com/SAP/project-foxhound/wiki/Publications) listed in the Wiki) as well as for security testing in industrial use cases.
 
 ## Usage
 
@@ -114,8 +120,8 @@ The JavaScript public API (jsapi.h) has been extended to support access to taint
 `JS_ReportTaintSink` which takes care of reporting a flow of tainted data into a predefined sink.
 In this case a message will be written to stdout and a custom JavaScript Event will be triggered that can then be processed by a Firefox extension.
 
-All code related to taint tracking has been marked with a `// TaintFox` comment, making it easy to search for modifications in the source code.
-Finding the `location.hash` taint source becomes as easy as `git grep -n TaintFox | grep location.hash`.
+All code related to taint tracking has been marked with a `// Foxhound` comment, making it easy to search for modifications in the source code.
+Finding the `location.hash` taint source becomes as easy as `git grep -n Foxhound | grep location.hash`.
 
 Taint information is available in JavaScript via the `.taint` property of string instances:
 

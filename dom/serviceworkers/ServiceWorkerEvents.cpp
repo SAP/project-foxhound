@@ -1108,7 +1108,7 @@ nsresult PushMessageData::EnsureDecodedText() {
     mDecodedText.Truncate();
     return rv;
   }
-  // Taintfox: PushMessageData source
+  // Foxhound: PushMessageData source
   MarkTaintSource(mDecodedText, "PushMessageData");
   return NS_OK;
 }

@@ -6589,7 +6589,7 @@ void Document::GetReferrer(nsACString& aReferrer) const {
 
   URLDecorationStripper::StripTrackingIdentifiers(referrer, aReferrer);
 
-  // TaintFox: document.referrer taint source.
+  // Foxhound: document.referrer taint source.
   MarkTaintSource(aReferrer, "document.referrer");
 }
 
@@ -6635,7 +6635,7 @@ void Document::GetCookie(nsAString& aCookie, ErrorResult& aRv) {
     // because it assumes that the input is valid.
     UTF_8_ENCODING->DecodeWithoutBOMHandling(cookie, aCookie);
 
-    // TaintFox: document.cookie source.
+    // Foxhound: document.cookie source.
     MarkTaintSource(aCookie, "document.cookie");
   }
 }
@@ -6680,7 +6680,7 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& aRv) {
     return;
   }
 
-  // TaintFox: document.cookie sink.
+  // Foxhound: document.cookie sink.
   ReportTaintSink(aCookie, "document.cookie");
   
   NS_ConvertUTF16toUTF8 cookie(aCookie);
@@ -10194,7 +10194,7 @@ void Document::WriteCommon(const nsAString& aText, bool aNewlineTerminate,
     }
   }
 
-  // TaintFox: document.write and document.writeln sink.
+  // Foxhound: document.write and document.writeln sink.
   ReportTaintSink(aText, aNewlineTerminate ? "document.writeln" : "document.write");
 
   static constexpr auto new_line = u"\n"_ns;
@@ -10277,7 +10277,7 @@ nsresult Document::GetDocumentURI(nsString& aDocumentURI) const {
 
     CopyUTF8toUTF16(uri, aDocumentURI);
 
-    // TaintFox: document.documentURI taint source.
+    // Foxhound: document.documentURI taint source.
     MarkTaintSource(aDocumentURI, "document.documentURI");
   } else {
     aDocumentURI.Truncate();
@@ -10305,7 +10305,7 @@ void Document::GetDocumentURIFromJS(nsString& aDocumentURI,
   }
   CopyUTF8toUTF16(uri, aDocumentURI);
 
-  // TaintFox: document.documentURI taint source.
+  // Foxhound: document.documentURI taint source.
   MarkTaintSource(aDocumentURI, "document.documentURI");
 }
 

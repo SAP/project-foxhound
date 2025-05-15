@@ -208,7 +208,7 @@ nsIncrementalStreamLoader::OnDataAvailable(nsIRequest* request,
     mRequest = request;
   }
 
-  // TaintFox: see if there's taint information available.
+  // Foxhound: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(inStr));
 
 #if (DEBUG_E2E_TAINTING)

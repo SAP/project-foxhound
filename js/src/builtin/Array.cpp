@@ -1376,13 +1376,14 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 8.
-  JSString* str = sb.finishString();
+  // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+  JS::Rooted<JSString*> str(cx, sb.finishString());
   if (!str) {
     return false;
   }
 
   if(str->isTainted()) {
-    // TaintFox: add taint operation.
+    // Foxhound: add taint operation.
     str->taint().extend(TaintOperationFromContext(cx, "Array.join", true, sepstr));
   }
 

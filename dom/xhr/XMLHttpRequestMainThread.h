@@ -466,7 +466,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   nsresult DetectCharset();
   nsresult AppendToResponseText(Span<const uint8_t> aBuffer, const StringTaint& aTaint,
                                 bool aLast = false);
-  // Taintfox: added taint aware stream reader and moved common code into new function.
+  // Foxhound: added taint aware stream reader and moved common code into new function.
   static nsresult HandleStreamInput(void* closure,
                                     const char* fromRawSegment,
                                     uint32_t toOffset,

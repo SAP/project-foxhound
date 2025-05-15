@@ -1,6 +1,6 @@
 # TaintFlow
 
-Taintfox will trace the flow of tainted strings throughout the engine inside a "TaintFlow" datastructure (available from JavaScript as the "flow" property). 
+Foxhound will trace the flow of tainted strings throughout the engine inside a "TaintFlow" datastructure (available from JavaScript as the "flow" property). 
 The flow is made up of several nodes, one for each operation that was performed on the tainted data. The taint flow tracing is currently considered a "best-effort" service.
 
 Mainly two types of operations are currently recorded in the taint flow: function calls and JavaScript string operations.

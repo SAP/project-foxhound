@@ -1337,7 +1337,7 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
   nsCOMPtr<nsIPrincipal> principal;
   nsCOMPtr<nsIPrincipal> partitionedPrincipal;
 
-  // Taintfox: WebSocket constructor sink
+  // Foxhound: WebSocket constructor sink
   ReportTaintSink(aUrl, "WebSocket");
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
@@ -2078,9 +2078,9 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
     jsString = JS_NewUCStringCopyN(cx, utf16Data.get(), utf16Data.Length());
     NS_ENSURE_TRUE(jsString, NS_ERROR_FAILURE);
 
-    // Propagate Taint
+    // Foxhound: Propagate Taint
     JS_SetStringTaint(cx, jsString, aData.Taint());
-    // Taintfox: WebSocket.MessageEvent.data
+    // Foxhound: WebSocket.MessageEvent.data
     MarkTaintSource(cx, jsString, "WebSocket.MessageEvent.data");
 
     jsData.setString(jsString);
@@ -2441,7 +2441,7 @@ void WebSocket::GetProtocol(nsAString& aProtocol) {
 void WebSocket::Send(const nsAString& aData, ErrorResult& aRv) {
   AssertIsOnTargetThread();
 
-  // Taintfox: WebSocket.send() sink
+  // Foxhound: WebSocket.send() sink
   nsAutoString url;
   GetUrl(url);
   ReportTaintSink(aData, "WebSocket.send", url);

@@ -66,7 +66,7 @@ void PartitionedLocalStorage::GetItem(const nsAString& aKey, nsAString& aResult,
 
   mCache->GetItem(aKey, aResult);
 
-  // TaintFox: localStorage.getItem source
+  // Foxhound: localStorage.getItem source
   MarkTaintSource(aResult, "localStorage.getItem", aKey);
 }
 
@@ -89,7 +89,7 @@ void PartitionedLocalStorage::SetItem(const nsAString& aKey,
     return;
   }
 
-  // TaintFox: localStorage.setItem sink.
+  // Foxhound: localStorage.setItem sink.
   ReportTaintSink(aValue, "localStorage.setItem", aKey);
   ReportTaintSink(aKey, "localStorage.setItem(key)", aValue);
 

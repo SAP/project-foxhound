@@ -50,7 +50,7 @@ class nsTLiteralString : public mozilla::detail::nsTStringRepr<T> {
    */
 
   /**
-   * Taintfox:
+   * Foxhound:
    *
    * In order to ensure that nsLiteralStrings can be used in constexpr
    * expressions, we need to explicitly define the nsTLiteralString constructor

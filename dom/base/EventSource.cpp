@@ -635,7 +635,7 @@ void EventSourceImpl::Init(nsIGlobalObject* aWindowGlobal,
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(ReadyState() == CONNECTING);
   mPrincipal = aPrincipal;
-  // Taintfox: EventSource sink
+  // Foxhound: EventSource sink
   ReportTaintSink(aURL, "EventSource");
   aRv = ParseURL(aURL);
   if (NS_WARN_IF(aRv.Failed())) {

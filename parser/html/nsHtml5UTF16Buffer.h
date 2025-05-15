@@ -55,7 +55,7 @@ class nsHtml5TreeBuilder;
 class nsHtml5StateSnapshot;
 class nsHtml5Portability;
 
-// TaintFox: extended to also carry taint information.
+// Foxhound: extended to also carry taint information.
 class nsHtml5UTF16Buffer {
  private:
   char16_t* buffer;

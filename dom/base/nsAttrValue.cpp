@@ -2115,7 +2115,7 @@ already_AddRefed<mozilla::StringBuffer> nsAttrValue::GetStringBuffer(
       buf && (buf->StorageSize() / sizeof(char16_t) - 1) == len) {
     // We can only reuse the buffer if it's exactly sized, since we rely on
     // StorageSize() to get the string length in ToString().
-    // TaintFox: propagate taint.
+    // Foxhound: propagate taint.
     if (aValue.isTainted()) {
       buf->AssignTaint(aValue.Taint());
     }

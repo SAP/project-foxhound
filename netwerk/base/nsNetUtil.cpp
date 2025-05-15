@@ -1728,7 +1728,7 @@ nsresult NS_NewURI(nsIURI** result, const nsAString& aSpec,
   if (!AppendUTF16toUTF8(aSpec, spec, mozilla::fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  // Taintfox: propagate taint
+  // Foxhound: propagate taint
   spec.AssignTaint(aSpec.Taint());
   return NS_NewURI(result, spec, charset, baseURI);
 }
@@ -1740,7 +1740,7 @@ nsresult NS_NewURI(nsIURI** result, const nsAString& aSpec,
   if (!AppendUTF16toUTF8(aSpec, spec, mozilla::fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  // Taintfox: propagate taint
+  // Foxhound: propagate taint
   spec.AssignTaint(aSpec.Taint());
   return NS_NewURI(result, spec, encoding, baseURI);
 }

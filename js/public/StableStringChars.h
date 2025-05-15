@@ -48,7 +48,7 @@ class MOZ_STACK_CLASS JS_PUBLIC_API AutoStableStringChars final {
    * chosen to allow the inline string types to be copied without allocating.
    * This is asserted in AutoStableStringChars::allocOwnChars.
    */
-  // TaintFox: modified to add taint property
+  // Foxhound: modified to add taint property
   // TODO: check this should be sizeof(void*)
   static const size_t InlineCapacity = 24 + sizeof(void*);
 

@@ -59,7 +59,7 @@ USE_LIBS += [
     "zlib",
 ]
 
-# Taintfox ensure tainting library is linked to
+# Foxhound: ensure tainting library is linked to
 USE_LIBS += [
     "taint",
 ]

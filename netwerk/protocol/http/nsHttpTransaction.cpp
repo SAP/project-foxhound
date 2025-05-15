@@ -2431,7 +2431,7 @@ nsresult nsHttpTransaction::HandleContentStart() {
       }
     }
 
-    // TaintFox: parse any taint information from the header and
+    // Foxhound: parse any taint information from the header and
     // add it to the content pipe.
     nsAutoCString serializedTaint;
     if (mResponseHead->GetHeader(nsHttp::X_Taint, serializedTaint) == NS_OK) {

@@ -43,7 +43,7 @@ class MOZ_TEMPORARY_CLASS nsTSubstringTuple {
         mFragA(nullptr),  // this fragment is ignored when aHead != nullptr
         mFragB(aStrB) {}
 
-  // TaintFox: Computes the combined taint information.
+  // Foxhound: Computes the combined taint information.
   SafeStringTaint Taint() const;
 
   /**

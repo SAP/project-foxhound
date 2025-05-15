@@ -74,7 +74,7 @@ bool xpc::NonVoidStringToJsval(JSContext* cx, const nsAString& readable,
   if (!str)
     return false;
 
-  // TaintFox: copy taint information.
+  // Foxhound: copy taint information.
   // |str| could be cx->names().emptyString, but we don't taint atoms currently, so that's ok.
   // TODO(samuel) verify readable.taint() is sane
   if (readable.isTainted()) {
@@ -104,7 +104,7 @@ bool xpc::NonVoidLatin1StringToJsval(JSContext* cx, const nsACString& latin1,
     return false;
   }
 
-  // TaintFox: Transfer taint information to newly created JS string.
+  // Foxhound: Transfer taint information to newly created JS string.
   if (latin1.isTainted()) {
     JS_SetStringTaint(cx, str, latin1.Taint());
   }
@@ -132,7 +132,7 @@ bool xpc::NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& utf8,
     return false;
   }
 
-  // TaintFox: Transfer taint information to newly created JS string.
+  // Foxhound: Transfer taint information to newly created JS string.
   if (utf8.isTainted()) {
     JS_SetStringTaint(cx, str, utf8.Taint());
   }

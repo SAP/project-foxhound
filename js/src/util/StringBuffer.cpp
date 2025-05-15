@@ -126,10 +126,10 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
 
   size_t len = length();
 
-  // Taintfox: propagate taint
+  // Foxhound: propagate taint
   SafeStringTaint taint = this->taint().safeCopy();
 
-  // Taintfox: Disable static string return
+  // Foxhound: Disable static string return
   // if (JSAtom* staticStr = cx->staticStrings().lookup(begin<CharT>(), len)) {
   //   return staticStr;
   // }
@@ -138,9 +138,9 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
     mozilla::Range<const CharT> range(begin<CharT>(), len);
     JSLinearString* str = NewInlineString<CanGC>(cx, range);
 
-    // TaintFox: Propagate taint to newly created string.
+    // Foxhound: Propagate taint to newly created string.
     str->setTaint(cx, taint);
-    // Taintfox: clear the stringbuffer taint information
+    // Foxhound: clear the stringbuffer taint information
     clearTaint();
 
     return str;
@@ -161,9 +161,9 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
   if (len < JSString::MIN_BYTES_FOR_BUFFER / sizeof(CharT)) {
     JSLinearString* str = NewStringCopyNDontDeflate<CanGC>(cx, begin<CharT>(), len, heap);
     
-    // TaintFox: Propagate taint to newly created string.
+    // Foxhound: Propagate taint to newly created string.
     str->setTaint(cx, taint);
-    // Taintfox: clear the stringbuffer taint information
+    // Foxhound: clear the stringbuffer taint information
     clearTaint();
 
     return str;  
@@ -200,9 +200,9 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx,
   Rooted<JSString::OwnedChars<CharT>> owned(cx, std::move(buffer), len);
   JSLinearString* str = JSLinearString::new_<CanGC, CharT>(cx, &owned, heap);
 
-  // TaintFox: Propagate taint to newly created string.
+  // Foxhound: Propagate taint to newly created string.
   str->setTaint(cx, taint);
-  // Taintfox: clear the stringbuffer taint information
+  // Foxhound: clear the stringbuffer taint information
   clearTaint();
 
   return str;
@@ -241,7 +241,7 @@ JSAtom* StringBuffer::finishAtom() {
                             : AtomizeChars(maybeCx_, rawTwoByteBegin(), len);
   clear();
 
-  // TaintFox: We loose taint here, can't taint atoms..
+  // Foxhound: We loose taint here, can't taint atoms..
   this->clearTaint();
 
   return atom;

@@ -10243,7 +10243,7 @@ static void TransformChars(nsTextFrame* aFrame, const nsStyleText* aStyle,
     out[i] = ch;
   }
 
-  // TaintFox: copy taint
+  // Foxhound: copy taint
   aOut.AssignTaint(aFrag->Taint());
 
   if (!aStyle->mTextTransform.IsNone() || needsToMaskPassword ||
@@ -10264,7 +10264,7 @@ static void TransformChars(nsTextFrame* aFrame, const nsStyleText* aStyle,
           charsToMergeArray, deletedCharsArray, transformedTextRun,
           aSkippedOffset);
 
-      // TaintFox: in almost all cases, the transformation will be trivial,
+      // Foxhound: in almost all cases, the transformation will be trivial,
       // mapping one character to another. In that case we can simply copy the
       // taint information.
       if (convertedString.Length() == fragString.Length())

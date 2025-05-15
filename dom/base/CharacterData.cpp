@@ -143,7 +143,7 @@ void CharacterData::GetData(nsAString& aData) const {
     }
   }
 
-  // TaintFox: propagate taint when accessing text data from DOM nodes.
+  // Foxhound: propagate taint when accessing text data from DOM nodes.
   aData.AssignTaint(mText.Taint());
 
 }
@@ -181,7 +181,7 @@ void CharacterData::SubstringData(uint32_t aStart, uint32_t aCount,
     CopyASCIItoUTF16(Substring(data, data + amount), aReturn);
   }
 
-  // TaintFox: propagate taint.
+  // Foxhound: propagate taint.
   aReturn.AssignTaint(mText.Taint().safeSubTaint(aStart, aStart + aCount));
 }
 

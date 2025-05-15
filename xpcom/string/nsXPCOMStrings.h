@@ -112,7 +112,7 @@ class nsStringContainer;
 struct nsStringContainer_base
 {
 protected:
-  // TaintFox: XXX segfault caused by this? add taint property.
+  // Foxhound: XXX segfault caused by this? add taint property.
   void* d1;
   uint32_t d2;
   uint32_t d3;
@@ -755,7 +755,7 @@ XPCOM_API(nsresult) NS_UTF16ToCString(const nsAString& aSource,
 /* ------------------------------------------------------------------------- */
 
 /**
- * TaintFox: NS_StringGetTaint
+ * Foxhound: NS_StringGetTaint
  *
  * This function provides a way to access the taint information associated with
  * a string.
@@ -763,7 +763,7 @@ XPCOM_API(nsresult) NS_UTF16ToCString(const nsAString& aSource,
 XPCOM_API(const StringTaint&) NS_StringGetTaint(const nsAString& aStr);
 
 /**
- * TaintFox: NS_CStringGetTaint
+ * Foxhound: NS_CStringGetTaint
  *
  * This function provides a way to access the taint information associated with
  * a string.
@@ -771,7 +771,7 @@ XPCOM_API(const StringTaint&) NS_StringGetTaint(const nsAString& aStr);
 XPCOM_API(const StringTaint&) NS_CStringGetTaint(const nsACString& aStr);
 
 /**
- * TaintFox: NS_StringSetTaint
+ * Foxhound: NS_StringSetTaint
  *
  * This function provides a way to assign the taint information associated with
  * a string.
@@ -779,7 +779,7 @@ XPCOM_API(const StringTaint&) NS_CStringGetTaint(const nsACString& aStr);
 XPCOM_API(void) NS_StringSetTaint(nsAString& aStr, const StringTaint& aTaint);
 
 /**
- * TaintFox: NS_CStringGetTaint
+ * Foxhound: NS_CStringGetTaint
  *
  * This function provides a way to assign the taint information associated with
  * a string.

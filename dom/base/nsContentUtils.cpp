@@ -460,7 +460,7 @@ nsString* nsContentUtils::sModifierSeparator = nullptr;
 
 bool nsContentUtils::sInitialized = false;
 /*
- * TaintFox: We set these two values to true by default to emulate the
+ * Foxhound: We set these two values to true by default to emulate the
  * behaviour of other browsers that do not encode the hash by default.
  */
 bool nsContentUtils::sEncodeDecodeURLHash = true;
@@ -846,7 +846,7 @@ nsresult nsContentUtils::Init() {
   sBlockedScriptRunners = new AutoTArray<nsCOMPtr<nsIRunnable>, 8>;
 
   /*
-   * TaintFox: We set these two values to true by default to emulate the
+   * Foxhound: We set these two values to true by default to emulate the
    * behaviour of other browsers that do not encode the hash by default.
    *
    * Are static prefs the right idea here? Maybe try something like here:
@@ -1095,7 +1095,7 @@ nsresult nsContentUtils::Btoa(const nsAString& aBinaryData,
 
   nsresult rv = Base64Encode(aBinaryData, aAsciiBase64String);
 
-  // Taintfox: Extend taint flow
+  // Foxhound: Extend taint flow
   MarkTaintOperation(aAsciiBase64String, "btoa");
 
   return rv;
@@ -1132,7 +1132,7 @@ nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
       return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
     }
 
-    // Taintfox: also remove any taint associated with the whitespace
+    // Foxhound: also remove any taint associated with the whitespace
     trimmedString.AppendTaint(aAsciiBase64String.Taint().safeSubTaint(0, i + 1));
     trimmedString.Append(start, cur - start);
 
@@ -1153,7 +1153,7 @@ nsresult nsContentUtils::Atob(const nsAString& aAsciiBase64String,
     return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
   }
 
-  // Taintfox: Extend taint flow
+  // Foxhound: Extend taint flow
   MarkTaintOperation(aBinaryData, "atob");
 
   return rv;
@@ -9193,7 +9193,7 @@ class BulkAppender {
     size_t len = N - 1;
     MOZ_ASSERT(mPosition + len <= mHandle.Length());
     memcpy(mHandle.Elements() + mPosition, aStr, len * sizeof(char16_t));
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     mTaint.concat(aTaint, mPosition);
     mPosition += len;
   }
@@ -9207,7 +9207,7 @@ class BulkAppender {
     // memcpy does not lead to UB even if len was zero.
     memcpy(mHandle.Elements() + mPosition, aStr.Elements(),
            len * sizeof(char16_t));
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     mTaint.concat(aTaint, mPosition);
     mPosition += len;
   }
@@ -9216,7 +9216,7 @@ class BulkAppender {
     size_t len = aStr.Length();
     MOZ_ASSERT(mPosition + len <= mHandle.Length());
     ConvertLatin1toUtf16(aStr, mHandle.AsSpan().From(mPosition));
-    // Taintfox: propagate taint
+    // Foxhound: propagate taint
     mTaint.concat(aTaint, mPosition);
     mPosition += len;
   }
@@ -9269,7 +9269,7 @@ class StringBuilder {
     Type mType = Type::Unknown;
   };
 
-  // Taintfox: changed 3 -> 4 in line below to for extra taint field in string
+  // Foxhound: changed 3 -> 4 in line below to for extra taint field in string
   static_assert(sizeof(void*) != 8 || sizeof(Unit) <= 4 * sizeof(void*),
                 "Unit should remain small");
 
@@ -9282,7 +9282,7 @@ class StringBuilder {
   // rest of the builder members fit. A more precise approach would be to
   // calculate that extra size and use (TARGET_SIZE - OTHER_SIZE) / sizeof(Unit)
   // or so, but this is simpler.
-  // Taintfox: different padding required due to taint fields
+  // Foxhound: different padding required due to taint fields
   static constexpr uint32_t PADDING_UNITS = sizeof(void*) == 8 ? 2 : 4;
 
   static constexpr uint32_t STRING_BUFFER_UNITS =
@@ -9395,7 +9395,7 @@ class StringBuilder {
         }
       }
     }
-    // Taintfox: Add the taint operation to all flows
+    // Foxhound: Add the taint operation to all flows
     MarkTaintOperation(appender.Taint(), "element.textContent");
     appender.Finish();
     aOut.AssignTaint(appender.Taint());
@@ -9447,7 +9447,7 @@ class StringBuilder {
       SafeStringTaint taint = aTaint.safeSubTaint(flushedUntil, currentPosition);
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
-    // Taintfox: Add the taint operation to all flows
+    // Foxhound: Add the taint operation to all flows
     MarkTaintOperation(aAppender.Taint(), "nsContentUtils::EncodeAttrString");
   }
 
@@ -9488,7 +9488,7 @@ class StringBuilder {
       SafeStringTaint taint = aTaint.safeSubTaint(flushedUntil, currentPosition);
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
-    // Taintfox: Add the taint operation to all flows
+    // Foxhound: Add the taint operation to all flows
     MarkTaintOperation(aAppender.Taint(), "nsContentUtils::EncodeTextFragment");
   }
 

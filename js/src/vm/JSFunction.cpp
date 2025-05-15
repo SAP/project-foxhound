@@ -1420,7 +1420,7 @@ static bool CreateDynamicFunction(JSContext* cx, const CallArgs& args,
     return false;
   }
   
-  // TaintFox: Function.ctor sink.
+  // Foxhound: Function.ctor sink.
   JS_ReportTaintSink(cx, functionText, "Function.ctor");
 
   SourceText<char16_t> srcBuf;

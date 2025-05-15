@@ -27,7 +27,7 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
 
     /**
      * Called when new data has arrived on the stream.
-     * Taintfox: this method has been extended to accept taint information.
+     * Foxhound: this method has been extended to accept taint information.
      *
      * @param loader the stream loader that loaded the stream.
      * @param ctxt the context parameter of the underlying channel
@@ -58,7 +58,7 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
 
     /**
      * Called when the entire stream has been loaded.
-     * Taintfox: this method has been extended to accept taint information.
+     * Foxhound: this method has been extended to accept taint information.
      *
      * @param loader the stream loader that loaded the stream.
      * @param ctxt the context parameter of the underlying channel

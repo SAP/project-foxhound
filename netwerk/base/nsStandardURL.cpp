@@ -112,7 +112,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     return 0;
   }
 
-  // Tainting: check whether to encode URL
+  // Foxhound: check whether to encode URL
   bool encodeURL = NS_IsMainThread() ? Preferences::GetBool("taintfox.escapeURL", false) : true;
   if (!encodeURL) {
     aMask |= esc_Never;
@@ -161,7 +161,7 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
             encoder->EncodeFromUTF8WithoutReplacement(
                 AsBytes(span.From(totalRead)), AsWritableBytes(buffer), true);
 
-        // Taintfox: Calculate taint for this chunk
+        // Foxhound: Calculate taint for this chunk
         SafeStringTaint subsubTaint = subtaint.safeSubTaint(totalRead, totalRead + read);
 
         totalRead += read;
@@ -636,7 +636,7 @@ nsresult nsStandardURL::NormalizeIPv4(const nsACString& host,
   NetworkEndian::writeUint32(ipSegments, ipv4);
   result = nsPrintfCString("%d.%d.%d.%d", ipSegments[0], ipSegments[1],
                            ipSegments[2], ipSegments[3]);
-  // Taintfox: propagate taint
+  // Foxhound: propagate taint
   if (host.Taint().hasTaint()) {
     // Just take the first taint range
     result.AssignTaint(StringTaint(TaintRange(0, result.Length(), host.Taint().begin()->flow())));
@@ -718,11 +718,11 @@ uint32_t nsStandardURL::AppendSegmentToBuf(char* buf, uint32_t i,
       segOutput.mLen = escapedStr->Length();
       *diff = segOutput.mLen - segInput.mLen;
       memcpy(buf + i, escapedStr->get(), segOutput.mLen);
-      // Taintfox: propagate taint
+      // Foxhound: propagate taint
       bufTaint.concat(escapedStr->Taint(), i);
     } else {
       memcpy(buf + i, str + segInput.mPos, segInput.mLen);
-      // Taintfox: propagate taint
+      // Foxhound: propagate taint
       bufTaint.concat(strTaint.safeSubTaint(segInput.mPos, segInput.mPos + segInput.mLen), i);
     }
     segOutput.mPos = i;
@@ -1711,7 +1711,7 @@ nsresult nsStandardURL::SetSpecWithEncoding(const nsACString& input,
 
   // filter out unexpected chars "\r\n\t" if necessary
   nsAutoCString filteredURI;
-  // Taintfox: FilterURIString is now taint-aware
+  // Foxhound: FilterURIString is now taint-aware
   net_FilterURIString(flat, filteredURI);
 
   if (filteredURI.Length() == 0) {
@@ -2817,7 +2817,7 @@ nsStandardURL::Resolve(const nsACString& in, nsACString& out) {
     }
   }
 
-  // Taintfox: Truncate the taint to the final length of the string
+  // Foxhound: Truncate the taint to the final length of the string
   // after any directory coalescence. This is not completely accurate
   // as it doesn't take into account if only part of the relative path
   // is tainted. Full implementation needs instrumentation of net_CoalesceDirs

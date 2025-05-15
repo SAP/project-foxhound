@@ -576,7 +576,7 @@ bool js::InternalCallOrConstruct(JSContext* cx, const CallArgs& args,
 
   /* Invoke native functions. */
   RootedFunction fun(cx, &args.callee().as<JSFunction>());
-  // TaintFox: mark tainted function call arguments for tracing purposes.
+  // Foxhound: mark tainted function call arguments for tracing purposes.
   if (!fun->isSelfHostedOrIntrinsic() && fun->isInterpreted())
       MarkTaintedFunctionArguments(cx, fun, args);
 
@@ -3371,7 +3371,7 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
           goto error;
         }
 
-        // TaintFox: mark tainted function call arguments for tracing purposes.
+        // Foxhound: mark tainted function call arguments for tracing purposes.
         if (!fun->isSelfHostedOrIntrinsic() && fun->isInterpreted())
             MarkTaintedFunctionArguments(cx, fun, args);
 

@@ -807,7 +807,7 @@ nsresult nsXMLContentSink::FlushText(bool aReleaseTextNode) {
         ++mInNotification;
       }
 
-      // TaintFox: nsXMLContentSink isn't taint aware..
+      // Foxhound: nsXMLContentSink isn't taint aware..
       rv = mLastTextNode->AppendText(mText, mTextLength, notify, EmptyTaint);
       if (notify) {
         --mInNotification;
@@ -1165,7 +1165,7 @@ nsXMLContentSink::HandleCDataSection(const char16_t* aData, uint32_t aLength) {
 
   RefPtr<CDATASection> cdata =
     new (mNodeInfoManager) CDATASection(mNodeInfoManager);
-  // TaintFox: here and above, no taint available..
+  // Foxhound: here and above, no taint available..
   cdata->SetText(aData, aLength, false, EmptyTaint);
   nsresult rv = AddContentAsLeaf(cdata);
   DidAddContent();

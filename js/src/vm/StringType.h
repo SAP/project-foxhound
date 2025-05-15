@@ -196,7 +196,7 @@ bool CheckStringIsIndex(const CharT* s, size_t length, uint32_t* indexp);
  * The ensureX() operations mutate 'this' in place to effectively make the type
  * be at least X (e.g., ensureLinear will change a JSRope to be a JSLinearString).
  *
- * TaintFox: the JSString class (and all subclasses) are taint aware.
+ * Foxhound: the JSString class (and all subclasses) are taint aware.
  */
 // clang-format on
 
@@ -204,7 +204,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
  protected:
   using Base = js::gc::CellWithLengthAndFlags;
   
-  // TaintFox: We add another pointer size of inline chars here to make the total size of JString
+  // Foxhound: We add another pointer size of inline chars here to make the total size of JString
   // evenly divisible by the gc::CellSize on 32 bit platforms.
   static const size_t NUM_INLINE_CHARS_LATIN1 =
       3 * sizeof(void*) / sizeof(JS::Latin1Char);
@@ -296,7 +296,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
     // Note: 32-bit length and flags fields are inherited from
     // CellWithLengthAndFlags.
 
-    // Taintfox: add the taint information
+    // Foxhound: add the taint information
     StringTaint taint_;
 
     union {
@@ -578,7 +578,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
     static_assert(
         EXTERNAL_FLAGS == String::EXTERNAL_FLAGS,
         "shadow::String::EXTERNAL_FLAGS must match JSString::EXTERNAL_FLAGS");
-    /* TaintFox: taint info offset assertion. */
+    /* Foxhound: taint info offset assertion. */
     static_assert(offsetof(JSString, d.taint_) == offsetof(String, taint),
                   "shadow::String taint offset must match JSString");
   }
@@ -594,7 +594,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
                                            bool usesStringBuffer);
 
  public:
-  // TaintFox: (statically) overwrite setTaint to avoid tainting the empty string.
+  // Foxhound: (statically) overwrite setTaint to avoid tainting the empty string.
   // Currently, we disallow tainting empty strings. This might change in the future.
   void setTaint(JSContext* cx, const StringTaint& taint) {
     if (isAtom()) {
@@ -882,15 +882,15 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   mozilla::Maybe<std::tuple<size_t, size_t>> encodeUTF8Partial(
       const JS::AutoRequireNoGC& nogc, mozilla::Span<char> buffer) const;
 
-  /* TaintFox: taint property offset calculation. */
+  /* Foxhound: taint property offset calculation. */
   static size_t offsetOfTaint() {
     return offsetof(JSString, d.taint_);
   }
 
-  /* Taintfox: enable cleanup of strings in nursery */
+  /* Foxhound: enable cleanup of strings in nursery */
   static void sweepAfterMinorGC(JS::GCContext* gcx, JSString* str);
 
-  /* Taintfox: register string in nursery */
+  /* Foxhound: register string in nursery */
   static inline void registerNurseryString(JSContext* cx, JSString* str);
 
  private:
@@ -1488,7 +1488,7 @@ static_assert(sizeof(JSThinInlineString) == sizeof(JSString),
  */
 class JSFatInlineString : public JSInlineString {
   friend class js::gc::CellAllocator;
-  // TaintFox: similar to JSString, add another pointer size of inline characters here for
+  // Foxhound: similar to JSString, add another pointer size of inline characters here for
   // alignment.
   static const size_t INLINE_EXTENSION_CHARS_LATIN1 =
       24 - NUM_INLINE_CHARS_LATIN1 + (sizeof(void*) / sizeof(JS::Latin1Char));
@@ -2009,7 +2009,7 @@ extern JSString* ConcatStrings(
     typename MaybeRooted<JSString*, allowGC>::HandleType right,
     js::gc::Heap heap = js::gc::Heap::Default);
 
-// Taintfox: Internal concat which does not add new Taint Operations
+// Foxhound: Internal concat which does not add new Taint Operations
 template <AllowGC allowGC>
 extern JSString* ConcatStringsQuiet(
     JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,

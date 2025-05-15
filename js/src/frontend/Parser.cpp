@@ -209,7 +209,7 @@ PerHandlerParser<ParseHandler>::PerHandlerParser(
              compilationState.input.isInitialStencil());
 }
 
-// TODO taintfox: check EmptyTaint is correct here
+// Foxhound: Extend to pass taint through
 template <class ParseHandler, typename Unit>
 GeneralParser<ParseHandler, Unit>::GeneralParser(
     FrontendContext* fc, const ReadOnlyCompileOptions& options,
@@ -3947,7 +3947,7 @@ bool GeneralParser<ParseHandler, Unit>::maybeParseDirective(
     return true;
   }
 
-  // TaintFox: need to atomize here so comparisons below work correct
+  // Foxhound: need to atomize here so comparisons below work correct
   // Atomize not working...
   // directive = AtomizeString(cx_, directive);
   if (IsUseStrictDirective(directivePos, directive)) {
@@ -9629,7 +9629,7 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
     //
     // These should probably be handled by a single ExpressionStatement
     // function in a default, not split up this way.
-    // TaintFox: TODO this string comparison could fail if "use asm" was tainted...
+    // Foxhound: TODO this string comparison could fail if "use asm" was tainted...
     case TokenKind::String:
       if (!canHaveDirectives &&
           anyChars.currentToken().atom() ==
@@ -11969,7 +11969,7 @@ GeneralParser<ParseHandler, Unit>::propertyName(
       return handler_.newSyntheticComputedName(biNode, pos().begin, pos().end);
     }
     case TokenKind::String: {
-      // TaintFox: it's ok to atomize here
+      // Foxhound: it's ok to atomize here
       auto str = anyChars.currentToken().atom();
       *propAtomOut = str;
       uint32_t index;

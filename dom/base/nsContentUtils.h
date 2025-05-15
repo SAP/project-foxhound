@@ -3627,7 +3627,7 @@ class nsContentUtils {
 
   static bool sIsHandlingKeyBoardEvent;
 
-  // Taintfox
+  // Foxhound
   static bool sEncodeDecodeURLHash;
   static bool sGettersDecodeURLHash;
 #ifndef RELEASE_OR_BETA

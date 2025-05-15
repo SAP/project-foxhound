@@ -72,7 +72,7 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
     return nullptr;
   }
 
-  // TaintFox: Init taint information.
+  // Foxhound: Init taint information.
   str->initTaint();
 
   mozilla::PodCopy(storage, chars.begin().get(), len);
@@ -97,7 +97,7 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
     return nullptr;
   }
 
-  // TaintFox: Init taint information.
+  // Foxhound: Init taint information.
   str->initTaint();
 
   if (JSThinInlineString::lengthFits<CharT>(len)) {
@@ -131,7 +131,7 @@ static MOZ_ALWAYS_INLINE JSAtom* NewInlineAtom(JSContext* cx,
     return nullptr;
   }
 
-  // TaintFox: Init taint information.
+  // Foxhound: Init taint information.
   str->initTaint();
 
   mozilla::PodCopy(storage, chars, length);
@@ -154,7 +154,7 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
   JS::AutoCheckCannotGC nogc;
   mozilla::PodCopy(chars, base->chars<CharT>(nogc) + start, length);
 
-  // TaintFox: Copy taint information.
+  // Foxhound: Copy taint information.
   s->initTaint();
   if (optTaint != nullptr) {
     s->setTaint(*optTaint);
@@ -172,7 +172,7 @@ static MOZ_ALWAYS_INLINE JSLinearString* TryEmptyOrStaticString(
   // Measurements on popular websites indicate empty strings are pretty common
   // and most strings with length 1 or 2 are in the StaticStrings table. For
   // length 3 strings that's only about 1%, so we check n <= 2.
-  // Taintfox: TODO: check whether we should disable this function
+  // Foxhound: TODO: check whether we should disable this function
   if (n <= 2) {
     if (n == 0) {
       return cx->emptyString();
@@ -371,7 +371,7 @@ inline JSRope::JSRope(JSString* left, JSString* right, size_t length) {
   d.s.u2.left = left;
   d.s.u3.right = right;
 
-  // TaintFox: Construct new taint information.
+  // Foxhound: Construct new taint information.
   initTaint();
   if (left->isTainted() || right->isTainted()) {
     taint() = left->taint();
@@ -419,7 +419,7 @@ inline JSDependentString::JSDependentString(JSLinearString* base, size_t start,
     base->storeBuffer()->putWholeCell(this);
   }
 
-  // TaintFox: copy taint information from the base string.
+  // Foxhound: copy taint information from the base string.
   this->initTaint();
   if (optTaint != nullptr) {
     this->setTaint(*optTaint);
@@ -443,7 +443,7 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
    */
   SafeStringTaint taint = baseArg->taint().safeSubTaint(start, start + length);
   if (baseArg->isDependent()) {
-    // Taintfox: taint lost if the base is followed and is untainted
+    // Foxhound: taint lost if the base is followed and is untainted
     // We ensure taint is propagated in NewDependentString function
     start += baseArg->asDependent().baseOffset();
     baseArg = baseArg->asDependent().base();
@@ -469,7 +469,7 @@ inline JSLinearString::JSLinearString(const char16_t* chars, size_t length,
   checkStringCharsArena(chars, hasBuffer);
   d.s.u2.nonInlineCharsTwoByte = chars;
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 
@@ -482,7 +482,7 @@ inline JSLinearString::JSLinearString(const JS::Latin1Char* chars,
   checkStringCharsArena(chars, hasBuffer);
   d.s.u2.nonInlineCharsLatin1 = chars;
 
-  // TaintFox
+  // Foxhound: Initialize Taint
   initTaint();
 }
 
@@ -669,7 +669,7 @@ inline JSThinInlineString::JSThinInlineString(size_t length,
   MOZ_ASSERT(lengthFits<JS::Latin1Char>(length));
   setLengthAndFlags(length, INIT_THIN_INLINE_FLAGS | LATIN1_CHARS_BIT);
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 
   *chars = d.inlineStorageLatin1;
@@ -679,7 +679,7 @@ inline JSThinInlineString::JSThinInlineString(size_t length, char16_t** chars) {
   MOZ_ASSERT(lengthFits<char16_t>(length));
   setLengthAndFlags(length, INIT_THIN_INLINE_FLAGS);
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 
   *chars = d.inlineStorageTwoByte;
@@ -690,7 +690,7 @@ inline JSFatInlineString::JSFatInlineString(size_t length,
   MOZ_ASSERT(lengthFits<JS::Latin1Char>(length));
   setLengthAndFlags(length, INIT_FAT_INLINE_FLAGS | LATIN1_CHARS_BIT);
 
-  // TaintFox
+  // Foxhound: Initialize Taint
   initTaint();
 
   *chars = d.inlineStorageLatin1;
@@ -700,7 +700,7 @@ inline JSFatInlineString::JSFatInlineString(size_t length, char16_t** chars) {
   MOZ_ASSERT(lengthFits<char16_t>(length));
   setLengthAndFlags(length, INIT_FAT_INLINE_FLAGS);
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 
   *chars = d.inlineStorageTwoByte;
@@ -714,7 +714,7 @@ inline JSExternalString::JSExternalString(
   d.s.u2.nonInlineCharsTwoByte = chars;
   d.s.u3.externalCallbacks = callbacks;
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 
@@ -726,7 +726,7 @@ inline JSExternalString::JSExternalString(
   d.s.u2.nonInlineCharsLatin1 = chars;
   d.s.u3.externalCallbacks = callbacks;
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 
@@ -785,7 +785,7 @@ inline js::NormalAtom::NormalAtom(const OwnedChars<CharT>& chars,
     d.s.u2.nonInlineCharsLatin1 = chars.data();
   }
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 
@@ -797,7 +797,7 @@ inline js::ThinInlineAtom::ThinInlineAtom(size_t length, JS::Latin1Char** chars,
                     INIT_THIN_INLINE_FLAGS | LATIN1_CHARS_BIT | ATOM_BIT);
   *chars = d.inlineStorageLatin1;
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 
@@ -807,7 +807,7 @@ inline js::ThinInlineAtom::ThinInlineAtom(size_t length, char16_t** chars,
   setLengthAndFlags(length, INIT_THIN_INLINE_FLAGS | ATOM_BIT);
   *chars = d.inlineStorageTwoByte;
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 #endif
@@ -820,7 +820,7 @@ inline js::FatInlineAtom::FatInlineAtom(size_t length, JS::Latin1Char** chars,
                     INIT_FAT_INLINE_FLAGS | LATIN1_CHARS_BIT | ATOM_BIT);
   *chars = d.inlineStorageLatin1;
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 
@@ -831,7 +831,7 @@ inline js::FatInlineAtom::FatInlineAtom(size_t length, char16_t** chars,
   setLengthAndFlags(length, INIT_FAT_INLINE_FLAGS | ATOM_BIT);
   *chars = d.inlineStorageTwoByte;
 
-  // TaintFox
+  // Foxhound: Initialize taint
   initTaint();
 }
 
@@ -873,7 +873,7 @@ MOZ_ALWAYS_INLINE void JSString::finalize(JS::GCContext* gcx) {
     MOZ_ASSERT(isRope());
   }
 
-  // TaintFox
+  // Foxhound: Clear taint
   clearTaint();
 }
 
@@ -893,7 +893,7 @@ inline void JSLinearString::finalize(JS::GCContext* gcx) {
     }
   }
 
-  // TaintFox
+  // Foxhound: Clear taint
   clearTaint();
 }
 
@@ -901,7 +901,7 @@ inline void JSFatInlineString::finalize(JS::GCContext* gcx) {
   MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(isInline());
 
-  // TaintFox
+  // Foxhound: Clear taint
   clearTaint();
 }
 
@@ -910,7 +910,7 @@ inline void js::FatInlineAtom::finalize(JS::GCContext* gcx) {
   MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::FAT_INLINE_ATOM);
 
   // Nothing to do.
-  // TaintFox
+  // Foxhound: Clear taint
   clearTaint();
 }
 
@@ -929,7 +929,7 @@ inline void JSExternalString::finalize(JS::GCContext* gcx) {
     callbacks()->finalize(const_cast<char16_t*>(rawTwoByteChars()));
   }
 
-  // TaintFox
+  // Foxhound: Clear taint
   clearTaint();
 }
 

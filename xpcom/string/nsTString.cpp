@@ -7,7 +7,7 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-// TaintFox
+// Foxhound
 // TODO(tom)
 // where is the = operator? need to ensure taint propogation
 
@@ -38,7 +38,7 @@ void nsTString<T>::Rebind(const char_type* data, size_type length) {
   // If we currently own a buffer, release it.
   this->Finalize();
 
-  // TODO: taintfox propagate taint
+  // TODO: Foxhound propagate taint
   this->SetData(const_cast<char_type*>(data), length, DataFlags::TERMINATED);
   this->AssertValidDependentString();
 }

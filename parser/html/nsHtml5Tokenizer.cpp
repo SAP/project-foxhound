@@ -2207,7 +2207,7 @@ stateloop:
           }
           P::completedNamedCharacterReference(mViewSource.get());
           const char16_t* val = nsHtml5NamedCharacters::VALUES[candidate];
-          // TaintFox: for sane input, charRefTaint is either fully tainted or not tainted at all. In both cases
+          // Foxhound: for sane input, charRefTaint is either fully tainted or not tainted at all. In both cases
           // we can just reuse charRefTaint directly as taint for val.
           // TODO(samuel) warn if unsane input.
           if (!val[1]) {

@@ -148,7 +148,7 @@ pref("dom.keyboardevent.dispatch_during_composition", true);
 // in setter and percent decoded in getter (old behaviour = true)
 pref("dom.url.encode_decode_hash", true);
 // Whether ::GetHash should do percent decoding (old behaviour = true)
-// TaintFox: changed to true, see nsContentUtils.cpp for more information.
+// Foxhound: changed to true, see nsContentUtils.cpp for more information.
 pref("dom.url.getters_decode_hash", true);
 
 // If this is true, TextEventDispatcher dispatches keypress event with setting

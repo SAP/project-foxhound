@@ -33,7 +33,7 @@ namespace mozilla {
  * tracking.  NOTE: A string buffer can be modified only if its reference
  * count is 1.
  *
- * TaintFox: nsStringBuffer is taint aware.
+ * Foxhound: nsStringBuffer is taint aware.
  * TODO: check if this would be better as a member, rather than inheriting
  */
 class StringBuffer : public TaintableString {

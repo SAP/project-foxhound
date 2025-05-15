@@ -76,7 +76,7 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str)
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(len));
   js::CopyChars(buf.get(), *linear);
   if(len > max_length) {
-    // Taintfox was crashing after startup after copying start and end
+    // Foxhound was crashing after startup after copying start and end
     // of the long strings, so disable copying here
     // TODO: work out why windows doesn't like this...
     // Update: this also caused issues with some URLs causing crashes
@@ -104,7 +104,7 @@ std::u16string JS::taintarg_jsstring(JSContext* cx, const JSLinearString* const&
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(len));
   js::CopyChars(buf.get(), *str);
   if(len > max_length) {
-    // Taintfox was crashing after startup after copying start and end
+    // Foxhound was crashing after startup after copying start and end
     // of the long strings, so disable copying here
     // TODO: work out why windows doesn't like this...
     // Update: this also caused issues with some URLs causing crashes
@@ -434,7 +434,7 @@ void JS::WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location) {
 
   char suffix_path[2048] = {0};
   SprintfLiteral(suffix_path, "%s.%d.%u.json", filename, getpid(), counter++);
-  
+
   Fprinter output;
   if (!output.init(suffix_path)) {
     SEprinter p;
@@ -521,7 +521,7 @@ void JS::PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::
 
   // Dump additional information from the taintreport
   if (location.isObject()) {
-    JSObject* obj = ToObject(cx, location);
+    JS::Rooted<JSObject*> obj(cx, ToObject(cx, location));
     PrintJsonObject(cx, obj, json);
   }
 

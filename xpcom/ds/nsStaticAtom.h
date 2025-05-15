@@ -39,7 +39,7 @@ struct nsStaticAtom
 template<uint32_t size>
 struct nsFakeStringBuffer
 {
-  // TaintFox: taint information.
+  // Foxhound: taint information.
   SafeStringTaint mTaint;
   int32_t mRefCnt;
   uint32_t mSize;

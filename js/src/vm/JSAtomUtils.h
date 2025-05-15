@@ -72,7 +72,7 @@ extern JSAtom* PermanentlyAtomizeCharsNonStaticValidLength(
     JSContext* cx, AtomSet& atomSet, mozilla::HashNumber hash,
     const Latin1Char* chars, size_t length);
 
-// TaintFox: convenience function to convert a character buffer to either a JSAtom or a
+// Foxhound: convenience function to convert a character buffer to either a JSAtom or a
 // JSLinearString depening on whether taint information is available or not.
 template <typename CharT>
 extern JSLinearString*
@@ -90,7 +90,7 @@ extern JSAtom* AtomizeUTF8Chars(JSContext* cx, const char* utf8Chars,
 
 extern JSAtom* AtomizeString(JSContext* cx, JSString* str);
 
-// TaintFox: Convenience function which atomizes the given string
+// Foxhound: Convenience function which atomizes the given string
 // only if it is not tainted (since that would loose the taint information).
 // This is meant as a replacement for AtomizeString.
 extern JSLinearString*

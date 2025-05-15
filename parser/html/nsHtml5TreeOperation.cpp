@@ -673,7 +673,7 @@ nsresult nsHtml5TreeOperation::FosterParentText(
         aStackParent->OwnerDoc()->NodeInfoManager();
     RefPtr<nsTextNode> text = new (nodeInfoManager) nsTextNode(nodeInfoManager);
     NS_ASSERTION(text, "Infallible malloc failed?");
-    // TaintFox: TODO(samuel) need taint here!
+    // Foxhound: TODO(samuel) need taint here!
     rv = text->SetText(aBuffer, aLength, false, EmptyTaint);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -697,7 +697,7 @@ nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
   nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
   RefPtr<Comment> comment = new (nodeInfoManager) Comment(nodeInfoManager);
   NS_ASSERTION(comment, "Infallible malloc failed?");
-  // TaintFox: TODO(samuel) need taint here!
+  // Foxhound: TODO(samuel) need taint here!
   nsresult rv = comment->SetText(aBuffer, aLength, false, EmptyTaint);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -709,7 +709,7 @@ nsresult nsHtml5TreeOperation::AppendCommentToDocument(
   RefPtr<Comment> comment = new (aBuilder->GetNodeInfoManager())
       Comment(aBuilder->GetNodeInfoManager());
   NS_ASSERTION(comment, "Infallible malloc failed?");
-  // TaintFox: TODO(samuel) need taint here!
+  // Foxhound: TODO(samuel) need taint here!
   nsresult rv = comment->SetText(aBuffer, aLength, false, EmptyTaint);
   NS_ENSURE_SUCCESS(rv, rv);
 

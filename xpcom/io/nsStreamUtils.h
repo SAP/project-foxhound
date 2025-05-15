@@ -207,7 +207,7 @@ extern nsresult NS_CopySegmentToBuffer(nsIInputStream* aInputStream,
                                        uint32_t* aWriteCount);
 
 /**
- * TaintFox:
+ * Foxhound:
  * Helper structure for NS_TaintedCopySegmentToBuffer
  */
 struct TaintedBuffer {
@@ -217,7 +217,7 @@ struct TaintedBuffer {
 };
 
 /**
- * TaintFox:
+ * Foxhound:
  * This function is intended to be passed to nsITaintawareInputStream::TaintedReadSegments
  * to copy data from the nsITaintawareInputStream into a character buffer passed as part of the
  * aClosure parameter to the TaintedReadSegments function.  The character buffer

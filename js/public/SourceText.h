@@ -134,7 +134,7 @@ class SourceText final : public TaintableString {
     other.units_ = nullptr;
     other.length_ = 0;
     other.ownsUnits_ = false;
-    // taintfox
+    // Foxhound: copy taint
     setTaint(other.taint());
     other.clearTaint();
   }

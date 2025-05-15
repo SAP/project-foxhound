@@ -282,7 +282,7 @@ class BulkWriteHandle final {
  *   nsAString for wide characters
  *   nsACString for narrow characters
  *
- * TaintFox: the (internal) XPCOM string classes are taint aware
+ * Foxhound: the (internal) XPCOM string classes are taint aware
  * as a taint member has been added to the nsTStringRepr class.
  */
 template <typename T>
@@ -558,7 +558,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   void Replace(index_type aCutStart, size_type aCutLength,
                const self_type& aStr) {
     Replace(aCutStart, aCutLength, aStr.Data(), aStr.Length());
-    // TaintFox: copy taint from replacement string.
+    // Foxhound: copy taint from replacement string.
     // At this point taint_ will already have been "reshaped" correctly, we just
     // need to insert the new taint.
     base_string_type::mTaint.insert(aCutStart, aStr.Taint());
@@ -568,7 +568,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
                              const fallible_t& aFallible) {
     return Replace(aCutStart, aCutLength, aStr.Data(), aStr.Length(),
                    aFallible);
-    // TaintFox: copy taint from replacement string.
+    // Foxhound: copy taint from replacement string.
     base_string_type::mTaint.insert(aCutStart, aStr.Taint());
   }
   void NS_FASTCALL Replace(index_type aCutStart, size_type aCutLength,
@@ -1168,7 +1168,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     if (this->mDataFlags & DataFlags::REFCOUNTED) {
       SetToEmptyBuffer();
 
-      // TaintFox: clear taint here.
+      // Foxhound: clear taint here.
       base_string_type::mTaint.clear();
     }
   }
@@ -1234,7 +1234,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     ::NS_ABORT_OOM(aLength * sizeof(char_type));
   }
 
-  // TaintFox: Helper function for appending taint information at the end of
+  // Foxhound: Helper function for appending taint information at the end of
   // this string.
   // The common usage pattern of this method is
   //    string.AppendTaint(some_taint);
@@ -1247,7 +1247,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
     base_string_type::mTaint.concat(aTaint, base_string_type::Length());
   }
 
-  // TaintFox: Helper function for Setting the Taint information
+  // Foxhound: Helper function for Setting the Taint information
   void AssignTaint(const StringTaint& aTaint)
   {
     base_string_type::mTaint = aTaint;

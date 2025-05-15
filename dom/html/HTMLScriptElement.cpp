@@ -126,6 +126,15 @@ nsresult HTMLScriptElement::Clone(dom::NodeInfo* aNodeInfo,
   return NS_OK;
 }
 
+void HTMLScriptElement::SetTextContentInternal(const nsAString& aTextContent,
+  nsIPrincipal* aSubjectPrincipal,
+  ErrorResult& aError) {
+    if(aTextContent.isTainted()) {
+      ReportTaintSink(aTextContent, "script.textContent", this);
+    }
+    FragmentOrElement::SetTextContentInternal(aTextContent, aSubjectPrincipal, aError);
+  }
+
 nsresult HTMLScriptElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
@@ -157,7 +166,7 @@ void HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML,
   if (!nsContentUtils::GetNodeTextContent(this, false, aInnerHTML, fallible)) {
     aError.ReportOOM();
   }
-  // Taintfox: script.innerHTML source
+  // Foxhound: script.innerHTML source
   MarkTaintSourceElement(aInnerHTML, "script.innerHTML", this);
 }
 
@@ -165,7 +174,7 @@ void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
                                      nsIPrincipal* aScriptedPrincipal,
                                      ErrorResult& aError) {
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
-  // Taintfox: script.innerHTML sink
+  // Foxhound: script.innerHTML sink
   ReportTaintSink(aInnerHTML, "script.innerHTML", this); 
 }
 
@@ -177,7 +186,7 @@ void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) const {
 
 void HTMLScriptElement::SetText(const nsAString& aValue, ErrorResult& aRv) {
   aRv = nsContentUtils::SetNodeTextContent(this, aValue, true);
-  // Taintfox: script.text sink
+  // Foxhound: script.text sink
   ReportTaintSink(aValue, "script.text", this); 
 }
 

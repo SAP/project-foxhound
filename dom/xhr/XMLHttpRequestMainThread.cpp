@@ -615,7 +615,7 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
     len += written;
     MOZ_ASSERT(len <= destBufferLen.value());
     handle.Finish(len, false);
-    // TaintFox: propagate taint. TODO(samuel) deal with encoding
+    // Foxhound: propagate taint. TODO(samuel) deal with encoding
     helper.AppendTaintAt(len, aTaint);
   }  // release mutex
 
@@ -643,7 +643,7 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
     return;
   }
 
-  // Taintfox: XMLHttpRequest.response source
+  // Foxhound: XMLHttpRequest.response source
   nsTArray<nsString> args;
 
   nsAutoString url;
@@ -1579,7 +1579,7 @@ void XMLHttpRequestMainThread::Open(const nsACString& aMethod,
   Telemetry::Accumulate(Telemetry::XMLHTTPREQUEST_ASYNC_OR_SYNC,
                         aAsync ? 0 : 1);
 
-  // TaintFox: XMLHttpRequest.open sink
+  // Foxhound: XMLHttpRequest.open sink
   nsAutoString url = NS_ConvertUTF8toUTF16(aUrl);
   ReportTaintSink(url, "XMLHttpRequest.open(url)");
   ReportTaintSink(aUsername, "XMLHttpRequest.open(username)", url);
@@ -3128,7 +3128,7 @@ void XMLHttpRequestMainThread::Send(
 
   if (aData.Value().IsUSVString()) {
     BodyExtractor<const nsAString> body(&aData.Value().GetAsUSVString());
-    // Taintfox: XMLHttpRequest.send() sink
+    // Foxhound: XMLHttpRequest.send() sink
     nsAutoString aUrl;
     if (mRequestURL) {
       nsCString url = mRequestURL->GetSpecOrDefault();

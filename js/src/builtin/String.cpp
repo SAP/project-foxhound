@@ -84,7 +84,7 @@ using mozilla::Utf16ValidUpTo;
 using JS::AutoCheckCannotGC;
 using JS::AutoStableStringChars;
 
-// TaintFox: Calls the handler function for every (densely stored) element in the given JavaScript array.
+// Foxhound: Calls the handler function for every (densely stored) element in the given JavaScript array.
 template <typename Handler>
 void ForEachElement(JSContext* cx, HandleObject obj, Handler handler)
 {
@@ -132,7 +132,7 @@ static bool foxhound_sink(JSContext* cx, unsigned argc, Value* vp);
  */
 
 /*
- * TaintFox: String.tainted() implementation.
+ * Foxhound: String.tainted() implementation.
  */
 bool
 js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
@@ -167,7 +167,7 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
 }
 
 /*
- * TaintFox: taint property implementation.
+ * Foxhound: taint property implementation.
  *
  * This builds a JS representation of the taint information associated with a string.
  */
@@ -447,7 +447,7 @@ static bool Escape(JSContext* cx, const CharT* chars, uint32_t length,
     return false;
   }
 
-  // TaintFox: Make sure output taint is empty.
+  // Foxhound: Make sure output taint is empty.
   outTaint->clear();
 
   auto current = inTaint.begin();
@@ -475,7 +475,7 @@ static bool Escape(JSContext* cx, const CharT* chars, uint32_t length,
 
     i++;
 
-    // TaintFox: Build new taint ranges.
+    // Foxhound: Build new taint ranges.
     if (current != inTaint.end()) {
         if (i == current->end()) {
             outTaint->append(TaintRange(ti, ni, current->flow()));
@@ -501,7 +501,7 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // TaintFox: Build new taint information and add it to the result string.
+  // Foxhound: Build new taint information and add it to the result string.
   SafeStringTaint newtaint;
 
   InlineCharBuffer<Latin1Char> newChars;
@@ -526,12 +526,13 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  JSString* res = newChars.toString(cx, newLength);
+  // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+  JS::Rooted<JSString*> res(cx, newChars.toString(cx, newLength));
   if (!res) {
     return false;
   }
 
-  // Taintfox: set new taint
+  // Foxhound: set new taint
   if(newtaint.hasTaint()) {
     newtaint.extend(TaintOperationFromContext(cx, "escape", true, str));
     res->setTaint(cx, newtaint);
@@ -595,10 +596,10 @@ static bool Unescape(StringBuffer& sb,
 
   // Step 4.
   uint32_t k = 0;
-  uint32_t ni = 0;         // TaintFox: current index in output string
-  uint32_t ti = 0;         // TaintFox: start of current taint range in output string
+  uint32_t ni = 0;         // Foxhound: current index in output string
+  uint32_t ti = 0;         // Foxhound: start of current taint range in output string
 
-  // TaintFox: make sure output taint is empty.
+  // Foxhound: make sure output taint is empty.
   outTaint->clear();
 
   auto current = inTaint.begin();
@@ -636,7 +637,7 @@ static bool Unescape(StringBuffer& sb,
     k += 1;
     ni += 1;
 
-    // TaintFox: Build new taint ranges.
+    // Foxhound: Build new taint ranges.
     if (current != inTaint.end()) {
       // Need to use <= and >= here since k can increase by more than 1 per iteration
       // Note: if just the '%' of an escaped sequence is tainted, then this will still mark
@@ -704,7 +705,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
     result = str;
   }
 
-  // TaintFox: add taint operation.
+  // Foxhound: add taint operation.
   if(newtaint.hasTaint()) {
     newtaint.extend(op);
     result->setTaint(cx, newtaint);
@@ -743,7 +744,7 @@ static const unsigned STRING_ELEMENT_ATTRS =
 
 static bool str_enumerate(JSContext* cx, HandleObject obj) {
   RootedString str(cx, obj->as<StringObject>().unbox());
-  // Taintfox: avoid creating static strings
+  // Foxhound: avoid creating static strings
   // js::StaticStrings& staticStrings = cx->staticStrings();
 
   RootedValue value(cx);
@@ -778,7 +779,7 @@ static bool str_resolve(JSContext* cx, HandleObject obj, HandleId id,
 
   int32_t slot = id.toInt();
   if ((size_t)slot < str->length()) {
-    // TaintFox: code modified to avoid atoms.
+    // Foxhound: code modified to avoid atoms.
     JSString* str1 = NewDependentString(cx, str, slot, 1);
     // Originally:
     //    JSString* str1 =
@@ -968,9 +969,9 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
 
   uint32_t begin = beginInt;
   uint32_t len = lengthInt;
-  // TaintFox
+  // Foxhound: cache the taint up here to prevent GC issues
   SafeStringTaint newTaint = str->taint().safeSubTaint(begin, begin + len);
-  
+
   /*
    * Optimization for one level deep ropes.
    * This is common for the following pattern:
@@ -1214,7 +1215,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   // input is a Latin-1 string, the output is also a Latin-1 string.
 
   InlineCharBuffer<CharT> newChars;
-  // Taintfox: cache the taint up here to prevent GC issues
+  // Foxhound: cache the taint up here to prevent GC issues
   SafeStringTaint taint = str->taint();
   if (taint.hasTaint()) {
     taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
@@ -1237,7 +1238,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
 
     // One element Latin-1 strings can be directly retrieved from the
     // static strings cache.
-    // Taintfox: disable this in order to prevent atoms
+    // Foxhound: disable this in order to prevent atoms
     // if constexpr (std::is_same_v<CharT, Latin1Char>) {
     //   if (length == 1) {
     //     CharT lower = unicode::ToLowerCase(chars[0]);
@@ -1270,7 +1271,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     }
 
     // If no character needs to change, return the input string.
-    // TaintFox: disabled. We need to return a new string here (so we can correctly
+    // Foxhound: disabled. We need to return a new string here (so we can correctly
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length) {
@@ -1305,11 +1306,11 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     }
   }
 
-  // Taintfox
+  // Foxhound
   JSString* res = newChars.toStringDontDeflate(cx, resultLength);
   if (!res)
     return nullptr;
-  // TaintFox: Add taint operation to all taint ranges of the input string.
+  // Foxhound: Add taint operation to all taint ranges of the input string.
   res->setTaint(cx, taint);
 
   return res;
@@ -1458,7 +1459,7 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    // TaintFox: propagate taint and add operation
+    // Foxhound: propagate taint and add operation
     MOZ_ASSERT(result.isString());
     if(str->isTainted()) {
       result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleLowerCase", true, str)));
@@ -1641,7 +1642,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
 
     // Most one element Latin-1 strings can be directly retrieved from the
     // static strings cache.
-    // Taintfox: disable this to prevent atoms
+    // Foxhound: disable this to prevent atoms
     // if constexpr (std::is_same_v<CharT, Latin1Char>) {
     //   if (length == 1) {
     //     Latin1Char c = chars[0];
@@ -1686,7 +1687,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     }
 
     // If no character needs to change, return the input string.
-    // TaintFox: disabled. We need to return a new string here (so we can correctly
+    // Foxhound: disabled. We need to return a new string here (so we can correctly
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length && taint.hasTaint()) {
@@ -1745,7 +1746,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   };
 
   JSString* res = newChars.mapNonEmpty(toString);
-    // TaintFox: Add taint operation to all taint ranges of the input string.
+    // Foxhound: Add taint operation to all taint ranges of the input string.
   if(taint.hasTaint()) {
     res->setTaint(cx, taint);
   }
@@ -1868,7 +1869,7 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    // TaintFox: propagate taint and add operation
+    // Foxhound: propagate taint and add operation
     MOZ_ASSERT(result.isString());
     if(str->isTainted()) {
       result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleUpperCase", true, str)));
@@ -1969,7 +1970,8 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     form = NormalizationForm::NFC;
   } else {
     // Step 4.
-    JSLinearString* formStr = ArgToLinearString(cx, args, 0);
+    // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+    JS::Rooted<JSLinearString*> formStr(cx, ArgToLinearString(cx, args, 0));
     if (!formStr) {
       return false;
     }
@@ -2036,7 +2038,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // TaintFox: Add taint operation.
+  // Foxhound: Add taint operation.
   if (str->isTainted()) {
     ns->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "normalize", true, str)));
   }
@@ -2258,12 +2260,12 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   }
   MOZ_ASSERT(*index < str->length());
 
-  // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
+  // Foxhound: avoid atoms here if the base string is tainted. TODO(samuel)
   if (str->isTainted() && index.isSome()) {
     str = NewDependentString(cx, str, index.value(), 1);
     str->taint().extend(TaintOperation("charAt", true, TaintLocationFromContext(cx), { taintarg(cx, index.value()) }));
     args.rval().setString(str);
-  } else { // Taintfox: only use static string if not tainted
+  } else { // Foxhound: only use static string if not tainted
     // Step 6.
     auto* result = cx->staticStrings().getUnitStringForElement(cx, str, *index);
     if (!result) {
@@ -3311,10 +3313,10 @@ static JSLinearString* TrimString(JSContext* cx, JSString* str, bool trimStart,
     TrimString(linear->twoByteChars(nogc), trimStart, trimEnd, length, &begin,
                &end);
   }
+  // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+  JS::Rooted<JSLinearString*> result(cx, NewDependentString(cx, linear, begin, end - begin));
 
-  JSLinearString* result = NewDependentString(cx, linear, begin, end - begin);
-
-  // TaintFox: Add trim operation to current taint flow.
+  // Foxhound: Add trim operation to current taint flow.
   // the acutal trimming of taint ranges has been done in
   // NewDependentString (StringType-inl.h, JSDependentString::init)
   if (result && result->isTainted()) {
@@ -3543,10 +3545,10 @@ static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
 
   // Move the rest char-by-char, interpreting dollars as we encounter them.
   const CharT* repLimit = repChars + repLength;
-  // Taintfox: index to keep track of taint information
+  // Foxhound: index to keep track of taint information
   size_t index = firstDollarIndex;
   for (const CharT* it = repChars + firstDollarIndex; it < repLimit; ++it, ++index) {
-    // Taintfox: propagate the taint information
+    // Foxhound: propagate the taint information
     const TaintFlow *flow = repTaint.at(index);
 
     if (*it != '$' || it == repLimit - 1) {
@@ -3804,7 +3806,7 @@ JSString* js::str_replace_string_raw(JSContext* cx, HandleString string,
   }
 
   if (match < 0) {
-    // TaintFox: copy string to add taint operation later on
+    // Foxhound: copy string to add taint operation later on
     return NewDependentString(cx, string, 0, string->length());
   }
 
@@ -3872,7 +3874,7 @@ static bool ReplaceAllInternal(const AutoCheckCannotGC& nogc,
     // Step 14.c.
     // Append the substring before the current match.
 
-    // Taintfox - first append taint for the substring before the current match
+    // Foxhound - first append taint for the substring before the current match
     result.taint().concat(string->taint().safeSubTaint(endOfLastMatch, position), result.length());
 
     if (!result.append(strChars + endOfLastMatch, position - endOfLastMatch)) {
@@ -3903,8 +3905,8 @@ static bool ReplaceAllInternal(const AutoCheckCannotGC& nogc,
     position = StringMatch(string, searchString, endOfLastMatch);
   } while (position >= 0);
 
-  // Taintfox: append the final taint
-  // Taintfox - first append taint for the substring before the current match
+  // Foxhound: append the final taint
+  // Foxhound - first append taint for the substring before the current match
   result.taint().concat(string->taint().safeSubTaint(endOfLastMatch, stringLength), result.length());
 
   // Step 15.
@@ -3934,7 +3936,7 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
 
   // Nothing to replace, so return early.
   if (position < 0) {
-    // TaintFox: copy string to add taint operation later on
+    // Foxhound: copy string to add taint operation later on
     return NewDependentString(cx, string, 0, string->length());
   }
 
@@ -3959,7 +3961,7 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
     return nullptr;
   }
 
-  // Taintfox: extend the taint flow
+  // Foxhound: extend the taint flow
   if(result.taint().hasTaint()) {
     result.taint().extend(
       TaintOperationFromContextJSString(cx, "replaceAll", true, searchString, replaceString));
@@ -4014,7 +4016,7 @@ static bool ReplaceAllInterleaveInternal(const AutoCheckCannotGC& nogc,
                                      repChars, replaceLength,
                                        replaceString->taint());
     }
-      // Taintfox: propagate taint
+      // Foxhound: propagate taint
       result.taint().concat(replaceString->taint(), result.length());
     return result.append(repChars, replaceLength);
   };
@@ -4026,7 +4028,7 @@ static bool ReplaceAllInterleaveInternal(const AutoCheckCannotGC& nogc,
       return false;
     }
 
-    // Taintfox: append taint for each character
+    // Foxhound: append taint for each character
     const TaintFlow *flow = string->taint().at(index);
     if (flow) {
       result.taint().set(result.length(), *flow);
@@ -4185,7 +4187,7 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
 
   // Step 13.
   size_t index = 0;
-  // TaintFox: tainting count
+  // Foxhound: tainting count
   size_t count = 0;
  
   // Step 14.
@@ -4234,7 +4236,7 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
     }
 
     if(sub->isTainted()) {
-      // TaintFox: extend taint flow
+      // Foxhound: extend taint flow
       sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx),
                                         { taintarg(cx, sep), taintarg(cx, count++) }));
     }
@@ -4260,7 +4262,7 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
     return nullptr;
   }
 
-  // TaintFox: extend taint flow
+  // Foxhound: extend taint flow
   if(sub->isTainted()) {
     sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, sep), taintarg(cx, count++) }));
   }
@@ -4277,7 +4279,7 @@ static ArrayObject* CharSplitHelper(JSContext* cx, Handle<JSLinearString*> str,
     return NewDenseEmptyArray(cx);
   }
 
-  // Taintfox: not needed
+  // Foxhound: not needed
   //  js::StaticStrings& staticStrings = cx->staticStrings();
   uint32_t resultlen = (limit < strLength ? limit : strLength);
   size_t count = 0;
@@ -4291,18 +4293,18 @@ static ArrayObject* CharSplitHelper(JSContext* cx, Handle<JSLinearString*> str,
     return nullptr;
   }
 
-  // Taintfox removing check on atom type
+  // Foxhound removing check on atom type
   splits->ensureDenseInitializedLength(0, resultlen);
 
   for (size_t i = 0; i < resultlen; ++i) {
-    // TaintFox: code modified to avoid atoms.
-    JSString* sub = NewDependentString(cx, str, i, 1);
+    // Foxhound: code modified to avoid atoms, and added rooting because TaintLocationFromContext can trigger a GC.
+    JS::Rooted<JSString*> sub(cx, NewDependentString(cx, str, i, 1));
     // was:
     // JSString* sub = staticStrings.getUnitStringForElement(cx, str, i);
     if (!sub) {
       return nullptr;
     }
-    // TaintFox: extend taint flow
+    // Foxhound: extend taint flow
     if(sub->isTainted()) {
       sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
     }
@@ -4349,7 +4351,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
       if (!sub) {
         return nullptr;
       }
-      // TaintFox: extend taint flow
+      // Foxhound: extend taint flow
       if(sub->isTainted()) {
         sub->taint().extend(op);
       }
@@ -4366,7 +4368,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
   if (!sub) {
     return nullptr;
   }
-  // TaintFox: extend taint flow
+  // Foxhound: extend taint flow
   if(sub->isTainted()) {
     sub->taint().extend(op);
   }
@@ -4491,7 +4493,7 @@ static const JSFunctionSpec string_methods[] = {
 
     JS_SELF_HOSTED_SYM_FN(iterator, "String_iterator", 0, 0),
 
-    /* TaintFox: add untaint method to strings. */
+    /* Foxhound: add untaint method to strings. */
     JS_FN("untaint", str_untaint, 0, 0),
 
     JS_FS_END,
@@ -4499,7 +4501,7 @@ static const JSFunctionSpec string_methods[] = {
 
 // ES6 rev 27 (2014 Aug 24) 21.1.1
 
-/* TaintFox: Add |taint| property. */
+/* Foxhound: Add |taint| property. */
 static const
 JSPropertySpec string_taint_properties[] = {
     JS_PSGS("taint", str_taint_getter, str_taint_setter, JSPROP_PERMANENT),
@@ -4774,7 +4776,7 @@ static const JSFunctionSpec string_static_methods[] = {
 
     JS_SELF_HOSTED_FN("raw", "String_static_raw", 1, 0),
 
-    // TaintFox: Helper function for manual taint sources.
+    // Foxhound: Helper function for manual taint sources.
     JS_FN("tainted",              str_tainted,          1,0),
 
     JS_FS_END,
@@ -5097,7 +5099,7 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, Handle<JSLinearString*> str,
     return false;
   }
 
-  // TaintFox: Add encode operation to output taint.
+  // Foxhound: Add encode operation to output taint.
   SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if(taint.hasTaint()) {
     if (unescapedSet == js_isUriReservedPlusPound) {
@@ -5263,7 +5265,7 @@ static bool Decode(JSContext* cx, Handle<JSLinearString*> str,
     return false;
   }
 
-  // TaintFox: Add decode operation to output taint.
+  // Foxhound: Add decode operation to output taint.
   SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if(taint.hasTaint()) {
     if(reservedSet == js_isUriReservedPlusPound) {
@@ -5321,7 +5323,7 @@ static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp) {
   return Encode(cx, str, nullptr, args.rval());
 }
 
-// TODO: TaintFox chars - need to propagate taint here
+// TODO: Foxhound chars - need to propagate taint here
 JSString* js::EncodeURI(JSContext* cx, const char* chars, size_t length) {
   JSStringBuilder sb(cx);
   EncodeResult result = Encode(sb, reinterpret_cast<const Latin1Char*>(chars),

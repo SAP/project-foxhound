@@ -11,7 +11,7 @@ function testName(thisv) {
     "trimRight",
     // Returns empty string
     "constructor",
-    // Taintfox
+    // Foxhound
     "taint",
     "untaint"
   ]

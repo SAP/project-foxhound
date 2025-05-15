@@ -20,7 +20,7 @@ void nsTPromiseFlatString<T>::Init(const substring_type& str) {
     // does not promote DataFlags::VOIDED
 
     this->SetData(newData, newLength, newDataFlags);
-    // Taintfox TODO: change this (back) to a set method
+    // Foxhound TODO: change this (back) to a set method
     this->Taint() = str.Taint();
   } else {
     this->Assign(str);
