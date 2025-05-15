@@ -2476,7 +2476,7 @@ JS_PUBLIC_API JSString* JS::NewStringFromKnownLiveUTF8Buffer(
   return ::NewStringFromUTF8Buffer(cx, buffer, length);
 }
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
 void JSExtensibleString::dumpOwnRepresentationFields(
     js::JSONPrinter& json) const {
   json.property("capacity", capacity());
