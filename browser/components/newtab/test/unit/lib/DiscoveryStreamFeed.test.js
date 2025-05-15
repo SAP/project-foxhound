@@ -86,6 +86,7 @@ describe("DiscoveryStreamFeed", () => {
           "discoverystream.spocs.personalized": true,
           "discoverystream.recs.personalized": true,
           "system.showSponsored": false,
+          "discoverystream.spocs.startupCache.enabled": true,
         },
       },
     });
@@ -613,7 +614,11 @@ describe("DiscoveryStreamFeed", () => {
     let fakeDiscoveryStream;
     beforeEach(() => {
       fakeDiscoveryStream = {
-        Prefs: {},
+        Prefs: {
+          values: {
+            "discoverystream.spocs.startupCache.enabled": true,
+          },
+        },
         DiscoveryStream: {
           layout: [
             { components: [{ feed: { url: "foo.com" } }] },
@@ -2755,9 +2760,7 @@ describe("DiscoveryStreamFeed", () => {
       feed.store.getState = () => ({
         Prefs: {
           values: {
-            pocketConfig: {
-              spocsCacheTimeout: 1,
-            },
+            "discoverystream.spocs.cacheTimeout": 1,
           },
         },
       });
@@ -2769,9 +2772,7 @@ describe("DiscoveryStreamFeed", () => {
       feed.store.getState = () => ({
         Prefs: {
           values: {
-            pocketConfig: {
-              spocsCacheTimeout: 31,
-            },
+            "discoverystream.spocs.cacheTimeout": 31,
           },
         },
       });
@@ -2782,9 +2783,7 @@ describe("DiscoveryStreamFeed", () => {
       feed.store.getState = () => ({
         Prefs: {
           values: {
-            pocketConfig: {
-              spocsCacheTimeout: 20,
-            },
+            "discoverystream.spocs.cacheTimeout": 20,
           },
         },
       });
@@ -3380,6 +3379,16 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.calledOnce(feed.scoreFeeds);
       assert.calledOnce(feed.scoreSpocs);
+    });
+  });
+
+  describe("#onAction: TOPIC_SELECTION_MAYBE_LATER", () => {
+    it("should call topicSelectionMaybeLaterEvent", async () => {
+      sandbox.stub(feed, "topicSelectionMaybeLaterEvent").resolves();
+      await feed.onAction({
+        type: at.TOPIC_SELECTION_MAYBE_LATER,
+      });
+      assert.calledOnce(feed.topicSelectionMaybeLaterEvent);
     });
   });
 

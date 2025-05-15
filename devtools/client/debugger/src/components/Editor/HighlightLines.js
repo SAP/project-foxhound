@@ -9,8 +9,8 @@
 
 import { Component } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
-import { fromEditorLine } from "../../utils/editor/index";
 import { features } from "../../utils/prefs";
+import { markerTypes } from "../../constants";
 
 class HighlightLines extends Component {
   static get propTypes() {
@@ -74,13 +74,14 @@ class HighlightLines extends Component {
     if (features.codemirrorNext) {
       if (editor) {
         editor.scrollTo(range.start, 0);
+        const lines = [];
+        for (let line = range.start; line <= range.end; line++) {
+          lines.push({ line });
+        }
         editor.setLineContentMarker({
-          id: "multi-highlight-line-marker",
+          id: markerTypes.MULTI_HIGHLIGHT_LINE_MARKER,
           lineClassName: "highlight-lines",
-          condition(line) {
-            const lineNumber = fromEditorLine(null, line);
-            return lineNumber >= range.start && lineNumber <= range.end;
-          },
+          lines,
         });
       }
       return;

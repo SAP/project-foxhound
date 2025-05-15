@@ -19,7 +19,7 @@ export class BackupUIChild extends JSWindowActorChild {
    * @param {Event} event
    *   The custom event that the widget fired.
    */
-  handleEvent(event) {
+  async handleEvent(event) {
     /**
      * BackupUI:InitWidget sends a message to the parent to request the BackupService state
      * which will result in a `backupServiceState` property of the widget to be set when that
@@ -29,8 +29,64 @@ export class BackupUIChild extends JSWindowActorChild {
     if (event.type == "BackupUI:InitWidget") {
       this.#inittedWidgets.add(event.target);
       this.sendAsyncMessage("RequestState");
-    } else if (event.type == "BackupUI:ScheduledBackupsConfirm") {
-      this.sendAsyncMessage("ScheduledBackupsConfirm");
+    } else if (event.type == "BackupUI:ToggleScheduledBackups") {
+      this.sendAsyncMessage("ToggleScheduledBackups", event.detail);
+    } else if (event.type == "BackupUI:ShowFilepicker") {
+      let targetNodeName = event.target.nodeName;
+      let { path, filename, iconURL } = await this.sendQuery("ShowFilepicker", {
+        win: event.detail?.win,
+        filter: event.detail?.filter,
+        displayDirectoryPath: event.detail?.displayDirectoryPath,
+      });
+
+      let widgets = ChromeUtils.nondeterministicGetWeakSetKeys(
+        this.#inittedWidgets
+      );
+
+      for (let widget of widgets) {
+        if (widget.isConnected && widget.nodeName == targetNodeName) {
+          widget.dispatchEvent(
+            new CustomEvent("BackupUI:SelectNewFilepickerPath", {
+              bubbles: true,
+              detail: {
+                path,
+                filename,
+                iconURL,
+              },
+            })
+          );
+          break;
+        }
+      }
+    } else if (event.type == "BackupUI:GetBackupFileInfo") {
+      let { backupFile } = event.detail;
+      this.sendAsyncMessage("GetBackupFileInfo", {
+        backupFile,
+      });
+    } else if (event.type == "BackupUI:RestoreFromBackupFile") {
+      let { backupFile, backupPassword } = event.detail;
+      event.target.recoveryInProgress = true;
+      event.target.recoveryErrorCode = 0;
+      let result = await this.sendQuery("RestoreFromBackupFile", {
+        backupFile,
+        backupPassword,
+      });
+      event.target.recoveryInProgress = false;
+      if (result.success) {
+        event.target.restoreFromBackupDialogEl?.close();
+      } else {
+        event.target.recoveryErrorCode = result.errorCode;
+      }
+    } else if (event.type == "BackupUI:RestoreFromBackupChooseFile") {
+      this.sendAsyncMessage("RestoreFromBackupChooseFile");
+    } else if (event.type == "BackupUI:ToggleEncryption") {
+      this.sendAsyncMessage("ToggleEncryption", event.detail);
+    } else if (event.type == "BackupUI:RerunEncryption") {
+      this.sendAsyncMessage("RerunEncryption", event.detail);
+    } else if (event.type == "BackupUI:ShowBackupLocation") {
+      this.sendAsyncMessage("ShowBackupLocation");
+    } else if (event.type == "BackupUI:EditBackupLocation") {
+      this.sendAsyncMessage("EditBackupLocation");
     }
   }
 

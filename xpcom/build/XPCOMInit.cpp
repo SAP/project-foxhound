@@ -30,6 +30,8 @@
 #include "nsXPCOMCIDInternal.h"
 
 #include "mozilla/dom/JSExecutionManager.h"
+#include "mozilla/dom/SharedScriptCache.h"
+#include "mozilla/SharedStyleSheetCache.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 
@@ -212,7 +214,7 @@ class OggReporter final : public nsIMemoryReporter,
                  bool aAnonymize) override {
     MOZ_COLLECT_REPORT(
         "explicit/media/libogg", KIND_HEAP, UNITS_BYTES, MemoryAllocated(),
-        "Memory allocated through libogg for Ogg, Theora, and related media "
+        "Memory allocated through libogg for Ogg, and related media "
         "files.");
 
     return NS_OK;
@@ -382,7 +384,14 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
     // else you'll probably have to do, please add it to the case in
     // GeckoChildProcessHost.cpp which sets the greomni/appomni flags.
     MOZ_ASSERT(XRE_IsParentProcess() || XRE_IsContentProcess());
-    mozilla::Omnijar::Init();
+
+    // Note that the Omnijar::Init does not fail but returns NS_OK if the file
+    // is not found at all, as this is an expected possible way of running
+    // with an unpacked modules directory.
+    nsresult rv = mozilla::Omnijar::Init();
+    if (NS_FAILED(rv)) {
+      return NS_ERROR_OMNIJAR_CORRUPT;
+    }
   }
 
   if ((sCommandLineWasInitialized = !CommandLine::IsInitialized())) {
@@ -743,6 +752,9 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
   }
 
   mozilla::ScriptPreloader::DeleteCacheDataSingleton();
+
+  mozilla::dom::SharedScriptCache::DeleteSingleton();
+  mozilla::SharedStyleSheetCache::DeleteSingleton();
 
   // Release shared memory which might be borrowed by the JS engine.
   xpc::SelfHostedShmem::Shutdown();

@@ -8,6 +8,7 @@
 
 #include <string.h>
 
+#include "AutoSelectionRestorer.h"
 #include "EditAction.h"
 #include "EditorDOMPoint.h"
 #include "EditorUtils.h"
@@ -703,7 +704,7 @@ Result<EditActionResult, nsresult> HTMLEditor::HTMLWithContextInserter::Run(
     // Save current selection since DeleteTableCellWithTransaction() perturbs
     // it.
     {
-      AutoSelectionRestorer restoreSelectionLater(mHTMLEditor);
+      AutoSelectionRestorer restoreSelectionLater(&mHTMLEditor);
       rv = mHTMLEditor.DeleteTableCellWithTransaction(1);
       if (NS_FAILED(rv)) {
         NS_WARNING("HTMLEditor::DeleteTableCellWithTransaction(1) failed");
@@ -1236,7 +1237,7 @@ HTMLEditor::HTMLWithContextInserter::InsertContents(
               rv != NS_SUCCESS_EDITOR_BUT_IGNORED_TRIVIAL_ERROR,
               "CreateContentResult::SuggestCaretPointTo() failed, but ignored");
           break;  // from the inner `for` loop
-        }         // end of the inner `for` loop
+        }  // end of the inner `for` loop
       }
     }
     if (lastInsertedPoint.IsSet()) {
@@ -2285,7 +2286,7 @@ HTMLEditor::HavePrivateHTMLFlavor HTMLEditor::ClipboardHasPrivateHTMLFlavor(
 }
 
 nsresult HTMLEditor::HandlePaste(AutoEditActionDataSetter& aEditActionData,
-                                 int32_t aClipboardType) {
+                                 nsIClipboard::ClipboardType aClipboardType) {
   aEditActionData.InitializeDataTransferWithClipboard(
       SettingDataTransfer::eWithFormat, aClipboardType);
   nsresult rv = aEditActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -2299,7 +2300,7 @@ nsresult HTMLEditor::HandlePaste(AutoEditActionDataSetter& aEditActionData,
   return rv;
 }
 
-nsresult HTMLEditor::PasteInternal(int32_t aClipboardType) {
+nsresult HTMLEditor::PasteInternal(nsIClipboard::ClipboardType aClipboardType) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   // Get Clipboard Service
@@ -2456,8 +2457,8 @@ nsresult HTMLEditor::HandlePasteTransferable(
 }
 
 nsresult HTMLEditor::PasteNoFormattingAsAction(
-    int32_t aClipboardType, DispatchPasteEvent aDispatchPasteEvent,
-    nsIPrincipal* aPrincipal) {
+    nsIClipboard::ClipboardType aClipboardType,
+    DispatchPasteEvent aDispatchPasteEvent, nsIPrincipal* aPrincipal) {
   if (IsReadonly()) {
     return NS_OK;
   }
@@ -2479,7 +2480,7 @@ nsresult HTMLEditor::PasteNoFormattingAsAction(
 
     Result<ClipboardEventResult, nsresult> ret =
         DispatchClipboardEventAndUpdateClipboard(ePasteNoFormatting,
-                                                 aClipboardType);
+                                                 Some(aClipboardType));
     if (MOZ_UNLIKELY(ret.isErr())) {
       NS_WARNING(
           "EditorBase::DispatchClipboardEventAndUpdateClipboard("
@@ -2608,7 +2609,7 @@ static const char* textHtmlEditorFlavors[] = {kTextMime,      kHTMLMime,
                                               kJPEGImageMime, kJPGImageMime,
                                               kPNGImageMime,  kGIFImageMime};
 
-bool HTMLEditor::CanPaste(int32_t aClipboardType) const {
+bool HTMLEditor::CanPaste(nsIClipboard::ClipboardType aClipboardType) const {
   if (AreClipboardCommandsUnconditionallyEnabled()) {
     return true;
   }
@@ -2684,7 +2685,8 @@ bool HTMLEditor::CanPasteTransferable(nsITransferable* aTransferable) {
 }
 
 nsresult HTMLEditor::HandlePasteAsQuotation(
-    AutoEditActionDataSetter& aEditActionData, int32_t aClipboardType) {
+    AutoEditActionDataSetter& aEditActionData,
+    nsIClipboard::ClipboardType aClipboardType) {
   MOZ_ASSERT(aClipboardType == nsIClipboard::kGlobalClipboard ||
              aClipboardType == nsIClipboard::kSelectionClipboard);
   aEditActionData.InitializeDataTransferWithClipboard(
@@ -2807,7 +2809,8 @@ nsresult HTMLEditor::HandlePasteAsQuotation(
   return rv;
 }
 
-nsresult HTMLEditor::PasteAsPlaintextQuotation(int32_t aSelectionType) {
+nsresult HTMLEditor::PasteAsPlaintextQuotation(
+    nsIClipboard::ClipboardType aSelectionType) {
   // Get Clipboard Service
   nsresult rv;
   nsCOMPtr<nsIClipboard> clipboard =

@@ -74,12 +74,50 @@ add_task(async function testResetAll() {
   ok(Services.prefs.getBoolPref(KNOWN_PREF_2), "initial state D");
 
   // Modify the state of some of the features.
-  doc.getElementById("test-featureC").click();
-  doc.getElementById("test-featureD").click();
+
+  EventUtils.synthesizeMouseAtCenter(
+    doc.getElementById("test-featureC").checkboxEl,
+    {},
+    gBrowser.contentWindow
+  );
+  EventUtils.synthesizeMouseAtCenter(
+    doc.getElementById("test-featureD").labelEl,
+    {},
+    gBrowser.contentWindow
+  );
+  // Verify that clicking the non-interactive description does not
+  // trigger telemetry events.
+  AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
+  EventUtils.synthesizeMouseAtCenter(
+    doc.getElementById("test-featureD").descriptionEl,
+    {},
+    gBrowser.contentWindow
+  );
+  AccessibilityUtils.resetEnv();
+
+  // Check the prefs changed
   ok(!Services.prefs.getBoolPref("test.featureA"), "modified state A");
   ok(Services.prefs.getBoolPref("test.featureB"), "modified state B");
   ok(Services.prefs.getBoolPref(KNOWN_PREF_1), "modified state C");
   ok(!Services.prefs.getBoolPref(KNOWN_PREF_2), "modified state D");
+
+  // Check that telemetry appeared:
+  const { TelemetryTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/TelemetryTestUtils.sys.mjs"
+  );
+  let snapshot = TelemetryTestUtils.getProcessScalars("parent", true, true);
+  TelemetryTestUtils.assertKeyedScalar(
+    snapshot,
+    "browser.ui.interaction.preferences_paneExperimental",
+    "test-featureC",
+    1
+  );
+  TelemetryTestUtils.assertKeyedScalar(
+    snapshot,
+    "browser.ui.interaction.preferences_paneExperimental",
+    "test-featureD",
+    1
+  );
 
   // State after reset.
   let prefChangedPromise = new Promise(resolve => {

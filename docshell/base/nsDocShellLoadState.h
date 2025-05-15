@@ -258,6 +258,10 @@ class nsDocShellLoadState final {
 
   void SetHasValidUserGestureActivation(bool HasValidUserGestureActivation);
 
+  void SetTextDirectiveUserActivation(bool aTextDirectiveUserActivation);
+
+  bool GetTextDirectiveUserActivation();
+
   const nsCString& TypeHint() const;
 
   void SetTypeHint(const nsCString& aTypeHint);
@@ -336,6 +340,15 @@ class nsDocShellLoadState final {
   }
 
   bool GetWasSchemelessInput() { return mWasSchemelessInput; }
+
+  void SetHttpsUpgradeTelemetry(
+      nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry) {
+    mHttpsUpgradeTelemetry = aHttpsUpgradeTelemetry;
+  }
+
+  nsILoadInfo::HTTPSUpgradeTelemetryType GetHttpsUpgradeTelemetry() {
+    return mHttpsUpgradeTelemetry;
+  }
 
   // Determine the remote type of the process which should be considered
   // responsible for this load for the purposes of security checks.
@@ -550,6 +563,11 @@ class nsDocShellLoadState final {
   // Is this load triggered by a user gesture?
   bool mHasValidUserGestureActivation;
 
+  // True if a text directive can be scrolled to. This is true either if the
+  // load is triggered by a user, or the document has an unconsumed activation
+  // (eg. client redirect).
+  bool mTextDirectiveUserActivation = false;
+
   // Whether this load can steal the focus from the source browsing context.
   bool mAllowFocusMove;
 
@@ -612,6 +630,10 @@ class nsDocShellLoadState final {
 
   // if the to-be-loaded address had it protocol added through a fixup
   bool mWasSchemelessInput = false;
+
+  // Solely for the use of collecting Telemetry for HTTPS upgrades.
+  nsILoadInfo::HTTPSUpgradeTelemetryType mHttpsUpgradeTelemetry =
+      nsILoadInfo::NOT_INITIALIZED;
 };
 
 #endif /* nsDocShellLoadState_h__ */

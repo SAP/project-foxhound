@@ -35,7 +35,7 @@ class TopSitesTest : TestSetup() {
     @get:Rule
     val activityIntentTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true)
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/532598
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/532598
     @SmokeTest
     @Test
     fun addAWebsiteAsATopSiteTest() {
@@ -48,7 +48,7 @@ class TopSitesTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             verifyPageContent(defaultWebPage.content)
         }.openThreeDotMenu {
-            expandMenu()
+            expandMenuFully()
             verifyAddToShortcutsButton(shouldExist = true)
         }.addToFirefoxHome {
             verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
@@ -58,7 +58,7 @@ class TopSitesTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/532599
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/532599
     @Test
     fun openTopSiteInANewTabTest() {
         val defaultWebPage = getGenericAsset(mockWebServer, 1)
@@ -70,7 +70,7 @@ class TopSitesTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             verifyPageContent(defaultWebPage.content)
         }.openThreeDotMenu {
-            expandMenu()
+            expandMenuFully()
             verifyAddToShortcutsButton(shouldExist = true)
         }.addToFirefoxHome {
             verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
@@ -90,7 +90,7 @@ class TopSitesTest : TestSetup() {
         mDevice.pressBack()
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/532600
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/532600
     @Test
     fun openTopSiteInANewPrivateTabTest() {
         val defaultWebPage = getGenericAsset(mockWebServer, 1)
@@ -102,7 +102,7 @@ class TopSitesTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             verifyPageContent(defaultWebPage.content)
         }.openThreeDotMenu {
-            expandMenu()
+            expandMenuFully()
             verifyAddToShortcutsButton(shouldExist = true)
         }.addToFirefoxHome {
             verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
@@ -116,9 +116,39 @@ class TopSitesTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1110321
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1110321
     @Test
-    fun renameATopSiteTest() {
+    fun editTopSiteTest() {
+        val defaultWebPage = getGenericAsset(mockWebServer, 1)
+        val genericWebPage = getGenericAsset(mockWebServer, 2)
+        val newPageTitle = generateRandomString(5)
+
+        homeScreen {
+            verifyExistingTopSitesList()
+        }
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+            waitForPageToLoad()
+        }.openThreeDotMenu {
+            expandMenuFully()
+            verifyAddToShortcutsButton(shouldExist = true)
+        }.addToFirefoxHome {
+            verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
+        }.goToHomescreen {
+            verifyExistingTopSitesList()
+            verifyExistingTopSitesTabs(defaultWebPage.title)
+        }.openContextMenuOnTopSitesWithTitle(defaultWebPage.title) {
+            verifyTopSiteContextMenuItems()
+        }.editTopSite(newPageTitle, genericWebPage.url.toString()) {
+            verifyExistingTopSitesList()
+            verifyExistingTopSitesTabs(newPageTitle)
+        }.openTopSiteTabWithTitle(title = newPageTitle) {
+            verifyUrl(genericWebPage.url.toString())
+        }
+    }
+
+    @Test
+    fun editTopSiteTestWithInvalidURL() {
         val defaultWebPage = getGenericAsset(mockWebServer, 1)
         val newPageTitle = generateRandomString(5)
 
@@ -129,7 +159,7 @@ class TopSitesTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             waitForPageToLoad()
         }.openThreeDotMenu {
-            expandMenu()
+            expandMenuFully()
             verifyAddToShortcutsButton(shouldExist = true)
         }.addToFirefoxHome {
             verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
@@ -138,13 +168,12 @@ class TopSitesTest : TestSetup() {
             verifyExistingTopSitesTabs(defaultWebPage.title)
         }.openContextMenuOnTopSitesWithTitle(defaultWebPage.title) {
             verifyTopSiteContextMenuItems()
-        }.renameTopSite(newPageTitle) {
-            verifyExistingTopSitesList()
-            verifyExistingTopSitesTabs(newPageTitle)
+        }.editTopSite(newPageTitle, "gl") {
+            verifyTopSiteContextMenuUrlErrorMessage()
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/532601
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/532601
     @Test
     fun removeTopSiteUsingMenuButtonTest() {
         val defaultWebPage = getGenericAsset(mockWebServer, 1)
@@ -156,7 +185,7 @@ class TopSitesTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             verifyPageContent(defaultWebPage.content)
         }.openThreeDotMenu {
-            expandMenu()
+            expandMenuFully()
             verifyAddToShortcutsButton(shouldExist = true)
         }.addToFirefoxHome {
             verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
@@ -175,7 +204,7 @@ class TopSitesTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2323641
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2323641
     @Test
     fun removeTopSiteFromMainMenuTest() {
         val defaultWebPage = getGenericAsset(mockWebServer, 1)
@@ -187,7 +216,7 @@ class TopSitesTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             verifyPageContent(defaultWebPage.content)
         }.openThreeDotMenu {
-            expandMenu()
+            expandMenuFully()
             verifyAddToShortcutsButton(shouldExist = true)
         }.addToFirefoxHome {
             verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
@@ -203,7 +232,7 @@ class TopSitesTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/561582
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/561582
     // Expected for en-us defaults
     @Test
     fun verifyENLocalesDefaultTopSitesListTest() {
@@ -215,7 +244,7 @@ class TopSitesTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1050642
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1050642
     @SmokeTest
     @Test
     fun addAndRemoveMostViewedTopSiteTest() {

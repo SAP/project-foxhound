@@ -8,6 +8,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
@@ -109,6 +111,7 @@ export const SearchSERPTelemetryUtils = {
     AD_LINK: "ad_link",
     AD_SIDEBAR: "ad_sidebar",
     AD_SITELINK: "ad_sitelink",
+    AD_UNCATEGORIZED: "ad_uncategorized",
     COOKIE_BANNER: "cookie_banner",
     INCONTENT_SEARCHBOX: "incontent_searchbox",
     NON_ADS_LINK: "non_ads_link",
@@ -136,6 +139,7 @@ const AD_COMPONENTS = [
   SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
   SearchSERPTelemetryUtils.COMPONENTS.AD_SIDEBAR,
   SearchSERPTelemetryUtils.COMPONENTS.AD_SITELINK,
+  SearchSERPTelemetryUtils.COMPONENTS.AD_UNCATEGORIZED,
 ];
 
 /**
@@ -1559,10 +1563,13 @@ class ContentHandler {
           "Find component for URL"
         );
 
-        // Default value for URLs that don't match any components categorized
-        // on the page.
+        // If no component was found, it's possible the link was added after
+        // components were categorized.
         if (!type) {
-          type = SearchSERPTelemetryUtils.COMPONENTS.NON_ADS_LINK;
+          let isAd = info.extraAdServersRegexps?.some(regex => regex.test(url));
+          type = isAd
+            ? SearchSERPTelemetryUtils.COMPONENTS.AD_UNCATEGORIZED
+            : SearchSERPTelemetryUtils.COMPONENTS.NON_ADS_LINK;
         }
 
         if (
@@ -1946,6 +1953,7 @@ class SERPCategorizer {
     // downloading the data), we shouldn't report telemetry.
     // Thus, there is no point attempting to categorize the SERP.
     if (SearchSERPDomainToCategoriesMap.empty) {
+      SERPCategorizationRecorder.recordMissingImpressionTelemetry();
       return null;
     }
     let resultsToReport = {};
@@ -2213,6 +2221,11 @@ class CategorizationRecorder {
     Services.obs.addObserver(this, "user-interaction-active");
     Services.obs.addObserver(this, "user-interaction-inactive");
     this.#init = true;
+    this.#serpCategorizationsCount = Services.prefs.getIntPref(
+      "browser.search.serpMetricsRecordedCounter",
+      0
+    );
+    Services.prefs.setIntPref("browser.search.serpMetricsRecordedCounter", 0);
     this.submitPing("startup");
     Services.obs.notifyObservers(null, "categorization-recorder-init");
   }
@@ -2221,6 +2234,11 @@ class CategorizationRecorder {
     if (this.#init) {
       Services.obs.removeObserver(this, "user-interaction-active");
       Services.obs.removeObserver(this, "user-interaction-inactive");
+      Services.prefs.setIntPref(
+        "browser.search.serpMetricsRecordedCounter",
+        this.#serpCategorizationsCount
+      );
+
       this.#resetCategorizationRecorderData();
       this.#init = false;
     }
@@ -2264,19 +2282,73 @@ class CategorizationRecorder {
     );
     Glean.serp.categorization.record(resultToReport);
 
-    this.#serpCategorizationsCount++;
-    if (
-      this.#serpCategorizationsCount >=
-      CATEGORIZATION_SETTINGS.PING_SUBMISSION_THRESHOLD
-    ) {
-      this.submitPing("threshold_reached");
-      this.#serpCategorizationsCount = 0;
+    this.#incrementCategorizationsCount();
+  }
+
+  /**
+   * Helper function for recording Glean telemetry when issues with the
+   * domain-to-categories map cause the categorization and impression not to be
+   * recorded.
+   */
+  recordMissingImpressionTelemetry() {
+    lazy.logConsole.debug(
+      "Recording a missing impression due to an issue with the domain-to-categories map."
+    );
+    Glean.serp.categorizationNoMapFound.add();
+    this.#incrementCategorizationsCount();
+  }
+
+  /**
+   * Adds a Glean object metric to the custom SERP categorization ping if info
+   * about a single experiment has been requested via Nimbus config.
+   */
+  maybeExtractAndRecordExperimentInfo() {
+    let targetExperiment =
+      lazy.NimbusFeatures.search.getVariable("targetExperiment");
+    if (!targetExperiment) {
+      lazy.logConsole.debug("No targetExperiment found.");
+      return;
     }
+
+    lazy.logConsole.debug("Found targetExperiment:", targetExperiment);
+
+    // Try checking if an Experiment exists, otherwise check for a Rollout.
+    let metadata =
+      lazy.ExperimentAPI.getExperimentMetaData({
+        featureId: "search",
+        slug: targetExperiment,
+      }) ??
+      lazy.ExperimentAPI.getRolloutMetaData({
+        featureId: "search",
+        slug: targetExperiment,
+      });
+    if (!metadata) {
+      lazy.logConsole.debug(
+        "No experiment or rollout found that matches targetExperiment."
+      );
+      return;
+    }
+
+    let experimentToRecord = {
+      slug: metadata.slug,
+      branch: metadata.branch?.slug,
+    };
+    lazy.logConsole.debug("Experiment data:", experimentToRecord);
+    Glean.serp.experimentInfo.set(experimentToRecord);
   }
 
   submitPing(reason) {
+    if (!this.#serpCategorizationsCount) {
+      return;
+    }
+
+    // If experiment info has been requested via Nimbus config, we want to
+    // record it just before submitting the ping.
+    this.maybeExtractAndRecordExperimentInfo();
     lazy.logConsole.debug("Submitting SERP categorization ping:", reason);
     GleanPings.serpCategorization.submit(reason);
+
+    this.#serpCategorizationsCount = 0;
   }
 
   /**
@@ -2287,6 +2359,17 @@ class CategorizationRecorder {
   testReset() {
     if (Cu.isInAutomation) {
       this.#resetCategorizationRecorderData();
+    }
+  }
+
+  #incrementCategorizationsCount() {
+    this.#serpCategorizationsCount++;
+
+    if (
+      this.#serpCategorizationsCount >=
+      CATEGORIZATION_SETTINGS.PING_SUBMISSION_THRESHOLD
+    ) {
+      this.submitPing("threshold_reached");
     }
   }
 

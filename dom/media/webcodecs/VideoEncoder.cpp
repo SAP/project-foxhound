@@ -218,7 +218,8 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
   }
   Maybe<EncoderConfig::CodecSpecific> specific;
   if (codecType == CodecType::H264) {
-    uint8_t profile, constraints, level;
+    uint8_t profile, constraints;
+    H264_LEVEL level;
     H264BitStreamFormat format;
     if (mAvc) {
       format = mAvc->mFormat == AvcBitstreamFormat::Annexb
@@ -230,8 +231,8 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
     if (ExtractH264CodecDetails(mCodec, profile, constraints, level)) {
       if (profile == H264_PROFILE_BASE || profile == H264_PROFILE_MAIN ||
           profile == H264_PROFILE_EXTENDED || profile == H264_PROFILE_HIGH) {
-        specific.emplace(H264Specific(static_cast<H264_PROFILE>(profile),
-                                      static_cast<H264_LEVEL>(level), format));
+        specific.emplace(
+            H264Specific(static_cast<H264_PROFILE>(profile), level, format));
       }
     }
   }
@@ -424,17 +425,24 @@ bool VideoEncoderTraits::Validate(const VideoEncoderConfig& aConfig,
   }
 
   // 3.
-  if ((aConfig.mDisplayWidth.WasPassed() &&
-       aConfig.mDisplayWidth.Value() == 0)) {
+  if (aConfig.mDisplayWidth.WasPassed() && aConfig.mDisplayWidth.Value() == 0) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: displayWidth equal to 0");
     LOGE("%s", aErrorMessage.get());
     return false;
   }
-  if ((aConfig.mDisplayHeight.WasPassed() &&
-       aConfig.mDisplayHeight.Value() == 0)) {
+  if (aConfig.mDisplayHeight.WasPassed() &&
+      aConfig.mDisplayHeight.Value() == 0) {
     aErrorMessage.AssignLiteral(
         "Invalid VideoEncoderConfig: displayHeight equal to 0");
+    LOGE("%s", aErrorMessage.get());
+    return false;
+  }
+
+  // https://github.com/w3c/webcodecs/issues/816
+  if ((aConfig.mBitrate.WasPassed() && aConfig.mBitrate.Value() == 0)) {
+    aErrorMessage.AssignLiteral(
+        "Invalid VideoEncoderConfig: bitrate equal to 0");
     LOGE("%s", aErrorMessage.get());
     return false;
   }

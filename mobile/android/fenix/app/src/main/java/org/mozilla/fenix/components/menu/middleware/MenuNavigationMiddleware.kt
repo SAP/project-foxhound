@@ -6,12 +6,14 @@ package org.mozilla.fenix.components.menu.middleware
 
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
+import androidx.navigation.NavOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.state.ext.getUrl
 import mozilla.components.concept.engine.prompt.ShareData
+import mozilla.components.feature.pwa.WebAppUseCases
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.service.fxa.manager.AccountState.Authenticated
@@ -33,9 +35,11 @@ import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
 import org.mozilla.fenix.components.menu.toFenixFxAEntryPoint
 import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.SupportUtils.AMO_HOMEPAGE_FOR_ANDROID
 import org.mozilla.fenix.settings.SupportUtils.SumoTopic
+import org.mozilla.fenix.utils.Settings
 
 /**
  * [Middleware] implementation for handling navigating events based on [MenuAction]s that are
@@ -46,13 +50,20 @@ import org.mozilla.fenix.settings.SupportUtils.SumoTopic
  * @param browsingModeManager [BrowsingModeManager] used for setting the browsing mode.
  * @param openToBrowser Callback to open the provided [BrowserNavigationParams]
  * in a new browser tab.
+ * @param webAppUseCases [WebAppUseCases] used for adding items to the home screen.
+ * @param settings Used to check [Settings] when adding items to the home screen.
+ * @param onDismiss Callback invoked to dismiss the menu dialog.
  * @param scope [CoroutineScope] used to launch coroutines.
  */
+@Suppress("LongParameterList")
 class MenuNavigationMiddleware(
     private val navController: NavController,
     private val navHostController: NavHostController,
     private val browsingModeManager: BrowsingModeManager,
     private val openToBrowser: (params: BrowserNavigationParams) -> Unit,
+    private val webAppUseCases: WebAppUseCases,
+    private val settings: Settings,
+    private val onDismiss: suspend () -> Unit,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : Middleware<MenuState, MenuAction> {
 
@@ -153,6 +164,22 @@ class MenuNavigationMiddleware(
                     }
                 }
 
+                is MenuAction.Navigate.AddToHomeScreen -> {
+                    settings.installPwaOpened = true
+                    if (webAppUseCases.isInstallable()) {
+                        webAppUseCases.addToHomescreen()
+                        onDismiss()
+                    } else {
+                        navController.nav(
+                            R.id.menuDialogFragment,
+                            MenuDialogFragmentDirections.actionMenuDialogFragmentToCreateShortcutFragment(),
+                            navOptions = NavOptions.Builder()
+                                .setPopUpTo(R.id.browserFragment, false)
+                                .build(),
+                        )
+                    }
+                }
+
                 is MenuAction.Navigate.SaveToCollection -> {
                     currentState.browserMenuState?.selectedTab?.let { currentSession ->
                         navController.nav(
@@ -170,7 +197,7 @@ class MenuNavigationMiddleware(
                     }
                 }
 
-                is MenuAction.Navigate.Translate -> navController.nav(
+                is MenuAction.Navigate.Translate -> navController.navigateSafe(
                     R.id.menuDialogFragment,
                     MenuDialogFragmentDirections.actionMenuDialogFragmentToTranslationsDialogFragment(),
                 )
@@ -205,6 +232,13 @@ class MenuNavigationMiddleware(
                 is MenuAction.Navigate.NewTab -> openNewTab(isPrivate = false)
 
                 is MenuAction.Navigate.NewPrivateTab -> openNewTab(isPrivate = true)
+
+                is MenuAction.Navigate.AddonDetails -> navController.nav(
+                    R.id.menuDialogFragment,
+                    MenuDialogFragmentDirections.actionMenuDialogFragmenToAddonDetailsFragment(
+                        addon = action.addon,
+                    ),
+                )
 
                 else -> Unit
             }

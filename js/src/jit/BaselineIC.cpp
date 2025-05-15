@@ -886,6 +886,9 @@ bool DoSetElemFallback(JSContext* cx, BaselineFrame* frame,
         MOZ_ASSERT(deferType != DeferType::None);
         break;
     }
+    if (deferType == DeferType::None && !attached) {
+      stub->trackNotAttached();
+    }
   }
 
   if (op == JSOp::InitElem || op == JSOp::InitHiddenElem ||
@@ -948,10 +951,11 @@ bool DoSetElemFallback(JSContext* cx, BaselineFrame* frame,
         MOZ_ASSERT_UNREACHABLE("Invalid attach result");
         break;
     }
+    if (!attached) {
+      stub->trackNotAttached();
+    }
   }
-  if (!attached && canAttachStub) {
-    stub->trackNotAttached();
-  }
+
   return true;
 }
 
@@ -1452,6 +1456,9 @@ bool DoSetPropFallback(JSContext* cx, BaselineFrame* frame,
         MOZ_ASSERT(deferType != DeferType::None);
         break;
     }
+    if (deferType == DeferType::None && !attached) {
+      stub->trackNotAttached();
+    }
   }
 
   if (op == JSOp::InitProp || op == JSOp::InitLockedProp ||
@@ -1526,9 +1533,9 @@ bool DoSetPropFallback(JSContext* cx, BaselineFrame* frame,
         MOZ_ASSERT_UNREACHABLE("Invalid attach result");
         break;
     }
-  }
-  if (!attached && canAttachStub) {
-    stub->trackNotAttached();
+    if (!attached) {
+      stub->trackNotAttached();
+    }
   }
 
   return true;
@@ -1615,7 +1622,7 @@ bool DoCallFallback(JSContext* cx, BaselineFrame* frame, ICFallbackStub* stub,
   // allowed to attach stubs.
   if (canAttachStub) {
     HandleValueArray args = HandleValueArray::fromMarkedLocation(argc, vp + 2);
-    CallIRGenerator gen(cx, script, pc, op, stub->state(), argc, callee,
+    CallIRGenerator gen(cx, script, pc, op, stub->state(), frame, argc, callee,
                         callArgs.thisv(), newTarget, args);
     switch (gen.tryAttachStub()) {
       case AttachDecision::NoAction:
@@ -1706,8 +1713,8 @@ bool DoSpreadCallFallback(JSContext* cx, BaselineFrame* frame,
 
     HandleValueArray args = HandleValueArray::fromMarkedLocation(
         aobj->length(), aobj->getDenseElements());
-    CallIRGenerator gen(cx, script, pc, op, stub->state(), 1, callee, thisv,
-                        newTarget, args);
+    CallIRGenerator gen(cx, script, pc, op, stub->state(), frame, 1, callee,
+                        thisv, newTarget, args);
     switch (gen.tryAttachStub()) {
       case AttachDecision::NoAction:
         break;

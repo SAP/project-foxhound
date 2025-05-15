@@ -17,6 +17,7 @@
 #include "jsapi.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/Variant.h"
 
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -35,6 +36,8 @@
 #include "mozilla/widget/ScreenManager.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/TouchEvents.h"
 #include "nsPIDOMWindow.h"
 #include "nsIAppWindow.h"
 #include "nsIDocShellTreeOwner.h"
@@ -47,6 +50,7 @@
 #include "mozilla/media/MediaUtils.h"
 #include "mozilla/dom/Navigator.h"
 #include "nsIGSettingsService.h"
+#include "nsITimer.h"
 
 #include "gfxPlatformFontList.h"
 #include "prsystem.h"
@@ -82,22 +86,27 @@ int MaxTouchPoints() {
 }  // extern "C"
 };  // namespace testing
 
-using VoidPromise = MozPromise<void_t, void_t, true>::Private;
+using PopulatePromiseBase =
+    MozPromise<void_t, std::pair<nsCString, Variant<nsresult, nsCString>>,
+               false>;
+using PopulatePromise = PopulatePromiseBase::Private;
 
 // ==================================================================
 // ==================================================================
-RefPtr<VoidPromise> ContentPageStuff() {
+RefPtr<PopulatePromise> ContentPageStuff() {
   nsCOMPtr<nsIUserCharacteristicsPageService> ucp =
       do_GetService("@mozilla.org/user-characteristics-page;1");
   MOZ_ASSERT(ucp);
 
-  RefPtr<VoidPromise> voidPromise = new VoidPromise(__func__);
+  RefPtr<PopulatePromise> populatePromise = new PopulatePromise(__func__);
   RefPtr<mozilla::dom::Promise> promise;
   nsresult rv = ucp->CreateContentPage(getter_AddRefs(promise));
   if (NS_FAILED(rv)) {
     MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Error,
             ("Could not create Content Page"));
-    return nullptr;
+    populatePromise->Reject(
+        std::pair(__func__, "CREATION_FAILED"_ns.AsString()), __func__);
+    return populatePromise;
   }
   MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
           ("Created Content Page"));
@@ -105,18 +114,27 @@ RefPtr<VoidPromise> ContentPageStuff() {
   if (promise) {
     promise->AddCallbacksWithCycleCollectedArgs(
         [=](JSContext*, JS::Handle<JS::Value>, mozilla::ErrorResult&) {
-          voidPromise->Resolve(void_t(), __func__);
+          populatePromise->Resolve(void_t(), __func__);
         },
-        [=](JSContext*, JS::Handle<JS::Value>, mozilla::ErrorResult&) {
-          voidPromise->Reject(void_t(), __func__);
+        [=](JSContext*, JS::Handle<JS::Value>, mozilla::ErrorResult& error) {
+          if (error.Failed()) {
+            nsresult rv = error.StealNSResult();
+            populatePromise->Reject(std::pair("ContentPageStuff"_ns, rv),
+                                    __func__);
+            return;
+          }
+          populatePromise->Reject(
+              std::pair("ContentPageStuff"_ns, "UNKNOWN"_ns.AsString()),
+              __func__);
         });
   } else {
     MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Error,
             ("Did not get a Promise back from ContentPageStuff"));
-    voidPromise->Reject(void_t(), __func__);
+    populatePromise->Reject(std::pair(__func__, "NO_PROMISE"_ns.AsString()),
+                            __func__);
   }
 
-  return voidPromise;
+  return populatePromise;
 }
 
 void PopulateCSSProperties() {
@@ -193,52 +211,46 @@ void PopulateScreenProperties() {
   glean::characteristics::color_depth.Set(colorDepth);
   glean::characteristics::pixel_depth.Set(screen->GetPixelDepth());
 
-  LayoutDeviceIntRect availRect = screen->GetAvailRect();
-  glean::characteristics::avail_height.Set(availRect.Height());
-  glean::characteristics::avail_width.Set(availRect.Width());
   glean::characteristics::orientation_angle.Set(screen->GetOrientationAngle());
+  glean::characteristics::video_dynamic_range.Set(screen->GetIsHDR());
 
   glean::characteristics::color_gamut.Set((int)colorGamut);
   glean::characteristics::color_depth.Set(colorDepth);
   const LayoutDeviceIntRect rect = screen->GetRect();
   glean::characteristics::screen_height.Set(rect.Height());
   glean::characteristics::screen_width.Set(rect.Width());
-
-  nsCOMPtr<nsPIDOMWindowInner> innerWindow =
-      do_QueryInterface(dom::GetEntryGlobal());
-
-  double outerHeight, outerWidth;
-  innerWindow->GetInnerHeight(&outerHeight);
-
-  innerWindow->GetInnerWidth(&outerWidth);
-  glean::characteristics::outer_height.Set(static_cast<int64_t>(outerHeight));
-  glean::characteristics::outer_width.Set(static_cast<int64_t>(outerWidth));
-
-  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-  innerWindow->GetDocShell()->GetTreeOwner(getter_AddRefs(treeOwner));
-  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin(do_QueryInterface(treeOwner));
-
-  LayoutDeviceIntSize contentSize;
-  treeOwner->GetPrimaryContentSize(&contentSize.width, &contentSize.height);
-
-  CSSToLayoutDeviceScale cssToDevScale =
-      treeOwnerAsWin->UnscaledDevicePixelsPerCSSPixel();
-  CSSIntSize contentSizeCSS = RoundedToInt(contentSize / cssToDevScale);
-  glean::characteristics::inner_height.Set(contentSizeCSS.height);
-  glean::characteristics::inner_width.Set(contentSizeCSS.width);
-
-  glean::characteristics::video_dynamic_range.Set(screen->GetIsHDR());
-
   glean::characteristics::posx.Set(rect.X());
   glean::characteristics::posy.Set(rect.Y());
 
+  glean::characteristics::screen_orientation.Set(
+      (int)screen->GetOrientationType());
+  glean::characteristics::target_frame_rate.Set(gfxPlatform::TargetFrameRate());
+
+  nsCOMPtr<nsPIDOMWindowInner> innerWindow =
+      do_QueryInterface(dom::GetEntryGlobal());
+  if (!innerWindow) {
+    return;
+  }
+
+  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
+  innerWindow->GetDocShell()->GetTreeOwner(getter_AddRefs(treeOwner));
+  if (!treeOwner) {
+    return;
+  }
+
+  nsCOMPtr<nsIBaseWindow> treeOwnerAsWin(do_QueryInterface(treeOwner));
+  if (!treeOwnerAsWin) {
+    return;
+  }
+
   nsCOMPtr<nsIWidget> mainWidget;
   treeOwnerAsWin->GetMainWidget(getter_AddRefs(mainWidget));
+  if (!mainWidget) {
+    return;
+  }
+
   nsSizeMode sizeMode = mainWidget ? mainWidget->SizeMode() : nsSizeMode_Normal;
   glean::characteristics::size_mode.Set(sizeMode);
-
-  mozilla::glean::characteristics::screen_orientation.Set(
-      (int)screen->GetOrientationType());
 }
 
 void PopulateMissingFonts() {
@@ -279,6 +291,18 @@ void PopulatePrefs() {
 
   glean::characteristics::prefs_network_cookie_cookiebehavior.Set(
       StaticPrefs::network_cookie_cookieBehavior());
+}
+
+void PopulateKeyboardLayout() {
+  nsAutoCString layoutName;
+
+  nsresult rv = LookAndFeel::GetKeyboardLayout(layoutName);
+
+  if (NS_FAILED(rv) || layoutName.IsEmpty()) {
+    return;
+  }
+
+  glean::characteristics::keyboard_layout.Set(layoutName);
 }
 
 template <typename StringMetric, typename QuantityMetric>
@@ -410,8 +434,8 @@ void PopulateScaling() {
   glean::characteristics::scalings.Set(output);
 }
 
-RefPtr<VoidPromise> PopulateMediaDevices() {
-  RefPtr<VoidPromise> voidPromise = new VoidPromise(__func__);
+RefPtr<PopulatePromise> PopulateMediaDevices() {
+  RefPtr<PopulatePromise> populatePromise = new PopulatePromise(__func__);
   MediaManager::Get()->GetPhysicalDevices()->Then(
       GetCurrentSerialEventTarget(), __func__,
       [=](const RefPtr<const MediaManager::MediaDeviceSetRefCnt>& aDevices) {
@@ -443,16 +467,20 @@ RefPtr<VoidPromise> PopulateMediaDevices() {
             cameraCount, microphoneCount, speakerCount, groupIds.size(),
             groupIdsWoSpeakers.size());
         glean::characteristics::media_devices.Set(json);
-        voidPromise->Resolve(void_t(), __func__);
+        populatePromise->Resolve(void_t(), __func__);
       },
       [=](RefPtr<MediaMgrError>&& reason) {
-        voidPromise->Reject(void_t(), __func__);
+        // GetPhysicalDevices() never rejects but we'll add the following
+        // just in case it changes in the future
+        reason->mMessage.StripChar(',');
+        populatePromise->Reject(
+            std::pair("PopulateMediaDevices"_ns, reason->mMessage), __func__);
       });
-  return voidPromise;
+  return populatePromise;
 }
 
-RefPtr<VoidPromise> PopulateAudioDeviceProperties() {
-  RefPtr<VoidPromise> voidPromise = new VoidPromise(__func__);
+RefPtr<PopulatePromise> PopulateAudioDeviceProperties() {
+  RefPtr<PopulatePromise> populatePromise = new PopulatePromise(__func__);
 
   NS_DispatchBackgroundTask(
       NS_NewRunnableFunction("PopulateAudioDeviceProperties", [=]() {
@@ -513,10 +541,10 @@ RefPtr<VoidPromise> PopulateAudioDeviceProperties() {
 
         NS_DispatchToMainThread(NS_NewRunnableFunction(
             "PopulateAudioDeviceProperties",
-            [=]() { voidPromise->Resolve(void_t(), __func__); }));
+            [=]() { populatePromise->Resolve(void_t(), __func__); }));
       }));
 
-  return voidPromise;
+  return populatePromise;
 }
 
 void PopulateLanguages() {
@@ -596,6 +624,183 @@ void PopulateTextAntiAliasing() {
   glean::characteristics::text_anti_aliasing.Set(output);
 }
 
+void PopulateErrors(
+    const PopulatePromise::AllSettledPromiseType::ResolveOrRejectValue&
+        results) {
+  nsCString errors;
+  for (const auto& result : results.ResolveValue()) {
+    if (!result.IsReject()) {
+      continue;
+    }
+
+    const auto& errorVar = result.RejectValue();
+    if (errorVar.second.is<nsresult>()) {
+      nsresult error = errorVar.second.as<nsresult>();
+      MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Error,
+              ("%s rejected with nsresult: %u.", errorVar.first.get(),
+               static_cast<uint32_t>(error)));
+      errors.AppendPrintf("%s:%u", errorVar.first.get(),
+                          static_cast<uint32_t>(error));
+    } else if (errorVar.second.is<nsCString>()) {
+      nsCString error = errorVar.second.as<nsCString>();
+      MOZ_LOG(
+          gUserCharacteristicsLog, mozilla::LogLevel::Error,
+          ("%s rejected with reason: %s.", errorVar.first.get(), error.get()));
+      errors.AppendPrintf("%s:%s", errorVar.first.get(), error.get());
+    }
+    errors.Append(",");
+  }
+  if (errors.Length() > 0) {
+    errors.Cut(errors.Length() - 1, 1);
+  }
+  glean::characteristics::errors.Set(errors);
+}
+
+void PopulateProcessorCount() {
+  int32_t processorCount = 0;
+#if defined(XP_MACOSX)
+  if (nsMacUtilsImpl::IsTCSMAvailable()) {
+    // On failure, zero is returned from GetPhysicalCPUCount()
+    // and we fallback to PR_GetNumberOfProcessors below.
+    processorCount = nsMacUtilsImpl::GetPhysicalCPUCount();
+  }
+#endif
+  if (processorCount == 0) {
+    processorCount = PR_GetNumberOfProcessors();
+  }
+  glean::characteristics::processor_count.Set(processorCount);
+}
+
+void PopulateMisc(bool worksInGtest) {
+  if (worksInGtest) {
+    glean::characteristics::max_touch_points.Set(testing::MaxTouchPoints());
+  } else {
+    // System Locale
+    nsAutoCString locale;
+    intl::OSPreferences::GetInstance()->GetSystemLocale(locale);
+    glean::characteristics::system_locale.Set(locale);
+  }
+}
+
+RefPtr<PopulatePromise> PopulateTimeZone() {
+  RefPtr<PopulatePromise> populatePromise = new PopulatePromise(__func__);
+
+  AutoTArray<char16_t, 128> tzBuffer;
+  auto result = intl::TimeZone::GetDefaultTimeZone(tzBuffer);
+  if (result.isOk()) {
+    NS_ConvertUTF16toUTF8 timeZone(
+        nsDependentString(tzBuffer.Elements(), tzBuffer.Length()));
+    glean::characteristics::timezone.Set(timeZone);
+    populatePromise->Resolve(void_t(), __func__);
+  } else {
+    populatePromise->Reject(std::pair(__func__, "NO_RESULT"_ns.AsString()),
+                            __func__);
+  }
+
+  return populatePromise;
+}
+
+using StealPointerPromise = MozPromise<WidgetGUIEvent*, void_t, true>::Private;
+static StaticRefPtr<StealPointerPromise> sPointerStolenEvent;
+
+/* static */
+void nsUserCharacteristics::StealPointerEvent(WidgetGUIEvent* aEvent) {
+  if (!aEvent) {
+    return;
+  }
+
+  if (!sPointerStolenEvent) {
+    sPointerStolenEvent = new StealPointerPromise(__func__, true);
+    ClearOnShutdown(&sPointerStolenEvent);
+  }
+
+  if (sPointerStolenEvent->IsResolved()) {
+    return;
+  }
+
+  if (aEvent->mMessage != eMouseDown && aEvent->mMessage != eTouchStart) {
+    return;
+  }
+
+  sPointerStolenEvent->Resolve(aEvent, __func__);
+}
+
+RefPtr<PopulatePromise> PopulatePointerInfo() {
+  RefPtr<PopulatePromise> populatePromise = new PopulatePromise(__func__);
+
+  if (!sPointerStolenEvent) {
+    sPointerStolenEvent = new StealPointerPromise(__func__, true);
+    ClearOnShutdown(&sPointerStolenEvent);
+  }
+
+  sPointerStolenEvent->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [=](const StealPointerPromise::ResolveOrRejectValue& r) {
+        const auto& guiEvent = r.ResolveValue();
+
+        if (guiEvent->mMessage == eMouseDown) {
+          auto* mouseEvent = guiEvent->AsMouseEvent();
+          glean::characteristics::pointer_pressure.Set(
+              nsCString(std::to_string(mouseEvent->mPressure)));
+          glean::characteristics::pointer_tangentinal_pressure.Set(
+              nsCString(std::to_string(mouseEvent->tangentialPressure)));
+          glean::characteristics::pointer_tiltx.Set(mouseEvent->tiltX);
+          glean::characteristics::pointer_tilty.Set(mouseEvent->tiltY);
+          glean::characteristics::pointer_twist.Set(mouseEvent->twist);
+        } else if (guiEvent->mMessage == eTouchStart) {
+          auto* touchEvent = guiEvent->AsTouchEvent();
+          if (touchEvent->mTouches.Length() > 0) {
+            const auto& touch = touchEvent->mTouches[0];
+            glean::characteristics::pointer_height.Set(
+                touch->RadiusY(dom::CallerType::System));
+            glean::characteristics::pointer_width.Set(
+                touch->RadiusX(dom::CallerType::System));
+            glean::characteristics::pointer_tangentinal_pressure.Set(
+                nsCString(std::to_string(touch->tangentialPressure)));
+            glean::characteristics::pointer_tiltx.Set(touch->tiltX);
+            glean::characteristics::pointer_tilty.Set(touch->tiltY);
+            glean::characteristics::pointer_twist.Set(touch->twist);
+            glean::characteristics::touch_rotation_angle.Set(
+                nsCString(std::to_string(touch->mRotationAngle)));
+          }
+        }
+
+        if (!populatePromise->IsResolved()) {
+          populatePromise->Resolve(void_t(), __func__);
+        }
+      });
+
+  return populatePromise;
+}
+
+const RefPtr<PopulatePromise>& TimoutPromise(
+    const RefPtr<PopulatePromise>& promise, uint32_t delay,
+    const nsCString& funcName) {
+  nsCOMPtr<nsITimer> timeout;
+  nsresult rv = NS_NewTimerWithCallback(
+      getter_AddRefs(timeout),
+      [=](auto) {
+        if (!promise->IsResolved()) {
+          promise->Reject(std::pair(funcName, "TIMEOUT"_ns.AsString()),
+                          __func__);
+        }
+      },
+      delay, nsITimer::TYPE_ONE_SHOT, "UserCharacteristicsPromiseTimeout");
+  if (NS_FAILED(rv)) {
+    promise->Reject(std::pair(funcName, "TIMEOUT_CREATION"_ns.AsString()),
+                    __func__);
+  }
+
+  auto cancelTimeoutRes = [timeout = std::move(timeout)]() {
+    timeout->Cancel();
+  };
+  auto cancelTimeoutRej = cancelTimeoutRes;
+  promise->Then(GetCurrentSerialEventTarget(), __func__,
+                std::move(cancelTimeoutRes), std::move(cancelTimeoutRej));
+
+  return promise;
+}
+
 // ==================================================================
 // The current schema of the data. Anytime you add a metric, or change how a
 // metric is set, this variable should be incremented. It'll be a lot. It's
@@ -603,99 +808,20 @@ void PopulateTextAntiAliasing() {
 // the source of the data we are looking at.
 const int kSubmissionSchema = 3;
 
+const auto* const kUUIDPref =
+    "toolkit.telemetry.user_characteristics_ping.uuid";
+
 const auto* const kLastVersionPref =
     "toolkit.telemetry.user_characteristics_ping.last_version_sent";
 const auto* const kCurrentVersionPref =
     "toolkit.telemetry.user_characteristics_ping.current_version";
+const auto* const kOptOutPref =
+    "toolkit.telemetry.user_characteristics_ping.opt-out";
+const auto* const kSendOncePref =
+    "toolkit.telemetry.user_characteristics_ping.send-once";
 
-/* static */
-void nsUserCharacteristics::MaybeSubmitPing() {
-  MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug, ("In MaybeSubmitPing()"));
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  /**
-   * There are two preferences at play here:
-   *  - Last Version Sent - preference containing the last version sent by the
-   * user to Mozilla
-   *  - Current Version - preference containing the version Mozilla would like
-   * the user to send
-   *
-   * A point of complexity arises in that these two values _may_ be changed
-   * by the user, even though neither is intended to be.
-   *
-   * When Current Version > Last Version Sent, we intend for the user to submit
-   * a new ping, which will include the schema version. Then update Last Version
-   * Sent = Current Version.
-   *
-   */
-  auto lastSubmissionVersion = Preferences::GetInt(kLastVersionPref, 0);
-  auto currentVersion = Preferences::GetInt(kCurrentVersionPref, 0);
-
-  MOZ_ASSERT(currentVersion == -1 || lastSubmissionVersion <= currentVersion,
-             "lastSubmissionVersion is somehow greater than currentVersion "
-             "- did you edit prefs improperly?");
-
-  if (lastSubmissionVersion < 0) {
-    // This is a way for users to opt out of this ping specifically.
-    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug,
-            ("Returning, User Opt-out"));
-    return;
-  }
-  if (currentVersion == 0) {
-    // Do nothing. We do not want any pings.
-    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug,
-            ("Returning, currentVersion == 0"));
-    return;
-  }
-  if (currentVersion == -1) {
-    // currentVersion = -1 is a development value to force a ping submission
-    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug,
-            ("Force-Submitting Ping"));
-    PopulateDataAndEventuallySubmit(false);
-    return;
-  }
-  if (lastSubmissionVersion > currentVersion) {
-    // This is an unexpected scneario that indicates something is wrong. We
-    // asserted against it (in debug, above) We will try to sanity-correct
-    // ourselves by setting it to the current version.
-    Preferences::SetInt(kLastVersionPref, currentVersion);
-    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning,
-            ("Returning, lastSubmissionVersion > currentVersion"));
-    return;
-  }
-  if (lastSubmissionVersion == currentVersion) {
-    // We are okay, we've already submitted the most recent ping
-    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning,
-            ("Returning, lastSubmissionVersion == currentVersion"));
-    return;
-  }
-  if (lastSubmissionVersion < currentVersion) {
-    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning, ("Ping requested"));
-    PopulateDataAndEventuallySubmit(true);
-  } else {
-    MOZ_ASSERT_UNREACHABLE("Should never reach here");
-  }
-}
-
-const auto* const kUUIDPref =
-    "toolkit.telemetry.user_characteristics_ping.uuid";
-
-/* static */
-void nsUserCharacteristics::PopulateDataAndEventuallySubmit(
-    bool aUpdatePref /* = true */, bool aTesting /* = false */
-) {
-  MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning, ("Populating Data"));
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (!obs) {
-    return;
-  }
-
-  // This notification tells us to register the actor
-  obs->NotifyObservers(nullptr, "user-characteristics-populating-data",
-                       nullptr);
-
+// We don't submit a ping if this function fails
+nsresult PopulateEssentials() {
   glean::characteristics::submission_schema.Set(kSubmissionSchema);
 
   nsAutoCString uuidString;
@@ -704,7 +830,7 @@ void nsUserCharacteristics::PopulateDataAndEventuallySubmit(
     nsCOMPtr<nsIUUIDGenerator> uuidgen =
         do_GetService("@mozilla.org/uuid-generator;1", &rv);
     if (NS_FAILED(rv)) {
-      return;
+      return rv;
     }
 
     nsIDToCString id(nsID::GenerateUUID());
@@ -713,88 +839,163 @@ void nsUserCharacteristics::PopulateDataAndEventuallySubmit(
   }
 
   glean::characteristics::client_identifier.Set(uuidString);
+  return NS_OK;
+}
 
-  glean::characteristics::max_touch_points.Set(testing::MaxTouchPoints());
+void AfterPingSentSteps(bool aUpdatePref) {
+  if (aUpdatePref) {
+    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
+            ("Updating preference"));
+    auto current_version = Preferences::GetInt(kCurrentVersionPref, 0);
+    Preferences::SetInt(kLastVersionPref, current_version);
+    if (Preferences::GetBool(kSendOncePref, false)) {
+      Preferences::SetBool(kSendOncePref, false);
+    }
+  }
+}
+
+/*
+  We allow users to send one voluntary ping by setting kSendOncePref to true.
+  We also use this to force submit a ping as a dev.
+
+  We allow users users to opt-out of this ping by setting kOptOutPref to true.
+  Note that kSendOncePref takes precedence over kOptOutPref. This allows user
+  to send only a single ping without modifying their opt-out preference.
+
+  We only send pings if the conditions above are met and kCurrentVersionPref >
+  kLastVersionPref.
+*/
+bool nsUserCharacteristics::ShouldSubmit() {
+  // User opted out of this ping specifically
+  bool optOut = Preferences::GetBool(kOptOutPref, false);
+  bool sendOnce = Preferences::GetBool(kSendOncePref, false);
+
+  if (optOut && sendOnce) {
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning,
+            ("BOTH OPT-OUT AND SEND-ONCE IS SET TO TRUE. OPT-OUT HAS PRIORITY "
+             "OVER SEND-ONCE. THE PING WON'T BE SEND."));
+  }
+
+  if (optOut) {
+    return false;
+  }
+
+  // User asked to send a ping regardless of the version
+  if (sendOnce) {
+    return true;
+  }
+
+  int32_t currentVersion = Preferences::GetInt(kCurrentVersionPref, 0);
+  int32_t lastSubmissionVersion = Preferences::GetInt(kLastVersionPref, 0);
+  MOZ_ASSERT(lastSubmissionVersion <= currentVersion,
+             "lastSubmissionVersion is somehow greater than currentVersion "
+             "- did you edit prefs improperly?");
+
+  if (currentVersion == 0) {
+    // Do nothing. We do not want any pings.
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug,
+            ("Returning, currentVersion == 0"));
+    return false;
+  }
+
+  if (lastSubmissionVersion > currentVersion) {
+    // This is an unexpected scenario that indicates something is wrong. We
+    // asserted against it (in debug, above) We will try to sanity-correct
+    // ourselves by setting it to the current version.
+    Preferences::SetInt(kLastVersionPref, currentVersion);
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning,
+            ("Returning, lastSubmissionVersion > currentVersion"));
+    return false;
+  }
+
+  if (lastSubmissionVersion == currentVersion) {
+    // We are okay, we've already submitted the most recent ping
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning,
+            ("Returning, lastSubmissionVersion == currentVersion"));
+    return false;
+  }
+
+  MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning, ("Ping requested"));
+
+  return true;
+}
+
+/* static */
+void nsUserCharacteristics::MaybeSubmitPing() {
+  MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug, ("In MaybeSubmitPing()"));
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  // Check user's preferences and submit only if (the user hasn't opted-out AND
+  // lastSubmissionVersion < currentVersion) OR send-once is true.
+  if (ShouldSubmit()) {
+    PopulateDataAndEventuallySubmit(true);
+  }
+}
+
+/* static */
+void nsUserCharacteristics::PopulateDataAndEventuallySubmit(
+    bool aUpdatePref /* = true */, bool aTesting /* = false */
+) {
+  MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning, ("Populating Data"));
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (NS_FAILED(PopulateEssentials())) {
+    // We couldn't populate important metrics. Don't submit a ping.
+    AfterPingSentSteps(false);
+    return;
+  }
 
   // ------------------------------------------------------------------------
 
-  nsTArray<RefPtr<MozPromise<mozilla::void_t, mozilla::void_t, true>>> promises;
+  nsTArray<RefPtr<PopulatePromiseBase>> promises;
   if (!aTesting) {
     // Many of the later peices of data do not work in a gtest
     // so skip populating them
 
     // ------------------------------------------------------------------------
 
+    promises.AppendElement(PopulateMediaDevices());
+    promises.AppendElement(PopulateAudioDeviceProperties());
+    promises.AppendElement(PopulateTimeZone());
+    promises.AppendElement(TimoutPromise(PopulatePointerInfo(), 5 * 60 * 1000,
+                                         "PopulatePointerInfo"_ns));
     PopulateMissingFonts();
     PopulateCSSProperties();
     PopulateScreenProperties();
     PopulatePrefs();
     PopulateFontPrefs();
     PopulateScaling();
-    promises.AppendElement(PopulateMediaDevices());
-    promises.AppendElement(PopulateAudioDeviceProperties());
+    PopulateKeyboardLayout();
     PopulateLanguages();
     PopulateTextAntiAliasing();
-
-    glean::characteristics::target_frame_rate.Set(
-        gfxPlatform::TargetFrameRate());
-
-    int32_t processorCount = 0;
-#if defined(XP_MACOSX)
-    if (nsMacUtilsImpl::IsTCSMAvailable()) {
-      // On failure, zero is returned from GetPhysicalCPUCount()
-      // and we fallback to PR_GetNumberOfProcessors below.
-      processorCount = nsMacUtilsImpl::GetPhysicalCPUCount();
-    }
-#endif
-    if (processorCount == 0) {
-      processorCount = PR_GetNumberOfProcessors();
-    }
-    glean::characteristics::processor_count.Set(processorCount);
-
-    AutoTArray<char16_t, 128> tzBuffer;
-    auto result = intl::TimeZone::GetDefaultTimeZone(tzBuffer);
-    if (result.isOk()) {
-      NS_ConvertUTF16toUTF8 timeZone(
-          nsDependentString(tzBuffer.Elements(), tzBuffer.Length()));
-      glean::characteristics::timezone.Set(timeZone);
-    } else {
-      glean::characteristics::timezone.Set("<error>"_ns);
-    }
-
-    nsAutoCString locale;
-    intl::OSPreferences::GetInstance()->GetSystemLocale(locale);
-    glean::characteristics::system_locale.Set(locale);
+    PopulateProcessorCount();
+    PopulateMisc(false);
   }
 
   promises.AppendElement(ContentPageStuff());
+  PopulateMisc(true);
 
   // ------------------------------------------------------------------------
 
   auto fulfillSteps = [aUpdatePref, aTesting]() {
     MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
-            ("ContentPageStuff Promise Resolved"));
+            ("All promises Resolved"));
 
     if (!aTesting) {
       nsUserCharacteristics::SubmitPing();
     }
 
-    if (aUpdatePref) {
-      MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
-              ("Updating preference"));
-      auto current_version =
-          mozilla::Preferences::GetInt(kCurrentVersionPref, 0);
-      mozilla::Preferences::SetInt(kLastVersionPref, current_version);
-    }
+    AfterPingSentSteps(aUpdatePref);
   };
 
-  VoidPromise::All(GetCurrentSerialEventTarget(), promises)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__, [=]() { fulfillSteps(); },
-          []() {
-            MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Error,
-                    ("One of the promises rejected."));
-          });
+  PopulatePromise::AllSettled(GetCurrentSerialEventTarget(), promises)
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [=](const PopulatePromise::AllSettledPromiseType::
+                     ResolveOrRejectValue& results) {
+               PopulateErrors(results);
+
+               fulfillSteps();
+             });
 }
 
 /* static */

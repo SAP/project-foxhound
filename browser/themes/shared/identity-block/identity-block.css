@@ -6,6 +6,11 @@
 
 #identity-box {
   margin-inline-end: var(--identity-box-margin-inline);
+
+  &[pageproxystate="invalid"] {
+    pointer-events: none;
+    -moz-user-focus: ignore;
+  }
 }
 
 #identity-box,
@@ -16,41 +21,41 @@
   fill-opacity: var(--urlbar-icon-fill-opacity);
 }
 
-#urlbar.searchButton > .urlbar-input-container > #identity-box[pageproxystate="invalid"],
-#identity-box[pageproxystate="invalid"] > #identity-permission-box,
-#identity-box[pageproxystate="invalid"] > #notification-popup-box,
-#identity-box[pageproxystate="invalid"] #identity-icon-label {
-  display: none;
-}
-
-#urlbar:not(.searchButton) > .urlbar-input-container > #identity-box[pageproxystate="invalid"] {
-  pointer-events: none;
-  -moz-user-focus: ignore;
-}
-
-.identity-box-button:hover:not([open=true]),
-#tracking-protection-icon-container:hover:not([open=true]) {
-  background-color: var(--urlbar-box-hover-bgcolor);
-  color: var(--urlbar-box-hover-text-color);
-}
-
-.identity-box-button:hover:active,
-.identity-box-button[open=true],
-#tracking-protection-icon-container:hover:active,
-#tracking-protection-icon-container[open=true] {
-  background-color: var(--urlbar-box-active-bgcolor);
-  color: var(--urlbar-box-hover-text-color);
-}
-
-.identity-box-button:focus-visible,
-#tracking-protection-icon-container:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-inset);
+#identity-box[pageproxystate="invalid"] {
+  > #identity-permission-box,
+  > #notification-popup-box,
+  #identity-icon-label {
+    display: none;
+  }
 }
 
 .identity-box-button {
   padding-inline: var(--urlbar-icon-padding);
   border-radius: var(--urlbar-icon-border-radius);
+}
+
+.identity-box-button,
+#tracking-protection-icon-container {
+  outline: var(--toolbarbutton-outline);
+  outline-offset: var(--toolbarbutton-outline-offset);
+
+  &:hover:not([open=true]) {
+    background-color: var(--urlbar-box-hover-bgcolor);
+    color: var(--urlbar-box-hover-text-color);
+    outline-color: var(--toolbarbutton-hover-outline-color);
+  }
+
+  &:hover:active,
+  &[open=true] {
+    background-color: var(--urlbar-box-active-bgcolor);
+    color: var(--urlbar-box-hover-text-color);
+    outline-color: var(--toolbarbutton-active-outline-color);
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
 }
 
 #identity-icon-label {
@@ -153,8 +158,14 @@
   list-style-image: url(chrome://global/skin/icons/page-portrait.svg);
 }
 
-#urlbar:not(.searchButton) > .urlbar-input-container > #identity-box[pageproxystate="invalid"] #identity-icon {
-  list-style-image: url(chrome://global/skin/icons/search-glass.svg);
+#identity-box[pageproxystate="invalid"] {
+  .identity-box-button {
+    outline: none;
+  }
+
+  #identity-icon {
+    list-style-image: url(chrome://global/skin/icons/search-glass.svg);
+  }
 }
 
 #urlbar[actiontype="extension"] > .urlbar-input-container > #identity-box #identity-icon {

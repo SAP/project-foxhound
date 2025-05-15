@@ -28,13 +28,7 @@ RUN /usr/local/sbin/setup_packages.sh $TASKCLUSTER_ROOT_URL $DOCKER_IMAGE_PACKAG
 # %include taskcluster/scripts/run-task
 ADD topsrcdir/taskcluster/scripts/run-task /builds/worker/bin/run-task
 
-# %include taskcluster/scripts/misc/fetch-content
-ADD topsrcdir/taskcluster/scripts/misc/fetch-content /builds/worker/bin/fetch-content
-
-# %include taskcluster/scripts/misc/fetch-chromium.py
-ADD topsrcdir/taskcluster/scripts/misc/fetch-chromium.py /builds/worker/bin/fetch-chromium.py
-
-# %include taskcluster/scripts/misc/fetch-cft-chromedriver.py
-ADD topsrcdir/taskcluster/scripts/misc/fetch-cft-chromedriver.py /builds/worker/bin/fetch-cft-chromedriver.py
+# %include third_party/python/taskcluster_taskgraph/taskgraph/run-task/fetch-content
+ADD topsrcdir/third_party/python/taskcluster_taskgraph/taskgraph/run-task/fetch-content /builds/worker/bin/fetch-content
 
 RUN pip3 install redo==2.0.4 --break-system-packages

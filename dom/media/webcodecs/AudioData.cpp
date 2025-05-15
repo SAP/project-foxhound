@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Assertions.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/Logging.h"
 #include "mozilla/dom/AudioData.h"
 #include "mozilla/dom/AudioDataBinding.h"
@@ -152,7 +153,9 @@ JSObject* AudioData::WrapObject(JSContext* aCx,
 }
 
 Result<Ok, nsCString> IsValidAudioDataInit(const AudioDataInit& aInit) {
-  if (aInit.mSampleRate <= 0.0) {
+  // The sample rate is an uint32_t within Gecko
+  uint32_t integerSampleRate = SaturatingCast<uint32_t>(aInit.mSampleRate);
+  if (integerSampleRate == 0) {
     auto msg = nsLiteralCString("sampleRate must be positive");
     LOGD("%s", msg.get());
     return Err(msg);
@@ -168,18 +171,27 @@ Result<Ok, nsCString> IsValidAudioDataInit(const AudioDataInit& aInit) {
     return Err(msg);
   }
 
-  uint64_t totalSamples = aInit.mNumberOfFrames * aInit.mNumberOfChannels;
-  uint32_t bytesPerSamples = BytesPerSamples(aInit.mFormat);
-  uint64_t totalSize = totalSamples * bytesPerSamples;
+  CheckedInt<uint64_t> bytesNeeded = aInit.mNumberOfFrames;
+  bytesNeeded *= aInit.mNumberOfChannels;
+  bytesNeeded *= BytesPerSamples(aInit.mFormat);
+
+  if (!bytesNeeded.isValid()) {
+    auto msg = nsPrintfCString(
+        "Overflow when computing the number of bytes needed to hold audio "
+        "samples");
+    LOGD("%s", msg.get());
+    return Err(msg);
+  }
+
   uint64_t arraySizeBytes = ProcessTypedArraysFixed(
       aInit.mData, [&](const Span<uint8_t>& aData) -> uint64_t {
         return aData.LengthBytes();
       });
-  if (arraySizeBytes < totalSize) {
+  if (arraySizeBytes < bytesNeeded.value()) {
     auto msg =
         nsPrintfCString("Array of size %" PRIu64
                         " not big enough, should be at least %" PRIu64 " bytes",
-                        arraySizeBytes, totalSize);
+                        arraySizeBytes, bytesNeeded.value());
     LOGD("%s", msg.get());
     return Err(msg);
   }
@@ -268,9 +280,6 @@ struct CopyToSpec {
   const uint32_t mFrameOffset;
   const uint32_t mPlaneIndex;
   const AudioSampleFormat mFormat;
-  // False if this is used internally, and this copy call doesn't come from
-  // script.
-  DebugOnly<bool> mFromScript = true;
 };
 
 bool IsInterleaved(const AudioSampleFormat& aFormat) {
@@ -423,7 +432,6 @@ void CopySamples(Span<S> aSource, Span<D> aDest, uint32_t aSourceChannelCount,
   }
 
   if (!IsInterleaved(aSourceFormat) && IsInterleaved(aCopyToSpec.mFormat)) {
-    MOZ_ASSERT(!aCopyToSpec.mFromScript);
     // Planar to interleaved -- copy of all channels of the source into the
     // destination buffer.
     MOZ_ASSERT(aCopyToSpec.mPlaneIndex == 0);
@@ -447,10 +455,12 @@ void CopySamples(Span<S> aSource, Span<D> aDest, uint32_t aSourceChannelCount,
   }
   if (!IsInterleaved(aSourceFormat) && !IsInterleaved(aCopyToSpec.mFormat)) {
     // Planar to Planar / convert + copy from the right index in the source.
-    size_t offset =
-        aCopyToSpec.mPlaneIndex * aSource.Length() / aSourceChannelCount;
-    MOZ_ASSERT(aDest.Length() >= aSource.Length() / aSourceChannelCount -
-                                     aCopyToSpec.mFrameOffset);
+    size_t framePerPlane = aSource.Length() / aSourceChannelCount;
+    size_t offset = aCopyToSpec.mPlaneIndex * framePerPlane;
+    MOZ_ASSERT(aDest.Length() >= aCopyToSpec.mFrameCount,
+               "Destination buffer too small");
+    MOZ_ASSERT(aSource.Length() >= offset + aCopyToSpec.mFrameCount,
+               "Source buffer too small");
     for (uint32_t i = 0; i < aCopyToSpec.mFrameCount; i++) {
       aDest[i] =
           ConvertAudioSample<D>(aSource[offset + aCopyToSpec.mFrameOffset + i]);
@@ -690,26 +700,28 @@ void AudioData::CloseIfNeeded() {
 RefPtr<mozilla::AudioData> AudioData::ToAudioData() const {
   // Always convert to f32 interleaved for now, as this Gecko's prefered
   // internal audio representation for encoding and decoding.
+  // mResource can be bigger than needed.
   Span<uint8_t> data = mResource->Data();
-  DebugOnly<uint32_t> frames = mNumberOfFrames;
-  uint32_t bytesPerSample = BytesPerSamples(mAudioSampleFormat.value());
-  uint32_t samples = data.Length() / bytesPerSample;
-  DebugOnly<uint32_t> computedFrames = samples / mNumberOfChannels;
-  MOZ_ASSERT(frames == computedFrames);
-  AlignedAudioBuffer buf(samples);
-  Span<uint8_t> storage(reinterpret_cast<uint8_t*>(buf.Data()),
-                        samples * sizeof(float));
+  CheckedUint64 sampleCount = mNumberOfFrames;
+  sampleCount *= mNumberOfChannels;
+  if (!sampleCount.isValid()) {
+    LOGE("Overflow AudioData::ToAudioData when computing the number of frames");
+    return nullptr;
+  }
+  AlignedAudioBuffer buf(sampleCount.value());
+  if (!buf.Length()) {
+    LOGE("OOM when allocating storage for AudioData conversion");
+    return nullptr;
+  }
+  Span<uint8_t> storage(reinterpret_cast<uint8_t*>(buf.Data()), buf.Size());
 
   CopyToSpec spec(mNumberOfFrames, 0, 0, AudioSampleFormat::F32);
-#ifdef DEBUG
-  spec.mFromScript = false;
-#endif
 
   DoCopy(data, storage, mNumberOfChannels, mAudioSampleFormat.value(), spec);
 
   return MakeRefPtr<mozilla::AudioData>(
       0, media::TimeUnit::FromMicroseconds(mTimestamp), std::move(buf),
-      mNumberOfChannels, mSampleRate);
+      mNumberOfChannels, SaturatingCast<uint32_t>(mSampleRate));
 }
 
 #undef LOGD

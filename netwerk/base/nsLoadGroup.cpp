@@ -660,6 +660,19 @@ nsLoadGroup::GetRequests(nsISimpleEnumerator** aRequests) {
 }
 
 NS_IMETHODIMP
+nsLoadGroup::GetTotalKeepAliveBytes(uint64_t* aTotalKeepAliveBytes) {
+  MOZ_ASSERT(aTotalKeepAliveBytes);
+  *aTotalKeepAliveBytes = mPendingKeepaliveRequestSize;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLoadGroup::SetTotalKeepAliveBytes(uint64_t aTotalKeepAliveBytes) {
+  mPendingKeepaliveRequestSize = aTotalKeepAliveBytes;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsLoadGroup::SetGroupObserver(nsIRequestObserver* aObserver) {
   SetGroupObserver(aObserver, false);
   return NS_OK;
@@ -1132,7 +1145,7 @@ nsLoadGroup::Observe(nsISupports* aSubject, const char* aTopic,
 
   OriginAttributes attrs;
   StoragePrincipalHelper::GetRegularPrincipalOriginAttributes(this, attrs);
-  if (attrs.mPrivateBrowsingId == 0) {
+  if (!attrs.IsPrivateBrowsing()) {
     return NS_OK;
   }
 

@@ -82,6 +82,8 @@ class TimeUnit final {
   constexpr TimeUnit(CheckedInt64 aTicks, int64_t aBase)
       : mTicks(aTicks), mBase(aBase) {
     MOZ_RELEASE_ASSERT(mBase > 0);
+    // aBase is often from a uint32_t and assumed less than 2^32.
+    MOZ_DIAGNOSTIC_ASSERT(mBase <= UINT32_MAX);
   }
 
   explicit constexpr TimeUnit(CheckedInt64 aTicks)
@@ -166,6 +168,13 @@ class TimeUnit final {
     template <typename T>
     static T policy(T& aValue) {
       return static_cast<T>(aValue);
+    }
+  };
+
+  struct FloorPolicy {
+    template <typename T>
+    static T policy(T& aValue) {
+      return std::floor(aValue);
     }
   };
 

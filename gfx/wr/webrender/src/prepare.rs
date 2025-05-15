@@ -6,7 +6,7 @@
 //!
 //! TODO: document this!
 
-use api::{PremultipliedColorF, PropertyBinding};
+use api::{ColorF, PropertyBinding};
 use api::{BoxShadowClipMode, BorderStyle, ClipMode};
 use api::units::*;
 use euclid::Scale;
@@ -16,6 +16,7 @@ use crate::command_buffer::{PrimitiveCommand, CommandBufferIndex};
 use crate::image_tiling::{self, Repetition};
 use crate::border::{get_max_scale_for_border, build_border_instances};
 use crate::clip::{ClipStore, ClipNodeRange};
+use crate::pattern::Pattern;
 use crate::spatial_tree::{SpatialNodeIndex, SpatialTree};
 use crate::clip::{ClipDataStore, ClipNodeFlags, ClipChainInstance, ClipItemKind};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureContext, PictureState};
@@ -27,8 +28,7 @@ use crate::picture::{PrimitiveList, PrimitiveCluster, SurfaceIndex, TileCacheIns
 use crate::prim_store::line_dec::MAX_LINE_DECORATION_RESOLUTION;
 use crate::prim_store::*;
 use crate::quad;
-use crate::pattern::Pattern;
-use crate::prim_store::gradient::{radial_gradient_pattern, conic_gradient_pattern, GradientGpuBlockBuilder};
+use crate::prim_store::gradient::GradientGpuBlockBuilder;
 use crate::render_backend::DataStores;
 use crate::render_task_graph::RenderTaskId;
 use crate::render_task_cache::RenderTaskCacheKeyKind;
@@ -120,10 +120,6 @@ fn can_use_clip_chain_for_quad_path(
         let clip_node = &data_stores.clip[clip_instance.handle];
 
         match clip_node.item.kind {
-            ClipItemKind::Rectangle { mode: ClipMode::ClipOut, .. } |
-            ClipItemKind::RoundedRectangle { mode: ClipMode::ClipOut, .. } => {
-                return false;
-            }
             ClipItemKind::RoundedRectangle { .. } | ClipItemKind::Rectangle { .. } => {}
             ClipItemKind::BoxShadow { .. } => {
                 // legacy path for box-shadows for now (move them to a separate primitive next)
@@ -258,6 +254,7 @@ fn prepare_prim_for_render(
 
                 *no_quads
             }
+            PrimitiveInstanceKind::BoxShadow { .. } |
             PrimitiveInstanceKind::Picture { .. } => false,
             _ => true,
         };
@@ -324,6 +321,9 @@ fn prepare_interned_prim_for_render(
     let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
 
     match &mut prim_instance.kind {
+        PrimitiveInstanceKind::BoxShadow { .. } => {
+            unreachable!("Native box shadow prims are not enabled yet");
+        }
         PrimitiveInstanceKind::LineDecoration { data_handle, ref mut render_task, .. } => {
             profile_scope!("LineDecoration");
             let prim_data = &mut data_stores.line_decoration[*data_handle];
@@ -636,16 +636,8 @@ fn prepare_interned_prim_for_render(
             } else {
                 let prim_data = &data_stores.prim[*data_handle];
 
-                let pattern = match prim_data.kind {
-                    PrimitiveTemplateKind::Clear => Pattern::clear(),
-                    PrimitiveTemplateKind::Rectangle { ref color, .. } => {
-                        let color = frame_context.scene_properties.resolve_color(color);
-                        Pattern::color(color)
-                    }
-                };
-
                 quad::prepare_quad(
-                    &pattern,
+                    prim_data,
                     &prim_data.common.prim_rect,
                     prim_instance_index,
                     prim_spatial_node_index,
@@ -813,21 +805,8 @@ fn prepare_interned_prim_for_render(
             let prim_data = &mut data_stores.radial_grad[*data_handle];
 
             if !*cached {
-                // The scaling parameter is used to compensate for when we reduce the size
-                // of the render task for cached gradients. Here we aren't applying any.
-                let no_scale = DeviceVector2D::one();
-
-                let pattern = radial_gradient_pattern(
-                    prim_data.center,
-                    no_scale,
-                    &prim_data.params,
-                    prim_data.extend_mode,
-                    &prim_data.stops,
-                    &mut frame_state.frame_gpu_data,
-                );
-
                 quad::prepare_quad(
-                    &pattern,
+                    prim_data,
                     &prim_data.common.prim_rect,
                     prim_instance_index,
                     prim_spatial_node_index,
@@ -877,21 +856,8 @@ fn prepare_interned_prim_for_render(
             let prim_data = &mut data_stores.conic_grad[*data_handle];
 
             if !*cached {
-                // The scaling parameter is used to compensate for when we reduce the size
-                // of the render task for cached gradients. Here we aren't applying any.
-                let no_scale = DeviceVector2D::one();
-
-                let pattern = conic_gradient_pattern(
-                    prim_data.center,
-                    no_scale,
-                    &prim_data.params,
-                    prim_data.extend_mode,
-                    &prim_data.stops,
-                    &mut frame_state.frame_gpu_data,
-                );
-
                 quad::prepare_quad(
-                    &pattern,
+                    prim_data,
                     &prim_data.common.prim_rect,
                     prim_instance_index,
                     prim_spatial_node_index,
@@ -987,11 +953,13 @@ fn prepare_interned_prim_for_render(
                     .clipped_local_rect
                     .cast_unit();
 
+                let pattern = Pattern::color(ColorF::WHITE);
+
                 let prim_address_f = quad::write_prim_blocks(
                     &mut frame_state.frame_gpu_data.f32,
                     prim_local_rect,
                     prim_instance.vis.clip_chain.local_clip_rect,
-                    PremultipliedColorF::WHITE,
+                    &pattern,
                     &[],
                     ScaleOffset::identity(),
                 );
@@ -1272,6 +1240,9 @@ fn update_clip_task_for_brush(
     device_pixel_scale: DevicePixelScale,
 ) -> Option<ClipTaskIndex> {
     let segments = match instance.kind {
+        PrimitiveInstanceKind::BoxShadow { .. } => {
+            unreachable!("BUG: box-shadows should not hit legacy brush clip path");
+        }
         PrimitiveInstanceKind::Picture { .. } |
         PrimitiveInstanceKind::TextRun { .. } |
         PrimitiveInstanceKind::Clear { .. } |
@@ -1741,6 +1712,9 @@ fn build_segments_if_needed(
         PrimitiveInstanceKind::BackdropRender { .. } => {
             // These primitives don't support / need segments.
             return;
+        }
+        PrimitiveInstanceKind::BoxShadow { .. } => {
+            unreachable!("BUG: box-shadows should not hit legacy brush clip path");
         }
     };
 

@@ -9,6 +9,7 @@
 use super::{AllowQuirks, Number, Percentage, ToComputedValue};
 use crate::computed_value_flags::ComputedValueFlags;
 use crate::font_metrics::{FontMetrics, FontMetricsOrientation};
+#[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::GeckoFontMetrics;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::{self, CSSPixelLength, Context};
@@ -212,6 +213,7 @@ impl FontRelativeLength {
     }
 
     /// Computes the length, given a GeckoFontMetrics getter to resolve font-relative units.
+    #[cfg(feature = "gecko")]
     pub fn to_computed_pixel_length_with_font_metrics(
         &self,
         get_font_metrics: impl Fn() -> GeckoFontMetrics,
@@ -1220,6 +1222,7 @@ impl NoCalcLength {
 
     /// Get a px value without a full style context; this can handle either
     /// absolute or (if a font metrics getter is provided) font-relative units.
+    #[cfg(feature = "gecko")]
     #[inline]
     pub fn to_computed_pixel_length_with_font_metrics(
         &self,
@@ -1509,6 +1512,7 @@ impl Length {
     }
 
     /// Get a px value, with an optional GeckoFontMetrics getter to resolve font-relative units.
+    #[cfg(feature = "gecko")]
     pub fn to_computed_pixel_length_with_font_metrics(
         &self,
         get_font_metrics: Option<impl Fn() -> GeckoFontMetrics>,
@@ -1953,6 +1957,10 @@ macro_rules! parse_size_non_length {
                 "fit-content" | "-moz-fit-content" => $size::FitContent,
                 #[cfg(feature = "gecko")]
                 "-moz-available" => $size::MozAvailable,
+                #[cfg(feature = "gecko")]
+                "-webkit-fill-available" if is_webkit_fill_available_keyword_enabled() => $size::WebkitFillAvailable,
+                #[cfg(feature = "gecko")]
+                "stretch" if is_stretch_enabled() => $size::Stretch,
                 $auto_or_none => $size::$auto_or_none_ident,
             })
         });
@@ -1960,6 +1968,15 @@ macro_rules! parse_size_non_length {
             return size;
         }
     }};
+}
+
+#[cfg(feature = "gecko")]
+fn is_webkit_fill_available_keyword_enabled() -> bool {
+    static_prefs::pref!("layout.css.webkit-fill-available.enabled")
+}
+#[cfg(feature = "gecko")]
+fn is_stretch_enabled() -> bool {
+    static_prefs::pref!("layout.css.stretch-size-keyword.enabled")
 }
 
 #[cfg(feature = "gecko")]

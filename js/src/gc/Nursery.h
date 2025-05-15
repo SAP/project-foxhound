@@ -56,6 +56,10 @@
 template <typename T>
 class SharedMem;
 
+namespace mozilla {
+class StringBuffer;
+};
+
 namespace js {
 
 struct StringStats;
@@ -146,6 +150,11 @@ class Nursery {
   // Use the following API if the owning Cell is already known.
   std::tuple<void*, bool> allocateBuffer(JS::Zone* zone, size_t nbytes,
                                          arena_id_t arenaId);
+
+  // Like allocateBuffer, but returns nullptr if the buffer can't be allocated
+  // in the nursery.
+  void* tryAllocateNurseryBuffer(JS::Zone* zone, size_t nbytes,
+                                 arena_id_t arenaId);
 
   // Allocate a buffer for a given Cell, using the nursery if possible and
   // owner is in the nursery.
@@ -245,6 +254,8 @@ class Nursery {
     MOZ_ASSERT(isEnabled());
     return cellsWithUid_.append(cell);
   }
+
+  [[nodiscard]] inline bool addStringBuffer(JSLinearString* s);
 
   size_t sizeOfMallocedBuffers(mozilla::MallocSizeOf mallocSizeOf) const;
 
@@ -654,6 +665,11 @@ class Nursery {
   // Report how many strings were deduplicated.
   bool reportDeduplications_;
 
+#ifdef JS_GC_ZEAL
+  // Report on the kinds of things promoted.
+  bool reportPromotion_;
+#endif
+
   // Whether to report information on pretenuring, and if so the allocation
   // threshold at which to report details of each allocation site.
   gc::AllocSiteFilter pretenuringReportFilter_;
@@ -718,6 +734,20 @@ class Nursery {
   SetObjectVector setsWithNurseryMemory_;
   using StringVector = Vector<JSString*, 0, SystemAllocPolicy>;
   StringVector stringsWithNurseryMemory_;
+
+  // List of strings with StringBuffers allocated in the nursery. References
+  // to the buffers are dropped after minor GC. The list stores both the JS
+  // string and the StringBuffer to simplify interaction with AtomRefs and
+  // string deduplication.
+  using StringAndBuffer = std::pair<JSLinearString*, mozilla::StringBuffer*>;
+  using StringAndBufferVector =
+      JS::GCVector<StringAndBuffer, 8, SystemAllocPolicy>;
+  StringAndBufferVector stringBuffers_;
+
+  // List of StringBuffers to release off-thread.
+  using StringBufferVector =
+      Vector<mozilla::StringBuffer*, 8, SystemAllocPolicy>;
+  StringBufferVector stringBuffersToReleaseAfterMinorGC_;
 
   UniquePtr<NurseryDecommitTask> decommitTask;
 

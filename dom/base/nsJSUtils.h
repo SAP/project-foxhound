@@ -18,14 +18,11 @@
  */
 
 #include "mozilla/Assertions.h"
-#include "mozilla/dom/DOMString.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
+#include "mozilla/CheckedInt.h"
 
 #include "jsapi.h"
 #include "js/CompileOptions.h"
 #include "js/Conversions.h"
-#include "js/SourceText.h"
 #include "js/String.h"  // JS::{,Lossy}CopyLinearStringChars, JS::CopyStringChars, JS::Get{,Linear}StringLength, JS::MaxStringLength, JS::StringHasLatin1Chars
 #include "js/Utility.h"  // JS::FreePolicy
 #include "nsString.h"
@@ -47,13 +44,6 @@ class Element;
 
 class nsJSUtils {
  public:
-  static bool GetCallingLocation(JSContext* aContext, nsACString& aFilename,
-                                 uint32_t* aLineno = nullptr,
-                                 uint32_t* aColumn = nullptr);
-  static bool GetCallingLocation(JSContext* aContext, nsAString& aFilename,
-                                 uint32_t* aLineno = nullptr,
-                                 uint32_t* aColumn = nullptr);
-
   /**
    * Retrieve the inner window ID based on the given JSContext.
    *

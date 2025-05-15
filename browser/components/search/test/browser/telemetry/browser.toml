@@ -35,6 +35,15 @@ support-files = ["searchTelemetryAd_searchbox_with_content.html", "serp.css"]
 ["browser_search_telemetry_adImpression_component_skipCount_parent.js"]
 support-files = ["searchTelemetryAd_searchbox_with_content.html", "serp.css"]
 
+["browser_search_telemetry_adblock_count.js"]
+
+["browser_search_telemetry_categorization_experiment_info.js"]
+skip-if = ["artifact"] # Bug 1883857 - experimentInfo object is not accessible in artifact builds
+support-files = ["searchTelemetryDomainCategorizationReporting.html"]
+
+["browser_search_telemetry_categorization_missing_impression.js"]
+support-files = ["searchTelemetryDomainExtraction.html"]
+
 ["browser_search_telemetry_categorization_timing.js"]
 
 ["browser_search_telemetry_content.js"]
@@ -153,6 +162,9 @@ support-files = [
   "serp.css",
 ]
 
+["browser_search_telemetry_engagement_target_after_load.js"]
+support-files = ["searchTelemetryAd_components_text.html", "serp.css"]
+
 ["browser_search_telemetry_new_window.js"]
 support-files = ["searchTelemetry.html", "searchTelemetryAd.html"]
 
@@ -224,3 +236,7 @@ support-files = ["searchTelemetrySinglePageApp.html"]
 
 ["browser_search_telemetry_spa_single_tab.js"]
 support-files = ["searchTelemetrySinglePageApp.html"]
+
+["browser_search_telemetry_visibility_helper_horizontal.js"]
+
+["browser_search_telemetry_visibility_helper_vertical.js"]

@@ -95,9 +95,6 @@ const HTTP_DOWNLOAD_ACTIVITIES = [
  *
  * @constructor
  * @param {Object} options
- * @param {boolean} options.earlyEvents
- *        Create network events before the transaction is committed and sent to
- *        the server.
  * @param {Function(nsIChannel): boolean} options.ignoreChannelFunction
  *        This function will be called for every detected channel to decide if it
  *        should be monitored or not.
@@ -139,20 +136,6 @@ export class NetworkObserver {
    * @type {boolean}
    */
   #authPromptListenerEnabled = false;
-  /**
-   * Whether network events should be created before being sent to the server or
-   * not. This is currently opt-in because it relies on an observer notification
-   * which is emitted too early (http-on-before-connect). Due to this, the event
-   * is initially missing some headers added only when the necko transaction is
-   * created.
-   * It also changes the order in which we detect flight and preflight CORS
-   * requests. When using early events, the order corresponds to the order in
-   * which the channels are created (first the flight request, then the
-   * preflight). When using the activity observer, the order corresponds to the
-   * order in which the requests are sent to the server (first preflight, then
-   * flight).
-   */
-  #createEarlyEvents = false;
   /**
    * See constructor argument of the same name.
    *
@@ -211,7 +194,7 @@ export class NetworkObserver {
   #throttler = null;
 
   constructor(options = {}) {
-    const { earlyEvents, ignoreChannelFunction, onNetworkEvent } = options;
+    const { ignoreChannelFunction, onNetworkEvent } = options;
     if (typeof ignoreChannelFunction !== "function") {
       throw new Error(
         `Expected "ignoreChannelFunction" to be a function, got ${ignoreChannelFunction} (${typeof ignoreChannelFunction})`
@@ -224,7 +207,6 @@ export class NetworkObserver {
       );
     }
 
-    this.#createEarlyEvents = earlyEvents;
     this.#ignoreChannelFunction = ignoreChannelFunction;
     this.#onNetworkEvent = onNetworkEvent;
 
@@ -249,13 +231,14 @@ export class NetworkObserver {
         this.#fileChannelExaminer,
         "file-channel-opened"
       );
-
-      if (this.#createEarlyEvents) {
-        Services.obs.addObserver(
-          this.#httpBeforeConnect,
-          "http-on-before-connect"
-        );
-      }
+      Services.obs.addObserver(
+        this.#dataChannelExaminer,
+        "data-channel-opened"
+      );
+      Services.obs.addObserver(
+        this.#httpBeforeConnect,
+        "http-on-before-connect"
+      );
 
       Services.obs.addObserver(this.#httpStopRequest, "http-on-stop-request");
     } else {
@@ -367,6 +350,10 @@ export class NetworkObserver {
       // callbacks on the network event owner.
       const httpActivity = this.#createOrGetActivityObject(channel);
       this.#createNetworkEvent(httpActivity);
+
+      // Handle overrides in http-on-before-connect because we need to redirect
+      // the request to the override before reaching the server.
+      this.#checkForContentOverride(httpActivity);
     }
   );
 
@@ -388,11 +375,10 @@ export class NetworkObserver {
       logPlatformEvent(topic, channel);
 
       const httpActivity = this.#createOrGetActivityObject(channel);
-      const serverTimings = this.#extractServerTimings(channel);
-
       if (httpActivity.owner) {
         // Try extracting server timings. Note that they will be sent to the client
         // in the `_onTransactionClose` method together with network event timings.
+        const serverTimings = NetworkTimings.extractServerTimings(httpActivity);
         httpActivity.owner.addServerTimings(serverTimings);
 
         // If the owner isn't set we need to create the network event and send
@@ -423,7 +409,8 @@ export class NetworkObserver {
    * Check if the current channel has its content being overriden
    * by the content of some local file.
    */
-  #checkForContentOverride(channel) {
+  #checkForContentOverride(httpActivity) {
+    const channel = httpActivity.channel;
     const overridePath = this.#overrides.get(channel.URI.spec);
     if (!overridePath) {
       return false;
@@ -432,6 +419,11 @@ export class NetworkObserver {
     dump(" Override " + channel.URI.spec + " to " + overridePath + "\n");
     try {
       lazy.NetworkOverride.overrideChannelWithFilePath(channel, overridePath);
+      // Handle the activity as being from the cache to avoid looking up
+      // typical information from the http channel, which would error for
+      // overridden channels.
+      httpActivity.fromCache = true;
+      httpActivity.isOverridden = true;
     } catch (e) {
       dump("Exception while trying to override request content: " + e + "\n");
     }
@@ -480,8 +472,6 @@ export class NetworkObserver {
           : channel.responseStatus
       );
 
-      this.#checkForContentOverride(channel);
-
       channel.QueryInterface(Ci.nsIHttpChannelInternal);
 
       // Retrieve or create the http activity.
@@ -497,6 +487,7 @@ export class NetworkObserver {
         httpActivity.owner.addResponseStart({
           channel: httpActivity.channel,
           fromCache: httpActivity.fromCache || httpActivity.fromServiceWorker,
+          fromServiceWorker: httpActivity.fromServiceWorker,
           rawHeaders: httpActivity.responseRawHeaders,
           proxyResponseRawHeaders: httpActivity.proxyResponseRawHeaders,
         });
@@ -526,9 +517,6 @@ export class NetworkObserver {
       this.#createNetworkEvent(httpActivity);
     }
 
-    // However if we already created an event because the NetworkObserver
-    // is using early events, simply forward the cache details to the
-    // event owner.
     httpActivity.owner.addCacheDetails({
       fromCache: httpActivity.fromCache,
       fromServiceWorker: httpActivity.fromServiceWorker,
@@ -541,10 +529,10 @@ export class NetworkObserver {
 
     // There also is never any timing events, so we can fire this
     // event with zeroed out values.
-    const timings = this.#setupHarTimings(httpActivity);
-    const serverTimings = this.#extractServerTimings(httpActivity.channel);
+    const timings = NetworkTimings.extractHarTimings(httpActivity);
+    const serverTimings = NetworkTimings.extractServerTimings(httpActivity);
     const serviceWorkerTimings =
-      this.#extractServiceWorkerTimings(httpActivity);
+      NetworkTimings.extractServiceWorkerTimings(httpActivity);
 
     httpActivity.owner.addServerTimings(serverTimings);
     httpActivity.owner.addServiceWorkerTimings(serviceWorkerTimings);
@@ -590,6 +578,52 @@ export class NetworkObserver {
       throttler.manageUpload(channel);
     }
   });
+
+  #dataChannelExaminer = DevToolsInfaillibleUtils.makeInfallible(
+    (subject, topic) => {
+      if (
+        topic != "data-channel-opened" ||
+        !(subject instanceof Ci.nsIDataChannel)
+      ) {
+        return;
+      }
+      const channel = subject.QueryInterface(Ci.nsIChannel);
+
+      if (this.#ignoreChannelFunction(channel)) {
+        return;
+      }
+
+      logPlatformEvent(topic, channel);
+
+      const networkEvent = this.#onNetworkEvent({}, channel, true);
+
+      networkEvent.addResponseStart({
+        channel,
+        fromCache: false,
+        // According to the fetch spec for data URLs we can just hardcode
+        // "Content-Type" header.
+        rawHeaders: "content-type: " + channel.contentType,
+      });
+
+      // For data URLs we can not set up a stream listener as for http,
+      // so we have to create a response manually and complete it.
+      const response = {
+        // TODO: Bug 1903807. Reevaluate if it's correct to just return
+        // zero for `bodySize` and `decodedBodySize`.
+        bodySize: 0,
+        decodedBodySize: 0,
+        contentCharset: channel.contentCharset,
+        contentLength: channel.contentLength,
+        contentType: channel.contentType,
+        mimeType: lazy.NetworkHelper.addCharsetToMimeType(
+          channel.contentType,
+          channel.contentCharset
+        ),
+        transferredSize: 0,
+      };
+      networkEvent.addResponseContent(response, {});
+    }
+  );
 
   /**
    * Observe notifications for the file-channel-opened topic
@@ -829,8 +863,10 @@ export class NetworkObserver {
       this.#setupResponseListener(httpActivity);
     }
 
-    if (this.#authPromptListenerEnabled) {
+    const wrapper = ChannelWrapper.get(httpActivity.channel);
+    if (this.#authPromptListenerEnabled && !wrapper.hasNetworkAuthListener) {
       new lazy.NetworkAuthListener(httpActivity.channel, httpActivity.owner);
+      wrapper.hasNetworkAuthListener = true;
     }
   }
 
@@ -859,12 +895,11 @@ export class NetworkObserver {
       };
     }
 
-    // TODO: In theory httpActivity.owner is missing only if #createEarlyEvents
-    // is false. However, there is a scenario in DevTools where this can still
-    // happen.
-    // If NetworkObserver clear() is called after the event was detected, the
-    // activity will be deletedld again have an ownerless notification here.
-    // Should be addressed in Bug 1756770.
+    // TODO: In theory httpActivity.owner should not be missing here because
+    // the network event should have been created in http-on-before-connect.
+    // However, there is a scenario in DevTools where this can still happen:
+    // if NetworkObserver clear() is called after the event was detected, the
+    // activity will be deleted again have an ownerless notification here.
     if (!httpActivity.owner) {
       // If we are not creating events using the early platform notification
       // this should be the first time we are notified about this channel.
@@ -1110,8 +1145,8 @@ export class NetworkObserver {
    */
   #onTransactionClose(httpActivity) {
     if (httpActivity.owner) {
-      const result = this.#setupHarTimings(httpActivity);
-      const serverTimings = this.#extractServerTimings(httpActivity.channel);
+      const result = NetworkTimings.extractHarTimings(httpActivity);
+      const serverTimings = NetworkTimings.extractServerTimings(httpActivity);
 
       httpActivity.owner.addServerTimings(serverTimings);
       httpActivity.owner.addEventTimings(
@@ -1120,6 +1155,279 @@ export class NetworkObserver {
         result.offsets
       );
     }
+  }
+
+  #sendRequestBody(httpActivity) {
+    if (httpActivity.sentBody !== null) {
+      const limit = Services.prefs.getIntPref(
+        "devtools.netmonitor.requestBodyLimit"
+      );
+      const size = httpActivity.sentBody.length;
+      if (size > limit && limit > 0) {
+        httpActivity.sentBody = httpActivity.sentBody.substr(0, limit);
+      }
+      httpActivity.owner.addRequestPostData({
+        text: httpActivity.sentBody,
+        size,
+      });
+      httpActivity.sentBody = null;
+    }
+  }
+
+  /*
+   * Clears the open requests channel map.
+   */
+  clear() {
+    this.#openRequests.clear();
+  }
+
+  /**
+   * Suspend observer activity. This is called when the Network monitor actor stops
+   * listening.
+   */
+  destroy() {
+    if (this.#isDestroyed) {
+      return;
+    }
+
+    if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT) {
+      gActivityDistributor.removeObserver(this);
+      Services.obs.removeObserver(
+        this.#httpResponseExaminer,
+        "http-on-examine-response"
+      );
+      Services.obs.removeObserver(
+        this.#httpResponseExaminer,
+        "http-on-examine-cached-response"
+      );
+      Services.obs.removeObserver(
+        this.#httpModifyExaminer,
+        "http-on-modify-request"
+      );
+      Services.obs.removeObserver(
+        this.#fileChannelExaminer,
+        "file-channel-opened"
+      );
+      Services.obs.removeObserver(
+        this.#dataChannelExaminer,
+        "data-channel-opened"
+      );
+
+      Services.obs.removeObserver(
+        this.#httpStopRequest,
+        "http-on-stop-request"
+      );
+      Services.obs.removeObserver(
+        this.#httpBeforeConnect,
+        "http-on-before-connect"
+      );
+    } else {
+      Services.obs.removeObserver(
+        this.#httpFailedOpening,
+        "http-on-failed-opening-request"
+      );
+    }
+
+    Services.obs.removeObserver(
+      this.#serviceWorkerRequest,
+      "service-worker-synthesized-response"
+    );
+
+    this.#ignoreChannelFunction = null;
+    this.#onNetworkEvent = null;
+    this.#throttler = null;
+    this.#decodedCertificateCache.clear();
+    this.clear();
+
+    this.#isDestroyed = true;
+  }
+}
+
+/**
+ * Helper singleton to compute network timings for a given httpActivity object.
+ */
+export const NetworkTimings = new (class {
+  /**
+   * Convert the httpActivity timings in HAR compatible timings. The HTTP
+   * activity object holds the raw timing information in |timings| - these are
+   * timings stored for each activity notification. The HAR timing information
+   * is constructed based on these lower level data.
+   *
+   * @param {Object} httpActivity
+   *     The HTTP activity object we are working with.
+   * @return {Object}
+   *     This object holds three properties:
+   *     - {Object} offsets: the timings computed as offsets from the initial
+   *     request start time.
+   *     - {Object} timings: the HAR timings object
+   *     - {number} total: the total time for all of the request and response
+   */
+  extractHarTimings(httpActivity) {
+    if (httpActivity.fromCache) {
+      // If it came from the browser cache, we have no timing
+      // information and these should all be 0
+      return {
+        total: 0,
+        timings: {
+          blocked: 0,
+          dns: 0,
+          ssl: 0,
+          connect: 0,
+          send: 0,
+          wait: 0,
+          receive: 0,
+        },
+        offsets: {
+          blocked: 0,
+          dns: 0,
+          ssl: 0,
+          connect: 0,
+          send: 0,
+          wait: 0,
+          receive: 0,
+        },
+      };
+    }
+
+    const timings = httpActivity.timings;
+    const harTimings = {};
+    // If the TCP Fast Open option or tls1.3 0RTT is used tls and data can
+    // be dispatched in SYN packet and not after tcp socket is connected.
+    // To demostrate this properly we will calculated TLS and send start time
+    // relative to CONNECTING_TO.
+    // Similary if 0RTT is used, data can be sent as soon as a TLS handshake
+    // starts.
+
+    harTimings.blocked = this.#getBlockedTiming(timings);
+    // DNS timing information is available only in when the DNS record is not
+    // cached.
+    harTimings.dns = this.#getDnsTiming(timings);
+    harTimings.connect = this.#getConnectTiming(timings);
+    harTimings.ssl = this.#getSslTiming(timings);
+
+    let { secureConnectionStartTime, secureConnectionStartTimeRelative } =
+      this.#getSecureConnectionStartTimeInfo(timings);
+
+    // sometimes the connection information events are attached to a speculative
+    // channel instead of this one, but necko might glue them back together in the
+    // nsITimedChannel interface used by Resource and Navigation Timing
+    const timedChannel = httpActivity.channel.QueryInterface(
+      Ci.nsITimedChannel
+    );
+
+    const {
+      tcpConnectEndTimeTc,
+      connectStartTimeTc,
+      connectEndTimeTc,
+      secureConnectionStartTimeTc,
+      domainLookupEndTimeTc,
+      domainLookupStartTimeTc,
+    } = this.#getDataFromTimedChannel(timedChannel);
+
+    if (
+      harTimings.connect <= 0 &&
+      timedChannel &&
+      tcpConnectEndTimeTc != 0 &&
+      connectStartTimeTc != 0
+    ) {
+      harTimings.connect = tcpConnectEndTimeTc - connectStartTimeTc;
+      if (secureConnectionStartTimeTc != 0) {
+        harTimings.ssl = connectEndTimeTc - secureConnectionStartTimeTc;
+        secureConnectionStartTime =
+          secureConnectionStartTimeTc - connectStartTimeTc;
+        secureConnectionStartTimeRelative = true;
+      } else {
+        harTimings.ssl = -1;
+      }
+    } else if (
+      timedChannel &&
+      timings.STATUS_TLS_STARTING &&
+      secureConnectionStartTimeTc != 0
+    ) {
+      // It can happen that TCP Fast Open actually have not sent any data and
+      // timings.STATUS_TLS_STARTING.first value will be corrected in
+      // timedChannel.secureConnectionStartTime
+      if (secureConnectionStartTimeTc > timings.STATUS_TLS_STARTING.first) {
+        // TCP Fast Open actually did not sent any data.
+        harTimings.ssl = connectEndTimeTc - secureConnectionStartTimeTc;
+        secureConnectionStartTimeRelative = false;
+      }
+    }
+
+    if (
+      harTimings.dns <= 0 &&
+      timedChannel &&
+      domainLookupEndTimeTc != 0 &&
+      domainLookupStartTimeTc != 0
+    ) {
+      harTimings.dns = domainLookupEndTimeTc - domainLookupStartTimeTc;
+    }
+
+    harTimings.send = this.#getSendTiming(timings);
+    harTimings.wait = this.#getWaitTiming(timings);
+    harTimings.receive = this.#getReceiveTiming(timings);
+    let { startSendingTime, startSendingTimeRelative } =
+      this.#getStartSendingTimeInfo(timings, connectStartTimeTc);
+
+    if (secureConnectionStartTimeRelative) {
+      const time = Math.max(Math.round(secureConnectionStartTime / 1000), -1);
+      secureConnectionStartTime = time;
+    }
+    if (startSendingTimeRelative) {
+      const time = Math.max(Math.round(startSendingTime / 1000), -1);
+      startSendingTime = time;
+    }
+
+    const ot = this.#calculateOffsetAndTotalTime(
+      harTimings,
+      secureConnectionStartTime,
+      startSendingTimeRelative,
+      secureConnectionStartTimeRelative,
+      startSendingTime
+    );
+    return {
+      total: ot.total,
+      timings: harTimings,
+      offsets: ot.offsets,
+    };
+  }
+
+  extractServerTimings(httpActivity) {
+    const channel = httpActivity.channel;
+    if (!channel || !channel.serverTiming) {
+      return null;
+    }
+
+    const serverTimings = new Array(channel.serverTiming.length);
+
+    for (let i = 0; i < channel.serverTiming.length; ++i) {
+      const { name, duration, description } =
+        channel.serverTiming.queryElementAt(i, Ci.nsIServerTiming);
+      serverTimings[i] = { name, duration, description };
+    }
+
+    return serverTimings;
+  }
+
+  extractServiceWorkerTimings(httpActivity) {
+    if (!httpActivity.fromServiceWorker) {
+      return null;
+    }
+    const timedChannel = httpActivity.channel.QueryInterface(
+      Ci.nsITimedChannel
+    );
+
+    return {
+      launchServiceWorker:
+        timedChannel.launchServiceWorkerEndTime -
+        timedChannel.launchServiceWorkerStartTime,
+      requestToServiceWorker:
+        timedChannel.dispatchFetchEventEndTime -
+        timedChannel.dispatchFetchEventStartTime,
+      handledByServiceWorker:
+        timedChannel.handleFetchEventEndTime -
+        timedChannel.handleFetchEventStartTime,
+    };
   }
 
   #getBlockedTiming(timings) {
@@ -1266,187 +1574,6 @@ export class NetworkObserver {
     return { startSendingTime, startSendingTimeRelative };
   }
 
-  /**
-   * Update the HTTP activity object to include timing information as in the HAR
-   * spec. The HTTP activity object holds the raw timing information in
-   * |timings| - these are timings stored for each activity notification. The
-   * HAR timing information is constructed based on these lower level
-   * data.
-   *
-   * @param {Object} httpActivity
-   *     The HTTP activity object we are working with.
-   * @return {Object}
-   *     This object holds three properties:
-   *     - {Object} offsets: the timings computed as offsets from the initial
-   *     request start time.
-   *     - {Object} timings: the HAR timings object
-   *     - {number} total: the total time for all of the request and response
-   */
-  #setupHarTimings(httpActivity) {
-    if (httpActivity.fromCache) {
-      // If it came from the browser cache, we have no timing
-      // information and these should all be 0
-      return {
-        total: 0,
-        timings: {
-          blocked: 0,
-          dns: 0,
-          ssl: 0,
-          connect: 0,
-          send: 0,
-          wait: 0,
-          receive: 0,
-        },
-        offsets: {
-          blocked: 0,
-          dns: 0,
-          ssl: 0,
-          connect: 0,
-          send: 0,
-          wait: 0,
-          receive: 0,
-        },
-      };
-    }
-
-    const timings = httpActivity.timings;
-    const harTimings = {};
-    // If the TCP Fast Open option or tls1.3 0RTT is used tls and data can
-    // be dispatched in SYN packet and not after tcp socket is connected.
-    // To demostrate this properly we will calculated TLS and send start time
-    // relative to CONNECTING_TO.
-    // Similary if 0RTT is used, data can be sent as soon as a TLS handshake
-    // starts.
-
-    harTimings.blocked = this.#getBlockedTiming(timings);
-    // DNS timing information is available only in when the DNS record is not
-    // cached.
-    harTimings.dns = this.#getDnsTiming(timings);
-    harTimings.connect = this.#getConnectTiming(timings);
-    harTimings.ssl = this.#getSslTiming(timings);
-
-    let { secureConnectionStartTime, secureConnectionStartTimeRelative } =
-      this.#getSecureConnectionStartTimeInfo(timings);
-
-    // sometimes the connection information events are attached to a speculative
-    // channel instead of this one, but necko might glue them back together in the
-    // nsITimedChannel interface used by Resource and Navigation Timing
-    const timedChannel = httpActivity.channel.QueryInterface(
-      Ci.nsITimedChannel
-    );
-
-    const {
-      tcpConnectEndTimeTc,
-      connectStartTimeTc,
-      connectEndTimeTc,
-      secureConnectionStartTimeTc,
-      domainLookupEndTimeTc,
-      domainLookupStartTimeTc,
-    } = this.#getDataFromTimedChannel(timedChannel);
-
-    if (
-      harTimings.connect <= 0 &&
-      timedChannel &&
-      tcpConnectEndTimeTc != 0 &&
-      connectStartTimeTc != 0
-    ) {
-      harTimings.connect = tcpConnectEndTimeTc - connectStartTimeTc;
-      if (secureConnectionStartTimeTc != 0) {
-        harTimings.ssl = connectEndTimeTc - secureConnectionStartTimeTc;
-        secureConnectionStartTime =
-          secureConnectionStartTimeTc - connectStartTimeTc;
-        secureConnectionStartTimeRelative = true;
-      } else {
-        harTimings.ssl = -1;
-      }
-    } else if (
-      timedChannel &&
-      timings.STATUS_TLS_STARTING &&
-      secureConnectionStartTimeTc != 0
-    ) {
-      // It can happen that TCP Fast Open actually have not sent any data and
-      // timings.STATUS_TLS_STARTING.first value will be corrected in
-      // timedChannel.secureConnectionStartTime
-      if (secureConnectionStartTimeTc > timings.STATUS_TLS_STARTING.first) {
-        // TCP Fast Open actually did not sent any data.
-        harTimings.ssl = connectEndTimeTc - secureConnectionStartTimeTc;
-        secureConnectionStartTimeRelative = false;
-      }
-    }
-
-    if (
-      harTimings.dns <= 0 &&
-      timedChannel &&
-      domainLookupEndTimeTc != 0 &&
-      domainLookupStartTimeTc != 0
-    ) {
-      harTimings.dns = domainLookupEndTimeTc - domainLookupStartTimeTc;
-    }
-
-    harTimings.send = this.#getSendTiming(timings);
-    harTimings.wait = this.#getWaitTiming(timings);
-    harTimings.receive = this.#getReceiveTiming(timings);
-    let { startSendingTime, startSendingTimeRelative } =
-      this.#getStartSendingTimeInfo(timings, connectStartTimeTc);
-
-    if (secureConnectionStartTimeRelative) {
-      const time = Math.max(Math.round(secureConnectionStartTime / 1000), -1);
-      secureConnectionStartTime = time;
-    }
-    if (startSendingTimeRelative) {
-      const time = Math.max(Math.round(startSendingTime / 1000), -1);
-      startSendingTime = time;
-    }
-
-    const ot = this.#calculateOffsetAndTotalTime(
-      harTimings,
-      secureConnectionStartTime,
-      startSendingTimeRelative,
-      secureConnectionStartTimeRelative,
-      startSendingTime
-    );
-    return {
-      total: ot.total,
-      timings: harTimings,
-      offsets: ot.offsets,
-    };
-  }
-
-  #extractServerTimings(channel) {
-    if (!channel || !channel.serverTiming) {
-      return null;
-    }
-
-    const serverTimings = new Array(channel.serverTiming.length);
-
-    for (let i = 0; i < channel.serverTiming.length; ++i) {
-      const { name, duration, description } =
-        channel.serverTiming.queryElementAt(i, Ci.nsIServerTiming);
-      serverTimings[i] = { name, duration, description };
-    }
-
-    return serverTimings;
-  }
-
-  #extractServiceWorkerTimings({ fromServiceWorker, channel }) {
-    if (!fromServiceWorker) {
-      return null;
-    }
-    const timedChannel = channel.QueryInterface(Ci.nsITimedChannel);
-
-    return {
-      launchServiceWorker:
-        timedChannel.launchServiceWorkerEndTime -
-        timedChannel.launchServiceWorkerStartTime,
-      requestToServiceWorker:
-        timedChannel.dispatchFetchEventEndTime -
-        timedChannel.dispatchFetchEventStartTime,
-      handledByServiceWorker:
-        timedChannel.handleFetchEventEndTime -
-        timedChannel.handleFetchEventStartTime,
-    };
-  }
-
   #convertTimeToMs(timing) {
     return Math.max(Math.round(timing / 1000), -1);
   }
@@ -1500,86 +1627,4 @@ export class NetworkObserver {
       offsets,
     };
   }
-
-  #sendRequestBody(httpActivity) {
-    if (httpActivity.sentBody !== null) {
-      const limit = Services.prefs.getIntPref(
-        "devtools.netmonitor.requestBodyLimit"
-      );
-      const size = httpActivity.sentBody.length;
-      if (size > limit && limit > 0) {
-        httpActivity.sentBody = httpActivity.sentBody.substr(0, limit);
-      }
-      httpActivity.owner.addRequestPostData({
-        text: httpActivity.sentBody,
-        size,
-      });
-      httpActivity.sentBody = null;
-    }
-  }
-
-  /*
-   * Clears the open requests channel map.
-   */
-  clear() {
-    this.#openRequests.clear();
-  }
-
-  /**
-   * Suspend observer activity. This is called when the Network monitor actor stops
-   * listening.
-   */
-  destroy() {
-    if (this.#isDestroyed) {
-      return;
-    }
-
-    if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT) {
-      gActivityDistributor.removeObserver(this);
-      Services.obs.removeObserver(
-        this.#httpResponseExaminer,
-        "http-on-examine-response"
-      );
-      Services.obs.removeObserver(
-        this.#httpResponseExaminer,
-        "http-on-examine-cached-response"
-      );
-      Services.obs.removeObserver(
-        this.#httpModifyExaminer,
-        "http-on-modify-request"
-      );
-      Services.obs.removeObserver(
-        this.#fileChannelExaminer,
-        "file-channel-opened"
-      );
-      Services.obs.removeObserver(
-        this.#httpStopRequest,
-        "http-on-stop-request"
-      );
-      if (this.#createEarlyEvents) {
-        Services.obs.removeObserver(
-          this.#httpBeforeConnect,
-          "http-on-before-connect"
-        );
-      }
-    } else {
-      Services.obs.removeObserver(
-        this.#httpFailedOpening,
-        "http-on-failed-opening-request"
-      );
-    }
-
-    Services.obs.removeObserver(
-      this.#serviceWorkerRequest,
-      "service-worker-synthesized-response"
-    );
-
-    this.#ignoreChannelFunction = null;
-    this.#onNetworkEvent = null;
-    this.#throttler = null;
-    this.#decodedCertificateCache.clear();
-    this.clear();
-
-    this.#isDestroyed = true;
-  }
-}
+})();

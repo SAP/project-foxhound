@@ -8,7 +8,7 @@ use crate::parser::{Parse, ParserContext};
 use crate::properties::{NonCustomPropertyId, PropertyId, ShorthandId};
 use crate::values::generics::animation as generics;
 use crate::values::specified::{LengthPercentage, NonNegativeNumber};
-use crate::values::{CustomIdent, KeyframesName, TimelineName};
+use crate::values::{CustomIdent, DashedIdent, KeyframesName};
 use crate::Atom;
 use cssparser::Parser;
 use std::fmt::{self, Write};
@@ -255,7 +255,10 @@ impl AnimationDirection {
     #[inline]
     pub fn match_keywords(name: &AnimationName) -> bool {
         if let Some(name) = name.as_atom() {
+            #[cfg(feature = "gecko")]
             return name.with_str(|n| Self::from_ident(n).is_ok());
+            #[cfg(feature = "servo")]
+            return Self::from_ident(name).is_ok();
         }
         false
     }
@@ -287,7 +290,10 @@ impl AnimationPlayState {
     #[inline]
     pub fn match_keywords(name: &AnimationName) -> bool {
         if let Some(name) = name.as_atom() {
+            #[cfg(feature = "gecko")]
             return name.with_str(|n| Self::from_ident(n).is_ok());
+            #[cfg(feature = "servo")]
+            return Self::from_ident(atom).is_ok();
         }
         false
     }
@@ -419,10 +425,10 @@ pub enum ScrollAxis {
     Block = 0,
     /// The inline axis of the scroll container.
     Inline = 1,
-    /// The vertical block axis of the scroll container.
-    Vertical = 2,
     /// The horizontal axis of the scroll container.
-    Horizontal = 3,
+    X = 2,
+    /// The vertical axis of the scroll container.
+    Y = 3,
 }
 
 impl ScrollAxis {
@@ -525,6 +531,63 @@ impl generics::ViewFunction<LengthPercentage> {
     }
 }
 
+/// The typedef of scroll-timeline-name or view-timeline-name.
+///
+/// https://drafts.csswg.org/scroll-animations-1/#scroll-timeline-name
+/// https://drafts.csswg.org/scroll-animations-1/#view-timeline-name
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+pub struct TimelineName(DashedIdent);
+
+impl TimelineName {
+    /// Returns the `none` value.
+    pub fn none() -> Self {
+        Self(DashedIdent::empty())
+    }
+
+    /// Check if this is `none` value.
+    pub fn is_none(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Parse for TimelineName {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
+            return Ok(Self::none())
+        }
+
+        DashedIdent::parse(context, input).map(TimelineName)
+    }
+}
+
+impl ToCss for TimelineName {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if self.is_none() {
+            return dest.write_str("none")
+        }
+
+        self.0.to_css(dest)
+    }
+}
+
 /// A specified value for the `animation-timeline` property.
 pub type AnimationTimeline = generics::GenericAnimationTimeline<LengthPercentage>;
 
@@ -535,22 +598,19 @@ impl Parse for AnimationTimeline {
     ) -> Result<Self, ParseError<'i>> {
         use crate::values::generics::animation::ViewFunction;
 
-        // <single-animation-timeline> = auto | none | <custom-ident> | <scroll()> | <view()>
+        // <single-animation-timeline> = auto | none | <dashed-ident> | <scroll()> | <view()>
         // https://drafts.csswg.org/css-animations-2/#typedef-single-animation-timeline
 
         if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
             return Ok(Self::Auto);
         }
 
-        if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
-            return Ok(AnimationTimeline::Timeline(TimelineName::none()));
-        }
-
+        // This parses none or <dashed-indent>.
         if let Ok(name) = input.try_parse(|i| TimelineName::parse(context, i)) {
             return Ok(AnimationTimeline::Timeline(name));
         }
 
-        // Parse possible functions
+        // Parse <scroll()> or <view()>.
         let location = input.current_source_location();
         let function = input.expect_function()?.clone();
         input.parse_nested_block(move |i| {
@@ -566,9 +626,6 @@ impl Parse for AnimationTimeline {
         })
     }
 }
-
-/// A value for the scroll-timeline-name or view-timeline-name.
-pub type ScrollTimelineName = AnimationName;
 
 /// A specified value for the `view-timeline-inset` property.
 pub type ViewTimelineInset = generics::GenericViewTimelineInset<LengthPercentage>;

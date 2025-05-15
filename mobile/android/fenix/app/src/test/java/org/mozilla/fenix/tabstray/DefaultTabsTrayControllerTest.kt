@@ -33,13 +33,13 @@ import mozilla.components.browser.storage.sync.TabEntry
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.feature.accounts.push.CloseTabsUseCases
 import mozilla.components.feature.tabs.TabsUseCases
-import mozilla.components.service.glean.testing.GleanTestRule
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
+import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -148,6 +148,37 @@ class DefaultTabsTrayControllerTest {
     }
 
     @Test
+    fun `GIVEN private mode and homepage as a new tab is enabled WHEN the fab is clicked THEN a new private homepage tab is displayed`() {
+        every { settings.enableHomepageAsNewTab } returns true
+
+        profiler = spyk(profiler) {
+            every { getProfilerTime() } returns Double.MAX_VALUE
+        }
+
+        assertNull(TabsTray.newPrivateTabTapped.testGetValue())
+
+        createController().handlePrivateTabsFabClick()
+
+        assertNotNull(TabsTray.newPrivateTabTapped.testGetValue())
+
+        verifyOrder {
+            profiler.getProfilerTime()
+            tabsUseCases.addTab.invoke(
+                startLoading = false,
+                private = true,
+            )
+            navController.navigate(
+                TabsTrayFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
+            )
+            navigationInteractor.onTabTrayDismissed()
+            profiler.addMarker(
+                "DefaultTabTrayController.onNewTabTapped",
+                Double.MAX_VALUE,
+            )
+        }
+    }
+
+    @Test
     fun `GIVEN normal mode WHEN the fab is clicked THEN a profile marker is added for the operations executed`() {
         profiler = spyk(profiler) {
             every { getProfilerTime() } returns Double.MAX_VALUE
@@ -157,6 +188,33 @@ class DefaultTabsTrayControllerTest {
 
         verifyOrder {
             profiler.getProfilerTime()
+            navController.navigate(
+                TabsTrayFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
+            )
+            navigationInteractor.onTabTrayDismissed()
+            profiler.addMarker(
+                "DefaultTabTrayController.onNewTabTapped",
+                Double.MAX_VALUE,
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN normal mode and homepage as a new tab is enabled WHEN the fab is clicked THEN a new homepage tab is displayed`() {
+        every { settings.enableHomepageAsNewTab } returns true
+
+        profiler = spyk(profiler) {
+            every { getProfilerTime() } returns Double.MAX_VALUE
+        }
+
+        createController().handleNormalTabsFabClick()
+
+        verifyOrder {
+            profiler.getProfilerTime()
+            tabsUseCases.addTab.invoke(
+                startLoading = false,
+                private = false,
+            )
             navController.navigate(
                 TabsTrayFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
             )
@@ -258,6 +316,10 @@ class DefaultTabsTrayControllerTest {
 
     @Test
     fun `WHEN handleTrayScrollingToPosition is called with smoothScroll=true THEN it scrolls to that position with smoothScroll`() {
+        val pagePosition = 3
+
+        every { trayStore.state.selectedPage } returns Page.positionToPage(pagePosition)
+
         var selectTabPositionInvoked = false
         createController(
             selectTabPosition = { position, smoothScroll ->
@@ -265,23 +327,31 @@ class DefaultTabsTrayControllerTest {
                 assertTrue(smoothScroll)
                 selectTabPositionInvoked = true
             },
-        ).handleTrayScrollingToPosition(3, true)
+        ).handleTrayScrollingToPosition(position = pagePosition, smoothScroll = true)
 
         assertTrue(selectTabPositionInvoked)
     }
 
     @Test
     fun `WHEN handleTrayScrollingToPosition is called with smoothScroll=true THEN it emits an action for the tray page of that tab position`() {
-        createController().handleTrayScrollingToPosition(33, true)
+        val pagePosition = 33
 
-        verify { trayStore.dispatch(TabsTrayAction.PageSelected(Page.positionToPage(33))) }
+        every { trayStore.state.selectedPage } returns Page.positionToPage(pagePosition)
+
+        createController().handleTrayScrollingToPosition(position = pagePosition, smoothScroll = true)
+
+        verify { trayStore.dispatch(TabsTrayAction.PageSelected(Page.positionToPage(position = pagePosition))) }
     }
 
     @Test
     fun `WHEN handleTrayScrollingToPosition is called with smoothScroll=false THEN it emits an action for the tray page of that tab position`() {
-        createController().handleTrayScrollingToPosition(44, true)
+        val pagePosition = 44
 
-        verify { trayStore.dispatch(TabsTrayAction.PageSelected(Page.positionToPage(44))) }
+        every { trayStore.state.selectedPage } returns Page.positionToPage(pagePosition)
+
+        createController().handleTrayScrollingToPosition(position = pagePosition, smoothScroll = true)
+
+        verify { trayStore.dispatch(TabsTrayAction.PageSelected(Page.positionToPage(position = pagePosition))) }
     }
 
     @Test
@@ -572,16 +642,24 @@ class DefaultTabsTrayControllerTest {
     }
 
     @Test
-    fun `WHEN a synced tab is closed THEN a command to close the tab is sent`() {
-        val tab = mockk<Tab>()
-        val entry = mockk<TabEntry>()
+    fun `WHEN a synced tab is closed THEN a command to close the tab is queued AND an undo snackbar is shown`() {
+        var showUndoSnackbarForSyncedTabInvoked = false
+        val controller = createController(
+            showUndoSnackbarForSyncedTab = {
+                showUndoSnackbarForSyncedTabInvoked = true
+            },
+        )
 
-        every { tab.active() }.answers { entry }
-        every { entry.url }.answers { "https://mozilla.org" }
-
-        createController().handleSyncedTabClosed(deviceId = "1234", tab)
+        val tab = Tab(
+            history = listOf(TabEntry(title = "Get Firefox", url = "https://getfirefox.com", iconUrl = null)),
+            active = 0,
+            lastUsed = 0,
+            inactive = false,
+        )
+        controller.handleSyncedTabClosed("1234", tab)
 
         coVerify(exactly = 1) { closeSyncedTabsUseCases.close("1234", any()) }
+        assertTrue(showUndoSnackbarForSyncedTabInvoked)
     }
 
     @Test
@@ -864,7 +942,7 @@ class DefaultTabsTrayControllerTest {
     fun `WHEN all inactive tabs are closed THEN perform the deletion and report the telemetry event and show a Snackbar`() {
         var showSnackbarInvoked = false
         val controller = createController(
-            showUndoSnackbarForTab = {
+            showUndoSnackbarForInactiveTab = {
                 showSnackbarInvoked = true
             },
         )
@@ -1120,30 +1198,69 @@ class DefaultTabsTrayControllerTest {
     }
 
     @Test
-    fun `WHEN the normal tabs page button is clicked THEN report the metric`() {
+    fun `GIVEN active page is not normal tabs WHEN the normal tabs page button is clicked THEN report the metric`() {
+        every { trayStore.state.selectedPage } returns Page.PrivateTabs
+
         assertNull(TabsTray.normalModeTapped.testGetValue())
 
-        createController().handleTrayScrollingToPosition(Page.NormalTabs.ordinal, false)
+        createController().handleTrayScrollingToPosition(position = Page.NormalTabs.ordinal, smoothScroll = false)
 
         assertNotNull(TabsTray.normalModeTapped.testGetValue())
     }
 
     @Test
-    fun `WHEN the private tabs page button is clicked THEN report the metric`() {
+    fun `GIVEN active page is normal tabs WHEN normal tabs page button is clicked THEN do not report the metric`() {
+        every { trayStore.state.selectedPage } returns Page.NormalTabs
+
+        assertNull(TabsTray.normalModeTapped.testGetValue())
+
+        createController().handleTrayScrollingToPosition(position = Page.NormalTabs.ordinal, smoothScroll = false)
+
+        assertNull(TabsTray.normalModeTapped.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN active page is not private tabs WHEN the private tabs page button is clicked THEN report the metric`() {
+        every { trayStore.state.selectedPage } returns Page.NormalTabs
+
         assertNull(TabsTray.privateModeTapped.testGetValue())
 
-        createController().handleTrayScrollingToPosition(Page.PrivateTabs.ordinal, false)
+        createController().handleTrayScrollingToPosition(position = Page.PrivateTabs.ordinal, smoothScroll = false)
 
         assertNotNull(TabsTray.privateModeTapped.testGetValue())
     }
 
     @Test
-    fun `WHEN the synced tabs page button is clicked THEN report the metric`() {
+    fun `GIVEN active page is private tabs WHEN the private tabs button is clicked THEN do not report the metric`() {
+        every { trayStore.state.selectedPage } returns Page.PrivateTabs
+
+        assertNull(TabsTray.privateModeTapped.testGetValue())
+
+        createController().handleTrayScrollingToPosition(position = Page.PrivateTabs.ordinal, smoothScroll = false)
+
+        assertNull(TabsTray.privateModeTapped.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN active page is not synced tabs WHEN the synced tabs page button is clicked THEN report the metric`() {
+        every { trayStore.state.selectedPage } returns Page.NormalTabs
+
         assertNull(TabsTray.syncedModeTapped.testGetValue())
 
-        createController().handleTrayScrollingToPosition(Page.SyncedTabs.ordinal, false)
+        createController().handleTrayScrollingToPosition(position = Page.SyncedTabs.ordinal, smoothScroll = false)
 
         assertNotNull(TabsTray.syncedModeTapped.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN active page is synced tabs WHEN the synced tabs page button is clicked THEN do not report the metric`() {
+        every { trayStore.state.selectedPage } returns Page.SyncedTabs
+
+        assertNull(TabsTray.syncedModeTapped.testGetValue())
+
+        createController().handleTrayScrollingToPosition(position = Page.SyncedTabs.ordinal, smoothScroll = false)
+
+        assertNull(TabsTray.syncedModeTapped.testGetValue())
     }
 
     private fun createController(
@@ -1151,6 +1268,8 @@ class DefaultTabsTrayControllerTest {
         selectTabPosition: (Int, Boolean) -> Unit = { _, _ -> },
         dismissTray: () -> Unit = { },
         showUndoSnackbarForTab: (Boolean) -> Unit = { _ -> },
+        showUndoSnackbarForInactiveTab: (Int) -> Unit = { _ -> },
+        showUndoSnackbarForSyncedTab: (CloseTabsUseCases.UndoableOperation) -> Unit = { _ -> },
         showCancelledDownloadWarning: (Int, String?, String?) -> Unit = { _, _, _ -> },
         showCollectionSnackbar: (Int, Boolean) -> Unit = { _, _ -> },
         showBookmarkSnackbar: (Int) -> Unit = { _ -> },
@@ -1174,6 +1293,8 @@ class DefaultTabsTrayControllerTest {
             selectTabPosition = selectTabPosition,
             dismissTray = dismissTray,
             showUndoSnackbarForTab = showUndoSnackbarForTab,
+            showUndoSnackbarForInactiveTab = showUndoSnackbarForInactiveTab,
+            showUndoSnackbarForSyncedTab = showUndoSnackbarForSyncedTab,
             showCancelledDownloadWarning = showCancelledDownloadWarning,
             showCollectionSnackbar = showCollectionSnackbar,
             showBookmarkSnackbar = showBookmarkSnackbar,

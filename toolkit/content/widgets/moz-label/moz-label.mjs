@@ -8,16 +8,20 @@
  *
  * @tagname moz-label
  * @attribute {string} accesskey - Key used for keyboard access.
+ * @attribute {string} shownaccesskey - Key to underline but not set as
+ *   accesskey, this is useful to work around an issue where multiple accesskeys
+ *   on the same element cause it to be focused isntead of activated.
  */
 class MozTextLabel extends HTMLLabelElement {
   #insertSeparator = false;
   #alwaysAppendAccessKey = false;
   #lastFormattedAccessKey = null;
+  #observer = null;
 
   // Default to underlining accesskeys for Windows and Linux.
   static #underlineAccesskey = !navigator.platform.includes("Mac");
   static get observedAttributes() {
-    return ["accesskey"];
+    return ["accesskey", "shownaccesskey"];
   }
 
   static stylesheetUrl = "chrome://global/content/elements/moz-label.css";
@@ -64,6 +68,18 @@ class MozTextLabel extends HTMLLabelElement {
   connectedCallback() {
     this.#setStyles();
     this.formatAccessKey();
+    if (!this.#observer) {
+      this.#observer = new MutationObserver(() => {
+        this.formatAccessKey();
+      }).observe(this, { characterData: true, childList: true, subtree: true });
+    }
+  }
+
+  disconnectedCallback() {
+    if (this.#observer) {
+      this.#observer.disconnect();
+      this.#observer = null;
+    }
   }
 
   // Bug 1820588 - we may want to generalize this into
@@ -155,7 +171,7 @@ class MozTextLabel extends HTMLLabelElement {
   // label uses [value]). So this is just for when we have textContent.
   formatAccessKey() {
     // Skip doing any DOM manipulation whenever possible:
-    let accessKey = this.accessKey;
+    let accessKey = this.accessKey || this.getAttribute("shownaccesskey");
     if (
       !MozTextLabel.#underlineAccesskey ||
       this.#lastFormattedAccessKey == accessKey ||

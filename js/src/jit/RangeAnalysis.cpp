@@ -15,6 +15,7 @@
 #include "jit/CompileInfo.h"
 #include "jit/IonAnalysis.h"
 #include "jit/JitSpewer.h"
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
@@ -3403,7 +3404,7 @@ void MDiv::collectRangeInfoPreTrunc() {
     canBeNegativeZero_ = false;
   }
 
-  if (fallible()) {
+  if (type() == MIRType::Int32 && fallible()) {
     setGuardRangeBailoutsUnchecked();
   }
 }

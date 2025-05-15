@@ -925,8 +925,10 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
         // filter those; pids do need to be restricted to the current
         // process in order to not leak information.
         Arg<clockid_t> clk_id(0);
+#ifdef MOZ_GECKO_PROFILER
         clockid_t this_process =
             MAKE_PROCESS_CPUCLOCK(getpid(), CPUCLOCK_SCHED);
+#endif
         return If(clk_id == CLOCK_MONOTONIC, Allow())
 #ifdef CLOCK_MONOTONIC_COARSE
             // Used by SandboxReporter, among other things.
@@ -1691,6 +1693,24 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
     return fd;
   }
 
+#if defined(__NR_stat64) || defined(__NR_stat)
+  static intptr_t StatTrap(const sandbox::arch_seccomp_data& aArgs, void* aux) {
+    const auto* const files = static_cast<const SandboxOpenedFiles*>(aux);
+    const auto* path = reinterpret_cast<const char*>(aArgs.args[0]);
+    int fd = files->GetDesc(path);
+    if (fd < 0) {
+      // SandboxOpenedFile::GetDesc already logged about this, if appropriate.
+      return -ENOENT;
+    }
+    auto* buf = reinterpret_cast<statstruct*>(aArgs.args[1]);
+#  ifdef __NR_fstat64
+    return DoSyscall(__NR_fstat64, fd, buf);
+#  else
+    return DoSyscall(__NR_fstat, fd, buf);
+#  endif
+  }
+#endif
+
   static intptr_t UnameTrap(const sandbox::arch_seccomp_data& aArgs,
                             void* aux) {
     const auto buf = reinterpret_cast<struct utsname*>(aArgs.args[0]);
@@ -1737,6 +1757,11 @@ class GMPSandboxPolicy : public SandboxPolicyCommon {
 #endif
       case __NR_openat:
         return Trap(OpenTrap, mFiles);
+
+#if defined(__NR_stat64) || defined(__NR_stat)
+      CASES_FOR_stat:
+        return Trap(StatTrap, mFiles);
+#endif
 
       case __NR_brk:
         return Allow();
@@ -1887,11 +1912,20 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         static constexpr unsigned long kVideoType =
             static_cast<unsigned long>('V') << _IOC_TYPESHIFT;
 #endif
-        // nvidia uses some ioctls from this range (but not actual
+        // nvidia non-tegra uses some ioctls from this range (but not actual
         // fbdev ioctls; nvidia uses values >= 200 for the NR field
         // (low 8 bits))
         static constexpr unsigned long kFbDevType =
             static_cast<unsigned long>('F') << _IOC_TYPESHIFT;
+
+#if defined(__aarch64__)
+        // NVIDIA decoder, from Linux4Tegra
+        // http://lists.mplayerhq.hu/pipermail/ffmpeg-devel/2024-May/328552.html
+        static constexpr unsigned long kNvidiaNvmapType =
+            static_cast<unsigned long>('N') << _IOC_TYPESHIFT;
+        static constexpr unsigned long kNvidiaNvhostType =
+            static_cast<unsigned long>('H') << _IOC_TYPESHIFT;
+#endif  // defined(__aarch64__)
 
         // Allow DRI and DMA-Buf for VA-API. Also allow V4L2 if enabled
         return If(shifted_type == kDrmType, Allow())
@@ -1899,7 +1933,12 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
 #ifdef MOZ_ENABLE_V4L2
             .ElseIf(shifted_type == kVideoType, Allow())
 #endif
-            // Hack for nvidia, which isn't supported yet:
+        // NVIDIA decoder from Linux4Tegra, this is specific to Tegra ARM64 SoC
+#if defined(__aarch64__)
+            .ElseIf(shifted_type == kNvidiaNvmapType, Allow())
+            .ElseIf(shifted_type == kNvidiaNvhostType, Allow())
+#endif  // defined(__aarch64__)
+        // Hack for nvidia non-tegra devices, which isn't supported yet:
             .ElseIf(shifted_type == kFbDevType, Error(ENOTTY))
             .Else(SandboxPolicyCommon::EvaluateSyscall(sysno));
       }
@@ -2125,6 +2164,9 @@ class UtilitySandboxPolicy : public SandboxPolicyCommon {
                 PR_GET_PDEATHSIG),  // PGO profiling, cf
                                     // https://reviews.llvm.org/D29954
                Allow())
+        .CASES((PR_CAPBSET_READ),  // libcap.so.2 loaded by libpulse.so.0
+                                   // queries for capabilities
+               Error(EINVAL))
         .Default(InvalidSyscall());
   }
 

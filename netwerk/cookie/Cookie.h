@@ -78,7 +78,6 @@ class Cookie final : public nsICookie {
     return nsDependentCSubstring(mData.host(), IsDomain() ? 1 : 0);
   }
   inline const nsCString& Path() const { return mData.path(); }
-  const nsCString& GetFilePath();
   inline int64_t Expiry() const { return mData.expiry(); }  // in seconds
   inline int64_t LastAccessed() const {
     return mData.lastAccessed();
@@ -120,6 +119,10 @@ class Cookie final : public nsICookie {
   }
   inline void SetHost(const nsACString& aHost) { mData.host() = aHost; }
 
+  uint32_t NameAndValueBytes() {
+    return mData.name().Length() + mData.value().Length();
+  }
+
   bool IsStale() const;
 
   const CookieStruct& ToIPC() const { return mData; }
@@ -135,7 +138,6 @@ class Cookie final : public nsICookie {
   // Please update SizeOfIncludingThis if this strategy changes.
   CookieStruct mData;
   OriginAttributes mOriginAttributes;
-  nsCString mFilePathCache;
 };
 
 // Comparator class for sorting cookies before sending to a server.

@@ -2639,6 +2639,20 @@
      */ \
     MACRO(ThrowWithStack, throw_with_stack, NULL, 1, 2, 0, JOF_BYTE) \
     /*
+     * Throw `exc` without jumping to error handling code.
+     *
+     * This sets the pending exception to `exc`, the pending exception stack
+     * to `stack` but unlike ThrowWithStack it doesnt jump to error-handling
+     * code. This is used in Disposable Scopes to set the pending exception as the
+     * initial completion to be used while disposing resources.
+     *
+     *   Category: Control flow
+     *   Type: Exceptions
+     *   Operands:
+     *   Stack: exc, stack =>
+     */ \
+    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(ThrowWithStackWithoutJump, throw_with_stack_without_jump, NULL, 1, 2, 0, JOF_BYTE)) \
+    /*
      * Create and throw an Error object.
      *
      * Sometimes we know at emit time that an operation always throws. For
@@ -3391,16 +3405,16 @@
      * Append the object on the stack as a disposable to be disposed on
      * to the current lexical environment object.
      *
-     * Implements: [AddDisposableResource ( disposeCapability, V, hint [ , method ] )][1], step 3
+     * Implements: [AddDisposableResource ( disposeCapability, V, hint [ , method ] )][1], step 1, 3-4.
      *
      * [1] https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-adddisposableresource
      *
      *   Category: Variables and scopes
      *   Type: Entering and leaving environments
-     *   Operands:
+     *   Operands: UsingHint hint
      *   Stack: v => v
      */ \
-    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(AddDisposable, add_disposable, NULL, 1, 1, 1, JOF_BYTE)) \
+    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(AddDisposable, add_disposable, NULL, 2, 1, 1, JOF_UINT8)) \
     /*
      * Retrieve the disposable objects from the currenct lexical environment object
      * and dispose them.
@@ -3411,10 +3425,10 @@
      *
      *   Category: Variables and scopes
      *   Type: Entering and leaving environments
-     *   Operands:
+     *   Operands: DisposeJumpKind jumpKind
      *   Stack: =>
      */ \
-    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(DisposeDisposables, dispose_disposables, NULL, 1, 0, 0, JOF_BYTE)) \
+    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(DisposeDisposables, dispose_disposables, NULL, 2, 0, 0, JOF_UINT8)) \
     /*
      * Push the current VariableEnvironment (the environment on the environment
      * chain designated to receive new variables).
@@ -3679,14 +3693,13 @@
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 #  define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-    IF_RECORD_TUPLE(/* empty */, MACRO(238))     \
     IF_RECORD_TUPLE(/* empty */, MACRO(239))     \
     IF_RECORD_TUPLE(/* empty */, MACRO(240))     \
     IF_RECORD_TUPLE(/* empty */, MACRO(241))     \
     IF_RECORD_TUPLE(/* empty */, MACRO(242))     \
     IF_RECORD_TUPLE(/* empty */, MACRO(243))     \
     IF_RECORD_TUPLE(/* empty */, MACRO(244))     \
-    MACRO(245)                                   \
+    IF_RECORD_TUPLE(/* empty */, MACRO(245))     \
     MACRO(246)                                   \
     MACRO(247)                                   \
     MACRO(248)                                   \

@@ -273,7 +273,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetRemoteAddress(nsACString& addr) override;
   NS_IMETHOD GetRemotePort(int32_t* port) override;
   NS_IMETHOD GetOnlyConnect(bool* aOnlyConnect) override;
-  NS_IMETHOD SetConnectOnly() override;
+  NS_IMETHOD SetConnectOnly(bool aTlsTunnel) override;
   NS_IMETHOD GetAllowSpdy(bool* aAllowSpdy) override;
   NS_IMETHOD SetAllowSpdy(bool aAllowSpdy) override;
   NS_IMETHOD GetAllowHttp3(bool* aAllowHttp3) override;
@@ -726,6 +726,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   void MaybeResumeAsyncOpen();
 
+  nsresult SetRequestHeaderInternal(const nsACString& aHeader,
+                                    const nsACString& aValue, bool aMerge,
+                                    nsHttpHeaderArray::HeaderVariety aVariety);
+
  protected:
   nsCString mSpec;  // ASCII encoded URL spec
   nsCString mContentTypeHint;
@@ -1084,6 +1088,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   void RemoveAsNonTailRequest();
 
   void EnsureBrowserId();
+
+  bool PerformCORSCheck();
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpBaseChannel, HTTP_BASE_CHANNEL_IID)

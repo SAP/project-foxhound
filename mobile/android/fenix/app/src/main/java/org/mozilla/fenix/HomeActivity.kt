@@ -30,6 +30,7 @@ import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.ActionBar
 import androidx.appcompat.widget.Toolbar
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
@@ -107,6 +108,7 @@ import org.mozilla.fenix.ext.getIntentSource
 import org.mozilla.fenix.ext.getNavDirections
 import org.mozilla.fenix.ext.hasTopDestination
 import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.ext.recordEventInNimbus
 import org.mozilla.fenix.ext.setNavigationIcon
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.extension.WebExtensionPromptFeature
@@ -156,6 +158,8 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
     lateinit var browsingModeManager: BrowsingModeManager
 
     private var isVisuallyComplete = false
+
+    var isMicrosurveyPromptDismissed = mutableStateOf(false)
 
     private var privateNotificationObserver: PrivateNotificationFeature<PrivateNotificationService>? =
         null
@@ -356,7 +360,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                 ?.also {
                     Events.appOpened.record(Events.AppOpenedExtra(it))
                     // This will record an event in Nimbus' internal event store. Used for behavioral targeting
-                    components.nimbus.events.recordEvent("app_opened")
+                    recordEventInNimbus("app_opened")
 
                     if (safeIntent.action.equals(ACTION_OPEN_PRIVATE_TAB) && it == APP_ICON) {
                         AppIcon.newPrivateTabTapped.record(NoExtras())

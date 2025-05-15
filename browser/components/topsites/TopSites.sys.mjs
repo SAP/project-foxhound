@@ -8,13 +8,15 @@ import {
   TOP_SITES_MAX_SITES_PER_ROW,
 } from "resource://activity-stream/common/Reducers.sys.mjs";
 import { Dedupe } from "resource://activity-stream/common/Dedupe.sys.mjs";
-import { shortURL } from "resource://activity-stream/lib/ShortURL.sys.mjs";
+import {
+  shortURL,
+  shortHostname,
+} from "resource://activity-stream/lib/ShortURL.sys.mjs";
 
 import {
   CUSTOM_SEARCH_SHORTCUTS,
   checkHasSearchEngine,
   getSearchProvider,
-  getSearchFormURL,
 } from "resource://activity-stream/lib/SearchShortcuts.sys.mjs";
 
 const lazy = {};
@@ -72,13 +74,19 @@ const DEFAULT_SITES_OVERRIDE_PREF =
   "browser.newtabpage.activity-stream.default.sites";
 const DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH = "browser.topsites.experiment.";
 
-function getShortURLForCurrentSearch() {
-  const url = shortURL({ url: Services.search.defaultEngine.searchForm });
+function getShortHostnameForCurrentSearch() {
+  const url = shortHostname(Services.search.defaultEngine.searchUrlDomain);
   return url;
 }
 
 class _TopSites {
-  #inited = false;
+  #hasObservers = false;
+  /**
+   * A Promise used to determine if initialization is complete.
+   *
+   * @type {Promise}
+   */
+  #initPromise = null;
   #searchShortcuts = [];
   #sites = [];
 
@@ -87,7 +95,7 @@ class _TopSites {
     ChromeUtils.defineLazyGetter(
       this,
       "_currentSearchHostname",
-      getShortURLForCurrentSearch
+      getShortHostnameForCurrentSearch
     );
     this.dedupe = new Dedupe(this._dedupeKey);
     this.frecentCache = new lazy.LinksCache(
@@ -107,30 +115,42 @@ class _TopSites {
     this.handlePlacesEvents = this.handlePlacesEvents.bind(this);
   }
 
+  /**
+   * Initializes the TopSites module.
+   *
+   * @returns {Promise}
+   */
   async init() {
-    if (this.#inited) {
-      return;
+    if (this.#initPromise) {
+      return this.#initPromise;
     }
-    this.#inited = true;
-    lazy.log.debug("Initializing TopSites.");
-    this.#addObservers();
-    await this._readDefaults({ isStartup: true });
+    this.#initPromise = (async () => {
+      lazy.log.debug("Initializing TopSites.");
+      this.#addObservers();
+      await this._readDefaults({ isStartup: true });
+      // TopSites was initialized by the store calling the initialization
+      // function and then updating custom search shortcuts. Since
+      // initialization now happens upon the first retrieval of sites, we move
+      // the update custom search shortcuts here.
+      await this.updateCustomSearchShortcuts(true);
+    })();
+    return this.#initPromise;
   }
 
   uninit() {
-    if (!this.#inited) {
-      return;
-    }
     lazy.log.debug("Un-initializing TopSites.");
     this.#removeObservers();
     this.#searchShortcuts = [];
     this.#sites = [];
-    this.#inited = false;
+    this.#initPromise = null;
     this.frecentCache.expire();
     this.pinnedCache.expire();
   }
 
   #addObservers() {
+    if (this.#hasObservers) {
+      return;
+    }
     // If the feed was previously disabled PREFS_INITIAL_VALUES was never received
     Services.obs.addObserver(this, "browser-search-engine-modified");
     Services.obs.addObserver(this, "browser-region-updated");
@@ -146,9 +166,13 @@ class _TopSites {
       ["bookmark-added", "bookmark-removed", "history-cleared", "page-removed"],
       this.handlePlacesEvents
     );
+    this.#hasObservers = true;
   }
 
   #removeObservers() {
+    if (!this.#hasObservers) {
+      return;
+    }
     Services.obs.removeObserver(this, "browser-search-engine-modified");
     Services.obs.removeObserver(this, "browser-region-updated");
     Services.obs.removeObserver(this, "newtab-linkBlocked");
@@ -163,6 +187,7 @@ class _TopSites {
       ["bookmark-added", "bookmark-removed", "history-cleared", "page-removed"],
       this.handlePlacesEvents
     );
+    this.#hasObservers = false;
   }
 
   _reset() {
@@ -184,7 +209,7 @@ class _TopSites {
           Services.prefs.getBoolPref(NO_DEFAULT_SEARCH_TILE_PREF, true)
         ) {
           delete this._currentSearchHostname;
-          this._currentSearchHostname = getShortURLForCurrentSearch();
+          this._currentSearchHostname = getShortHostnameForCurrentSearch();
         }
         this.refresh({ broadcast: true });
         break;
@@ -296,26 +321,12 @@ class _TopSites {
    *   A list of Top Sites.
    */
   async getSites() {
-    if (!this.#inited) {
-      await this.init();
-      // TopSites was initialized by the store calling the initialization
-      // function and then updating custom search shortcuts. Since
-      // initialization now happens upon the first get, we move the update
-      // custom search shortcuts here.
-      await this.updateCustomSearchShortcuts(true);
-    }
+    await this.init();
     return structuredClone(this.#sites);
   }
 
   async getSearchShortcuts() {
-    if (!this.#inited) {
-      await this.init();
-      // TopSites was initialized by the store calling the initialization
-      // function and then updating custom search shortcuts. Since
-      // initialization now happens upon the first get, we move the update
-      // custom search shortcuts here.
-      await this.updateCustomSearchShortcuts(true);
-    }
+    await this.init();
     return structuredClone(this.#searchShortcuts);
   }
 
@@ -741,7 +752,7 @@ class _TopSites {
     for (const link of withPinned) {
       if (link) {
         if (link.searchTopSite && !link.isDefault) {
-          await this._attachTippyTopIconForSearchShortcut(link, link.label);
+          this._tippyTopProvider.processSite(link);
         } else {
           this._fetchIcon(link);
         }
@@ -757,30 +768,6 @@ class _TopSites {
     this.#sites = withPinned;
 
     return withPinned;
-  }
-
-  /**
-   * Attach TippyTop icon to the given search shortcut
-   *
-   * Note that it queries the search form URL from search service For Yandex,
-   * and uses it to choose the best icon for its shortcut variants.
-   *
-   * @param {object} link A link object with a `url` property
-   * @param {string} keyword Search keyword
-   */
-  async _attachTippyTopIconForSearchShortcut(link, keyword) {
-    if (
-      ["@\u044F\u043D\u0434\u0435\u043A\u0441", "@yandex"].includes(keyword)
-    ) {
-      let site = { url: link.url };
-      site.url = (await getSearchFormURL(keyword)) || site.url;
-      this._tippyTopProvider.processSite(site);
-      link.tippyTopIcon = site.tippyTopIcon;
-      link.smallFavicon = site.smallFavicon;
-      link.backgroundColor = site.backgroundColor;
-    } else {
-      this._tippyTopProvider.processSite(link);
-    }
   }
 
   /**
@@ -832,7 +819,7 @@ class _TopSites {
       );
       if (shortcut) {
         let clone = { ...shortcut };
-        await this._attachTippyTopIconForSearchShortcut(clone, clone.keyword);
+        this._tippyTopProvider.processSite(clone);
         searchShortcuts.push(clone);
       }
     }

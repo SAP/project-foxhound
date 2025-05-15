@@ -26,7 +26,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BookmarksPolicies: "resource:///modules/policies/BookmarksPolicies.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
-  PdfJsDefaultPreferences: "resource://pdf.js/PdfJsDefaultPreferences.sys.mjs",
   ProxyPolicies: "resource:///modules/policies/ProxyPolicies.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
@@ -1967,26 +1966,6 @@ export var Policies = {
                   throw new Error(`Non-integer value for ${preference}`);
                 }
 
-                // Because pdfjs prefs are set async, we can't check the
-                // default pref branch to see if they are int or bool, so we
-                // have to get their type from PdfJsDefaultPreferences.
-                if (preference.startsWith("pdfjs.")) {
-                  let preferenceTail = preference.replace("pdfjs.", "");
-                  if (
-                    preferenceTail in lazy.PdfJsDefaultPreferences &&
-                    typeof lazy.PdfJsDefaultPreferences[preferenceTail] ==
-                      "number"
-                  ) {
-                    prefBranch.setIntPref(preference, param[preference].Value);
-                  } else {
-                    prefBranch.setBoolPref(
-                      preference,
-                      !!param[preference].Value
-                    );
-                  }
-                  break;
-                }
-
                 // This is ugly, but necessary. On Windows GPO and macOS
                 // configs, booleans are converted to 0/1. In the previous
                 // Preferences implementation, the schema took care of
@@ -2039,6 +2018,26 @@ export var Policies = {
   PrintingEnabled: {
     onBeforeUIStartup(manager, param) {
       setAndLockPref("print.enabled", param);
+    },
+  },
+
+  PrivateBrowsingModeAvailability: {
+    onBeforeAddons(manager, param) {
+      switch (param) {
+        // Private Browsing mode disabled
+        case 1:
+          manager.disallowFeature("privatebrowsing");
+          blockAboutPage(manager, "about:privatebrowsing", true);
+          setAndLockPref("browser.privatebrowsing.autostart", false);
+          break;
+        // Private Browsing mode forced
+        case 2:
+          setAndLockPref("browser.privatebrowsing.autostart", true);
+          break;
+        // Private Browsing mode available
+        case 0:
+          break;
+      }
     },
   },
 

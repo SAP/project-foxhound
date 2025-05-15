@@ -9,10 +9,18 @@
  * otherwise specified.
  */
 
+const { CustomizableUITestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CustomizableUITestUtils.sys.mjs"
+);
+let gCUITestUtils = new CustomizableUITestUtils(window);
+
 const PERMISSIONS_PAGE =
   "https://example.com/browser/browser/base/content/test/permissions/permissions.html";
 const afterUrlBarButton = "save-to-pocket-button";
-
+const sidebarRevampEnabled = Services.prefs.getBoolPref(
+  "sidebar.revamp",
+  false
+);
 // The DevEdition has the DevTools button in the toolbar by default. Remove it
 // to prevent branch-specific rules what button should be focused.
 function resetToolbarWithoutDevEditionButtons() {
@@ -46,11 +54,13 @@ function AddOldMenuSideButtons() {
     "nav-bar",
     CustomizableUI.getWidgetIdsInArea("nav-bar").length - 3
   );
-  CustomizableUI.addWidgetToArea(
-    "sidebar-button",
-    "nav-bar",
-    CustomizableUI.getWidgetIdsInArea("nav-bar").length - 3
-  );
+  if (!sidebarRevampEnabled) {
+    CustomizableUI.addWidgetToArea(
+      "sidebar-button",
+      "nav-bar",
+      CustomizableUI.getWidgetIdsInArea("nav-bar").length - 3
+    );
+  }
   CustomizableUI.addWidgetToArea(
     "unified-extensions-button",
     "nav-bar",
@@ -60,7 +70,9 @@ function AddOldMenuSideButtons() {
 
 function RemoveOldMenuSideButtons() {
   CustomizableUI.removeWidgetFromArea("library-button");
-  CustomizableUI.removeWidgetFromArea("sidebar-button");
+  if (!sidebarRevampEnabled) {
+    CustomizableUI.removeWidgetFromArea("sidebar-button");
+  }
   document.documentElement.setAttribute(
     "fxastatus",
     document.documentElement.getAttribute("oldfxastatus")
@@ -124,6 +136,11 @@ add_setup(async function () {
     children: bookmarks,
   });
 
+  await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+    title: "Test",
+    url: "https://example.com",
+  });
   // The page actions button is not normally visible, so we must
   // unhide it.
   BrowserPageActions.mainButtonNode.style.visibility = "visible";
@@ -144,6 +161,11 @@ add_task(async function testTabStopsNoPageWithHomeButton() {
     await expectFocusAfterKey("Tab", "home-button");
     await expectFocusAfterKey("Tab", gURLBar.inputField);
     await expectFocusAfterKey("Tab", afterUrlBarButton);
+    if (sidebarRevampEnabled) {
+      let sidebar = document.querySelector("sidebar-main");
+      await expectFocusAfterKey("Tab", sidebar.toolButtons[0]);
+      await expectFocusAfterKey("Tab", sidebar.customizeButton);
+    }
     await expectFocusAfterKey("Tab", gBrowser.selectedBrowser);
   });
   RemoveHomeButton();
@@ -156,6 +178,7 @@ async function doTestTabStopsPageLoaded(aPageActionsVisible) {
     ? "visible"
     : "";
   await BrowserTestUtils.withNewTab("https://example.com", async function () {
+    let sidebar = document.querySelector("sidebar-main");
     await waitUntilReloadEnabled();
     startFromUrlBar();
     await expectFocusAfterKey(
@@ -174,6 +197,10 @@ async function doTestTabStopsPageLoaded(aPageActionsVisible) {
       aPageActionsVisible ? "pageActionButton" : "star-button-box"
     );
     await expectFocusAfterKey("Tab", afterUrlBarButton);
+    if (sidebarRevampEnabled) {
+      await expectFocusAfterKey("Tab", sidebar.toolButtons[0]);
+      await expectFocusAfterKey("Tab", sidebar.customizeButton);
+    }
     await expectFocusAfterKey("Tab", gBrowser.selectedBrowser);
   });
 }
@@ -214,18 +241,40 @@ add_task(async function testTabStopsWithNotification() {
 });
 
 // Test tab stops with the Bookmarks toolbar visible.
-add_task(async function testTabStopsWithBookmarksToolbar() {
+add_task(async function testTabStopsWithBookmarksToolbarVisible() {
   await BrowserTestUtils.withNewTab("about:blank", async function () {
     CustomizableUI.setToolbarVisibility("PersonalToolbar", true);
+    await TestUtils.waitForCondition(() => {
+      return document
+        .getElementById("PersonalToolbar")
+        .getAttribute("collapsed");
+    });
     startFromUrlBar();
     await expectFocusAfterKey("Tab", afterUrlBarButton);
     await expectFocusAfterKey("Tab", "PersonalToolbar", true);
+    if (sidebarRevampEnabled) {
+      let sidebar = document.querySelector("sidebar-main");
+      await expectFocusAfterKey("Tab", sidebar.toolButtons[0]);
+      await expectFocusAfterKey("Tab", sidebar.customizeButton);
+    }
     await expectFocusAfterKey("Tab", gBrowser.selectedBrowser);
+  });
+});
 
+// Test tab stops with the Bookmarks toolbar hidden.
+add_task(async function testTabStopsWithBookmarksToolbarHidden() {
+  await BrowserTestUtils.withNewTab("about:blank", async function () {
     // Make sure the Bookmarks toolbar is no longer tabbable once hidden.
     CustomizableUI.setToolbarVisibility("PersonalToolbar", false);
+    const toolbar = document.getElementById("PersonalToolbar");
+    await TestUtils.waitForCondition(() => toolbar.getAttribute("collapsed"));
     startFromUrlBar();
     await expectFocusAfterKey("Tab", afterUrlBarButton);
+    if (sidebarRevampEnabled) {
+      let sidebar = document.querySelector("sidebar-main");
+      await expectFocusAfterKey("Tab", sidebar.toolButtons[0]);
+      await expectFocusAfterKey("Tab", sidebar.customizeButton);
+    }
     await expectFocusAfterKey("Tab", gBrowser.selectedBrowser);
   });
 });
@@ -234,13 +283,26 @@ add_task(async function testTabStopsWithBookmarksToolbar() {
 add_task(async function testTabStopNoButtons() {
   await withNewBlankTab(async function () {
     // The Back, Forward and Reload buttons are all currently disabled.
-    // The Home button is the only other button at that tab stop.
-    CustomizableUI.removeWidgetFromArea("home-button");
+    if (!sidebarRevampEnabled) {
+      // The Home button is the only other button at that tab stop.
+      CustomizableUI.removeWidgetFromArea("home-button");
+    } else {
+      // The home and sidebar buttons are the only other button at that tab stop.
+      CustomizableUI.removeWidgetFromArea("home-button");
+      CustomizableUI.removeWidgetFromArea("sidebar-button");
+    }
     startFromUrlBar();
     await expectFocusAfterKey("Shift+Tab", "tabs-newtab-button");
     await expectFocusAfterKey("Tab", gURLBar.inputField);
     resetToolbarWithoutDevEditionButtons();
     AddHomeBesideReload();
+    if (!sidebarRevampEnabled) {
+      CustomizableUI.addWidgetToArea(
+        "sidebar-button",
+        "nav-bar",
+        CustomizableUI.getPlacementOfWidget("home-button").position + 1
+      );
+    }
     // Make sure the button is reachable now that it has been re-added.
     await expectFocusAfterKey("Shift+Tab", "home-button", true);
     RemoveHomeButton();
@@ -264,7 +326,9 @@ add_task(async function testArrowsToolbarbuttons() {
       "ArrowLeft at end of button group does nothing"
     );
     await expectFocusAfterKey("ArrowRight", "library-button");
-    await expectFocusAfterKey("ArrowRight", "sidebar-button");
+    if (!sidebarRevampEnabled) {
+      await expectFocusAfterKey("ArrowRight", "sidebar-button");
+    }
     await expectFocusAfterKey("ArrowRight", "unified-extensions-button");
     await expectFocusAfterKey("ArrowRight", "fxa-toolbar-menu-button");
     // This next check also confirms that the overflow menu button is skipped,
@@ -278,7 +342,9 @@ add_task(async function testArrowsToolbarbuttons() {
     );
     await expectFocusAfterKey("ArrowLeft", "fxa-toolbar-menu-button");
     await expectFocusAfterKey("ArrowLeft", "unified-extensions-button");
-    await expectFocusAfterKey("ArrowLeft", "sidebar-button");
+    if (!sidebarRevampEnabled) {
+      await expectFocusAfterKey("ArrowLeft", "sidebar-button");
+    }
     await expectFocusAfterKey("ArrowLeft", "library-button");
   });
   RemoveOldMenuSideButtons();
@@ -342,7 +408,9 @@ add_task(async function testArrowsOverflowButton() {
     startFromUrlBar();
     await expectFocusAfterKey("Tab", afterUrlBarButton);
     await expectFocusAfterKey("ArrowRight", "library-button");
-    await expectFocusAfterKey("ArrowRight", "sidebar-button");
+    if (!sidebarRevampEnabled) {
+      await expectFocusAfterKey("ArrowRight", "sidebar-button");
+    }
     await expectFocusAfterKey("ArrowRight", "unified-extensions-button");
     await expectFocusAfterKey("ArrowRight", "fxa-toolbar-menu-button");
     await expectFocusAfterKey("ArrowRight", "nav-bar-overflow-button");
@@ -399,7 +467,9 @@ add_task(async function testArrowsRtl() {
     "ArrowRight at end of button group does nothing"
   );
   await expectFocusAfterKey("ArrowLeft", "library-button", false, win);
-  await expectFocusAfterKey("ArrowLeft", "sidebar-button", false, win);
+  if (!sidebarRevampEnabled) {
+    await expectFocusAfterKey("ArrowLeft", "sidebar-button", false, win);
+  }
   await BrowserTestUtils.closeWindow(win);
   await SpecialPowers.popPrefEnv();
   RemoveOldMenuSideButtons();
@@ -507,15 +577,28 @@ add_task(async function testCharacterNavigation() {
     );
     // Escape should reset the search.
     EventUtils.synthesizeKey("KEY_Escape");
-    // Now that the search is reset, pressing s should focus Save to Pocket.
-    await expectFocusAfterKey("s", "save-to-pocket-button");
-    // Pressing i makes the search "si", so it should focus Sidebars.
-    await expectFocusAfterKey("i", "sidebar-button");
+    if (!sidebarRevampEnabled) {
+      // Now that the search is reset, pressing s should focus Save to Pocket.
+      await expectFocusAfterKey("s", "save-to-pocket-button");
+      // Pressing i makes the search "si", so it should focus Sidebars.
+      await expectFocusAfterKey("i", "sidebar-button");
+    } else {
+      // Now that the search is reset, pressing s should focus Sidebars.
+      await expectFocusAfterKey("s", "sidebar-button");
+      // Pressing i makes the search "sa", so it should focus Save to Pocket.
+      await expectFocusAfterKey("a", "save-to-pocket-button");
+    }
     // Reset the search.
     EventUtils.synthesizeKey("KEY_Escape");
-    await expectFocusAfterKey("s", "save-to-pocket-button");
-    // Pressing s again should find the next button starting with s: Sidebars.
-    await expectFocusAfterKey("s", "sidebar-button");
+    if (!sidebarRevampEnabled) {
+      await expectFocusAfterKey("s", "save-to-pocket-button");
+      // Pressing s again should find the next button starting with s: Sidebars.
+      await expectFocusAfterKey("s", "sidebar-button");
+    } else {
+      await expectFocusAfterKey("s", "sidebar-button");
+      // Pressing s again should find the next button starting with s: Save to Pocket.
+      await expectFocusAfterKey("s", "save-to-pocket-button");
+    }
   });
   RemoveHomeButton();
   RemoveOldMenuSideButtons();
@@ -546,9 +629,7 @@ add_task(async function testCharacterInPanelMultiView() {
 // Test tab stops after the search bar is added.
 add_task(async function testTabStopsAfterSearchBarAdded() {
   AddOldMenuSideButtons();
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.widget.inNavBar", 1]],
-  });
+  await gCUITestUtils.addSearchBar();
   await withNewBlankTab(async function () {
     startFromUrlBar();
     await expectFocusAfterKey("Tab", "searchbar", true);
@@ -558,7 +639,7 @@ add_task(async function testTabStopsAfterSearchBarAdded() {
     await expectFocusAfterKey("Shift+Tab", "searchbar", true);
     await expectFocusAfterKey("Shift+Tab", gURLBar.inputField);
   });
-  await SpecialPowers.popPrefEnv();
+  gCUITestUtils.removeSearchBar();
   RemoveOldMenuSideButtons();
 });
 

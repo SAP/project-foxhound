@@ -7,6 +7,7 @@ import { FluentOrText } from "content-src/components/FluentOrText/FluentOrText";
 import { SponsoredContentHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight";
 import React from "react";
 import { connect } from "react-redux";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 
 /**
  * A section that can collapse. As of bug 1710937, it can no longer collapse.
@@ -19,11 +20,13 @@ export class _CollapsibleSection extends React.PureComponent {
     this.onMenuButtonMouseEnter = this.onMenuButtonMouseEnter.bind(this);
     this.onMenuButtonMouseLeave = this.onMenuButtonMouseLeave.bind(this);
     this.onMenuUpdate = this.onMenuUpdate.bind(this);
+    this.setContextMenuButtonRef = this.setContextMenuButtonRef.bind(this);
+    this.handleTopicSelectionButtonClick =
+      this.handleTopicSelectionButtonClick.bind(this);
     this.state = {
       menuButtonHover: false,
       showContextMenu: false,
     };
-    this.setContextMenuButtonRef = this.setContextMenuButtonRef.bind(this);
   }
 
   setContextMenuButtonRef(element) {
@@ -46,16 +49,38 @@ export class _CollapsibleSection extends React.PureComponent {
     this.setState({ showContextMenu });
   }
 
+  handleTopicSelectionButtonClick() {
+    const maybeDisplay =
+      this.props.Prefs.values[
+        "discoverystream.topicSelection.onboarding.maybeDisplay"
+      ];
+
+    this.props.dispatch(ac.OnlyToMain({ type: at.TOPIC_SELECTION_USER_OPEN }));
+
+    if (maybeDisplay) {
+      // if still part of onboarding, remove user from onboarding flow
+      this.props.dispatch(
+        ac.SetPref(
+          "discoverystream.topicSelection.onboarding.maybeDisplay",
+          false
+        )
+      );
+    }
+    this.props.dispatch(
+      ac.BroadcastToContent({ type: at.TOPIC_SELECTION_SPOTLIGHT_OPEN })
+    );
+  }
+
   render() {
     const { isAnimating, maxHeight, menuButtonHover, showContextMenu } =
       this.state;
     const {
       id,
       collapsed,
-      learnMore,
       title,
       subTitle,
       mayHaveSponsoredStories,
+      mayHaveTopicsSelection,
     } = this.props;
     const active = menuButtonHover || showContextMenu;
     let bodyStyle;
@@ -69,6 +94,14 @@ export class _CollapsibleSection extends React.PureComponent {
       titleStyle = { visibility: "hidden" };
     }
     const hasSubtitleClassName = subTitle ? `has-subtitle` : ``;
+    const hasBeenUpdatedPreviously =
+      this.props.Prefs.values[
+        "discoverystream.topicSelection.hasBeenUpdatedPreviously"
+      ];
+    const selectedTopics =
+      this.props.Prefs.values["discoverystream.topicSelection.selectedTopics"];
+    const topicsHaveBeenPreviouslySet =
+      hasBeenUpdatedPreviously || selectedTopics;
     return (
       <section
         className={`collapsible-section ${this.props.className}${
@@ -85,15 +118,6 @@ export class _CollapsibleSection extends React.PureComponent {
             <span className="section-title">
               <FluentOrText message={title} />
             </span>
-            <span className="learn-more-link-wrapper">
-              {learnMore && (
-                <span className="learn-more-link">
-                  <FluentOrText message={learnMore.link.message}>
-                    <a href={learnMore.link.href} />
-                  </FluentOrText>
-                </span>
-              )}
-            </span>
             {subTitle && (
               <span className="section-sub-title">
                 <FluentOrText message={subTitle} />
@@ -107,6 +131,19 @@ export class _CollapsibleSection extends React.PureComponent {
                 />
               )}
           </h3>
+          {mayHaveTopicsSelection && (
+            <div className="button-topic-selection">
+              <moz-button
+                data-l10n-id={
+                  topicsHaveBeenPreviouslySet
+                    ? "newtab-topic-selection-button-update-interests"
+                    : "newtab-topic-selection-button-pick-interests"
+                }
+                type={topicsHaveBeenPreviouslySet ? "default" : "primary"}
+                onClick={this.handleTopicSelectionButtonClick}
+              />
+            </div>
+          )}
         </div>
         <ErrorBoundary className="section-body-fallback">
           <div ref={this.onBodyMount} style={bodyStyle}>

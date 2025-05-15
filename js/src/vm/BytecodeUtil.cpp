@@ -1105,7 +1105,7 @@ JS_PUBLIC_API bool js::DumpScript(JSContext* cx, JSScript* scriptArg,
   return ok;
 }
 
-static UniqueChars ToDisassemblySource(JSContext* cx, HandleValue v) {
+UniqueChars js::ToDisassemblySource(JSContext* cx, HandleValue v) {
   if (v.isString()) {
     return QuoteString(cx, v.toString(), '"');
   }
@@ -2140,6 +2140,11 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
       case JSOp::HasOwn:
         return write("HasOwn(") && decompilePCForStackOperand(pc, -2) &&
                write(", ") && decompilePCForStackOperand(pc, -1) && write(")");
+
+#  ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+      case JSOp::AddDisposable:
+        return decompilePCForStackOperand(pc, -1);
+#  endif
 
       default:
         break;

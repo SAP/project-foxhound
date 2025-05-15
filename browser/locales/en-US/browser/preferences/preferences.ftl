@@ -64,12 +64,10 @@ pane-sync-title3 = Sync
 category-sync3 =
     .tooltiptext = { pane-sync-title3 }
 
-pane-experimental-title = { -brand-short-name } Experiments
-category-experimental =
-    .tooltiptext = { -brand-short-name } Experiments
-pane-experimental-subtitle = Proceed with Caution
-pane-experimental-search-results-header = { -brand-short-name } Experiments: Proceed with Caution
-pane-experimental-description2 = Changing advanced configuration settings can impact { -brand-short-name } performance or security.
+settings-pane-labs-title = { -firefoxlabs-brand-name }
+settings-category-labs =
+    .tooltiptext = { -firefoxlabs-brand-name }
+pane-experimental-description3 = Give our experimental features a try! They’re in development and evolving, which could impact how { -brand-short-name } works.
 
 pane-experimental-reset =
   .label = Restore Defaults
@@ -621,7 +619,7 @@ browsing-search-on-start-typing =
     .accesskey = x
 
 browsing-picture-in-picture-toggle-enabled =
-    .label = Enable picture-in-picture video controls
+    .label = Enable Picture-in-Picture video controls
     .accesskey = E
 
 browsing-picture-in-picture-learn-more = Learn more
@@ -1253,6 +1251,9 @@ addressbar-locbar-quickactions-option =
 addressbar-locbar-showrecentsearches-option =
     .label = Show recent searches
     .accesskey = r
+addressbar-locbar-showtrendingsuggestions-option =
+    .label = Show trending search suggestions
+    .accesskey = t
 
 addressbar-quickactions-learn-more = Learn more
 
@@ -1539,18 +1540,24 @@ space-alert-under-5gb-message2 = <strong>{ -brand-short-name } is running out of
 
 httpsonly-header = HTTPS-Only Mode
 
-httpsonly-description = HTTPS provides a secure, encrypted connection between { -brand-short-name } and the websites you visit. Most websites support HTTPS, and if HTTPS-Only Mode is enabled, then { -brand-short-name } will upgrade all connections to HTTPS.
+httpsonly-description2 = { -brand-short-name } creates secure and encrypted connections to sites you visit. { -brand-short-name } will warn you if a connection isn’t secure when HTTPS-Only is on.
 
 httpsonly-learn-more = Learn more
 
 httpsonly-radio-enabled =
     .label = Enable HTTPS-Only Mode in all windows
+httpsonly-radio-enabled2 =
+    .label = Only use HTTPS in all windows
 
 httpsonly-radio-enabled-pbm =
     .label = Enable HTTPS-Only Mode in private windows only
+httpsonly-radio-enabled-pbm2 =
+    .label = Only use HTTPS in private windows
 
 httpsonly-radio-disabled =
     .label = Don’t enable HTTPS-Only Mode
+httpsonly-radio-disabled2 =
+    .label = Try HTTPS first, but allow connections that are not secure
 
 ## DoH Section
 

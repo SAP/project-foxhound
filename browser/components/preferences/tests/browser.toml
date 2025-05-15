@@ -15,6 +15,7 @@ skip-if = [
   "os == 'linux' && os_version == '18.04' && tsan", # manifest runs too long
   "win11_2009 && asan", # manifest runs too long
 ]
+tags = "os_integration"
 
 ["browser_about_settings.js"]
 
@@ -214,10 +215,6 @@ skip-if = ["true"]
 ["browser_searchChangedEngine.js"]
 
 ["browser_searchDefaultEngine.js"]
-support-files = [
-  "engine1/manifest.json",
-  "engine2/manifest.json",
-]
 
 ["browser_searchFindMoreLink.js"]
 

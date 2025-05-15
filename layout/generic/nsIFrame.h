@@ -375,6 +375,20 @@ struct IntrinsicSize {
     return width && height ? Some(nsSize(*width, *height)) : Nothing();
   }
 
+  Maybe<nscoord>& ISize(WritingMode aWM) {
+    return aWM.IsVertical() ? height : width;
+  }
+  const Maybe<nscoord>& ISize(WritingMode aWM) const {
+    return aWM.IsVertical() ? height : width;
+  }
+
+  Maybe<nscoord>& BSize(WritingMode aWM) {
+    return aWM.IsVertical() ? width : height;
+  }
+  const Maybe<nscoord>& BSize(WritingMode aWM) const {
+    return aWM.IsVertical() ? width : height;
+  }
+
   void Zoom(const StyleZoom& aZoom) {
     if (width) {
       *width = aZoom.ZoomCoord(*width);
@@ -602,7 +616,6 @@ class nsIFrame : public nsQueryFrame {
   using ReflowInput = mozilla::ReflowInput;
   using ReflowOutput = mozilla::ReflowOutput;
   using Visibility = mozilla::Visibility;
-  using LengthPercentage = mozilla::LengthPercentage;
   using ContentRelevancy = mozilla::ContentRelevancy;
 
   using nsDisplayItem = mozilla::nsDisplayItem;
@@ -782,7 +795,13 @@ class nsIFrame : public nsQueryFrame {
    * Get the content object associated with this frame. Does not add a
    * reference.
    */
-  nsIContent* GetContent() const { return mContent; }
+  [[nodiscard]] nsIContent* GetContent() const { return mContent; }
+
+  [[nodiscard]] bool ContentIsRootOfNativeAnonymousSubtree() const {
+    return mContent && mContent->IsRootOfNativeAnonymousSubtree();
+  }
+
+  [[nodiscard]] inline bool ContentIsEditable() const;
 
   /**
    * @brief Get the closest native anonymous subtree root if the content is in a
@@ -969,10 +988,6 @@ class nsIFrame : public nsQueryFrame {
 
   /**
    * Set this frame's parent to aParent.
-   * If the frame may have moved into or out of a scrollframe's
-   * frame subtree,
-   * StickyScrollContainer::NotifyReparentedFrameAcrossScrollFrameBoundary must
-   * also be called.
    */
   void SetParent(nsContainerFrame* aParent);
 
@@ -2529,18 +2544,12 @@ class nsIFrame : public nsQueryFrame {
   virtual nsIFrame* LastInFlow() const { return const_cast<nsIFrame*>(this); }
 
   /**
-   * Note: "width" in the names and comments on the following methods
-   * means inline-size, which could be height in vertical layout
-   */
-
-  /**
-   * Mark any stored intrinsic width information as dirty (requiring
+   * Mark any stored intrinsic inline size information as dirty (requiring
    * re-calculation).  Note that this should generally not be called
    * directly; PresShell::FrameNeedsReflow() will call it instead.
    */
   virtual void MarkIntrinsicISizesDirty();
 
- public:
   /**
    * Make this frame and all descendants dirty (if not already).
    * Exceptions: TableColGroupFrame children.
@@ -2568,7 +2577,9 @@ class nsIFrame : public nsQueryFrame {
    *
    * This method must not return a negative value.
    */
-  virtual nscoord GetMinISize(gfxContext* aRenderingContext);
+  nscoord GetMinISize(gfxContext* aContext) {
+    return IntrinsicISize(aContext, mozilla::IntrinsicISizeType::MinISize);
+  }
 
   /**
    * Get the max-content intrinsic inline size of the frame.  This must be
@@ -2576,27 +2587,32 @@ class nsIFrame : public nsQueryFrame {
    *
    * Otherwise, all the comments for |GetMinISize| above apply.
    */
-  virtual nscoord GetPrefISize(gfxContext* aRenderingContext);
+  nscoord GetPrefISize(gfxContext* aContext) {
+    return IntrinsicISize(aContext, mozilla::IntrinsicISizeType::PrefISize);
+  }
 
   /**
-   * |InlineIntrinsicISize| represents the intrinsic width information
-   * in inline layout.  Code that determines the intrinsic width of a
+   * A helper to implement GetMinISize() and GetPrefISize(). A derived class
+   * should override this method to return its intrinsic size.
+   *
+   * All the comments for GetMinISize() and GetPrefISize() apply.
+   */
+  virtual nscoord IntrinsicISize(gfxContext* aContext,
+                                 mozilla::IntrinsicISizeType aType) {
+    return 0;
+  }
+
+  /**
+   * |InlineIntrinsicISize| represents the intrinsic inline size information
+   * in inline layout.  Code that determines the intrinsic inline size of a
    * region of inline layout accumulates the result into this structure.
    * This pattern is needed because we need to maintain state
    * information about whitespace (for both collapsing and trimming).
    */
   struct InlineIntrinsicISizeData {
-    InlineIntrinsicISizeData()
-        : mLine(nullptr),
-          mLineContainer(nullptr),
-          mPrevLines(0),
-          mCurrentLine(0),
-          mTrailingWhitespace(0),
-          mSkipWhitespace(true) {}
-
     // The line. This may be null if the inlines are not associated with
     // a block or if we just don't know the line.
-    const nsLineList_iterator* mLine;
+    const nsLineList_iterator* mLine = nullptr;
 
     // The line container. Private, to ensure we always use SetLineContainer
     // to update it.
@@ -2605,7 +2621,7 @@ class nsIFrame : public nsQueryFrame {
     // |mLine| and |mLineContainer| fields when following a next-in-flow link,
     // so we must not assume these can always be dereferenced.
    private:
-    nsIFrame* mLineContainer;
+    nsIFrame* mLineContainer = nullptr;
 
     // Setter and getter for the lineContainer field:
    public:
@@ -2614,50 +2630,48 @@ class nsIFrame : public nsQueryFrame {
     }
     nsIFrame* LineContainer() const { return mLineContainer; }
 
-    // The maximum intrinsic width for all previous lines.
-    nscoord mPrevLines;
+    // The max-content intrinsic inline size for all previous lines.
+    nscoord mPrevLines = 0;
 
-    // The maximum intrinsic width for the current line.  At a line
-    // break (mandatory for preferred width; allowed for minimum width),
-    // the caller should call |Break()|.
-    nscoord mCurrentLine;
+    // The max-content intrinsic inline size for the current line.  At a line
+    // break (mandatory for max-content inline size; allowed for min-content
+    // inline size), the caller should call |Break()|.
+    nscoord mCurrentLine = 0;
 
-    // This contains the width of the trimmable whitespace at the end of
+    // This contains the inline size of the trimmable whitespace at the end of
     // |mCurrentLine|; it is zero if there is no such whitespace.
-    nscoord mTrailingWhitespace;
+    nscoord mTrailingWhitespace = 0;
 
     // True if initial collapsable whitespace should be skipped.  This
     // should be true at the beginning of a block, after hard breaks
     // and when the last text ended with whitespace.
-    bool mSkipWhitespace;
+    bool mSkipWhitespace = true;
 
     // Floats encountered in the lines.
-    class FloatInfo {
+    class FloatInfo final {
      public:
-      FloatInfo(const nsIFrame* aFrame, nscoord aWidth)
-          : mFrame(aFrame), mWidth(aWidth) {}
+      FloatInfo(const nsIFrame* aFrame, nscoord aISize)
+          : mFrame(aFrame), mISize(aISize) {}
       const nsIFrame* Frame() const { return mFrame; }
-      nscoord Width() const { return mWidth; }
+      nscoord ISize() const { return mISize; }
 
      private:
       const nsIFrame* mFrame;
-      nscoord mWidth;
+      nscoord mISize;
     };
 
     nsTArray<FloatInfo> mFloats;
   };
 
   struct InlineMinISizeData : public InlineIntrinsicISizeData {
-    InlineMinISizeData() : mAtStartOfLine(true) {}
-
     // The default implementation for nsIFrame::AddInlineMinISize.
     void DefaultAddInlineMinISize(nsIFrame* aFrame, nscoord aISize,
                                   bool aAllowBreak = true);
 
     // We need to distinguish forced and optional breaks for cases where the
-    // current line total is negative.  When it is, we need to ignore
-    // optional breaks to prevent min-width from ending up bigger than
-    // pref-width.
+    // current line total is negative. When it is, we need to ignore optional
+    // breaks to prevent min-content inline size from ending up bigger than
+    // max-content inline size.
     void ForceBreak();
 
     // If the break here is actually taken, aHyphenWidth must be added to the
@@ -2667,12 +2681,10 @@ class nsIFrame : public nsQueryFrame {
     // Whether we're currently at the start of the line.  If we are, we
     // can't break (for example, between the text-indent and the first
     // word).
-    bool mAtStartOfLine;
+    bool mAtStartOfLine = true;
   };
 
   struct InlinePrefISizeData : public InlineIntrinsicISizeData {
-    InlinePrefISizeData() : mLineIsEmpty(true) {}
-
     /**
      * Finish the current line and start a new line.
      *
@@ -2693,39 +2705,40 @@ class nsIFrame : public nsQueryFrame {
     void DefaultAddInlinePrefISize(nscoord aISize);
 
     // True if the current line contains nothing other than placeholders.
-    bool mLineIsEmpty;
+    bool mLineIsEmpty = true;
   };
 
   /**
-   * Add the intrinsic minimum width of a frame in a way suitable for
-   * use in inline layout to an |InlineIntrinsicISizeData| object that
-   * represents the intrinsic width information of all the previous
+   * Add the min-content intrinsic inline size of a frame in a way suitable for
+   * use in inline layout to an |InlineMinISizeData| object that
+   * represents the intrinsic inline size information of all the previous
    * frames in the inline layout region.
    *
    * All *allowed* breakpoints within the frame determine what counts as
-   * a line for the |InlineIntrinsicISizeData|.  This means that
+   * a line for the |InlineMinISizeData|.  This means that
    * |aData->mTrailingWhitespace| will always be zero (unlike for
    * AddInlinePrefISize).
    *
    * All the comments for |GetMinISize| apply, except that this function
    * is responsible for adding padding, border, and margin and for
-   * considering the effects of 'width', 'min-width', and 'max-width'.
+   * considering the effects of 'inline-size', 'min-inline-size', and
+   * 'max-inline-size'.
    *
    * This may be called on any frame.  Frames that do not participate in
-   * line breaking can inherit the default implementation on nsFrame,
+   * line breaking can inherit the default implementation on nsIFrame,
    * which calls |GetMinISize|.
    */
   virtual void AddInlineMinISize(gfxContext* aRenderingContext,
                                  InlineMinISizeData* aData);
 
   /**
-   * Add the intrinsic preferred width of a frame in a way suitable for
-   * use in inline layout to an |InlineIntrinsicISizeData| object that
-   * represents the intrinsic width information of all the previous
+   * Add the max-content intrinsic inline size of a frame in a way suitable for
+   * use in inline layout to an |InlinePrefISizeData| object that
+   * represents the intrinsic inline size information of all the previous
    * frames in the inline layout region.
    *
    * All the comments for |AddInlineMinISize| and |GetPrefISize| apply,
-   * except that this fills in an |InlineIntrinsicISizeData| structure
+   * except that this fills in an |InlinePrefISizeData| structure
    * based on using all *mandatory* breakpoints within the frame.
    */
   virtual void AddInlinePrefISize(gfxContext* aRenderingContext,
@@ -2880,6 +2893,14 @@ class nsIFrame : public nsQueryFrame {
    */
   nscoord ShrinkISizeToFit(gfxContext* aRenderingContext, nscoord aISizeInCB,
                            mozilla::ComputeSizeFlags aFlags);
+
+  /**
+   * A helper for derived classes to implement min-content & max-content
+   * intrinsic inline size in terms of AddInlineMinISize() and
+   * AddInlinePrefISize().
+   */
+  nscoord IntrinsicISizeFromInline(gfxContext* aContext,
+                                   mozilla::IntrinsicISizeType aType);
 
  public:
   /**
@@ -3372,6 +3393,9 @@ class nsIFrame : public nsQueryFrame {
     return sLayoutFrameTypes[uint8_t(mClass)];
   }
 
+  /** Return this frame's class id */
+  ClassID GetClassID() const { return mClass; }
+
   /**
    * Get the type flags of the frame.
    *
@@ -3460,12 +3484,9 @@ class nsIFrame : public nsQueryFrame {
    *   or visual coordinates
    * @param aStopAtAncestor don't look further than aStopAtAncestor. If null,
    *   all ancestors (including across documents) will be traversed.
-   * @param aOutAncestor [out] The ancestor frame the frame has chosen.  If
-   *   this frame has no ancestor, *aOutAncestor will be set to null. If
-   * this frame is not a root frame, then *aOutAncestor will be in the same
-   * document as this frame. If this frame IsTransformed(), then *aOutAncestor
-   * will be the parent frame (if not preserve-3d) or the nearest
-   * non-transformed ancestor (if preserve-3d).
+   * @param aOutAncestor [out] The ancestor frame the frame has chosen. If this
+   *   frame has no ancestor, *aOutAncestor will be set to null. If this frame
+   *   IsTransformed(), then *aOutAncestor will be the parent frame.
    * @return A Matrix4x4 that converts points in the coordinate space
    *   RelativeTo{this, aViewportType} into points in aOutAncestor's
    *   coordinate space.
@@ -3624,16 +3645,6 @@ class nsIFrame : public nsQueryFrame {
    * Normally does nothing since DLBI handles removed frames.
    */
   virtual void InvalidateFrameForRemoval() {}
-
-  /**
-   * When HasUserData(frame->LayerIsPrerenderedDataKey()), then the
-   * entire overflow area of this frame has been rendered in its
-   * layer(s).
-   */
-  static void* LayerIsPrerenderedDataKey() {
-    return &sLayerIsPrerenderedDataKey;
-  }
-  static uint8_t sLayerIsPrerenderedDataKey;
 
   /**
    * Checks if a frame has had InvalidateFrame() called on it since the
@@ -4426,11 +4437,11 @@ class nsIFrame : public nsQueryFrame {
                             bool aConstrainBSize = true);
 
  private:
-  Maybe<nscoord> ComputeISizeValueFromAspectRatio(
+  nscoord ComputeISizeValueFromAspectRatio(
       mozilla::WritingMode aWM, const mozilla::LogicalSize& aCBSize,
       const mozilla::LogicalSize& aContentEdgeToBoxSizing,
-      const mozilla::StyleSizeOverrides& aSizeOverrides,
-      mozilla::ComputeSizeFlags aFlags) const;
+      const mozilla::LengthPercentage& aBSize,
+      const mozilla::AspectRatio& aAspectRatio) const;
 
  public:
   /**
@@ -4774,6 +4785,7 @@ class nsIFrame : public nsQueryFrame {
     MinContent,
     MaxContent,
     MozAvailable,
+    Stretch,
     FitContent,
     FitContentFunction,
   };
@@ -4787,6 +4799,9 @@ class nsIFrame : public nsQueryFrame {
         return mozilla::Some(ExtremumLength::MaxContent);
       case SizeOrMaxSize::Tag::MozAvailable:
         return mozilla::Some(ExtremumLength::MozAvailable);
+      case SizeOrMaxSize::Tag::WebkitFillAvailable:
+      case SizeOrMaxSize::Tag::Stretch:
+        return mozilla::Some(ExtremumLength::Stretch);
       case SizeOrMaxSize::Tag::FitContent:
         return mozilla::Some(ExtremumLength::FitContent);
       case SizeOrMaxSize::Tag::FitContentFunction:
@@ -4799,10 +4814,10 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Helper function - computes the content-box inline size for aSize, which is
    * a more complex version to resolve a StyleExtremumLength.
+   *
    * @param aAvailableISizeOverride If this has a value, it is used as the
-   *                                available inline-size instead of
-   *                                aContainingBlockSize.ISize(aWM) when
-   *                                resolving fit-content.
+   * available inline-size instead of aCBSize.ISize(aWM) when resolving
+   * fit-content.
    */
   struct ISizeComputationResult {
     nscoord mISize = 0;
@@ -4810,11 +4825,12 @@ class nsIFrame : public nsQueryFrame {
   };
   ISizeComputationResult ComputeISizeValue(
       gfxContext* aRenderingContext, const mozilla::WritingMode aWM,
-      const mozilla::LogicalSize& aContainingBlockSize,
+      const mozilla::LogicalSize& aCBSize,
       const mozilla::LogicalSize& aContentEdgeToBoxSizing,
       nscoord aBoxSizingToMarginEdge, ExtremumLength aSize,
       Maybe<nscoord> aAvailableISizeOverride,
-      const mozilla::StyleSizeOverrides& aSizeOverrides,
+      const mozilla::StyleSize& aStyleBSize,
+      const mozilla::AspectRatio& aAspectRatio,
       mozilla::ComputeSizeFlags aFlags);
 
   /**
@@ -4822,34 +4838,45 @@ class nsIFrame : public nsQueryFrame {
    * a simpler version to resolve a LengthPercentage.
    */
   nscoord ComputeISizeValue(const mozilla::WritingMode aWM,
-                            const mozilla::LogicalSize& aContainingBlockSize,
+                            const mozilla::LogicalSize& aCBSize,
                             const mozilla::LogicalSize& aContentEdgeToBoxSizing,
-                            const LengthPercentage& aSize);
+                            const mozilla::LengthPercentage& aSize) const;
 
+  /**
+   * Compute content-box inline size for aSize.
+   *
+   * This method doesn't handle 'auto' when aSize is of type StyleSize,
+   * nor does it handle 'none' when aSize is of type StyleMaxSize.
+   *
+   * @param aStyleBSize the style block size of the frame, used to compute
+   * intrinsic inline size with aAspectRatio.
+   *
+   * @param aAspectRatio the preferred aspect-ratio of the frame.
+   */
   template <typename SizeOrMaxSize>
   ISizeComputationResult ComputeISizeValue(
       gfxContext* aRenderingContext, const mozilla::WritingMode aWM,
-      const mozilla::LogicalSize& aContainingBlockSize,
+      const mozilla::LogicalSize& aCBSize,
       const mozilla::LogicalSize& aContentEdgeToBoxSizing,
       nscoord aBoxSizingToMarginEdge, const SizeOrMaxSize& aSize,
-      const mozilla::StyleSizeOverrides& aSizeOverrides = {},
+      const mozilla::StyleSize& aStyleBSize,
+      const mozilla::AspectRatio& aAspectRatio,
       mozilla::ComputeSizeFlags aFlags = {}) {
     if (aSize.IsLengthPercentage()) {
-      return {ComputeISizeValue(aWM, aContainingBlockSize,
-                                aContentEdgeToBoxSizing,
+      return {ComputeISizeValue(aWM, aCBSize, aContentEdgeToBoxSizing,
                                 aSize.AsLengthPercentage())};
     }
     auto length = ToExtremumLength(aSize);
     MOZ_ASSERT(length, "This doesn't handle none / auto");
     Maybe<nscoord> availbleISizeOverride;
     if (aSize.IsFitContentFunction()) {
-      availbleISizeOverride.emplace(aSize.AsFitContentFunction().Resolve(
-          aContainingBlockSize.ISize(aWM)));
+      availbleISizeOverride.emplace(
+          aSize.AsFitContentFunction().Resolve(aCBSize.ISize(aWM)));
     }
-    return ComputeISizeValue(aRenderingContext, aWM, aContainingBlockSize,
-                             aContentEdgeToBoxSizing, aBoxSizingToMarginEdge,
-                             length.valueOr(ExtremumLength::MinContent),
-                             availbleISizeOverride, aSizeOverrides, aFlags);
+    return ComputeISizeValue(
+        aRenderingContext, aWM, aCBSize, aContentEdgeToBoxSizing,
+        aBoxSizingToMarginEdge, length.valueOr(ExtremumLength::MinContent),
+        availbleISizeOverride, aStyleBSize, aAspectRatio, aFlags);
   }
 
   DisplayItemArray& DisplayItems() { return mDisplayItems; }
@@ -5094,7 +5121,7 @@ class nsIFrame : public nsQueryFrame {
   mozilla::WritingMode mWritingMode;
 
   /** The ClassID of the concrete class of this instance. */
-  ClassID mClass;  // 1 byte
+  const ClassID mClass;  // 1 byte
 
   bool mMayHaveRoundedCorners : 1;
 

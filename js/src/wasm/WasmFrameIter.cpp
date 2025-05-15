@@ -19,6 +19,7 @@
 #include "wasm/WasmFrameIter.h"
 
 #include "jit/JitFrames.h"
+#include "jit/shared/IonAssemblerBuffer.h"  // jit::BufferOffset
 #include "js/ColumnNumber.h"  // JS::WasmFunctionIndex, LimitedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin
 #include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/JSContext.h"
@@ -179,15 +180,19 @@ void WasmFrameIter::operator++() {
   popFrame();
 }
 
-static inline void AssertDirectJitCall(const void* fp) {
-  // Called via an inlined fast JIT to wasm call: in this case, FP is
-  // pointing in the middle of the exit frame, right before the exit
-  // footer; ensure the exit frame type is the expected one.
+static inline void AssertJitExitFrame(const void* fp,
+                                      jit::ExitFrameType expected) {
+  // Called via a JIT to wasm call: in this case, FP is pointing in the middle
+  // of the exit frame, right before the exit footer; ensure the exit frame type
+  // is the expected one.
 #ifdef DEBUG
   auto* jitCaller = (ExitFrameLayout*)fp;
-  MOZ_ASSERT(jitCaller->footer()->type() ==
-             jit::ExitFrameType::DirectWasmJitCall);
+  MOZ_ASSERT(jitCaller->footer()->type() == expected);
 #endif
+}
+
+static inline void AssertDirectJitCall(const void* fp) {
+  AssertJitExitFrame(fp, jit::ExitFrameType::DirectWasmJitCall);
 }
 
 void WasmFrameIter::popFrame() {
@@ -214,7 +219,7 @@ void WasmFrameIter::popFrame() {
     AssertDirectJitCall(fp_->jitEntryCaller());
 
     unwoundCallerFP_ = fp_->jitEntryCaller();
-    unwoundJitFrameType_.emplace(FrameType::Exit);
+    hasUnwoundJitFrame_ = true;
 
     if (unwind_ == Unwind::True) {
       activation_->setJSExitFP(unwoundCallerFP());
@@ -238,6 +243,7 @@ void WasmFrameIter::popFrame() {
   if (codeRange_->isInterpEntry()) {
     // Interpreter entry has a simple frame, record FP from it.
     unwoundCallerFP_ = reinterpret_cast<uint8_t*>(fp_);
+    MOZ_ASSERT(!hasUnwoundJitFrame_);
 
     fp_ = nullptr;
     code_ = nullptr;
@@ -265,10 +271,12 @@ void WasmFrameIter::popFrame() {
     // |      WASM FRAME     | (already unwound)
     // |---------------------|
     //
-    // The next value of FP is just a regular jit frame used as a marker to
-    // know that we should transition to a JSJit frame iterator.
+    // The next value of FP is a jit exit frame with type WasmGenericJitEntry.
+    // This lets us transition to a JSJit frame iterator.
     unwoundCallerFP_ = reinterpret_cast<uint8_t*>(fp_);
-    unwoundJitFrameType_.emplace(FrameType::JSJitToWasm);
+    hasUnwoundJitFrame_ = true;
+    AssertJitExitFrame(unwoundCallerFP_,
+                       jit::ExitFrameType::WasmGenericJitEntry);
 
     fp_ = nullptr;
     code_ = nullptr;
@@ -305,17 +313,21 @@ void WasmFrameIter::popFrame() {
 
 const char* WasmFrameIter::filename() const {
   MOZ_ASSERT(!done());
-  return code_->metadata().filename.get();
+  return code_->codeMeta().scriptedCaller().filename.get();
 }
 
 const char16_t* WasmFrameIter::displayURL() const {
   MOZ_ASSERT(!done());
-  return code_->metadata().displayURL();
+  return code_->codeMetaForAsmJS()
+             ? code_->codeMetaForAsmJS()->displayURL()  // asm.js
+             : nullptr;                                 // wasm
 }
 
 bool WasmFrameIter::mutedErrors() const {
   MOZ_ASSERT(!done());
-  return code_->metadata().mutedErrors();
+  return code_->codeMetaForAsmJS()
+             ? code_->codeMetaForAsmJS()->mutedErrors()  // asm.js
+             : false;                                    // wasm
 }
 
 JSAtom* WasmFrameIter::functionDisplayAtom() const {
@@ -374,7 +386,7 @@ bool WasmFrameIter::debugEnabled() const {
   // Metadata::debugEnabled is only set if debugging is actually enabled (both
   // requested, and available via baseline compilation), and Tier::Debug code
   // will be available.
-  if (!code_->metadata().debugEnabled) {
+  if (!code_->codeMeta().debugEnabled) {
     return false;
   }
 
@@ -385,8 +397,7 @@ bool WasmFrameIter::debugEnabled() const {
   }
 
   // Only non-imported functions can have debug frames.
-  if (codeRange_->funcIndex() <
-      code_->metadata(Tier::Debug).funcImports.length()) {
+  if (codeRange_->funcIndex() < code_->funcImports().length()) {
     return false;
   }
 
@@ -407,13 +418,8 @@ DebugFrame* WasmFrameIter::debugFrame() const {
 }
 
 bool WasmFrameIter::hasUnwoundJitFrame() const {
-  return unwoundCallerFP_ && unwoundJitFrameType_.isSome();
-}
-
-jit::FrameType WasmFrameIter::unwoundJitFrameType() const {
-  MOZ_ASSERT(unwoundCallerFP_);
-  MOZ_ASSERT(unwoundJitFrameType_.isSome());
-  return *unwoundJitFrameType_;
+  MOZ_ASSERT_IF(hasUnwoundJitFrame_, unwoundCallerFP_);
+  return hasUnwoundJitFrame_;
 }
 
 uint8_t* WasmFrameIter::resumePCinCurrentFrame() const {
@@ -459,7 +465,7 @@ static const unsigned BeforePushRetAddr = 0;
 static const unsigned PushedRetAddr = 8;
 static const unsigned PushedFP = 12;
 static const unsigned SetFP = 16;
-static const unsigned PoppedFP = 4;
+static const unsigned PoppedFP = 8;
 static const unsigned PoppedFPJitEntry = 8;
 static_assert(BeforePushRetAddr == 0, "Required by StartUnwinding");
 static_assert(PushedFP > PushedRetAddr, "Required by StartUnwinding");
@@ -671,12 +677,10 @@ static void GenerateCallableEpilogue(MacroAssembler& masm, unsigned framePushed,
 
   AutoForbidPoolsAndNops afp(&masm, /* number of instructions in scope = */ 5);
 
+  masm.Ldr(ARMRegister(lr, 64), MemOperand(sp, Frame::returnAddressOffset()));
   masm.Ldr(ARMRegister(FramePointer, 64),
            MemOperand(sp, Frame::callerFPOffset()));
   poppedFP = masm.currentOffset();
-
-  masm.Ldr(ARMRegister(lr, 64), MemOperand(sp, Frame::returnAddressOffset()));
-  *ret = masm.currentOffset();
 
   masm.Add(sp, sp, sizeof(Frame));
 
@@ -686,6 +690,7 @@ static void GenerateCallableEpilogue(MacroAssembler& masm, unsigned framePushed,
   // use it.  Hence we have to do it "by hand".
   masm.Mov(PseudoStackPointer64, vixl::sp);
 
+  *ret = masm.currentOffset();
   masm.Ret(ARMRegister(lr, 64));
 
   // See comment at equivalent place in |GenerateCallablePrologue| above.
@@ -923,10 +928,34 @@ static void AssertNoWasmExitFPInJitExit(MacroAssembler& masm) {
 }
 
 void wasm::GenerateJitExitPrologue(MacroAssembler& masm, unsigned framePushed,
-                                   CallableOffsets* offsets) {
+                                   uint32_t fallbackOffset,
+                                   ImportOffsets* offsets) {
   masm.haltingAlign(CodeAlignment);
 
+#ifdef ENABLE_WASM_JSPI
+  {
+#  if defined(JS_CODEGEN_ARM64)
+    AutoForbidPoolsAndNops afp(&masm,
+                               /* number of instructions in scope = */ 2);
+#  endif
+    offsets->begin = masm.currentOffset();
+    Label fallback;
+    masm.bind(&fallback, BufferOffset(fallbackOffset));
+
+    const Register scratch = ABINonArgReg0;
+    masm.load32(Address(InstanceReg, Instance::offsetOfOnSuspendableStack()),
+                scratch);
+    masm.branchTest32(Assembler::NonZero, scratch, scratch, &fallback);
+  }
+
+  uint32_t entryOffset;
+  GenerateCallablePrologue(masm, &entryOffset);
+  offsets->afterFallbackCheck = entryOffset;
+#else
   GenerateCallablePrologue(masm, &offsets->begin);
+  offsets->afterFallbackCheck = offsets->begin;
+#endif  // ENABLE_WASM_JSPI
+
   AssertNoWasmExitFPInJitExit(masm);
 
   MOZ_ASSERT(masm.framePushed() == 0);
@@ -1145,7 +1174,8 @@ void ProfilingFrameIterator::initFromExitFP(const Frame* fp) {
     case CodeRange::ImportInterpExit:
     case CodeRange::BuiltinThunk:
     case CodeRange::TrapExit:
-    case CodeRange::DebugTrap:
+    case CodeRange::DebugStub:
+    case CodeRange::RequestTierUpStub:
     case CodeRange::Throw:
     case CodeRange::FarJumpIsland:
       MOZ_CRASH("Unexpected CodeRange kind");
@@ -1181,18 +1211,14 @@ static bool CanUnwindSignatureCheck(uint8_t* fp) {
   return code && !codeRange->isEntry();
 }
 
-static bool GetUnwindInfo(const CodeSegment* codeSegment,
+static bool GetUnwindInfo(const CodeBlock* codeBlock,
                           const CodeRange* codeRange, uint8_t* pc,
                           const CodeRangeUnwindInfo** info) {
-  if (!codeSegment->isModule()) {
-    return false;
-  }
   if (!codeRange->isFunction() || !codeRange->funcHasUnwindInfo()) {
     return false;
   }
 
-  const ModuleSegment* segment = codeSegment->asModule();
-  *info = segment->code().lookupUnwindInfo(pc);
+  *info = codeBlock->code->lookupUnwindInfo(pc);
   return *info;
 }
 
@@ -1249,13 +1275,13 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
   // thunk, then execution must be entering from or leaving to the C++ caller
   // that pushed the JitActivation.
   const CodeRange* codeRange;
-  uint8_t* codeBase;
+  const uint8_t* codeBase;
   const Code* code = nullptr;
 
-  const CodeSegment* codeSegment = LookupCodeSegment(pc, &codeRange);
-  if (codeSegment) {
-    code = &codeSegment->code();
-    codeBase = codeSegment->base();
+  const CodeBlock* codeBlock = LookupCodeBlock(pc, &codeRange);
+  if (codeBlock) {
+    code = codeBlock->code;
+    codeBase = codeBlock->segment->base();
     MOZ_ASSERT(codeRange);
   } else if (!LookupBuiltinThunk(pc, &codeRange, &codeBase)) {
     return false;
@@ -1284,6 +1310,14 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
     } else {
       offsetFromEntry = offsetInCode - codeRange->funcUncheckedCallEntry();
     }
+  } else if (codeRange->isImportJitExit()) {
+    if (offsetInCode < codeRange->importJitExitEntry()) {
+      // Anything above entry shall not change stack/frame pointer --
+      // collapse this code into single point.
+      offsetFromEntry = 0;
+    } else {
+      offsetFromEntry = offsetInCode - codeRange->importJitExitEntry();
+    }
   } else {
     offsetFromEntry = offsetInCode - codeRange->begin();
   }
@@ -1300,7 +1334,8 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
     case CodeRange::ImportJitExit:
     case CodeRange::ImportInterpExit:
     case CodeRange::BuiltinThunk:
-    case CodeRange::DebugTrap:
+    case CodeRange::DebugStub:
+    case CodeRange::RequestTierUpStub:
 #if defined(JS_CODEGEN_MIPS64)
       if (codeRange->isThunk()) {
         // The FarJumpIsland sequence temporary scrambles ra.
@@ -1427,7 +1462,7 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
         // been restored so several cases can be coalesced here.
       } else if (offsetInCode >= codeRange->ret() - PoppedFP &&
                  offsetInCode <= codeRange->ret()) {
-        fixedPC = Frame::fromUntaggedWasmExitFP(sp)->returnAddress();
+        fixedPC = (uint8_t*)registers.lr;
         fixedFP = fp;
         AssertMatchesCallSite(fixedPC, fixedFP);
 #else
@@ -1456,8 +1491,7 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
         }
 
         const CodeRangeUnwindInfo* unwindInfo;
-        if (codeSegment &&
-            GetUnwindInfo(codeSegment, codeRange, pc, &unwindInfo)) {
+        if (codeBlock && GetUnwindInfo(codeBlock, codeRange, pc, &unwindInfo)) {
           switch (unwindInfo->unwindHow()) {
             case CodeRangeUnwindInfo::RestoreFpRa:
               fixedPC = (uint8_t*)registers.tempRA;
@@ -1653,7 +1687,8 @@ void ProfilingFrameIterator::operator++() {
     case CodeRange::ImportInterpExit:
     case CodeRange::BuiltinThunk:
     case CodeRange::TrapExit:
-    case CodeRange::DebugTrap:
+    case CodeRange::DebugStub:
+    case CodeRange::RequestTierUpStub:
     case CodeRange::FarJumpIsland: {
       stackAddress_ = callerFP_;
       const auto* frame = Frame::fromUntaggedWasmExitFP(callerFP_);
@@ -1676,6 +1711,7 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
   MOZ_ASSERT(NeedsBuiltinThunk(func));
   switch (func) {
     case SymbolicAddress::HandleDebugTrap:
+    case SymbolicAddress::HandleRequestTierUp:
     case SymbolicAddress::HandleThrow:
     case SymbolicAddress::HandleTrap:
     case SymbolicAddress::CallImport_General:
@@ -1895,7 +1931,8 @@ const char* ProfilingFrameIterator::label() const {
   static const char builtinNativeDescription[] =
       "fast exit trampoline to native (in wasm)";
   static const char trapDescription[] = "trap handling (in wasm)";
-  static const char debugTrapDescription[] = "debug trap handling (in wasm)";
+  static const char debugStubDescription[] = "debug trap handling (in wasm)";
+  static const char requestTierUpDescription[] = "tier-up request (in wasm)";
 
   if (!exitReason_.isFixed()) {
     return ThunkedNativeToDescription(exitReason_.symbolic());
@@ -1912,8 +1949,10 @@ const char* ProfilingFrameIterator::label() const {
       return builtinNativeDescription;
     case ExitReason::Fixed::Trap:
       return trapDescription;
-    case ExitReason::Fixed::DebugTrap:
-      return debugTrapDescription;
+    case ExitReason::Fixed::DebugStub:
+      return debugStubDescription;
+    case ExitReason::Fixed::RequestTierUp:
+      return requestTierUpDescription;
   }
 
   switch (codeRange_->kind()) {
@@ -1931,8 +1970,10 @@ const char* ProfilingFrameIterator::label() const {
       return importInterpDescription;
     case CodeRange::TrapExit:
       return trapDescription;
-    case CodeRange::DebugTrap:
-      return debugTrapDescription;
+    case CodeRange::DebugStub:
+      return debugStubDescription;
+    case CodeRange::RequestTierUpStub:
+      return requestTierUpDescription;
     case CodeRange::FarJumpIsland:
       return "interstitial (in wasm)";
     case CodeRange::Throw:

@@ -19,6 +19,7 @@
 #include "jit/Ion.h"
 #include "jit/JitSpewer.h"
 #include "jit/JSJitFrameIter.h"
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "jit/VMFunctions.h"
@@ -1539,6 +1540,22 @@ RToFloat32::RToFloat32(CompactBufferReader& reader) {}
 bool RToFloat32::recover(JSContext* cx, SnapshotIterator& iter) const {
   double num = iter.readNumber();
   double result = js::RoundFloat32(num);
+
+  iter.storeInstructionResult(DoubleValue(result));
+  return true;
+}
+
+bool MToFloat16::writeRecoverData(CompactBufferWriter& writer) const {
+  MOZ_ASSERT(canRecoverOnBailout());
+  writer.writeUnsigned(uint32_t(RInstruction::Recover_ToFloat16));
+  return true;
+}
+
+RToFloat16::RToFloat16(CompactBufferReader& reader) {}
+
+bool RToFloat16::recover(JSContext* cx, SnapshotIterator& iter) const {
+  double num = iter.readNumber();
+  double result = js::RoundFloat16(num);
 
   iter.storeInstructionResult(DoubleValue(result));
   return true;

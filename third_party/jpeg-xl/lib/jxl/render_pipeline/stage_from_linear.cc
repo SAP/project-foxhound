@@ -10,10 +10,10 @@
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
-#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/cms/tone_mapping-inl.h"
 #include "lib/jxl/cms/transfer_functions-inl.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
+#include "lib/jxl/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -68,7 +68,7 @@ struct OpPq {
 };
 
 struct OpHlg {
-  explicit OpHlg(const Vector3& luminances, const float intensity_target)
+  explicit OpHlg(const float luminances[3], const float intensity_target)
       : hlg_ootf_(HlgOOTF::ToSceneLight(/*display_luminance=*/intensity_target,
                                         luminances)) {}
 

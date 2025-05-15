@@ -21,6 +21,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+// Precedence values when sorting logins by alerts.
+const ALERT_VALUES = {
+  breached: 0,
+  vulnerable: 1,
+  none: 2,
+};
+
 /**
  * Data source for Logins.
  *
@@ -30,19 +37,22 @@ XPCOMUtils.defineLazyPreferenceGetter(
  * similar lines will differ in values only.
  */
 export class LoginDataSource extends DataSourceBase {
+  doneReloadDataSource;
   #originPrototype;
   #usernamePrototype;
   #passwordPrototype;
-  #loginsDisabledMessage;
   #enabled;
   #header;
   #exportPasswordsStrings;
+  #sortId;
 
   constructor(...args) {
     super(...args);
     // Wait for Fluent to provide strings before loading data
     this.localizeStrings({
       headerLabel: "passwords-section-label",
+      expandSection: "passwords-expand-section-tooltip",
+      collapseSection: "passwords-collapse-section-tooltip",
       originLabel: "passwords-origin-label",
       usernameLabel: "passwords-username-label",
       passwordLabel: "passwords-password-label",
@@ -78,8 +88,11 @@ export class LoginDataSource extends DataSourceBase {
       const noPasswordSticker = { type: "error", label: "😾 Missing password" };
       const breachedSticker = { type: "warning", label: "BREACH" };
       const vulnerableSticker = { type: "risk", label: "🤮 Vulnerable" };
-      this.#loginsDisabledMessage = strings.passwordsDisabled;
-      this.#header = this.createHeaderLine(strings.headerLabel);
+      const tooltip = {
+        expand: strings.expandSection,
+        collapse: strings.collapseSection,
+      };
+      this.#header = this.createHeaderLine(strings.headerLabel, tooltip);
       this.#header.commands.push(
         { id: "Create", label: "passwords-command-create" },
         {
@@ -90,7 +103,12 @@ export class LoginDataSource extends DataSourceBase {
         { id: "Export", label: "passwords-command-export" },
         { id: "RemoveAll", label: "passwords-command-remove-all" },
         { id: "Settings", label: "passwords-command-settings" },
-        { id: "Help", label: "passwords-command-help" }
+        { id: "Help", label: "passwords-command-help" },
+        { id: "SortByName", label: "passwords-command-sort-name" },
+        {
+          id: "SortByAlerts",
+          label: "passwords-command-sort-alerts",
+        }
       );
       this.#header.executeImport = async () =>
         this.#importFromFile(
@@ -116,7 +134,22 @@ export class LoginDataSource extends DataSourceBase {
           strings.passwordsExportFilePickerCsvFilterTitle,
       };
 
+      this.#header.executeSortByName = () => {
+        if (this.#sortId !== "name") {
+          this.#sortId = "name";
+          this.#reloadDataSource();
+        }
+      };
+
+      this.#header.executeSortByAlerts = async () => {
+        if (this.#sortId !== "alerts") {
+          this.#sortId = "alerts";
+          this.#reloadDataSource();
+        }
+      };
+
       this.#originPrototype = this.prototypeDataLine({
+        field: { value: "origin" },
         label: { value: strings.originLabel },
         start: { value: true },
         value: {
@@ -135,16 +168,13 @@ export class LoginDataSource extends DataSourceBase {
           },
         },
         commands: {
-          *value() {
-            yield { id: "Open", label: "command-open" };
-            yield copyCommand;
-            yield "-";
-            yield deleteCommand;
-
-            if (this.breached) {
-              yield dismissBreachCommand;
-            }
-          },
+          value: [
+            { id: "Open", label: "command-open" },
+            copyCommand,
+            editCommand,
+            deleteCommand,
+            dismissBreachCommand,
+          ],
         },
         executeDismissBreach: {
           value() {
@@ -176,6 +206,7 @@ export class LoginDataSource extends DataSourceBase {
         },
       });
       this.#usernamePrototype = this.prototypeDataLine({
+        field: { value: "username" },
         label: { value: strings.usernameLabel },
         value: {
           get() {
@@ -204,6 +235,7 @@ export class LoginDataSource extends DataSourceBase {
         },
       });
       this.#passwordPrototype = this.prototypeDataLine({
+        field: { value: "password" },
         label: { value: strings.passwordLabel },
         concealed: { value: true, writable: true },
         end: { value: true },
@@ -227,17 +259,17 @@ export class LoginDataSource extends DataSourceBase {
           },
         },
         commands: {
-          *value() {
-            if (this.concealed) {
-              yield { id: "Reveal", label: "command-reveal", verify: true };
-            } else {
-              yield { id: "Conceal", label: "command-conceal" };
-            }
-            yield { ...copyCommand, verify: true };
-            yield editCommand;
-            yield "-";
-            yield deleteCommand;
-          },
+          value: [
+            { ...copyCommand, verify: true },
+            {
+              id: "Reveal",
+              label: "command-reveal",
+              verify: true,
+            },
+            { id: "Conceal", label: "command-conceal" },
+            editCommand,
+            deleteCommand,
+          ],
         },
         executeReveal: {
           value() {
@@ -281,6 +313,8 @@ export class LoginDataSource extends DataSourceBase {
         },
       });
 
+      // Sort by origin, then by username, then by GUID
+      this.#sortId = "name";
       Services.obs.addObserver(this, "passwordmgr-storage-changed");
       Services.prefs.addObserver("signon.rememberSignons", this);
       Services.prefs.addObserver(
@@ -508,15 +542,7 @@ export class LoginDataSource extends DataSourceBase {
         login.password.toUpperCase().includes(searchText)
     );
 
-    this.formatMessages({
-      id:
-        stats.count == stats.total
-          ? "passwords-count"
-          : "passwords-filtered-count",
-      args: stats,
-    }).then(([headerLabel]) => {
-      this.#header.value = headerLabel;
-    });
+    this.#header.value.total = stats.total;
   }
 
   /**
@@ -525,9 +551,11 @@ export class LoginDataSource extends DataSourceBase {
    * removes lines for the removed logins.
    */
   async #reloadDataSource() {
+    this.doneReloadDataSource = false;
     this.#enabled = Services.prefs.getBoolPref("signon.rememberSignons");
     if (!this.#enabled) {
       this.#reloadEmptyDataSource();
+      this.doneReloadDataSource = true;
       return;
     }
 
@@ -538,6 +566,7 @@ export class LoginDataSource extends DataSourceBase {
       ? await lazy.LoginBreaches.getPotentialBreachesByLoginGUID(logins)
       : new Map();
 
+    let alertsAcc = 0;
     logins.forEach(login => {
       // Similar domains will be grouped together
       // www. will have least effect on the sorting
@@ -548,8 +577,25 @@ export class LoginDataSource extends DataSourceBase {
       if (parts.length > 1) {
         parts.length -= 1;
       }
+      const isLoginBreached = breachesMap.has(login.guid);
+      const isLoginVulnerable = lazy.LoginBreaches.isVulnerablePassword(login);
+
+      let alertValue;
+      if (isLoginBreached) {
+        alertValue = ALERT_VALUES.breached;
+        alertsAcc += 1;
+      } else if (isLoginVulnerable) {
+        alertValue = ALERT_VALUES.vulnerable;
+        alertsAcc += 1;
+      } else {
+        alertValue = ALERT_VALUES.none;
+      }
+
       const domain = parts.reverse().join(".");
-      const lineId = `${domain}:${login.username}:${login.guid}`;
+      const lineId =
+        this.#sortId === "alerts"
+          ? `${alertValue}:${domain}:${login.username}:${login.guid}`
+          : `${domain}:${login.username}:${login.guid}`;
 
       let originLine = this.addOrUpdateLine(
         login,
@@ -563,17 +609,19 @@ export class LoginDataSource extends DataSourceBase {
         this.#passwordPrototype
       );
 
-      originLine.breached = breachesMap.has(login.guid);
-      passwordLine.vulnerable = lazy.LoginBreaches.isVulnerablePassword(login);
+      originLine.breached = isLoginBreached;
+      passwordLine.vulnerable = isLoginVulnerable;
     });
-
+    this.#header.value.alerts = alertsAcc;
     this.afterReloadingDataSource();
+    this.doneReloadDataSource = true;
   }
 
   #reloadEmptyDataSource() {
     this.lines.length = 0;
     //todo: user can enable passwords by activating Passwords header line
-    this.#header.value = this.#loginsDisabledMessage;
+    this.#header.value.total = 0;
+    this.#header.value.alerts = 0;
     this.refreshAllLinesOnScreen();
   }
 

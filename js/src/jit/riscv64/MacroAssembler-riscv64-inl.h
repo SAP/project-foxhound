@@ -1606,6 +1606,12 @@ void MacroAssembler::moveFloat32ToGPR(FloatRegister src, Register dest) {
 void MacroAssembler::moveGPRToFloat32(Register src, FloatRegister dest) {
   fmv_w_x(dest, src);
 }
+void MacroAssembler::moveFloat16ToGPR(FloatRegister src, Register dest) {
+  MOZ_CRASH("Not supported for this target");
+}
+void MacroAssembler::moveGPRToFloat16(Register src, FloatRegister dest) {
+  MOZ_CRASH("Not supported for this target");
+}
 void MacroAssembler::mul32(Register rhs, Register srcDest) {
   mulw(srcDest, srcDest, rhs);
 }
@@ -1912,6 +1918,16 @@ void MacroAssembler::sqrtDouble(FloatRegister src, FloatRegister dest) {
 void MacroAssembler::sqrtFloat32(FloatRegister src, FloatRegister dest) {
   fsqrt_s(dest, src);
 }
+
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const Address& dest, Register) {
+  MOZ_CRASH("Not supported for this target");
+}
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const BaseIndex& dest, Register) {
+  MOZ_CRASH("Not supported for this target");
+}
+
 FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
     FloatRegister src, const Address& addr) {
   return ma_fst_s(src, addr);

@@ -144,18 +144,12 @@ jobs:
           - mozilla-release
           - mozilla-esr128
           - elm
+          - cypress
       # For all non m-c jobs we just run once daily matching the 10 UTC
       # nightly which is designed to align with searchfox's AWS cron
       # jobs (for legacy reasons) rather than trying to align with
       # specific builds.  (Ex: mozilla-beta has a "daily-releases" job
       # that currently runs 3 times a week.)
-      #
-      # Note that for branches that don't change a lot this will result
-      # in a redundant job being scheduled each day rather than reusing
-      # the previous day's job.  This is only beneficial in the sense
-      # that there's no risk of expiration for artifacts and is a
-      # trade-off to avoid stale indices.  Bug 1686981 tracks fixing
-      # this.
       when:
           - {hour: 10, minute: 0}
 
@@ -216,7 +210,9 @@ jobs:
               mozilla-release:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
-              mozilla-esr128: []
+              mozilla-esr128:
+                  - {hour: 7, minute: 0}
+                  - {hour: 19, minute: 0}
 
     - name: periodic-update
       job:
@@ -227,6 +223,7 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
+          - mozilla-esr128
       when:
           - {weekday: 'Monday', hour: 8, minute: 0}
           - {weekday: 'Thursday', hour: 8, minute: 0}
@@ -300,12 +297,10 @@ jobs:
           target-tasks-method: l10n_bump
       run-on-projects:
           - autoland
-          - mozilla-central
           - mozilla-beta
       when:
           by-project:
               autoland: [{hour: 6, minute: 45}, {hour: 18, minute: 45}]
-              mozilla-central: []
               # 4h before launch of `daily-releases`
               mozilla-beta: [{hour: 9, minute: 00}]
               # No default

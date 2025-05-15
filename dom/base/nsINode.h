@@ -45,6 +45,7 @@ class nsIAnimationObserver;
 class nsIContent;
 class nsIContentSecurityPolicy;
 class nsIFrame;
+class nsIFormControl;
 class nsIHTMLCollection;
 class nsMultiMutationObserver;
 class nsINode;
@@ -627,6 +628,16 @@ class nsINode : public mozilla::dom::EventTarget {
   inline mozilla::dom::Text* AsText();
   inline const mozilla::dom::Text* AsText() const;
 
+  /**
+   * Return this node if the instance type inherits nsIFormControl, or an
+   * nsIFormControl instance which ia associated with this node.  Otherwise,
+   * returns nullptr.
+   */
+  [[nodiscard]] virtual nsIFormControl* GetAsFormControl() { return nullptr; }
+  [[nodiscard]] virtual const nsIFormControl* GetAsFormControl() const {
+    return nullptr;
+  }
+
   /*
    * Return whether the node is a ProcessingInstruction node.
    */
@@ -1159,6 +1170,12 @@ class nsINode : public mozilla::dom::EventTarget {
   inline mozilla::dom::Element* GetAsElementOrParentElement() const;
 
   /**
+   * Get inclusive ancestor element in the flattened tree.
+   */
+  inline mozilla::dom::Element* GetInclusiveFlattenedTreeAncestorElement()
+      const;
+
+  /**
    * Get the root of the subtree this node belongs to.  This never returns
    * null.  It may return 'this' (e.g. for document nodes, and nodes that
    * are the roots of disconnected subtrees).
@@ -1369,6 +1386,23 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   virtual nsresult Clone(mozilla::dom::NodeInfo*, nsINode** aResult) const = 0;
 
+  // A callback that gets called when we are forcefully unbound from a node (due
+  // to the node going away). You shouldn't take a strong ref to the node from
+  // the callback.
+  using UnbindCallback = void (*)(nsISupports*, nsINode*);
+  // We should keep alive these objects.
+  struct BoundObject {
+    nsCOMPtr<nsISupports> mObject;
+    UnbindCallback mDtor = nullptr;
+
+    BoundObject(nsISupports* aObject, UnbindCallback aDtor)
+        : mObject(aObject), mDtor(aDtor) {}
+
+    bool operator==(nsISupports* aOther) const {
+      return mObject.get() == aOther;
+    }
+  };
+
   // This class can be extended by subclasses that wish to store more
   // information in the slots.
   class nsSlots {
@@ -1399,6 +1433,9 @@ class nsINode : public mozilla::dom::EventTarget {
      * nsNodeWeakReference.
      */
     nsNodeWeakReference* MOZ_NON_OWNING_REF mWeakReference;
+
+    /** A list of objects that we should keep alive. See Bind/UnbindObject. */
+    nsTArray<BoundObject> mBoundObjects;
 
     /**
      * A set of ranges which are in the selection and which have this node as
@@ -1921,11 +1958,14 @@ class nsINode : public mozilla::dom::EventTarget {
     // flags, because we can't use those to distinguish
     // <bdi dir="some-invalid-value"> and <bdi dir="auto">.
     NodeHasValidDirAttribute,
-    // Set if this node, which must be a text node, might be responsible for
-    // setting the directionality of a dir="auto" ancestor.
-    NodeMaySetDirAuto,
-    // Set if a node in the node's parent chain has dir=auto.
+    // Set if a node in the node's parent chain has dir=auto and nothing
+    // inbetween nor the node itself establishes its own direction.
     NodeAncestorHasDirAuto,
+    // Set if the node or an ancestor is assigned to a dir=auto slot and
+    // nothing between nor the node itself establishes its own direction.
+    // Except for when the node assigned to the dir=auto slot establishes
+    // its own direction, then the flag is still set.
+    NodeAffectsDirAutoSlot,
     // Set if the node is handling a click.
     NodeHandlingClick,
     // Set if the element has a parser insertion mode other than "in body",
@@ -2050,23 +2090,17 @@ class nsINode : public mozilla::dom::EventTarget {
   void SetHasValidDir() { SetBoolFlag(NodeHasValidDirAttribute); }
   void ClearHasValidDir() { ClearBoolFlag(NodeHasValidDirAttribute); }
   bool HasValidDir() const { return GetBoolFlag(NodeHasValidDirAttribute); }
-  void SetMaySetDirAuto() {
-    // FIXME(bug 1881225): dir=auto should probably work on CDATA too.
-    MOZ_ASSERT(NodeType() == TEXT_NODE);
-    SetBoolFlag(NodeMaySetDirAuto);
-  }
-  bool MaySetDirAuto() const {
-    MOZ_ASSERT(NodeType() == TEXT_NODE);
-    return GetBoolFlag(NodeMaySetDirAuto);
-  }
-  void ClearMaySetDirAuto() {
-    MOZ_ASSERT(NodeType() == TEXT_NODE);
-    ClearBoolFlag(NodeMaySetDirAuto);
-  }
   void SetAncestorHasDirAuto() { SetBoolFlag(NodeAncestorHasDirAuto); }
   void ClearAncestorHasDirAuto() { ClearBoolFlag(NodeAncestorHasDirAuto); }
   bool AncestorHasDirAuto() const {
     return GetBoolFlag(NodeAncestorHasDirAuto);
+  }
+  void SetAffectsDirAutoSlot() { SetBoolFlag(NodeAffectsDirAutoSlot); }
+  void ClearAffectsDirAutoSlot() { ClearBoolFlag(NodeAffectsDirAutoSlot); }
+
+  // Set if the node or an ancestor is assigned to a dir=auto slot.
+  bool AffectsDirAutoSlot() const {
+    return GetBoolFlag(NodeAffectsDirAutoSlot);
   }
 
   // Implemented in nsIContentInlines.h.
@@ -2151,10 +2185,11 @@ class nsINode : public mozilla::dom::EventTarget {
   void ClearSubtreeRootPointer() { mSubtreeRoot = nullptr; }
 
  public:
-  // Makes nsINode object to keep aObject alive.
-  void BindObject(nsISupports* aObject);
-  // After calling UnbindObject nsINode object doesn't keep
-  // aObject alive anymore.
+  // Makes nsINode object keep aObject alive. If a callback is provided, it's
+  // called before deleting the node.
+  void BindObject(nsISupports* aObject, UnbindCallback = nullptr);
+  // After calling UnbindObject nsINode, object doesn't keep aObject alive
+  // anymore.
   void UnbindObject(nsISupports* aObject);
 
   void GenerateXPath(nsAString& aResult);

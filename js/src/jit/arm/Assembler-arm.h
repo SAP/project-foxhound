@@ -1098,9 +1098,8 @@ class InstructionIterator {
 };
 
 class Assembler;
-typedef js::jit::AssemblerBufferWithConstantPools<1024, 4, Instruction,
-                                                  Assembler>
-    ARMBuffer;
+using ARMBuffer =
+    js::jit::AssemblerBufferWithConstantPools<1024, 4, Instruction, Assembler>;
 
 class Assembler : public AssemblerShared {
  public:
@@ -1211,8 +1210,8 @@ class Assembler : public AssemblerShared {
   Instruction* editSrc(BufferOffset bo) { return m_buffer.getInst(bo); }
 
 #ifdef JS_DISASM_ARM
-  typedef disasm::EmbeddedVector<char, disasm::ReasonableBufferSize>
-      DisasmBuffer;
+  using DisasmBuffer =
+      disasm::EmbeddedVector<char, disasm::ReasonableBufferSize>;
 
   static void disassembleInstruction(const Instruction* i,
                                      DisasmBuffer& buffer);
@@ -1650,6 +1649,13 @@ class Assembler : public AssemblerShared {
   BufferOffset as_vcvtFixed(VFPRegister vd, bool isSigned, uint32_t fixedPoint,
                             bool toFixed, Condition c = Always);
 
+  // Convert between single- and half-precision. Both registers are single
+  // precision.
+  BufferOffset as_vcvtb_s2h(VFPRegister vd, VFPRegister vm,
+                            Condition c = Always);
+  BufferOffset as_vcvtb_h2s(VFPRegister vd, VFPRegister vm,
+                            Condition c = Always);
+
   // Transfer between VFP and memory.
   BufferOffset as_vdtr(LoadStore ls, VFPRegister vd, VFPAddr addr,
                        Condition c = Always /* vfp doesn't have a wb option*/);
@@ -1678,12 +1684,14 @@ class Assembler : public AssemblerShared {
   // Label operations.
   bool nextLink(BufferOffset b, BufferOffset* next);
   void bind(Label* label, BufferOffset boff = BufferOffset());
+  void bind(CodeLabel* label) { label->target()->bind(currentOffset()); }
   uint32_t currentOffset() { return nextOffset().getOffset(); }
   void retarget(Label* label, Label* target);
   // I'm going to pretend this doesn't exist for now.
   void retarget(Label* label, void* target, RelocationKind reloc);
 
   static void Bind(uint8_t* rawCode, const CodeLabel& label);
+  static void PatchMovwt(Instruction* addr, uint32_t imm);
 
   void as_bkpt();
   BufferOffset as_illegal_trap();
@@ -1703,12 +1711,14 @@ class Assembler : public AssemblerShared {
 #endif
   }
 
-  static bool SupportsFloatingPoint() { return HasVFP(); }
-  static bool SupportsUnalignedAccesses() { return HasARMv7(); }
+  static bool SupportsFloatingPoint() { return ARMFlags::HasVFP(); }
+  static bool SupportsUnalignedAccesses() { return ARMFlags::HasARMv7(); }
   // Note, returning false here is technically wrong, but one has to go via the
   // as_vldr_unaligned and as_vstr_unaligned instructions to get proper behavior
   // and those are NEON-specific and have to be asked for specifically.
   static bool SupportsFastUnalignedFPAccesses() { return false; }
+  static bool SupportsFloat64To16() { return false; }
+  static bool SupportsFloat32To16() { return ARMFlags::HasFPHalfPrecision(); }
 
   static bool HasRoundInstruction(RoundingMode mode) { return false; }
 
@@ -2231,31 +2241,6 @@ static inline bool GetTempRegForIntArg(uint32_t usedIntArgs,
   *out = CallTempNonArgRegs[usedIntArgs];
   return true;
 }
-
-#if defined(JS_CODEGEN_ARM_HARDFP) || defined(JS_SIMULATOR_ARM)
-
-static inline bool GetFloat32ArgReg(uint32_t usedIntArgs,
-                                    uint32_t usedFloatArgs,
-                                    FloatRegister* out) {
-  MOZ_ASSERT(UseHardFpABI());
-  if (usedFloatArgs >= NumFloatArgRegs) {
-    return false;
-  }
-  *out = VFPRegister(usedFloatArgs, VFPRegister::Single);
-  return true;
-}
-static inline bool GetDoubleArgReg(uint32_t usedIntArgs, uint32_t usedFloatArgs,
-                                   FloatRegister* out) {
-  MOZ_ASSERT(UseHardFpABI());
-  MOZ_ASSERT((usedFloatArgs % 2) == 0);
-  if (usedFloatArgs >= NumFloatArgRegs) {
-    return false;
-  }
-  *out = VFPRegister(usedFloatArgs >> 1, VFPRegister::Double);
-  return true;
-}
-
-#endif
 
 class DoubleEncoder {
   struct DoubleEntry {

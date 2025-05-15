@@ -475,14 +475,14 @@ MOZ_CAN_RUN_SCRIPT bool InterruptCallback(JSContext* aCx) {
 
 class LogViolationDetailsRunnable final : public WorkerMainThreadRunnable {
   uint16_t mViolationType;
-  nsString mFileName;
+  nsCString mFileName;
   uint32_t mLineNum;
   uint32_t mColumnNum;
   nsString mScriptSample;
 
  public:
   LogViolationDetailsRunnable(WorkerPrivate* aWorker, uint16_t aViolationType,
-                              const nsString& aFileName, uint32_t aLineNum,
+                              const nsCString& aFileName, uint32_t aLineNum,
                               uint32_t aColumnNum,
                               const nsAString& aScriptSample)
       : WorkerMainThreadRunnable(aWorker,
@@ -531,25 +531,14 @@ bool ContentSecurityPolicyAllows(JSContext* aCx, JS::RuntimeCode aKind,
   }
 
   if (reportViolation) {
-    nsString fileName;
-    uint32_t lineNum = 0;
-    JS::ColumnNumberOneOrigin columnNum;
-
-    JS::AutoFilename file;
-    if (JS::DescribeScriptedCaller(aCx, &file, &lineNum, &columnNum) &&
-        file.get()) {
-      CopyUTF8toUTF16(MakeStringSpan(file.get()), fileName);
-    } else {
-      MOZ_ASSERT(!JS_IsExceptionPending(aCx));
-    }
-
+    auto caller = JSCallingLocation::Get(aCx);
     RefPtr<LogViolationDetailsRunnable> runnable =
-        new LogViolationDetailsRunnable(worker, violationType, fileName,
-                                        lineNum, columnNum.oneOriginValue(),
-                                        scriptSample);
+        new LogViolationDetailsRunnable(worker, violationType,
+                                        caller.FileName(), caller.mLine,
+                                        caller.mColumn, scriptSample);
 
     ErrorResult rv;
-    runnable->Dispatch(Killing, rv);
+    runnable->Dispatch(worker, Killing, rv);
     if (NS_WARN_IF(rv.Failed())) {
       rv.SuppressException();
     }
@@ -833,6 +822,26 @@ class WorkerJSRuntime final : public mozilla::CycleCollectedJSRuntime {
       mWorkerPrivate->SetCCCollectedAnything(collectedAnything);
     }
   }
+
+  void TraceNativeBlackRoots(JSTracer* aTracer) override {
+    if (!mWorkerPrivate || !mWorkerPrivate->MayContinueRunning()) {
+      return;
+    }
+
+    if (WorkerGlobalScope* scope = mWorkerPrivate->GlobalScope()) {
+      if (EventListenerManager* elm = scope->GetExistingListenerManager()) {
+        elm->TraceListeners(aTracer);
+      }
+    }
+
+    if (WorkerDebuggerGlobalScope* debuggerScope =
+            mWorkerPrivate->DebuggerGlobalScope()) {
+      if (EventListenerManager* elm =
+              debuggerScope->GetExistingListenerManager()) {
+        elm->TraceListeners(aTracer);
+      }
+    }
+  };
 
  private:
   WorkerPrivate* mWorkerPrivate;
@@ -1746,6 +1755,19 @@ void RuntimeService::CancelWorkersForWindow(const nsPIDOMWindowInner& aWindow) {
   }
 }
 
+void RuntimeService::UpdateWorkersBackgroundState(
+    const nsPIDOMWindowInner& aWindow, bool aIsBackground) {
+  AssertIsOnMainThread();
+  for (WorkerPrivate* const worker : GetWorkersForWindow(aWindow)) {
+    MOZ_ASSERT(!worker->IsSharedWorker());
+    if (aIsBackground) {
+      worker->SetIsRunningInBackground();
+    } else {
+      worker->SetIsRunningInForeground();
+    }
+  }
+}
+
 void RuntimeService::FreezeWorkersForWindow(const nsPIDOMWindowInner& aWindow) {
   AssertIsOnMainThread();
 
@@ -2043,14 +2065,15 @@ void RuntimeService::DumpRunningWorkers() {
 
 bool LogViolationDetailsRunnable::MainThreadRun() {
   AssertIsOnMainThread();
+  MOZ_ASSERT(mWorkerRef);
 
-  nsIContentSecurityPolicy* csp = mWorkerPrivate->GetCsp();
+  nsIContentSecurityPolicy* csp = mWorkerRef->Private()->GetCsp();
   if (csp) {
     csp->LogViolationDetails(mViolationType,
                              nullptr,  // triggering element
-                             mWorkerPrivate->CSPEventListener(), mFileName,
-                             mScriptSample, mLineNum, mColumnNum, u""_ns,
-                             u""_ns);
+                             mWorkerRef->Private()->CSPEventListener(),
+                             mFileName, mScriptSample, mLineNum, mColumnNum,
+                             u""_ns, u""_ns);
   }
 
   return true;
@@ -2204,19 +2227,15 @@ WorkerThreadPrimaryRunnable::Run() {
     // Check sentinels if we actually removed all global scope references.
     // In case use the earlier set-aside raw pointers to not mess with the
     // ref counting after the cycle collector has gone away.
-    if (globalScopeSentinel) {
-      MOZ_ASSERT(!globalScopeSentinel->IsAlive());
-      if (NS_WARN_IF(globalScopeSentinel->IsAlive())) {
-        globalScopeRawPtr->NoteWorkerTerminated();
-        globalScopeRawPtr = nullptr;
-      }
+    if (NS_WARN_IF(globalScopeSentinel && globalScopeSentinel->IsAlive())) {
+      MOZ_ASSERT_UNREACHABLE("WorkerGlobalScope alive after worker shutdown");
+      globalScopeRawPtr->NoteWorkerTerminated();
+      globalScopeRawPtr = nullptr;
     }
-    if (debuggerScopeSentinel) {
-      MOZ_ASSERT(!debuggerScopeSentinel->IsAlive());
-      if (NS_WARN_IF(debuggerScopeSentinel->IsAlive())) {
-        debuggerScopeRawPtr->NoteWorkerTerminated();
-        debuggerScopeRawPtr = nullptr;
-      }
+    if (NS_WARN_IF(debuggerScopeSentinel && debuggerScopeSentinel->IsAlive())) {
+      MOZ_ASSERT_UNREACHABLE("Debugger global alive after worker shutdown");
+      debuggerScopeRawPtr->NoteWorkerTerminated();
+      debuggerScopeRawPtr = nullptr;
     }
   }
 
@@ -2266,6 +2285,15 @@ void CancelWorkersForWindow(const nsPIDOMWindowInner& aWindow) {
   RuntimeService* runtime = RuntimeService::GetService();
   if (runtime) {
     runtime->CancelWorkersForWindow(aWindow);
+  }
+}
+
+void UpdateWorkersBackgroundState(const nsPIDOMWindowInner& aWindow,
+                                  bool aIsBackground) {
+  AssertIsOnMainThread();
+  RuntimeService* runtime = RuntimeService::GetService();
+  if (runtime) {
+    runtime->UpdateWorkersBackgroundState(aWindow, aIsBackground);
   }
 }
 

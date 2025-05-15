@@ -4,13 +4,8 @@
 
 /* import-globals-from preferences.js */
 
-ChromeUtils.defineESModuleGetters(this, {
-  GenAI: "resource:///modules/GenAI.sys.mjs",
-});
-
 var gExperimentalPane = {
   inited: false,
-  _template: null,
   _featureGatesContainer: null,
   _boundRestartObserver: null,
   _observedPrefs: [],
@@ -67,19 +62,6 @@ var gExperimentalPane = {
     return features.filter(f => f.isPublic);
   },
 
-  async _sortFeatures(features) {
-    // Sort the features alphabetically by their title
-    let titles = await document.l10n.formatMessages(
-      features.map(f => {
-        return { id: f.title };
-      })
-    );
-    titles = titles.map((title, index) => [title.attributes[0].value, index]);
-    titles.sort((a, b) => a[0].toLowerCase().localeCompare(b[0].toLowerCase()));
-    // Get the features in order of sorted titles.
-    return titles.map(([, index]) => features[index]);
-  },
-
   async init() {
     if (this.inited) {
       return;
@@ -107,70 +89,85 @@ var gExperimentalPane = {
       }
     }
 
-    features = await this._sortFeatures(features);
-
     setEventListener(
       "experimentalCategory-reset",
-      "command",
+      "click",
       gExperimentalPane.resetAllFeatures
     );
 
     window.addEventListener("unload", () => this.removePrefObservers());
-    this._template = document.getElementById("template-featureGate");
     this._featureGatesContainer = document.getElementById(
       "pane-experimental-featureGates"
     );
     this._boundRestartObserver = this._observeRestart.bind(this);
     let frag = document.createDocumentFragment();
+    let groups = new Map();
     for (let feature of features) {
-      if (Preferences.get(feature.preference)) {
-        console.error(
-          "Preference control already exists for experimental feature '" +
-            feature.id +
-            "' with preference '" +
-            feature.preference +
-            "'"
-        );
-        continue;
+      if (!groups.has(feature.group)) {
+        groups.set(feature.group, []);
       }
-      if (feature.restartRequired) {
-        this.addPrefObserver(feature.preference, this._boundRestartObserver);
+      groups.get(feature.group).push(feature);
+    }
+    for (let [group, groupFeatures] of groups) {
+      let card = document.createElement("moz-card");
+      card.classList.add("featureGate");
+      let fieldset = document.createElement("moz-fieldset");
+      document.l10n.setAttributes(fieldset, group);
+      card.append(fieldset);
+      for (let feature of groupFeatures) {
+        if (Preferences.get(feature.preference)) {
+          console.error(
+            "Preference control already exists for experimental feature '" +
+              feature.id +
+              "' with preference '" +
+              feature.preference +
+              "'"
+          );
+          continue;
+        }
+
+        if (feature.restartRequired) {
+          this.addPrefObserver(feature.preference, this._boundRestartObserver);
+        }
+
+        let checkbox = document.createElement("moz-checkbox");
+        let description = document.createElement("div");
+        description.slot = "description";
+        description.id = feature.id + "-description";
+        description.classList.add("featureGateDescription");
+        checkbox.append(description);
+        fieldset.append(checkbox);
+
+        let descriptionLinks = feature.descriptionLinks || {};
+        for (let [key, value] of Object.entries(descriptionLinks)) {
+          let link = document.createElement("a");
+          link.setAttribute("data-l10n-name", key);
+          link.setAttribute("href", value);
+          link.setAttribute("target", "_blank");
+          description.append(link);
+        }
+        document.l10n.setAttributes(description, feature.description);
+        checkbox.setAttribute("preference", feature.preference);
+        checkbox.id = feature.id;
+        checkbox.setAttribute("aria-describedby", description.id);
+        document.l10n.setAttributes(checkbox, feature.title);
+        let extraTemplate = document.getElementById(`template-${feature.id}`);
+        if (extraTemplate) {
+          fieldset.appendChild(extraTemplate.content.cloneNode(true));
+        }
+        let preference = Preferences.add({
+          id: feature.preference,
+          type: gExperimentalPane._featureGatePrefTypeToPrefServiceType(
+            feature.type
+          ),
+        });
+        preference.setElementValue(checkbox);
       }
-      let template = this._template.content.cloneNode(true);
-      let description = template.querySelector(".featureGateDescription");
-      description.id = feature.id + "-description";
-      let descriptionLinks = feature.descriptionLinks || {};
-      for (let [key, value] of Object.entries(descriptionLinks)) {
-        let link = document.createElement("a");
-        link.setAttribute("data-l10n-name", key);
-        link.setAttribute("href", value);
-        link.setAttribute("target", "_blank");
-        description.append(link);
-      }
-      document.l10n.setAttributes(description, feature.description);
-      let checkbox = template.querySelector(".featureGateCheckbox");
-      checkbox.setAttribute("preference", feature.preference);
-      checkbox.id = feature.id;
-      checkbox.setAttribute("aria-describedby", description.id);
-      document.l10n.setAttributes(checkbox, feature.title);
-      let extraTemplate = document.getElementById(`template-${feature.id}`);
-      if (extraTemplate) {
-        template
-          .querySelector(".featureGate")
-          .appendChild(extraTemplate.content.cloneNode(true));
-      }
-      frag.appendChild(template);
-      let preference = Preferences.add({
-        id: feature.preference,
-        type: gExperimentalPane._featureGatePrefTypeToPrefServiceType(
-          feature.type
-        ),
-      });
-      preference.setElementValue(checkbox);
+
+      frag.append(card);
     }
     this._featureGatesContainer.appendChild(frag);
 
-    // Bug 1895494 to allow more generic logic
-    GenAI.buildPreferences(window);
+    Services.obs.notifyObservers(window, "experimental-pane-loaded");
   },
 };

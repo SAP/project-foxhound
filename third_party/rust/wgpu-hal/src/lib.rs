@@ -40,12 +40,10 @@
  *   taking objects by reference, returning them by value, and so on,
  *   unlike `wgpu-core`, which refers to objects by ID.
  *
- * - We map buffer contents *persistently*. This means that the buffer
- *   can remain mapped on the CPU while the GPU reads or writes to it.
- *   You must explicitly indicate when data might need to be
- *   transferred between CPU and GPU, if `wgpu-hal` indicates that the
- *   mapping is not coherent (that is, automatically synchronized
- *   between the two devices).
+ * - We map buffer contents *persistently*. This means that the buffer can
+ *   remain mapped on the CPU while the GPU reads or writes to it. You must
+ *   explicitly indicate when data might need to be transferred between CPU and
+ *   GPU, if [`Device::map_buffer`] indicates that this is necessary.
  *
  * - You must record *explicit barriers* between different usages of a
  *   resource. For example, if a buffer is written to by a compute
@@ -211,8 +209,6 @@
     clippy::arc_with_non_send_sync,
     // for `if_then_panic` until it reaches stable
     unknown_lints,
-    // We use loops for getting early-out of scope without closures.
-    clippy::never_loop,
     // We don't use syntax sugar where it's not necessary.
     clippy::match_like_matches_macro,
     // Redundant matching is more explicit.
@@ -231,17 +227,15 @@
     clippy::non_send_fields_in_send_ty,
     // TODO!
     clippy::missing_safety_doc,
-    // Clashes with clippy::pattern_type_mismatch
-    clippy::needless_borrowed_reference,
+    // It gets in the way a lot and does not prevent bugs in practice.
+    clippy::pattern_type_mismatch,
 )]
 #![warn(
     trivial_casts,
     trivial_numeric_casts,
     unsafe_op_in_unsafe_fn,
     unused_extern_crates,
-    unused_qualifications,
-    // We don't match on a reference, unless required.
-    clippy::pattern_type_mismatch,
+    unused_qualifications
 )]
 
 /// DirectX12 API internals.
@@ -300,6 +294,7 @@ pub const QUERY_SIZE: wgt::BufferAddress = 8;
 pub type Label<'a> = Option<&'a str>;
 pub type MemoryRange = Range<wgt::BufferAddress>;
 pub type FenceValue = u64;
+pub type AtomicFenceValue = std::sync::atomic::AtomicU64;
 
 /// Drop guard to signal wgpu-hal is no longer using an externally created object.
 pub type DropGuard = Box<dyn std::any::Any + Send + Sync>;
@@ -453,7 +448,11 @@ pub trait Instance: Sized + WasmNotSendSync {
         window_handle: raw_window_handle::RawWindowHandle,
     ) -> Result<<Self::A as Api>::Surface, InstanceError>;
     unsafe fn destroy_surface(&self, surface: <Self::A as Api>::Surface);
-    unsafe fn enumerate_adapters(&self) -> Vec<ExposedAdapter<Self::A>>;
+    /// `surface_hint` is only used by the GLES backend targeting WebGL2
+    unsafe fn enumerate_adapters(
+        &self,
+        surface_hint: Option<&<Self::A as Api>::Surface>,
+    ) -> Vec<ExposedAdapter<Self::A>>;
 }
 
 pub trait Surface: WasmNotSendSync {
@@ -564,6 +563,7 @@ pub trait Adapter: WasmNotSendSync {
         &self,
         features: wgt::Features,
         limits: &wgt::Limits,
+        memory_hints: &wgt::MemoryHints,
     ) -> Result<OpenDevice<Self::A>, DeviceError>;
 
     /// Return the set of supported capabilities for a texture format.
@@ -662,17 +662,97 @@ pub trait Device: WasmNotSendSync {
         &self,
         desc: &BufferDescriptor,
     ) -> Result<<Self::A as Api>::Buffer, DeviceError>;
+
+    /// Free `buffer` and any GPU resources it owns.
+    ///
+    /// Note that backends are allowed to allocate GPU memory for buffers from
+    /// allocation pools, and this call is permitted to simply return `buffer`'s
+    /// storage to that pool, without making it available to other applications.
+    ///
+    /// # Safety
+    ///
+    /// - The given `buffer` must not currently be mapped.
     unsafe fn destroy_buffer(&self, buffer: <Self::A as Api>::Buffer);
-    //TODO: clarify if zero-sized mapping is allowed
+
+    /// Return a pointer to CPU memory mapping the contents of `buffer`.
+    ///
+    /// Buffer mappings are persistent: the buffer may remain mapped on the CPU
+    /// while the GPU reads or writes to it. (Note that `wgpu_core` does not use
+    /// this feature: when a `wgpu_core::Buffer` is unmapped, the underlying
+    /// `wgpu_hal` buffer is also unmapped.)
+    ///
+    /// If this function returns `Ok(mapping)`, then:
+    ///
+    /// - `mapping.ptr` is the CPU address of the start of the mapped memory.
+    ///
+    /// - If `mapping.is_coherent` is `true`, then CPU writes to the mapped
+    ///   memory are immediately visible on the GPU, and vice versa.
+    ///
+    /// # Safety
+    ///
+    /// - The given `buffer` must have been created with the [`MAP_READ`] or
+    ///   [`MAP_WRITE`] flags set in [`BufferDescriptor::usage`].
+    ///
+    /// - The given `range` must fall within the size of `buffer`.
+    ///
+    /// - The caller must avoid data races between the CPU and the GPU. A data
+    ///   race is any pair of accesses to a particular byte, one of which is a
+    ///   write, that are not ordered with respect to each other by some sort of
+    ///   synchronization operation.
+    ///
+    /// - If this function returns `Ok(mapping)` and `mapping.is_coherent` is
+    ///   `false`, then:
+    ///
+    ///   - Every CPU write to a mapped byte followed by a GPU read of that byte
+    ///     must have at least one call to [`Device::flush_mapped_ranges`]
+    ///     covering that byte that occurs between those two accesses.
+    ///
+    ///   - Every GPU write to a mapped byte followed by a CPU read of that byte
+    ///     must have at least one call to [`Device::invalidate_mapped_ranges`]
+    ///     covering that byte that occurs between those two accesses.
+    ///
+    ///   Note that the data race rule above requires that all such access pairs
+    ///   be ordered, so it is meaningful to talk about what must occur
+    ///   "between" them.
+    ///
+    /// - Zero-sized mappings are not allowed.
+    ///
+    /// - The returned [`BufferMapping::ptr`] must not be used after a call to
+    /// [`Device::unmap_buffer`].
+    ///
+    /// [`MAP_READ`]: BufferUses::MAP_READ
+    /// [`MAP_WRITE`]: BufferUses::MAP_WRITE
     unsafe fn map_buffer(
         &self,
         buffer: &<Self::A as Api>::Buffer,
         range: MemoryRange,
     ) -> Result<BufferMapping, DeviceError>;
-    unsafe fn unmap_buffer(&self, buffer: &<Self::A as Api>::Buffer) -> Result<(), DeviceError>;
+
+    /// Remove the mapping established by the last call to [`Device::map_buffer`].
+    ///
+    /// # Safety
+    ///
+    /// - The given `buffer` must be currently mapped.
+    unsafe fn unmap_buffer(&self, buffer: &<Self::A as Api>::Buffer);
+
+    /// Indicate that CPU writes to mapped buffer memory should be made visible to the GPU.
+    ///
+    /// # Safety
+    ///
+    /// - The given `buffer` must be currently mapped.
+    ///
+    /// - All ranges produced by `ranges` must fall within `buffer`'s size.
     unsafe fn flush_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
     where
         I: Iterator<Item = MemoryRange>;
+
+    /// Indicate that GPU writes to mapped buffer memory should be made visible to the CPU.
+    ///
+    /// # Safety
+    ///
+    /// - The given `buffer` must be currently mapped.
+    ///
+    /// - All ranges produced by `ranges` must fall within `buffer`'s size.
     unsafe fn invalidate_mapped_ranges<I>(&self, buffer: &<Self::A as Api>::Buffer, ranges: I)
     where
         I: Iterator<Item = MemoryRange>;
@@ -812,6 +892,8 @@ pub trait Device: WasmNotSendSync {
         &self,
         acceleration_structure: <Self::A as Api>::AccelerationStructure,
     );
+
+    fn get_internal_counters(&self) -> wgt::HalCounters;
 }
 
 pub trait Queue: WasmNotSendSync {
@@ -873,6 +955,9 @@ pub trait Queue: WasmNotSendSync {
     ///
     /// - All calls to this function that include a given [`SurfaceTexture`][st]
     ///   in `surface_textures` must use the same [`Fence`].
+    ///
+    /// - The [`Fence`] passed as `signal_fence.0` must remain alive until
+    ///   all submissions that will signal it have completed.
     ///
     /// [`Fence`]: Api::Fence
     /// [cb]: Api::CommandBuffer
@@ -2118,7 +2203,7 @@ pub struct BuildAccelerationStructureDescriptor<'a, A: Api> {
 /// - All buffers, buffer addresses and offsets will be ignored.
 /// - The build mode will be ignored.
 /// - Reducing the amount of Instances, Triangle groups or AABB groups (or the number of Triangles/AABBs in corresponding groups),
-/// may result in reduced size requirements.
+///   may result in reduced size requirements.
 /// - Any other change may result in a bigger or smaller size requirement.
 #[derive(Clone, Debug)]
 pub struct GetAccelerationStructureBuildSizesDescriptor<'a, A: Api> {

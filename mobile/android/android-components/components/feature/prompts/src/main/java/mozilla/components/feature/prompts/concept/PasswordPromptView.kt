@@ -12,13 +12,9 @@ interface PasswordPromptView {
     var listener: Listener?
 
     /**
-     * Shows a simple prompt with the given [generatedPassword].
+     * Shows a simple prompt for using a generated password.
      */
-    fun showPrompt(
-        generatedPassword: String,
-        url: String,
-        onSaveLoginWithStrongPassword: (url: String, password: String) -> Unit,
-    )
+    fun showPrompt()
 
     /**
      * Hides the prompt.
@@ -26,17 +22,17 @@ interface PasswordPromptView {
     fun hidePrompt()
 
     /**
+     * Returns true if the prompt is visible and false otherwise.
+     */
+    fun isVisible(): Boolean
+
+    /**
      * Interface to allow a class to listen to generated strong password event events.
      */
     interface Listener {
         /**
-         * Called when a user wants to use a strong generated password.
-         *
+         * Called when a user clicks on the password generator prompt
          */
-        fun onUseGeneratedPassword(
-            generatedPassword: String,
-            url: String,
-            onSaveLoginWithStrongPassword: (url: String, password: String) -> Unit,
-        )
+        fun onGeneratedPasswordPromptClick()
     }
 }

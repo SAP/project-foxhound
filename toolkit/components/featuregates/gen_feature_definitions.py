@@ -19,6 +19,7 @@ id_regex = re.compile(r"^[a-z0-9-]+$")
 feature_schema = Schema(
     {
         Match(id_regex): {
+            Required("group"): All(Text, Length(min=1)),
             Required("title"): All(Text, Length(min=1)),
             Required("description"): All(Text, Length(min=1)),
             Required("bug-numbers"): All(Length(min=1), [All(int, Range(min=1))]),
@@ -42,7 +43,7 @@ def main(output, *filenames):
     errors = False
     try:
         features = process_files(filenames)
-        json.dump(features, output, sort_keys=True)
+        json.dump(features, output)
     except ExceptionGroup as error_group:
         print(str(error_group))
         return EXIT_ERROR

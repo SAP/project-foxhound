@@ -493,6 +493,12 @@ void HttpChannelChild::OnStartRequest(
     SetCookie(aArgs.cookie());
   }
 
+  // Note: this is where we would notify "http-on-after-examine-response"
+  // observers.  We have deliberately disabled this for child processes (see bug
+  // 806753)
+  //
+  // gHttpHandler->OnAfterExamineResponse(this);
+
   if (aArgs.shouldWaitForOnStartRequestSent() &&
       !mRecvOnStartRequestSentCalled) {
     LOG(("  > pending DoOnStartRequest until RecvOnStartRequestSent\n"));
@@ -960,41 +966,6 @@ void HttpChannelChild::DoOnConsoleReport(
   MaybeFlushConsoleReports();
 }
 
-void HttpChannelChild::RecordChannelCompletionDurationForEarlyHint() {
-  if (!mLoadGroup) {
-    return;
-  }
-
-  uint32_t earlyHintType = 0;
-  nsCOMPtr<nsIRequest> req;
-  Unused << mLoadGroup->GetDefaultLoadRequest(getter_AddRefs(req));
-  if (nsCOMPtr<nsIHttpChannelInternal> httpChannel = do_QueryInterface(req)) {
-    Unused << httpChannel->GetEarlyHintLinkType(&earlyHintType);
-  }
-
-  if (!earlyHintType) {
-    return;
-  }
-
-  nsAutoCString earlyHintKey;
-  if (mIsFromCache) {
-    earlyHintKey.Append("cache_"_ns);
-  } else {
-    earlyHintKey.Append("net_"_ns);
-  }
-  if (earlyHintType & LinkStyle::ePRECONNECT) {
-    earlyHintKey.Append("preconnect_"_ns);
-  }
-  if (earlyHintType & LinkStyle::ePRELOAD) {
-    earlyHintKey.Append("preload_"_ns);
-    earlyHintKey.Append(mEarlyHintPreloaderId ? "1"_ns : "0"_ns);
-  }
-
-  Telemetry::AccumulateTimeDelta(Telemetry::EH_PERF_CHANNEL_COMPLETION_TIME,
-                                 earlyHintKey, mAsyncOpenTime,
-                                 TimeStamp::Now());
-}
-
 void HttpChannelChild::OnStopRequest(
     const nsresult& aChannelStatus, const ResourceTimingStructArgs& aTiming,
     const nsHttpHeaderArray& aResponseTrailers) {
@@ -1048,12 +1019,10 @@ void HttpChannelChild::OnStopRequest(
         mURI, requestMethod, priority, mChannelId, NetworkLoadType::LOAD_STOP,
         mLastStatusReported, now, mTransferSize, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0,
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
         &mTransactionTimings, std::move(mSource),
         Some(nsDependentCString(contentType.get())));
   }
-
-  RecordChannelCompletionDurationForEarlyHint();
 
   TimeDuration channelCompletionDuration = now - mAsyncOpenTime;
   if (mIsFromCache) {
@@ -1642,7 +1611,7 @@ void HttpChannelChild::Redirect1Begin(
         mURI, requestMethod, mPriority, mChannelId,
         NetworkLoadType::LOAD_REDIRECT, mLastStatusReported, TimeStamp::Now(),
         0, kCacheUnknown, mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0,
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
         &mTransactionTimings, std::move(mSource),
         Some(nsDependentCString(contentType.get())), newOriginalURI,
         redirectFlags, channelId);
@@ -1965,7 +1934,7 @@ HttpChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener) {
         mURI, requestMethod, mPriority, mChannelId, NetworkLoadType::LOAD_START,
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0);
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing());
   }
   StoreIsPending(true);
   StoreWasOpened(true);
@@ -2200,6 +2169,7 @@ HttpChannelChild::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
 
 NS_IMETHODIMP
 HttpChannelChild::AsyncOpen(nsIStreamListener* aListener) {
+  AUTO_PROFILER_LABEL("HttpChannelChild::AsyncOpen", NETWORK);
   LOG(("HttpChannelChild::AsyncOpen [this=%p uri=%s]\n", this, mSpec.get()));
 
   nsresult rv = AsyncOpenInternal(aListener);
@@ -2306,7 +2276,7 @@ nsresult HttpChannelChild::AsyncOpenInternal(nsIStreamListener* aListener) {
         mURI, requestMethod, mPriority, mChannelId, NetworkLoadType::LOAD_START,
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0);
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing());
   }
   StoreIsPending(true);
   StoreWasOpened(true);
@@ -3300,7 +3270,7 @@ HttpChannelChild::LogBlockedCORSRequest(const nsAString& aMessage,
                                         const nsACString& aCategory,
                                         bool aIsWarning) {
   uint64_t innerWindowID = mLoadInfo->GetInnerWindowID();
-  bool privateBrowsing = !!mLoadInfo->GetOriginAttributes().mPrivateBrowsingId;
+  bool privateBrowsing = mLoadInfo->GetOriginAttributes().IsPrivateBrowsing();
   bool fromChromeContext =
       mLoadInfo->TriggeringPrincipal()->IsSystemPrincipal();
   nsCORSListenerProxy::LogBlockedCORSRequest(innerWindowID, privateBrowsing,

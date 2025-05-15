@@ -58,6 +58,10 @@ impl Path {
         unsafe { std::mem::transmute(path) }
     }
 
+    pub fn new<S: AsRef<OsStr> + ?Sized>(s: &S) -> &Self {
+        Self::from_path(std::path::Path::new(s))
+    }
+
     pub fn exists(&self) -> bool {
         super::fs::MockFS
             .try_get(|files| {
@@ -168,5 +172,13 @@ impl From<PathBuf> for std::ffi::OsString {
 impl From<&str> for PathBuf {
     fn from(s: &str) -> Self {
         PathBuf(s.into())
+    }
+}
+
+impl super::mock::MockUnwrap for PathBuf {
+    type Inner = std::path::PathBuf;
+
+    fn unwrap(self) -> Self::Inner {
+        self.0
     }
 }

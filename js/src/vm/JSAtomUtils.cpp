@@ -171,7 +171,7 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
    mozilla::HashStringKnownLength("Symbol." #NAME,              \
                                   sizeof("Symbol." #NAME) - 1), \
    "Symbol." #NAME},
-      JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
+    JS_FOR_EACH_WELL_KNOWN_SYMBOL(COMMON_NAME_INFO)
 #undef COMMON_NAME_INFO
   };
 
@@ -346,7 +346,7 @@ void AtomsTable::mergeAtomsAddedWhileSweeping() {
 }
 
 bool AtomsTable::sweepIncrementally(SweepIterator& atomsToSweep,
-                                    SliceBudget& budget) {
+                                    JS::SliceBudget& budget) {
   // Sweep the table incrementally until we run out of work or budget.
   while (!atomsToSweep.empty()) {
     budget.step();
@@ -574,15 +574,16 @@ static MOZ_ALWAYS_INLINE JSAtom* MakeUTF8AtomHelperNonStaticValidLength(
 
   // MakeAtomUTF8Helper is called from deep in the Atomization path, which
   // expects functions to fail gracefully with nullptr on OOM, without throwing.
-  UniquePtr<CharT[], JS::FreePolicy> newStr(
-      js_pod_arena_malloc<CharT>(js::StringBufferArena, length));
-  if (!newStr) {
+  JSString::OwnedChars<CharT> newChars(
+      AllocAtomCharsValidLength<CharT>(cx, length));
+  if (!newChars) {
     return nullptr;
   }
 
-  InflateUTF8CharsToBuffer(chars->utf8, newStr.get(), length, chars->encoding);
+  InflateUTF8CharsToBuffer(chars->utf8, newChars.data(), length,
+                           chars->encoding);
 
-  return JSAtom::newValidLength(cx, std::move(newStr), length, hash);
+  return JSAtom::newValidLength<CharT>(cx, newChars, hash);
 }
 
 // Another variant of NewAtomNonStaticValidLength.

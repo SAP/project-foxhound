@@ -1120,7 +1120,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    * When loading a new source on an existing media element, make sure to reset
    * everything that is accessible using the media element API.
    */
-  void ResetState();
+  virtual void ResetState();
 
   /**
    * The resource-fetch algorithm step of the load algorithm.
@@ -1812,7 +1812,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   already_AddRefed<PlayPromise> CreatePlayPromise(ErrorResult& aRv) const;
 
-  virtual void MaybeBeginCloningVisually(){};
+  virtual void MaybeBeginCloningVisually() {};
 
   uint32_t GetPreloadDefault() const;
   uint32_t GetPreloadDefaultAuto() const;
@@ -1943,5 +1943,9 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 bool HasDebuggerOrTabsPrivilege(JSContext* aCx, JSObject* aObj);
 
 }  // namespace mozilla::dom
+
+inline nsISupports* ToSupports(mozilla::dom::HTMLMediaElement* aElement) {
+  return static_cast<mozilla::dom::EventTarget*>(aElement);
+}
 
 #endif  // mozilla_dom_HTMLMediaElement_h

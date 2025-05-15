@@ -164,9 +164,8 @@ function handleRustResult(result, liftCallback, liftErrCallback) {
             throw liftErrCallback(result.data);
 
         case "internal-error":
-            let message = result.internalErrorMessage;
-            if (message) {
-                throw new UniFFIInternalError(message);
+            if (result.data) {
+                throw new UniFFIInternalError(FfiConverterString.lift(result.data));
             } else {
                 throw new UniFFIInternalError("Unknown error");
             }
@@ -381,7 +380,7 @@ export function gradient(value) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                62, // external_types:uniffi_uniffi_fixture_external_types_fn_func_gradient
+                63, // external_types:uniffi_uniffi_fixture_external_types_fn_func_gradient
                 FfiConverterOptionalTypeLine.lower(value),
             )
         }
@@ -414,7 +413,7 @@ export function intersection(ln1,ln2) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                63, // external_types:uniffi_uniffi_fixture_external_types_fn_func_intersection
+                64, // external_types:uniffi_uniffi_fixture_external_types_fn_func_intersection
                 FfiConverterTypeLine.lower(ln1),
                 FfiConverterTypeLine.lower(ln2),
             )

@@ -39,129 +39,6 @@
 
 namespace mozilla::gfx {
 
-// Inserts (allocates) a rectangle of the requested size into the tree.
-Maybe<IntPoint> TexturePacker::Insert(const IntSize& aSize) {
-  // Check if the available space could possibly fit the requested size. If
-  // not, there is no reason to continue searching within this sub-tree.
-  if (mAvailable < std::min(aSize.width, aSize.height) ||
-      mBounds.width < aSize.width || mBounds.height < aSize.height) {
-    return Nothing();
-  }
-  if (mChildren) {
-    // If this node has children, then try to insert into each of the children
-    // in turn.
-    Maybe<IntPoint> inserted = mChildren[0].Insert(aSize);
-    if (!inserted) {
-      inserted = mChildren[1].Insert(aSize);
-    }
-    // If the insertion succeeded, adjust the available state to reflect the
-    // remaining space in the children.
-    if (inserted) {
-      mAvailable = std::max(mChildren[0].mAvailable, mChildren[1].mAvailable);
-      if (!mAvailable) {
-        DiscardChildren();
-      }
-    }
-    return inserted;
-  }
-  // If we get here, we've encountered a leaf node. First check if its size is
-  // exactly the requested size. If so, mark the node as unavailable and return
-  // its offset.
-  if (mBounds.Size() == aSize) {
-    mAvailable = 0;
-    return Some(mBounds.TopLeft());
-  }
-  // The node is larger than the requested size. Choose the axis which has the
-  // most excess space beyond the requested size and split it so that at least
-  // one of the children matches the requested size for that axis.
-  if (mBounds.width - aSize.width > mBounds.height - aSize.height) {
-    mChildren.reset(new TexturePacker[2]{
-        TexturePacker(
-            IntRect(mBounds.x, mBounds.y, aSize.width, mBounds.height)),
-        TexturePacker(IntRect(mBounds.x + aSize.width, mBounds.y,
-                              mBounds.width - aSize.width, mBounds.height))});
-  } else {
-    mChildren.reset(new TexturePacker[2]{
-        TexturePacker(
-            IntRect(mBounds.x, mBounds.y, mBounds.width, aSize.height)),
-        TexturePacker(IntRect(mBounds.x, mBounds.y + aSize.height,
-                              mBounds.width, mBounds.height - aSize.height))});
-  }
-  // After splitting, try to insert into the first child, which should usually
-  // be big enough to accomodate the request. Adjust the available state to the
-  // remaining space.
-  Maybe<IntPoint> inserted = mChildren[0].Insert(aSize);
-  mAvailable = std::max(mChildren[0].mAvailable, mChildren[1].mAvailable);
-  return inserted;
-}
-
-// Removes (frees) a rectangle with the given bounds from the tree.
-bool TexturePacker::Remove(const IntRect& aBounds) {
-  if (!mChildren) {
-    // If there are no children, we encountered a leaf node. Non-zero available
-    // state means that this node was already removed previously. Also, if the
-    // bounds don't contain the request, and assuming the tree was previously
-    // split during insertion, then this node is not the node we're searching
-    // for.
-    if (mAvailable > 0 || !mBounds.Contains(aBounds)) {
-      return false;
-    }
-    // The bounds match exactly and it was previously inserted, so in this case
-    // we can just remove it.
-    if (mBounds == aBounds) {
-      mAvailable = std::min(mBounds.width, mBounds.height);
-      return true;
-    }
-    // We need to split this leaf node so that it can exactly match the removed
-    // bounds. We know the leaf node at least contains the removed bounds, but
-    // needs to be subdivided until it has a child node that exactly matches.
-    // Choose the axis to split with the largest amount of excess space. Within
-    // that axis, choose the larger of the space before or after the subrect as
-    // the split point to the new children.
-    if (mBounds.width - aBounds.width > mBounds.height - aBounds.height) {
-      int split = aBounds.x - mBounds.x > mBounds.XMost() - aBounds.XMost()
-                      ? aBounds.x
-                      : aBounds.XMost();
-      mChildren.reset(new TexturePacker[2]{
-          TexturePacker(
-              IntRect(mBounds.x, mBounds.y, split - mBounds.x, mBounds.height),
-              false),
-          TexturePacker(IntRect(split, mBounds.y, mBounds.XMost() - split,
-                                mBounds.height),
-                        false)});
-    } else {
-      int split = aBounds.y - mBounds.y > mBounds.YMost() - aBounds.YMost()
-                      ? aBounds.y
-                      : aBounds.YMost();
-      mChildren.reset(new TexturePacker[2]{
-          TexturePacker(
-              IntRect(mBounds.x, mBounds.y, mBounds.width, split - mBounds.y),
-              false),
-          TexturePacker(
-              IntRect(mBounds.x, split, mBounds.width, mBounds.YMost() - split),
-              false)});
-    }
-  }
-  // We've encountered a branch node. Determine which of the two child nodes
-  // would possibly contain the removed bounds. We first check which axis the
-  // children were split on and then whether the removed bounds on that axis
-  // are past the start of the second child. Proceed to recurse into that
-  // child node for removal.
-  bool next = mChildren[0].mBounds.x < mChildren[1].mBounds.x
-                  ? aBounds.x >= mChildren[1].mBounds.x
-                  : aBounds.y >= mChildren[1].mBounds.y;
-  bool removed = mChildren[next ? 1 : 0].Remove(aBounds);
-  if (removed) {
-    if (mChildren[0].IsFullyAvailable() && mChildren[1].IsFullyAvailable()) {
-      DiscardChildren();
-      mAvailable = std::min(mBounds.width, mBounds.height);
-    } else {
-      mAvailable = std::max(mChildren[0].mAvailable, mChildren[1].mAvailable);
-    }
-  }
-  return removed;
-}
-
 BackingTexture::BackingTexture(const IntSize& aSize, SurfaceFormat aFormat,
                                const RefPtr<WebGLTexture>& aTexture)
     : mSize(aSize), mFormat(aFormat), mTexture(aTexture) {}
@@ -169,30 +46,48 @@ BackingTexture::BackingTexture(const IntSize& aSize, SurfaceFormat aFormat,
 SharedTexture::SharedTexture(const IntSize& aSize, SurfaceFormat aFormat,
                              const RefPtr<WebGLTexture>& aTexture)
     : BackingTexture(aSize, aFormat, aTexture),
-      mPacker(IntRect(IntPoint(0, 0), aSize)) {}
+      mAtlasAllocator(
+          Etagere::etagere_atlas_allocator_new(aSize.width, aSize.height)) {}
 
-SharedTextureHandle::SharedTextureHandle(const IntRect& aBounds,
+SharedTexture::~SharedTexture() {
+  if (mAtlasAllocator) {
+    Etagere::etagere_atlas_allocator_delete(mAtlasAllocator);
+    mAtlasAllocator = nullptr;
+  }
+}
+
+SharedTextureHandle::SharedTextureHandle(Etagere::AllocationId aId,
+                                         const IntRect& aBounds,
                                          SharedTexture* aTexture)
-    : mBounds(aBounds), mTexture(aTexture) {}
+    : mAllocationId(aId), mBounds(aBounds), mTexture(aTexture) {}
 
 already_AddRefed<SharedTextureHandle> SharedTexture::Allocate(
     const IntSize& aSize) {
-  RefPtr<SharedTextureHandle> handle;
-  if (Maybe<IntPoint> origin = mPacker.Insert(aSize)) {
-    handle = new SharedTextureHandle(IntRect(*origin, aSize), this);
-    ++mAllocatedHandles;
+  Etagere::Allocation alloc = {{0, 0, 0, 0}, Etagere::INVALID_ALLOCATION_ID};
+  if (!mAtlasAllocator ||
+      !Etagere::etagere_atlas_allocator_allocate(mAtlasAllocator, aSize.width,
+                                                 aSize.height, &alloc) ||
+      alloc.id == Etagere::INVALID_ALLOCATION_ID) {
+    return nullptr;
   }
+  RefPtr<SharedTextureHandle> handle = new SharedTextureHandle(
+      alloc.id,
+      IntRect(IntPoint(alloc.rectangle.min_x, alloc.rectangle.min_y), aSize),
+      this);
   return handle.forget();
 }
 
-bool SharedTexture::Free(const SharedTextureHandle& aHandle) {
+bool SharedTexture::Free(SharedTextureHandle& aHandle) {
   if (aHandle.mTexture != this) {
     return false;
   }
-  if (!mPacker.Remove(aHandle.mBounds)) {
-    return false;
+  if (aHandle.mAllocationId != Etagere::INVALID_ALLOCATION_ID) {
+    if (mAtlasAllocator) {
+      Etagere::etagere_atlas_allocator_deallocate(mAtlasAllocator,
+                                                  aHandle.mAllocationId);
+    }
+    aHandle.mAllocationId = Etagere::INVALID_ALLOCATION_ID;
   }
-  --mAllocatedHandles;
   return true;
 }
 
@@ -1326,8 +1221,8 @@ bool SharedContextWebgl::CreateShaders() {
         "                     dot(u_transform[1], u_transform[1]));\n"
         "   vec2 invScale = u_aa * inversesqrt(scale + 1.0e-6);\n"
         "   scale *= invScale;\n"
-        "   vec2 extrude = a_vertex.xy + invScale * (2.0 * a_vertex.xy - "
-        "1.0);\n"
+        "   vec2 extrude = a_vertex.xy +\n"
+        "                  invScale * (2.0 * a_vertex.xy - 1.0);\n"
         "   vec2 vertex = u_transform[0] * extrude.x +\n"
         "                 u_transform[1] * extrude.y +\n"
         "                 u_transform[2];\n"
@@ -1335,8 +1230,10 @@ bool SharedContextWebgl::CreateShaders() {
         "   v_cliptc = vertex / u_viewport;\n"
         "   v_clipdist = vec4(vertex - u_clipbounds.xy,\n"
         "                     u_clipbounds.zw - vertex);\n"
-        "   v_dist = vec4(extrude, 1.0 - extrude) * scale.xyxy + 1.5 - u_aa;\n"
-        "   v_alpha = a_vertex.z;\n"
+        "   float noAA = 1.0 - u_aa;\n"
+        "   v_dist = vec4(extrude, 1.0 - extrude) * scale.xyxy + 0.5 + noAA;\n"
+        "   v_alpha = min(a_vertex.z,\n"
+        "                 min(scale.x, 1.0) * min(scale.y, 1.0) + noAA);\n"
         "}\n";
     auto fsSource =
         "precision mediump float;\n"
@@ -1350,7 +1247,7 @@ bool SharedContextWebgl::CreateShaders() {
         "   float clip = texture2D(u_clipmask, v_cliptc).r;\n"
         "   vec4 dist = min(v_dist, v_clipdist);\n"
         "   dist.xy = min(dist.xy, dist.zw);\n"
-        "   float aa = v_alpha * clamp(min(dist.x, dist.y), 0.0, 1.0);\n"
+        "   float aa = clamp(min(dist.x, dist.y), 0.0, v_alpha);\n"
         "   gl_FragColor = clip * aa * u_color;\n"
         "}\n";
     RefPtr<WebGLShader> vsId = mWebgl->CreateShader(LOCAL_GL_VERTEX_SHADER);
@@ -1406,8 +1303,8 @@ bool SharedContextWebgl::CreateShaders() {
         "                     dot(u_transform[1], u_transform[1]));\n"
         "   vec2 invScale = u_aa * inversesqrt(scale + 1.0e-6);\n"
         "   scale *= invScale;\n"
-        "   vec2 extrude = a_vertex.xy + invScale * (2.0 * a_vertex.xy - "
-        "1.0);\n"
+        "   vec2 extrude = a_vertex.xy +\n"
+        "                  invScale * (2.0 * a_vertex.xy - 1.0);\n"
         "   vec2 vertex = u_transform[0] * extrude.x +\n"
         "                 u_transform[1] * extrude.y +\n"
         "                 u_transform[2];\n"
@@ -1418,8 +1315,10 @@ bool SharedContextWebgl::CreateShaders() {
         "   v_texcoord = u_texmatrix[0] * extrude.x +\n"
         "                u_texmatrix[1] * extrude.y +\n"
         "                u_texmatrix[2];\n"
-        "   v_dist = vec4(extrude, 1.0 - extrude) * scale.xyxy + 1.5 - u_aa;\n"
-        "   v_alpha = a_vertex.z;\n"
+        "   float noAA = 1.0 - u_aa;\n"
+        "   v_dist = vec4(extrude, 1.0 - extrude) * scale.xyxy + 0.5 + noAA;\n"
+        "   v_alpha = min(a_vertex.z,\n"
+        "                 min(scale.x, 1.0) * min(scale.y, 1.0) + noAA);\n"
         "}\n";
     auto fsSource =
         "precision mediump float;\n"
@@ -1440,7 +1339,7 @@ bool SharedContextWebgl::CreateShaders() {
         "   float clip = texture2D(u_clipmask, v_cliptc).r;\n"
         "   vec4 dist = min(v_dist, v_clipdist);\n"
         "   dist.xy = min(dist.xy, dist.zw);\n"
-        "   float aa = v_alpha * clamp(min(dist.x, dist.y), 0.0, 1.0);\n"
+        "   float aa = clamp(min(dist.x, dist.y), 0.0, v_alpha);\n"
         "   gl_FragColor = clip * aa * u_color *\n"
         "                  mix(image, image.rrrr, u_swizzle);\n"
         "}\n";
@@ -1511,23 +1410,27 @@ inline ColorPattern DrawTargetWebgl::GetClearPattern() const {
       DeviceColor(0.0f, 0.0f, 0.0f, IsOpaque(mFormat) ? 1.0f : 0.0f));
 }
 
-// Check if the transformed rect would contain the entire viewport.
-inline bool DrawTargetWebgl::RectContainsViewport(const Rect& aRect) const {
-  return mTransform.PreservesAxisAlignedRectangles() &&
-         MatrixDouble(mTransform)
-             .TransformBounds(
-                 RectDouble(aRect.x, aRect.y, aRect.width, aRect.height))
-             .Contains(RectDouble(GetRect()));
+template <typename R>
+inline RectDouble DrawTargetWebgl::TransformDouble(const R& aRect) const {
+  return MatrixDouble(mTransform).TransformBounds(WidenToDouble(aRect));
+}
+
+// Check if the transformed rect clips to the viewport.
+inline Maybe<Rect> DrawTargetWebgl::RectClippedToViewport(
+    const RectDouble& aRect) const {
+  if (!mTransform.PreservesAxisAlignedRectangles()) {
+    return Nothing();
+  }
+
+  return Some(NarrowToFloat(aRect.SafeIntersect(RectDouble(GetRect()))));
 }
 
 // Ensure that the rect, after transform, is within reasonable precision limits
 // such that when transformed and clipped in the shader it will not round bits
 // from the mantissa in a way that will diverge in a noticeable way from path
 // geometry calculated by the path fallback.
-static inline bool RectInsidePrecisionLimits(const Rect& aRect,
-                                             const Matrix& aTransform) {
-  return Rect(-(1 << 20), -(1 << 20), 2 << 20, 2 << 20)
-      .Contains(aTransform.TransformBounds(aRect));
+static inline bool RectInsidePrecisionLimits(const RectDouble& aRect) {
+  return RectDouble(-(1 << 20), -(1 << 20), 2 << 20, 2 << 20).Contains(aRect);
 }
 
 void DrawTargetWebgl::ClearRect(const Rect& aRect) {
@@ -1536,14 +1439,16 @@ void DrawTargetWebgl::ClearRect(const Rect& aRect) {
     return;
   }
 
-  bool containsViewport = RectContainsViewport(aRect);
-  if (containsViewport) {
-    // If the rect encompasses the entire viewport, just clear the viewport
-    // instead to avoid transform issues.
-    DrawRect(Rect(GetRect()), GetClearPattern(),
+  RectDouble xformRect = TransformDouble(aRect);
+  bool containsViewport = false;
+  if (Maybe<Rect> clipped = RectClippedToViewport(xformRect)) {
+    // If the rect clips to viewport, just clear the clipped rect
+    // to avoid transform issues.
+    containsViewport = clipped->Size() == Size(GetSize());
+    DrawRect(*clipped, GetClearPattern(),
              DrawOptions(1.0f, CompositionOp::OP_CLEAR), Nothing(), nullptr,
              false);
-  } else if (RectInsidePrecisionLimits(aRect, mTransform)) {
+  } else if (RectInsidePrecisionLimits(xformRect)) {
     // If the rect transform won't stress precision, then just use it.
     DrawRect(aRect, GetClearPattern(),
              DrawOptions(1.0f, CompositionOp::OP_CLEAR));
@@ -2695,16 +2600,18 @@ bool SharedContextWebgl::PruneTextureMemory(size_t aMargin, bool aPruneUnused) {
 void DrawTargetWebgl::FillRect(const Rect& aRect, const Pattern& aPattern,
                                const DrawOptions& aOptions) {
   if (SupportsPattern(aPattern)) {
-    if (RectInsidePrecisionLimits(aRect, mTransform)) {
-      DrawRect(aRect, aPattern, aOptions);
-      return;
+    RectDouble xformRect = TransformDouble(aRect);
+    if (aPattern.GetType() == PatternType::COLOR) {
+      if (Maybe<Rect> clipped = RectClippedToViewport(xformRect)) {
+        // If the pattern is transform-invariant and the rect clips to the
+        // viewport, just clip drawing to the viewport to avoid transform
+        // issues.
+        DrawRect(*clipped, aPattern, aOptions, Nothing(), nullptr, false);
+        return;
+      }
     }
-    if (aPattern.GetType() == PatternType::COLOR &&
-        RectContainsViewport(aRect)) {
-      // If the pattern is transform-invariant and the rect encompasses the
-      // entire viewport, just clip drawing to the viewport to avoid transform
-      // issues.
-      DrawRect(Rect(GetRect()), aPattern, aOptions, Nothing(), nullptr, false);
+    if (RectInsidePrecisionLimits(xformRect)) {
+      DrawRect(aRect, aPattern, aOptions);
       return;
     }
   }
@@ -2865,17 +2772,19 @@ void DrawTargetWebgl::Fill(const Path* aPath, const Pattern& aPattern,
   SkRect skiaRect = SkRect::MakeEmpty();
   // Draw the path as a simple rectangle with a supported pattern when possible.
   if (skiaPath.isRect(&skiaRect) && SupportsPattern(aPattern)) {
-    Rect rect = SkRectToRect(skiaRect);
-    if (RectInsidePrecisionLimits(rect, mTransform)) {
-      DrawRect(rect, aPattern, aOptions);
-      return;
+    RectDouble rect = SkRectToRectDouble(skiaRect);
+    RectDouble xformRect = TransformDouble(rect);
+    if (aPattern.GetType() == PatternType::COLOR) {
+      if (Maybe<Rect> clipped = RectClippedToViewport(xformRect)) {
+        // If the pattern is transform-invariant and the rect clips to the
+        // viewport, just clip drawing to the viewport to avoid transform
+        // issues.
+        DrawRect(*clipped, aPattern, aOptions, Nothing(), nullptr, false);
+        return;
+      }
     }
-    if (aPattern.GetType() == PatternType::COLOR &&
-        RectContainsViewport(rect)) {
-      // If the pattern is transform-invariant and the rect encompasses the
-      // entire viewport, just clip drawing to the viewport to avoid transform
-      // issues.
-      DrawRect(Rect(GetRect()), aPattern, aOptions, Nothing(), nullptr, false);
+    if (RectInsidePrecisionLimits(xformRect)) {
+      DrawRect(NarrowToFloat(rect), aPattern, aOptions);
       return;
     }
   }

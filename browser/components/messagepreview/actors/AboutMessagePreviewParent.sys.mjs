@@ -8,6 +8,8 @@ import { JsonSchema } from "resource://gre/modules/JsonSchema.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  BookmarksBarButton: "resource:///modules/asrouter/BookmarksBarButton.sys.mjs",
   CFRPageActions: "resource:///modules/asrouter/CFRPageActions.sys.mjs",
   FeatureCalloutBroker:
     "resource:///modules/asrouter/FeatureCalloutBroker.sys.mjs",
@@ -17,6 +19,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
 });
 
+const SWITCH_THEMES = {
+  DARK: "firefox-compact-dark@mozilla.org",
+  LIGHT: "firefox-compact-light@mozilla.org",
+};
+
 function dispatchCFRAction({ type, data }, browser) {
   if (type === "USER_ACTION") {
     lazy.SpecialMessageActions.handleAction(data, browser);
@@ -24,12 +31,34 @@ function dispatchCFRAction({ type, data }, browser) {
 }
 
 export class AboutMessagePreviewParent extends JSWindowActorParent {
+  constructor() {
+    super();
+
+    const EXISTING_THEME = Services.prefs.getStringPref(
+      "extensions.activeThemeID"
+    );
+
+    this._onUnload = () => {
+      lazy.AddonManager.getAddonByID(EXISTING_THEME).then(addon =>
+        addon.enable()
+      );
+    };
+  }
+
+  didDestroy() {
+    this._onUnload();
+  }
+
   showInfoBar(message, browser) {
     lazy.InfoBar.showInfoBarMessage(browser, message, dispatchCFRAction);
   }
 
   showSpotlight(message, browser) {
     lazy.Spotlight.showSpotlightDialog(browser, message, () => {});
+  }
+
+  showBookmarksBarButton(message, browser) {
+    lazy.BookmarksBarButton.showBookmarksBarButton(message, browser);
   }
 
   showCFR(message, browser) {
@@ -41,6 +70,12 @@ export class AboutMessagePreviewParent extends JSWindowActorParent {
   }
 
   async showFeatureCallout(message, browser) {
+    // Clear the Feature Tour prefs used by some callouts, to ensure
+    // the behaviour of the message is correct
+    let tourPref = message.content.tour_pref_name;
+    if (tourPref) {
+      Services.prefs.clearUserPref(tourPref);
+    }
     // For messagePreview, force the trigger && targeting to be something we can show.
     message.trigger.id = "nthTabClosed";
     message.targeting = "true";
@@ -109,6 +144,9 @@ export class AboutMessagePreviewParent extends JSWindowActorParent {
       case "feature_callout":
         this.showFeatureCallout(message, browser);
         return;
+      case "bookmarks_bar_button":
+        this.showBookmarksBarButton(message, browser);
+        return;
       default:
         console.error(`Unsupported message template ${message.template}`);
     }
@@ -120,7 +158,12 @@ export class AboutMessagePreviewParent extends JSWindowActorParent {
     switch (name) {
       case "MessagePreview:SHOW_MESSAGE":
         this.showMessage(data);
-        break;
+        return;
+      case "MessagePreview:CHANGE_THEME": {
+        const theme = data.isDark ? SWITCH_THEMES.LIGHT : SWITCH_THEMES.DARK;
+        lazy.AddonManager.getAddonByID(theme).then(addon => addon.enable());
+        return;
+      }
       default:
         console.log(`Unexpected event ${name} was not handled.`);
     }

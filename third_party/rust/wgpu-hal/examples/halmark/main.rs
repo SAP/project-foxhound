@@ -111,7 +111,7 @@ impl<A: hal::Api> Example<A> {
         };
 
         let (adapter, capabilities) = unsafe {
-            let mut adapters = instance.enumerate_adapters();
+            let mut adapters = instance.enumerate_adapters(Some(&surface));
             if adapters.is_empty() {
                 return Err("no adapters found".into());
             }
@@ -125,7 +125,11 @@ impl<A: hal::Api> Example<A> {
 
         let hal::OpenDevice { device, queue } = unsafe {
             adapter
-                .open(wgt::Features::empty(), &wgt::Limits::default())
+                .open(
+                    wgt::Features::empty(),
+                    &wgt::Limits::default(),
+                    &wgt::MemoryHints::default(),
+                )
                 .unwrap()
         };
 
@@ -297,7 +301,7 @@ impl<A: hal::Api> Example<A> {
                 mapping.ptr.as_ptr(),
                 texture_data.len(),
             );
-            device.unmap_buffer(&staging_buffer).unwrap();
+            device.unmap_buffer(&staging_buffer);
             assert!(mapping.is_coherent);
         }
 
@@ -406,7 +410,7 @@ impl<A: hal::Api> Example<A> {
                 mapping.ptr.as_ptr(),
                 mem::size_of::<Globals>(),
             );
-            device.unmap_buffer(&buffer).unwrap();
+            device.unmap_buffer(&buffer);
             assert!(mapping.is_coherent);
             buffer
         };
@@ -643,7 +647,7 @@ impl<A: hal::Api> Example<A> {
                     size,
                 );
                 assert!(mapping.is_coherent);
-                self.device.unmap_buffer(&self.local_buffer).unwrap();
+                self.device.unmap_buffer(&self.local_buffer);
             }
         }
 
@@ -809,6 +813,8 @@ fn main() {
 
     let example_result = Example::<Api>::init(&window);
     let mut example = Some(example_result.expect("Selected backend is not supported"));
+
+    println!("Press space to spawn bunnies.");
 
     let mut last_frame_inst = Instant::now();
     let (mut frame_count, mut accum_time) = (0, 0.0);

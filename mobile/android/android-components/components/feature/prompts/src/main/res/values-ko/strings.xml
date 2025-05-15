@@ -49,7 +49,9 @@
     <!-- Prompt message displayed when app detects a user has entered a new password for an existing login and user decides if app should update the password. -->
     <string name="mozac_feature_prompt_login_update_headline_2">비밀번호를 업데이트하시겠습니까?</string>
     <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
-    <string name="mozac_feature_prompt_login_add_username_headline">저장된 비밀번호에 사용자 이름을 추가하시겠습니까?</string>
+    <string name="mozac_feature_prompt_login_add_username_headline" moz:removedIn="130" tools:ignore="UnusedResources">저장된 비밀번호에 사용자 이름을 추가하시겠습니까?</string>
+    <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
+    <string name="mozac_feature_prompt_login_add_username_headline_2">사용자 이름을 업데이트하시겠습니까?</string>
     <!-- Text for a label for the field when prompt requesting a text is shown. -->
     <!-- For more info take a look here https://developer.mozilla.org/en-US/docs/Web/API/Window/prompt -->
     <string name="mozac_feature_prompts_content_description_input_label">텍스트 입력을 위한 라벨</string>
@@ -125,7 +127,10 @@
     <!-- Title for using the suggest strong password confirmation dialog -->
     <string name="mozac_feature_prompts_suggest_strong_password_title">강력한 비밀번호를 사용하시겠습니까?</string>
     <!-- Content description for the suggest strong password confirmation dialog -->
-    <string name="mozac_feature_prompts_suggest_strong_password_description">무작위로 생성된 강력한 비밀번호를 사용하여 계정을 보호하세요. 비밀번호를 계정에 저장하여 비밀번호에 빠르게 액세스하세요.</string>
+    <string name="mozac_feature_prompts_suggest_strong_password_description" moz:removedIn="130" tools:ignore="UnusedResources">무작위로 생성된 강력한 비밀번호를 사용하여 계정을 보호하세요. 비밀번호를 계정에 저장하여 비밀번호에 빠르게 액세스하세요.</string>
+    <!-- Content description for the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_description_2">무작위로 생성된 강력한 비밀번호를 사용하여 계정을 보호하세요. 나중에 사용할 수 있도록 계정에 저장됩니다.</string>
+
     <!-- Pressing this will use the suggested strong password -->
     <string name="mozac_feature_prompts_suggest_strong_password_use_password">비밀번호 사용</string>
     <!-- Pressing this will dismiss the suggested strong password dialog -->
@@ -135,6 +140,9 @@
     <!-- Title for showing the suggest strong password updated confirmation snackbar -->
     <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">비밀번호 업데이트됨</string>
 
+
+    <!-- Title for showing the username updated confirmation snackbar -->
+    <string name="mozac_feature_prompt_login_snackbar_username_updated">사용자 이름 업데이트됨</string>
 
     <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
     <string name="mozac_feature_prompt_repost_title">이 사이트로 데이터를 다시 보내시겠습니까?</string>

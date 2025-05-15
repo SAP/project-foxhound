@@ -17,6 +17,7 @@
 #include "jit/CacheIROpsGenerated.h"
 #include "jit/CacheIRReader.h"
 #include "jit/LIR.h"
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
@@ -724,10 +725,22 @@ bool WarpCacheIRTranspiler::emitMegamorphicLoadSlotResult(ObjOperandId objId,
   PropertyName* name = stringStubField(nameOffset)->asAtom().asPropertyName();
 
   auto* ins = MMegamorphicLoadSlot::New(alloc(), obj, NameToId(name));
-  add(ins);
 
+  add(ins);
   pushResult(ins);
   return true;
+}
+
+bool WarpCacheIRTranspiler::emitMegamorphicLoadSlotPermissiveResult(
+    ObjOperandId objId, uint32_t nameOffset) {
+  MDefinition* obj = getOperand(objId);
+  PropertyName* name = stringStubField(nameOffset)->asAtom().asPropertyName();
+
+  auto* ins = MMegamorphicLoadSlotPermissive::New(alloc(), obj, NameToId(name));
+
+  addEffectful(ins);
+  pushResult(ins);
+  return resumeAfter(ins);
 }
 
 bool WarpCacheIRTranspiler::emitMegamorphicLoadSlotByValueResult(
@@ -736,10 +749,22 @@ bool WarpCacheIRTranspiler::emitMegamorphicLoadSlotByValueResult(
   MDefinition* id = getOperand(idId);
 
   auto* ins = MMegamorphicLoadSlotByValue::New(alloc(), obj, id);
-  add(ins);
 
+  add(ins);
   pushResult(ins);
   return true;
+}
+
+bool WarpCacheIRTranspiler::emitMegamorphicLoadSlotByValuePermissiveResult(
+    ObjOperandId objId, ValOperandId idId) {
+  MDefinition* obj = getOperand(objId);
+  MDefinition* id = getOperand(idId);
+
+  auto* ins = MMegamorphicLoadSlotByValuePermissive::New(alloc(), obj, id);
+
+  addEffectful(ins);
+  pushResult(ins);
+  return resumeAfter(ins);
 }
 
 bool WarpCacheIRTranspiler::emitMegamorphicStoreSlot(ObjOperandId objId,
@@ -1282,7 +1307,7 @@ bool WarpCacheIRTranspiler::emitGuardBooleanToInt32(ValOperandId inputId,
 bool WarpCacheIRTranspiler::emitGuardIsNumber(ValOperandId inputId) {
   // Prefer MToDouble because it gets further optimizations downstream.
   MDefinition* def = getOperand(inputId);
-  if (def->type() == MIRType::Int32) {
+  if (def->type() == MIRType::Int32 || def->type() == MIRType::Float32) {
     auto* ins = MToDouble::New(alloc(), def);
     add(ins);
 
@@ -2219,6 +2244,7 @@ static MIRType MIRTypeForArrayBufferViewRead(Scalar::Type arrayType,
       return MIRType::Int32;
     case Scalar::Uint32:
       return forceDoubleForUint32 ? MIRType::Double : MIRType::Int32;
+    case Scalar::Float16:
     case Scalar::Float32:
       return MIRType::Float32;
     case Scalar::Float64:
@@ -3642,6 +3668,17 @@ bool WarpCacheIRTranspiler::emitMathFRoundNumberResult(
   MDefinition* input = getOperand(inputId);
 
   auto* ins = MToFloat32::New(alloc(), input);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitMathF16RoundNumberResult(
+    NumberOperandId inputId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* ins = MToFloat16::New(alloc(), input);
   add(ins);
 
   pushResult(ins);
@@ -5967,7 +6004,8 @@ bool WarpCacheIRTranspiler::emitCallWasmFunction(
   auto* wasmInstanceObj = &instanceObject->as<WasmInstanceObject>();
   const wasm::FuncExport* funcExport = wasmFuncExportField(funcExportOffset);
   const wasm::FuncType& sig =
-      wasmInstanceObj->instance().metadata().getFuncExportType(*funcExport);
+      wasmInstanceObj->instance().code().codeMeta().getFuncType(
+          funcExport->funcIndex());
 
   if (!updateCallInfo(callee, flags)) {
     return false;

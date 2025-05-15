@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 gecko_parameters_schema = {
+    Required("android_perftest_backstop"): bool,
     Required("app_version"): str,
     Required("backstop"): bool,
     Required("build_number"): int,
@@ -66,6 +67,11 @@ gecko_parameters_schema = {
             "A module path pointing to a dict to be use as the `strategy_override` "
             "argument in `taskgraph.optimize.base.optimize_task_graph`.",
         ): str,
+        Optional(
+            "pernosco",
+            description="Record an rr trace on supported tasks using the Pernosco debugging "
+            "service.",
+        ): bool,
         Optional("rebuild"): int,
         Optional("tasks-regex"): {
             "include": Any(None, [str]),
@@ -104,6 +110,7 @@ def get_app_version(product_dir="browser"):
 
 def get_defaults(repo_root=None):
     return {
+        "android_perftest_backstop": False,
         "app_version": get_app_version(),
         "backstop": False,
         "base_repository": "https://hg.mozilla.org/mozilla-unified",

@@ -8,11 +8,11 @@ import errno
 import logging
 import os
 import sys
-from multiprocessing import cpu_count
 
 from mach.decorators import Command
 from mozbuild.base import BinaryNotFoundException, MozbuildObject
 from mozbuild.base import MachCommandConditions as conditions
+from mozbuild.util import cpu_count
 from mozlog import structured
 from xpcshellcommandline import parser_desktop, parser_remote
 
@@ -177,6 +177,11 @@ class AndroidXPCShellRunner(MozbuildObject):
                     break
             else:
                 raise Exception("APK not found in objdir. You must specify an APK.")
+
+        if not kwargs["xrePath"]:
+            MOZ_HOST_BIN = os.environ.get("MOZ_HOST_BIN")
+            if MOZ_HOST_BIN:
+                kwargs["xrePath"] = MOZ_HOST_BIN
 
         xpcshell = remotexpcshelltests.XPCShellRemote(kwargs, log)
 

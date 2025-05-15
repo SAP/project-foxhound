@@ -468,7 +468,8 @@ void ClientWebGLContext::EndComposition() {
 layers::TextureType ClientWebGLContext::GetTexTypeForSwapChain() const {
   const RefPtr<layers::ImageBridgeChild> imageBridge =
       layers::ImageBridgeChild::GetSingleton();
-  return layers::TexTypeForWebgl(imageBridge);
+  const bool isOutOfProcess = mNotLost && mNotLost->outOfProcess != nullptr;
+  return layers::TexTypeForWebgl(imageBridge, isOutOfProcess);
 }
 
 void ClientWebGLContext::Present(WebGLFramebufferJS* const xrFb,
@@ -587,8 +588,9 @@ Maybe<layers::SurfaceDescriptor> ClientWebGLContext::GetFrontBuffer(
 }
 
 Maybe<layers::SurfaceDescriptor> ClientWebGLContext::PresentFrontBuffer(
-    WebGLFramebufferJS* const fb, const layers::TextureType type, bool webvr) {
-  Present(fb, type, webvr);
+    WebGLFramebufferJS* const fb, bool webvr) {
+  const auto texType = GetTexTypeForSwapChain();
+  Present(fb, texType, webvr);
   return GetFrontBuffer(fb, webvr);
 }
 
@@ -739,16 +741,7 @@ void ClientWebGLContext::GetCanvas(
 void ClientWebGLContext::SetDrawingBufferColorSpace(
     const dom::PredefinedColorSpace val) {
   mDrawingBufferColorSpace = val;
-
-  // Just in case, update in Options too.
-  // Why not treat our WebGLContextOptions as the source of truth? Well,
-  // mNotLost is lost on context-loss, so we'd lose any setting we had here if
-  // that happens.
-  if (mNotLost) {
-    mNotLost->info.options.colorSpace = mDrawingBufferColorSpace;
-  }
-
-  Run<RPROC(SetDrawingBufferColorSpace)>(mDrawingBufferColorSpace);
+  Run<RPROC(SetDrawingBufferColorSpace)>(*mDrawingBufferColorSpace);
 }
 
 void ClientWebGLContext::GetContextAttributes(
@@ -939,8 +932,10 @@ bool ClientWebGLContext::CreateHostContext(const uvec2& requestedSize) {
   // Init state
   const auto& limits = Limits();
   auto& state = State();
+  state.mIsEnabledMap = webgl::MakeIsEnabledMap(mIsWebGL2);
+
   state.mDefaultTfo = new WebGLTransformFeedbackJS(*this);
-  state.mDefaultVao = new WebGLVertexArrayJS(*this);
+  state.mDefaultVao = new WebGLVertexArrayJS(this);
 
   state.mBoundTfo = state.mDefaultTfo;
   state.mBoundVao = state.mDefaultVao;
@@ -977,8 +972,6 @@ bool ClientWebGLContext::CreateHostContext(const uvec2& requestedSize) {
     (void)state
         .mCurrentQueryByTarget[LOCAL_GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN];
   }
-
-  state.mIsEnabledMap = Some(webgl::MakeIsEnabledMap(mIsWebGL2));
 
   return true;
 }
@@ -1072,9 +1065,6 @@ ClientWebGLContext::SetContextOptions(JSContext* cx,
   }
   if (attributes.mAntialias.WasPassed()) {
     newOpts.antialias = attributes.mAntialias.Value();
-  }
-  if (attributes.mColorSpace.WasPassed()) {
-    newOpts.colorSpace = attributes.mColorSpace.Value();
   }
 
   // Don't do antialiasing if we've disabled MSAA.
@@ -1383,7 +1373,6 @@ static RefPtr<T> AsRefPtr(T* ptr) {
 
 already_AddRefed<WebGLBufferJS> ClientWebGLContext::CreateBuffer() const {
   const FuncScope funcScope(*this, "createBuffer");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLBufferJS(*this));
   Run<RPROC(CreateBuffer)>(ret->mId);
@@ -1393,7 +1382,6 @@ already_AddRefed<WebGLBufferJS> ClientWebGLContext::CreateBuffer() const {
 already_AddRefed<WebGLFramebufferJS> ClientWebGLContext::CreateFramebuffer()
     const {
   const FuncScope funcScope(*this, "createFramebuffer");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLFramebufferJS(*this));
   Run<RPROC(CreateFramebuffer)>(ret->mId);
@@ -1404,29 +1392,30 @@ already_AddRefed<WebGLFramebufferJS>
 ClientWebGLContext::CreateOpaqueFramebuffer(
     const webgl::OpaqueFramebufferOptions& options) const {
   const FuncScope funcScope(*this, "createOpaqueFramebuffer");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLFramebufferJS(*this, true));
 
-  const auto& inProcess = mNotLost->inProcess;
-  if (inProcess) {
-    if (!inProcess->CreateOpaqueFramebuffer(ret->mId, options)) {
-      ret = nullptr;
+  if (mNotLost) {
+    const auto& inProcess = mNotLost->inProcess;
+    if (inProcess) {
+      if (!inProcess->CreateOpaqueFramebuffer(ret->mId, options)) {
+        ret = nullptr;
+      }
+      return ret.forget();
     }
-    return ret.forget();
+    const auto& child = mNotLost->outOfProcess;
+    child->FlushPendingCmds();
+    bool ok = false;
+    if (!child->SendCreateOpaqueFramebuffer(ret->mId, options, &ok))
+      return nullptr;
+    if (!ok) return nullptr;
   }
-  const auto& child = mNotLost->outOfProcess;
-  child->FlushPendingCmds();
-  bool ok = false;
-  if (!child->SendCreateOpaqueFramebuffer(ret->mId, options, &ok))
-    return nullptr;
-  if (!ok) return nullptr;
+
   return ret.forget();
 }
 
 already_AddRefed<WebGLProgramJS> ClientWebGLContext::CreateProgram() const {
   const FuncScope funcScope(*this, "createProgram");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLProgramJS(*this));
   Run<RPROC(CreateProgram)>(ret->mId);
@@ -1435,9 +1424,8 @@ already_AddRefed<WebGLProgramJS> ClientWebGLContext::CreateProgram() const {
 
 already_AddRefed<WebGLQueryJS> ClientWebGLContext::CreateQuery() const {
   const FuncScope funcScope(*this, "createQuery");
-  if (IsContextLost()) return nullptr;
 
-  auto ret = AsRefPtr(new WebGLQueryJS(*this));
+  auto ret = AsRefPtr(new WebGLQueryJS(this));
   Run<RPROC(CreateQuery)>(ret->mId);
   return ret.forget();
 }
@@ -1445,7 +1433,6 @@ already_AddRefed<WebGLQueryJS> ClientWebGLContext::CreateQuery() const {
 already_AddRefed<WebGLRenderbufferJS> ClientWebGLContext::CreateRenderbuffer()
     const {
   const FuncScope funcScope(*this, "createRenderbuffer");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLRenderbufferJS(*this));
   Run<RPROC(CreateRenderbuffer)>(ret->mId);
@@ -1454,7 +1441,6 @@ already_AddRefed<WebGLRenderbufferJS> ClientWebGLContext::CreateRenderbuffer()
 
 already_AddRefed<WebGLSamplerJS> ClientWebGLContext::CreateSampler() const {
   const FuncScope funcScope(*this, "createSampler");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLSamplerJS(*this));
   Run<RPROC(CreateSampler)>(ret->mId);
@@ -1464,7 +1450,6 @@ already_AddRefed<WebGLSamplerJS> ClientWebGLContext::CreateSampler() const {
 already_AddRefed<WebGLShaderJS> ClientWebGLContext::CreateShader(
     const GLenum type) const {
   const FuncScope funcScope(*this, "createShader");
-  if (IsContextLost()) return nullptr;
 
   switch (type) {
     case LOCAL_GL_VERTEX_SHADER:
@@ -1483,7 +1468,6 @@ already_AddRefed<WebGLShaderJS> ClientWebGLContext::CreateShader(
 already_AddRefed<WebGLSyncJS> ClientWebGLContext::FenceSync(
     const GLenum condition, const GLbitfield flags) const {
   const FuncScope funcScope(*this, "fenceSync");
-  if (IsContextLost()) return nullptr;
 
   if (condition != LOCAL_GL_SYNC_GPU_COMMANDS_COMPLETE) {
     EnqueueError_ArgEnum("condition", condition);
@@ -1509,7 +1493,6 @@ already_AddRefed<WebGLSyncJS> ClientWebGLContext::FenceSync(
 
 already_AddRefed<WebGLTextureJS> ClientWebGLContext::CreateTexture() const {
   const FuncScope funcScope(*this, "createTexture");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLTextureJS(*this));
   Run<RPROC(CreateTexture)>(ret->mId);
@@ -1519,7 +1502,6 @@ already_AddRefed<WebGLTextureJS> ClientWebGLContext::CreateTexture() const {
 already_AddRefed<WebGLTransformFeedbackJS>
 ClientWebGLContext::CreateTransformFeedback() const {
   const FuncScope funcScope(*this, "createTransformFeedback");
-  if (IsContextLost()) return nullptr;
 
   auto ret = AsRefPtr(new WebGLTransformFeedbackJS(*this));
   Run<RPROC(CreateTransformFeedback)>(ret->mId);
@@ -1529,9 +1511,8 @@ ClientWebGLContext::CreateTransformFeedback() const {
 already_AddRefed<WebGLVertexArrayJS> ClientWebGLContext::CreateVertexArray()
     const {
   const FuncScope funcScope(*this, "createVertexArray");
-  if (IsContextLost()) return nullptr;
 
-  auto ret = AsRefPtr(new WebGLVertexArrayJS(*this));
+  auto ret = AsRefPtr(new WebGLVertexArrayJS(this));
   Run<RPROC(CreateVertexArray)>(ret->mId);
   return ret.forget();
 }
@@ -1943,7 +1924,7 @@ void ClientWebGLContext::SetEnabledI(const GLenum cap, const Maybe<GLuint> i,
   const FuncScope funcScope(*this, "enable/disable");
   if (IsContextLost()) return;
 
-  auto& map = *mNotLost->state.mIsEnabledMap;
+  auto& map = mNotLost->state.mIsEnabledMap;
   auto slot = MaybeFind(map, cap);
   if (i && cap != LOCAL_GL_BLEND) {
     slot = nullptr;
@@ -1964,7 +1945,7 @@ bool ClientWebGLContext::IsEnabled(const GLenum cap) const {
   const FuncScope funcScope(*this, "isEnabled");
   if (IsContextLost()) return false;
 
-  const auto& map = *mNotLost->state.mIsEnabledMap;
+  const auto& map = mNotLost->state.mIsEnabledMap;
   const auto slot = MaybeFind(map, cap);
   if (!slot) {
     EnqueueError_ArgEnum("cap", cap);
@@ -2172,6 +2153,11 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
       retval.set(JS::NumberValue(UnderlyingValue(state.mProvokingVertex)));
       return;
 
+    case LOCAL_GL_DEPTH_CLAMP:
+      if (!IsExtensionEnabled(WebGLExtensionID::EXT_depth_clamp)) break;
+      retval.set(JS::BooleanValue(state.mIsEnabledMap[LOCAL_GL_DEPTH_CLAMP]));
+      return;
+
     // -
     // Array returns
 
@@ -2327,7 +2313,7 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
         retval.set(JS::NumberValue(state.mPixelUnpackState.skipRows));
         return;
     }  // switch pname
-  }    // if webgl2
+  }  // if webgl2
 
   // -
 
@@ -2901,6 +2887,17 @@ void ClientWebGLContext::BlendColor(GLclampf r, GLclampf g, GLclampf b,
   const FuncScope funcScope(*this, "blendColor");
   if (IsContextLost()) return;
   auto& state = State();
+
+  const bool unclamped =
+      (mIsWebGL2 ||
+       IsExtensionEnabled(WebGLExtensionID::WEBGL_color_buffer_float) ||
+       IsExtensionEnabled(WebGLExtensionID::EXT_color_buffer_half_float));
+  if (!unclamped) {
+    r = std::clamp(r, 0.0f, 1.0f);
+    g = std::clamp(g, 0.0f, 1.0f);
+    b = std::clamp(b, 0.0f, 1.0f);
+    a = std::clamp(a, 0.0f, 1.0f);
+  }
 
   auto& cache = state.mBlendColor;
   cache[0] = r;
@@ -5863,7 +5860,7 @@ void ClientWebGLContext::ProvokingVertex(const GLenum rawMode) const {
   const FuncScope funcScope(*this, "provokingVertex");
   if (IsContextLost()) return;
 
-  const auto mode = webgl::AsEnumCase<webgl::ProvokingVertex>(rawMode);
+  const auto mode = AsEnumCase<webgl::ProvokingVertex>(rawMode);
   if (!mode) {
     EnqueueError_ArgEnum("mode", rawMode);
     return;
@@ -6665,14 +6662,15 @@ Maybe<Span<uint8_t>> ClientWebGLContext::ValidateArrayBufferView(
 
 // ---------------------------
 
-webgl::ObjectJS::ObjectJS(const ClientWebGLContext& webgl)
-    : mGeneration(webgl.mNotLost), mId(webgl.NextId()) {}
+webgl::ObjectJS::ObjectJS(const ClientWebGLContext* const webgl)
+    : mGeneration(webgl ? webgl->mNotLost : nullptr),
+      mId(webgl ? webgl->NextId() : 0) {}
 
 // -
 
 WebGLFramebufferJS::WebGLFramebufferJS(const ClientWebGLContext& webgl,
                                        bool opaque)
-    : webgl::ObjectJS(webgl), mOpaque(opaque) {
+    : webgl::ObjectJS(&webgl), mOpaque(opaque) {
   (void)mAttachments[LOCAL_GL_DEPTH_ATTACHMENT];
   (void)mAttachments[LOCAL_GL_STENCIL_ATTACHMENT];
   if (!webgl.mIsWebGL2) {
@@ -6684,6 +6682,8 @@ WebGLFramebufferJS::WebGLFramebufferJS(const ClientWebGLContext& webgl,
 
 void WebGLFramebufferJS::EnsureColorAttachments() {
   const auto& webgl = Context();
+  if (!webgl) return;  // Context is lost.
+
   const auto& limits = webgl->Limits();
   auto maxColorDrawBuffers = limits.maxColorDrawBuffers;
   if (!webgl->mIsWebGL2 &&
@@ -6696,7 +6696,7 @@ void WebGLFramebufferJS::EnsureColorAttachments() {
 }
 
 WebGLProgramJS::WebGLProgramJS(const ClientWebGLContext& webgl)
-    : webgl::ObjectJS(webgl),
+    : webgl::ObjectJS(&webgl),
       mKeepAlive(std::make_shared<webgl::ProgramKeepAlive>(*this)),
       mKeepAliveWeak(mKeepAlive) {
   (void)mNextLink_Shaders[LOCAL_GL_VERTEX_SHADER];
@@ -6706,18 +6706,19 @@ WebGLProgramJS::WebGLProgramJS(const ClientWebGLContext& webgl)
 }
 
 WebGLShaderJS::WebGLShaderJS(const ClientWebGLContext& webgl, const GLenum type)
-    : webgl::ObjectJS(webgl),
+    : webgl::ObjectJS(&webgl),
       mType(type),
       mKeepAlive(std::make_shared<webgl::ShaderKeepAlive>(*this)),
       mKeepAliveWeak(mKeepAlive) {}
 
 WebGLTransformFeedbackJS::WebGLTransformFeedbackJS(
     const ClientWebGLContext& webgl)
-    : webgl::ObjectJS(webgl),
+    : webgl::ObjectJS(&webgl),
       mAttribBuffers(webgl::kMaxTransformFeedbackSeparateAttribs) {}
 
-WebGLVertexArrayJS::WebGLVertexArrayJS(const ClientWebGLContext& webgl)
-    : webgl::ObjectJS(webgl), mAttribBuffers(webgl.Limits().maxVertexAttribs) {}
+WebGLVertexArrayJS::WebGLVertexArrayJS(const ClientWebGLContext* const webgl)
+    : webgl::ObjectJS(webgl),
+      mAttribBuffers(Context() ? Context()->Limits().maxVertexAttribs : 0) {}
 
 // -
 

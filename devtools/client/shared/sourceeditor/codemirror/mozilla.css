@@ -305,9 +305,11 @@
 }
 
 /* CodeMirror matchhighlight styling */
-.cm-matchhighlight {
+.cm-matchhighlight, .cm-selectionMatch {
   outline: 1px solid var(--theme-contrast-border);
   border-radius: 2px;
+  /* Override cm6 inline */
+  background-color: transparent !important; 
 }
 
 .cm-non-printable-char {
@@ -341,9 +343,9 @@
 }
 
 .cm6-dt-foldgutter__toggle-button {
-  height: 14px;
-  width: 14px;
-  margin-inline: 3px;
+  height: 20px;
+  width: 20px;
+  padding-inline: 3px;
   /* By default, the icon is a bit too low */
   translate: 0px -4px;
   background-image: url("chrome://devtools/skin/images/arrow.svg");
@@ -351,6 +353,7 @@
   background-repeat: no-repeat;
   background-color: transparent;
   border: none;
+  outline-offset: -2px;
   -moz-context-properties: fill;
   fill: var(--theme-icon-dimmed-color);
   /* make the icons smaller than regular twistys (10->8px) */
@@ -360,6 +363,10 @@
   &[aria-expanded=false] {
     transform: rotate(-90deg);
   }
+}
+
+.cm-editor .cm-gutter.cm-lineNumbers {
+  user-select: none;
 }
 
 .cm-editor .cm-foldPlaceholder {

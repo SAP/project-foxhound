@@ -279,11 +279,13 @@
         return this._lastSeenActive;
       }
 
-      const appStartTime = Services.startup.getStartupInfo().start.getTime();
-      if (!this._lastAccessed || this._lastAccessed >= appStartTime) {
+      if (
+        !this._lastAccessed ||
+        this._lastAccessed >= this.container.startupTime
+      ) {
         // When the tab was created this session but hasn't been seen by the user,
         // default to the application start time.
-        return appStartTime;
+        return this.container.startupTime;
       }
       // The tab was restored from a previous session but never seen.
       // Use the lastAccessed as the best proxy for when the user might have seen it.
@@ -575,12 +577,7 @@
       // Prepare connection to host beforehand.
       SessionStore.speculativeConnectOnTabHover(this);
 
-      const isForegroundWindow =
-        this.ownerGlobal ==
-        BrowserWindowTracker.getTopWindow({ allowPopups: true });
-      if (isForegroundWindow) {
-        this.dispatchEvent(new CustomEvent("TabHoverStart", { bubbles: true }));
-      }
+      this.dispatchEvent(new CustomEvent("TabHoverStart", { bubbles: true }));
     }
 
     _mouseleave() {

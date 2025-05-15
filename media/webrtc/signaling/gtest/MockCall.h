@@ -192,7 +192,7 @@ class MockVideoReceiveStream : public webrtc::VideoReceiveStreamInterface {
   virtual void SetAssociatedPayloadTypes(
       std::map<int, int> associated_payload_types) override {}
 
-  virtual void UpdateRtxSsrc(uint32_t ssrc) override{};
+  virtual void UpdateRtxSsrc(uint32_t ssrc) override {};
 
   virtual ~MockVideoReceiveStream() {}
 
@@ -301,7 +301,7 @@ class MockCall : public webrtc::Call {
 
   std::vector<webrtc::VideoStream> CreateEncoderStreams(int width, int height) {
     return mVideoSendEncoderConfig->video_stream_factory->CreateEncoderStreams(
-        width, height, *mVideoSendEncoderConfig);
+        mUnusedConfig, width, height, *mVideoSendEncoderConfig);
   }
 
   virtual const webrtc::FieldTrialsView& trials() const override {
@@ -316,7 +316,7 @@ class MockCall : public webrtc::Call {
     return nullptr;
   }
 
-  virtual ~MockCall(){};
+  virtual ~MockCall() {};
 
   const RefPtr<MockCallWrapper> mCallWrapper;
   mozilla::Maybe<webrtc::AudioReceiveStreamInterface::Config>

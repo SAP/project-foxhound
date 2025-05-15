@@ -693,8 +693,11 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
             # Ignore chunking if we have user specified test paths
             if not (self.verify_enabled or self.per_test_coverage):
                 test_paths = self._get_mozharness_test_paths(suite_category, suite)
-                if test_paths:
-                    base_cmd.extend(test_paths)
+                if test_paths or c["test_tags"]:
+                    if test_paths:
+                        base_cmd.extend(test_paths)
+                    if c["test_tags"]:
+                        base_cmd.extend(["--tag={}".format(t) for t in c["test_tags"]])
                 elif c.get("total_chunks") and c.get("this_chunk"):
                     base_cmd.extend(
                         [
@@ -751,10 +754,6 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
 
             if c["conditioned_profile"]:
                 base_cmd.append("--conditioned-profile")
-
-            # Ensure the --tag flag and its params get passed along
-            if c["test_tags"]:
-                base_cmd.extend(["--tag={}".format(t) for t in c["test_tags"]])
 
             if suite_category not in c["suite_definitions"]:
                 self.fatal("'%s' not defined in the config!")

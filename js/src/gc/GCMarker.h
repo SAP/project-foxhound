@@ -18,10 +18,13 @@
 
 class JSRope;
 
+namespace JS {
+class SliceBudget;
+}
+
 namespace js {
 
 class GCMarker;
-class SliceBudget;
 class WeakMapBase;
 
 #ifdef DEBUG
@@ -121,12 +124,14 @@ class MarkStack {
 
     Cell* ptr() const;
 
+    explicit TaggedPtr(uintptr_t bits);
+
    public:
-    TaggedPtr() = default;
     TaggedPtr(Tag tag, Cell* ptr);
+    static TaggedPtr fromBits(uintptr_t bits);
+
     uintptr_t asBits() const;
     Tag tag() const;
-    uintptr_t tagUnchecked() const;
     template <typename T>
     T* as() const;
 
@@ -136,9 +141,23 @@ class MarkStack {
     void assertValid() const;
   };
 
-  struct SlotsOrElementsRange {
+  class SlotsOrElementsRange {
+    uintptr_t startAndKind_;
+    TaggedPtr ptr_;
+
+    static constexpr size_t StartShift = 2;
+    static constexpr size_t KindMask = (1 << StartShift) - 1;
+
+    SlotsOrElementsRange(uintptr_t startAndKind, uintptr_t ptr);
+
+   public:
     SlotsOrElementsRange(SlotsOrElementsKind kind, JSObject* obj, size_t start);
+    static SlotsOrElementsRange fromBits(uintptr_t startAndKind, uintptr_t ptr);
+
     void assertValid() const;
+
+    uintptr_t asBits0() const;
+    uintptr_t asBits1() const;
 
     SlotsOrElementsKind kind() const;
     size_t start() const;
@@ -146,13 +165,6 @@ class MarkStack {
 
     void setStart(size_t newStart);
     void setEmpty();
-
-   private:
-    static constexpr size_t StartShift = 2;
-    static constexpr size_t KindMask = (1 << StartShift) - 1;
-
-    uintptr_t startAndKind_;
-    TaggedPtr ptr_;
   };
 
   MarkStack();
@@ -163,17 +175,16 @@ class MarkStack {
 
   void swap(MarkStack& other);
 
-  // The unit for MarkStack::capacity() is mark stack words.
-  size_t capacity() { return stack().length(); }
+  // The unit for capacity is mark stack words.
+  size_t capacity() const { return capacity_; }
+#ifdef JS_GC_ZEAL
+  void setMaxCapacity(size_t maxCapacity);
+#endif
 
   size_t position() const { return topIndex_; }
 
   [[nodiscard]] bool init();
   [[nodiscard]] bool resetStackCapacity();
-
-#ifdef JS_GC_ZEAL
-  void setMaxCapacity(size_t maxCapacity);
-#endif
 
   template <typename T>
   [[nodiscard]] bool push(T* ptr);
@@ -204,24 +215,36 @@ class MarkStack {
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
  private:
-  using StackVector = Vector<TaggedPtr, 0, SystemAllocPolicy>;
-  const StackVector& stack() const { return stack_.ref(); }
-  StackVector& stack() { return stack_.ref(); }
+  uintptr_t at(size_t index) const {
+    MOZ_ASSERT(topIndex_ <= capacity_);
+    MOZ_ASSERT(index < topIndex_);
+    return stack_[index];
+  }
+  uintptr_t* ptr(size_t index) {
+    MOZ_ASSERT(topIndex_ <= capacity_);
+    MOZ_ASSERT(index <= topIndex_);
+    return stack_ + index;
+  }
 
-  /* Grow the stack, ensuring there is space for at least count elements. */
+  // Return a pointer to the first unused word beyond the top of the stack.
+  uintptr_t* end() { return ptr(topIndex_); }
+
+  // Grow the stack, ensuring there is space to push |count| more words.
   [[nodiscard]] bool enlarge(size_t count);
 
   [[nodiscard]] bool resize(size_t newCapacity);
 
-  TaggedPtr* topPtr();
+  TaggedPtr peekPtr() const;
 
-  const TaggedPtr& peekPtr() const;
   [[nodiscard]] bool pushTaggedPtr(Tag tag, Cell* ptr);
 
   bool indexIsEntryBase(size_t index) const;
 
-  // Vector containing allocated stack memory. Unused beyond topIndex_.
-  MainThreadOrGCTaskData<StackVector> stack_;
+  // Area of memory containing the stack.
+  MainThreadOrGCTaskData<uintptr_t*> stack_;
+
+  // Size of the stack in words.
+  MainThreadOrGCTaskData<size_t> capacity_;
 
   // Index of the top of the stack.
   MainThreadOrGCTaskData<size_t> topIndex_;
@@ -257,7 +280,8 @@ class MOZ_STACK_CLASS MarkStackIter {
 
   MarkStack::Tag peekTag() const;
   bool isSlotsOrElementsRange() const;
-  MarkStack::SlotsOrElementsRange& slotsOrElementsRange();
+  MarkStack::SlotsOrElementsRange slotsOrElementsRange() const;
+  void setSlotsOrElementsRange(const MarkStack::SlotsOrElementsRange& range);
 
  private:
   size_t position() const;
@@ -371,7 +395,7 @@ class GCMarker {
   void reset();
 
   [[nodiscard]] bool markUntilBudgetExhausted(
-      SliceBudget& budget,
+      JS::SliceBudget& budget,
       gc::ShouldReportMarkTime reportTime = gc::ReportMarkTime);
 
   void setRootMarkingMode(bool newState);
@@ -397,10 +421,10 @@ class GCMarker {
   bool markOneObjectForTest(JSObject* obj);
 #endif
 
-  bool markCurrentColorInParallel(SliceBudget& budget);
+  bool markCurrentColorInParallel(JS::SliceBudget& budget);
 
   template <uint32_t markingOptions, gc::MarkColor>
-  bool markOneColor(SliceBudget& budget);
+  bool markOneColor(JS::SliceBudget& budget);
 
   static void moveWork(GCMarker* dst, GCMarker* src);
 
@@ -449,7 +473,7 @@ class GCMarker {
   friend class gc::AutoUpdateMarkStackRanges;
 
   template <uint32_t markingOptions>
-  bool processMarkStackTop(SliceBudget& budget);
+  bool processMarkStackTop(JS::SliceBudget& budget);
   friend class gc::GCRuntime;
 
   // Helper methods that coerce their second argument to the base pointer
@@ -534,7 +558,7 @@ class GCMarker {
 #endif
 
   template <uint32_t markingOptions>
-  bool doMarking(SliceBudget& budget, gc::ShouldReportMarkTime reportTime);
+  bool doMarking(JS::SliceBudget& budget, gc::ShouldReportMarkTime reportTime);
 
   void delayMarkingChildrenOnOOM(gc::Cell* cell);
 

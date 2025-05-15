@@ -2116,13 +2116,23 @@ bool LaunchWinPostProcess(const WCHAR* installationDir,
   si.lpDesktop = const_cast<LPWSTR>(L"");  // -Wwritable-strings
   PROCESS_INFORMATION pi = {0};
 
-  bool ok = CreateProcessW(exefullpath, cmdline,
-                           nullptr,  // no special security attributes
-                           nullptr,  // no special thread attributes
-                           false,    // don't inherit filehandles
-                           0,        // No special process creation flags
-                           nullptr,  // inherit my environment
-                           workingDirectory, &si, &pi);
+  // Invoke post-update with a minimal environment to avoid environment
+  // variables intended to relaunch Firefox impacting post-update operations, in
+  // particular background tasks.  The updater will invoke the callback
+  // application with the current (non-minimal) environment.
+  //
+  // N.b.: two null terminating characters!  The first terminates a non-existent
+  // key-value pair, the second (automatically added) terminates the block of
+  // key-value pairs.
+  const WCHAR* emptyEnvironment = L"\0";
+
+  bool ok =
+      CreateProcessW(exefullpath, cmdline,
+                     nullptr,  // no special security attributes
+                     nullptr,  // no special thread attributes
+                     false,    // don't inherit filehandles
+                     0,        // No special process creation flags
+                     (LPVOID)emptyEnvironment, workingDirectory, &si, &pi);
   free(cmdline);
   if (ok) {
     LOG(("LaunchWinPostProcess - Waiting for process to complete"));
@@ -2922,6 +2932,8 @@ int LaunchCallbackAndPostProcessApps(int argc, NS_tchar** argv,
       if (!sUsingService) {
         LOG(("Starting Service Update before launching callback app"));
         StartServiceUpdate(gInstallDirPath);
+      } else {
+        LOG(("Not starting service update. MMS will handle it."));
       }
 #  endif
     } else {
@@ -4177,7 +4189,7 @@ int NS_main(int argc, NS_tchar** argv) {
                 "NS_main: callback app file in use, failed to exclusively open "
                 "executable file from background task: " LOG_S,
                 argv[callbackIndex]));
-            WriteStatusFile(WRITE_ERROR_BACKGROUND_TASK_SHARING_VIOLATION);
+            WriteStatusFile(BACKGROUND_TASK_SHARING_VIOLATION);
 
             proceedWithoutExclusive = false;
           }

@@ -19,6 +19,7 @@
 #include "jit/JitSpewer.h"
 #include "jit/LIR.h"
 #include "jit/MacroAssembler.h"
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "jit/SharedICRegisters.h"
@@ -2876,8 +2877,6 @@ void LIRGenerator::visitOsrArgumentsObject(MOsrArgumentsObject* object) {
 
 void LIRGenerator::visitToDouble(MToDouble* convert) {
   MDefinition* opd = convert->input();
-  mozilla::DebugOnly<MToFPInstruction::ConversionKind> conversion =
-      convert->conversion();
 
   switch (opd->type()) {
     case MIRType::Value: {
@@ -2888,19 +2887,14 @@ void LIRGenerator::visitToDouble(MToDouble* convert) {
     }
 
     case MIRType::Null:
-      MOZ_ASSERT(conversion == MToFPInstruction::NonStringPrimitives);
       lowerConstantDouble(0, convert);
       break;
 
     case MIRType::Undefined:
-      MOZ_ASSERT(conversion == MToFPInstruction::NonStringPrimitives);
       lowerConstantDouble(GenericNaN(), convert);
       break;
 
     case MIRType::Boolean:
-      MOZ_ASSERT(conversion == MToFPInstruction::NonStringPrimitives);
-      [[fallthrough]];
-
     case MIRType::Int32: {
       LInt32ToDouble* lir =
           new (alloc()) LInt32ToDouble(useRegisterAtStart(opd));
@@ -2928,8 +2922,6 @@ void LIRGenerator::visitToDouble(MToDouble* convert) {
 
 void LIRGenerator::visitToFloat32(MToFloat32* convert) {
   MDefinition* opd = convert->input();
-  mozilla::DebugOnly<MToFloat32::ConversionKind> conversion =
-      convert->conversion();
 
   switch (opd->type()) {
     case MIRType::Value: {
@@ -2940,19 +2932,14 @@ void LIRGenerator::visitToFloat32(MToFloat32* convert) {
     }
 
     case MIRType::Null:
-      MOZ_ASSERT(conversion == MToFPInstruction::NonStringPrimitives);
       lowerConstantFloat32(0, convert);
       break;
 
     case MIRType::Undefined:
-      MOZ_ASSERT(conversion == MToFPInstruction::NonStringPrimitives);
       lowerConstantFloat32(GenericNaN(), convert);
       break;
 
     case MIRType::Boolean:
-      MOZ_ASSERT(conversion == MToFPInstruction::NonStringPrimitives);
-      [[fallthrough]];
-
     case MIRType::Int32: {
       LInt32ToFloat32* lir =
           new (alloc()) LInt32ToFloat32(useRegisterAtStart(opd));
@@ -2970,6 +2957,90 @@ void LIRGenerator::visitToFloat32(MToFloat32* convert) {
     case MIRType::Float32:
       redefine(convert, opd);
       break;
+
+    default:
+      // Objects might be effectful. Symbols will throw.
+      // Strings are complicated - we don't handle them yet.
+      MOZ_CRASH("unexpected type");
+  }
+}
+
+void LIRGenerator::visitToFloat16(MToFloat16* convert) {
+  MDefinition* opd = convert->input();
+
+  switch (opd->type()) {
+    case MIRType::Value: {
+      LDefinition tempDef = LDefinition::BogusTemp();
+      if (!MacroAssembler::SupportsFloat64To16()) {
+        tempDef = temp();
+      }
+
+      auto* lir = new (alloc()) LValueToFloat16(useBox(opd), tempDef);
+      assignSnapshot(lir, convert->bailoutKind());
+      define(lir, convert);
+
+      if (!MacroAssembler::SupportsFloat64To16()) {
+        assignSafepoint(lir, convert);
+      }
+      break;
+    }
+
+    case MIRType::Null:
+      lowerConstantFloat32(0, convert);
+      break;
+
+    case MIRType::Undefined:
+      lowerConstantFloat32(GenericNaN(), convert);
+      break;
+
+    case MIRType::Boolean:
+    case MIRType::Int32: {
+      LDefinition tempDef = LDefinition::BogusTemp();
+      if (!MacroAssembler::SupportsFloat32To16()) {
+        tempDef = temp();
+      }
+
+      auto* lir =
+          new (alloc()) LInt32ToFloat16(useRegisterAtStart(opd), tempDef);
+      define(lir, convert);
+
+      if (!MacroAssembler::SupportsFloat32To16()) {
+        assignSafepoint(lir, convert);
+      }
+      break;
+    }
+
+    case MIRType::Double: {
+      LDefinition tempDef = LDefinition::BogusTemp();
+      if (!MacroAssembler::SupportsFloat64To16()) {
+        tempDef = temp();
+      }
+
+      auto* lir =
+          new (alloc()) LDoubleToFloat16(useRegisterAtStart(opd), tempDef);
+      define(lir, convert);
+
+      if (!MacroAssembler::SupportsFloat64To16()) {
+        assignSafepoint(lir, convert);
+      }
+      break;
+    }
+
+    case MIRType::Float32: {
+      LDefinition tempDef = LDefinition::BogusTemp();
+      if (!MacroAssembler::SupportsFloat32To16()) {
+        tempDef = temp();
+      }
+
+      auto* lir =
+          new (alloc()) LFloat32ToFloat16(useRegisterAtStart(opd), tempDef);
+      define(lir, convert);
+
+      if (!MacroAssembler::SupportsFloat32To16()) {
+        assignSafepoint(lir, convert);
+      }
+      break;
+    }
 
     default:
       // Objects might be effectful. Symbols will throw.
@@ -2999,9 +3070,7 @@ void LIRGenerator::visitToNumberInt32(MToNumberInt32* convert) {
       break;
 
     case MIRType::Boolean:
-      MOZ_ASSERT(convert->conversion() == IntConversionInputKind::Any ||
-                 convert->conversion() ==
-                     IntConversionInputKind::NumbersOrBoolsOnly);
+      MOZ_ASSERT(convert->conversion() == IntConversionInputKind::Any);
       redefine(convert, opd);
       break;
 
@@ -3175,6 +3244,16 @@ void LIRGenerator::visitWasmWrapU32Index(MWasmWrapU32Index* ins) {
 
   auto* lir = new (alloc()) LWasmWrapU32Index(useRegisterAtStart(input));
   defineReuseInput(lir, ins, 0);
+}
+
+void LIRGenerator::visitWasmClampTable64Index(MWasmClampTable64Index* ins) {
+  MDefinition* input = ins->input();
+  MOZ_ASSERT(input->type() == MIRType::Int64);
+  MOZ_ASSERT(ins->type() == MIRType::Int32);
+
+  auto* lir =
+      new (alloc()) LWasmClampTable64Index(useInt64RegisterAtStart(input));
+  define(lir, ins);
 }
 
 void LIRGenerator::visitIntPtrToDouble(MIntPtrToDouble* ins) {
@@ -4469,18 +4548,30 @@ void LIRGenerator::visitLoadUnboxedScalar(MLoadUnboxedScalar* ins) {
   }
 
   if (!Scalar::isBigIntType(ins->storageType())) {
-    // We need a temp register for Uint32Array with known double result.
-    LDefinition tempDef = LDefinition::BogusTemp();
-    if (ins->storageType() == Scalar::Uint32 &&
-        IsFloatingPointType(ins->type())) {
-      tempDef = temp();
+    // We need a temp register for Uint32Array with known double result and for
+    // Float16Array.
+    LDefinition temp1 = LDefinition::BogusTemp();
+    if ((ins->storageType() == Scalar::Uint32 &&
+         IsFloatingPointType(ins->type())) ||
+        ins->storageType() == Scalar::Float16) {
+      temp1 = temp();
     }
 
-    auto* lir = new (alloc()) LLoadUnboxedScalar(elements, index, tempDef);
+    // Additional temp when Float16 to Float32 conversion requires a call.
+    LDefinition temp2 = LDefinition::BogusTemp();
+    if (MacroAssembler::LoadRequiresCall(ins->storageType())) {
+      temp2 = temp();
+    }
+
+    auto* lir = new (alloc()) LLoadUnboxedScalar(elements, index, temp1, temp2);
     if (ins->fallible()) {
       assignSnapshot(lir, ins->bailoutKind());
     }
     define(lir, ins);
+
+    if (MacroAssembler::LoadRequiresCall(ins->storageType())) {
+      assignSafepoint(lir, ins);
+    }
   } else {
     MOZ_ASSERT(ins->type() == MIRType::BigInt);
 
@@ -4508,40 +4599,49 @@ void LIRGenerator::visitLoadDataViewElement(MLoadDataViewElement* ins) {
 
   // We need a temp register for:
   // - Uint32Array with known double result,
+  // - Float16Array,
   // - Float32Array,
   // - and BigInt64Array and BigUint64Array.
-  LDefinition tempDef = LDefinition::BogusTemp();
+  LDefinition temp1 = LDefinition::BogusTemp();
   if ((ins->storageType() == Scalar::Uint32 &&
        IsFloatingPointType(ins->type())) ||
+      ins->storageType() == Scalar::Float16 ||
       ins->storageType() == Scalar::Float32) {
-    tempDef = temp();
+    temp1 = temp();
   }
   if (Scalar::isBigIntType(ins->storageType())) {
 #ifdef JS_CODEGEN_X86
     // There are not enough registers on x86.
     if (littleEndian.isConstant()) {
-      tempDef = temp();
+      temp1 = temp();
     }
 #else
-    tempDef = temp();
+    temp1 = temp();
 #endif
+  }
+
+  // Additional temp when Float16 to Float64 conversion requires a call.
+  LDefinition temp2 = LDefinition::BogusTemp();
+  if (MacroAssembler::LoadRequiresCall(ins->storageType())) {
+    temp2 = temp();
   }
 
   // We also need a separate 64-bit temp register for:
   // - Float64Array
   // - and BigInt64Array and BigUint64Array.
-  LInt64Definition temp64Def = LInt64Definition::BogusTemp();
+  LInt64Definition temp64 = LInt64Definition::BogusTemp();
   if (Scalar::byteSize(ins->storageType()) == 8) {
-    temp64Def = tempInt64();
+    temp64 = tempInt64();
   }
 
   auto* lir = new (alloc())
-      LLoadDataViewElement(elements, index, littleEndian, tempDef, temp64Def);
+      LLoadDataViewElement(elements, index, littleEndian, temp1, temp2, temp64);
   if (ins->fallible()) {
     assignSnapshot(lir, ins->bailoutKind());
   }
   define(lir, ins);
-  if (Scalar::isBigIntType(ins->storageType())) {
+  if (Scalar::isBigIntType(ins->storageType()) ||
+      MacroAssembler::LoadRequiresCall(ins->storageType())) {
     assignSafepoint(lir, ins);
   }
 }
@@ -4594,12 +4694,21 @@ void LIRGenerator::visitLoadTypedArrayElementHole(
   const LAllocation length = useRegister(ins->length());
 
   if (!Scalar::isBigIntType(ins->arrayType())) {
-    auto* lir =
-        new (alloc()) LLoadTypedArrayElementHole(elements, index, length);
+    LDefinition tempDef = LDefinition::BogusTemp();
+    if (MacroAssembler::LoadRequiresCall(ins->arrayType())) {
+      tempDef = temp();
+    }
+
+    auto* lir = new (alloc())
+        LLoadTypedArrayElementHole(elements, index, length, tempDef);
     if (ins->fallible()) {
       assignSnapshot(lir, ins->bailoutKind());
     }
     defineBox(lir, ins);
+
+    if (MacroAssembler::LoadRequiresCall(ins->arrayType())) {
+      assignSafepoint(lir, ins);
+    }
   } else {
 #ifdef JS_CODEGEN_X86
     LInt64Definition temp64 = LInt64Definition::BogusTemp();
@@ -4619,6 +4728,8 @@ void LIRGenerator::visitStoreUnboxedScalar(MStoreUnboxedScalar* ins) {
   MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
   if (ins->isFloatWrite()) {
+    MOZ_ASSERT_IF(ins->writeType() == Scalar::Float16,
+                  ins->value()->type() == MIRType::Float32);
     MOZ_ASSERT_IF(ins->writeType() == Scalar::Float32,
                   ins->value()->type() == MIRType::Float32);
     MOZ_ASSERT_IF(ins->writeType() == Scalar::Float64,
@@ -4662,7 +4773,19 @@ void LIRGenerator::visitStoreUnboxedScalar(MStoreUnboxedScalar* ins) {
     add(fence, ins);
   }
   if (!ins->isBigIntWrite()) {
-    add(new (alloc()) LStoreUnboxedScalar(elements, index, value), ins);
+    // We need a temp register for Float16Array.
+    LDefinition tempDef = LDefinition::BogusTemp();
+    if (ins->writeType() == Scalar::Float16) {
+      tempDef = temp();
+    }
+
+    auto* lir =
+        new (alloc()) LStoreUnboxedScalar(elements, index, value, tempDef);
+    add(lir, ins);
+
+    if (MacroAssembler::StoreRequiresCall(ins->writeType())) {
+      assignSafepoint(lir, ins);
+    }
   } else {
     add(new (alloc()) LStoreUnboxedBigInt(elements, index, value, tempInt64()),
         ins);
@@ -4679,6 +4802,8 @@ void LIRGenerator::visitStoreDataViewElement(MStoreDataViewElement* ins) {
   MOZ_ASSERT(ins->littleEndian()->type() == MIRType::Boolean);
 
   if (ins->isFloatWrite()) {
+    MOZ_ASSERT_IF(ins->writeType() == Scalar::Float16,
+                  ins->value()->type() == MIRType::Float32);
     MOZ_ASSERT_IF(ins->writeType() == Scalar::Float32,
                   ins->value()->type() == MIRType::Float32);
     MOZ_ASSERT_IF(ins->writeType() == Scalar::Float64,
@@ -4707,9 +4832,13 @@ void LIRGenerator::visitStoreDataViewElement(MStoreDataViewElement* ins) {
     temp64Def = tempInt64();
   }
 
-  add(new (alloc()) LStoreDataViewElement(elements, index, value, littleEndian,
-                                          tempDef, temp64Def),
-      ins);
+  auto* lir = new (alloc()) LStoreDataViewElement(
+      elements, index, value, littleEndian, tempDef, temp64Def);
+  add(lir, ins);
+
+  if (MacroAssembler::StoreRequiresCall(ins->writeType())) {
+    assignSafepoint(lir, ins);
+  }
 }
 
 void LIRGenerator::visitStoreTypedArrayElementHole(
@@ -4719,6 +4848,8 @@ void LIRGenerator::visitStoreTypedArrayElementHole(
   MOZ_ASSERT(ins->length()->type() == MIRType::IntPtr);
 
   if (ins->isFloatWrite()) {
+    MOZ_ASSERT_IF(ins->arrayType() == Scalar::Float16,
+                  ins->value()->type() == MIRType::Float32);
     MOZ_ASSERT_IF(ins->arrayType() == Scalar::Float32,
                   ins->value()->type() == MIRType::Float32);
     MOZ_ASSERT_IF(ins->arrayType() == Scalar::Float64,
@@ -4744,11 +4875,18 @@ void LIRGenerator::visitStoreTypedArrayElementHole(
   }
 
   if (!ins->isBigIntWrite()) {
-    LDefinition spectreTemp =
-        BoundsCheckNeedsSpectreTemp() ? temp() : LDefinition::BogusTemp();
-    auto* lir = new (alloc()) LStoreTypedArrayElementHole(
-        elements, length, index, value, spectreTemp);
+    LDefinition tempDef = LDefinition::BogusTemp();
+    if (BoundsCheckNeedsSpectreTemp() || ins->arrayType() == Scalar::Float16) {
+      tempDef = temp();
+    }
+
+    auto* lir = new (alloc())
+        LStoreTypedArrayElementHole(elements, length, index, value, tempDef);
     add(lir, ins);
+
+    if (MacroAssembler::StoreRequiresCall(ins->arrayType())) {
+      assignSafepoint(lir, ins);
+    }
   } else {
     auto* lir = new (alloc()) LStoreTypedArrayElementHoleBigInt(
         elements, length, index, value, tempInt64());
@@ -5227,6 +5365,16 @@ void LIRGenerator::visitMegamorphicLoadSlot(MMegamorphicLoadSlot* ins) {
   defineReturn(lir, ins);
 }
 
+void LIRGenerator::visitMegamorphicLoadSlotPermissive(
+    MMegamorphicLoadSlotPermissive* ins) {
+  MOZ_ASSERT(ins->object()->type() == MIRType::Object);
+  auto* lir = new (alloc()) LMegamorphicLoadSlotPermissive(
+      useRegisterAtStart(ins->object()), tempFixed(CallTempReg0),
+      tempFixed(CallTempReg1), tempFixed(CallTempReg2));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
 void LIRGenerator::visitMegamorphicLoadSlotByValue(
     MMegamorphicLoadSlotByValue* ins) {
   MOZ_ASSERT(ins->object()->type() == MIRType::Object);
@@ -5237,6 +5385,18 @@ void LIRGenerator::visitMegamorphicLoadSlotByValue(
       tempFixed(CallTempReg2));
   assignSnapshot(lir, ins->bailoutKind());
   defineReturn(lir, ins);
+}
+
+void LIRGenerator::visitMegamorphicLoadSlotByValuePermissive(
+    MMegamorphicLoadSlotByValuePermissive* ins) {
+  MOZ_ASSERT(ins->object()->type() == MIRType::Object);
+  MOZ_ASSERT(ins->idVal()->type() == MIRType::Value);
+  auto* lir = new (alloc()) LMegamorphicLoadSlotByValuePermissive(
+      useRegisterAtStart(ins->object()), useBoxAtStart(ins->idVal()),
+      tempFixed(CallTempReg0), tempFixed(CallTempReg1),
+      tempFixed(CallTempReg2));
+  defineReturn(lir, ins);
+  assignSafepoint(lir, ins);
 }
 
 void LIRGenerator::visitMegamorphicStoreSlot(MMegamorphicStoreSlot* ins) {
@@ -7821,36 +7981,58 @@ void LIRGenerator::visitWasmNewArrayObject(MWasmNewArrayObject* ins) {
 
 #ifdef FUZZING_JS_FUZZILLI
 void LIRGenerator::visitFuzzilliHash(MFuzzilliHash* ins) {
-  MDefinition* value = ins->getOperand(0);
+  MDefinition* value = ins->input();
 
-  if (value->type() == MIRType::Undefined || value->type() == MIRType::Null) {
-    define(new (alloc()) LFuzzilliHashT(LAllocation(), temp(), tempDouble()),
-           ins);
-  } else if (value->type() == MIRType::Int32 ||
-             value->type() == MIRType::Double ||
-             value->type() == MIRType::Float32 ||
-             value->type() == MIRType::Boolean ||
-             value->type() == MIRType::BigInt) {
-    define(new (alloc())
-               LFuzzilliHashT(useRegister(value), temp(), tempDouble()),
-           ins);
-  } else if (value->type() == MIRType::Object) {
-    LFuzzilliHashT* lir =
-        new (alloc()) LFuzzilliHashT(useRegister(value), temp(), tempDouble());
-    define(lir, ins);
-    assignSafepoint(lir, ins);
-  } else if (value->type() == MIRType::Value) {
-    LFuzzilliHashV* lir =
-        new (alloc()) LFuzzilliHashV(useBox(value), temp(), tempDouble());
-    define(lir, ins);
-    assignSafepoint(lir, ins);
-  } else {
-    define(new (alloc()) LInteger(0), ins);
+  switch (value->type()) {
+    case MIRType::Undefined:
+    case MIRType::Null: {
+      auto* lir =
+          new (alloc()) LFuzzilliHashT(LAllocation(), temp(), tempDouble());
+      define(lir, ins);
+      break;
+    }
+
+    case MIRType::Int32:
+    case MIRType::Double:
+    case MIRType::Float32:
+    case MIRType::Boolean: {
+      auto* lir = new (alloc())
+          LFuzzilliHashT(useRegister(value), temp(), tempDouble());
+      define(lir, ins);
+      break;
+    }
+
+    case MIRType::BigInt:
+    case MIRType::Object: {
+      auto* lir = new (alloc())
+          LFuzzilliHashT(useRegister(value), LDefinition::BogusTemp(),
+                         LDefinition::BogusTemp());
+      define(lir, ins);
+      assignSafepoint(lir, ins);
+      break;
+    }
+
+    case MIRType::Value: {
+      auto* lir =
+          new (alloc()) LFuzzilliHashV(useBox(value), temp(), tempDouble());
+      define(lir, ins);
+      assignSafepoint(lir, ins);
+      break;
+    }
+
+    case MIRType::String:
+    case MIRType::Symbol: {
+      define(new (alloc()) LInteger(0), ins);
+      break;
+    }
+
+    default:
+      MOZ_CRASH("Bad type");
   }
 }
 
 void LIRGenerator::visitFuzzilliHashStore(MFuzzilliHashStore* ins) {
-  MDefinition* value = ins->getOperand(0);
+  MDefinition* value = ins->input();
   MOZ_ASSERT(value->type() == MIRType::Int32);
   add(new (alloc()) LFuzzilliHashStore(useRegister(value), temp(), temp()),
       ins);

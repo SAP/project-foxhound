@@ -202,7 +202,7 @@ async function webdriverClickElement(el, a11y) {
       win
     );
 
-    if (lazy.dragService?.getCurrentSession()) {
+    if (lazy.dragService?.getCurrentSession(win)) {
       // Special handling is required if the mousemove started a drag session.
       // In this case, mousedown event shouldn't be fired, and the mouseup should
       // end the session.  Therefore, we should synthesize only mouseup.
@@ -660,7 +660,9 @@ async function webdriverSendKeysToElement(
   if (el.type !== "file" || strictFileInteractability) {
     let containerEl = lazy.dom.getContainer(el);
 
-    lazy.dom.scrollIntoView(containerEl);
+    if (!lazy.dom.isInView(containerEl)) {
+      lazy.dom.scrollIntoView(containerEl);
+    }
 
     // TODO: Wait for element to be keyboard-interactible
     if (!interaction.isKeyboardInteractable(containerEl)) {

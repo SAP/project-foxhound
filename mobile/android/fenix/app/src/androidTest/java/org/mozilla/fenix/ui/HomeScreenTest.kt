@@ -8,7 +8,7 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.helpers.HomeActivityTestRule
+import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RetryTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestHelper
@@ -28,14 +28,14 @@ class HomeScreenTest : TestSetup() {
     @get:Rule(order = 0)
     val activityTestRule =
         AndroidComposeTestRule(
-            HomeActivityTestRule.withDefaultSettingsOverrides(),
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
     @Rule(order = 1)
     @JvmField
     val retryTestRule = RetryTestRule(3)
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/235396
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/235396
     @Test
     fun homeScreenItemsTest() {
         // Workaround to make sure the Pocket articles are populated before starting the test.
@@ -61,7 +61,7 @@ class HomeScreenTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/244199
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/244199
     @Test
     fun privateBrowsingHomeScreenItemsTest() {
         homeScreen { }.togglePrivateBrowsingMode()
@@ -73,7 +73,7 @@ class HomeScreenTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1364362
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1364362
     @SmokeTest
     @Test
     fun verifyJumpBackInSectionTest() {
@@ -125,7 +125,7 @@ class HomeScreenTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1569839
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1569839
     @Test
     fun verifyCustomizeHomepageButtonTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
@@ -149,7 +149,7 @@ class HomeScreenTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/414970
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/414970
     @SmokeTest
     @Test
     fun addPrivateBrowsingShortcutFromHomeScreenCFRTest() {
@@ -167,9 +167,26 @@ class HomeScreenTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1569867
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1569867
     @Test
     fun verifyJumpBackInContextualHintTest() {
+        activityTestRule.activityRule.applySettingsExceptions {
+            it.isJumpBackInCFREnabled = true
+            it.isNavigationBarCFREnabled = false
+        }
+
+        val genericPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(genericPage.url) {
+        }.goToHomescreen {
+            verifyJumpBackInMessage(activityTestRule, exists = true)
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2651349
+    @Test
+    fun verifyJumpBackCFRIsNotDisplayedWhileSearchFragmentIsEnableTest() {
         activityTestRule.activityRule.applySettingsExceptions {
             it.isJumpBackInCFREnabled = true
         }
@@ -178,8 +195,10 @@ class HomeScreenTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericPage.url) {
-        }.goToHomescreen {
-            verifyJumpBackInMessage(activityTestRule)
+        }.openNavigationToolbar {
+        }
+        homeScreen {
+            verifyJumpBackInMessage(activityTestRule, exists = false)
         }
     }
 }

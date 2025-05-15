@@ -158,11 +158,13 @@ EVENT(CheckboxStateChange, eFormCheckboxStateChange, EventNameType_None,
       eBasicEventClass)
 EVENT(RadioStateChange, eFormRadioStateChange, EventNameType_None,
       eBasicEventClass)
-EVENT(auxclick, eMouseAuxClick, EventNameType_All, eMouseEventClass)
-EVENT(click, eMouseClick, EventNameType_All, eMouseEventClass)
+EVENT(auxclick, ePointerAuxClick, EventNameType_All, ePointerEventClass)
+EVENT(click, ePointerClick, EventNameType_All, ePointerEventClass)
 EVENT(close, eClose, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(contentvisibilityautostatechange, eContentVisibilityAutoStateChange,
+      EventNameType_All, eBasicEventClass)
 EVENT(contextmenu, eContextMenu,
-      EventNameType_HTMLXUL | EventNameType_SVGGraphic, eMouseEventClass)
+      EventNameType_HTMLXUL | EventNameType_SVGGraphic, ePointerEventClass)
 NON_IDL_EVENT(mouselongtap, eMouseLongTap, EventNameType_HTMLXUL,
               eMouseEventClass)
 EVENT(cuechange, eCueChange, EventNameType_All, eBasicEventClass)

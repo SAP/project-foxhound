@@ -68,9 +68,6 @@
 
 using namespace js;
 
-using JS::CanonicalizeNaN;
-using JS::ToInt32;
-using JS::ToUint32;
 using mozilla::IsAsciiDigit;
 
 /*
@@ -310,35 +307,28 @@ void FixedLengthTypedArrayObject::setInlineElements() {
 
 uint32_t js::ClampDoubleToUint8(const double x) {
   // Not < so that NaN coerces to 0
-  if (!(x >= 0)) {
+  if (!(x > 0)) {
     return 0;
   }
 
-  if (x > 255) {
+  if (x >= 255) {
     return 255;
   }
 
-  double toTruncate = x + 0.5;
-  uint8_t y = uint8_t(toTruncate);
+  // Convert with truncation.
+  uint8_t y = uint8_t(x);
 
-  /*
-   * now val is rounded to nearest, ties rounded up.  We want
-   * rounded to nearest ties to even, so check whether we had a
-   * tie.
-   */
-  if (y == toTruncate) {
-    /*
-     * It was a tie (since adding 0.5 gave us the exact integer
-     * we want).  Since we rounded up, we either already have an
-     * even number or we have an odd number but the number we
-     * want is one less.  So just unconditionally masking out the
-     * ones bit should do the trick to get us the value we
-     * want.
-     */
-    return y & ~1;
+  // Now |y| is rounded toward zero. We want rounded to nearest, ties to even.
+  double r = x - double(y);
+
+  // It was a tie (since the difference is exactly 0.5). Round up if the number
+  // is odd.
+  if (r == 0.5) {
+    return y + (y & 1);
   }
 
-  return y;
+  // Round up if truncation incorrectly rounded down.
+  return y + (r > 0.5);
 }
 
 static void ReportOutOfBounds(JSContext* cx, TypedArrayObject* typedArray) {
@@ -409,13 +399,6 @@ class TypedArrayObjectTemplate {
   }
   static constexpr JSProtoKey protoKey() {
     return TypeIDOfType<NativeType>::protoKey;
-  }
-
-  static constexpr bool ArrayTypeIsUnsigned() {
-    return TypeIsUnsigned<NativeType>();
-  }
-  static constexpr bool ArrayTypeIsFloatingPoint() {
-    return TypeIsFloatingPoint<NativeType>();
   }
 
   static constexpr size_t BYTES_PER_ELEMENT = sizeof(NativeType);
@@ -1130,21 +1113,7 @@ bool TypedArrayObjectTemplate<NativeType>::convertValue(JSContext* cx,
   }
 
   // Assign based on characteristics of the destination type
-  if constexpr (ArrayTypeIsFloatingPoint()) {
-    *result = NativeType(d);
-  } else if constexpr (ArrayTypeIsUnsigned()) {
-    static_assert(sizeof(NativeType) <= 4);
-    uint32_t n = ToUint32(d);
-    *result = NativeType(n);
-  } else if constexpr (ArrayTypeID() == Scalar::Uint8Clamped) {
-    // The uint8_clamped type has a special rounding converter
-    // for doubles.
-    *result = NativeType(d);
-  } else {
-    static_assert(sizeof(NativeType) <= 4);
-    int32_t n = ToInt32(d);
-    *result = NativeType(n);
-  }
+  *result = ConvertNumber<NativeType>(d);
   return true;
 }
 
@@ -2068,6 +2037,56 @@ bool TypedArrayObject::copyWithin(JSContext* cx, unsigned argc, Value* vp) {
 using ByteVector =
     js::Vector<uint8_t, FixedLengthTypedArrayObject::INLINE_BUFFER_LIMIT>;
 
+class ByteSink final {
+  ByteVector& bytes_;
+
+ public:
+  explicit ByteSink(ByteVector& bytes) : bytes_(bytes) {
+    MOZ_ASSERT(bytes.empty());
+  }
+
+  constexpr bool canAppend(size_t n = 1) const { return true; }
+
+  template <typename... Args>
+  bool append(Args... args) {
+    if (!bytes_.reserve(bytes_.length() + sizeof...(args))) {
+      return false;
+    }
+    (bytes_.infallibleAppend(args), ...);
+    return true;
+  }
+};
+
+class TypedArraySink final {
+  Handle<TypedArrayObject*> typedArray_;
+  size_t maxLength_;
+  size_t index_ = 0;
+
+ public:
+  TypedArraySink(Handle<TypedArrayObject*> typedArray, size_t maxLength)
+      : typedArray_(typedArray), maxLength_(maxLength) {
+    MOZ_ASSERT(typedArray->type() == Scalar::Uint8);
+
+    // The underlying buffer must neither be detached nor shrunk. (It may have
+    // been grown when it's a growable shared buffer and a concurrent thread
+    // resized the buffer.)
+    MOZ_ASSERT(!typedArray->hasDetachedBuffer());
+    MOZ_ASSERT(typedArray->length().valueOr(0) >= maxLength);
+  }
+
+  size_t written() const { return index_; }
+
+  bool canAppend(size_t n = 1) const { return maxLength_ - index_ >= n; }
+
+  template <typename... Args>
+  bool append(Args... args) {
+    MOZ_ASSERT(canAppend(sizeof...(args)));
+    (TypedArrayObjectTemplate<uint8_t>::setIndex(*typedArray_, index_++, args),
+     ...);
+    return true;
+  }
+};
+
 static UniqueChars QuoteString(JSContext* cx, char16_t ch) {
   Sprinter sprinter(cx);
   if (!sprinter.init()) {
@@ -2086,8 +2105,9 @@ static UniqueChars QuoteString(JSContext* cx, char16_t ch) {
  *
  * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-fromhex
  */
-static bool FromHex(JSContext* cx, Handle<JSString*> string, size_t maxLength,
-                    ByteVector& bytes, size_t* readLength) {
+template <class Sink>
+static bool FromHex(JSContext* cx, Handle<JSString*> string, Sink& sink,
+                    size_t* readLength) {
   // Step 1. (Not applicable in our implementation.)
 
   // Step 2.
@@ -2106,13 +2126,12 @@ static bool FromHex(JSContext* cx, Handle<JSString*> string, size_t maxLength,
   }
 
   // Step 4. (Not applicable in our implementation.)
-  MOZ_ASSERT(bytes.empty());
 
   // Step 5.
   size_t index = 0;
 
   // Step 6.
-  while (index < length && bytes.length() < maxLength) {
+  while (index < length && sink.canAppend()) {
     // Step 6.a.
     char16_t c0 = linear->latin1OrTwoByteChar(index);
     char16_t c1 = linear->latin1OrTwoByteChar(index + 1);
@@ -2136,7 +2155,7 @@ static bool FromHex(JSContext* cx, Handle<JSString*> string, size_t maxLength,
                    mozilla::AsciiAlphanumericToNumber(c1);
 
     // Step 6.e.
-    if (!bytes.append(byte)) {
+    if (!sink.append(byte)) {
       return false;
     }
   }
@@ -2220,16 +2239,14 @@ enum class LastChunkHandling {
  *
  * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
  */
+template <class Sink>
 static bool FromBase64(JSContext* cx, Handle<JSString*> string,
                        Alphabet alphabet, LastChunkHandling lastChunkHandling,
-                       size_t maxLength, ByteVector& bytes,
-                       size_t* readLength) {
+                       Sink& sink, size_t* readLength) {
   // Steps 1-2. (Not applicable in our implementation.)
 
   // Step 3.
-  size_t remaining = maxLength;
-  if (remaining == 0) {
-    MOZ_ASSERT(bytes.empty());
+  if (!sink.canAppend()) {
     *readLength = 0;
     return true;
   }
@@ -2244,15 +2261,7 @@ static bool FromBase64(JSContext* cx, Handle<JSString*> string,
   // Encode a complete base64 chunk.
   auto decodeChunk = [&](uint32_t chunk) {
     MOZ_ASSERT(chunk <= 0xffffff);
-    MOZ_ASSERT(remaining >= 3);
-
-    if (!bytes.reserve(bytes.length() + 3)) {
-      return false;
-    }
-    bytes.infallibleAppend(chunk >> 16);
-    bytes.infallibleAppend(chunk >> 8);
-    bytes.infallibleAppend(chunk);
-    return true;
+    return sink.append(chunk >> 16, chunk >> 8, chunk);
   };
 
   // DecodeBase64Chunk ( chunk [ , throwOnExtraBits ] )
@@ -2260,20 +2269,13 @@ static bool FromBase64(JSContext* cx, Handle<JSString*> string,
   // Encode a three element partial base64 chunk.
   auto decodeChunk3 = [&](uint32_t chunk, bool throwOnExtraBits) {
     MOZ_ASSERT(chunk <= 0x3ffff);
-    MOZ_ASSERT(remaining >= 2);
 
     if (throwOnExtraBits && (chunk & 0x3) != 0) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_TYPED_ARRAY_EXTRA_BASE64_BITS);
       return false;
     }
-
-    if (!bytes.reserve(bytes.length() + 2)) {
-      return false;
-    }
-    bytes.infallibleAppend(chunk >> 10);
-    bytes.infallibleAppend(chunk >> 2);
-    return true;
+    return sink.append(chunk >> 10, chunk >> 2);
   };
 
   // DecodeBase64Chunk ( chunk [ , throwOnExtraBits ] )
@@ -2281,19 +2283,13 @@ static bool FromBase64(JSContext* cx, Handle<JSString*> string,
   // Encode a two element partial base64 chunk.
   auto decodeChunk2 = [&](uint32_t chunk, bool throwOnExtraBits) {
     MOZ_ASSERT(chunk <= 0xfff);
-    MOZ_ASSERT(remaining >= 1);
 
     if (throwOnExtraBits && (chunk & 0xf) != 0) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_TYPED_ARRAY_EXTRA_BASE64_BITS);
       return false;
     }
-
-    if (!bytes.reserve(bytes.length() + 1)) {
-      return false;
-    }
-    bytes.infallibleAppend(chunk >> 4);
-    return true;
+    return sink.append(chunk >> 4);
   };
 
   // DecodeBase64Chunk ( chunk [ , throwOnExtraBits ] )
@@ -2311,8 +2307,7 @@ static bool FromBase64(JSContext* cx, Handle<JSString*> string,
   // String index after the last fully read base64 chunk.
   size_t read = 0;
 
-  // Step 5.
-  MOZ_ASSERT(bytes.empty());
+  // Step 5. (Not applicable in our implementation.)
 
   // Step 6.
   //
@@ -2370,8 +2365,7 @@ static bool FromBase64(JSContext* cx, Handle<JSString*> string,
     // Step 10.h. (Not applicable in our implementation.)
 
     // Step 10.i.
-    if ((remaining == 1 && chunkLength == 2) ||
-        (remaining == 2 && chunkLength == 3)) {
+    if (chunkLength > 1 && !sink.canAppend(chunkLength)) {
       *readLength = read;
       return true;
     }
@@ -2401,9 +2395,7 @@ static bool FromBase64(JSContext* cx, Handle<JSString*> string,
       read = index + 1;
 
       // Step 10.l.v.
-      MOZ_ASSERT(remaining >= 3);
-      remaining -= 3;
-      if (remaining == 0) {
+      if (!sink.canAppend()) {
         *readLength = read;
         return true;
       }
@@ -2618,6 +2610,24 @@ static bool GetLastChunkHandlingOption(JSContext* cx, Handle<JSObject*> options,
   return false;
 }
 
+enum class OmitPadding : bool { No, Yes };
+
+/**
+ * Uint8Array.prototype.toBase64 ( [ options ] )
+ *
+ * Helper to retrieve the "omitPadding" option.
+ */
+static bool GetOmitPaddingOption(JSContext* cx, Handle<JSObject*> options,
+                                 OmitPadding* result) {
+  Rooted<Value> value(cx);
+  if (!GetProperty(cx, options, options, cx->names().omitPadding, &value)) {
+    return false;
+  }
+
+  *result = static_cast<OmitPadding>(JS::ToBoolean(value));
+  return true;
+}
+
 /**
  * Uint8Array.fromBase64 ( string [ , options ] )
  *
@@ -2656,10 +2666,10 @@ static bool uint8array_fromBase64(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 10.
-  constexpr size_t maxLength = std::numeric_limits<size_t>::max();
   ByteVector bytes(cx);
+  ByteSink sink{bytes};
   size_t unusedReadLength;
-  if (!FromBase64(cx, string, alphabet, lastChunkHandling, maxLength, bytes,
+  if (!FromBase64(cx, string, alphabet, lastChunkHandling, sink,
                   &unusedReadLength)) {
     return false;
   }
@@ -2700,10 +2710,10 @@ static bool uint8array_fromHex(JSContext* cx, unsigned argc, Value* vp) {
   Rooted<JSString*> string(cx, args[0].toString());
 
   // Step 2.
-  constexpr size_t maxLength = std::numeric_limits<size_t>::max();
   ByteVector bytes(cx);
+  ByteSink sink{bytes};
   size_t unusedReadLength;
-  if (!FromHex(cx, string, maxLength, bytes, &unusedReadLength)) {
+  if (!FromHex(cx, string, sink, &unusedReadLength)) {
     return false;
   }
 
@@ -2772,39 +2782,18 @@ static bool uint8array_setFromBase64(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 15.
-  size_t maxLength = *length;
-
-  // Steps 16-17.
+  // Steps 15-17.
   ByteVector bytes(cx);
+  TypedArraySink sink{tarray, *length};
   size_t readLength;
-  if (!FromBase64(cx, string, alphabet, lastChunkHandling, maxLength, bytes,
-                  &readLength)) {
+  if (!FromBase64(cx, string, alphabet, lastChunkHandling, sink, &readLength)) {
     return false;
   }
 
   // Step 18.
-  size_t written = bytes.length();
+  size_t written = sink.written();
 
-  // Step 19.
-  //
-  // The underlying buffer has neither been detached nor shrunk. (It may have
-  // been grown when it's a growable shared buffer and a concurrent thread
-  // resized the buffer.)
-  MOZ_ASSERT(!tarray->hasDetachedBuffer());
-  MOZ_ASSERT(tarray->length().valueOr(0) >= *length);
-
-  // Step 20.
-  MOZ_ASSERT(written <= *length);
-
-  // Step 21. (Inlined SetUint8ArrayBytes)
-  auto target = tarray->dataPointerEither().cast<uint8_t*>();
-  auto source = SharedMem<uint8_t*>::unshared(bytes.begin());
-  if (tarray->isSharedMemory()) {
-    SharedOps::podCopy(target, source, written);
-  } else {
-    UnsharedOps::podCopy(target, source, written);
-  }
+  // Steps 19-21. (Not applicable in our implementation.)
 
   // Step 22.
   Rooted<PlainObject*> result(cx, NewPlainObject(cx));
@@ -2865,38 +2854,17 @@ static bool uint8array_setFromHex(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 7.
-  size_t maxLength = *length;
-
-  // Steps 8-9.
-  ByteVector bytes(cx);
+  // Steps 7-9.
+  TypedArraySink sink{tarray, *length};
   size_t readLength;
-  if (!FromHex(cx, string, maxLength, bytes, &readLength)) {
+  if (!FromHex(cx, string, sink, &readLength)) {
     return false;
   }
 
   // Step 10.
-  size_t written = bytes.length();
+  size_t written = sink.written();
 
-  // Step 11.
-  //
-  // The underlying buffer has neither been detached nor shrunk. (It may have
-  // been grown when it's a growable shared buffer and a concurrent thread
-  // resized the buffer.)
-  MOZ_ASSERT(!tarray->hasDetachedBuffer());
-  MOZ_ASSERT(tarray->length().valueOr(0) >= *length);
-
-  // Step 12.
-  MOZ_ASSERT(written <= *length);
-
-  // Step 13. (Inlined SetUint8ArrayBytes)
-  auto target = tarray->dataPointerEither().cast<uint8_t*>();
-  auto source = SharedMem<uint8_t*>::unshared(bytes.begin());
-  if (tarray->isSharedMemory()) {
-    SharedOps::podCopy(target, source, written);
-  } else {
-    UnsharedOps::podCopy(target, source, written);
-  }
+  // Steps 11-13. (Not applicable in our implementation.)
 
   // Step 14.
   Rooted<PlainObject*> result(cx, NewPlainObject(cx));
@@ -2945,6 +2913,7 @@ static bool uint8array_toBase64(JSContext* cx, const CallArgs& args) {
 
   // Steps 3-7.
   auto alphabet = Alphabet::Base64;
+  auto omitPadding = OmitPadding::No;
   if (args.hasDefined(0)) {
     // Step 3. (Inlined GetOptionsObject)
     Rooted<JSObject*> options(
@@ -2953,8 +2922,13 @@ static bool uint8array_toBase64(JSContext* cx, const CallArgs& args) {
       return false;
     }
 
-    // Steps 4-7.
+    // Steps 4-6.
     if (!GetAlphabetOption(cx, options, &alphabet)) {
+      return false;
+    }
+
+    // Step 7.
+    if (!GetOmitPaddingOption(cx, options, &omitPadding)) {
       return false;
     }
   }
@@ -2967,11 +2941,16 @@ static bool uint8array_toBase64(JSContext* cx, const CallArgs& args) {
   }
 
   // Compute the output string length. Three input bytes are encoded as four
-  // characters, so the output length is ⌈length × 4/3⌉.
+  // characters, so the output length is ⌈length × 4/3⌉. When omitting padding,
+  // the output length is length + ⌈length / 3⌉.
   auto outLength = mozilla::CheckedInt<size_t>{*length};
   outLength += 2;
   outLength /= 3;
-  outLength *= 4;
+  if (omitPadding == OmitPadding::No) {
+    outLength *= 4;
+  } else {
+    outLength += *length;
+  }
   if (!outLength.isValid() || outLength.value() > JSString::MAX_LENGTH) {
     ReportAllocationOverflow(cx);
     return false;
@@ -3009,28 +2988,32 @@ static bool uint8array_toBase64(JSContext* cx, const CallArgs& args) {
     sb.infallibleAppend(encode(u24 >> 0));
   }
 
-  // Trailing two and one element bytes are padded with '='.
+  // Trailing two and one element bytes are optionally padded with '='.
   if (toRead == 2) {
     // Combine two input bytes into a single uint24 value.
     auto byte0 = jit::AtomicOperations::loadSafeWhenRacy(data++);
     auto byte1 = jit::AtomicOperations::loadSafeWhenRacy(data++);
     auto u24 = (uint32_t(byte0) << 16) | (uint32_t(byte1) << 8);
 
-    // Encode the uint24 value as base64, including padding.
+    // Encode the uint24 value as base64, optionally including padding.
     sb.infallibleAppend(encode(u24 >> 18));
     sb.infallibleAppend(encode(u24 >> 12));
     sb.infallibleAppend(encode(u24 >> 6));
-    sb.infallibleAppend('=');
+    if (omitPadding == OmitPadding::No) {
+      sb.infallibleAppend('=');
+    }
   } else if (toRead == 1) {
     // Combine one input byte into a single uint24 value.
     auto byte0 = jit::AtomicOperations::loadSafeWhenRacy(data++);
     auto u24 = uint32_t(byte0) << 16;
 
-    // Encode the uint24 value as base64, including padding.
+    // Encode the uint24 value as base64, optionally including padding.
     sb.infallibleAppend(encode(u24 >> 18));
     sb.infallibleAppend(encode(u24 >> 12));
-    sb.infallibleAppend('=');
-    sb.infallibleAppend('=');
+    if (omitPadding == OmitPadding::No) {
+      sb.infallibleAppend('=');
+      sb.infallibleAppend('=');
+    }
   } else {
     MOZ_ASSERT(toRead == 0);
   }
@@ -3256,7 +3239,7 @@ bool TypedArrayObjectTemplate<float16>::getElementPure(TypedArrayObject* tarray,
    * This could be removed for platforms/compilers known to convert a 32-bit
    * non-canonical nan to a 64-bit canonical nan.
    */
-  *vp = JS::CanonicalizedDoubleValue(f16.toDouble());
+  *vp = JS::CanonicalizedDoubleValue(static_cast<double>(f16));
   return true;
 }
 
@@ -3922,22 +3905,23 @@ bool js::DefineTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
 }
 
 template <typename T, typename U>
-static constexpr typename std::enable_if_t<std::is_unsigned_v<T>, U>
+static constexpr typename std::enable_if_t<
+    std::numeric_limits<T>::is_integer && !std::numeric_limits<T>::is_signed, U>
 UnsignedSortValue(U val) {
   return val;
 }
 
 template <typename T, typename U>
-static constexpr
-    typename std::enable_if_t<std::is_integral_v<T> && std::is_signed_v<T>, U>
-    UnsignedSortValue(U val) {
+static constexpr typename std::enable_if_t<
+    std::numeric_limits<T>::is_integer && std::numeric_limits<T>::is_signed, U>
+UnsignedSortValue(U val) {
   // Flip sign bit.
   return val ^ static_cast<U>(std::numeric_limits<T>::min());
 }
 
 template <typename T, typename UnsignedT>
 static constexpr
-    typename std::enable_if_t<std::is_floating_point_v<T>, UnsignedT>
+    typename std::enable_if_t<!std::numeric_limits<T>::is_integer, UnsignedT>
     UnsignedSortValue(UnsignedT val) {
   // Flip sign bit for positive numbers; flip all bits for negative numbers,
   // except negative NaNs.
@@ -3946,10 +3930,9 @@ static constexpr
                 "FloatingPoint::Bits matches the unsigned int representation");
 
   // FF80'0000 is negative infinity, (FF80'0000, FFFF'FFFF] are all NaNs with
-  // the sign-bit set (and the equivalent holds for double values). So any value
-  // larger than negative infinity is a negative NaN.
-  constexpr UnsignedT NegativeInfinity =
-      FloatingPoint::kSignBit | FloatingPoint::kExponentBits;
+  // the sign-bit set (and the equivalent holds for double and float16 values).
+  // So any value larger than negative infinity is a negative NaN.
+  constexpr UnsignedT NegativeInfinity = mozilla::InfinityBits<T, 1>::value;
   if (val > NegativeInfinity) {
     return val;
   }
@@ -3959,37 +3942,97 @@ static constexpr
   return val ^ FloatingPoint::kSignBit;
 }
 
-template <typename T, typename UnsignedT>
+template <typename T, typename U>
 static constexpr
-    typename std::enable_if_t<std::is_same_v<T, float16>, UnsignedT>
-    UnsignedSortValue(UnsignedT val) {
-  // Flip sign bit for positive numbers; flip all bits for negative numbers,
-  // except negative NaNs.
+    typename std::enable_if_t<std::numeric_limits<T>::is_integer, U>
+    ToCountingSortKey(U val) {
+  return UnsignedSortValue<T, U>(val);
+}
 
-  // FC00 is negative infinity, (FC00, FFFF] are all NaNs with
-  // the sign-bit set. So any value
-  // larger than negative infinity is a negative NaN.
-  constexpr UnsignedT NegativeInfinity = 0xFC00;
+template <typename T, typename U>
+static constexpr
+    typename std::enable_if_t<std::numeric_limits<T>::is_integer, U>
+    FromCountingSortKey(U val) {
+  // ToCountingSortKey for integers is a self-inverse function.
+  return ToCountingSortKey<T, U>(val);
+}
+
+/**
+ * UnsignedSortValue for floating point values isn't reversible, so we use a
+ * different implementation for counting sort to keep NaN payloads unmodified
+ * for consistency with TypedArrayRadixSort and TypedArrayStdSort.
+ *
+ * Mapping overview:
+ * - Largest -NaN      = FFFF -> FFFF
+ * - Smallest -NaN     = FC01 -> FC01
+ * - Negative infinity = FC00 -> 0000
+ * - Negative zero     = 8000 -> 7C00
+ * - Positive zero     = 0000 -> 7C01
+ * - Positive infinity = 7C00 -> F801
+ * - Smallest +NaN     = 7C01 -> F802
+ * - Largest +NaN      = 7FFF -> FC00
+ */
+template <typename T, typename U>
+static constexpr typename std::enable_if_t<std::is_same_v<T, js::float16>, U>
+ToCountingSortKey(U val) {
+  using FloatingPoint = mozilla::FloatingPoint<T>;
+  static_assert(std::is_same_v<typename FloatingPoint::Bits, U>,
+                "FloatingPoint::Bits matches the unsigned int representation");
+
+  constexpr U PositiveInfinity = mozilla::InfinityBits<T, 0>::value;
+  constexpr U NegativeInfinity = mozilla::InfinityBits<T, 1>::value;
+
+  // Any value larger than negative infinity is a negative NaN. Place those at
+  // the very end.
   if (val > NegativeInfinity) {
     return val;
   }
-  if (val & 0x8000) {
-    return ~val;
+
+  // Map negative values, starting at negative infinity which is mapped to zero.
+  if (val & FloatingPoint::kSignBit) {
+    return NegativeInfinity - val;
   }
-  return val ^ 0x8000;
+
+  // Map positive values right after the last negative value (negative zero).
+  return val + (PositiveInfinity + 1);
+}
+
+/**
+ * Reverse the mapping from ToCountingSortKey.
+ */
+template <typename T, typename U>
+static constexpr typename std::enable_if_t<std::is_same_v<T, js::float16>, U>
+FromCountingSortKey(U val) {
+  using FloatingPoint = mozilla::FloatingPoint<T>;
+  static_assert(std::is_same_v<typename FloatingPoint::Bits, U>,
+                "FloatingPoint::Bits matches the unsigned int representation");
+
+  constexpr U PositiveInfinity = mozilla::InfinityBits<T, 0>::value;
+  constexpr U NegativeInfinity = mozilla::InfinityBits<T, 1>::value;
+
+  // Negative NaN are unchanged.
+  if (val > NegativeInfinity) {
+    return val;
+  }
+
+  // Any value larger than 0x7C00 was a positive number, including positive NaN.
+  if (val > PositiveInfinity) {
+    return val - (PositiveInfinity + 1);
+  }
+
+  // Any other value was a negative number, excluding negative NaN.
+  return NegativeInfinity - val;
 }
 
 template <typename T>
-static typename std::enable_if_t<std::is_integral_v<T> ||
-                                 std::is_same_v<T, uint8_clamped>>
+static typename std::enable_if_t<std::numeric_limits<T>::is_integer>
 TypedArrayStdSort(SharedMem<void*> data, size_t length) {
   T* unwrapped = data.cast<T*>().unwrapUnshared();
   std::sort(unwrapped, unwrapped + length);
 }
 
 template <typename T>
-static typename std::enable_if_t<std::is_floating_point_v<T> ||
-                                 std::is_same_v<T, float16>>
+static typename std::enable_if_t<!std::numeric_limits<T>::is_integer>
 TypedArrayStdSort(SharedMem<void*> data, size_t length) {
   // Sort on the unsigned representation for performance reasons.
   using UnsignedT =
@@ -4032,9 +4075,6 @@ TypedArrayStdSort(JSContext* cx, TypedArrayObject* typedArray, size_t length) {
 template <typename T, typename Ops>
 static bool TypedArrayCountingSort(JSContext* cx, TypedArrayObject* typedArray,
                                    size_t length) {
-  static_assert(std::is_integral_v<T> || std::is_same_v<T, uint8_clamped>,
-                "Counting sort expects integral array elements");
-
   // Determined by performance testing.
   if (length <= 64) {
     return TypedArrayStdSort<T, Ops>(cx, typedArray, length);
@@ -4043,7 +4083,6 @@ static bool TypedArrayCountingSort(JSContext* cx, TypedArrayObject* typedArray,
   // Map signed values onto the unsigned range when storing in buffer.
   using UnsignedT =
       typename mozilla::UnsignedStdintTypeForSize<sizeof(T)>::Type;
-  constexpr T min = std::numeric_limits<T>::min();
 
   constexpr size_t InlineStorage = sizeof(T) == 1 ? 256 : 0;
   Vector<size_t, InlineStorage> buffer(cx);
@@ -4051,25 +4090,28 @@ static bool TypedArrayCountingSort(JSContext* cx, TypedArrayObject* typedArray,
     return false;
   }
 
-  SharedMem<T*> data = typedArray->dataPointerEither().cast<T*>();
+  SharedMem<UnsignedT*> data =
+      typedArray->dataPointerEither().cast<UnsignedT*>();
 
   // Populate the buffer.
   for (size_t i = 0; i < length; i++) {
-    T val = Ops::load(data + i);
-    buffer[UnsignedT(val - min)]++;
+    UnsignedT val = ToCountingSortKey<T, UnsignedT>(Ops::load(data + i));
+    buffer[val]++;
   }
 
   // Traverse the buffer in order and write back elements to array.
   UnsignedT val = UnsignedT(-1);  // intentional overflow on first increment
   for (size_t i = 0; i < length;) {
-    // Invariant: sum(buffer[val:]) == length-i
     size_t j;
     do {
       j = buffer[++val];
     } while (j == 0);
 
+    // Invariant: sum(buffer[val:]) == length-i
+    MOZ_ASSERT(j <= length - i);
+
     for (; j > 0; j--) {
-      Ops::store(data + i++, T(val + min));
+      Ops::store(data + i++, FromCountingSortKey<T, UnsignedT>(val));
     }
   }
 
@@ -4138,18 +4180,25 @@ static bool TypedArrayRadixSort(JSContext* cx, TypedArrayObject* typedArray,
   // Radix sort uses O(n) additional space, limit this space to 64 MB.
   constexpr size_t StdSortMaxCutoff = (64 * 1024 * 1024) / sizeof(T);
 
-  if (length <= StdSortMinCutoff || length >= StdSortMaxCutoff) {
-    return TypedArrayStdSort<T, Ops>(cx, typedArray, length);
-  }
-
   if constexpr (sizeof(T) == 2) {
-    // Radix sort uses O(n) additional space, so when |n| reaches 2^16, switch
-    // over to counting sort to limit the additional space needed to 2^16.
-    constexpr size_t CountingSortMaxCutoff = 65536;
+    // Radix sort uses |n * sizeof(T)| additional space, whereas counting sort
+    // uses |65536 * sizeof(size_t)| additional space. When the additional
+    // space needed for radix sort exceeds the space needed for counting sort,
+    // switch over to counting sort.
+    //
+    // It's faster to switch slightly earlier, so subtract a constant from the
+    // exact value. This constant (2048) was determined by performance testing.
+    constexpr size_t CountingSortMaxCutoff =
+        65536 * (sizeof(size_t) / sizeof(T)) - 2048;
+    static_assert(CountingSortMaxCutoff < StdSortMaxCutoff);
 
     if (length >= CountingSortMaxCutoff) {
       return TypedArrayCountingSort<T, Ops>(cx, typedArray, length);
     }
+  }
+
+  if (length <= StdSortMinCutoff || length >= StdSortMaxCutoff) {
+    return TypedArrayStdSort<T, Ops>(cx, typedArray, length);
   }
 
   using UnsignedT =
@@ -4205,13 +4254,7 @@ template <typename T, typename Ops>
 static constexpr typename std::enable_if_t<sizeof(T) == 2 || sizeof(T) == 4,
                                            TypedArraySortFn>
 TypedArraySort() {
-  if constexpr (std::is_same_v<T, float16>) {
-    // TODO: Support radix sort for Float16, see
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1893229
-    return TypedArrayStdSort<T, Ops>;
-  } else {
-    return TypedArrayRadixSort<T, Ops>;
-  }
+  return TypedArrayRadixSort<T, Ops>;
 }
 
 template <typename T, typename Ops>
@@ -4331,7 +4374,7 @@ static void StoreSortedElements(TypedArrayObject* tarray, Value* elements,
   SharedMem<T*> data = tarray->dataPointerEither().cast<T*>();
   for (size_t i = 0; i < len; i++) {
     T val;
-    if constexpr (TypeIsFloatingPoint<T>()) {
+    if constexpr (!std::numeric_limits<T>::is_integer) {
       val = elements[i].toDouble();
     } else if constexpr (std::is_same_v<T, int64_t>) {
       val = BigInt::toInt64(elements[i].toBigInt());
@@ -4453,6 +4496,7 @@ bool TypedArrayObject::sort(JSContext* cx, unsigned argc, Value* vp) {
 
 ArraySortResult js::TypedArraySortFromJit(
     JSContext* cx, jit::TrampolineNativeFrameLayout* frame) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "[TypedArray].prototype", "sort");
   // Initialize the ArraySortData class stored in the trampoline frame.
   void* dataUninit = frame->getFrameData<ArraySortData>();
   auto* data = new (dataUninit) ArraySortData(cx);

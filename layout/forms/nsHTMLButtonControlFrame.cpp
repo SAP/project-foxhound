@@ -11,7 +11,6 @@
 #include "nsIFrameInlines.h"
 #include "nsContainerFrame.h"
 #include "nsPresContextInlines.h"
-#include "nsIFormControlFrame.h"
 #include "nsPresContext.h"
 #include "nsLayoutUtils.h"
 #include "nsGkAtoms.h"
@@ -52,7 +51,6 @@ void nsHTMLButtonControlFrame::Init(nsIContent* aContent,
 
 NS_QUERYFRAME_HEAD(nsHTMLButtonControlFrame)
   NS_QUERYFRAME_ENTRY(nsHTMLButtonControlFrame)
-  NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 #ifdef ACCESSIBILITY
@@ -60,8 +58,6 @@ a11y::AccType nsHTMLButtonControlFrame::AccessibleType() {
   return a11y::eHTMLButtonType;
 }
 #endif
-
-void nsHTMLButtonControlFrame::SetFocus(bool aOn, bool aRepaint) {}
 
 nsresult nsHTMLButtonControlFrame::HandleEvent(nsPresContext* aPresContext,
                                                WidgetGUIEvent* aEvent,
@@ -238,22 +234,13 @@ void nsHTMLButtonControlFrame::BuildDisplayList(
   DisplaySelectionOverlay(aBuilder, aLists.Content());
 }
 
-nscoord nsHTMLButtonControlFrame::GetMinISize(gfxContext* aRenderingContext) {
+nscoord nsHTMLButtonControlFrame::IntrinsicISize(gfxContext* aContext,
+                                                 IntrinsicISizeType aType) {
   if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
     return *containISize;
   }
-  nsIFrame* kid = mFrames.FirstChild();
-  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                              IntrinsicISizeType::MinISize);
-}
-
-nscoord nsHTMLButtonControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
-    return *containISize;
-  }
-  nsIFrame* kid = mFrames.FirstChild();
-  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                              IntrinsicISizeType::PrefISize);
+  return nsLayoutUtils::IntrinsicForContainer(aContext, mFrames.FirstChild(),
+                                              aType);
 }
 
 void nsHTMLButtonControlFrame::Reflow(nsPresContext* aPresContext,
@@ -458,15 +445,6 @@ BaselineSharingGroup nsHTMLButtonControlFrame::GetDefaultBaselineSharingGroup()
 nscoord nsHTMLButtonControlFrame::SynthesizeFallbackBaseline(
     mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
   return Baseline::SynthesizeBOffsetFromMarginBox(this, aWM, aBaselineGroup);
-}
-
-nsresult nsHTMLButtonControlFrame::SetFormProperty(nsAtom* aName,
-                                                   const nsAString& aValue) {
-  if (nsGkAtoms::value == aName) {
-    return mContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::value,
-                                          aValue, true);
-  }
-  return NS_OK;
 }
 
 ComputedStyle* nsHTMLButtonControlFrame::GetAdditionalComputedStyle(

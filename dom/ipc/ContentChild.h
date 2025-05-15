@@ -249,6 +249,10 @@ class ContentChild final : public PContentChild,
       const Maybe<RefPtr<nsIPrincipal>>& aForPrincipal,
       const Maybe<nsCString>& aBaseDomain);
 
+  mozilla::ipc::IPCResult RecvClearScriptCache(
+      const Maybe<RefPtr<nsIPrincipal>>& aForPrincipal,
+      const Maybe<nsCString>& aBaseDomain);
+
   mozilla::ipc::IPCResult RecvClearImageCacheFromPrincipal(
       nsIPrincipal* aPrincipal);
   mozilla::ipc::IPCResult RecvClearImageCacheFromBaseDomain(
@@ -365,6 +369,9 @@ class ContentChild final : public PContentChild,
   // this for telemetry.
   const nsACString& GetRemoteType() const override;
 
+  mozilla::ipc::IPCResult RecvInitRemoteWorkerService(
+      Endpoint<PRemoteWorkerServiceChild>&& aEndpoint);
+
   mozilla::ipc::IPCResult RecvInitBlobURLs(
       nsTArray<BlobURLRegistrationData>&& aRegistations);
 
@@ -406,21 +413,6 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvShutdownConfirmedHP();
 
   mozilla::ipc::IPCResult RecvShutdown();
-
-  mozilla::ipc::IPCResult RecvInvokeDragSession(
-      const MaybeDiscarded<WindowContext>& aSourceWindowContext,
-      const MaybeDiscarded<WindowContext>& aSourceTopWindowContext,
-      nsTArray<IPCTransferableData>&& aTransferables, const uint32_t& aAction);
-
-  mozilla::ipc::IPCResult RecvUpdateDragSession(
-      nsTArray<IPCTransferableData>&& aTransferables,
-      EventMessage aEventMessage);
-
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  mozilla::ipc::IPCResult RecvEndDragSession(
-      const bool& aDoneDrag, const bool& aUserCancelled,
-      const mozilla::LayoutDeviceIntPoint& aEndDragPoint,
-      const uint32_t& aKeyModifiers, const uint32_t& aDropEffect);
 
   mozilla::ipc::IPCResult RecvPush(const nsCString& aScope,
                                    nsIPrincipal* aPrincipal,
@@ -717,11 +709,11 @@ class ContentChild final : public PContentChild,
       uint64_t aContextId, DiscardWindowContextResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvScriptError(
-      const nsString& aMessage, const nsString& aSourceName,
-      const nsString& aSourceLine, const uint32_t& aLineNumber,
-      const uint32_t& aColNumber, const uint32_t& aFlags,
-      const nsCString& aCategory, const bool& aFromPrivateWindow,
-      const uint64_t& aInnerWindowId, const bool& aFromChromeContext);
+      const nsString& aMessage, const nsCString& aSourceName,
+      const uint32_t& aLineNumber, const uint32_t& aColNumber,
+      const uint32_t& aFlags, const nsCString& aCategory,
+      const bool& aFromPrivateWindow, const uint64_t& aInnerWindowId,
+      const bool& aFromChromeContext);
 
   mozilla::ipc::IPCResult RecvReportFrameTimingData(
       const LoadInfoArgs& loadInfoArgs, const nsString& entryName,

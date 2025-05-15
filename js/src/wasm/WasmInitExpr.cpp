@@ -41,7 +41,7 @@ class MOZ_STACK_CLASS InitExprInterpreter {
       : features(FeatureArgs::build(cx, FeatureOptions())),
         stack(cx),
         instanceObj(cx, instanceObj),
-        types(instanceObj->instance().metadata().types) {}
+        types(instanceObj->instance().codeMeta().types) {}
 
   bool evaluate(JSContext* cx, Decoder& d);
 
@@ -135,7 +135,7 @@ class MOZ_STACK_CLASS InitExprInterpreter {
   }
 #ifdef ENABLE_WASM_GC
   bool evalStructNew(JSContext* cx, uint32_t typeIndex) {
-    const TypeDef& typeDef = instance().metadata().types->type(typeIndex);
+    const TypeDef& typeDef = instance().codeMeta().types->type(typeIndex);
     const StructType& structType = typeDef.structType();
 
     Rooted<WasmStructObject*> structObj(
@@ -163,7 +163,7 @@ class MOZ_STACK_CLASS InitExprInterpreter {
       return false;
     }
 
-    const TypeDef& typeDef = instance().metadata().types->type(typeIndex);
+    const TypeDef& typeDef = instance().codeMeta().types->type(typeIndex);
     return pushRef(RefType::fromTypeDef(&typeDef, false),
                    AnyRef::fromJSObject(*structObj));
   }
@@ -180,7 +180,7 @@ class MOZ_STACK_CLASS InitExprInterpreter {
     arrayObj->fillVal(val, 0, numElements);
     stack.popBack();
 
-    const TypeDef& typeDef = instance().metadata().types->type(typeIndex);
+    const TypeDef& typeDef = instance().codeMeta().types->type(typeIndex);
     return pushRef(RefType::fromTypeDef(&typeDef, false),
                    AnyRef::fromJSObject(*arrayObj));
   }
@@ -193,7 +193,7 @@ class MOZ_STACK_CLASS InitExprInterpreter {
       return false;
     }
 
-    const TypeDef& typeDef = instance().metadata().types->type(typeIndex);
+    const TypeDef& typeDef = instance().codeMeta().types->type(typeIndex);
     return pushRef(RefType::fromTypeDef(&typeDef, false),
                    AnyRef::fromJSObject(*arrayObj));
   }
@@ -214,7 +214,7 @@ class MOZ_STACK_CLASS InitExprInterpreter {
       stack.popBack();
     }
 
-    const TypeDef& typeDef = instance().metadata().types->type(typeIndex);
+    const TypeDef& typeDef = instance().codeMeta().types->type(typeIndex);
     return pushRef(RefType::fromTypeDef(&typeDef, false),
                    AnyRef::fromJSObject(*arrayObj));
   }
@@ -416,9 +416,9 @@ bool InitExprInterpreter::evaluate(JSContext* cx, Decoder& d) {
 #undef CHECK
 }
 
-bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
+bool wasm::DecodeConstantExpression(Decoder& d, CodeMetadata* codeMeta,
                                     ValType expected, Maybe<LitVal>* literal) {
-  ValidatingOpIter iter(*env, d, ValidatingOpIter::InitExpr);
+  ValidatingOpIter iter(*codeMeta, d, ValidatingOpIter::InitExpr);
 
   if (!iter.startInitExpr(expected)) {
     return false;
@@ -500,7 +500,7 @@ bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
       }
 #ifdef ENABLE_WASM_SIMD
       case uint16_t(Op::SimdPrefix): {
-        if (!env->simdAvailable()) {
+        if (!codeMeta->simdAvailable()) {
           return d.fail("v128 not enabled");
         }
         if (op.b1 != uint32_t(SimdOp::V128Const)) {
@@ -519,8 +519,8 @@ bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
         if (!iter.readRefFunc(&funcIndex)) {
           return false;
         }
-        env->declareFuncExported(funcIndex, /* eager */ false,
-                                 /* canRefFunc */ true);
+        codeMeta->funcs[funcIndex].declareFuncExported(/* eager */ false,
+                                                       /* canRefFunc */ true);
         *literal = Nothing();
         break;
       }
@@ -552,7 +552,7 @@ bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
       }
 #ifdef ENABLE_WASM_GC
       case uint16_t(Op::GcPrefix): {
-        if (!env->gcEnabled()) {
+        if (!codeMeta->gcEnabled()) {
           return iter.unrecognizedOpcode(&op);
         }
         switch (op.b1) {
@@ -631,11 +631,11 @@ bool wasm::DecodeConstantExpression(Decoder& d, ModuleEnvironment* env,
   }
 }
 
-bool InitExpr::decodeAndValidate(Decoder& d, ModuleEnvironment* env,
+bool InitExpr::decodeAndValidate(Decoder& d, CodeMetadata* codeMeta,
                                  ValType expected, InitExpr* expr) {
   Maybe<LitVal> literal = Nothing();
   const uint8_t* exprStart = d.currentPosition();
-  if (!DecodeConstantExpression(d, env, expected, &literal)) {
+  if (!DecodeConstantExpression(d, codeMeta, expected, &literal)) {
     return false;
   }
   const uint8_t* exprEnd = d.currentPosition();

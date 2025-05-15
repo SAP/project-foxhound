@@ -6,9 +6,14 @@
 
 #include "mozilla/dom/TrustedTypePolicyFactory.h"
 
+#include <utility>
+
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/CSPViolationData.h"
 #include "mozilla/dom/TrustedTypePolicy.h"
+#include "mozilla/dom/nsCSPUtils.h"
 
 namespace mozilla::dom {
 
@@ -19,10 +24,88 @@ JSObject* TrustedTypePolicyFactory::WrapObject(
   return TrustedTypePolicyFactory_Binding::Wrap(aCx, this, aGivenProto);
 }
 
+constexpr size_t kCreatePolicyCSPViolationMaxSampleLength = 40;
+
+static CSPViolationData CreateCSPViolationData(JSContext* aJSContext,
+                                               uint32_t aPolicyIndex,
+                                               const nsAString& aPolicyName) {
+  auto caller = JSCallingLocation::Get(aJSContext);
+  const nsAString& sample =
+      Substring(aPolicyName, /* aStartPos */ 0,
+                /* aLength */ kCreatePolicyCSPViolationMaxSampleLength);
+
+  // According to https://github.com/w3c/webappsec-csp/issues/442 column- and
+  // line-numbers are expected to be 1-origin.
+
+  return {aPolicyIndex,
+          CSPViolationData::Resource{
+              CSPViolationData::BlockedContentSource::TrustedTypesPolicy},
+          nsIContentSecurityPolicy::TRUSTED_TYPES_DIRECTIVE,
+          caller.FileName(),
+          caller.mLine,
+          caller.mColumn,
+          /* aElement */ nullptr,
+          sample};
+}
+
+auto TrustedTypePolicyFactory::ShouldTrustedTypePolicyCreationBeBlockedByCSP(
+    JSContext* aJSContext,
+    const nsAString& aPolicyName) const -> PolicyCreation {
+  // CSP-support for Workers will be added in
+  // <https://bugzilla.mozilla.org/show_bug.cgi?id=1901492>.
+  // That is, currently only Windows are supported.
+  nsIContentSecurityPolicy* csp =
+      mGlobalObject->GetAsInnerWindow()
+          ? mGlobalObject->GetAsInnerWindow()->GetCsp()
+          : nullptr;
+
+  auto result = PolicyCreation::Allowed;
+
+  if (csp) {
+    uint32_t numPolicies = 0;
+    csp->GetPolicyCount(&numPolicies);
+
+    for (uint64_t i = 0; i < numPolicies; ++i) {
+      const nsCSPPolicy* policy = csp->GetPolicy(i);
+      if (policy->hasDirective(
+              nsIContentSecurityPolicy::TRUSTED_TYPES_DIRECTIVE)) {
+        if (policy->ShouldCreateViolationForNewTrustedTypesPolicy(
+                aPolicyName, mCreatedPolicyNames)) {
+          // Only required for Workers;
+          // https://bugzilla.mozilla.org/show_bug.cgi?id=1901492.
+          nsICSPEventListener* cspEventListener{nullptr};
+
+          CSPViolationData cspViolationData{
+              CreateCSPViolationData(aJSContext, i, aPolicyName)};
+
+          csp->LogTrustedTypesViolationDetailsUnchecked(
+              std::move(cspViolationData), cspEventListener);
+
+          if (policy->getDisposition() == nsCSPPolicy::Disposition::Enforce) {
+            result = PolicyCreation::Blocked;
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
 already_AddRefed<TrustedTypePolicy> TrustedTypePolicyFactory::CreatePolicy(
-    const nsAString& aPolicyName,
-    const TrustedTypePolicyOptions& aPolicyOptions) {
-  // TODO: add CSP support.
+    JSContext* aJSContext, const nsAString& aPolicyName,
+    const TrustedTypePolicyOptions& aPolicyOptions, ErrorResult& aRv) {
+  if (PolicyCreation::Blocked ==
+      ShouldTrustedTypePolicyCreationBeBlockedByCSP(aJSContext, aPolicyName)) {
+    nsCString errorMessage =
+        "Content-Security-Policy blocked creating policy named '"_ns +
+        NS_ConvertUTF16toUTF8(aPolicyName) + "'"_ns;
+
+    // TODO: perhaps throw different TypeError messages,
+    //       https://github.com/w3c/trusted-types/issues/511.
+    aRv.ThrowTypeError(errorMessage);
+    return nullptr;
+  }
 
   // TODO: add default policy support; this requires accessing the default
   //       policy on the C++ side, hence already now ref-counting policy
@@ -66,7 +149,7 @@ IS_TRUSTED_TYPE_IMPL(HTML);
 IS_TRUSTED_TYPE_IMPL(Script);
 IS_TRUSTED_TYPE_IMPL(ScriptURL);
 
-UniquePtr<TrustedHTML> TrustedTypePolicyFactory::EmptyHTML() {
+already_AddRefed<TrustedHTML> TrustedTypePolicyFactory::EmptyHTML() {
   // Preserving the wrapper ensures:
   // ```
   //  const e = trustedTypes.emptyHTML;
@@ -77,14 +160,14 @@ UniquePtr<TrustedHTML> TrustedTypePolicyFactory::EmptyHTML() {
   // multiple emptyHML objects. Both, the JS- and the C++-objects.
   dom::PreserveWrapper(this);
 
-  return MakeUnique<TrustedHTML>(EmptyString());
+  return MakeRefPtr<TrustedHTML>(EmptyString()).forget();
 }
 
-UniquePtr<TrustedScript> TrustedTypePolicyFactory::EmptyScript() {
+already_AddRefed<TrustedScript> TrustedTypePolicyFactory::EmptyScript() {
   // See the explanation in `EmptyHTML()`.
   dom::PreserveWrapper(this);
 
-  return MakeUnique<TrustedScript>(EmptyString());
+  return MakeRefPtr<TrustedScript>(EmptyString()).forget();
 }
 
 }  // namespace mozilla::dom

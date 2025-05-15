@@ -36,7 +36,7 @@
 
 #if defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
     defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_LOONG64) || \
-    defined(JS_CODEGEN_RISCV64)
+    defined(JS_CODEGEN_RISCV64) || defined(JS_CODEGEN_ARM)
 // JS_CODELABEL_LINKMODE gives labels additional metadata
 // describing how Bind() should patch them.
 #  define JS_CODELABEL_LINKMODE
@@ -492,7 +492,7 @@ class CodeLabel {
 #endif
 };
 
-typedef Vector<CodeLabel, 0, SystemAllocPolicy> CodeLabelVector;
+using CodeLabelVector = Vector<CodeLabel, 0, SystemAllocPolicy>;
 
 class CodeLocationLabel {
   uint8_t* raw_ = nullptr;
@@ -531,7 +531,7 @@ struct SymbolicAccess {
   SymbolicAddress target;
 };
 
-typedef Vector<SymbolicAccess, 0, SystemAllocPolicy> SymbolicAccessVector;
+using SymbolicAccessVector = Vector<SymbolicAccess, 0, SystemAllocPolicy>;
 
 // Describes a single wasm or asm.js memory access for the purpose of generating
 // code and metadata.

@@ -22,6 +22,7 @@ import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -30,6 +31,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.DownloadAction
 import mozilla.components.browser.state.state.content.DownloadState
+import mozilla.components.browser.state.state.content.DownloadState.Status.CANCELLED
 import mozilla.components.browser.state.state.content.DownloadState.Status.COMPLETED
 import mozilla.components.browser.state.state.content.DownloadState.Status.DOWNLOADING
 import mozilla.components.browser.state.state.content.DownloadState.Status.FAILED
@@ -295,7 +297,10 @@ class AbstractFetchDownloadServiceTest {
 
         service.handleRemovePrivateDownloadIntent(downloadState)
 
-        verify(service).cancelDownloadJob(downloadJobState)
+        verify(service).cancelDownloadJob(
+            currentDownloadJobState = eq(downloadJobState),
+            coroutineScope = any(),
+        )
         verify(service).removeDownloadJob(downloadJobState)
         verify(browserStore).dispatch(DownloadAction.RemoveDownloadAction(downloadState.id))
     }
@@ -645,6 +650,7 @@ class AbstractFetchDownloadServiceTest {
 
         // Simulate a failure
         var downloadJobState = service.downloadJobs[providedDownload.value.state.id]!!
+        downloadJobState.currentBytesCopied = 1000
         service.setDownloadJobStatus(downloadJobState, FAILED)
         service.downloadJobs[providedDownload.value.state.id]?.job?.cancel()
 
@@ -663,6 +669,7 @@ class AbstractFetchDownloadServiceTest {
 
         downloadJobState = service.downloadJobs[providedDownload.value.state.id]!!
         assertEquals(DOWNLOADING, service.getDownloadJobStatus(downloadJobState))
+        assertEquals(0, downloadJobState.currentBytesCopied)
 
         // Make sure the download job is completed (break out of copyInChunks)
         service.setDownloadJobStatus(downloadJobState, DownloadState.Status.PAUSED)
@@ -1695,16 +1702,17 @@ class AbstractFetchDownloadServiceTest {
                 override val notificationsDelegate = this@AbstractFetchDownloadServiceTest.notificationsDelegate
             },
         )
+        val append = true
         val uniqueFile: DownloadState = mock()
         val qSdkVersion = 29
         doReturn(uniqueFile).`when`(service).makeUniqueFileNameIfNecessary(any(), anyBoolean())
         doNothing().`when`(service).updateDownloadState(uniqueFile)
-        doNothing().`when`(service).useFileStreamScopedStorage(eq(uniqueFile), any())
+        doNothing().`when`(service).useFileStreamScopedStorage(eq(uniqueFile), eq(append), any())
         doReturn(qSdkVersion).`when`(service).getSdkVersion()
 
-        service.useFileStream(mock(), true) {}
+        service.useFileStream(mock(), append) {}
 
-        verify(service).useFileStreamScopedStorage(eq(uniqueFile), any())
+        verify(service).useFileStreamScopedStorage(eq(uniqueFile), eq(append), any())
     }
 
     @Test
@@ -2223,6 +2231,40 @@ class AbstractFetchDownloadServiceTest {
 
         assertTrue(result.toString().endsWith("location/test.txt"))
     }
+
+    @Test
+    fun `WHEN cancelDownloadJob is called THEN deleteDownloadingFile must be called`() =
+        runTest(testsDispatcher) {
+            val downloadState = DownloadState(url = "mozilla.org/mozilla.txt")
+            val downloadJobState =
+                DownloadJobState(job = Job(), state = downloadState, status = DOWNLOADING)
+
+            doNothing().`when`(service)
+                .deleteDownloadingFile(downloadState.copy(status = CANCELLED))
+
+            service.downloadJobs[downloadState.id] = downloadJobState
+
+            service.cancelDownloadJob(
+                currentDownloadJobState = downloadJobState,
+                coroutineScope = CoroutineScope(coroutinesTestRule.testDispatcher),
+            )
+
+            verify(service).deleteDownloadingFile(downloadState.copy(status = CANCELLED))
+            assertTrue(downloadJobState.downloadDeleted)
+        }
+
+    @Test
+    fun `WHEN makeUniqueFileNameIfNecessary is called THEN file name should be unique`() =
+        runTest(testsDispatcher) {
+            val downloadState = DownloadState("https://example.com/file.txt", "file.txt")
+            val previousDownloadState = DownloadState("https://example.com/file.txt", "file.txt")
+
+            service.downloadJobs[previousDownloadState.id] = DownloadJobState(job = Job(), state = previousDownloadState, status = DOWNLOADING)
+
+            val transformedDownload = service.makeUniqueFileNameIfNecessary(downloadState, false)
+
+            assertEquals("file(1).txt", transformedDownload.fileName)
+        }
 }
 
 @Implements(FileProvider::class)

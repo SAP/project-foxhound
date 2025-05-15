@@ -36,6 +36,8 @@ class MozPromise;
 using BoolPromise = MozPromise<bool, nsresult, false>;
 using Int64Promise = MozPromise<int64_t, nsresult, false>;
 
+using ExclusiveBoolPromise = MozPromise<bool, nsresult, true>;
+
 namespace ipc {
 
 class BoolResponse;
@@ -44,6 +46,7 @@ enum class ResponseRejectReason;
 using BoolResponsePromise =
     MozPromise<BoolResponse, ResponseRejectReason, true>;
 using BoolResponseResolver = std::function<void(const BoolResponse&)>;
+using NSResultResponseResolver = std::function<void(const nsresult&)>;
 
 }  // namespace ipc
 

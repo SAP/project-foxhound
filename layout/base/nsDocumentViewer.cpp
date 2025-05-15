@@ -30,6 +30,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/FragmentDirective.h"
 #include "mozilla/widget/Screen.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
@@ -77,6 +78,7 @@
 #include "nsCopySupport.h"
 #include "nsXULPopupManager.h"
 
+#include "nsIClipboard.h"
 #include "nsIClipboardHelper.h"
 
 #include "nsPIDOMWindow.h"
@@ -1077,6 +1079,10 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
 
   if (!mStopped) {
     if (mDocument) {
+      // This is the final attempt to scroll to an anchor / text directive.
+      // This is the last iteration of the algorithm described in the spec for
+      // trying to scroll to a fragment.
+      // https://html.spec.whatwg.org/#try-to-scroll-to-the-fragment
       nsCOMPtr<Document> document = mDocument;
       document->ScrollToRef();
     }
@@ -1093,6 +1099,19 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
     }
   }
 
+  // https://wicg.github.io/scroll-to-text-fragment/#invoking-text-directives
+  // Monkeypatching HTML § 7.4.6.3 Scrolling to a fragment:
+  // 2.1 If the user agent has reason to believe the user is no longer
+  //     interested in scrolling to the fragment, then:
+  // 2.1.1 Set pending text directives to null.
+  //
+  // Gecko's implementation differs from the spec (ie., it implements its
+  // intention but doesn't follow step by step), therefore the mentioned steps
+  // are not applied in the same manner.
+  // However, this should be the right place to do this.
+  if (mDocument) {
+    mDocument->FragmentDirective()->ClearUninvokedDirectives();
+  }
   if (mDocument && !restoring) {
     mDocument->LoadEventFired();
   }
@@ -1334,7 +1353,7 @@ nsDocumentViewer::PageHide(bool aIsUnload) {
   // inform the window so that the focus state is reset.
   NS_ENSURE_STATE(mDocument);
   nsPIDOMWindowOuter* window = mDocument->GetWindow();
-  if (window) window->PageHidden();
+  if (window) window->PageHidden(!aIsUnload);
 
   if (aIsUnload) {
     // if Destroy() was called during OnPageHide(), mDocument is nullptr.
@@ -2400,7 +2419,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsDocumentViewer::SelectAll() {
 
 NS_IMETHODIMP nsDocumentViewer::CopySelection() {
   RefPtr<PresShell> presShell = mPresShell;
-  nsCopySupport::FireClipboardEvent(eCopy, nsIClipboard::kGlobalClipboard,
+  nsCopySupport::FireClipboardEvent(eCopy, Some(nsIClipboard::kGlobalClipboard),
                                     presShell, nullptr);
   return NS_OK;
 }

@@ -25,7 +25,7 @@
   "gClickAndHoldListenersOnElement",
   "gSessionHistoryObserver",
   "gStoragePressureObserver",
-  "gPopupBlockerObserver",
+  "PopupBlockerObserver",
   "gKeywordURIFixup",
   "_createNullPrincipalFromTabUserContextId",
   "HandleAppCommandEvent",
@@ -274,5 +274,6 @@
   "gFindBar",
   "gFindBarInitialized",
   "gFindBarPromise",
-  "BrowserSearch"
+  "BrowserSearch",
+  "PBMExitStatus"
 ]

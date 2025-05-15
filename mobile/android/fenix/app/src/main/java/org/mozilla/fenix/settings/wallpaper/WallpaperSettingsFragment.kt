@@ -16,7 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.ext.observeAsComposableState
-import mozilla.components.service.glean.private.NoExtras
+import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Wallpapers
 import org.mozilla.fenix.HomeActivity
@@ -105,7 +105,6 @@ class WallpaperSettingsFragment : Fragment() {
             Wallpaper.ImageFileState.Downloaded -> {
                 FenixSnackbar.make(
                     view = view,
-                    isDisplayedWithBrowserToolbar = false,
                 )
                     .setText(view.context.getString(R.string.wallpaper_updated_snackbar_message))
                     .setAction(requireContext().getString(R.string.wallpaper_updated_snackbar_action)) {
@@ -125,7 +124,6 @@ class WallpaperSettingsFragment : Fragment() {
             Wallpaper.ImageFileState.Error -> {
                 FenixSnackbar.make(
                     view = view,
-                    isDisplayedWithBrowserToolbar = false,
                 )
                     .setText(view.context.getString(R.string.wallpaper_download_error_snackbar_message))
                     .setAction(view.context.getString(R.string.wallpaper_download_error_snackbar_action)) {

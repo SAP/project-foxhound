@@ -202,6 +202,10 @@ class MOZ_STACK_CLASS TryEmitter {
  public:
   TryEmitter(BytecodeEmitter* bce, Kind kind, ControlKind controlKind);
 
+#ifdef DEBUG
+  bool hasControlInfo();
+#endif
+
   [[nodiscard]] bool emitTry();
 
   enum class ExceptionStack : bool {
@@ -216,7 +220,23 @@ class MOZ_STACK_CLASS TryEmitter {
     Yes,
   };
 
-  [[nodiscard]] bool emitCatch(ExceptionStack stack = ExceptionStack::No);
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  enum class ForForOfIteratorClose : bool {
+    No,
+    /**
+     * Emit additional code for the ForOfIteratorClose operation.
+     */
+    Yes,
+  };
+#endif
+
+  [[nodiscard]] bool emitCatch(
+      ExceptionStack stack = ExceptionStack::No
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+      ,
+      ForForOfIteratorClose forForOfIteratorClose = ForForOfIteratorClose::No
+#endif
+  );
 
   // If `finallyPos` is specified, it's an offset of the finally block's
   // "{" character in the source code text, to improve line:column number in

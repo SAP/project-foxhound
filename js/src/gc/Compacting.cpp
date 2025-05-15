@@ -36,6 +36,8 @@ using namespace js::gc;
 
 using mozilla::Maybe;
 
+using JS::SliceBudget;
+
 bool GCRuntime::canRelocateZone(Zone* zone) const {
   return !zone->isAtomsZone();
 }
@@ -468,7 +470,7 @@ void GCRuntime::sweepZoneAfterCompacting(MovingTracer* trc, Zone* zone) {
   traceWeakFinalizationObserverEdges(trc, zone);
 
   for (auto* cache : zone->weakCaches()) {
-    cache->traceWeak(trc, WeakCacheBase::DontLockStoreBuffer);
+    cache->traceWeak(trc, JS::detail::WeakCacheBase::DontLockStoreBuffer);
   }
 
   if (jit::JitZone* jitZone = zone->jitZone()) {
@@ -822,8 +824,8 @@ void GCRuntime::updateRuntimePointersToRelocatedCells(AutoGCSession& session) {
 
   // Sweep everything to fix up weak pointers.
   jit::JitRuntime::TraceWeakJitcodeGlobalTable(rt, &trc);
-  for (WeakCacheBase* cache : rt->weakCaches()) {
-    cache->traceWeak(&trc, WeakCacheBase::DontLockStoreBuffer);
+  for (JS::detail::WeakCacheBase* cache : rt->weakCaches()) {
+    cache->traceWeak(&trc, JS::detail::WeakCacheBase::DontLockStoreBuffer);
   }
 
   if (rt->hasJitRuntime() && rt->jitRuntime()->hasInterpreterEntryMap()) {

@@ -228,11 +228,12 @@ enum class LimitsFlags {
 };
 
 enum class LimitsMask {
-  Table = uint8_t(LimitsFlags::HasMaximum),
 #ifdef ENABLE_WASM_MEMORY64
+  Table = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsI64),
   Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared) |
            uint8_t(LimitsFlags::IsI64),
 #else
+  Table = uint8_t(LimitsFlags::HasMaximum),
   Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared),
 #endif
 };
@@ -981,21 +982,10 @@ enum class BuiltinModuleId {
   SelfTest = 0,
   IntGemm,
   JSString,
+
+  // Not technically a builtin module, but it uses most of the same machinery.
+  JSStringConstants,
 };
-
-struct BuiltinModuleIds {
-  BuiltinModuleIds() = default;
-
-  bool selfTest = false;
-  bool intGemm = false;
-  bool jsString = false;
-
-  bool hasNone() const { return !selfTest && !intGemm && !jsString; }
-
-  WASM_CHECK_CACHEABLE_POD(selfTest, intGemm, jsString)
-};
-
-WASM_DECLARE_CACHEABLE_POD(BuiltinModuleIds)
 
 enum class StackSwitchKind {
   SwitchToSuspendable,
@@ -1136,8 +1126,8 @@ static const unsigned MaxTags = 1000000;
 static const unsigned MaxFuncs = 1000000;
 static const unsigned MaxTables = 100000;
 static const unsigned MaxMemories = 100000;
-static const unsigned MaxImports = 100000;
-static const unsigned MaxExports = 100000;
+static const unsigned MaxImports = 1000000;
+static const unsigned MaxExports = 1000000;
 static const unsigned MaxGlobals = 1000000;
 static const unsigned MaxDataSegments = 100000;
 static const unsigned MaxDataSegmentLengthPages = 16384;
@@ -1202,10 +1192,36 @@ static constexpr size_t SuspendableStackPlusRedZoneSize =
 
 static const unsigned MaxVarU32DecodedBytes = 5;
 
-// The CompileMode controls how compilation of a module is performed (notably,
-// how many times we compile it).
+// The CompileMode controls how compilation of a module is performed.
+enum class CompileMode {
+  // Compile the module just once using a given tier.
+  Once,
+  // Compile the module first with baseline, then eagerly launch an ion
+  // background compile to compile the module again.
+  EagerTiering,
+  // Compile the module first with baseline, then lazily compile functions with
+  // ion when they trigger a hotness threshold.
+  LazyTiering,
+};
 
-enum class CompileMode { Once, Tier1, Tier2 };
+// CompileState tracks where in the compilation process we are for a module.
+enum class CompileState {
+  // We're compiling the module using the 'once' mode.
+  Once,
+  // We're compiling the module using the eager tiering mode. We're
+  // currently compiling the first tier. The second tier task will be launched
+  // once we're done compiling the first tier.
+  EagerTier1,
+  // We're compiling the module using the eager tiering mode. We're now
+  // compiling the second tier.
+  EagerTier2,
+  // We're compiling the module eagerly using the lazy tiering mode. We're
+  // compiling the first tier.
+  LazyTier1,
+  // We're compiling the module eagerly using the lazy tiering strategy. We're
+  // compiling the second tier.
+  LazyTier2,
+};
 
 // Typed enum for whether debugging is enabled.
 

@@ -102,6 +102,7 @@ web-platform-tests:
             - --exclude-tag=webgpu
             - --exclude-tag=canvas
             - --exclude-tag=webcodecs
+            - --exclude-tag=eme
 
 web-platform-tests-backlog:
     description: "Web platform test (backlog) run"
@@ -138,6 +139,7 @@ web-platform-tests-backlog:
             - --backlog
             - --exclude-tag=webgpu
             - --exclude-tag=webcodecs
+            - --exclude-tag=eme
 
 web-platform-tests-privatebrowsing:
     description: "Web platform privatebrowsing test run"
@@ -183,6 +185,34 @@ web-platform-tests-webcodecs:
             - --test-type=testharness
             - --default-exclude
             - --tag=webcodecs
+
+web-platform-tests-eme:
+    description: "Web platform EME test run"
+    suite: web-platform-tests
+    treeherder-symbol: W(eme)
+    tier: default
+    chunks: 1
+    max-run-time: 1800
+    variants:
+        - eme-wmf
+    run-on-projects:
+        by-variant:
+            eme-wmf:
+                by-test-platform:
+                    windows1.*-64.*: ['autoland', 'mozilla-central']
+                    default: []
+            default:
+                by-test-platform:
+                    android.*: []
+                    .*wayland.*: []
+                    windows1.*: []
+                    default: built-projects
+    mozharness:
+        chunked: true
+        extra-options:
+            - --test-type=testharness
+            - --default-exclude
+            - --tag=eme
 
 web-platform-tests-reftest:
     description: "Web platform reftest run"
@@ -269,9 +299,10 @@ web-platform-tests-webgpu:
     # 50% overhead, so let's aim for 15m (20m debug)
     chunks:
         by-test-platform:
-            linux2204.*/debug.*: 6
-            linux2204.*: 5
-            default: 2
+            linux2204.*/debug.*: 11
+            linux2204.*: 9
+            windows.*-64.*/opt.*: 6
+            default: 5
     max-run-time:
         by-test-platform:
             .*/debug.*: 2700  # 45m
@@ -285,28 +316,36 @@ web-platform-tests-webgpu:
     mozharness:
         chunked: true
         extra-options:
-            by-test-platform:
-                macos.*:
-                    - --test-type=testharness
-                    - --skip-implementation-status=backlog
-                    - --skip-implementation-status=not-implementing
-                    - --default-exclude
-                    - --tag=webgpu
-                    - --exclude-tag=canvas
-                    - --exclude-tag=webcodecs
-                    - --setpref=gfx.webgpu.ignore-blocklist=true
-                default:
-                    - --test-type=testharness
-                    - --skip-implementation-status=backlog
-                    - --skip-implementation-status=not-implementing
-                    - --default-exclude
-                    - --tag=webgpu
-                    - --exclude-tag=canvas
-                    - --exclude-tag=webcodecs
+            - --test-type=testharness
+            - --skip-implementation-status=backlog
+            - --skip-implementation-status=not-implementing
+            - --default-exclude
+            - --tag=webgpu
+            - --exclude-tag=webgpu-long
+            - --exclude-tag=canvas
+            - --exclude-tag=webcodecs
+            - --timeout-multiplier=5.0
     worker-type:
         by-test-platform:
             .*wayland.*: t-linux-wayland-vm
             default: default
+
+web-platform-tests-webgpu-long:
+    description: "Web platform WebGPU test run (long tests)"
+    suite: web-platform-tests
+    treeherder-symbol: W(webgpu-long)
+    virtualization: virtual-with-gpu
+    tier: 2
+    max-run-time: 5400  # 90m
+    variants: []  # We don't need sw or nofis testing.
+    mozharness:
+        extra-options:
+            - --test-type=testharness
+            - --default-exclude
+            - --tag=webgpu-long
+            - --skip-implementation-status=backlog
+            - --skip-implementation-status=not-implementing
+            - --timeout-multiplier=10.0
 
 web-platform-tests-webgpu-backlog:
     description: "Web platform WebGPU test run (backlog)"
@@ -339,26 +378,15 @@ web-platform-tests-webgpu-backlog:
     mozharness:
         chunked: true
         extra-options:
-            by-test-platform:
-                macos.*:
-                    - --test-type=testharness
-                    - --default-exclude
-                    - --tag=webgpu
-                    - --exclude-tag=canvas
-                    - --exclude-tag=webcodecs
-                    - --skip-implementation-status=implementing
-                    - --skip-implementation-status=not-implementing
-                    - --backlog
-                    - --setpref=gfx.webgpu.ignore-blocklist=true
-                default:
-                    - --test-type=testharness
-                    - --default-exclude
-                    - --tag=webgpu
-                    - --exclude-tag=canvas
-                    - --exclude-tag=webcodecs
-                    - --skip-implementation-status=implementing
-                    - --skip-implementation-status=not-implementing
-                    - --backlog
+            - --test-type=testharness
+            - --default-exclude
+            - --tag=webgpu
+            - --exclude-tag=canvas
+            - --exclude-tag=webcodecs
+            - --skip-implementation-status=implementing
+            - --skip-implementation-status=not-implementing
+            - --backlog
+            - --timeout-multiplier=5.0
     worker-type:
         by-test-platform:
             .*wayland.*: t-linux-wayland-vm
@@ -451,6 +479,7 @@ web-platform-tests-reftest-backlog:
             - --backlog
             - --exclude-tag=webgpu
             - --exclude-tag=webcodecs
+            - --exclude-tag=eme
 
 web-platform-tests-wdspec:
     description: "Web platform webdriver-spec run"
@@ -487,7 +516,6 @@ web-platform-tests-wdspec:
                     default: []
             default:
                 by-test-platform:
-                    android.*: []
                     .*wayland.*: []
                     default: built-projects
     tier:

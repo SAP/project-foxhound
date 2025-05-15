@@ -326,7 +326,7 @@ load 477731-1.html
 load 477928.html
 load 478131-1.html
 asserts(4) load 478170-1.html # Big sizes
-asserts(1591-3980) load 478185-1.html
+pref(layout.css.letter-spacing.model,2) load 478185-1.html
 load 478504.html
 asserts-if(!Android,0-1) load 479938-1.html # Bug 575011
 load 480345-1.html
@@ -670,6 +670,7 @@ load 1373586.html
 load 1375858.html
 load 1381134.html
 load 1381134-2.html
+load 1397449.html
 load 1401420-1.html
 load 1401709.html
 load 1401807.html
@@ -809,7 +810,7 @@ skip-if(Android) load 1741488-1.html # printPreview doesn't work on android
 load 1776079.html
 asserts(0-2) load 1791606.html
 load 1799749.html
-pref(layout.css.content-visibility.enabled,true) asserts(0-1) load 1807958.html # asserts from integer overflow & bogus sizes
+asserts(0-1) load 1807958.html # asserts from integer overflow & bogus sizes
 load 1816574.html
 load 1821603.html
 load 1822118.html

@@ -295,6 +295,13 @@ internal object TranslationsStateReducer {
                 )
             }
 
+        is TranslationsAction.SetTranslateProcessingAction ->
+            state.copyWithTranslationsState(action.tabId) {
+                it.copy(
+                    isTranslateProcessing = action.isProcessing,
+                )
+            }
+
         is TranslationsAction.SetNeverTranslateSitesAction ->
             state.copy(
                 translationEngine = state.translationEngine.copy(
@@ -502,6 +509,7 @@ internal object TranslationsStateReducer {
                 ModelState.DELETION_IN_PROGRESS
             }
             val newModelState = LanguageModel.determineNewLanguageModelState(
+                appLanguage = state.locale?.language.toString(),
                 currentLanguageModels = state.translationEngine.languageModels,
                 options = action.options,
                 newStatus = processState,

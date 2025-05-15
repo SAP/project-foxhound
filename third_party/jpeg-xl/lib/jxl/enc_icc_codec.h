@@ -8,8 +8,9 @@
 
 // Compressed representation of ICC profiles.
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"

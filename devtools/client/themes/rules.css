@@ -233,6 +233,12 @@
   user-select: none;
   margin-bottom: 2px;
   margin-left: 1ch;
+
+  /* Because of the overflow hidden, the outline that would be set on the child link
+     would not be visible, so we need to set it here */
+  &:focus-within:has(a:focus-visible) {
+    outline: var(--theme-focus-outline);
+  }
 }
 
 .ruleview-rule-source-label {
@@ -243,7 +249,22 @@
   /* Create an LTR embed to avoid special characters being shifted to the start due to the
      parent node direction: rtl; */
   direction: ltr;
-  unicode-bidi: embed
+  unicode-bidi: embed;
+
+  /* We don't always have a link (e.g. for inline style, it's a simple span), and in such
+     case, we shouldn't set the color the same as link color */
+  &:is(a) {
+    color: var(--theme-internal-link-color);
+
+    /* The outline is set on ruleview-rule-source */
+    &:focus-visible {
+      outline: none;
+    }
+
+    &:visited {
+      color: var(--theme-internal-link-color);
+    }
+  }
 }
 
 .ruleview-rule-source.disabled > .ruleview-rule-source-label,
@@ -495,8 +516,8 @@
 }
 
 .ruleview-invalid-at-computed-value-time-warning {
-    background-image: url(resource://devtools-shared-images/error-small.svg);
-    fill: var(--theme-highlight-red);
+    background-image: var(--invalid-at-computed-value-time-icon);
+    fill: var(--invalid-at-computed-value-time-fill-color);
 }
 
 
@@ -624,13 +645,19 @@
 .ruleview-flex,
 .ruleview-grid,
 .ruleview-shapeswatch {
+  background-color: transparent;
+  border: none;
   -moz-context-properties: stroke;
   stroke: var(--theme-icon-color);
+  /* Prevent line break when copy/pasting an entire rule */
+  user-select: auto;
 }
 
-.ruleview-flex.active,
-.ruleview-grid.active,
-.ruleview-shapeswatch.active {
+:is(
+  .ruleview-flex,
+  .ruleview-grid,
+  .ruleview-shapeswatch
+)[aria-pressed="true"] {
   stroke: var(--theme-icon-checked-color);
 }
 
@@ -691,6 +718,8 @@
   /* Adjust outline so it doesn't conflate with the color swatch, which could have a similar background
      color as the outline */
   outline-offset: 2px;
+  /* Make sure that the background color is properly set in High Contrast Mode */
+  forced-color-adjust: none;
 }
 
 .ruleview-bezierswatch {
@@ -784,7 +813,7 @@
   }
 
   &.ruleview-selector.unmatched,
-  & .ruleview-unmatched-variable,
+  & .ruleview-unmatched,
   .ruleview-property:is(.unused, .ruleview-overridden) & :is(.ruleview-propertyname, .ruleview-propertyvalue) {
     color: var(--rule-highlight-unmatched-unused-color);
   }
@@ -827,6 +856,7 @@
 .ruleview-rule-ancestor-data  [role="listitem"] :is(button,[role="button"]).open-inspector {
   /* There's a space character after the button, so add a 1ch margin-inline-start to be consistent */
   margin-inline: 1ch 0;
+  user-select: auto;
 }
 
 .ruleview-selectors-container,
@@ -841,7 +871,7 @@
 
 .ruleview-selector-separator,
 .ruleview-selector.unmatched,
-.ruleview-unmatched-variable,
+.ruleview-unmatched,
 .ruleview-property:is(.unused, .ruleview-overridden) :is(.ruleview-propertyname,.ruleview-propertyvalue) {
   color: var(--theme-text-color-alt);
 }
@@ -850,7 +880,7 @@
     only with colors, so let's add a line-through line */
 :is(
   .ruleview-selector.unmatched,
-  .ruleview-unmatched-variable,
+  .ruleview-unmatched,
   .ruleview-invalid-at-computed-value-time
 ):not(
   /* don't show the strike through when the element is hovered so it's more legible */

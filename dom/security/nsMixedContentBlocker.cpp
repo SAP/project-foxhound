@@ -115,9 +115,9 @@ static void LogMixedContentMessage(
                                         messageLookupKey.get(), params,
                                         localizedMsg);
 
-  nsContentUtils::ReportToConsoleByWindowID(localizedMsg, severityFlag,
-                                            messageCategory, aInnerWindowID,
-                                            aRequestingLocation);
+  nsContentUtils::ReportToConsoleByWindowID(
+      localizedMsg, severityFlag, messageCategory, aInnerWindowID,
+      SourceLocation(aRequestingLocation));
 }
 
 /* nsIChannelEventSink implementation
@@ -802,13 +802,13 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
     CopyUTF8toUTF16(spec, *params.AppendElement());
 
     CSP_LogLocalizedStr("blockAllMixedContent", params,
-                        u""_ns,  // aSourceFile
+                        ""_ns,   // aSourceFile
                         u""_ns,  // aScriptSample
                         0,       // aLineNumber
                         1,       // aColumnNumber
                         nsIScriptError::errorFlag, "blockAllMixedContent"_ns,
                         requestingWindow->Id(),
-                        !!aLoadInfo->GetOriginAttributes().mPrivateBrowsingId);
+                        aLoadInfo->GetOriginAttributes().IsPrivateBrowsing());
     *aDecision = REJECT_REQUEST;
     MOZ_LOG(
         sMCBLog, LogLevel::Verbose,

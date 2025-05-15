@@ -276,8 +276,6 @@ void ShadowRoot::AddSlot(HTMLSlotElement* aSlot) {
       if (doEnqueueSlotChange) {
         oldSlot->EnqueueSlotChangeEvent();
         aSlot->EnqueueSlotChangeEvent();
-        SlotStateChanged(oldSlot);
-        SlotStateChanged(aSlot);
       }
     } else {
       bool doEnqueueSlotChange = false;
@@ -295,7 +293,6 @@ void ShadowRoot::AddSlot(HTMLSlotElement* aSlot) {
 
       if (doEnqueueSlotChange) {
         aSlot->EnqueueSlotChangeEvent();
-        SlotStateChanged(aSlot);
       }
     }
   } else {
@@ -314,7 +311,6 @@ void ShadowRoot::AddSlot(HTMLSlotElement* aSlot) {
     }
     if (doEnqueueSlotChange) {
       aSlot->EnqueueSlotChangeEvent();
-      SlotStateChanged(aSlot);
     }
   }
 }

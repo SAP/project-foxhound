@@ -23,8 +23,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SearchEngine: "resource://gre/modules/SearchEngine.sys.mjs",
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
-  SearchEngineSelectorOld:
-    "resource://gre/modules/SearchEngineSelectorOld.sys.mjs",
   SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
   SearchStaticData: "resource://gre/modules/SearchStaticData.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
@@ -501,15 +499,9 @@ export class SearchService {
   // Test-only function to reset just the engine selector so that it can
   // load a different configuration.
   resetEngineSelector() {
-    if (lazy.SearchUtils.newSearchConfigEnabled) {
-      this.#engineSelector = new lazy.SearchEngineSelector(
-        this.#handleConfigurationUpdated.bind(this)
-      );
-    } else {
-      this.#engineSelector = new lazy.SearchEngineSelectorOld(
-        this.#handleConfigurationUpdated.bind(this)
-      );
-    }
+    this.#engineSelector = new lazy.SearchEngineSelector(
+      this.#handleConfigurationUpdated.bind(this)
+    );
   }
 
   resetToAppDefaultEngine() {
@@ -658,30 +650,17 @@ export class SearchService {
     }
 
     if (extension.isAppProvided) {
-      // If we are in the middle of initialization or reloading engines,
-      // don't add the engine here. This has been called as the result
-      // of _makeEngineFromConfig installing the extension, and that is already
-      // handling the addition of the engine.
-      if (this.isInitialized && !this._reloadingEngines) {
-        let { engines } = await this._fetchEngineSelectorEngines();
-        let inConfig = engines.filter(el => el.webExtension.id == extension.id);
-        if (inConfig.length) {
-          await this.#installExtensionEngine(
-            extension,
-            inConfig.map(el => el.webExtension.locale)
-          );
-          return;
-        }
-      }
+      // TODO: Bug 1885953 - We should store the WebExtension references and
+      // remove them on idle.
       lazy.logConsole.debug(
-        "addEnginesFromExtension: Ignoring app engine during init or reload:",
+        "addEnginesFromExtension: Ignoring old app provided WebExtension",
         extension.id
       );
       return;
     }
     lazy.logConsole.debug("addEnginesFromExtension:", extension.id);
 
-    // If we havent started SearchService yet, store this extension
+    // If we haven't started the SearchService yet, store this extension
     // to install in SearchService.init().
     if (!this.isInitialized) {
       this.#startupExtensions.add(extension);
@@ -1336,15 +1315,9 @@ export class SearchService {
       console.error(ex, "Search Service could not get the ignore list.")
     );
 
-    if (lazy.SearchUtils.newSearchConfigEnabled) {
-      this.#engineSelector = new lazy.SearchEngineSelector(
-        this.#handleConfigurationUpdated.bind(this)
-      );
-    } else {
-      this.#engineSelector = new lazy.SearchEngineSelectorOld(
-        this.#handleConfigurationUpdated.bind(this)
-      );
-    }
+    this.#engineSelector = new lazy.SearchEngineSelector(
+      this.#handleConfigurationUpdated.bind(this)
+    );
   }
 
   /**
@@ -1641,13 +1614,7 @@ export class SearchService {
     lazy.logConsole.debug("#loadEngines: start");
     this.#setDefaultAndOrdersFromSelector(engines, privateDefault);
 
-    // We've done what we can without the add-on manager, now ensure that
-    // it has finished starting before we continue.
-    if (!lazy.SearchUtils.newSearchConfigEnabled) {
-      await lazy.AddonManager.readyPromise;
-    }
-
-    await this.#loadEnginesFromConfig(engines, settings);
+    this.#loadEnginesFromConfig(engines, settings);
 
     await this.#loadStartupEngines(settings);
 
@@ -1795,16 +1762,16 @@ export class SearchService {
    * @param {object} [settings]
    *   The saved settings for the user.
    */
-  async #loadEnginesFromConfig(engineConfigs, settings) {
+  #loadEnginesFromConfig(engineConfigs, settings) {
     lazy.logConsole.debug("#loadEnginesFromConfig");
     for (let config of engineConfigs) {
       try {
-        let engine = await this._makeEngineFromConfig(config, settings);
+        let engine = new lazy.AppProvidedSearchEngine({ config, settings });
         this.#addEngineToStore(engine);
       } catch (ex) {
         console.error(
-          "Could not load engine",
-          "webExtension" in config ? config.webExtension.id : "unknown",
+          "Could not load app provided search engine id:",
+          config.identifier,
           ex
         );
       }
@@ -1819,10 +1786,7 @@ export class SearchService {
    *   The saved settings for the user.
    */
   async #loadStartupEngines(settings) {
-    if (
-      this.#startupExtensions.size &&
-      lazy.SearchUtils.newSearchConfigEnabled
-    ) {
+    if (this.#startupExtensions.size) {
       await lazy.AddonManager.readyPromise;
     }
 
@@ -1837,11 +1801,10 @@ export class SearchService {
           extension,
           locale: lazy.SearchUtils.DEFAULT_TAG,
           settings,
-          initEngine: true,
         });
       } catch (ex) {
         lazy.logConsole.error(
-          "#createAndAddAddonEngine failed for",
+          "#loadStartupEngines failed for",
           extension.id,
           ex
         );
@@ -2083,7 +2046,10 @@ export class SearchService {
     // Any remaining configuration engines are ones that we need to add.
     for (let engine of configEngines) {
       try {
-        let newAppEngine = await this._makeEngineFromConfig(engine, settings);
+        let newAppEngine = new lazy.AppProvidedSearchEngine({
+          config: engine,
+          settings,
+        });
 
         // If this is a duplicate name, keep track of the old engine as we need
         // to handle it later.
@@ -2100,9 +2066,9 @@ export class SearchService {
         this.#addEngineToStore(newAppEngine, true);
       } catch (ex) {
         lazy.logConsole.warn(
-          `Could not load engine ${
-            "webExtension" in engine ? engine.webExtension.id : "unknown"
-          }: ${ex}`
+          "Could not load app provided search engine id:",
+          engine.identifier,
+          ex
         );
       }
     }
@@ -2330,59 +2296,14 @@ export class SearchService {
         continue;
       }
 
-      if (lazy.SearchUtils.newSearchConfigEnabled) {
-        // Use the internal remove - _reloadEngines already deals with default
-        // engines etc, and we want to avoid adjusting the sort order unnecessarily.
-        this.#internalRemoveEngine(engine);
+      // Use the internal remove - _reloadEngines already deals with default
+      // engines etc, and we want to avoid adjusting the sort order unnecessarily.
+      this.#internalRemoveEngine(engine);
 
-        if (engine instanceof lazy.AppProvidedSearchEngine) {
-          await engine.cleanup();
-        }
-      } else {
-        // If we have other engines that use the same extension ID, then
-        // we do not want to remove the add-on - only remove the engine itself.
-        let inUseEngines = [...this._engines.values()].filter(
-          e => e._extensionID == engine._extensionID
-        );
-
-        if (inUseEngines.length <= 1) {
-          if (inUseEngines.length == 1 && inUseEngines[0] == engine) {
-            // No other engines are using this extension ID.
-
-            // The internal remove is done first to avoid a call to removeEngine
-            // which could adjust the sort order when we don't want it to.
-            this.#internalRemoveEngine(engine);
-
-            // Only uninstall application provided engines. We don't want to
-            // remove third-party add-ons. Their search engine names might conflict,
-            // but we still allow the add-on to be installed.
-            if (engine.isAppProvided) {
-              let addon = await lazy.AddonManager.getAddonByID(
-                engine._extensionID
-              );
-              if (addon) {
-                // AddonManager won't call removeEngine if an engine with the
-                // WebExtension id doesn't exist in the search service.
-                await addon.uninstall();
-              }
-            }
-          }
-          // For the case where `inUseEngines[0] != engine`:
-          // This is a situation where there was an engine added earlier in this
-          // function with the same name.
-          // For example, eBay has the same name for both US and GB, but has
-          // a different domain and uses a different locale of the same
-          // WebExtension.
-          // The result of this is the earlier addition has already replaced
-          // the engine in `this._engines` (which is indexed by name), so all that
-          // needs to be done here is to pretend the old engine was removed
-          // which is notified below.
-        } else {
-          // More than one engine is using this extension ID, so we don't want to
-          // remove the add-on.
-          this.#internalRemoveEngine(engine);
-        }
+      if (engine instanceof lazy.AppProvidedSearchEngine) {
+        await engine.cleanup();
       }
+
       lazy.SearchUtils.notifyAction(
         engine,
         lazy.SearchUtils.MODIFIED_TYPE.REMOVED
@@ -2630,24 +2551,22 @@ export class SearchService {
       // we're ready to remove old search-config and use search-config-v2 for all
       // clients. The id in appProvidedSearchEngine should be changed to
       // engine.identifier.
-      if (lazy.SearchUtils.newSearchConfigEnabled) {
-        let identifierComponents = NON_SPLIT_ENGINE_IDS.includes(e.identifier)
-          ? [e.identifier]
-          : e.identifier.split("-");
+      let identifierComponents = NON_SPLIT_ENGINE_IDS.includes(e.identifier)
+        ? [e.identifier]
+        : e.identifier.split("-");
 
-        if (e.identifier == "amazon-se") {
-          identifierComponents[1] = "sweden";
-        }
-
-        if (e.identifier == "amazon-es") {
-          identifierComponents[1] = "spain";
-        }
-
-        let locale = identifierComponents.slice(1).join("-") || "default";
-
-        e.webExtension.id = identifierComponents[0] + "@search.mozilla.org";
-        e.webExtension.locale = locale;
+      if (e.identifier == "amazon-se") {
+        identifierComponents[1] = "sweden";
       }
+
+      if (e.identifier == "amazon-es") {
+        identifierComponents[1] = "spain";
+      }
+
+      let locale = identifierComponents.slice(1).join("-") || "default";
+
+      e.webExtension.id = identifierComponents[0] + "@search.mozilla.org";
+      e.webExtension.locale = locale;
     }
 
     return { engines, privateDefault };
@@ -2809,7 +2728,7 @@ export class SearchService {
     lazy.logConsole.debug("Running check on WebExtension engines");
 
     for (let engine of this._engines.values()) {
-      if (engine instanceof lazy.AddonSearchEngine && !engine.isAppProvided) {
+      if (engine instanceof lazy.AddonSearchEngine) {
         await engine.checkAndReportIfSettingsValid();
       }
     }
@@ -2871,7 +2790,9 @@ export class SearchService {
   }
 
   /**
-   * Creates and adds a WebExtension based engine.
+   * Creates and adds a WebExtension based engine. It is expected that this
+   * function is only called after initialisation has completed, or at a stage
+   * where we are ready to load the engines we've been told about during startup.
    *
    * @param {object} options
    *   Options for the engine.
@@ -2882,14 +2803,11 @@ export class SearchService {
    *   default locale.
    * @param {object} [options.settings]
    *   The saved settings for the user.
-   * @param {initEngine} [options.initEngine]
-   *   Set to true if this engine is being loaded during initialization.
    */
   async #createAndAddAddonEngine({
     extension,
     locale = lazy.SearchUtils.DEFAULT_TAG,
     settings,
-    initEngine = false,
   }) {
     // If we're in the startup cycle, and we've already loaded this engine,
     // then we use the existing one rather than trying to start from scratch.
@@ -2906,13 +2824,6 @@ export class SearchService {
         );
         return;
       }
-    }
-
-    // We install search extensions during the init phase, both built in
-    // web extensions freshly installed (via addEnginesFromExtension) or
-    // user installed extensions being reenabled calling this directly.
-    if (!this.isInitialized && !extension.isAppProvided && !initEngine) {
-      await this.init();
     }
 
     lazy.logConsole.debug(
@@ -2937,7 +2848,7 @@ export class SearchService {
     }
 
     let newEngine = new lazy.AddonSearchEngine({
-      isAppProvided: extension.isAppProvided,
+      isAppProvided: false,
       details: {
         extensionID: extension.id,
         locale,
@@ -3041,24 +2952,6 @@ export class SearchService {
       }
     }
     return extensionEngines;
-  }
-
-  async #installExtensionEngine(
-    extension,
-    locales,
-    settings,
-    initEngine = false
-  ) {
-    lazy.logConsole.debug("installExtensionEngine:", extension.id);
-
-    for (let locale of locales) {
-      await this.#createAndAddAddonEngine({
-        extension,
-        locale,
-        settings,
-        initEngine,
-      });
-    }
   }
 
   #internalRemoveEngine(engine) {
@@ -3817,47 +3710,6 @@ export class SearchService {
   }
 
   /**
-   * Create an engine object from the search configuration details.
-   *
-   * This method is prefixed with _ rather than # because it is
-   * called in a test.
-   *
-   * @param {object} config
-   *   The configuration object that defines the details of the engine
-   *   webExtensionId etc.
-   * @param {object} [settings]
-   *   The saved settings for the user.
-   * @returns {nsISearchEngine}
-   *   Returns the search engine object.
-   */
-  async _makeEngineFromConfig(config, settings) {
-    lazy.logConsole.debug("_makeEngineFromConfig:", config);
-
-    if (!lazy.SearchUtils.newSearchConfigEnabled) {
-      let locale =
-        "locale" in config.webExtension
-          ? config.webExtension.locale
-          : lazy.SearchUtils.DEFAULT_TAG;
-
-      let engine = new lazy.AddonSearchEngine({
-        isAppProvided: true,
-        details: {
-          extensionID: config.webExtension.id,
-          locale,
-        },
-      });
-      await engine.init({
-        settings,
-        locale,
-        config,
-      });
-      return engine;
-    }
-
-    return new lazy.AppProvidedSearchEngine({ config, settings });
-  }
-
-  /**
    * @param {object} metaData
    *    The metadata object that defines the details of the engine.
    * @returns {boolean}
@@ -3983,7 +3835,6 @@ class SearchDefaultOverrideAllowlistHandler {
     return entry.urls.some(
       e =>
         searchProvider.search_url == e.search_url &&
-        searchProvider.search_form == e.search_form &&
         searchProvider.search_url_get_params == e.search_url_get_params &&
         searchProvider.search_url_post_params == e.search_url_post_params
     );

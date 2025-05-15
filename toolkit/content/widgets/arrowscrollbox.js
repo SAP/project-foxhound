@@ -8,6 +8,9 @@
 // leaking to window scope.
 {
   class MozArrowScrollbox extends MozElements.BaseControl {
+    static #startEndVertical = ["top", "bottom"];
+    static #startEndHorizontal = ["left", "right"];
+
     static get inheritedAttributes() {
       return {
         "#scrollbutton-up": "disabled=scrolledtostart",
@@ -30,7 +33,7 @@
       </box>
       <spacer part="overflow-end-indicator"/>
       <toolbarbutton id="scrollbutton-down" part="scrollbutton-down" keyNav="false" data-l10n-id="overflow-scroll-button-forwards"/>
-    `;
+      `;
     }
 
     constructor() {
@@ -131,6 +134,8 @@
     }
 
     connectedCallback() {
+      this.removeAttribute("overflowing");
+
       if (this.hasConnected) {
         return;
       }
@@ -145,7 +150,6 @@
         );
       }
 
-      this.removeAttribute("overflowing");
       this.initializeAttributeInheritance();
       this._updateScrollButtonsDisabledState();
     }
@@ -225,21 +229,19 @@
     }
 
     get startEndProps() {
-      if (!this._startEndProps) {
-        this._startEndProps =
-          this.getAttribute("orient") == "vertical"
-            ? ["top", "bottom"]
-            : ["left", "right"];
-      }
-      return this._startEndProps;
+      return this.getAttribute("orient") == "vertical"
+        ? MozArrowScrollbox.#startEndVertical
+        : MozArrowScrollbox.#startEndHorizontal;
     }
 
     get isRTLScrollbox() {
-      if (!this._isRTLScrollbox) {
+      if (this.getAttribute("orient") == "vertical") {
+        return false;
+      }
+      if (!("_isRTLScrollbox" in this)) {
         this._isRTLScrollbox =
-          this.getAttribute("orient") != "vertical" &&
           document.defaultView.getComputedStyle(this.scrollbox).direction ==
-            "rtl";
+          "rtl";
       }
       return this._isRTLScrollbox;
     }
@@ -659,6 +661,9 @@
       if (this.getAttribute("orient") == "vertical") {
         doScroll = true;
         scrollAmount = event.deltaY;
+        if (deltaMode == event.DOM_DELTA_PIXEL) {
+          instant = true;
+        }
       } else {
         // We allow vertical scrolling to scroll a horizontal scrollbox
         // because many users have a vertical scroll wheel but no

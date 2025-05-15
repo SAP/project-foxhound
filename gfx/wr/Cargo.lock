@@ -782,9 +782,9 @@ dependencies = [
 
 [[package]]
 name = "etagere"
-version = "0.2.6"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eb66dc3d6bb6b2ab4a12454db6988079311d6443e627bc7e6065f907f556272"
+checksum = "0e2f1e3be19fb10f549be8c1bf013e8675b4066c445e36eb76d2ebb2f54ee495"
 dependencies = [
  "euclid",
  "serde",
@@ -996,9 +996,9 @@ dependencies = [
 
 [[package]]
 name = "glean"
-version = "60.1.1"
+version = "60.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dc8ff10d489acea6e3e3165bcc5d903f2d4fe88faab6940a3e7de11ff862a5e"
+checksum = "ca647335c75b91b4dc5314542d27206a1d457209077e0588a68f727e0eaa73f4"
 dependencies = [
  "glean-core",
  "inherent",
@@ -1009,9 +1009,9 @@ dependencies = [
 
 [[package]]
 name = "glean-core"
-version = "60.1.1"
+version = "60.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0933c00ca50c8b2c10ca9090c5d4a6fbadd4982005699b38e0c5f233983d3cd4"
+checksum = "2be44a42d3d442ec6e99af1e679c8052d3a36dad68b40a05815409df39605fcf"
 dependencies = [
  "android_logger",
  "bincode",

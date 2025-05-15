@@ -73,10 +73,17 @@ static bool sRenderThreadEverStarted = false;
 size_t RenderThread::sRendererCount = 0;
 size_t RenderThread::sActiveRendererCount = 0;
 
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GTK)
+static bool USE_DEDICATED_GLYPH_RASTER_THREAD = true;
+#else
+static bool USE_DEDICATED_GLYPH_RASTER_THREAD = false;
+#endif
+
 RenderThread::RenderThread(RefPtr<nsIThread> aThread)
     : mThread(std::move(aThread)),
       mThreadPool(false),
       mThreadPoolLP(true),
+      mGlyphRasterThread(USE_DEDICATED_GLYPH_RASTER_THREAD),
       mSingletonGLIsForHardwareWebRender(true),
       mBatteryInfo("RenderThread.mBatteryInfo"),
       mWindowInfos("RenderThread.mWindowInfos"),
@@ -120,6 +127,11 @@ void RenderThread::Start(uint32_t aNamespace) {
   if (stackSize && !gfx::gfxVars::SupportsThreadsafeGL()) {
     stackSize = std::max(stackSize, 4096U << 10);
   }
+#if !defined(__OPTIMIZE__)
+  // swgl's draw_quad_spans will allocate ~1.5MB in no-opt builds
+  // and the default thread stack size on macOS is 512KB
+  stackSize = std::max(stackSize, 4 * 1024 * 1024U);
+#endif
 
   RefPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread(
@@ -645,10 +657,12 @@ void RenderThread::HandleFrameOneDocInner(wr::WindowId aWindowId, bool aRender,
     SetFramePublishId(aWindowId, aPublishId.ref());
   }
 
+  RendererStats stats = {0};
+
   UpdateAndRender(aWindowId, frame.mStartId, frame.mStartTime, render,
                   /* aReadbackSize */ Nothing(),
                   /* aReadbackFormat */ Nothing(),
-                  /* aReadbackBuffer */ Nothing());
+                  /* aReadbackBuffer */ Nothing(), &stats);
 
   // The start time is from WebRenderBridgeParent::CompositeToTarget. From that
   // point until now (when the frame is finally pushed to the screen) is
@@ -657,6 +671,12 @@ void RenderThread::HandleFrameOneDocInner(wr::WindowId aWindowId, bool aRender,
   mozilla::glean::gfx::composite_time.AccumulateRawDuration(compositeDuration);
   PerfStats::RecordMeasurement(PerfStats::Metric::Compositing,
                                compositeDuration);
+  if (stats.frame_build_time > 0.0) {
+    TimeDuration fbTime =
+        TimeDuration::FromMilliseconds(stats.frame_build_time);
+    mozilla::glean::wr::framebuild_time.AccumulateRawDuration(fbTime);
+    PerfStats::RecordMeasurement(PerfStats::Metric::FrameBuilding, fbTime);
+  }
 }
 
 void RenderThread::SetClearColor(wr::WindowId aWindowId, wr::ColorF aColor) {
@@ -768,7 +788,8 @@ void RenderThread::UpdateAndRender(
     const TimeStamp& aStartTime, bool aRender,
     const Maybe<gfx::IntSize>& aReadbackSize,
     const Maybe<wr::ImageFormat>& aReadbackFormat,
-    const Maybe<Range<uint8_t>>& aReadbackBuffer, bool* aNeedsYFlip) {
+    const Maybe<Range<uint8_t>>& aReadbackBuffer, RendererStats* aStats,
+    bool* aNeedsYFlip) {
   AUTO_PROFILER_LABEL("RenderThread::UpdateAndRender", GRAPHICS);
   MOZ_ASSERT(IsInRenderThread());
   MOZ_ASSERT(aRender || aReadbackBuffer.isNothing());
@@ -799,10 +820,9 @@ void RenderThread::UpdateAndRender(
                           renderer->GetCompositorBridge()));
 
   wr::RenderedFrameId latestFrameId;
-  RendererStats stats = {0};
   if (aRender) {
     latestFrameId = renderer->UpdateAndRender(
-        aReadbackSize, aReadbackFormat, aReadbackBuffer, aNeedsYFlip, &stats);
+        aReadbackSize, aReadbackFormat, aReadbackBuffer, aNeedsYFlip, aStats);
   } else {
     renderer->Update();
   }
@@ -817,7 +837,7 @@ void RenderThread::UpdateAndRender(
   layers::CompositorThread()->Dispatch(
       NewRunnableFunction("NotifyDidRenderRunnable", &NotifyDidRender,
                           renderer->GetCompositorBridge(), info, aStartId,
-                          aStartTime, start, end, aRender, stats));
+                          aStartTime, start, end, aRender, *aStats));
 
   ipc::FileDescriptor fenceFd;
 
@@ -1143,6 +1163,22 @@ void RenderThread::HandleRenderTextureOps() {
   }
 }
 
+RefPtr<RenderTextureHostUsageInfo> RenderThread::GetOrMergeUsageInfo(
+    const wr::ExternalImageId& aExternalImageId,
+    RefPtr<RenderTextureHostUsageInfo> aUsageInfo) {
+  MutexAutoLock lock(mRenderTextureMapLock);
+  if (mHasShutdown) {
+    return nullptr;
+  }
+  auto it = mRenderTextures.find(aExternalImageId);
+  if (it == mRenderTextures.end()) {
+    return nullptr;
+  }
+
+  auto& texture = it->second;
+  return texture->GetOrMergeUsageInfo(lock, aUsageInfo);
+}
+
 void RenderThread::UnregisterExternalImageDuringShutdown(
     const wr::ExternalImageId& aExternalImageId) {
   MOZ_ASSERT(IsInRenderThread());
@@ -1171,6 +1207,18 @@ RenderTextureHost* RenderThread::GetRenderTexture(
     return nullptr;
   }
   return it->second;
+}
+
+std::tuple<RenderTextureHost*, RefPtr<RenderTextureHostUsageInfo>>
+RenderThread::GetRenderTextureAndUsageInfo(
+    const wr::ExternalImageId& aExternalImageId) {
+  MutexAutoLock lock(mRenderTextureMapLock);
+  auto it = mRenderTextures.find(aExternalImageId);
+  MOZ_ASSERT(it != mRenderTextures.end());
+  if (it == mRenderTextures.end()) {
+    return {};
+  }
+  return {it->second, it->second->GetTextureHostUsageInfo(lock)};
 }
 
 void RenderThread::InitDeviceTask() {
@@ -1464,6 +1512,20 @@ void WebRenderThreadPool::Release() {
   if (mThreadPool) {
     wr_thread_pool_delete(mThreadPool);
     mThreadPool = nullptr;
+  }
+}
+
+MaybeWebRenderGlyphRasterThread::MaybeWebRenderGlyphRasterThread(bool aEnable) {
+  if (aEnable) {
+    mThread = wr_glyph_raster_thread_new();
+  } else {
+    mThread = nullptr;
+  }
+}
+
+MaybeWebRenderGlyphRasterThread::~MaybeWebRenderGlyphRasterThread() {
+  if (mThread) {
+    wr_glyph_raster_thread_delete(mThread);
   }
 }
 

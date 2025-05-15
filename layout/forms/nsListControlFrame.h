@@ -9,7 +9,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPtr.h"
-#include "nsIFormControlFrame.h"
 #include "nsISelectControlFrame.h"
 #include "nsSelectsAreaFrame.h"
 
@@ -33,10 +32,9 @@ class HTMLOptionsCollection;
  */
 
 class nsListControlFrame final : public mozilla::ScrollContainerFrame,
-                                 public nsIFormControlFrame,
                                  public nsISelectControlFrame {
  public:
-  typedef mozilla::dom::HTMLOptionElement HTMLOptionElement;
+  using HTMLOptionElement = mozilla::dom::HTMLOptionElement;
 
   friend nsListControlFrame* NS_NewListControlFrame(
       mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
@@ -55,8 +53,8 @@ class nsListControlFrame final : public mozilla::ScrollContainerFrame,
 
   void SetInitialChildList(ChildListID aListID, nsFrameList&& aChildList) final;
 
-  nscoord GetPrefISize(gfxContext* aRenderingContext) final;
-  nscoord GetMinISize(gfxContext* aRenderingContext) final;
+  nscoord IntrinsicISize(gfxContext* aContext,
+                         mozilla::IntrinsicISizeType aType) final;
 
   void Reflow(nsPresContext* aCX, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput, nsReflowStatus& aStatus) final;
@@ -81,11 +79,7 @@ class nsListControlFrame final : public mozilla::ScrollContainerFrame,
   nsresult GetFrameName(nsAString& aResult) const final;
 #endif
 
-  // nsIFormControlFrame
-  nsresult SetFormProperty(nsAtom* aName, const nsAString& aValue) final;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void SetFocus(bool aOn = true, bool aRepaint = false) final;
-
+  void ElementStateChanged(mozilla::dom::ElementState aStates) final;
   bool ShouldPropagateComputedBSizeToScrolledContent() const final;
 
   // for accessibility purposes
@@ -153,7 +147,7 @@ class nsListControlFrame final : public mozilla::ScrollContainerFrame,
   HTMLOptionElement* GetOption(uint32_t aIndex) const;
 
   // Helper
-  bool IsFocused() { return this == mFocused; }
+  bool IsFocused() const;
 
   /**
    * Function to paint the focus rect when our nsSelectsAreaFrame is painting.
@@ -327,7 +321,7 @@ class nsListControlFrame final : public mozilla::ScrollContainerFrame,
 
   RefPtr<mozilla::HTMLSelectEventListener> mEventListener;
 
-  static nsListControlFrame* mFocused;
+  static nsListControlFrame* sFocused;
 };
 
 #endif /* nsListControlFrame_h___ */

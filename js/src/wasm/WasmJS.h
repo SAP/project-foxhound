@@ -25,7 +25,6 @@
 #include <stdint.h>  // int32_t, int64_t, uint32_t
 
 #include "gc/Barrier.h"        // HeapPtr
-#include "gc/SweepingAPI.h"    // WeakCache
 #include "gc/ZoneAllocator.h"  // ZoneAllocPolicy
 #include "js/AllocPolicy.h"    // SystemAllocPolicy
 #include "js/Class.h"          // JSClassOps, ClassSpec
@@ -33,6 +32,7 @@
 #include "js/GCVector.h"       // GCVector
 #include "js/PropertySpec.h"   // JSPropertySpec, JSFunctionSpec
 #include "js/RootingAPI.h"     // StableCellHasher
+#include "js/SweepingAPI.h"    // JS::WeakCache
 #include "js/TypeDecls.h"  // HandleValue, HandleObject, MutableHandleObject, MutableHandleFunction
 #include "js/Vector.h"  // JS::Vector
 #include "js/WasmFeatures.h"
@@ -111,6 +111,7 @@ bool IsWasmExportedFunction(JSFunction* fun);
 Instance& ExportedFunctionToInstance(JSFunction* fun);
 WasmInstanceObject* ExportedFunctionToInstanceObject(JSFunction* fun);
 uint32_t ExportedFunctionToFuncIndex(JSFunction* fun);
+const wasm::TypeDef& ExportedFunctionToTypeDef(JSFunction* fun);
 
 bool IsSharedWasmMemoryObject(JSObject* obj);
 
@@ -250,8 +251,9 @@ class WasmInstanceObject : public NativeObject {
       JSContext* cx, Handle<WasmInstanceObject*> instanceObj,
       uint32_t funcIndex, MutableHandleFunction fun);
 
-  const wasm::CodeRange& getExportedFunctionCodeRange(JSFunction* fun,
-                                                      wasm::Tier tier);
+  void getExportedFunctionCodeRange(JSFunction* fun,
+                                    const wasm::CodeRange** range,
+                                    uint8_t** codeBase);
 
   static WasmInstanceScope* getScope(JSContext* cx,
                                      Handle<WasmInstanceObject*> instanceObj);
@@ -284,10 +286,9 @@ class WasmMemoryObject : public NativeObject {
   static bool discard(JSContext* cx, unsigned argc, Value* vp);
   static uint64_t growShared(Handle<WasmMemoryObject*> memory, uint64_t delta);
 
-  using InstanceSet =
-      WeakCache<GCHashSet<WeakHeapPtr<WasmInstanceObject*>,
-                          StableCellHasher<WeakHeapPtr<WasmInstanceObject*>>,
-                          CellAllocPolicy>>;
+  using InstanceSet = JS::WeakCache<GCHashSet<
+      WeakHeapPtr<WasmInstanceObject*>,
+      StableCellHasher<WeakHeapPtr<WasmInstanceObject*>>, CellAllocPolicy>>;
   bool hasObservers() const;
   InstanceSet& observers() const;
   InstanceSet* getOrCreateObservers(JSContext* cx);
@@ -379,8 +380,7 @@ class WasmTableObject : public NativeObject {
   // Note that, after creation, a WasmTableObject's table() is not initialized
   // and must be initialized before use.
 
-  static WasmTableObject* create(JSContext* cx, uint32_t initialLength,
-                                 mozilla::Maybe<uint32_t> maximumLength,
+  static WasmTableObject* create(JSContext* cx, wasm::Limits limits,
                                  wasm::RefType tableType, HandleObject proto);
   wasm::Table& table() const;
 

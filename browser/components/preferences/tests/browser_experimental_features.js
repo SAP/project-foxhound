@@ -61,11 +61,11 @@ add_task(async function testSearchFindsExperiments() {
   ok(!experimentalCategory.hidden, "The category is not hidden");
 
   await TestUtils.waitForCondition(
-    () => doc.getElementById("firefoxExperimentalCategory"),
+    () => doc.querySelector("#pane-experimental-featureGates > .featureGate"),
     "Waiting for experimental features category to get initialized"
   );
   await evaluateSearchResults(
-    "advanced configuration",
+    "in development and evolving",
     ["pane-experimental-featureGates"],
     /* include experiments */ true
   );
@@ -81,7 +81,7 @@ add_task(async function testExtraTemplate() {
   // Pretend a feature has id of "featureGate" to reuse that template
   const server = new DefinitionServer();
   server.addDefinition({
-    id: "featureGate",
+    id: "testFeatureGateExtra",
     isPublicJexl: "true",
     preference: "test.feature",
   });
@@ -93,15 +93,15 @@ add_task(async function testExtraTemplate() {
   );
 
   const doc = gBrowser.contentDocument;
-  const checkbox = await TestUtils.waitForCondition(
-    () => doc.getElementById("featureGate"),
+  let extraContent = await TestUtils.waitForCondition(
+    () => doc.getElementById("testFeatureGateExtraContent"),
     "wait for feature to get added to the DOM"
   );
 
   is(
-    checkbox.parentNode.querySelectorAll("checkbox").length,
-    2,
-    "extra template added another checkbox"
+    extraContent.textContent,
+    "Test extra content",
+    "extra template added extra content"
   );
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);

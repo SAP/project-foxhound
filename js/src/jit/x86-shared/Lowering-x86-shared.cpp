@@ -9,6 +9,7 @@
 #include "mozilla/MathAlgorithms.h"
 
 #include "jit/Lowering.h"
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "wasm/WasmFeatures.h"  // for wasm::ReportSimdAnalysis
 
@@ -574,9 +575,7 @@ void LIRGeneratorX86Shared::lowerTruncateFToInt32(MTruncateToInt32* ins) {
 
 void LIRGeneratorX86Shared::lowerCompareExchangeTypedArrayElement(
     MCompareExchangeTypedArrayElement* ins, bool useI386ByteRegisters) {
-  MOZ_ASSERT(ins->arrayType() != Scalar::Float32);
-  MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
-
+  MOZ_ASSERT(!Scalar::isFloatingType(ins->arrayType()));
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
   MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 
@@ -668,9 +667,7 @@ void LIRGeneratorX86Shared::lowerAtomicExchangeTypedArrayElement(
 void LIRGeneratorX86Shared::lowerAtomicTypedArrayElementBinop(
     MAtomicTypedArrayElementBinop* ins, bool useI386ByteRegisters) {
   MOZ_ASSERT(ins->arrayType() != Scalar::Uint8Clamped);
-  MOZ_ASSERT(ins->arrayType() != Scalar::Float32);
-  MOZ_ASSERT(ins->arrayType() != Scalar::Float64);
-
+  MOZ_ASSERT(!Scalar::isFloatingType(ins->arrayType()));
   MOZ_ASSERT(ins->elements()->type() == MIRType::Elements);
   MOZ_ASSERT(ins->index()->type() == MIRType::IntPtr);
 

@@ -146,34 +146,43 @@ static bool IsWasmSuspendingWrapper(const Value& v) {
 
 bool js::wasm::GetImports(JSContext* cx, const Module& module,
                           HandleObject importObj, ImportValues* imports) {
-  if (!module.imports().empty() && !importObj) {
+  const ModuleMetadata& moduleMeta = module.moduleMeta();
+  const CodeMetadata& codeMeta = module.codeMeta();
+  const BuiltinModuleIds& builtinModules = codeMeta.features().builtinModules;
+
+  if (!moduleMeta.imports.empty() && !importObj) {
     return ThrowBadImportArg(cx);
   }
-
-  const Metadata& metadata = module.metadata();
 
   BuiltinModuleInstances builtinInstances(cx);
   RootedValue importModuleValue(cx);
   RootedObject importModuleObject(cx);
+  bool isImportedStringModule = false;
   RootedValue importFieldValue(cx);
 
   uint32_t tagIndex = 0;
-  const TagDescVector& tags = metadata.tags;
+  const TagDescVector& tags = codeMeta.tags;
   uint32_t globalIndex = 0;
-  const GlobalDescVector& globals = metadata.globals;
+  const GlobalDescVector& globals = codeMeta.globals;
   uint32_t tableIndex = 0;
-  const TableDescVector& tables = metadata.tables;
-  for (const Import& import : module.imports()) {
-    Maybe<BuiltinModuleId> builtinModule = ImportMatchesBuiltinModule(
-        import.module.utf8Bytes(), metadata.builtinModules);
+  const TableDescVector& tables = codeMeta.tables;
+  for (const Import& import : moduleMeta.imports) {
+    Maybe<BuiltinModuleId> builtinModule =
+        ImportMatchesBuiltinModule(import.module.utf8Bytes(), builtinModules);
     if (builtinModule) {
-      MutableHandle<JSObject*> builtinInstance =
-          builtinInstances[*builtinModule];
-      if (!builtinInstance && !wasm::InstantiateBuiltinModule(
-                                  cx, *builtinModule, builtinInstance)) {
-        return false;
+      if (*builtinModule == BuiltinModuleId::JSStringConstants) {
+        isImportedStringModule = true;
+        importModuleObject = nullptr;
+      } else {
+        MutableHandle<JSObject*> builtinInstance =
+            builtinInstances[*builtinModule];
+        if (!builtinInstance && !wasm::InstantiateBuiltinModule(
+                                    cx, *builtinModule, builtinInstance)) {
+          return false;
+        }
+        isImportedStringModule = false;
+        importModuleObject = builtinInstance;
       }
-      importModuleObject = builtinInstance;
     } else {
       RootedId moduleName(cx);
       if (!import.module.toPropertyKey(cx, &moduleName)) {
@@ -197,17 +206,28 @@ bool js::wasm::GetImports(JSContext* cx, const Module& module,
         return false;
       }
 
+      isImportedStringModule = false;
       importModuleObject = &importModuleValue.toObject();
     }
+    MOZ_RELEASE_ASSERT(!isImportedStringModule ||
+                       import.kind == DefinitionKind::Global);
 
-    RootedId fieldName(cx);
-    if (!import.field.toPropertyKey(cx, &fieldName)) {
-      return false;
-    }
-
-    if (!GetProperty(cx, importModuleObject, importModuleObject, fieldName,
-                     &importFieldValue)) {
-      return false;
+    if (isImportedStringModule) {
+      RootedString stringConstant(cx, import.field.toJSString(cx));
+      if (!stringConstant) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+      importFieldValue = StringValue(stringConstant);
+    } else {
+      RootedId fieldName(cx);
+      if (!import.field.toPropertyKey(cx, &fieldName)) {
+        return false;
+      }
+      if (!GetProperty(cx, importModuleObject, importModuleObject, fieldName,
+                       &importFieldValue)) {
+        return false;
+      }
     }
 
     switch (import.kind) {
@@ -456,7 +476,7 @@ bool wasm::CompileAndSerialize(JSContext* cx, const ShareableBytes& bytecode,
   MOZ_ASSERT(CodeCachingAvailable(cx));
 
   // Create and manually fill in compile args for code caching
-  MutableCompileArgs compileArgs = js_new<CompileArgs>(ScriptedCaller());
+  MutableCompileArgs compileArgs = js_new<CompileArgs>();
   if (!compileArgs) {
     return false;
   }
@@ -490,7 +510,7 @@ bool wasm::CompileAndSerialize(JSContext* cx, const ShareableBytes& bytecode,
     return false;
   }
 
-  MOZ_ASSERT(module->code().hasTier(Tier::Serialized));
+  MOZ_ASSERT(module->code().hasCompleteTier(Tier::Serialized));
   MOZ_ASSERT(listener.called);
   return !listener.serialized->empty();
 }
@@ -598,36 +618,34 @@ static bool GetLimits(JSContext* cx, HandleObject obj, LimitsKind kind,
                       Limits* limits) {
   limits->indexType = IndexType::I32;
 
-  // Memory limits may specify an alternate index type, and we need this to
-  // check the ranges for initial and maximum, so look for the index type first.
-  if (kind == LimitsKind::Memory) {
+  // Limits may specify an alternate index type, and we need this to check the
+  // ranges for initial and maximum, so look for the index type first.
 #ifdef ENABLE_WASM_MEMORY64
-    // Get the index type field
-    JSAtom* indexTypeAtom = Atomize(cx, "index", strlen("index"));
-    if (!indexTypeAtom) {
-      return false;
-    }
-    RootedId indexTypeId(cx, AtomToId(indexTypeAtom));
-
-    RootedValue indexTypeVal(cx);
-    if (!GetProperty(cx, obj, obj, indexTypeId, &indexTypeVal)) {
-      return false;
-    }
-
-    // The index type has a default value
-    if (!indexTypeVal.isUndefined()) {
-      if (!ToIndexType(cx, indexTypeVal, &limits->indexType)) {
-        return false;
-      }
-
-      if (limits->indexType == IndexType::I64 && !Memory64Available(cx)) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_WASM_NO_MEM64_LINK);
-        return false;
-      }
-    }
-#endif
+  // Get the index type field
+  JSAtom* indexTypeAtom = Atomize(cx, "index", strlen("index"));
+  if (!indexTypeAtom) {
+    return false;
   }
+  RootedId indexTypeId(cx, AtomToId(indexTypeAtom));
+
+  RootedValue indexTypeVal(cx);
+  if (!GetProperty(cx, obj, obj, indexTypeId, &indexTypeVal)) {
+    return false;
+  }
+
+  // The index type has a default value
+  if (!indexTypeVal.isUndefined()) {
+    if (!ToIndexType(cx, indexTypeVal, &limits->indexType)) {
+      return false;
+    }
+
+    if (limits->indexType == IndexType::I64 && !Memory64Available(cx)) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_WASM_NO_MEM64_LINK);
+      return false;
+    }
+  }
+#endif
 
   const char* noun = (kind == LimitsKind::Memory ? "Memory" : "Table");
   // 2^48 is a valid value, so the range goes to 49 bits.  Values above 2^48 are
@@ -796,6 +814,12 @@ static JSString* TypeToString(JSContext* cx, T type) {
       cx, JS::ConstUTF8CharsZ(chars.get(), strlen(chars.get())));
 }
 
+#  ifdef ENABLE_WASM_MEMORY64
+static JSString* IndexTypeToString(JSContext* cx, IndexType type) {
+  return JS_NewStringCopyZ(cx, ToString(type));
+}
+#  endif
+
 [[nodiscard]] static JSObject* ValTypesToArray(JSContext* cx,
                                                const ValTypeVector& valTypes) {
   Rooted<ArrayObject*> arrayObj(cx, NewDenseEmptyArray(cx));
@@ -835,8 +859,9 @@ static JSObject* FuncTypeToObject(JSContext* cx, const FuncType& type) {
   return NewPlainObjectWithUniqueNames(cx, props);
 }
 
-static JSObject* TableTypeToObject(JSContext* cx, RefType type,
-                                   uint32_t initial, Maybe<uint32_t> maximum) {
+static JSObject* TableTypeToObject(JSContext* cx, IndexType indexType,
+                                   RefType type, uint32_t initial,
+                                   Maybe<uint32_t> maximum) {
   Rooted<IdValueVector> props(cx, IdValueVector(cx));
 
   RootedString elementType(cx, TypeToString(cx, type));
@@ -859,6 +884,18 @@ static JSObject* TableTypeToObject(JSContext* cx, RefType type,
     ReportOutOfMemory(cx);
     return nullptr;
   }
+
+#  ifdef ENABLE_WASM_MEMORY64
+  RootedString it(cx, IndexTypeToString(cx, indexType));
+  if (!it) {
+    return nullptr;
+  }
+  if (!props.append(
+          IdValuePair(NameToId(cx->names().index), StringValue(it)))) {
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+#  endif
 
   return NewPlainObjectWithUniqueNames(cx, props);
 }
@@ -896,8 +933,7 @@ static JSObject* MemoryTypeToObject(JSContext* cx, bool shared,
   }
 
 #  ifdef ENABLE_WASM_MEMORY64
-  RootedString it(
-      cx, JS_NewStringCopyZ(cx, indexType == IndexType::I32 ? "i32" : "i64"));
+  RootedString it(cx, IndexTypeToString(cx, indexType));
   if (!it) {
     return nullptr;
   }
@@ -1008,7 +1044,10 @@ const JSFunctionSpec WasmModuleObject::static_methods[] = {
 /* static */
 void WasmModuleObject::finalize(JS::GCContext* gcx, JSObject* obj) {
   const Module& module = obj->as<WasmModuleObject>().module();
-  obj->zone()->decJitMemory(module.codeLength(module.code().stableTier()));
+  size_t codeMemory = module.tier1CodeMemoryUsed();
+  if (codeMemory) {
+    obj->zone()->decJitMemory(codeMemory);
+  }
   gcx->release(obj, &module, module.gcMallocBytesExcludingCode(),
                MemoryUse::WasmModule);
 }
@@ -1116,16 +1155,19 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  const ModuleMetadata& moduleMeta = module->moduleMeta();
+
   RootedValueVector elems(cx);
-  if (!elems.reserve(module->imports().length())) {
+  if (!elems.reserve(moduleMeta.imports.length())) {
     return false;
   }
 
-#ifdef ENABLE_WASM_TYPE_REFLECTIONS
-  const Metadata& metadata = module->metadata();
-  const MetadataTier& metadataTier =
-      module->metadata(module->code().stableTier());
+#if defined(ENABLE_WASM_JS_STRING_BUILTINS) || \
+    defined(ENABLE_WASM_TYPE_REFLECTIONS)
+  const CodeMetadata& codeMeta = module->codeMeta();
+#endif
 
+#if defined(ENABLE_WASM_TYPE_REFLECTIONS)
   size_t numFuncImport = 0;
   size_t numMemoryImport = 0;
   size_t numGlobalImport = 0;
@@ -1133,7 +1175,15 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
   size_t numTagImport = 0;
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
-  for (const Import& import : module->imports()) {
+  for (const Import& import : moduleMeta.imports) {
+#ifdef ENABLE_WASM_JS_STRING_BUILTINS
+    Maybe<BuiltinModuleId> builtinModule = ImportMatchesBuiltinModule(
+        import.module.utf8Bytes(), codeMeta.features().builtinModules);
+    if (builtinModule) {
+      continue;
+    }
+#endif
+
     Rooted<IdValueVector> props(cx, IdValueVector(cx));
     if (!props.reserve(3)) {
       return false;
@@ -1165,21 +1215,21 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
     switch (import.kind) {
       case DefinitionKind::Function: {
         size_t funcIndex = numFuncImport++;
-        const FuncType& funcType =
-            metadata.getFuncImportType(metadataTier.funcImports[funcIndex]);
+        const FuncType& funcType = codeMeta.getFuncType(funcIndex);
         typeObj = FuncTypeToObject(cx, funcType);
         break;
       }
       case DefinitionKind::Table: {
         size_t tableIndex = numTableImport++;
-        const TableDesc& table = metadata.tables[tableIndex];
-        typeObj = TableTypeToObject(cx, table.elemType, table.initialLength,
-                                    table.maximumLength);
+        const TableDesc& table = codeMeta.tables[tableIndex];
+        typeObj =
+            TableTypeToObject(cx, table.indexType(), table.elemType,
+                              table.initialLength(), table.maximumLength());
         break;
       }
       case DefinitionKind::Memory: {
         size_t memoryIndex = numMemoryImport++;
-        const MemoryDesc& memory = metadata.memories[memoryIndex];
+        const MemoryDesc& memory = codeMeta.memories[memoryIndex];
         typeObj =
             MemoryTypeToObject(cx, memory.isShared(), memory.indexType(),
                                memory.initialPages(), memory.maximumPages());
@@ -1187,13 +1237,13 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
       }
       case DefinitionKind::Global: {
         size_t globalIndex = numGlobalImport++;
-        const GlobalDesc& global = metadata.globals[globalIndex];
+        const GlobalDesc& global = codeMeta.globals[globalIndex];
         typeObj = GlobalTypeToObject(cx, global.type(), global.isMutable());
         break;
       }
       case DefinitionKind::Tag: {
         size_t tagIndex = numTagImport++;
-        const TagDesc& tag = metadata.tags[tagIndex];
+        const TagDesc& tag = codeMeta.tags[tagIndex];
         typeObj = TagTypeToObject(cx, tag.type->argTypes());
         break;
       }
@@ -1237,18 +1287,18 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  const ModuleMetadata& moduleMeta = module->moduleMeta();
+
   RootedValueVector elems(cx);
-  if (!elems.reserve(module->exports().length())) {
+  if (!elems.reserve(moduleMeta.exports.length())) {
     return false;
   }
 
 #ifdef ENABLE_WASM_TYPE_REFLECTIONS
-  const Metadata& metadata = module->metadata();
-  const MetadataTier& metadataTier =
-      module->metadata(module->code().stableTier());
+  const CodeMetadata& codeMeta = module->codeMeta();
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
-  for (const Export& exp : module->exports()) {
+  for (const Export& exp : moduleMeta.exports) {
     Rooted<IdValueVector> props(cx, IdValueVector(cx));
     if (!props.reserve(2)) {
       return false;
@@ -1272,31 +1322,32 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
     RootedObject typeObj(cx);
     switch (exp.kind()) {
       case DefinitionKind::Function: {
-        const FuncExport& fe = metadataTier.lookupFuncExport(exp.funcIndex());
-        const FuncType& funcType = metadata.getFuncExportType(fe);
+        const FuncType& funcType =
+            module->codeMeta().getFuncType(exp.funcIndex());
         typeObj = FuncTypeToObject(cx, funcType);
         break;
       }
       case DefinitionKind::Table: {
-        const TableDesc& table = metadata.tables[exp.tableIndex()];
-        typeObj = TableTypeToObject(cx, table.elemType, table.initialLength,
-                                    table.maximumLength);
+        const TableDesc& table = codeMeta.tables[exp.tableIndex()];
+        typeObj =
+            TableTypeToObject(cx, table.indexType(), table.elemType,
+                              table.initialLength(), table.maximumLength());
         break;
       }
       case DefinitionKind::Memory: {
-        const MemoryDesc& memory = metadata.memories[exp.memoryIndex()];
+        const MemoryDesc& memory = codeMeta.memories[exp.memoryIndex()];
         typeObj =
             MemoryTypeToObject(cx, memory.isShared(), memory.indexType(),
                                memory.initialPages(), memory.maximumPages());
         break;
       }
       case DefinitionKind::Global: {
-        const GlobalDesc& global = metadata.globals[exp.globalIndex()];
+        const GlobalDesc& global = codeMeta.globals[exp.globalIndex()];
         typeObj = GlobalTypeToObject(cx, global.type(), global.isMutable());
         break;
       }
       case DefinitionKind::Tag: {
-        const TagDesc& tag = metadata.tags[exp.tagIndex()];
+        const TagDesc& tag = codeMeta.tags[exp.tagIndex()];
         typeObj = TagTypeToObject(cx, tag.type->argTypes());
         break;
       }
@@ -1359,7 +1410,7 @@ bool WasmModuleObject::customSections(JSContext* cx, unsigned argc, Value* vp) {
 
   RootedValueVector elems(cx);
   Rooted<ArrayBufferObject*> buf(cx);
-  for (const CustomSection& cs : module->customSections()) {
+  for (const CustomSection& cs : module->moduleMeta().customSections) {
     if (name.length() != cs.name.length()) {
       continue;
     }
@@ -1416,7 +1467,10 @@ WasmModuleObject* WasmModuleObject::create(JSContext* cx, const Module& module,
 
   // Bug 1569888: We account for the first tier here; the second tier, if
   // different, also needs to be accounted for.
-  cx->zone()->incJitMemory(module.codeLength(module.code().stableTier()));
+  size_t codeMemory = module.tier1CodeMemoryUsed();
+  if (codeMemory) {
+    cx->zone()->incJitMemory(codeMemory);
+  }
   return obj;
 }
 
@@ -1627,8 +1681,8 @@ bool WasmInstanceObject::isNewborn() const {
 // This is defined here in order to avoid recursive dependency between
 // WasmJS.h and Scope.h.
 using WasmFunctionScopeMap =
-    WeakCache<GCHashMap<uint32_t, WeakHeapPtr<WasmFunctionScope*>,
-                        DefaultHasher<uint32_t>, CellAllocPolicy>>;
+    JS::WeakCache<GCHashMap<uint32_t, WeakHeapPtr<WasmFunctionScope*>,
+                            DefaultHasher<uint32_t>, CellAllocPolicy>>;
 class WasmInstanceObject::UnspecifiedScopeMap {
  public:
   WasmFunctionScopeMap& asWasmFunctionScopeMap() {
@@ -1946,7 +2000,7 @@ static bool WasmCall(JSContext* cx, unsigned argc, Value* vp) {
  *
  * The explicitly exported functions have stubs created for them eagerly.  Eager
  * stubs are created with their tier when the module is compiled, see
- * ModuleGenerator::finishCodeTier(), which calls wasm::GenerateStubs(), which
+ * ModuleGenerator::finishCodeBlock(), which calls wasm::GenerateStubs(), which
  * generates stubs for functions with eager stubs.
  *
  * An eager stub for tier-1 is upgraded to tier-2 if the module tiers up, see
@@ -2073,30 +2127,7 @@ static bool WasmCall(JSContext* cx, unsigned argc, Value* vp) {
  *
  *    The locking protocol ensuring that all stubs are upgraded properly and
  *    that the system switches to creating tier-2 stubs is implemented in
- *    Module::finishTier2() and EnsureEntryStubs():
- *
- *    There are two locks, one per code tier.
- *
- *    EnsureEntryStubs() is attempting to create a tier-appropriate lazy stub,
- *    so it takes the lock for the current best tier, checks to see if there is
- *    a stub, and exits if there is.  If the tier changed racily it takes the
- *    other lock too, since that is now the lock for the best tier.  Then it
- *    creates the stub, installs it, and releases the locks.  Thus at most one
- *    stub per tier can be created at a time.
- *
- *    Module::finishTier2() takes both locks (tier-1 before tier-2), thus
- *    preventing EnsureEntryStubs() from creating stubs while stub upgrading is
- *    going on, and itself waiting until EnsureEntryStubs() is not active.  Once
- *    it has both locks, it upgrades all lazy stubs and makes tier-2 the new
- *    best tier.  Should EnsureEntryStubs subsequently enter, it will find that
- *    a stub already exists at tier-2 and will exit early.
- *
- * (It would seem that the locking protocol could be simplified a little by
- * having only one lock, hanging off the Code object, or by unconditionally
- * taking both locks in EnsureEntryStubs().  However, in some cases where we
- * acquire a lock the Code object is not readily available, so plumbing would
- * have to be added, and in EnsureEntryStubs(), there are sometimes not two code
- * tiers.)
+ *    Module::finishTier2() and EnsureEntryStubs().
  *
  * ## Stub lifetimes and serialization
  *
@@ -2117,10 +2148,9 @@ bool WasmInstanceObject::getExportedFunction(
   }
 
   const Instance& instance = instanceObj->instance();
-  const FuncExport& funcExport =
-      instance.metadata(instance.code().bestTier()).lookupFuncExport(funcIndex);
-  const TypeDef& funcTypeDef =
-      instance.metadata().getFuncExportTypeDef(funcExport);
+  const CodeBlock& codeBlock = instance.code().funcCodeBlock(funcIndex);
+  const FuncExport& funcExport = codeBlock.lookupFuncExport(funcIndex);
+  const TypeDef& funcTypeDef = instance.codeMeta().getFuncTypeDef(funcIndex);
   unsigned numArgs = funcTypeDef.funcType().args().length();
 
   if (instance.isAsmJS()) {
@@ -2184,12 +2214,9 @@ bool WasmInstanceObject::getExportedFunction(
   fun->setExtendedSlot(FunctionExtended::WASM_STV_SLOT,
                        PrivateValue((void*)funcTypeDef.superTypeVector()));
 
-  const CodeTier& codeTier =
-      instance.code().codeTier(instance.code().bestTier());
-  const CodeRange& codeRange = codeTier.metadata().codeRange(funcExport);
-
+  const CodeRange& codeRange = codeBlock.codeRange(funcExport);
   fun->setExtendedSlot(FunctionExtended::WASM_FUNC_UNCHECKED_ENTRY_SLOT,
-                       PrivateValue(codeTier.segment().base() +
+                       PrivateValue(codeBlock.segment->base() +
                                     codeRange.funcUncheckedCallEntry()));
 
   if (!instanceObj->exports().putNew(funcIndex, fun)) {
@@ -2200,12 +2227,13 @@ bool WasmInstanceObject::getExportedFunction(
   return true;
 }
 
-const CodeRange& WasmInstanceObject::getExportedFunctionCodeRange(
-    JSFunction* fun, Tier tier) {
-  uint32_t funcIndex = ExportedFunctionToFuncIndex(fun);
+void WasmInstanceObject::getExportedFunctionCodeRange(
+    JSFunction* fun, const wasm::CodeRange** range, uint8_t** codeBase) {
+  uint32_t funcIndex = wasm::ExportedFunctionToFuncIndex(fun);
   MOZ_ASSERT(exports().lookup(funcIndex)->value() == fun);
-  const MetadataTier& metadata = instance().metadata(tier);
-  return metadata.codeRange(metadata.lookupFuncExport(funcIndex));
+  const CodeBlock& code = instance().code().funcCodeBlock(funcIndex);
+  *range = &code.codeRanges[code.funcToCodeRange[funcIndex]];
+  *codeBase = code.segment->base();
 }
 
 /* static */
@@ -2272,6 +2300,10 @@ WasmInstanceObject* wasm::ExportedFunctionToInstanceObject(JSFunction* fun) {
 
 uint32_t wasm::ExportedFunctionToFuncIndex(JSFunction* fun) {
   return fun->wasmInstance().code().getFuncIndex(fun);
+}
+
+const wasm::TypeDef& wasm::ExportedFunctionToTypeDef(JSFunction* fun) {
+  return *fun->wasmTypeDef();
 }
 
 // ============================================================================
@@ -2842,22 +2874,13 @@ void WasmTableObject::trace(JSTracer* trc, JSObject* obj) {
 // value is omitted. An implementation of [1].
 //
 // [1]
-// https://webassembly.github.io/reference-types/js-api/index.html#defaultvalue
-static Value RefTypeDefautValue(wasm::RefType tableType) {
+// https://webassembly.github.io/spec/js-api/#defaultvalue
+static Value RefTypeDefaultValue(wasm::RefType tableType) {
   return tableType.isExtern() ? UndefinedValue() : NullValue();
 }
 
-static bool CheckRefTypeValue(JSContext* cx, wasm::RefType type,
-                              HandleValue value) {
-  RootedFunction fun(cx);
-  RootedAnyRef any(cx, AnyRef::null());
-
-  return CheckRefType(cx, type, value, &fun, &any);
-}
-
 /* static */
-WasmTableObject* WasmTableObject::create(JSContext* cx, uint32_t initialLength,
-                                         Maybe<uint32_t> maximumLength,
+WasmTableObject* WasmTableObject::create(JSContext* cx, Limits limits,
                                          wasm::RefType tableType,
                                          HandleObject proto) {
   AutoSetNewObjectMetadata metadata(cx);
@@ -2869,7 +2892,7 @@ WasmTableObject* WasmTableObject::create(JSContext* cx, uint32_t initialLength,
 
   MOZ_ASSERT(obj->isNewborn());
 
-  TableDesc td(tableType, initialLength, maximumLength, Nothing(),
+  TableDesc td(limits, tableType, Nothing(),
                /*isAsmJS*/ false,
                /*isImported=*/true, /*isExported=*/true);
 
@@ -2928,9 +2951,6 @@ bool WasmTableObject::construct(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Converting limits for a table only supports i32
-  MOZ_ASSERT(limits.indexType == IndexType::I32);
-
   if (limits.initial > MaxTableLength) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_WASM_TABLE_IMP_LIMIT);
@@ -2946,39 +2966,32 @@ bool WasmTableObject::construct(JSContext* cx, unsigned argc, Value* vp) {
 
   // The rest of the runtime expects table limits to be within a 32-bit range.
   static_assert(MaxTableLimitField <= UINT32_MAX, "invariant");
-  uint32_t initialLength = uint32_t(limits.initial);
-  Maybe<uint32_t> maximumLength;
-  if (limits.maximum) {
-    maximumLength = Some(uint32_t(*limits.maximum));
-  }
-
   Rooted<WasmTableObject*> table(
-      cx, WasmTableObject::create(cx, initialLength, maximumLength, tableType,
-                                  proto));
+      cx, WasmTableObject::create(cx, limits, tableType, proto));
   if (!table) {
     return false;
   }
 
   // Initialize the table to a default value
   RootedValue initValue(
-      cx, args.length() < 2 ? RefTypeDefautValue(tableType) : args[1]);
-  if (!CheckRefTypeValue(cx, tableType, initValue)) {
+      cx, args.length() < 2 ? RefTypeDefaultValue(tableType) : args[1]);
+  if (!CheckRefType(cx, tableType, initValue)) {
     return false;
   }
 
   // Skip initializing the table if the fill value is null, as that is the
   // default value.
   if (!initValue.isNull() &&
-      !table->fillRange(cx, 0, initialLength, initValue)) {
+      !table->fillRange(cx, 0, limits.initial, initValue)) {
     return false;
   }
 #ifdef DEBUG
   // Assert that null is the default value of a new table.
   if (initValue.isNull()) {
-    table->table().assertRangeNull(0, initialLength);
+    table->table().assertRangeNull(0, limits.initial);
   }
   if (!tableType.isNullable()) {
-    table->table().assertRangeNotNull(0, initialLength);
+    table->table().assertRangeNotNull(0, limits.initial);
   }
 #endif
 
@@ -3008,13 +3021,32 @@ const JSPropertySpec WasmTableObject::properties[] = {
     JS_STRING_SYM_PS(toStringTag, "WebAssembly.Table", JSPROP_READONLY),
     JS_PS_END};
 
-static bool ToTableIndex(JSContext* cx, HandleValue v, const Table& table,
-                         const char* noun, uint32_t* index) {
-  if (!EnforceRangeU32(cx, v, "Table", noun, index)) {
-    return false;
+static bool ToTableIndexOrDelta(JSContext* cx, HandleValue v,
+                                const Table& table, const char* noun,
+                                uint32_t* index, bool isIndex) {
+  switch (table.indexType()) {
+    case IndexType::I32: {
+      if (!EnforceRangeU32(cx, v, "Table", noun, index)) {
+        return false;
+      }
+    } break;
+    case IndexType::I64: {
+      uint64_t index64;
+      if (!EnforceRangeU64(cx, v, "Table", noun, &index64)) {
+        return false;
+      }
+
+      // Since our runtime limits for table length are always less than
+      // UINT32_MAX, clamping i64 values to UINT32_MAX will always trigger
+      // bounds checks. See MacroAssembler::wasmClampTable64Index and its uses.
+      static_assert(MaxTableLength < UINT32_MAX);
+      *index = index64 > UINT32_MAX ? UINT32_MAX : uint32_t(index64);
+    } break;
+    default:
+      MOZ_CRASH("unknown index type");
   }
 
-  if (*index >= table.length()) {
+  if (isIndex && *index >= table.length()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_WASM_BAD_RANGE, "Table", noun);
     return false;
@@ -3027,8 +3059,9 @@ static bool ToTableIndex(JSContext* cx, HandleValue v, const Table& table,
 /* static */
 bool WasmTableObject::typeImpl(JSContext* cx, const CallArgs& args) {
   Table& table = args.thisv().toObject().as<WasmTableObject>().table();
-  RootedObject typeObj(cx, TableTypeToObject(cx, table.elemType(),
-                                             table.length(), table.maximum()));
+  RootedObject typeObj(
+      cx, TableTypeToObject(cx, table.indexType(), table.elemType(),
+                            table.length(), table.maximum()));
   if (!typeObj) {
     return false;
   }
@@ -3054,7 +3087,7 @@ bool WasmTableObject::getImpl(JSContext* cx, const CallArgs& args) {
   }
 
   uint32_t index;
-  if (!ToTableIndex(cx, args.get(0), table, "get index", &index)) {
+  if (!ToTableIndexOrDelta(cx, args.get(0), table, "get index", &index, true)) {
     return false;
   }
 
@@ -3078,12 +3111,12 @@ bool WasmTableObject::setImpl(JSContext* cx, const CallArgs& args) {
   }
 
   uint32_t index;
-  if (!ToTableIndex(cx, args.get(0), table, "set index", &index)) {
+  if (!ToTableIndexOrDelta(cx, args.get(0), table, "set index", &index, true)) {
     return false;
   }
 
   RootedValue fillValue(
-      cx, args.length() < 2 ? RefTypeDefautValue(table.elemType()) : args[1]);
+      cx, args.length() < 2 ? RefTypeDefaultValue(table.elemType()) : args[1]);
   if (!tableObj->fillRange(cx, index, 1, fillValue)) {
     return false;
   }
@@ -3109,13 +3142,14 @@ bool WasmTableObject::growImpl(JSContext* cx, const CallArgs& args) {
   }
 
   uint32_t delta;
-  if (!EnforceRangeU32(cx, args.get(0), "Table", "grow delta", &delta)) {
+  if (!ToTableIndexOrDelta(cx, args.get(0), table, "grow delta", &delta,
+                           false)) {
     return false;
   }
 
   RootedValue fillValue(
-      cx, args.length() < 2 ? RefTypeDefautValue(table.elemType()) : args[1]);
-  if (!CheckRefTypeValue(cx, table.elemType(), fillValue)) {
+      cx, args.length() < 2 ? RefTypeDefaultValue(table.elemType()) : args[1]);
+  if (!CheckRefType(cx, table.elemType(), fillValue)) {
     return false;
   }
 
@@ -3175,15 +3209,15 @@ bool WasmTableObject::fillRange(JSContext* cx, uint32_t index, uint32_t length,
   // bounds
   MOZ_ASSERT(uint64_t(index) + uint64_t(length) <= tab.length());
 
-  RootedFunction fun(cx);
   RootedAnyRef any(cx, AnyRef::null());
-  if (!CheckRefType(cx, tab.elemType(), value, &fun, &any)) {
+  if (!wasm::CheckRefType(cx, tab.elemType(), value, &any)) {
     return false;
   }
   switch (tab.repr()) {
     case TableRepr::Func:
       MOZ_RELEASE_ASSERT(!tab.isAsmJS());
-      tab.fillFuncRef(index, length, FuncRef::fromJSFunction(fun), cx);
+      tab.fillFuncRef(index, length, FuncRef::fromAnyRefUnchecked(any.get()),
+                      cx);
       break;
     case TableRepr::Ref:
       tab.fillAnyRef(index, length, any);
@@ -3336,7 +3370,7 @@ bool WasmGlobalObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   // Override with non-undefined value, if provided.
   RootedValue valueVal(cx);
   if (globalType.isRefType()) {
-    valueVal.set(args.length() < 2 ? RefTypeDefautValue(globalType.refType())
+    valueVal.set(args.length() < 2 ? RefTypeDefaultValue(globalType.refType())
                                    : args[1]);
     if (!Val::fromJSValue(cx, globalType, valueVal, &globalVal)) {
       return false;
@@ -4084,11 +4118,8 @@ bool WasmFunctionTypeImpl(JSContext* cx, const CallArgs& args) {
   RootedFunction function(cx, &args.thisv().toObject().as<JSFunction>());
   Rooted<WasmInstanceObject*> instanceObj(
       cx, ExportedFunctionToInstanceObject(function));
-  uint32_t funcIndex = ExportedFunctionToFuncIndex(function);
-  Instance& instance = instanceObj->instance();
-  const FuncExport& fe =
-      instance.metadata(instance.code().bestTier()).lookupFuncExport(funcIndex);
-  const FuncType& funcType = instance.metadata().getFuncExportType(fe);
+  const TypeDef& funcTypeDef = ExportedFunctionToTypeDef(function);
+  const FuncType& funcType = funcTypeDef.funcType();
   RootedObject typeObj(cx, FuncTypeToObject(cx, funcType));
   if (!typeObj) {
     return false;
@@ -4122,41 +4153,46 @@ static JSFunction* WasmFunctionCreate(JSContext* cx, HandleObject func,
     return nullptr;
   }
 
-  ModuleEnvironment moduleEnv(compileArgs->features);
+  MutableModuleMetadata moduleMeta = js_new<ModuleMetadata>();
+  if (!moduleMeta || !moduleMeta->init(*compileArgs)) {
+    return nullptr;
+  }
+  MutableCodeMetadata codeMeta = moduleMeta->codeMeta;
   CompilerEnvironment compilerEnv(CompileMode::Once, Tier::Optimized,
                                   DebugEnabled::False);
   compilerEnv.computeParameters();
 
-  if (!moduleEnv.init()) {
-    return nullptr;
-  }
-
   FuncType funcType = FuncType(std::move(params), std::move(results));
-  if (!moduleEnv.types->addType(std::move(funcType))) {
+  if (!codeMeta->types->addType(std::move(funcType))) {
     return nullptr;
   }
 
   // Add an (import (func ...))
-  FuncDesc funcDesc = FuncDesc(&(*moduleEnv.types)[0].funcType(), 0);
-  if (!moduleEnv.funcs.append(funcDesc)) {
+  FuncDesc funcDesc = FuncDesc(0);
+  if (!codeMeta->funcs.append(funcDesc)) {
     return nullptr;
   }
-  moduleEnv.numFuncImports = 1;
+  codeMeta->numFuncImports = 1;
 
   // Add an (export (func 0))
-  moduleEnv.declareFuncExported(0, /* eager */ true, /* canRefFunc */ true);
+  codeMeta->funcs[0].declareFuncExported(/* eager */ true,
+                                         /* canRefFunc */ true);
 
   // We will be looking up and using the function in the future by index so the
   // name doesn't matter.
   CacheableName fieldName;
-  if (!moduleEnv.exports.emplaceBack(std::move(fieldName), 0,
-                                     DefinitionKind::Function)) {
+  if (!moduleMeta->exports.emplaceBack(std::move(fieldName), 0,
+                                       DefinitionKind::Function)) {
     return nullptr;
   }
 
-  ModuleGenerator mg(*compileArgs, &moduleEnv, &compilerEnv, nullptr, nullptr,
-                     nullptr);
-  if (!mg.init(nullptr)) {
+  if (!moduleMeta->prepareForCompile(compilerEnv.mode())) {
+    return nullptr;
+  }
+
+  ModuleGenerator mg(*codeMeta, compilerEnv, compilerEnv.initialState(),
+                     nullptr, nullptr, nullptr);
+  if (!mg.initializeCompleteTier()) {
     return nullptr;
   }
   // We're not compiling any function definitions.
@@ -4167,7 +4203,8 @@ static JSFunction* WasmFunctionCreate(JSContext* cx, HandleObject func,
   if (!shareableBytes) {
     return nullptr;
   }
-  SharedModule module = mg.finishModule(*shareableBytes);
+  SharedModule module = mg.finishModule(*shareableBytes, moduleMeta,
+                                        /*maybeTier2Listener=*/nullptr);
   if (!module) {
     return nullptr;
   }

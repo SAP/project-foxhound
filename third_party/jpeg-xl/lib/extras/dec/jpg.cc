@@ -6,18 +6,19 @@
 #include "lib/extras/dec/jpg.h"
 
 #if JPEGXL_ENABLE_JPEG
-#include "lib/jxl/base/include_jpeglib.h"  // NOLINT
+#include <jpeglib.h>
+#include <setjmp.h>
 #endif
+#include <stdint.h>
 
 #include <algorithm>
-#include <cstdint>
 #include <numeric>
 #include <utility>
 #include <vector>
 
 #include "lib/extras/size_constraints.h"
-#include "lib/jxl/base/sanitizers.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 namespace extras {
@@ -298,12 +299,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes,
     };
     ppf->frames.clear();
     // Allocates the frame buffer.
-    {
-      JXL_ASSIGN_OR_RETURN(
-          PackedFrame frame,
-          PackedFrame::Create(cinfo.image_width, cinfo.image_height, format));
-      ppf->frames.emplace_back(std::move(frame));
-    }
+    ppf->frames.emplace_back(cinfo.image_width, cinfo.image_height, format);
     const auto& frame = ppf->frames.back();
     JXL_ASSERT(sizeof(JSAMPLE) * cinfo.out_color_components *
                    cinfo.image_width <=

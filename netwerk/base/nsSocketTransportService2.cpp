@@ -7,6 +7,7 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/ChaosMode.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Likely.h"
 #include "mozilla/PodOperations.h"
@@ -406,6 +407,18 @@ bool nsSocketTransportService::CanAttachSocket() {
   MOZ_ASSERT(!mShuttingDown);
   uint32_t total = mActiveList.Length() + mIdleList.Length();
   bool rv = total < gMaxCount;
+
+  if (!rv) {
+    static bool reported_socket_limit_reached = false;
+    if (!reported_socket_limit_reached) {
+      mozilla::glean::networking::os_socket_limit_reached.Add(1);
+      reported_socket_limit_reached = true;
+    }
+    SOCKET_LOG(
+        ("nsSocketTransportService::CanAttachSocket failed -  total: %d, "
+         "maxCount: %d\n",
+         total, gMaxCount));
+  }
 
   MOZ_ASSERT(mInitialized);
   return rv;
@@ -1661,8 +1674,6 @@ void nsSocketTransportService::ClosePrivateConnections() {
       DetachSocket(mIdleList, &mIdleList[i]);
     }
   }
-
-  ClearPrivateSSLState();
 }
 
 NS_IMETHODIMP
@@ -1855,8 +1866,17 @@ void nsSocketTransportService::EndPolling() {
 void nsSocketTransportService::TryRepairPollableEvent() {
   mLock.AssertCurrentThreadOwns();
 
+  PollableEvent* pollable = nullptr;
+  {
+    // Bug 1719046: In certain cases PollableEvent constructor can hang
+    // when callign PR_NewTCPSocketPair.
+    // We unlock the mutex to prevent main thread hangs acquiring the lock.
+    MutexAutoUnlock unlock(mLock);
+    pollable = new PollableEvent();
+  }
+
   NS_WARNING("Trying to repair mPollableEvent");
-  mPollableEvent.reset(new PollableEvent());
+  mPollableEvent.reset(pollable);
   if (!mPollableEvent->Valid()) {
     mPollableEvent = nullptr;
   }

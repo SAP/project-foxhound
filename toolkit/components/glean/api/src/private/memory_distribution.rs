@@ -4,6 +4,7 @@
 
 use inherent::inherent;
 use std::convert::TryInto;
+use std::sync::Arc;
 
 use super::{CommonMetricData, DistributionData, MemoryUnit, MetricId};
 
@@ -21,12 +22,12 @@ pub enum MemoryDistributionMetric {
         ///
         /// **TEST-ONLY** - Do not use unless gated with `#[cfg(test)]`.
         id: MetricId,
-        inner: glean::private::MemoryDistributionMetric,
+        inner: Arc<glean::private::MemoryDistributionMetric>,
     },
     Child(MemoryDistributionMetricIpc),
 }
 #[derive(Clone, Debug)]
-pub struct MemoryDistributionMetricIpc(MetricId);
+pub struct MemoryDistributionMetricIpc(pub MetricId);
 
 impl MemoryDistributionMetric {
     /// Create a new memory distribution metric.
@@ -35,7 +36,10 @@ impl MemoryDistributionMetric {
             MemoryDistributionMetric::Child(MemoryDistributionMetricIpc(id))
         } else {
             let inner = glean::private::MemoryDistributionMetric::new(meta, memory_unit);
-            MemoryDistributionMetric::Parent { id, inner }
+            MemoryDistributionMetric::Parent {
+                id,
+                inner: Arc::new(inner),
+            }
         }
     }
 
@@ -47,6 +51,31 @@ impl MemoryDistributionMetric {
             }
             MemoryDistributionMetric::Child(_) => {
                 panic!("Can't get a child metric from a child metric")
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metric_id(&self) -> MetricId {
+        match self {
+            MemoryDistributionMetric::Parent { id, .. } => *id,
+            MemoryDistributionMetric::Child(c) => c.0,
+        }
+    }
+
+    pub fn accumulate_samples(&self, samples: Vec<u64>) {
+        match self {
+            MemoryDistributionMetric::Parent { inner, .. } => {
+                inner.accumulate_samples(samples.into_iter().map(|s| s as _).collect());
+            }
+            MemoryDistributionMetric::Child(c) => {
+                with_ipc_payload(move |payload| {
+                    if let Some(v) = payload.memory_samples.get_mut(&c.0) {
+                        v.extend(samples);
+                    } else {
+                        payload.memory_samples.insert(c.0, samples);
+                    }
+                });
             }
         }
     }

@@ -527,27 +527,6 @@ IPCResult BackgroundParentImpl::RecvPRemoteWorkerControllerConstructor(
   return IPC_OK();
 }
 
-already_AddRefed<dom::PRemoteWorkerServiceParent>
-BackgroundParentImpl::AllocPRemoteWorkerServiceParent() {
-  return MakeAndAddRef<dom::RemoteWorkerServiceParent>();
-}
-
-IPCResult BackgroundParentImpl::RecvPRemoteWorkerServiceConstructor(
-    PRemoteWorkerServiceParent* aActor) {
-  mozilla::dom::RemoteWorkerServiceParent* actor =
-      static_cast<mozilla::dom::RemoteWorkerServiceParent*>(aActor);
-
-  RefPtr<ThreadsafeContentParentHandle> parent =
-      BackgroundParent::GetContentParentHandle(this);
-  // If the ContentParent is null we are dealing with a same-process actor.
-  if (!parent) {
-    actor->Initialize(NOT_REMOTE_TYPE);
-  } else {
-    actor->Initialize(parent->GetRemoteType());
-  }
-  return IPC_OK();
-}
-
 mozilla::dom::PSharedWorkerParent*
 BackgroundParentImpl::AllocPSharedWorkerParent(
     const mozilla::dom::RemoteWorkerData& aData, const uint64_t& aWindowID,
@@ -1382,9 +1361,27 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvRemoveEndpoint(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvPLockManagerConstructor(
+    PLockManagerParent* aActor, mozilla::NotNull<nsIPrincipal*> aPrincipalInfo,
+    const Maybe<nsID>& aClientId) {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aActor);
+
+  // If the IsOtherProcessActor is true, then we're dealing with some kind of
+  // content process, and we do not expect the system principal to send this
+  // kind of constructor message.
+  if (aPrincipalInfo->IsSystemPrincipal() &&
+      BackgroundParent::IsOtherProcessActor(this)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  return IPC_OK();
+}
+
 already_AddRefed<dom::locks::PLockManagerParent>
 BackgroundParentImpl::AllocPLockManagerParent(NotNull<nsIPrincipal*> aPrincipal,
-                                              const nsID& aClientId) {
+                                              const Maybe<nsID>& aClientId) {
   return MakeAndAddRef<mozilla::dom::locks::LockManagerParent>(aPrincipal,
                                                                aClientId);
 }

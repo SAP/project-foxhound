@@ -109,8 +109,11 @@ export class AboutWelcomeParent extends JSWindowActorParent {
 
   // Static methods that calls into ShellService to check
   // if Firefox is pinned or already default
-  static doesAppNeedPin() {
-    return lazy.ShellService.doesAppNeedPin();
+  static async doesAppNeedPin() {
+    return (
+      (await lazy.ShellService.doesAppNeedPin()) ||
+      (await lazy.ShellService.doesAppNeedStartMenuPin())
+    );
   }
 
   static isDefaultBrowser() {
@@ -158,10 +161,11 @@ export class AboutWelcomeParent extends JSWindowActorParent {
       case "AWPage:TELEMETRY_EVENT":
         lazy.Telemetry.sendTelemetry(data);
         break;
-      case "AWPage:GET_ATTRIBUTION_DATA":
+      case "AWPage:GET_ATTRIBUTION_DATA": {
         let attributionData =
           await lazy.AboutWelcomeDefaults.getAttributionContent();
         return attributionData;
+      }
       case "AWPage:ENSURE_ADDON_INSTALLED":
         return new Promise(resolve => {
           let listener = {
@@ -182,7 +186,11 @@ export class AboutWelcomeParent extends JSWindowActorParent {
           };
           lazy.AddonManager.addInstallListener(listener);
         });
-      case "AWPage:GET_ADDON_DETAILS":
+      case "AWPage:GET_INSTALLED_ADDONS":
+        return lazy.AddonManager.getActiveAddons().then(response =>
+          response.addons.map(addon => addon.id)
+        );
+      case "AWPage:GET_ADDON_DETAILS": {
         let addonDetails =
           await lazy.AboutWelcomeDefaults.getAddonFromRepository(data);
 
@@ -193,12 +201,13 @@ export class AboutWelcomeParent extends JSWindowActorParent {
           screenshots: addonDetails.screenshots,
           url: addonDetails.url,
         };
+      }
       case "AWPage:SELECT_THEME":
         await lazy.BuiltInThemes.ensureBuiltInThemes();
         return lazy.AddonManager.getAddonByID(LIGHT_WEIGHT_THEMES[data]).then(
           addon => addon.enable()
         );
-      case "AWPage:GET_SELECTED_THEME":
+      case "AWPage:GET_SELECTED_THEME": {
         let themes = await lazy.AddonManager.getAddonsByTypes(["theme"]);
         let activeTheme = themes.find(addon => addon.isActive);
         // Store the current theme ID so user can restore their previous theme.
@@ -211,6 +220,7 @@ export class AboutWelcomeParent extends JSWindowActorParent {
           key => LIGHT_WEIGHT_THEMES[key] === activeTheme?.id
         );
         return themeShortName?.toLowerCase();
+      }
       case "AWPage:DOES_APP_NEED_PIN":
         return AboutWelcomeParent.doesAppNeedPin();
       case "AWPage:NEED_DEFAULT":

@@ -5,8 +5,6 @@
 
 const lazy = {};
 
-const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
-
 ChromeUtils.defineESModuleGetters(lazy, {
   ExtensionTestUtils:
     "resource://testing-common/ExtensionXPCShellUtils.sys.mjs",
@@ -16,16 +14,12 @@ add_setup(async function () {
   let server = useHttpServer();
   server.registerContentType("sjs", "sjs");
   await SearchTestUtils.useTestEngines("test-extensions");
-  await promiseStartupManager();
-
-  registerCleanupFunction(async () => {
-    await promiseShutdownManager();
-  });
+  await SearchTestUtils.initXPCShellAddonManager();
 });
 
 add_task(async function test_install_duplicate_engine_startup() {
   let name = "Plain";
-  consoleAllowList.push("#createAndAddAddonEngine failed for");
+  consoleAllowList.push("#loadStartupEngines failed for");
   // Do not use SearchTestUtils.installSearchExtension, as we need to manually
   // start the search service after installing the extension.
   let extensionInfo = {
@@ -47,9 +41,7 @@ add_task(async function test_install_duplicate_engine_startup() {
   let submission = engine.getSubmission("foo");
   Assert.equal(
     submission.uri.spec,
-    SearchUtils.newSearchConfigEnabled
-      ? "https://duckduckgo.com/?t=ffsb&q=foo"
-      : "https://duckduckgo.com/?q=foo&t=ffsb",
+    "https://duckduckgo.com/?t=ffsb&q=foo",
     "Should have not changed the app provided engine."
   );
 

@@ -712,7 +712,7 @@ impl DebugOverlayState {
 /// Tracks buffer damage rects over a series of frames.
 #[derive(Debug, Default)]
 pub(crate) struct BufferDamageTracker {
-    damage_rects: [DeviceRect; 2],
+    damage_rects: [DeviceRect; 4],
     current_offset: usize,
 }
 
@@ -1147,6 +1147,7 @@ impl Renderer {
                 }
                 ResultMsg::SetParameter(ref param) => {
                     self.device.set_parameter(param);
+                    self.profiler.set_parameter(param);
                 }
                 ResultMsg::DebugOutput(output) => match output {
                     #[cfg(feature = "capture")]
@@ -1429,6 +1430,7 @@ impl Renderer {
     ) -> Result<RenderResults, Vec<RendererError>> {
         profile_scope!("render");
         let mut results = RenderResults::default();
+        self.profile.end_time_if_started(profiler::FRAME_SEND_TIME);
         self.profile.start_time(profiler::RENDERER_TIME);
 
         self.staging_texture_pool.begin_frame();
@@ -1558,6 +1560,15 @@ impl Renderer {
         let _gm = self.gpu_profiler.start_marker("end frame");
         self.gpu_profiler.end_frame();
 
+        let t = self.profile.end_time(profiler::RENDERER_TIME);
+        self.profile.end_time_if_started(profiler::TOTAL_FRAME_CPU_TIME);
+
+        let current_time = precise_time_ns();
+        if device_size.is_some() {
+            let time = profiler::ns_to_ms(current_time - self.last_time);
+            self.profile.set(profiler::FRAME_TIME, time);
+        }
+
         let debug_overlay = device_size.and_then(|device_size| {
             // Bind a surface to draw the debug / profiler information to.
             self.bind_debug_overlay(device_size).map(|draw_target| {
@@ -1571,17 +1582,9 @@ impl Renderer {
             })
         });
 
-        let t = self.profile.end_time(profiler::RENDERER_TIME);
-        self.profile.end_time_if_started(profiler::TOTAL_FRAME_CPU_TIME);
         Telemetry::record_renderer_time(Duration::from_micros((t * 1000.00) as u64));
         if self.profile.get(profiler::SHADER_BUILD_TIME).is_none() {
           Telemetry::record_renderer_time_no_sc(Duration::from_micros((t * 1000.00) as u64));
-        }
-
-        let current_time = precise_time_ns();
-        if device_size.is_some() {
-            let time = profiler::ns_to_ms(current_time - self.last_time);
-            self.profile.set(profiler::FRAME_TIME, time);
         }
 
         if self.max_recorded_profiles > 0 {
@@ -2179,8 +2182,8 @@ impl Renderer {
     fn handle_prims(
         &mut self,
         draw_target: &DrawTarget,
-        prim_instances: &[Vec<PrimitiveInstanceData>],
-        prim_instances_with_scissor: &FastHashMap<(DeviceIntRect, PatternKind), Vec<PrimitiveInstanceData>>,
+        prim_instances: &[FastHashMap<TextureSource, Vec<PrimitiveInstanceData>>],
+        prim_instances_with_scissor: &FastHashMap<(DeviceIntRect, PatternKind), FastHashMap<TextureSource, Vec<PrimitiveInstanceData>>>,
         projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
@@ -2189,12 +2192,10 @@ impl Renderer {
         {
             let _timer = self.gpu_profiler.start_timer(GPU_TAG_INDIRECT_PRIM);
 
-            if prim_instances.iter().any(|instances| !instances.is_empty()) {
-                self.set_blend(false, FramebufferKind::Other);
-            }
+            self.set_blend(false, FramebufferKind::Other);
 
-            for (pattern_idx, prim_instances) in prim_instances.iter().enumerate() {
-                if prim_instances.is_empty() {
+            for (pattern_idx, prim_instances_map) in prim_instances.iter().enumerate() {
+                if prim_instances_map.is_empty() {
                     continue;
                 }
                 let pattern = PatternKind::from_u32(pattern_idx as u32);
@@ -2207,15 +2208,16 @@ impl Renderer {
                     &mut self.profile,
                 );
 
-                // TODO: Some patterns will need to be able to sample textures.
-                let texture_bindings = BatchTextures::empty();
+                for (texture_source, prim_instances) in prim_instances_map {
+                    let texture_bindings = BatchTextures::composite_rgb(*texture_source);
 
-                self.draw_instanced_batch(
-                    prim_instances,
-                    VertexArrayKind::Primitive,
-                    &texture_bindings,
-                    stats,
-                );
+                    self.draw_instanced_batch(
+                        prim_instances,
+                        VertexArrayKind::Primitive,
+                        &texture_bindings,
+                        stats,
+                    );
+                }
             }
 
             if !prim_instances_with_scissor.is_empty() {
@@ -2225,7 +2227,7 @@ impl Renderer {
 
                 let mut prev_pattern = None;
 
-                for ((scissor_rect, pattern), prim_instances) in prim_instances_with_scissor {
+                for ((scissor_rect, pattern), prim_instances_map) in prim_instances_with_scissor {
                     if prev_pattern != Some(*pattern) {
                         prev_pattern = Some(*pattern);
                         self.shaders.borrow_mut().get_quad_shader(*pattern).bind(
@@ -2238,13 +2240,17 @@ impl Renderer {
                     }
 
                     self.device.set_scissor_rect(draw_target.to_framebuffer_rect(*scissor_rect));
-                    // TODO: hook up the right pattern.
-                    self.draw_instanced_batch(
-                        prim_instances,
-                        VertexArrayKind::Primitive,
-                        &BatchTextures::empty(),
-                        stats,
-                    );
+
+                    for (texture_source, prim_instances) in prim_instances_map {
+                        let texture_bindings = BatchTextures::composite_rgb(*texture_source);
+
+                        self.draw_instanced_batch(
+                            prim_instances,
+                            VertexArrayKind::Primitive,
+                            &texture_bindings,
+                            stats,
+                        );
+                    }
                 }
 
                 self.device.disable_scissor();
@@ -2417,13 +2423,12 @@ impl Renderer {
                 // TODO(gw): Support R8 format here once we start
                 //           creating mips for alpha masks.
                 let task = &render_tasks[blit.source];
-                let source_rect = task.get_target_rect();
+                let source_rect = blit.source_rect.translate(task.get_target_rect().min.to_vector());
                 let source_texture = task.get_texture_source();
 
                 (source_texture, source_rect)
             };
 
-            debug_assert_eq!(source_rect.size(), blit.target_rect.size());
             let (texture, swizzle) = self.texture_resolver
                 .resolve(&source)
                 .expect("BUG: invalid source texture");
@@ -6021,7 +6026,6 @@ mod tests {
         assert_eq!(tracker.get_damage_rect(1), Some(DeviceRect::zero()));
         assert_eq!(tracker.get_damage_rect(2), Some(DeviceRect::zero()));
         assert_eq!(tracker.get_damage_rect(3), Some(DeviceRect::zero()));
-        assert_eq!(tracker.get_damage_rect(4), None);
 
         let damage1 = DeviceRect::from_origin_and_size(DevicePoint::new(10.0, 10.0), DeviceSize::new(10.0, 10.0));
         let damage2 = DeviceRect::from_origin_and_size(DevicePoint::new(20.0, 20.0), DeviceSize::new(10.0, 10.0));
@@ -6032,13 +6036,11 @@ mod tests {
         assert_eq!(tracker.get_damage_rect(1), Some(DeviceRect::zero()));
         assert_eq!(tracker.get_damage_rect(2), Some(damage1));
         assert_eq!(tracker.get_damage_rect(3), Some(damage1));
-        assert_eq!(tracker.get_damage_rect(4), None);
 
         tracker.push_dirty_rect(&damage2);
         assert_eq!(tracker.get_damage_rect(0), None);
         assert_eq!(tracker.get_damage_rect(1), Some(DeviceRect::zero()));
         assert_eq!(tracker.get_damage_rect(2), Some(damage2));
         assert_eq!(tracker.get_damage_rect(3), Some(combined));
-        assert_eq!(tracker.get_damage_rect(4), None);
     }
 }

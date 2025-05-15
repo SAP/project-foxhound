@@ -49,7 +49,7 @@ task-defaults:
                             - linux64-custom-car
                             - linux64-minidump-stackwalk
                             - linux64-fix-stacks
-                        windows10-64.*:
+                        windows.*-64.*:
                             - win64-custom-car
                             - win64-minidump-stackwalk
                             - win64-fix-stacks
@@ -73,12 +73,15 @@ task-defaults:
                         windows.*-32.*.:
                             - win32-minidump-stackwalk
                             - win32-fix-stacks
-                        windows10-64.*:
+                        windows.*-64.*:
                             - win64-minidump-stackwalk
                             - win64-fix-stacks
-                        macos.*:
+                        macosx1015.*:
                             - macosx64-minidump-stackwalk
                             - macosx64-fix-stacks
+                        macosx1400.*:
+                            - macosx64-aarch64-minidump-stackwalk
+                            - macosx64-aarch64-fix-stacks
                         default:
                             - linux64-minidump-stackwalk
                             - linux64-fix-stacks
@@ -102,7 +105,7 @@ browsertime-tp6:
         mozharness:
             extra-options:
                 by-test-platform:
-                    windows10-64.*shippable.*-qr.*:
+                    windows.*64.*shippable.*-qr.*:
                         - --chimera
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
@@ -118,7 +121,7 @@ browsertime-tp6:
                         firefox:
                             by-test-platform:
                                 windows.*-32.*: []
-                                (macosx1015|linux|windows10-64).*shippable-qr.*: [trunk]
+                                (macosx1015|linux|windows.*-64).*shippable-qr.*: [trunk]
                                 default: []
                         default: []
                 default:
@@ -178,7 +181,7 @@ browsertime-responsiveness:
     mozharness:
         extra-options:
             by-test-platform:
-                windows10-.*:
+                windows.*:
                     - --cold
                     - --browsertime-no-ffwindowrecorder
                     - --conditioned-profile=settled
@@ -206,7 +209,7 @@ browsertime-tp6-essential:
         mozharness:
             extra-options:
                 by-test-platform:
-                    windows10-64.*shippable.*-qr.*:
+                    windows.*-64.*shippable.*-qr.*:
                         - --chimera
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
@@ -280,7 +283,7 @@ browsertime-tp6-bytecode:
     mozharness:
         extra-options:
             by-test-platform:
-                windows10-64.*shippable.*-qr.*:
+                windows.*-64.*shippable.*-qr.*:
                     - --chimera
                     - --browsertime
                     - --browsertime-no-ffwindowrecorder
@@ -318,7 +321,7 @@ browsertime-tp7:
         mozharness:
             extra-options:
                 by-test-platform:
-                    windows10-64.*shippable.*-qr.*:
+                    windows.*-64.*shippable.*-qr.*:
                         - --chimera
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
@@ -465,7 +468,7 @@ browsertime-benchmark:
                             default: 1
                     default:
                         by-test-platform:
-                            windows10-64-ccov.*/.*: 3
+                            windows.*-64-ccov.*/.*: 3
                             linux64-ccov.*/.*: 3
                             default: 2
             default:
@@ -484,7 +487,7 @@ browsertime-benchmark:
                             default: []
                     custom-car:
                         by-test-platform:
-                            (linux|windows10-64).*shippable-qr.*: [mozilla-central]
+                            (linux|windows).*shippable-qr.*: [mozilla-central]
                             default: []
                     safari-tp:
                         by-test-platform:
@@ -510,7 +513,7 @@ browsertime-benchmark:
                             default: []
                     custom-car:
                         by-test-platform:
-                            (linux|windows10-64).*shippable-qr.*: [mozilla-central]
+                            (linux|windows.*-64).*shippable-qr.*: [mozilla-central]
                             default: []
                     default: []
             default:
@@ -768,7 +771,7 @@ browsertime-tp6-live-sheriffed:
             - --browsertime-arg=maxLoadTime=240000
     run-on-projects:
         by-test-platform:
-            (linux|windows10-64|macos)(?!.*shippable).*: []
+            (linux|windows.*-64|macos)(?!.*shippable).*: []
             (linux|windows|macosx1015)(?!.*-qr).*: []
             windows.*-32.*: []
             default: []
@@ -844,7 +847,7 @@ browsertime-regression-tests:
     mozharness:
         extra-options:
             by-test-platform:
-                windows10-64.*shippable.*-qr.*: []
+                windows.*-64.*shippable.*-qr.*: []
                 default: []
     tier: 2
     treeherder-symbol: Btime(regressor)
@@ -883,6 +886,36 @@ browsertime-pageload-benchmark:
     run-on-projects: []
     tier: 2
     treeherder-symbol: Btime(tp6-bench)
+
+browsertime-video-playback-latency:
+    <<: *tp6-defaults
+    raptor:
+        apps: [firefox, chrome, safari]
+        test: video-playback-latency
+        run-visual-metrics: true
+        subtests:
+            by-app:
+                safari:
+                    - vpl-h264
+                default:
+                    - vpl-av1
+                    - vpl-h264
+                    - vpl-vp9
+    description: Raptor (browsertime) Video playback latency test
+    mozharness:
+        extra-options:
+            - --chimera
+            - --browsertime-no-ffwindowrecorder
+            - --extra-profiler-run
+    run-on-projects:
+        by-app:
+            firefox:
+                by-test-platform:
+                    (macosx1015|linux|windows10-64).*shippable-qr.*: [autoland, mozilla-central]
+                    default: []
+            default: []
+    tier: 3
+    treeherder-symbol: Btime(vpl)
 
 browsertime-speculative:
     raptor:
@@ -935,7 +968,7 @@ browsertime-tp6-webextensions:
     mozharness:
         extra-options:
             by-test-platform:
-                windows10-64.*shippable.*-qr.*:
+                windows.*-64.*shippable.*-qr.*:
                     - --chimera
                     - --browsertime
                     - --browsertime-no-ffwindowrecorder

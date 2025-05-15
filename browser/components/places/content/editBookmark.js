@@ -64,12 +64,23 @@ var gEditItemOverlay = {
           ? node.query.tags[0]
           : node.title;
     }
+
     let isURI = node && PlacesUtils.nodeIsURI(node);
     let uri = isURI || isTag ? Services.io.newURI(node.uri) : null;
     let title = node ? node.title : null;
     let isBookmark = isItem && isURI;
-    let bulkTagging = !node;
-    let uris = bulkTagging ? aInitInfo.uris : null;
+
+    let addedMultipleBookmarks = aInitInfo.addedMultipleBookmarks;
+    let bulkTagging = false;
+    let uris = null;
+    if (!node) {
+      bulkTagging = true;
+      uris = aInitInfo.uris;
+    } else if (addedMultipleBookmarks) {
+      bulkTagging = true;
+      uris = node.children.map(c => c.url);
+    }
+
     let visibleRows = new Set();
     let isParentReadOnly = false;
     let postData = aInitInfo.postData;
@@ -82,7 +93,7 @@ var gEditItemOverlay = {
         );
       }
       let parent = node.parent;
-      isParentReadOnly = !PlacesUtils.nodeIsFolder(parent);
+      isParentReadOnly = !PlacesUtils.nodeIsFolderOrShortcut(parent);
       // Note this may be an empty string, that'd the case for the root node
       // of a search, or a virtual root node, like the Library left pane.
       parentGuid = parent.bookmarkGuid;
@@ -100,6 +111,7 @@ var gEditItemOverlay = {
       title,
       isBookmark,
       isFolderShortcut,
+      addedMultipleBookmarks,
       isParentReadOnly,
       bulkTagging,
       uris,
@@ -177,7 +189,7 @@ var gEditItemOverlay = {
   _firstEditedField: "",
 
   _initNamePicker() {
-    if (this._paneInfo.bulkTagging) {
+    if (this._paneInfo.bulkTagging && !this._paneInfo.addedMultipleBookmarks) {
       throw new Error("_initNamePicker called unexpectedly");
     }
 
@@ -288,6 +300,7 @@ var gEditItemOverlay = {
         isItem,
         isURI,
         isBookmark,
+        addedMultipleBookmarks,
         bulkTagging,
         uris,
         visibleRows,
@@ -328,7 +341,13 @@ var gEditItemOverlay = {
         return visible;
       };
 
-      if (showOrCollapse("nameRow", !bulkTagging, "name")) {
+      if (
+        showOrCollapse(
+          "nameRow",
+          !bulkTagging || addedMultipleBookmarks,
+          "name"
+        )
+      ) {
         this._initNamePicker();
         this._namePicker.readOnly = this.readOnly;
       }
@@ -434,7 +453,8 @@ var gEditItemOverlay = {
       this._bookmarkState = this.makeNewStateObject({
         children: aInfo.node?.children,
         index: aInfo.node?.index,
-        isFolder: aInfo.node != null && PlacesUtils.nodeIsFolder(aInfo.node),
+        isFolder:
+          aInfo.node != null && PlacesUtils.nodeIsFolderOrShortcut(aInfo.node),
       });
       if (isBookmark || bulkTagging) {
         await this._initAllTags();

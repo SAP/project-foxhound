@@ -500,6 +500,23 @@ export class UrlbarView {
   }
 
   /**
+   * Hide the popup that shows the Urlbar results. The popup is still
+   * considered "open", this will not trigger abandonment telemetry
+   * but will not be shown to the user.
+   */
+  hideTemporarily() {
+    this.panel.toggleAttribute("hide-temporarily", true);
+  }
+
+  /**
+   * Show the Urlbar results popup after being hidden by
+   * `hideTemporarily`
+   */
+  restoreVisibility() {
+    this.panel.toggleAttribute("hide-temporarily", false);
+  }
+
+  /**
    * Closes the view, cancelling the query if necessary.
    *
    * @param {object} options Options object
@@ -766,7 +783,8 @@ export class UrlbarView {
       //  * The search string starts with an `@` or a search restriction
       //    character
       this.oneOffSearchButtons.enable(
-        firstResult.providerName != "UrlbarProviderSearchTips" &&
+        (firstResult.providerName != "UrlbarProviderSearchTips" ||
+          queryContext.trimmedSearchString) &&
           queryContext.trimmedSearchString[0] != "@" &&
           (queryContext.trimmedSearchString[0] !=
             lazy.UrlbarTokenizer.RESTRICT.SEARCH ||
@@ -1425,8 +1443,10 @@ export class UrlbarView {
    *   signals an attribute should be removed, and `undefined` in which case
    *   the attribute won't be set nor removed. The `id` attribute is reserved
    *   and cannot be set here.
+   * @param {UrlbarResult} result
+   *   The UrlbarResult displayed to the node. This is optional.
    */
-  #setDynamicAttributes(node, attributes) {
+  #setDynamicAttributes(node, attributes, result) {
     if (!attributes) {
       return;
     }
@@ -1445,6 +1465,8 @@ export class UrlbarView {
         node.removeAttribute(name);
       } else if (typeof value == "boolean") {
         node.toggleAttribute(name, value);
+      } else if (Blob.isInstance(value) && result) {
+        node.setAttribute(name, this.#getBlobUrlForResult(result, value));
       } else {
         node.setAttribute(name, value);
       }
@@ -1950,8 +1972,9 @@ export class UrlbarView {
         if (result.heuristic && !result.payload.title) {
           isVisitAction = true;
         } else if (
-          result.providerName != lazy.UrlbarProviderQuickSuggest.name ||
-          result.payload.shouldShowUrl
+          (result.providerName != lazy.UrlbarProviderQuickSuggest.name ||
+            result.payload.shouldShowUrl) &&
+          !result.payload.providesSearchMode
         ) {
           setURL = true;
         }
@@ -2056,19 +2079,8 @@ export class UrlbarView {
       return result.payload.icon;
     }
     if (result.payload.iconBlob) {
-      // Blob icons are currently limited to Suggest results, which will define
-      // a `payload.originalUrl` if the result URL contains timestamp templates
-      // that are replaced at query time.
-      let resultUrl = result.payload.originalUrl || result.payload.url;
-      if (resultUrl) {
-        let blobUrl = this.#blobUrlsByResultUrl?.get(resultUrl);
-        if (!blobUrl) {
-          blobUrl = URL.createObjectURL(result.payload.iconBlob);
-          // Since most users will not trigger results with blob icons, we
-          // create this map lazily.
-          this.#blobUrlsByResultUrl ||= new Map();
-          this.#blobUrlsByResultUrl.set(resultUrl, blobUrl);
-        }
+      let blobUrl = this.#getBlobUrlForResult(result, result.payload.iconBlob);
+      if (blobUrl) {
         return blobUrl;
       }
     }
@@ -2090,6 +2102,25 @@ export class UrlbarView {
     return lazy.UrlbarUtils.ICON.DEFAULT;
   }
 
+  #getBlobUrlForResult(result, blob) {
+    // Blob icons are currently limited to Suggest results, which will define
+    // a `payload.originalUrl` if the result URL contains timestamp templates
+    // that are replaced at query time.
+    let resultUrl = result.payload.originalUrl || result.payload.url;
+    if (resultUrl) {
+      let blobUrl = this.#blobUrlsByResultUrl?.get(resultUrl);
+      if (!blobUrl) {
+        blobUrl = URL.createObjectURL(blob);
+        // Since most users will not trigger results with blob icons, we
+        // create this map lazily.
+        this.#blobUrlsByResultUrl ||= new Map();
+        this.#blobUrlsByResultUrl.set(resultUrl, blobUrl);
+      }
+      return blobUrl;
+    }
+    return null;
+  }
+
   async #updateRowForDynamicType(item, result) {
     item.setAttribute("dynamicType", result.payload.dynamicType);
 
@@ -2097,25 +2128,6 @@ export class UrlbarView {
     for (let [name, node] of item._elements) {
       node.id = `${item.id}-${name}`;
       idsByName.set(name, node.id);
-    }
-
-    // First, apply highlighting. We do this before updating via getViewUpdate
-    // so the dynamic provider can override the highlighting by setting the
-    // textContent of the highlighted node, if it wishes.
-    for (let [payloadName, highlights] of Object.entries(
-      result.payloadHighlights
-    )) {
-      if (!highlights.length) {
-        continue;
-      }
-      // Highlighting only works if the dynamic element name is the same as the
-      // highlighted payload property name.
-      let nodeToHighlight = item.querySelector(`#${item.id}-${payloadName}`);
-      this.#addTextContentWithHighlights(
-        nodeToHighlight,
-        result.payload[payloadName],
-        highlights
-      );
     }
 
     // Get the view update from the result's provider.
@@ -2128,7 +2140,7 @@ export class UrlbarView {
     // Update each node in the view by name.
     for (let [nodeName, update] of Object.entries(viewUpdate)) {
       let node = item.querySelector(`#${item.id}-${nodeName}`);
-      this.#setDynamicAttributes(node, update.attributes);
+      this.#setDynamicAttributes(node, update.attributes, result);
       if (update.style) {
         for (let [styleName, value] of Object.entries(update.style)) {
           node.style[styleName] = value;
@@ -2143,7 +2155,11 @@ export class UrlbarView {
         }
         this.#setElementL10n(node, update.l10n);
       } else if (update.textContent) {
-        node.textContent = update.textContent;
+        this.#addTextContentWithHighlights(
+          node,
+          update.textContent,
+          update.highlights
+        );
       }
     }
   }
@@ -2705,6 +2721,13 @@ export class UrlbarView {
     }
 
     if (result.payload.providesSearchMode) {
+      if (result.type == lazy.UrlbarUtils.RESULT_TYPE.RESTRICT) {
+        this.#setElementL10n(titleNode, {
+          id: "urlbar-result-action-search-w-engine",
+          args: { engine: result.payload.l10nRestrictKeyword },
+        });
+        return;
+      }
       // Keyword offers are the only result that require a localized title.
       // We localize the title instead of using the action text as a title
       // because some keyword offer results use both a title and action text

@@ -57,6 +57,7 @@ browser/base/content/macWindow.inc.xhtml
 browser/base/content/main-popupset.inc.xhtml
 browser/base/content/pageinfo/pageInfo.xhtml
 browser/base/content/webext-panels.xhtml
+browser/components/backup/content/archive.template.html
 browser/components/downloads/content/contentAreaDownloadsView.xhtml
 browser/components/places/content/bookmarkProperties.xhtml
 browser/components/places/content/bookmarksSidebar.xhtml
@@ -988,7 +989,7 @@ tools/jprof/README.html
 uriloader/exthandler/tests/mochitest/save_filenames.html
 
 ##############################################################################
-# The list below is copied from .eslintignore. Prettier doesn't currently
+# The list below is copied from .eslintrc-ignores.js. Prettier doesn't currently
 # support multiple ignore files or dynamic ignore configurations.
 # When this is implemented, we'll update the configuration below (bug 1825508)
 ##############################################################################
@@ -1041,9 +1042,7 @@ browser/locales/
 # Generated data files
 browser/extensions/formautofill/phonenumberutils/PhoneNumberMetaData.jsm
 
-# Ignore devtools debugger files which aren't intended for linting, and also
-# aren't included in any .eslintignore or .prettierignore file.
-# See https://github.com/firefox-devtools/debugger/blob/master/package.json#L24
+# Ignore devtools debugger files which aren't intended for linting.
 devtools/client/debugger/bin/
 devtools/client/debugger/configs/
 devtools/client/debugger/dist/
@@ -1381,14 +1380,12 @@ media/libopus/
 media/libpng/
 media/libsoundtouch/
 media/libspeex_resampler/
-media/libtheora/
 media/libvorbis/
 media/libvpx/
 media/libwebp/
 media/libyuv/
 media/mozva/va
 media/mp4parse-rust/
-media/openmax_dl/
 media/openmax_il/
 media/webrtc/signaling/gtest/MockCall.h
 mfbt/double-conversion/double-conversion/
@@ -1417,6 +1414,7 @@ security/manager/tools/log_list.json
 security/nss/
 security/sandbox/chromium/
 security/sandbox/chromium-shim/
+security/sandbox/linux/launch/glibc_hack/sandbox/linux/services/namespace_sandbox.cc
 services/common/kinto-http-client.sys.mjs
 services/common/kinto-offline-client.sys.mjs
 testing/gtest/gmock/
@@ -1519,7 +1517,8 @@ security/manager/tools/KnownRootHashes.json
 security/manager/tools/PreloadedHPKPins.json
 services/settings/dumps/
 toolkit/components/nimbus/schemas/NimbusExperiment.schema.json
-toolkit/components/pdfjs/content/PdfJsDefaultPreferences.sys.mjs
+toolkit/components/pdfjs/PdfJsDefaultPrefs.js
+toolkit/components/pdfjs/PdfJsOverridePrefs.js
 toolkit/components/uniffi-js/UniFFIGeneratedScaffolding.cpp
 toolkit/components/uniffi-js/UniFFIFixtureScaffolding.cpp
 toolkit/components/uniffi-bindgen-gecko-js/fixtures/generated

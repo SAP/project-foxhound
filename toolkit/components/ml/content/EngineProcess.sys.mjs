@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// known to be loaded early in the startup process, and should be loaded eagerly
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-
 const lazy = {};
 ChromeUtils.defineESModuleGetters(
   lazy,
@@ -16,6 +13,7 @@ ChromeUtils.defineESModuleGetters(
 
 /**
  * @typedef {import("../actors/MLEngineParent.sys.mjs").MLEngineParent} MLEngineParent
+ * @typedef {import("../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
  */
 
 /**
@@ -26,6 +24,13 @@ ChromeUtils.defineESModuleGetters(
  * This class encapsulates the options for a pipeline process.
  */
 export class PipelineOptions {
+  /**
+   * The identifier for the engine to be used by the pipeline.
+   *
+   * @type {?string}
+   */
+  engineId = "default-engine";
+
   /**
    * The name of the task the pipeline is configured for.
    *
@@ -128,6 +133,7 @@ export class PipelineOptions {
    */
   updateOptions(options) {
     const allowedKeys = [
+      "engineId",
       "taskName",
       "modelHubRootUrl",
       "modelHubUrlTemplate",
@@ -142,11 +148,9 @@ export class PipelineOptions {
       "runtimeFilename",
     ];
 
-    Object.keys(options).forEach(key => {
-      if (allowedKeys.includes(key)) {
-        this[key] = options[key]; // Use bracket notation to access setter
-      } else {
-        throw new Error(`Invalid option: ${key}`);
+    allowedKeys.forEach(key => {
+      if (options[key]) {
+        this[key] = options[key];
       }
     });
   }
@@ -158,6 +162,7 @@ export class PipelineOptions {
    */
   getOptions() {
     return {
+      engineId: this.engineId,
       taskName: this.taskName,
       modelHubRootUrl: this.modelHubRootUrl,
       modelHubUrlTemplate: this.modelHubUrlTemplate,
@@ -185,6 +190,42 @@ export class PipelineOptions {
         config[key] = options[key];
       }
     });
+  }
+
+  /**
+   * Checks if this PipelineOptions instance is equal to another.
+   *
+   * @param {PipelineOptions} other - The other PipelineOptions instance to compare with.
+   * @returns {boolean} True if the instances are equal, false otherwise.
+   */
+  equals(other) {
+    if (!(other instanceof PipelineOptions)) {
+      return false;
+    }
+    const options = this.getOptions();
+    const otherOptions = other.getOptions();
+
+    const isEqual = (val1, val2) => {
+      if (val1 === val2) {
+        return true;
+      }
+      if (val1 == null || val2 == null) {
+        return false;
+      }
+      if (typeof val1 !== "object" || typeof val2 !== "object") {
+        return false;
+      }
+      const keys1 = Object.keys(val1);
+      const keys2 = Object.keys(val2);
+      if (keys1.length !== keys2.length) {
+        return false;
+      }
+      return keys1.every(key => isEqual(val1[key], val2[key]));
+    };
+
+    return Object.keys(options).every(key =>
+      isEqual(options[key], otherOptions[key])
+    );
   }
 }
 
@@ -241,10 +282,6 @@ export class EngineProcess {
    * @returns {Promise<MLEngineParent>}
    */
   static async getMLEngineParent() {
-    // Bug 1890946 - enable the inference engine in release
-    if (!AppConstants.NIGHTLY_BUILD) {
-      throw new Error("MLEngine is only available in Nightly builds.");
-    }
     // the pref is off by default
     if (!Services.prefs.getBoolPref("browser.ml.enable")) {
       throw new Error("MLEngine is disabled. Check the browser.ml prefs.");
@@ -282,7 +319,7 @@ export class EngineProcess {
     const browser = doc.createXULElement("browser");
     browser.setAttribute("id", id);
     browser.setAttribute("remote", "true");
-    browser.setAttribute("remoteType", "web");
+    browser.setAttribute("remoteType", "inference");
     browser.setAttribute("disableglobalhistory", "true");
     browser.setAttribute("type", "content");
     browser.setAttribute("src", url);
@@ -422,4 +459,18 @@ export class EngineProcess {
     }
     element.remove();
   }
+}
+
+/**
+ * Creates a new ML engine instance with the provided options.
+ *
+ * @param {object} options - Configuration options for the ML engine.
+ * @param {?function(ProgressAndStatusCallbackParams):void} notificationsCallback A function to call to indicate notifications.
+ * @returns {Promise<MLEngine>} - A promise that resolves to the ML engine instance.
+ *
+ */
+export async function createEngine(options, notificationsCallback = null) {
+  const pipelineOptions = new PipelineOptions(options);
+  const engineParent = await EngineProcess.getMLEngineParent();
+  return engineParent.getEngine(pipelineOptions, notificationsCallback);
 }

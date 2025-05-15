@@ -207,8 +207,27 @@ DecodeStencil(JS::FrontendContext* fc, const ReadOnlyDecodeOptions& options,
 
 // Register an encoder on its script source, such that all functions can be
 // encoded as they are delazified.
+//
+// If the incremental encoding is already started for given stencil's script
+// source, alreadyStarted is set to true and returns true.
+// alreadyStarted is set to false otherwise.
 extern JS_PUBLIC_API bool StartIncrementalEncoding(JSContext* cx,
-                                                   RefPtr<Stencil>&& stencil);
+                                                   RefPtr<Stencil>&& stencil,
+                                                   bool& alreadyStarted);
+
+}  // namespace JS
+
+// ************************************************************************
+//   Copy
+// ************************************************************************
+
+namespace JS {
+
+// Duplicate the stencil object.
+//
+// This is a temporary workaround until JS::StartIncrementalEncoding gets
+// refactored not to take the ownership.
+extern JS_PUBLIC_API Stencil* DuplicateStencil(JSContext* cx, Stencil* stencil);
 
 }  // namespace JS
 

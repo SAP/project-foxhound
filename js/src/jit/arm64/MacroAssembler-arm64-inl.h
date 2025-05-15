@@ -22,6 +22,24 @@ void MacroAssembler::move64(Imm64 imm, Register64 dest) {
   Mov(ARMRegister(dest.reg, 64), imm.value);
 }
 
+void MacroAssembler::moveFloat16ToGPR(FloatRegister src, Register dest) {
+  // Direct "half-precision to 32-bit" move requires (FEAT_FP16), so we
+  // instead use a "single-precision to 32-bit" move.
+  Fmov(ARMRegister(dest, 32), ARMFPRegister(src, 32));
+
+  // Ensure the hi-word is zeroed.
+  Uxth(ARMRegister(dest, 32), ARMRegister(dest, 32));
+}
+
+void MacroAssembler::moveGPRToFloat16(Register src, FloatRegister dest) {
+  // Ensure the hi-word is zeroed.
+  Uxth(ARMRegister(src, 32), ARMRegister(src, 32));
+
+  // Direct "32-bit to half-precision" move requires (FEAT_FP16), so we
+  // instead use a "32-bit to single-precision" move.
+  Fmov(ARMFPRegister(dest, 32), ARMRegister(src, 32));
+}
+
 void MacroAssembler::moveFloat32ToGPR(FloatRegister src, Register dest) {
   Fmov(ARMRegister(dest, 32), ARMFPRegister(src, 32));
 }
@@ -2236,6 +2254,15 @@ FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
   return doBaseIndex(ARMFPRegister(src, 32), addr, vixl::STR_s);
 }
 
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const Address& dest, Register) {
+  return Str(ARMFPRegister(src, 16), toMemOperand(dest));
+}
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const BaseIndex& dest, Register) {
+  return doBaseIndex(ARMFPRegister(src, 16), dest, vixl::STR_h);
+}
+
 void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {
   // Bug 1715494: Discriminating barriers such as StoreStore are hard to reason
   // about.  Execute the full barrier for everything that requires a barrier.
@@ -4102,29 +4129,6 @@ void MacroAssemblerCompat::branchStackPtrRhs(Condition cond,
   // condition.
   Cmp(GetStackPointer64(), scratch);
   B(label, Assembler::InvertCondition(cond));
-}
-
-// If source is a double, load into dest.
-// If source is int32, convert to double and store in dest.
-// Else, branch to failure.
-void MacroAssemblerCompat::ensureDouble(const ValueOperand& source,
-                                        FloatRegister dest, Label* failure) {
-  Label isDouble, done;
-
-  {
-    ScratchTagScope tag(asMasm(), source);
-    splitTagForTest(source, tag);
-    asMasm().branchTestDouble(Assembler::Equal, tag, &isDouble);
-    asMasm().branchTestInt32(Assembler::NotEqual, tag, failure);
-  }
-
-  convertInt32ToDouble(source.valueReg(), dest);
-  jump(&done);
-
-  bind(&isDouble);
-  unboxDouble(source, dest);
-
-  bind(&done);
 }
 
 void MacroAssemblerCompat::unboxValue(const ValueOperand& src, AnyRegister dest,

@@ -349,10 +349,10 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fc01107426c3adebb
  39 files changed, 573 insertions(+), 85 deletions(-)
 
 diff --git a/api/rtp_headers.cc b/api/rtp_headers.cc
-index 0573e54684..40d4690397 100644
+index 8813e0f4c2..b5e08cea2c 100644
 --- a/api/rtp_headers.cc
 +++ b/api/rtp_headers.cc
-@@ -26,7 +26,8 @@ RTPHeaderExtension::RTPHeaderExtension()
+@@ -31,7 +31,8 @@ RTPHeaderExtension::RTPHeaderExtension()
        videoRotation(kVideoRotation_0),
        hasVideoContentType(false),
        videoContentType(VideoContentType::UNSPECIFIED),
@@ -363,10 +363,10 @@ index 0573e54684..40d4690397 100644
  RTPHeaderExtension::RTPHeaderExtension(const RTPHeaderExtension& other) =
      default;
 diff --git a/api/rtp_headers.h b/api/rtp_headers.h
-index 5d4d4190d5..9868365f24 100644
+index 7ededb94fc..bf1660d934 100644
 --- a/api/rtp_headers.h
 +++ b/api/rtp_headers.h
-@@ -89,6 +89,19 @@ inline bool operator!=(const AbsoluteCaptureTime& lhs,
+@@ -112,6 +112,19 @@ inline bool operator!=(const AbsoluteCaptureTime& lhs,
    return !(lhs == rhs);
  }
  
@@ -386,18 +386,21 @@ index 5d4d4190d5..9868365f24 100644
  struct RTPHeaderExtension {
    RTPHeaderExtension();
    RTPHeaderExtension(const RTPHeaderExtension& other);
-@@ -144,9 +157,9 @@ struct RTPHeaderExtension {
-   std::string mid;
+@@ -170,12 +183,12 @@ struct RTPHeaderExtension {
  
    absl::optional<ColorSpace> color_space;
--};
+ 
++  CsrcAudioLevelList csrcAudioLevels;
++
+  private:
+   absl::optional<AudioLevel> audio_level_;
+ };
  
 -enum { kRtpCsrcSize = 15 };  // RFC 3550 page 13
-+  CsrcAudioLevelList csrcAudioLevels;
-+};
- 
+-
  struct RTC_EXPORT RTPHeader {
    RTPHeader();
+   RTPHeader(const RTPHeader& other);
 diff --git a/api/rtp_parameters.cc b/api/rtp_parameters.cc
 index 3ff4b58a2e..ad0f3c9396 100644
 --- a/api/rtp_parameters.cc
@@ -413,7 +416,7 @@ index 3ff4b58a2e..ad0f3c9396 100644
  
  bool RtpExtension::IsSupportedForVideo(absl::string_view uri) {
 diff --git a/call/BUILD.gn b/call/BUILD.gn
-index 654db9cb1e..57c6f3a516 100644
+index 8d5c3ef05f..a934b36da4 100644
 --- a/call/BUILD.gn
 +++ b/call/BUILD.gn
 @@ -20,6 +20,7 @@ rtc_library("call_interfaces") {
@@ -435,10 +438,10 @@ index 654db9cb1e..57c6f3a516 100644
    deps = [
      ":audio_sender_interface",
 diff --git a/call/video_receive_stream.h b/call/video_receive_stream.h
-index 12f6bf60c8..542067d30c 100644
+index 20e9245584..b54df14eac 100644
 --- a/call/video_receive_stream.h
 +++ b/call/video_receive_stream.h
-@@ -206,6 +206,8 @@ class VideoReceiveStreamInterface : public MediaReceiveStreamInterface {
+@@ -216,6 +216,8 @@ class VideoReceiveStreamInterface : public MediaReceiveStreamInterface {
        // disabled.
        KeyFrameReqMethod keyframe_method = KeyFrameReqMethod::kPliRtcp;
  
@@ -448,7 +451,7 @@ index 12f6bf60c8..542067d30c 100644
        LntfConfig lntf;
  
 diff --git a/modules/audio_coding/acm2/acm_receiver.h b/modules/audio_coding/acm2/acm_receiver.h
-index 820150aede..39653be00b 100644
+index 6393a866f6..b942f635e7 100644
 --- a/modules/audio_coding/acm2/acm_receiver.h
 +++ b/modules/audio_coding/acm2/acm_receiver.h
 @@ -18,6 +18,7 @@
@@ -459,7 +462,7 @@ index 820150aede..39653be00b 100644
  
  #include "absl/types/optional.h"
  #include "api/array_view.h"
-@@ -230,12 +231,15 @@ class AcmReceiver {
+@@ -232,12 +233,15 @@ class AcmReceiver {
  
    mutable Mutex mutex_;
    absl::optional<DecoderInfo> last_decoder_ RTC_GUARDED_BY(mutex_);
@@ -787,7 +790,7 @@ index de68885519..099b0be1a3 100644
    method_ = new_method;
  }
 diff --git a/modules/rtp_rtcp/source/rtp_header_extensions.cc b/modules/rtp_rtcp/source/rtp_header_extensions.cc
-index 9f0374b299..c51692b818 100644
+index 43770a728a..bcdc9a036b 100644
 --- a/modules/rtp_rtcp/source/rtp_header_extensions.cc
 +++ b/modules/rtp_rtcp/source/rtp_header_extensions.cc
 @@ -423,6 +423,45 @@ bool PlayoutDelayLimits::Write(rtc::ArrayView<uint8_t> data,
@@ -837,10 +840,10 @@ index 9f0374b299..c51692b818 100644
  //
  // E.g. default video or screenshare.
 diff --git a/modules/rtp_rtcp/source/rtp_header_extensions.h b/modules/rtp_rtcp/source/rtp_header_extensions.h
-index 7f039ec8ac..9187cb97bc 100644
+index 02a1543e00..05e771a56d 100644
 --- a/modules/rtp_rtcp/source/rtp_header_extensions.h
 +++ b/modules/rtp_rtcp/source/rtp_header_extensions.h
-@@ -305,6 +305,21 @@ class ColorSpaceExtension {
+@@ -308,6 +308,21 @@ class ColorSpaceExtension {
    static size_t WriteLuminance(uint8_t* data, float f, int denominator);
  };
  
@@ -878,7 +881,7 @@ index 2a95a3a816..b152cdbd9e 100644
    }
  }
 diff --git a/modules/rtp_rtcp/source/rtp_packet_unittest.cc b/modules/rtp_rtcp/source/rtp_packet_unittest.cc
-index 922a4b15f4..669947838b 100644
+index ccdb5f8a75..da4abe0131 100644
 --- a/modules/rtp_rtcp/source/rtp_packet_unittest.cc
 +++ b/modules/rtp_rtcp/source/rtp_packet_unittest.cc
 @@ -123,6 +123,18 @@ constexpr uint8_t kPacketWithMid[] = {
@@ -900,7 +903,7 @@ index 922a4b15f4..669947838b 100644
  constexpr uint32_t kCsrcs[] = {0x34567890, 0x32435465};
  constexpr uint8_t kPayload[] = {'p', 'a', 'y', 'l', 'o', 'a', 'd'};
  constexpr uint8_t kPacketPaddingSize = 8;
-@@ -399,6 +411,24 @@ TEST(RtpPacketTest, FailsToSetUnregisteredExtension) {
+@@ -402,6 +414,24 @@ TEST(RtpPacketTest, FailsToSetUnregisteredExtension) {
    EXPECT_EQ(packet.GetExtension<TransportSequenceNumber>(), absl::nullopt);
  }
  
@@ -946,7 +949,7 @@ index 0b87d6d065..d69ae9420b 100644
  }  // namespace webrtc
  
 diff --git a/modules/rtp_rtcp/source/rtp_sender.cc b/modules/rtp_rtcp/source/rtp_sender.cc
-index 07356b8478..e853507174 100644
+index 1c2d746ac2..bf1ebfb412 100644
 --- a/modules/rtp_rtcp/source/rtp_sender.cc
 +++ b/modules/rtp_rtcp/source/rtp_sender.cc
 @@ -128,6 +128,10 @@ bool IsNonVolatile(RTPExtensionType type) {
@@ -1454,18 +1457,18 @@ index 5ec1fd4a83..e46e050609 100644
  
    int64_t _lastProcessFrameTimeNanos RTC_GUARDED_BY(capture_checker_);
 diff --git a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-index 24d862c4c2..13c8b87c38 100644
+index 21d46023f6..9c84b7768d 100644
 --- a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
 +++ b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-@@ -270,6 +270,7 @@ LibvpxVp9Encoder::LibvpxVp9Encoder(std::unique_ptr<LibvpxInterface> interface,
+@@ -255,6 +255,7 @@ LibvpxVp9Encoder::LibvpxVp9Encoder(const Environment& env,
        first_frame_in_picture_(true),
        ss_info_needed_(false),
        force_all_active_layers_(false),
 +      num_cores_(0),
        is_flexible_mode_(false),
-       variable_framerate_experiment_(ParseVariableFramerateConfig(trials)),
-       variable_framerate_controller_(
-@@ -594,6 +595,7 @@ int LibvpxVp9Encoder::InitEncode(const VideoCodec* inst,
+       variable_framerate_controller_(variable_framerate_screenshare::kMinFps),
+       quality_scaler_experiment_(ParseQualityScalerConfig(env.field_trials())),
+@@ -528,6 +529,7 @@ int LibvpxVp9Encoder::InitEncode(const VideoCodec* inst,
  
    force_key_frame_ = true;
    pics_since_key_ = 0;
@@ -1473,7 +1476,7 @@ index 24d862c4c2..13c8b87c38 100644
  
    scalability_mode_ = inst->GetScalabilityMode();
    if (scalability_mode_.has_value()) {
-@@ -1181,6 +1183,14 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
+@@ -1098,6 +1100,14 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
      config_changed_ = false;
    }
  
@@ -1488,7 +1491,7 @@ index 24d862c4c2..13c8b87c38 100644
    RTC_DCHECK_EQ(input_image.width(), raw_->d_w);
    RTC_DCHECK_EQ(input_image.height(), raw_->d_h);
  
-@@ -1303,6 +1313,48 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
+@@ -1220,6 +1230,48 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
    return WEBRTC_VIDEO_CODEC_OK;
  }
  
@@ -1538,10 +1541,10 @@ index 24d862c4c2..13c8b87c38 100644
                                               absl::optional<int>* spatial_idx,
                                               absl::optional<int>* temporal_idx,
 diff --git a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.h b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.h
-index 349ab0e2d6..8a9aeb8213 100644
+index 0134e3ea58..86d1bdda16 100644
 --- a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.h
 +++ b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.h
-@@ -76,6 +76,9 @@ class LibvpxVp9Encoder : public VP9Encoder {
+@@ -68,6 +68,9 @@ class LibvpxVp9Encoder : public VideoEncoder {
    // Call encoder initialize function and set control settings.
    int InitAndSetControlSettings(const VideoCodec* inst);
  
@@ -1551,7 +1554,7 @@ index 349ab0e2d6..8a9aeb8213 100644
    bool PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
                               absl::optional<int>* spatial_idx,
                               absl::optional<int>* temporal_idx,
-@@ -157,6 +160,7 @@ class LibvpxVp9Encoder : public VP9Encoder {
+@@ -150,6 +153,7 @@ class LibvpxVp9Encoder : public VideoEncoder {
    VideoBitrateAllocation current_bitrate_allocation_;
    bool ss_info_needed_;
    bool force_all_active_layers_;
@@ -1560,10 +1563,10 @@ index 349ab0e2d6..8a9aeb8213 100644
    std::unique_ptr<ScalableVideoController> svc_controller_;
    absl::optional<ScalabilityMode> scalability_mode_;
 diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
-index 2ba00e0034..abc8916e29 100644
+index b6e1697682..db328d51c6 100644
 --- a/rtc_base/BUILD.gn
 +++ b/rtc_base/BUILD.gn
-@@ -463,6 +463,12 @@ rtc_library("logging") {
+@@ -470,6 +470,12 @@ rtc_library("logging") {
      "//third_party/abseil-cpp/absl/types:optional",
    ]
  
@@ -1650,7 +1653,7 @@ index b171cfe11e..df7f173f58 100644
  
  //////////////////////////////////////////////////////////////////////
 diff --git a/test/fuzzers/rtp_packet_fuzzer.cc b/test/fuzzers/rtp_packet_fuzzer.cc
-index 02fc64a2dc..371900eb2d 100644
+index be4e9a3e85..23a1828915 100644
 --- a/test/fuzzers/rtp_packet_fuzzer.cc
 +++ b/test/fuzzers/rtp_packet_fuzzer.cc
 @@ -164,6 +164,11 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
@@ -1679,10 +1682,10 @@ index 0a9226ef6f..620c1c02f3 100644
    vcm_ = nullptr;
  }
 diff --git a/webrtc.gni b/webrtc.gni
-index 447aae4096..277c12c054 100644
+index 2077c0e9a8..c9f75e2cde 100644
 --- a/webrtc.gni
 +++ b/webrtc.gni
-@@ -126,7 +126,7 @@ declare_args() {
+@@ -130,7 +130,7 @@ declare_args() {
  
    # Selects whether debug dumps for the audio processing module
    # should be generated.

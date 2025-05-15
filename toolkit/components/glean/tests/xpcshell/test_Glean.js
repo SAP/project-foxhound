@@ -630,8 +630,7 @@ add_task(async function test_fog_complex_object_works() {
 });
 
 add_task(
-  // FIXME(1897219): Should be re-enabled along with the newer implementation.
-  // ride-along pings are not handled correctly in artifact builds.
+  // FIXME(1898464): ride-along pings are not handled correctly in artifact builds.
   {
     skip_if: () =>
       Services.prefs.getBoolPref("telemetry.fog.artifact_build", false),
@@ -667,3 +666,86 @@ add_task(
     Assert.equal(null, Glean.testOnly.badCode.testGetValue("ride-along-ping"));
   }
 );
+
+add_task(async function test_fog_labeled_custom_distribution_works() {
+  Assert.equal(
+    undefined,
+    Glean.testOnly.mabelsCustomLabelLengths.monospace.testGetValue(),
+    "New labels with no values should return undefined"
+  );
+  Glean.testOnly.mabelsCustomLabelLengths.monospace.accumulateSamples([1, 42]);
+  Glean.testOnly.mabelsCustomLabelLengths.sanserif.accumulateSingleSample(13);
+  let monospace =
+    Glean.testOnly.mabelsCustomLabelLengths.monospace.testGetValue();
+  Assert.equal(2, monospace.count);
+  Assert.equal(43, monospace.sum);
+  Assert.deepEqual({ 0: 0, 1: 2, 268435456: 0 }, monospace.values);
+  let sanserif =
+    Glean.testOnly.mabelsCustomLabelLengths.sanserif.testGetValue();
+  Assert.equal(1, sanserif.count);
+  Assert.equal(13, sanserif.sum);
+  Assert.deepEqual({ 0: 0, 1: 1, 268435456: 0 }, sanserif.values);
+  // What about invalid/__other__?
+  Assert.equal(
+    undefined,
+    Glean.testOnly.mabelsCustomLabelLengths.__other__.testGetValue()
+  );
+  Glean.testOnly.mabelsCustomLabelLengths[
+    "1".repeat(72)
+  ].accumulateSingleSample(3);
+  Assert.throws(
+    () => Glean.testOnly.mabelsCustomLabelLengths.__other__.testGetValue(),
+    /DataError/
+  );
+});
+
+add_task(async function test_fog_labeled_memory_distribution_works() {
+  Glean.testOnly.whatDoYouRemember.twenty_years_ago.accumulate(7);
+  Glean.testOnly.whatDoYouRemember.twenty_years_ago.accumulate(17);
+
+  let data = Glean.testOnly.whatDoYouRemember.twenty_years_ago.testGetValue();
+  Assert.equal(2, data.count, "Count of entries is correct");
+  // `data.sum` is in bytes, but the metric is in MB.
+  Assert.equal(24 * 1024 * 1024, data.sum, "Sum's correct");
+  for (let [bucket, count] of Object.entries(data.values)) {
+    Assert.ok(
+      count == 0 || (count == 1 && (bucket == 17520006 || bucket == 7053950)),
+      "Only two buckets have a sample"
+    );
+  }
+});
+
+add_task(async function test_labeled_timing_distribution_works() {
+  let t1 = Glean.testOnly.whereHasTheTimeGone.west.start();
+  let t2 = Glean.testOnly.whereHasTheTimeGone.west.start();
+
+  await sleep(5);
+
+  let t3 = Glean.testOnly.whereHasTheTimeGone.west.start();
+  Glean.testOnly.whereHasTheTimeGone.west.cancel(t1);
+
+  await sleep(5);
+
+  Glean.testOnly.whereHasTheTimeGone.west.stopAndAccumulate(t2); // 10ms
+  Glean.testOnly.whereHasTheTimeGone.west.stopAndAccumulate(t3); // 5ms
+
+  let data = Glean.testOnly.whereHasTheTimeGone.west.testGetValue();
+
+  // Cancelled timers should not be counted.
+  Assert.equal(2, data.count, "Count of entries is correct");
+
+  const NANOS_IN_MILLIS = 1e6;
+  // bug 1701949 - Sleep gets close, but sometimes doesn't wait long enough.
+  const EPSILON = 40000;
+
+  // Variance in timing makes getting the sum impossible to know.
+  Assert.greater(data.sum, 15 * NANOS_IN_MILLIS - EPSILON);
+
+  // No guarantees from timers means no guarantees on buckets.
+  // But we can guarantee it's only two samples.
+  Assert.equal(
+    2,
+    Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
+    "Only two buckets with samples"
+  );
+});

@@ -251,13 +251,13 @@ extern bool GenerateBuiltinThunk(jit::MacroAssembler& masm,
                                  ExitReason exitReason, void* funcPtr,
                                  CallableOffsets* offsets);
 
-extern bool GenerateImportFunctions(const ModuleEnvironment& env,
-                                    const FuncImportVector& imports,
-                                    CompiledCode* code);
-
-extern bool GenerateStubs(const ModuleEnvironment& env,
+extern bool GenerateStubs(const CodeMetadata& codeMeta,
                           const FuncImportVector& imports,
                           const FuncExportVector& exports, CompiledCode* code);
+
+extern bool GenerateEntryStubs(const CodeMetadata& codeMeta,
+                               const FuncExportVector& exports,
+                               CompiledCode* code);
 
 extern bool GenerateEntryStubs(jit::MacroAssembler& masm,
                                size_t funcExportIndex, const FuncExport& fe,
@@ -363,6 +363,11 @@ extern void GenerateDirectCallFromJit(jit::MacroAssembler& masm,
                                       const JitCallStackArgVector& stackArgs,
                                       jit::Register scratch,
                                       uint32_t* callOffset);
+
+extern void GenerateJumpToCatchHandler(jit::MacroAssembler& masm,
+                                       jit::Register rfe,
+                                       jit::Register scratch1,
+                                       jit::Register scratch2);
 
 }  // namespace wasm
 }  // namespace js

@@ -61,73 +61,7 @@ const TERM = "c;,?:@&=+$-_.!~*'()# d\u00E8f";
 const TERM_ENCODED = "c%3B%2C%3F%3A%40%26%3D%2B%24-_.!~*'()%23+d%C3%A8f";
 
 add_setup(async function () {
-  await SearchTestUtils.useTestEngines(
-    "data",
-    null,
-    SearchUtils.newSearchConfigEnabled
-      ? CONFIG_V2
-      : [
-          {
-            webExtension: {
-              id: "engine-purposes@search.mozilla.org",
-              name: "Test Engine With Purposes",
-              search_url: "https://www.example.com/search",
-              params: [
-                {
-                  name: "form",
-                  condition: "purpose",
-                  purpose: "keyword",
-                  value: "MOZKEYWORD",
-                },
-                {
-                  name: "form",
-                  condition: "purpose",
-                  purpose: "contextmenu",
-                  value: "MOZCONTEXT",
-                },
-                {
-                  name: "form",
-                  condition: "purpose",
-                  purpose: "newtab",
-                  value: "MOZNEWTAB",
-                },
-                {
-                  name: "form",
-                  condition: "purpose",
-                  purpose: "searchbar",
-                  value: "MOZSEARCHBAR",
-                },
-                {
-                  name: "form",
-                  condition: "purpose",
-                  purpose: "homepage",
-                  value: "MOZHOMEPAGE",
-                },
-                {
-                  name: "pc",
-                  value: "FIREFOX",
-                },
-                {
-                  name: "channel",
-                  condition: "pref",
-                  pref: "testChannelEnabled",
-                },
-                {
-                  name: "q",
-                  value: "{searchTerms}",
-                },
-              ],
-            },
-            appliesTo: [
-              {
-                included: { everywhere: true },
-                default: "yes",
-              },
-            ],
-          },
-        ]
-  );
-  await AddonTestUtils.promiseStartupManager();
+  SearchTestUtils.setRemoteSettingsConfig(CONFIG_V2);
   await Services.search.init();
 
   defaultEngine = Services.search.getEngineByName("Test Engine With Purposes");
@@ -388,8 +322,58 @@ add_task(async function test_searchTermFromResult_paramsInSearchUrl() {
   );
 });
 
-function getTerm(url, searchEngine = defaultEngine) {
-  return searchEngine.searchTermFromResult(Services.io.newURI(url.toString()));
+add_task(async function test_searchTermFrom_skipParamMatching() {
+  info(
+    "Reuse engine that has a partner code and parameter corresponding to a search."
+  );
+  let testEngine = Services.search.getEngineByName(
+    "engine_params_in_search_url"
+  );
+
+  info("Enable skip param matching.");
+  const SKIP_PARAM_MATCHING = true;
+
+  let url = `https://example.com/?q=${TERM_ENCODED}&pc=firefox`;
+  Assert.equal(
+    getTerm(url, testEngine, SKIP_PARAM_MATCHING),
+    TERM,
+    "Should get term when all known params are present."
+  );
+
+  url = `https://example.com/?q=${TERM_ENCODED}`;
+  Assert.equal(
+    getTerm(url, testEngine, SKIP_PARAM_MATCHING),
+    TERM,
+    "Should get term even when missing a known non-search query param."
+  );
+
+  url = `https://example.com/?q=${TERM_ENCODED}&pc=firefox&foo=bar`;
+  Assert.equal(
+    getTerm(url, testEngine, SKIP_PARAM_MATCHING),
+    TERM,
+    "Should get term when an unknown param is added."
+  );
+
+  url = `https://example.com/?pc=firefox&foo=bar`;
+  Assert.equal(
+    getTerm(url, testEngine, SKIP_PARAM_MATCHING),
+    "",
+    "Should not get term when the search query is missing."
+  );
+
+  url = `https://example.net/?q=${TERM_ENCODED}&pc=firefox`;
+  Assert.equal(
+    getTerm(url, testEngine, SKIP_PARAM_MATCHING),
+    "",
+    "Should not get term when the input origin differs."
+  );
+});
+
+function getTerm(url, searchEngine = defaultEngine, skipParamMatching) {
+  return searchEngine.searchTermFromResult(
+    Services.io.newURI(url.toString()),
+    skipParamMatching
+  );
 }
 
 // Return a new instance of a submission URL so that it can modified

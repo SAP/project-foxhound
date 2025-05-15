@@ -310,8 +310,10 @@ bool WebGLContext::CreateAndInitGL(
   if (IsWebGL2()) {
     flags |= gl::CreateContextFlags::PREFER_ES3;
   } else {
-    // Request and prefer ES2 context for WebGL1.
-    flags |= gl::CreateContextFlags::PREFER_EXACT_VERSION;
+    if (StaticPrefs::webgl_1_request_es2()) {
+      // Request and prefer ES2 context for WebGL1.
+      flags |= gl::CreateContextFlags::PREFER_EXACT_VERSION;
+    }
 
     if (!StaticPrefs::webgl_1_allow_core_profiles()) {
       flags |= gl::CreateContextFlags::REQUIRE_COMPAT_PROFILE;
@@ -695,6 +697,13 @@ void WebGLContext::FinishInit() {
   mScissorRect = {0, 0, size.width, size.height};
   mScissorRect.Apply(*gl);
 
+  {
+    const auto& isEnabledMap = webgl::MakeIsEnabledMap(IsWebGL2());
+    for (const auto& pair : isEnabledMap) {
+      mIsEnabledMapKeys.insert(pair.first);
+    }
+  }
+
   //////
   // Check everything
 
@@ -997,7 +1006,7 @@ bool WebGLContext::PresentInto(gl::SwapChain& swapChain) {
   const auto size = mDefaultFB->mSize;
 
   const auto error = [&]() -> std::optional<std::string> {
-    const auto canvasCspace = ToColorSpace2ForOutput(mOptions.colorSpace);
+    const auto canvasCspace = ToColorSpace2ForOutput(mDrawingBufferColorSpace);
     auto presenter = swapChain.Acquire(size, canvasCspace);
     if (!presenter) {
       return "Swap chain surface creation failed.";
@@ -1097,7 +1106,7 @@ bool WebGLContext::PresentIntoXR(gl::SwapChain& swapChain,
                                  const gl::MozFramebuffer& fb) {
   OnEndOfFrame();
 
-  const auto colorSpace = ToColorSpace2ForOutput(mOptions.colorSpace);
+  const auto colorSpace = ToColorSpace2ForOutput(mDrawingBufferColorSpace);
   auto presenter = swapChain.Acquire(fb.mSize, colorSpace);
   if (!presenter) {
     GenerateWarning("Swap chain surface creation failed.");
@@ -1227,8 +1236,8 @@ bool WebGLContext::CopyToSwapChain(
   }
 
   {
-    // ColorSpace will need to be part of SwapChainOptions for DTWebgl.
-    const auto colorSpace = ToColorSpace2ForOutput(mOptions.colorSpace);
+    // TODO: ColorSpace will need to be part of SwapChainOptions for DTWebgl.
+    const auto colorSpace = ToColorSpace2ForOutput(mDrawingBufferColorSpace);
     auto presenter = srcFb->mSwapChain.Acquire(size, colorSpace);
     if (!presenter) {
       GenerateWarning("Swap chain surface creation failed.");
@@ -1368,6 +1377,7 @@ bool WebGLContext::PushRemoteTexture(
     case layers::SurfaceDescriptor::TSurfaceDescriptorMacIOSurface:
     case layers::SurfaceDescriptor::TSurfaceTextureDescriptor:
     case layers::SurfaceDescriptor::TSurfaceDescriptorAndroidHardwareBuffer:
+    case layers::SurfaceDescriptor::TEGLImageDescriptor:
     case layers::SurfaceDescriptor::TSurfaceDescriptorDMABuf:
       keepAlive = surf;
       break;

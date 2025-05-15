@@ -42,6 +42,7 @@ class Instance;
 class Instance;
 
 struct CallableOffsets;
+struct ImportOffsets;
 struct FuncOffsets;
 struct Offsets;
 class Frame;
@@ -68,7 +69,8 @@ class WasmFrameIter {
   Frame* fp_;
   Instance* instance_;
   uint8_t* unwoundCallerFP_;
-  mozilla::Maybe<jit::FrameType> unwoundJitFrameType_;
+  // Whether unwoundCallerFP_ is a JS JIT exit frame.
+  bool hasUnwoundJitFrame_ = false;
   Unwind unwind_;
   void** unwoundAddressOfReturnAddress_;
   uint8_t* resumePCinCurrentFrame_;
@@ -97,7 +99,6 @@ class WasmFrameIter {
   void** unwoundAddressOfReturnAddress() const;
   bool debugEnabled() const;
   DebugFrame* debugFrame() const;
-  jit::FrameType unwoundJitFrameType() const;
   bool hasUnwoundJitFrame() const;
   uint8_t* unwoundCallerFP() const { return unwoundCallerFP_; }
   Frame* frame() const { return fp_; }
@@ -123,7 +124,8 @@ class ExitReason {
     ImportInterp,   // slow-path call into C++ Invoke()
     BuiltinNative,  // fast-path call directly into native C++ code
     Trap,           // call to trap handler
-    DebugTrap       // call to debug trap handler
+    DebugStub,      // call to debug stub
+    RequestTierUp   // call to request tier-2 compilation
   };
 
  private:
@@ -240,7 +242,7 @@ void GenerateExitEpilogue(jit::MacroAssembler& masm, unsigned framePushed,
                           ExitReason reason, CallableOffsets* offsets);
 
 void GenerateJitExitPrologue(jit::MacroAssembler& masm, unsigned framePushed,
-                             CallableOffsets* offsets);
+                             uint32_t fallbackOffset, ImportOffsets* offsets);
 void GenerateJitExitEpilogue(jit::MacroAssembler& masm, unsigned framePushed,
                              CallableOffsets* offsets);
 

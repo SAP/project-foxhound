@@ -43,6 +43,8 @@ support-files = [
 
 ["browser_translations_full_page_panel_cancel.js"]
 
+["browser_translations_full_page_panel_change_app_locale.js"]
+
 ["browser_translations_full_page_panel_close_panel_never_translate_language_with_translations_active.js"]
 
 ["browser_translations_full_page_panel_close_panel_never_translate_language_with_translations_inactive.js"]
@@ -66,6 +68,8 @@ skip-if = ["true"]
 
 ["browser_translations_full_page_panel_init_failure.js"]
 
+["browser_translations_full_page_panel_modify_available_language_models.js"]
+
 ["browser_translations_full_page_panel_never_translate_language.js"]
 
 ["browser_translations_full_page_panel_never_translate_site_auto.js"]
@@ -83,6 +87,8 @@ skip-if = ["os == 'linux' && !debug"] # Bug 1863227
 
 ["browser_translations_full_page_panel_unsupported_lang.js"]
 
+["browser_translations_full_page_panel_weblanguage_differs_from_app.js"]
+
 ["browser_translations_full_page_reader_mode.js"]
 
 ["browser_translations_full_page_telemetry_auto_translate.js"]
@@ -94,6 +100,8 @@ skip-if = ["os == 'linux' && !debug"] # Bug 1863227
 ["browser_translations_full_page_telemetry_panel_auto_offer.js"]
 
 ["browser_translations_full_page_telemetry_panel_auto_offer_settings.js"]
+
+["browser_translations_full_page_telemetry_retranslate.js"]
 
 ["browser_translations_full_page_telemetry_switch_languages.js"]
 
@@ -107,6 +115,12 @@ skip-if = ["os == 'linux' && !debug"] # Bug 1863227
 
 ["browser_translations_select_context_menu_feature_disabled.js"]
 
+["browser_translations_select_context_menu_preferred_app_locales.js"]
+
+["browser_translations_select_context_menu_preferred_language_edge_cases.js"]
+
+["browser_translations_select_context_menu_preferred_web_languages.js"]
+
 ["browser_translations_select_context_menu_with_full_page_translations_active.js"]
 
 ["browser_translations_select_context_menu_with_hyperlink.js"]
@@ -117,6 +131,8 @@ skip-if = ["os == 'linux' && !debug"] # Bug 1863227
 
 ["browser_translations_select_panel_a11y_utils.js"]
 
+["browser_translations_select_panel_change_app_locale.js"]
+
 ["browser_translations_select_panel_close_on_new_tab.js"]
 
 ["browser_translations_select_panel_copy_button.js"]
@@ -126,6 +142,8 @@ skip-if = ["os == 'linux' && !debug"] # Bug 1863227
 ["browser_translations_select_panel_fallback_to_doc_language.js"]
 
 ["browser_translations_select_panel_init_failure.js"]
+
+["browser_translations_select_panel_modify_available_language_models.js"]
 
 ["browser_translations_select_panel_pdf.js"]
 
@@ -198,5 +216,9 @@ skip-if = ["os == 'linux' && !debug"] # Bug 1863227
 ["browser_translations_select_telemetry_translation_failure_ui_then_cancel.js"]
 
 ["browser_translations_select_telemetry_translation_failure_ui_then_succeed.js"]
+
+["browser_translations_select_telemetry_translation_failure_with_full_page_translations_active.js"]
+
+["browser_translations_select_telemetry_translation_success_with_full_page_translations_active.js"]
 
 ["browser_translations_select_telemetry_unsupported_language_ui.js"]

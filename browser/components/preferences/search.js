@@ -10,6 +10,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
 });
 
 const PREF_URLBAR_QUICKSUGGEST_BLOCKLIST =
@@ -20,14 +22,12 @@ Preferences.addAll([
   { id: "browser.search.suggest.enabled", type: "bool" },
   { id: "browser.urlbar.suggest.searches", type: "bool" },
   { id: "browser.search.suggest.enabled.private", type: "bool" },
-  { id: "browser.search.widget.inNavBar", type: "bool" },
   { id: "browser.urlbar.showSearchSuggestionsFirst", type: "bool" },
   { id: "browser.urlbar.showSearchTerms.enabled", type: "bool" },
   { id: "browser.search.separatePrivateDefault", type: "bool" },
   { id: "browser.search.separatePrivateDefault.ui.enabled", type: "bool" },
   { id: "browser.urlbar.suggest.trending", type: "bool" },
   { id: "browser.urlbar.trending.featureGate", type: "bool" },
-  { id: "browser.urlbar.trending.enabledLocales", type: "string" },
   { id: "browser.urlbar.recentsearches.featureGate", type: "bool" },
   { id: "browser.urlbar.suggest.recentsearches", type: "bool" },
 ]);
@@ -79,7 +79,6 @@ var gSearchPane = {
 
     let suggestsPref = Preferences.get("browser.search.suggest.enabled");
     let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
-    let searchBarPref = Preferences.get("browser.search.widget.inNavBar");
     let privateSuggestsPref = Preferences.get(
       "browser.search.suggest.enabled.private"
     );
@@ -88,7 +87,18 @@ var gSearchPane = {
       this._updateSuggestionCheckboxes.bind(this);
     suggestsPref.on("change", updateSuggestionCheckboxes);
     urlbarSuggestsPref.on("change", updateSuggestionCheckboxes);
-    searchBarPref.on("change", updateSuggestionCheckboxes);
+    let customizableUIListener = {
+      onWidgetAfterDOMChange: node => {
+        if (node.id == "search-container") {
+          updateSuggestionCheckboxes();
+        }
+      },
+    };
+    lazy.CustomizableUI.addListener(customizableUIListener);
+    window.addEventListener("unload", () => {
+      lazy.CustomizableUI.removeListener(customizableUIListener);
+    });
+
     let urlbarSuggests = document.getElementById("urlBarSuggestion");
     urlbarSuggests.addEventListener("command", () => {
       urlbarSuggestsPref.value = urlbarSuggests.checked;
@@ -100,7 +110,7 @@ var gSearchPane = {
     // all prefs.
     suggestionsInSearchFieldsCheckbox.addEventListener("command", () => {
       this._skipUpdateSuggestionCheckboxesFromPrefChanges = true;
-      if (!searchBarPref.value) {
+      if (!lazy.CustomizableUI.getPlacementOfWidget("search-container")) {
         urlbarSuggestsPref.value = suggestionsInSearchFieldsCheckbox.checked;
       }
       suggestsPref.value = suggestionsInSearchFieldsCheckbox.checked;
@@ -156,28 +166,30 @@ var gSearchPane = {
 
   _initShowSearchTermsCheckbox() {
     let checkbox = document.getElementById("searchShowSearchTermCheckbox");
-
-    // Add Nimbus event to show/hide checkbox.
-    let onNimbus = () => {
-      checkbox.hidden = !UrlbarPrefs.get("showSearchTermsFeatureGate");
-    };
-    NimbusFeatures.urlbar.onUpdate(onNimbus);
-
-    // Add observer of Search Bar preference as showSearchTerms
-    // can't be shown/hidden while Search Bar is enabled.
-    let searchBarPref = Preferences.get("browser.search.widget.inNavBar");
     let updateCheckboxHidden = () => {
       checkbox.hidden =
-        !UrlbarPrefs.get("showSearchTermsFeatureGate") || searchBarPref.value;
+        !UrlbarPrefs.get("showSearchTermsFeatureGate") ||
+        !!lazy.CustomizableUI.getPlacementOfWidget("search-container");
     };
-    searchBarPref.on("change", updateCheckboxHidden);
+
+    // Add observer of CustomizableUI as showSearchTerms checkbox
+    // should be hidden while Search Bar is enabled.
+    let customizableUIListener = {
+      onWidgetAfterDOMChange: node => {
+        if (node.id == "search-container") {
+          updateCheckboxHidden();
+        }
+      },
+    };
+    lazy.CustomizableUI.addListener(customizableUIListener);
+    NimbusFeatures.urlbar.onUpdate(updateCheckboxHidden);
 
     // Fire once to initialize.
-    onNimbus();
     updateCheckboxHidden();
 
     window.addEventListener("unload", () => {
-      NimbusFeatures.urlbar.offUpdate(onNimbus);
+      NimbusFeatures.urlbar.offUpdate(updateCheckboxHidden);
+      lazy.CustomizableUI.removeListener(customizableUIListener);
     });
   },
 
@@ -215,14 +227,14 @@ var gSearchPane = {
       "showSearchSuggestionsPrivateWindows"
     );
     let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
-    let searchBarPref = Preferences.get("browser.search.widget.inNavBar");
+    let searchBarVisible =
+      !!lazy.CustomizableUI.getPlacementOfWidget("search-container");
 
     suggestionsInSearchFieldsCheckbox.checked =
-      suggestsPref.value &&
-      (searchBarPref.value ? true : urlbarSuggestsPref.value);
+      suggestsPref.value && (searchBarVisible || urlbarSuggestsPref.value);
 
     urlbarSuggests.disabled = !suggestsPref.value || permanentPB;
-    urlbarSuggests.hidden = !searchBarPref.value;
+    urlbarSuggests.hidden = !searchBarVisible;
 
     privateWindowCheckbox.disabled = !suggestsPref.value;
     privateWindowCheckbox.checked = Preferences.get(
@@ -249,7 +261,7 @@ var gSearchPane = {
     }
     if (
       suggestionsInSearchFieldsCheckbox.checked &&
-      !searchBarPref.value &&
+      !searchBarVisible &&
       !urlbarSuggests.checked
     ) {
       urlbarSuggestsPref.value = true;
@@ -284,18 +296,8 @@ var gSearchPane = {
     let trendingSupported = (
       await Services.search.getDefault()
     ).supportsResponseType(lazy.SearchUtils.URL_TYPE.TRENDING_JSON);
-    let trendingEnabled = Preferences.get(
-      "browser.urlbar.trending.featureGate"
-    ).value;
-    let enabledLocales = Preferences.get(
-      "browser.urlbar.trending.enabledLocales"
-    ).value;
-    if (trendingEnabled && enabledLocales) {
-      trendingEnabled = enabledLocales.includes(
-        Services.locale.appLocaleAsBCP47
-      );
-    }
-    trendingBox.hidden = !trendingEnabled;
+    trendingBox.hidden = !Preferences.get("browser.urlbar.trending.featureGate")
+      .value;
     trendingCheckBox.disabled = suggestDisabled || !trendingSupported;
   },
 
@@ -1189,6 +1191,17 @@ class EngineView {
     } else if (column.id == "engineKeyword") {
       let shortcut = this._getLocalShortcut(index);
       if (shortcut) {
+        if (
+          lazy.UrlbarPrefs.getScotchBonnetPref(
+            "searchRestrictKeywords.featureGate"
+          )
+        ) {
+          const keyword =
+            "@" +
+            this._localShortcutL10nNames.get(shortcut.source).toLowerCase();
+          return `${keyword}, ${shortcut.restrict}`;
+        }
+
         return shortcut.restrict;
       }
       return this._engineStore.engines[index].originalEngine.aliases.join(", ");

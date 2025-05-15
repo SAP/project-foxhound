@@ -380,8 +380,7 @@ PersistenceType IDBFactory::GetPersistenceType(
       return PERSISTENCE_TYPE_PERSISTENT;
     }
 
-    if (aPrincipalInfo.get_ContentPrincipalInfo().attrs().mPrivateBrowsingId >
-        0) {
+    if (aPrincipalInfo.get_ContentPrincipalInfo().attrs().IsPrivateBrowsing()) {
       return PERSISTENCE_TYPE_PRIVATE;
     }
   }
@@ -404,8 +403,8 @@ void IDBFactory::UpdateActiveDatabaseCount(int32_t aDelta) {
                         (mActiveDatabaseCount + aDelta) < mActiveDatabaseCount);
   mActiveDatabaseCount += aDelta;
 
-  if (GetOwner()) {
-    GetOwner()->UpdateActiveIndexedDBDatabaseCount(aDelta);
+  if (nsGlobalWindowInner* win = GetOwnerWindow()) {
+    win->UpdateActiveIndexedDBDatabaseCount(aDelta);
   }
 }
 
@@ -690,7 +689,7 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
     }
     MOZ_ASSERT(aCallerType == CallerType::System);
     MOZ_DIAGNOSTIC_ASSERT(mPrivateBrowsingMode ==
-                          (aPrincipal->GetPrivateBrowsingId() > 0));
+                          aPrincipal->GetIsInPrivateBrowsing());
 
     if (NS_WARN_IF(
             NS_FAILED(PrincipalToPrincipalInfo(aPrincipal, &principalInfo)))) {

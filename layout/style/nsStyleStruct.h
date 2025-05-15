@@ -735,7 +735,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   // element.
   mozilla::StylePositionAnchor mPositionAnchor;
   mozilla::StylePositionVisibility mPositionVisibility;
-  mozilla::StylePositionTryOptions mPositionTryOptions;
+  mozilla::StylePositionTryFallbacks mPositionTryFallbacks;
   mozilla::StylePositionTryOrder mPositionTryOrder;
   mozilla::StyleInsetArea mInsetArea;
 
@@ -801,7 +801,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
     if (aCoord.IsLengthPercentage()) {
       return aCoord.AsLengthPercentage().HasPercent();
     }
-    return aCoord.IsFitContent() || aCoord.IsMozAvailable();
+    return aCoord.IsFitContent() || aCoord.BehavesLikeStretchOnInlineAxis();
   }
 
   template <typename SizeOrMaxSize>
@@ -1164,7 +1164,7 @@ struct StyleScrollTimeline {
   StyleScrollTimeline() = default;
   explicit StyleScrollTimeline(const StyleScrollTimeline& aCopy) = default;
 
-  nsAtom* GetName() const { return mName._0.AsAtom(); }
+  nsAtom* GetName() const { return mName.AsAtom(); }
   StyleScrollAxis GetAxis() const { return mAxis; }
 
   bool operator==(const StyleScrollTimeline& aOther) const {
@@ -1175,7 +1175,7 @@ struct StyleScrollTimeline {
   }
 
  private:
-  StyleScrollTimelineName mName;
+  StyleTimelineName mName;
   StyleScrollAxis mAxis = StyleScrollAxis::Block;
 };
 
@@ -1183,7 +1183,7 @@ struct StyleViewTimeline {
   StyleViewTimeline() = default;
   explicit StyleViewTimeline(const StyleViewTimeline& aCopy) = default;
 
-  nsAtom* GetName() const { return mName._0.AsAtom(); }
+  nsAtom* GetName() const { return mName.AsAtom(); }
   StyleScrollAxis GetAxis() const { return mAxis; }
   const StyleViewTimelineInset& GetInset() const { return mInset; }
 
@@ -1196,7 +1196,7 @@ struct StyleViewTimeline {
   }
 
  private:
-  StyleScrollTimelineName mName;
+  StyleTimelineName mName;
   StyleScrollAxis mAxis = StyleScrollAxis::Block;
   StyleViewTimelineInset mInset;
 };
@@ -1737,6 +1737,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   uint32_t mViewTimelineNameCount;
   uint32_t mViewTimelineAxisCount;
   uint32_t mViewTimelineInsetCount;
+
+  mozilla::StyleFieldSizing mFieldSizing;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {
@@ -1910,7 +1912,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVGReset {
   bool HasMask() const;
 
   bool HasNonScalingStroke() const {
-    return mVectorEffect == mozilla::StyleVectorEffect::NonScalingStroke;
+    return mVectorEffect.HasNonScalingStroke();
   }
 
   // geometry properties

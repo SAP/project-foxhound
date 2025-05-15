@@ -36,7 +36,7 @@
 namespace mozilla {
 
 // Global map: browserId -> BounceTrackingState
-static StaticAutoPtr<nsTHashMap<uint64_t, RefPtr<BounceTrackingState>>>
+static StaticAutoPtr<nsTHashMap<uint64_t, WeakPtr<BounceTrackingState>>>
     sBounceTrackingStates;
 
 static StaticRefPtr<BounceTrackingStorageObserver> sStorageObserver;
@@ -52,6 +52,10 @@ BounceTrackingState::BounceTrackingState() {
 BounceTrackingState::~BounceTrackingState() {
   if (sBounceTrackingStates) {
     sBounceTrackingStates->Remove(mBrowserId);
+  }
+  if (mClientBounceDetectionTimeout) {
+    mClientBounceDetectionTimeout->Cancel();
+    mClientBounceDetectionTimeout = nullptr;
   }
 }
 
@@ -69,14 +73,42 @@ already_AddRefed<BounceTrackingState> BounceTrackingState::GetOrCreate(
     return nullptr;
   }
 
-  // Create BounceTrackingState instance and populate the global
-  // BounceTrackingState map.
-  if (!sBounceTrackingStates) {
-    sBounceTrackingStates =
-        new nsTHashMap<nsUint64HashKey, RefPtr<BounceTrackingState>>();
-    ClearOnShutdown(&sBounceTrackingStates);
+  dom::BrowsingContext* browsingContext = aWebProgress->GetBrowsingContext();
+  if (!browsingContext) {
+    return nullptr;
+  }
+  uint64_t browserId = browsingContext->BrowserId();
+
+  // Check if there is already a BounceTrackingState for the given browser.
+  if (sBounceTrackingStates) {
+    WeakPtr<BounceTrackingState> existingBTS =
+        sBounceTrackingStates->Get(browserId);
+    if (existingBTS) {
+      // Return a strong reference.
+      return do_AddRef(existingBTS.get());
+    }
   }
 
+  // Create a new BounceTracking state, initialize it and insert it into the
+  // map, then return it to the caller.
+  RefPtr<BounceTrackingState> newBTS = new BounceTrackingState();
+
+  aRv = newBTS->Init(aWebProgress);
+  if (NS_FAILED(aRv)) {
+    NS_WARNING("Failed to initialize BounceTrackingState.");
+    return nullptr;
+  }
+
+  // Now that we know that we'll keep this BounceTrackingState lazily initialize
+  // the global map
+  if (!sBounceTrackingStates) {
+    sBounceTrackingStates =
+        new nsTHashMap<nsUint64HashKey, WeakPtr<BounceTrackingState>>();
+    ClearOnShutdown(&sBounceTrackingStates);
+  }
+  sBounceTrackingStates->InsertOrUpdate(browserId, newBTS);
+
+  // And the storage observer.
   if (!sStorageObserver) {
     sStorageObserver = new BounceTrackingStorageObserver();
     ClearOnShutdown(&sStorageObserver);
@@ -85,29 +117,7 @@ already_AddRefed<BounceTrackingState> BounceTrackingState::GetOrCreate(
     NS_ENSURE_SUCCESS(aRv, nullptr);
   }
 
-  dom::BrowsingContext* browsingContext = aWebProgress->GetBrowsingContext();
-  if (!browsingContext) {
-    return nullptr;
-  }
-  uint64_t browserId = browsingContext->BrowserId();
-  bool createdNew = false;
-
-  RefPtr<BounceTrackingState> bounceTrackingState =
-      do_AddRef(sBounceTrackingStates->LookupOrInsertWith(browserId, [&] {
-        createdNew = true;
-        return do_AddRef(new BounceTrackingState());
-      }));
-
-  if (createdNew) {
-    aRv = bounceTrackingState->Init(aWebProgress);
-    if (NS_FAILED(aRv)) {
-      NS_WARNING("Failed to initialize BounceTrackingState.");
-      sBounceTrackingStates->Remove(browserId);
-      return nullptr;
-    }
-  }
-
-  return bounceTrackingState.forget();
+  return newBTS.forget();
 };
 
 // static
@@ -188,8 +198,13 @@ void BounceTrackingState::Reset(const OriginAttributes* aOriginAttributes,
   if (!sBounceTrackingStates) {
     return;
   }
-  for (const RefPtr<BounceTrackingState>& bounceTrackingState :
+  for (const WeakPtr<BounceTrackingState>& btsWeak :
        sBounceTrackingStates->Values()) {
+    if (!btsWeak) {
+      continue;
+    }
+    RefPtr<BounceTrackingState> bounceTrackingState(btsWeak);
+
     if ((aOriginAttributes &&
          *aOriginAttributes != bounceTrackingState->OriginAttributesRef()) ||
         (aPattern &&
@@ -250,17 +265,13 @@ bool BounceTrackingState::ShouldTrackPrincipal(nsIPrincipal* aPrincipal) {
     return false;
   }
 
-  // Skip partitioned principals.
-  if (!aPrincipal->OriginAttributesRef().mPartitionKey.IsEmpty()) {
-    return false;
-  }
-
   return true;
 }
 
 // static
 nsresult BounceTrackingState::HasBounceTrackingStateForSite(
-    const nsACString& aSiteHost, bool& aResult) {
+    const nsACString& aSiteHost, const OriginAttributes& aOriginAttributes,
+    bool& aResult) {
   aResult = false;
   NS_ENSURE_TRUE(aSiteHost.Length(), NS_ERROR_FAILURE);
 
@@ -271,8 +282,20 @@ nsresult BounceTrackingState::HasBounceTrackingStateForSite(
   // Iterate over all browsing contexts which have a bounce tracking state. Use
   // the content principal base domain field to determine whether a BC has an
   // active site that matches aSiteHost.
-  for (const RefPtr<BounceTrackingState>& state :
+  for (const WeakPtr<BounceTrackingState>& btsWeak :
        sBounceTrackingStates->Values()) {
+    if (!btsWeak) {
+      continue;
+    }
+    RefPtr<BounceTrackingState> state(btsWeak);
+
+    // Skip BTS of unrelated OA. These are not relevant for the caller as their
+    // state is isolated.
+    if (state->mOriginAttributes != aOriginAttributes) {
+      continue;
+    }
+
+    // For each active BTS get the current window's document principal.
     RefPtr<dom::BrowsingContext> browsingContext =
         state->CurrentBrowsingContext();
 
@@ -281,26 +304,20 @@ nsresult BounceTrackingState::HasBounceTrackingStateForSite(
       continue;
     }
 
-    RefPtr<dom::Element> embedderElement =
-        browsingContext->GetEmbedderElement();
-    if (!embedderElement) {
+    RefPtr<dom::WindowGlobalParent> currentWindow =
+        browsingContext->Canonical()->GetCurrentWindowGlobal();
+    if (!currentWindow) {
       continue;
     }
 
-    nsCOMPtr<nsIBrowser> browser = embedderElement->AsBrowser();
-    if (!browser) {
+    nsCOMPtr<nsIPrincipal> principal = currentWindow->DocumentPrincipal();
+    if (NS_WARN_IF(!principal)) {
       continue;
     }
 
-    nsCOMPtr<nsIPrincipal> contentPrincipal;
-    nsresult rv =
-        browser->GetContentPrincipal(getter_AddRefs(contentPrincipal));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      continue;
-    }
-
+    // Lastly, check if the site matches.
     nsAutoCString baseDomain;
-    rv = contentPrincipal->GetBaseDomain(baseDomain);
+    nsresult rv = principal->GetBaseDomain(baseDomain);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
     }

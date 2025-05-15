@@ -21,10 +21,13 @@ import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.ui.widgets.VerticalSwipeRefreshLayout
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.components.toolbar.navbar.EngineViewClippingBehavior
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.utils.Settings
 
 class BaseBrowserFragmentTest {
@@ -49,6 +52,8 @@ class BaseBrowserFragmentTest {
         every { fragment.getEngineView() } returns engineView
         every { fragment.getSwipeRefreshLayout() } returns swipeRefreshLayout
         every { swipeRefreshLayout.layoutParams } returns mockk<CoordinatorLayout.LayoutParams>(relaxed = true)
+        every { fragment.binding } returns mockk(relaxed = true)
+        every { fragment.viewLifecycleOwner } returns mockk(relaxed = true)
     }
 
     @Test
@@ -81,6 +86,7 @@ class BaseBrowserFragmentTest {
     fun `initializeEngineView should setDynamicToolbarMaxHeight to toolbar height if dynamic toolbar is enabled`() {
         every { settings.shouldUseFixedTopToolbar } returns false
         every { settings.isDynamicToolbarEnabled } returns true
+        every { settings.navigationToolbarEnabled } returns true
 
         fragment.initializeEngineView(
             topToolbarHeight = 13,
@@ -107,7 +113,7 @@ class BaseBrowserFragmentTest {
     fun `initializeEngineView should set EngineViewClippingBehavior when dynamic toolbar is enabled`() {
         every { settings.shouldUseFixedTopToolbar } returns false
         every { settings.isDynamicToolbarEnabled } returns true
-        every { settings.enableIncompleteToolbarRedesign } returns true
+        every { settings.navigationToolbarEnabled } returns true
         val params: CoordinatorLayout.LayoutParams = mockk(relaxed = true)
         every { params.behavior } returns mockk(relaxed = true)
         every { swipeRefreshLayout.layoutParams } returns params
@@ -232,6 +238,7 @@ class BaseBrowserFragmentTest {
     fun `WHEN initializeEngineView is called  THEN setDynamicToolbarMaxHeight sets max height to the engine view as a sum of two toolbars heights`() {
         every { settings.shouldUseFixedTopToolbar } returns false
         every { settings.isDynamicToolbarEnabled } returns true
+        every { settings.navigationToolbarEnabled } returns true
 
         fragment.initializeEngineView(
             topToolbarHeight = 13,
@@ -250,6 +257,54 @@ class BaseBrowserFragmentTest {
             bottomToolbarHeight = 13,
         )
         verify { engineView.setDynamicToolbarMaxHeight(26) }
+    }
+
+    @Test
+    fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are true GIVEN a call to setupMicrosurvey THEN messagingFeature is initialized`() {
+        every { testContext.settings().isExperimentationEnabled } returns true
+        every { testContext.settings().microsurveyFeatureEnabled } returns true
+
+        assertNull(fragment.messagingFeatureMicrosurvey.get())
+
+        fragment.initializeMicrosurveyFeature(testContext)
+
+        assertNotNull(fragment.messagingFeatureMicrosurvey.get())
+    }
+
+    @Test
+    fun `WHEN isMicrosurveyEnabled and isExperimentationEnabled are false GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
+        every { testContext.settings().isExperimentationEnabled } returns false
+        every { testContext.settings().microsurveyFeatureEnabled } returns false
+
+        assertNull(fragment.messagingFeatureMicrosurvey.get())
+
+        fragment.initializeMicrosurveyFeature(testContext)
+
+        assertNull(fragment.messagingFeatureMicrosurvey.get())
+    }
+
+    @Test
+    fun `WHEN isMicrosurveyEnabled is true and isExperimentationEnabled false GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
+        every { testContext.settings().isExperimentationEnabled } returns false
+        every { testContext.settings().microsurveyFeatureEnabled } returns true
+
+        assertNull(fragment.messagingFeatureMicrosurvey.get())
+
+        fragment.initializeMicrosurveyFeature(testContext)
+
+        assertNull(fragment.messagingFeatureMicrosurvey.get())
+    }
+
+    @Test
+    fun `WHEN isMicrosurveyEnabled is false and isExperimentationEnabled true GIVEN a call to setupMicrosurvey THEN messagingFeature is not initialized`() {
+        every { testContext.settings().isExperimentationEnabled } returns true
+        every { testContext.settings().microsurveyFeatureEnabled } returns false
+
+        assertNull(fragment.messagingFeatureMicrosurvey.get())
+
+        fragment.initializeMicrosurveyFeature(testContext)
+
+        assertNull(fragment.messagingFeatureMicrosurvey.get())
     }
 }
 

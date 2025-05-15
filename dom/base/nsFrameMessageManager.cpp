@@ -455,17 +455,15 @@ bool nsFrameMessageManager::GetParamsForMessage(JSContext* aCx,
   nsCOMPtr<nsIConsoleService> console(
       do_GetService(NS_CONSOLESERVICE_CONTRACTID));
   if (console) {
-    nsAutoString filename;
-    uint32_t lineno = 0, column = 1;
-    nsJSUtils::GetCallingLocation(aCx, filename, &lineno, &column);
+    auto location = JSCallingLocation::Get(aCx);
     nsCOMPtr<nsIScriptError> error(
         do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
     error->Init(
         u"Sending message that cannot be cloned. Are "
         "you trying to send an XPCOM object?"_ns,
-        filename, u""_ns, lineno, column, nsIScriptError::warningFlag,
-        "chrome javascript"_ns, false /* from private window */,
-        true /* from chrome context */);
+        location.FileName(), location.mLine, location.mColumn,
+        nsIScriptError::warningFlag, "chrome javascript"_ns,
+        false /* from private window */, true /* from chrome context */);
     console->LogMessage(error);
   }
 
@@ -807,17 +805,16 @@ void nsFrameMessageManager::ReceiveMessage(
         data->Write(cx, rval, aError);
         if (NS_WARN_IF(aError.Failed())) {
           aRetVal->RemoveLastElement();
-          nsString msg =
-              aMessage + nsLiteralString(
-                             u": message reply cannot be cloned. Are "
-                             "you trying to send an XPCOM object?");
+          nsString msg = aMessage +
+                         u": message reply cannot be cloned. Are "
+                         "you trying to send an XPCOM object?"_ns;
 
           nsCOMPtr<nsIConsoleService> console(
               do_GetService(NS_CONSOLESERVICE_CONTRACTID));
           if (console) {
             nsCOMPtr<nsIScriptError> error(
                 do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
-            error->Init(msg, u""_ns, u""_ns, 0, 0, nsIScriptError::warningFlag,
+            error->Init(msg, ""_ns, 0, 0, nsIScriptError::warningFlag,
                         "chrome javascript"_ns, false /* from private window */,
                         true /* from chrome context */);
             console->LogMessage(error);

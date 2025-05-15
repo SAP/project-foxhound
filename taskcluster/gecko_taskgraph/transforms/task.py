@@ -146,8 +146,8 @@ task_description_schema = Schema(
             # 'by-tier' behavior will be used.
             "rank": Any(
                 # Rank is equal the timestamp of the build_date for tier-1
-                # tasks, and zero for non-tier-1.  This sorts tier-{2,3}
-                # builds below tier-1 in the index.
+                # tasks, and one for non-tier-1.  This sorts tier-{2,3}
+                # builds below tier-1 in the index, but above eager-index.
                 "by-tier",
                 # Rank is given as an integer constant (e.g. zero to make
                 # sure a task is last in the index).
@@ -1268,6 +1268,23 @@ def build_push_msix_payload(config, task, task_def):
 
 
 @payload_builder(
+    "shipit-update-product-channel-version",
+    schema={
+        Required("product"): str,
+        Required("channel"): str,
+        Required("version"): str,
+    },
+)
+def build_ship_it_update_product_channel_version_payload(config, task, task_def):
+    worker = task["worker"]
+    task_def["payload"] = {
+        "product": worker["product"],
+        "version": worker["version"],
+        "channel": worker["channel"],
+    }
+
+
+@payload_builder(
     "shipit-shipped",
     schema={
         Required("release-name"): str,
@@ -1578,10 +1595,13 @@ def set_defaults(config, tasks):
         elif worker["implementation"] == "generic-worker":
             worker.setdefault("env", {})
             worker.setdefault("os-groups", [])
-            if worker["os-groups"] and worker["os"] != "windows":
+            if worker["os-groups"] and worker["os"] not in (
+                "windows",
+                "linux",
+            ):
                 raise Exception(
                     "os-groups feature of generic-worker is only supported on "
-                    "Windows, not on {}".format(worker["os"])
+                    "Windows and Linux, not on {}".format(worker["os"])
                 )
             worker.setdefault("chain-of-trust", False)
         elif worker["implementation"] in (
@@ -1855,10 +1875,11 @@ def add_index_routes(config, tasks):
         rank = index.get("rank", "by-tier")
 
         if rank == "by-tier":
-            # rank is zero for non-tier-1 tasks and based on pushid for others;
-            # this sorts tier-{2,3} builds below tier-1 in the index
+            # rank is one for non-tier-1 tasks and based on pushid for others;
+            # this sorts tier-{2,3} builds below tier-1 in the index, but above
+            # eager-index
             tier = task.get("treeherder", {}).get("tier", 3)
-            extra_index["rank"] = 0 if tier > 1 else int(config.params["build_date"])
+            extra_index["rank"] = 1 if tier > 1 else int(config.params["build_date"])
         elif rank == "build_date":
             extra_index["rank"] = int(config.params["build_date"])
         else:

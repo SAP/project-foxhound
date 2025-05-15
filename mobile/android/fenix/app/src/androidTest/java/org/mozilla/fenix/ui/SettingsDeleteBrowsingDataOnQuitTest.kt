@@ -19,6 +19,7 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestAssetHelper.getStorageTestAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.restartApp
@@ -48,7 +49,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         Manifest.permission.RECORD_AUDIO,
     )
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/416048
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416048
     @Test
     fun deleteBrowsingDataOnQuitSettingTest() {
         homeScreen {
@@ -77,7 +78,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/416049
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416049
     @Test
     fun deleteOpenTabsOnQuitTest() {
         val testPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
@@ -102,7 +103,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/416050
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416050
     @Test
     fun deleteBrowsingHistoryOnQuitTest() {
         val genericPage =
@@ -131,7 +132,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/416051
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416051
     @Test
     fun deleteCookiesAndSiteDataOnQuitTest() {
         val storageWritePage =
@@ -166,7 +167,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1243096
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1243096
     @SmokeTest
     @Test
     fun deleteDownloadsOnQuitTest() {
@@ -196,7 +197,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/416053
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416053
     @SmokeTest
     @Test
     fun deleteSitePermissionsOnQuitTest() {
@@ -212,7 +213,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         }
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.toUri()) {
-            waitForPageToLoad()
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
         }.clickStartMicrophoneButton {
             verifyMicrophonePermissionPrompt(testPageSubstring)
             selectRememberPermissionDecision()
@@ -226,13 +227,13 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         restartApp(composeTestRule.activityRule)
         navigationToolbar {
         }.enterURLAndEnterToBrowser(testPage.toUri()) {
-            waitForPageToLoad()
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
         }.clickStartMicrophoneButton {
             verifyMicrophonePermissionPrompt(testPageSubstring)
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/416052
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416052
     @Test
     fun deleteCachedFilesOnQuitTest() {
         val pocketTopArticles = getStringResource(R.string.pocket_pinned_top_articles)
@@ -247,7 +248,7 @@ class SettingsDeleteBrowsingDataOnQuitTest : TestSetup() {
         homeScreen {
             verifyExistingTopSitesTabs(pocketTopArticles)
         }.openTopSiteTabWithTitle(pocketTopArticles) {
-            waitForPageToLoad()
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
         }.goToHomescreen {
         }.openThreeDotMenu {
             clickQuit()

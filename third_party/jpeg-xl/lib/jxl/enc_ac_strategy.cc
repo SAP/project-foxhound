@@ -5,13 +5,12 @@
 
 #include "lib/jxl/enc_ac_strategy.h"
 
-#include <jxl/memory_manager.h>
+#include <stdint.h>
+#include <string.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <cstdio>
-#include <cstring>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_ac_strategy.cc"
@@ -22,7 +21,6 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/fast_math-inl.h"
-#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_transforms-inl.h"
 #include "lib/jxl/enc_aux_out.h"
@@ -215,9 +213,7 @@ const uint8_t* TypeMask(const uint8_t& raw_strategy) {
 Status DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
                       size_t ysize, const char* tag, AuxOut* aux_out,
                       const CompressParams& cparams) {
-  JxlMemoryManager* memory_manager = ac_strategy.memory_manager();
-  JXL_ASSIGN_OR_RETURN(Image3F color_acs,
-                       Image3F::Create(memory_manager, xsize, ysize));
+  JXL_ASSIGN_OR_RETURN(Image3F color_acs, Image3F::Create(xsize, ysize));
   for (size_t y = 0; y < ysize; y++) {
     float* JXL_RESTRICT rows[3] = {
         color_acs.PlaneRow(0, y),
@@ -455,11 +451,11 @@ float EstimateEntropy(const AcStrategy& acs, float entropy_mul, size_t x,
         }
       }
       static const double kChannelMul[3] = {
-          pow(10.2, 8.0),
-          pow(1.0, 8.0),
-          pow(1.03, 8.0),
+          10.2,
+          1.0,
+          1.03,
       };
-      lossc = Mul(Set(df8, kChannelMul[c]), lossc);
+      lossc = Mul(Set(df8, pow(kChannelMul[c], 8.0)), lossc);
       loss = Add(loss, lossc);
     }
     entropy += config.cost_delta * GetLane(SumOfLanes(df, entropy_v));
@@ -799,7 +795,7 @@ void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   // starting from the smallest transforms (16x8 and 8x16).
   // Additional complication: 16x8 and 8x16 are considered
   // simultaneously and fairly against each other.
-  // We are looking at 64x64 squares since the Y-to-X and Y-to-B
+  // We are looking at 64x64 squares since the YtoX and YtoB
   // maps happen to be at that resolution, and having
   // integral transforms cross these boundaries leads to
   // additional complications.
@@ -812,9 +808,9 @@ void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
   size_t tx = bx / kColorTileDimInBlocks;
   size_t ty = by / kColorTileDimInBlocks;
   const float cmap_factors[3] = {
-      cmap.base().YtoXRatio(cmap.ytox_map.ConstRow(ty)[tx]),
+      cmap.YtoXRatio(cmap.ytox_map.ConstRow(ty)[tx]),
       0.0f,
-      cmap.base().YtoBRatio(cmap.ytob_map.ConstRow(ty)[tx]),
+      cmap.YtoBRatio(cmap.ytob_map.ConstRow(ty)[tx]),
   };
   if (cparams.speed_tier > SpeedTier::kHare) return;
   // First compute the best 8x8 transform for each square. Later, we do not
@@ -850,7 +846,7 @@ void ProcessRectACS(const CompressParams& cparams, const ACSConfig& config,
     float entropy_mul;
   };
   // These numbers need to be figured out manually and looking at
-  // ringing next to sky etc. Optimization will find smaller numbers
+  // ringing next to sky etc. Optimization will find larger numbers
   // and produce more ringing than is ideal. Larger numbers will
   // help stop ringing.
   const float entropy_mul16X8 = 1.25;

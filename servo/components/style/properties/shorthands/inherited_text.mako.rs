@@ -109,6 +109,7 @@
     name="white-space"
     engines="gecko"
     sub_properties="text-wrap-mode white-space-collapse"
+    derive_value_info="False"
     spec="https://www.w3.org/TR/css-text-4/#white-space-property"
 >
     use crate::properties::longhands::{text_wrap_mode, white_space_collapse};
@@ -128,6 +129,7 @@
                 "pre-line" => (Wrap::Wrap, Collapse::PreserveBreaks),
                 // TODO: deprecate/remove -moz-pre-space; the white-space-collapse: preserve-spaces value
                 // should serve this purpose?
+                #[cfg(feature = "gecko")]
                 "-moz-pre-space" => (Wrap::Wrap, Collapse::PreserveSpaces),
             };
             Ok(expanded! {
@@ -180,6 +182,7 @@
                         Collapse::Collapse => return dest.write_str("normal"),
                         Collapse::Preserve => return dest.write_str("pre-wrap"),
                         Collapse::PreserveBreaks => return dest.write_str("pre-line"),
+                        #[cfg(feature = "gecko")]
                         Collapse::PreserveSpaces => return dest.write_str("-moz-pre-space"),
                         _ => (),
                     }
@@ -205,6 +208,18 @@
             }
 
             Ok(())
+        }
+    }
+
+    impl SpecifiedValueInfo for Longhands {
+        fn collect_completion_keywords(f: KeywordsCollectFn) {
+            // Collect keywords from our longhands.
+            text_wrap_mode::SpecifiedValue::collect_completion_keywords(f);
+            white_space_collapse::SpecifiedValue::collect_completion_keywords(f);
+
+            // Add the special values supported only by the shorthand
+            // (see parse_special_shorthands() above).
+            f(&["normal", "pre", "pre-wrap", "pre-line"])
         }
     }
 </%helpers:shorthand>

@@ -102,8 +102,6 @@ def old_configure_options(*options):
     "--libdir",
     "--prefix",
     "--with-branding",
-    "--with-distribution-id",
-    "--with-macbundlename-prefix",
     "--x-includes",
     "--x-libraries",
 )

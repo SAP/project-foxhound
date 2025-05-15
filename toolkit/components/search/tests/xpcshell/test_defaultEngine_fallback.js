@@ -45,8 +45,6 @@ add_setup(async function () {
     "engine-reordered@search.mozilla.org",
   ]);
 
-  await AddonTestUtils.promiseStartupManager();
-
   appDefault = await Services.search.getDefault();
   appPrivateDefault = await Services.search.getDefaultPrivate();
 });
@@ -306,28 +304,22 @@ add_task(
     // For this test, we need to change any general search engines to unknown,
     // so that we can test what happens in the unlikely event that there are no
     // general search engines.
-    if (SearchUtils.newSearchConfigEnabled) {
-      let searchConfig = await getSearchConfig();
-      for (let entry of searchConfig.data) {
-        if (
-          entry.recordType == "engine" &&
-          entry.base.classification == "general"
-        ) {
-          entry.base.classification = "unknown";
-        }
+    let searchConfig = await getSearchConfig();
+    for (let entry of searchConfig.data) {
+      if (
+        entry.recordType == "engine" &&
+        entry.base.classification == "general"
+      ) {
+        entry.base.classification = "unknown";
       }
-      const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
-      settings.get.returns(searchConfig.data);
-      Services.search.wrappedJSObject.reset();
-      await Services.search.init();
-
-      appPrivateDefault = await Services.search.getDefaultPrivate();
-
-      Services.search.defaultEngine = appPrivateDefault;
-    } else {
-      Services.search.defaultEngine = Services.search.defaultPrivateEngine =
-        appPrivateDefault;
     }
+    SearchTestUtils.setRemoteSettingsConfig(searchConfig.data);
+    Services.search.wrappedJSObject.reset();
+    await Services.search.init();
+
+    appPrivateDefault = await Services.search.getDefaultPrivate();
+
+    Services.search.defaultEngine = appPrivateDefault;
 
     // Remove all but the default engine.
     let visibleEngines = await Services.search.getVisibleEngines();
@@ -341,10 +333,6 @@ add_task(
       appPrivateDefault.name,
       "Should only have one visible engine"
     );
-
-    if (!SearchUtils.newSearchConfigEnabled) {
-      SearchUtils.GENERAL_SEARCH_ENGINE_IDS.clear();
-    }
 
     const observer = new SearchObserver(
       [

@@ -9,12 +9,13 @@
 #include "mozilla/CaretAssociationHint.h"
 #include "mozilla/IMEContentObserver.h"
 #include "mozilla/IMEStateManager.h"
+#include "mozilla/TextComposition.h"
 #include "mozilla/TextInputListener.h"
 
 #include "nsCOMPtr.h"
 #include "nsView.h"
 #include "nsCaret.h"
-#include "nsITextControlFrame.h"
+#include "nsFocusManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsTextControlFrame.h"
 #include "nsIControllers.h"
@@ -35,6 +36,7 @@
 #include "nsIController.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/InputEventOptions.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/NativeKeyBindingsType.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
@@ -59,7 +61,6 @@ namespace mozilla {
 using namespace dom;
 using ValueSetterOption = TextControlState::ValueSetterOption;
 using ValueSetterOptions = TextControlState::ValueSetterOptions;
-using SelectionDirection = nsITextControlFrame::SelectionDirection;
 
 /*****************************************************************************
  * TextControlElement
@@ -858,7 +859,7 @@ void TextInputListener::OnSelectionChange(Selection& aSelection,
   mSelectionWasCollapsed = collapsed;
 
   if (!weakFrame.IsAlive() || !mFrame ||
-      !nsContentUtils::IsFocusedContent(mFrame->GetContent())) {
+      nsFocusManager::GetFocusedElementStatic() != mFrame->GetContent()) {
     return;
   }
 
@@ -1262,10 +1263,9 @@ class MOZ_STACK_CLASS AutoTextControlHandlingState {
     }
     // The new value never includes line breaks caused by hard-wrap.
     // So, mCachedValue can always cache the new value.
-    nsITextControlFrame* textControlFrame =
+    nsTextControlFrame* textControlFrame =
         do_QueryFrame(mTextControlFrame.GetFrame());
-    return static_cast<nsTextControlFrame*>(textControlFrame)
-                   ->CacheValue(mSettingValue, fallible)
+    return textControlFrame->CacheValue(mSettingValue, fallible)
                ? NS_OK
                : NS_ERROR_OUT_OF_MEMORY;
   }
@@ -2399,8 +2399,7 @@ void TextControlState::UnbindFromFrame(nsTextControlFrame* aFrame) {
     uint32_t start = 0, end = 0;
     GetSelectionRange(&start, &end, IgnoreErrors());
 
-    nsITextControlFrame::SelectionDirection direction =
-        GetSelectionDirection(IgnoreErrors());
+    SelectionDirection direction = GetSelectionDirection(IgnoreErrors());
 
     SelectionProperties& props = GetSelectionProperties();
     props.SetMaxLength(value.Length());
@@ -2641,7 +2640,9 @@ bool TextControlState::SetValue(const nsAString& aValue,
   //       bug must not be reproducible actually.
   if (aOptions.contains(ValueSetterOption::BySetUserInputAPI) ||
       aOptions.contains(ValueSetterOption::ByContentAPI)) {
-    if (EditorHasComposition()) {
+    RefPtr<TextComposition> compositionInEditor =
+        mTextEditor ? mTextEditor->GetComposition() : nullptr;
+    if (compositionInEditor && compositionInEditor->IsComposing()) {
       // When this is called recursively, there shouldn't be composition.
       if (handlingSetValue.IsHandling(TextControlAction::CommitComposition)) {
         // Don't request to commit composition again.  But if it occurs,
@@ -2676,10 +2677,34 @@ bool TextControlState::SetValue(const nsAString& aValue,
       AutoTextControlHandlingState handlingCommitComposition(
           *this, TextControlAction::CommitComposition);
       if (nsContentUtils::IsSafeToRunScript()) {
-        // WARNING: During this call, compositionupdate, compositionend, input
-        // events will be fired.  Therefore, everything can occur.  E.g., the
-        // document may be unloaded.
-        RefPtr<TextEditor> textEditor = mTextEditor;
+        // While we're committing composition, we don't want TextEditor
+        // dispatches nested `beforeinput`/`input` events if this is called by a
+        // `beforeinput`/`input` event listener since the commit value will be
+        // completely overwritten by the new value soon and the web app do not
+        // need to handle the temporary input caused by committing composition
+        // which is caused by updating the value by the web app itself  Note
+        // that `input` event listener may be async function and setting value
+        // may occur after the editor ends dispatching `input` event. Even in
+        // this case, to avoid nest call of the async `input` event listener, we
+        // need to suppress `input` events caused by committing composition.  On
+        // the other hand, we need to dispatch `input` event when the value is
+        // set by a `compositionupdate` event listener because once we suppress
+        // `input` event for it, the composition change won't cause dispatching
+        // `input` event.  Therefore, we should not suppress `input` events
+        // before the editor starts handling the composition change, but we need
+        // to suppress `input` events even after the editor ends handling the
+        // change.
+        // FYI: Even if we suppress `input` event dispatching,
+        // `compositionupdate` and `compositionend` caused by the committing
+        // composition will be fired.  Therefore, everything could occur during
+        // a the following call.  I.e., the document may be unloaded by the web
+        // app itself.
+        Maybe<AutoInputEventSuppresser> preventInputEventsDuringCommit;
+        if (mTextEditor->IsDispatchingInputEvent() ||
+            compositionInEditor->EditorHasHandledLatestChange()) {
+          preventInputEventsDuringCommit.emplace(mTextEditor);
+        }
+        OwningNonNull<TextEditor> textEditor(*mTextEditor);
         nsresult rv = textEditor->CommitComposition();
         if (handlingCommitComposition.IsTextControlStateDestroyed()) {
           return true;
@@ -2786,8 +2811,7 @@ bool TextControlState::SetValueWithTextEditor(
         aHandlingSetValue.GetSettingValue(), nullptr,
         StaticPrefs::dom_input_event_allow_to_cancel_set_user_input()
             ? TextEditor::AllowBeforeInputEventCancelable::Yes
-            : TextEditor::AllowBeforeInputEventCancelable::No,
-        nullptr);
+            : TextEditor::AllowBeforeInputEventCancelable::No);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "EditorBase::ReplaceTextAsAction() failed");
     return rv != NS_ERROR_OUT_OF_MEMORY;

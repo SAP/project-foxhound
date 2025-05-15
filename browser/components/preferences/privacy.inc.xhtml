@@ -940,33 +940,30 @@
       <html:span id="telemetryDisabledDescription"
                  data-l10n-id="collection-health-report-telemetry-disabled"/>
       <html:a is="moz-support-link"
-              id="telemetryDataDeletionLearnMore"
+              support-page="telemetry-clientid"
               class="learnMore"
               data-l10n-id="collection-health-report-telemetry-disabled-link"/>
     </description>
   </hbox>
   <vbox data-subcategory="reports">
-    <html:span flex="1">
+    <hbox>
       <checkbox id="submitHealthReportBox"
                 data-l10n-id="collection-health-report"
                 class="tail-with-learn-more"/>
       <html:a id="FHRLearnMore"
              class="learnMore"
              data-l10n-id="collection-health-report-link"/>
-      <vbox class="indent">
-        <hbox align="center">
-          <checkbox id="addonRecommendationEnabled"
-                    class="tail-with-learn-more"
-                    data-l10n-id="addon-recommendations"/>
-          <html:a is="moz-support-link"
-                  id="addonRecommendationLearnMore"
-                  class="learnMore"
-                  data-l10n-id="addon-recommendations-link"
-                  support-page="personalized-addons"
-          />
-        </hbox>
-      </vbox>
-    </html:span>
+    </hbox>
+    <hbox class="indent">
+      <checkbox id="addonRecommendationEnabled"
+                class="tail-with-learn-more"
+                data-l10n-id="addon-recommendations"/>
+      <html:a is="moz-support-link"
+              id="addonRecommendationLearnMore"
+              class="learnMore"
+              data-l10n-id="addon-recommendations-link"
+              support-page="personalized-addons"/>
+    </hbox>
 #ifndef MOZ_TELEMETRY_REPORTING
   <description id="TelemetryDisabledDesc"
     class="indent tip-caption" control="telemetryGroup"
@@ -1041,6 +1038,7 @@
 </hbox>
 
 <groupbox id="websiteAdvertisingGroup" data-category="panePrivacy" hidden="true">
+  <label class="search-header" searchkeywords="ppa" hidden="true"><html:h2 data-l10n-id="website-advertising-header"/></label>
   <checkbox id="privateAttribution"
             preference="dom.private-attribution.submission.enabled"
             data-l10n-id="website-advertising-private-attribution"/>
@@ -1147,7 +1145,7 @@
 <groupbox id="httpsOnlyBox" data-category="panePrivacy" hidden="true">
   <label><html:h2 data-l10n-id="httpsonly-header"/></label>
   <vbox data-subcategory="httpsonly" flex="1">
-    <description id="httpsOnlyDescription" class="description-deemphasized" data-l10n-id="httpsonly-description"/>
+    <description id="httpsOnlyDescription" class="description-deemphasized" data-l10n-id="httpsonly-description2"/>
     <html:a is="moz-support-link"
             id="httpsOnlyLearnMore"
             class="learnMore"
@@ -1158,13 +1156,13 @@
   <hbox>
     <radiogroup flex="1" id="httpsOnlyRadioGroup">
       <radio id="httpsOnlyRadioEnabled"
-              data-l10n-id="httpsonly-radio-enabled"
+              data-l10n-id="httpsonly-radio-enabled2"
               value="enabled"/>
       <radio id="httpsOnlyRadioEnabledPBM"
-              data-l10n-id="httpsonly-radio-enabled-pbm"
+              data-l10n-id="httpsonly-radio-enabled-pbm2"
               value="privateOnly"/>
       <radio id="httpsOnlyRadioDisabled"
-              data-l10n-id="httpsonly-radio-disabled"
+              data-l10n-id="httpsonly-radio-disabled2"
               value="disabled"/>
     </radiogroup>
     <vbox>

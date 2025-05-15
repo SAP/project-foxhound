@@ -33,6 +33,7 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
         homeOnboardingDialogVersion = getHomeOnboardingVersion(),
         isPocketEnabled = settings.showPocketRecommendationsFeature,
         isJumpBackInCFREnabled = settings.shouldShowJumpBackInCFR,
+        isNavigationBarCFREnabled = settings.shouldShowNavigationBarCFR,
         isRecentTabsFeatureEnabled = settings.showRecentTabsFeature,
         isRecentlyVisitedFeatureEnabled = settings.historyMetadataUIFeature,
         isPWAsPromptEnabled = !settings.userKnowsAboutPwas,
@@ -43,6 +44,8 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
         etpPolicy = getETPPolicy(settings),
         composeTopSitesEnabled = settings.enableComposeTopSites,
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings),
+        isNavigationToolbarEnabled = settings.navigationToolbarEnabled,
+        isMicrosurveyEnabled = settings.microsurveyFeatureEnabled,
     )
 
     /**
@@ -63,6 +66,7 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
 
     override var isPocketEnabled: Boolean by updatedFeatureFlags::isPocketEnabled
     override var isJumpBackInCFREnabled: Boolean by updatedFeatureFlags::isJumpBackInCFREnabled
+    override var isNavigationBarCFREnabled: Boolean by updatedFeatureFlags::isNavigationBarCFREnabled
     override var isWallpaperOnboardingEnabled: Boolean by updatedFeatureFlags::isWallpaperOnboardingEnabled
     override var isRecentTabsFeatureEnabled: Boolean by updatedFeatureFlags::isRecentTabsFeatureEnabled
     override var isRecentlyVisitedFeatureEnabled: Boolean by updatedFeatureFlags::isRecentlyVisitedFeatureEnabled
@@ -72,6 +76,8 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
     override var etpPolicy: ETPPolicy by updatedFeatureFlags::etpPolicy
     override var composeTopSitesEnabled: Boolean by updatedFeatureFlags::composeTopSitesEnabled
     override var isLocationPermissionEnabled: SitePermissionsRules.Action by updatedFeatureFlags::isLocationPermissionEnabled
+    override var isNavigationToolbarEnabled: Boolean by updatedFeatureFlags::isNavigationToolbarEnabled
+    override var isMicrosurveyEnabled: Boolean by updatedFeatureFlags::isMicrosurveyEnabled
 
     override fun applyFlagUpdates() {
         Log.i(TAG, "applyFlagUpdates: Trying to apply the updated feature flags: $updatedFeatureFlags")
@@ -92,6 +98,7 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
         setHomeOnboardingVersion(featureFlags.homeOnboardingDialogVersion)
         settings.showPocketRecommendationsFeature = featureFlags.isPocketEnabled
         settings.shouldShowJumpBackInCFR = featureFlags.isJumpBackInCFREnabled
+        settings.shouldShowNavigationBarCFR = featureFlags.isNavigationBarCFREnabled
         settings.showRecentTabsFeature = featureFlags.isRecentTabsFeatureEnabled
         settings.historyMetadataUIFeature = featureFlags.isRecentlyVisitedFeatureEnabled
         settings.userKnowsAboutPwas = !featureFlags.isPWAsPromptEnabled
@@ -100,6 +107,8 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
         settings.deleteSitePermissions = featureFlags.isDeleteSitePermissionsEnabled
         settings.shouldShowOpenInAppBanner = featureFlags.isOpenInAppBannerEnabled
         settings.enableComposeTopSites = featureFlags.composeTopSitesEnabled
+        settings.navigationToolbarEnabled = featureFlags.isNavigationToolbarEnabled
+        settings.microsurveyFeatureEnabled = featureFlags.isMicrosurveyEnabled
         setETPPolicy(featureFlags.etpPolicy)
         setPermissions(PhoneFeature.LOCATION, featureFlags.isLocationPermissionEnabled)
     }
@@ -110,6 +119,7 @@ private data class FeatureFlags(
     var homeOnboardingDialogVersion: Int,
     var isPocketEnabled: Boolean,
     var isJumpBackInCFREnabled: Boolean,
+    var isNavigationBarCFREnabled: Boolean,
     var isRecentTabsFeatureEnabled: Boolean,
     var isRecentlyVisitedFeatureEnabled: Boolean,
     var isPWAsPromptEnabled: Boolean,
@@ -120,6 +130,8 @@ private data class FeatureFlags(
     var etpPolicy: ETPPolicy,
     var composeTopSitesEnabled: Boolean,
     var isLocationPermissionEnabled: SitePermissionsRules.Action,
+    var isNavigationToolbarEnabled: Boolean,
+    var isMicrosurveyEnabled: Boolean,
 )
 
 internal fun getETPPolicy(settings: Settings): ETPPolicy {

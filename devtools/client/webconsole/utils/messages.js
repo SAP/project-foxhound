@@ -17,6 +17,20 @@ loader.lazyRequireGetter(
   true
 );
 
+loader.lazyRequireGetter(
+  this,
+  "TRACER_FIELDS_INDEXES",
+  "resource://devtools/server/actors/tracer.js",
+  true
+);
+
+loader.lazyRequireGetter(
+  this,
+  "TRACER_LOG_METHODS",
+  "resource://devtools/shared/specs/tracer.js",
+  true
+);
+
 // URL Regex, common idioms:
 //
 // Lead-in (URL):
@@ -89,7 +103,11 @@ function prepareMessage(resource, idGenerator, persistLogs) {
     resource = transformResource(resource, persistLogs);
   }
 
-  resource.id = idGenerator.getNextId(resource);
+  // The Tracer resource transformer may process some resource
+  // which aren't translated into any item in the console (Tracer frames)
+  if (resource) {
+    resource.id = idGenerator.getNextId(resource);
+  }
   return resource;
 }
 
@@ -103,7 +121,14 @@ function prepareMessage(resource, idGenerator, persistLogs) {
 function transformResource(resource, persistLogs) {
   switch (resource.resourceType || resource.type) {
     case ResourceCommand.TYPES.CONSOLE_MESSAGE: {
-      return transformConsoleAPICallResource(resource, persistLogs);
+      // @backward-compat { version 129 } Once Fx129 is release, CONSOLE_MESSAGE resource
+      // are no longer encapsulated into a sub "message" attribute.
+      // Once this happens, 'targetFront' could then be derived from `consoleMessageResource` from transformConsoleAPICallResource.
+      return transformConsoleAPICallResource(
+        resource.message || resource,
+        persistLogs,
+        resource.targetFront
+      );
     }
 
     case ResourceCommand.TYPES.PLATFORM_MESSAGE: {
@@ -122,12 +147,12 @@ function transformResource(resource, persistLogs) {
       return transformNetworkEventResource(resource);
     }
 
-    case ResourceCommand.TYPES.JSTRACER_TRACE: {
-      return transformTraceResource(resource);
-    }
-
     case ResourceCommand.TYPES.JSTRACER_STATE: {
       return transformTracerStateResource(resource);
+    }
+
+    case ResourceCommand.TYPES.JSTRACER_TRACE: {
+      return transformTraceResource(resource);
     }
 
     case "will-navigate": {
@@ -142,14 +167,14 @@ function transformResource(resource, persistLogs) {
 }
 
 // eslint-disable-next-line complexity
-function transformConsoleAPICallResource(consoleMessageResource, persistLogs) {
-  const { message, targetFront } = consoleMessageResource;
-
-  let parameters = message.arguments;
-  let type = message.level;
+function transformConsoleAPICallResource(
+  consoleMessageResource,
+  persistLogs,
+  targetFront
+) {
+  let { arguments: parameters, level: type, timer } = consoleMessageResource;
   let level = getLevelFromType(type);
   let messageText = null;
-  const { timer } = message;
 
   // Special per-type conversion.
   switch (type) {
@@ -163,7 +188,7 @@ function transformConsoleAPICallResource(consoleMessageResource, persistLogs) {
     case "countReset":
       // Chrome RDP doesn't have a special type for count.
       type = MESSAGE_TYPE.LOG;
-      const { counter } = message;
+      const { counter } = consoleMessageResource;
 
       if (!counter) {
         // We don't show anything if we don't have counter data.
@@ -250,12 +275,12 @@ function transformConsoleAPICallResource(consoleMessageResource, persistLogs) {
       break;
   }
 
-  const frame = message.filename
+  const frame = consoleMessageResource.filename
     ? {
-        source: message.filename,
-        sourceId: message.sourceId,
-        line: message.lineNumber,
-        column: message.columnNumber,
+        source: consoleMessageResource.filename,
+        sourceId: consoleMessageResource.sourceId,
+        line: consoleMessageResource.lineNumber,
+        column: consoleMessageResource.columnNumber,
       }
     : null;
 
@@ -270,13 +295,15 @@ function transformConsoleAPICallResource(consoleMessageResource, persistLogs) {
     level,
     parameters,
     messageText,
-    stacktrace: message.stacktrace ? message.stacktrace : null,
+    stacktrace: consoleMessageResource.stacktrace
+      ? consoleMessageResource.stacktrace
+      : null,
     frame,
-    timeStamp: message.timeStamp,
-    userProvidedStyles: message.styles,
-    prefix: message.prefix,
-    private: message.private,
-    chromeContext: message.chromeContext,
+    timeStamp: consoleMessageResource.timeStamp,
+    userProvidedStyles: consoleMessageResource.styles,
+    prefix: consoleMessageResource.prefix,
+    private: consoleMessageResource.private,
+    chromeContext: consoleMessageResource.chromeContext,
   });
 }
 
@@ -362,84 +389,147 @@ function transformNetworkEventResource(networkEventResource) {
 }
 
 function transformTraceResource(traceResource) {
-  const { targetFront, prefix, timeStamp } = traceResource;
-  if (traceResource.eventName) {
-    const { eventName } = traceResource;
-
-    return new ConsoleMessage({
-      targetFront,
-      source: MESSAGE_SOURCE.JSTRACER,
-      depth: 0,
-      eventName,
-      timeStamp,
-      prefix,
-      allowRepeating: false,
-    });
+  const { targetFront } = traceResource;
+  const type = traceResource[TRACER_FIELDS_INDEXES.TYPE];
+  const collectedFrames = targetFront.getJsTracerCollectedFramesArray();
+  switch (type) {
+    case "frame":
+      collectedFrames.push(traceResource);
+      return null;
+    case "enter": {
+      const [, prefix, frameIndex, timeStamp, depth, args] = traceResource;
+      const frame = collectedFrames[frameIndex];
+      return new ConsoleMessage({
+        targetFront,
+        source: MESSAGE_SOURCE.JSTRACER,
+        frame: {
+          source: frame[TRACER_FIELDS_INDEXES.FRAME_URL],
+          sourceId: frame[TRACER_FIELDS_INDEXES.FRAME_SOURCEID],
+          line: frame[TRACER_FIELDS_INDEXES.FRAME_LINE],
+          column: frame[TRACER_FIELDS_INDEXES.FRAME_COLUMN],
+        },
+        depth,
+        implementation: frame[TRACER_FIELDS_INDEXES.FRAME_IMPLEMENTATION],
+        displayName: frame[TRACER_FIELDS_INDEXES.FRAME_NAME],
+        parameters: args
+          ? args.map(p =>
+              p ? getAdHocFrontOrPrimitiveGrip(p, targetFront) : p
+            )
+          : null,
+        messageText: null,
+        timeStamp,
+        prefix,
+        // Allow the identical frames to be coalesced into a unique message
+        // with a repeatition counter so that we keep the output short in case of loops.
+        allowRepeating: true,
+      });
+    }
+    case "exit": {
+      const [
+        ,
+        prefix,
+        frameIndex,
+        timeStamp,
+        depth,
+        relatedTraceId,
+        returnedValue,
+        why,
+      ] = traceResource;
+      const frame = collectedFrames[frameIndex];
+      return new ConsoleMessage({
+        targetFront,
+        source: MESSAGE_SOURCE.JSTRACER,
+        frame: {
+          source: frame[TRACER_FIELDS_INDEXES.FRAME_URL],
+          sourceId: frame[TRACER_FIELDS_INDEXES.FRAME_SOURCEID],
+          line: frame[TRACER_FIELDS_INDEXES.FRAME_LINE],
+          column: frame[TRACER_FIELDS_INDEXES.FRAME_COLUMN],
+        },
+        depth,
+        implementation: frame[TRACER_FIELDS_INDEXES.FRAME_IMPLEMENTATION],
+        displayName: frame[TRACER_FIELDS_INDEXES.FRAME_NAME],
+        parameters: null,
+        returnedValue:
+          returnedValue != undefined
+            ? getAdHocFrontOrPrimitiveGrip(returnedValue, targetFront)
+            : null,
+        relatedTraceId,
+        why,
+        messageText: null,
+        timeStamp,
+        prefix,
+        // Allow the identical frames to be coallesced into a unique message
+        // with a repeatition counter so that we keep the output short in case of loops.
+        allowRepeating: true,
+      });
+    }
+    case "dom-mutation": {
+      const [
+        ,
+        prefix,
+        frameIndex,
+        timeStamp,
+        depth,
+        mutationType,
+        mutationElement,
+      ] = traceResource;
+      const frame = collectedFrames[frameIndex];
+      return new ConsoleMessage({
+        targetFront,
+        source: MESSAGE_SOURCE.JSTRACER,
+        frame: {
+          source: frame[TRACER_FIELDS_INDEXES.FRAME_URL],
+          sourceId: frame[TRACER_FIELDS_INDEXES.FRAME_SOURCEID],
+          line: frame[TRACER_FIELDS_INDEXES.FRAME_LINE],
+          column: frame[TRACER_FIELDS_INDEXES.FRAME_COLUMN],
+        },
+        depth,
+        implementation: frame[TRACER_FIELDS_INDEXES.FRAME_IMPLEMENTATION],
+        displayName: frame[TRACER_FIELDS_INDEXES.FRAME_NAME],
+        parameters: null,
+        messageText: null,
+        timeStamp,
+        prefix,
+        mutationType,
+        mutationElement: mutationElement
+          ? getAdHocFrontOrPrimitiveGrip(mutationElement, targetFront)
+          : null,
+        // Allow the identical frames to be coallesced into a unique message
+        // with a repeatition counter so that we keep the output short in case of loops.
+        allowRepeating: true,
+      });
+    }
+    case "event": {
+      const [, prefix, , timeStamp, , eventName] = traceResource;
+      return new ConsoleMessage({
+        targetFront,
+        source: MESSAGE_SOURCE.JSTRACER,
+        depth: 0,
+        prefix,
+        timeStamp,
+        eventName,
+        allowRepeating: false,
+      });
+    }
   }
-  const {
-    depth,
-    implementation,
-    displayName,
-    filename,
-    lineNumber,
-    columnNumber,
-    args,
-    sourceId,
-
-    relatedTraceId,
-    why,
-
-    mutationType,
-    mutationElement,
-  } = traceResource;
-
-  const frame = {
-    source: filename,
-    sourceId,
-    line: lineNumber,
-    column: columnNumber,
-  };
-
-  return new ConsoleMessage({
-    targetFront,
-    source: MESSAGE_SOURCE.JSTRACER,
-    frame,
-    depth,
-    implementation,
-    displayName,
-    parameters: args
-      ? args.map(p => (p ? getAdHocFrontOrPrimitiveGrip(p, targetFront) : p))
-      : null,
-    returnedValue:
-      why && "returnedValue" in traceResource
-        ? getAdHocFrontOrPrimitiveGrip(traceResource.returnedValue, targetFront)
-        : undefined,
-    relatedTraceId,
-    why,
-    messageText: null,
-    timeStamp,
-    prefix,
-    mutationType,
-    mutationElement: mutationElement
-      ? getAdHocFrontOrPrimitiveGrip(mutationElement, targetFront)
-      : null,
-    // Allow the identical frames to be coallesced into a unique message
-    // with a repeatition counter so that we keep the output short in case of loops.
-    allowRepeating: true,
-  });
+  return null;
 }
 
 function transformTracerStateResource(stateResource) {
   const { targetFront, enabled, logMethod, timeStamp, reason } = stateResource;
   let message;
   if (enabled) {
-    if (logMethod == "stdout") {
+    if (logMethod == TRACER_LOG_METHODS.STDOUT) {
       message = l10n.getStr("webconsole.message.commands.startTracingToStdout");
     } else if (logMethod == "console") {
       message = l10n.getStr(
         "webconsole.message.commands.startTracingToWebConsole"
       );
-    } else if (logMethod == "profiler") {
+    } else if (logMethod == TRACER_LOG_METHODS.DEBUGGER_SIDEBAR) {
+      message = l10n.getStr(
+        "webconsole.message.commands.startTracingToDebuggerSidebar"
+      );
+    } else if (logMethod == TRACER_LOG_METHODS.PROFILER) {
       message = l10n.getStr(
         "webconsole.message.commands.startTracingToProfiler"
       );
@@ -771,11 +861,8 @@ function getWarningGroupLabel(firstMessage) {
     return replaceURL(firstMessage.messageText, "<URL>");
   }
 
-  if (isCookieSameSiteMessage(firstMessage)) {
-    if (Services.prefs.getBoolPref("network.cookie.sameSite.laxByDefault")) {
-      return l10n.getStr("webconsole.group.cookieSameSiteLaxByDefaultEnabled2");
-    }
-    return l10n.getStr("webconsole.group.cookieSameSiteLaxByDefaultDisabled2");
+  if (isCookieMessage(firstMessage)) {
+    return l10n.getStr("webconsole.group.cookie");
   }
 
   if (isCSPMessage(firstMessage)) {
@@ -846,7 +933,7 @@ function getWarningGroupType(message) {
 
   if (
     message.level !== MESSAGE_LEVEL.WARN &&
-    // CookieSameSite messages are not warnings but infos
+    // Cookie messages are both warnings and infos
     message.level !== MESSAGE_LEVEL.INFO
   ) {
     return null;
@@ -864,8 +951,8 @@ function getWarningGroupType(message) {
     return MESSAGE_TYPE.TRACKING_PROTECTION_GROUP;
   }
 
-  if (isCookieSameSiteMessage(message)) {
-    return MESSAGE_TYPE.COOKIE_SAMESITE_GROUP;
+  if (isCookieMessage(message)) {
+    return MESSAGE_TYPE.COOKIE_GROUP;
   }
 
   if (isCSPMessage(message)) {
@@ -901,7 +988,7 @@ function isWarningGroup(message) {
     message.type === MESSAGE_TYPE.CONTENT_BLOCKING_GROUP ||
     message.type === MESSAGE_TYPE.STORAGE_ISOLATION_GROUP ||
     message.type === MESSAGE_TYPE.TRACKING_PROTECTION_GROUP ||
-    message.type === MESSAGE_TYPE.COOKIE_SAMESITE_GROUP ||
+    message.type === MESSAGE_TYPE.COOKIE_GROUP ||
     message.type === MESSAGE_TYPE.CORS_GROUP ||
     message.type === MESSAGE_TYPE.CSP_GROUP
   );
@@ -947,9 +1034,14 @@ function isTrackingProtectionMessage(message) {
  * @param {ConsoleMessage} message
  * @returns {Boolean}
  */
-function isCookieSameSiteMessage(message) {
+function isCookieMessage(message) {
   const { category } = message;
-  return category == "cookieSameSite";
+  return [
+    "cookiesCHIPS",
+    "cookiesOversize",
+    "cookieSameSite",
+    "cookieInvalidAttribute",
+  ].includes(category);
 }
 
 /**

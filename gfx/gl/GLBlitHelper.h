@@ -23,6 +23,7 @@
 #include "mozilla/ipc/IPCTypes.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/Types.h"
@@ -62,7 +63,6 @@ class SurfaceDescriptorBuffer;
 #ifdef XP_WIN
 class D3D11ShareHandleImage;
 class D3D11TextureIMFSampleImage;
-class D3D11YCbCrImage;
 class SurfaceDescriptorD3D10;
 class SurfaceDescriptorDXGIYCbCr;
 #endif
@@ -124,6 +124,7 @@ Mat3 SubRectMat3(float x, float y, float w, float h);
 Mat3 SubRectMat3(const gfx::IntRect& subrect, const gfx::IntSize& size);
 Mat3 SubRectMat3(const gfx::IntRect& bigSubrect, const gfx::IntSize& smallSize,
                  const gfx::IntSize& divisors);
+Mat3 MatrixToMat3(const gfx::Matrix& aMatrix);
 
 class DrawBlitProg final {
   const GLBlitHelper& mParent;
@@ -295,8 +296,6 @@ class GLBlitHelper final {
   bool BlitImage(layers::D3D11ShareHandleImage* srcImage,
                  const gfx::IntSize& destSize, OriginPos destOrigin) const;
   bool BlitImage(layers::D3D11TextureIMFSampleImage* srcImage,
-                 const gfx::IntSize& destSize, OriginPos destOrigin) const;
-  bool BlitImage(layers::D3D11YCbCrImage* srcImage,
                  const gfx::IntSize& destSize, OriginPos destOrigin) const;
 
   bool BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,

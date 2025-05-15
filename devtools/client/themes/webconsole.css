@@ -360,7 +360,7 @@
 .message-location {
   max-width: 40%;
   flex-shrink: 0;
-  color: var(--frame-link-source);
+  color: var(--theme-internal-link-color);
   margin-left: 1ch;
   /* Makes the file name truncated (and ellipsis shown) on the left side */
   direction: rtl;
@@ -711,44 +711,15 @@ a.learn-more-link.webconsole-learn-more-link {
   min-width: 150px;
 }
 
-.webconsole-filterbar-primary .filter-checkbox {
-  flex-shrink: 0;
-  margin: 0 3px;
-  display: flex;
-  align-items: center;
-  user-select: none;
+/* We always render the "X hidden" element in the filter bar for accessibility.
+   But when the filter input is not focused, or empty, and there is no filtered messages,
+   we don't want to display it as it provides little value
+*/
+.webconsole-filterbar-primary[data-has-filtered-by-text="false"]
+  .devtools-searchbox input:is(:not(:focus),:empty) ~ #devtools-console-output-filter-summary {
+  display: none;
 }
 
-.webconsole-filterbar-filtered-messages {
-  /* Needed so the bar takes the whole horizontal space when it is wrapped */
-  flex-grow: 1;
-  justify-content: flex-end;
-  color: var(--theme-comment);
-  text-align: end;
-  align-items: center;
-  min-height: var(--primary-toolbar-height);
-  line-height: var(--primary-toolbar-height);
-}
-
-@media (max-width: 965px) {
-  /* This media query will make filtered message element to be displayed in new
-    line. This width is based on greek localized size since it is longer than
-    other localized strings. */
-  .webconsole-filterbar-filtered-messages {
-    grid-row: 2 / 3;
-    grid-column: 1 / -1;
-    justify-self: stretch;
-  }
-}
-
-.webconsole-filterbar-filtered-messages .filter-message-text {
-  font-style: italic;
-  user-select: none;
-}
-
-.webconsole-filterbar-filtered-messages .reset-filters-button {
-  margin-inline-start: 0.5em;
-}
 
 /* Special casing String reps, and warning/error string colors
  * so they are legible */
@@ -939,8 +910,18 @@ a.learn-more-link.webconsole-learn-more-link {
   border-inline-start-color: var(--console-indent-border-color);
 }
 
-.webconsole-app .object-inspector.tree .tree-node:hover:not(.focused) {
+.webconsole-app .object-inspector.tree .tree-node:hover:not(.focused),
+/* also disable the highlight on the arrow expand */
+.webconsole-app .object-inspector.tree .tree-node:hover:not(.focused) .theme-twisty {
   background-color: var(--object-inspector-hover-background);
+}
+
+/* In RTL the tree arrows should usually point to the left, but in
+   this context it should point to the right.
+   This overrides the detault rules set on .theme-twisty. */
+.webconsole-app .tree .theme-twisty:dir(rtl):not(.open),
+.webconsole-app .object-inspector .tree-node .theme-twisty:dir(rtl):not(.open) {
+  transform: rotate(-90deg);
 }
 
 /*
@@ -1006,38 +987,6 @@ a.learn-more-link.webconsole-learn-more-link {
   width: 100%;
   background-image: url("chrome://devtools/skin/images/arrow-big.svg");
   fill: var(--theme-icon-dimmed-color);
-}
-
-/* Apply a style similar to collapse-button for the object tree arrows */
-.webconsole-app .tree .arrow,
-.webconsole-app .object-inspector .tree-node .arrow {
-  width: 10px;
-  height: 10px;
-  background: url("chrome://devtools/skin/images/arrow.svg") no-repeat center;
-  background-size: 10px;
-  transform: rotate(-90deg);
-  /* Needed for alignment */
-  margin-top: -1px;
-  -moz-context-properties: fill;
-  fill: var(--theme-icon-dimmed-color);
-}
-
-/* In RTL the tree arrows should usually point to the left, but in
-   this context it should point to the right.
-   This overrides the rule from other stylesheets that does the opposite. */
-.webconsole-app .tree .arrow:dir(rtl),
-.webconsole-app .object-inspector .tree-node .arrow:dir(rtl) {
-  transform: rotate(-90deg);
-}
-
-.webconsole-app .tree .arrow.expanded,
-.webconsole-app .object-inspector .tree-node .arrow.expanded {
-  transform: rotate(0deg);
-}
-
-.webconsole-app .tree.focused .arrow,
-.webconsole-app .object-inspector .tree-node.focused .arrow {
-  fill: currentColor;
 }
 
 /** Utils **/

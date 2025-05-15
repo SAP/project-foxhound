@@ -6,6 +6,7 @@ support-files = [
 prefs = [
   "browser.sessionstore.closedTabsFromAllWindows=true",
   "browser.sessionstore.closedTabsFromClosedWindows=true",
+  "sidebar.revamp=false",
 ]
 
 ["browser_1003588_no_specials_in_panel.js"]
@@ -43,7 +44,7 @@ tags = "overflowable-toolbar"
 # MacOS builds in browser_876926_customize_mode_wrapping.js
 skip-if = ["os == 'mac' && debug"]
 
-["browser_694291_searchbar_preference.js"]
+["browser_1880230_hideInNonPrivateBrowsing.js"]
 
 ["browser_873501_handle_specials.js"]
 

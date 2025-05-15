@@ -119,6 +119,38 @@ const METRICS = [
     JSON.stringify({ ordered_labels: ["label_1", "label_2"] }),
   ],
   ["rate", "jog_ipc", "jog_rate", ["test-only"], `"ping"`, false],
+  [
+    "labeled_custom_distribution",
+    "jog_ipc",
+    "jog_labeled_custom_dist",
+    ["test-only"],
+    `"ping"`,
+    false,
+    JSON.stringify({
+      range_min: 1,
+      range_max: 2147483646,
+      bucket_count: 10,
+      histogram_type: "linear",
+    }),
+  ],
+  [
+    "labeled_memory_distribution",
+    "jog_ipc",
+    "jog_labeled_memory_dist",
+    ["test-only"],
+    `"ping"`,
+    false,
+    JSON.stringify({ memory_unit: "megabyte" }),
+  ],
+  [
+    "labeled_timing_distribution",
+    "jog_ipc",
+    "jog_labeled_timing_dist",
+    ["test-only"],
+    `"ping"`,
+    false,
+    JSON.stringify({ time_unit: "nanosecond" }),
+  ],
 ];
 
 add_task({ skip_if: () => runningInParent }, async function run_child_stuff() {
@@ -168,6 +200,25 @@ add_task({ skip_if: () => runningInParent }, async function run_child_stuff() {
 
   Glean.jogIpc.jogRate.addToNumerator(44);
   Glean.jogIpc.jogRate.addToDenominator(14);
+
+  Glean.jogIpc.jogLabeledCustomDist.label_1.accumulateSamples([3, 4]);
+
+  for (let memory of MEMORIES) {
+    Glean.jogIpc.jogLabeledMemoryDist.label_1.accumulate(memory);
+  }
+
+  let l1 = Glean.jogIpc.jogLabeledTimingDist.label1.start();
+  let l2 = Glean.jogIpc.jogLabeledTimingDist.label1.start();
+
+  await sleep(5);
+
+  let l3 = Glean.jogIpc.jogLabeledTimingDist.label1.start();
+  Glean.jogIpc.jogLabeledTimingDist.label1.cancel(l1);
+
+  await sleep(5);
+
+  Glean.jogIpc.jogLabeledTimingDist.label1.stopAndAccumulate(l2); // 10ms
+  Glean.jogIpc.jogLabeledTimingDist.label1.stopAndAccumulate(l3); // 5ms
 });
 
 add_task(
@@ -258,6 +309,43 @@ add_task(
     Assert.deepEqual(
       { numerator: 44, denominator: 14 },
       Glean.jogIpc.jogRate.testGetValue()
+    );
+
+    const labeledCustomData =
+      Glean.jogIpc.jogLabeledCustomDist.label_1.testGetValue();
+    Assert.equal(3 + 4, labeledCustomData.sum, "Sum's correct");
+    for (let [bucket, count] of Object.entries(labeledCustomData.values)) {
+      Assert.ok(
+        count == 0 || (count == 2 && bucket == 1), // both values in the low bucket
+        `Only two buckets have a sample ${bucket} ${count}`
+      );
+    }
+
+    const labeledMemoryData =
+      Glean.jogIpc.jogLabeledMemoryDist.label_1.testGetValue();
+    Assert.equal(
+      MEMORIES.reduce((a, b) => a + b, 0) * 1024 * 1024,
+      labeledMemoryData.sum
+    );
+    for (let [bucket, count] of Object.entries(labeledMemoryData.values)) {
+      // We could assert instead, but let's skip to save the logspam.
+      if (count == 0) {
+        continue;
+      }
+      Assert.ok(count == 1 && MEMORY_BUCKETS.includes(bucket));
+    }
+
+    const labeledTimes =
+      Glean.jogIpc.jogLabeledTimingDist.label1.testGetValue();
+    Assert.greater(labeledTimes.sum, 15 * NANOS_IN_MILLIS - EPSILON);
+    // We can't guarantee any specific time values (thank you clocks),
+    // but we can assert there are only two samples.
+    Assert.equal(
+      2,
+      Object.entries(labeledTimes.values).reduce(
+        (acc, [, count]) => acc + count,
+        0
+      )
     );
   }
 );

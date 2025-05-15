@@ -60,6 +60,15 @@
     min-height: 19px;
     margin-bottom: 13px;
     position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    @media (max-width: $break-point-medium - 1) {
+      flex-direction: column;
+      gap: var(--space-small);
+      align-items: flex-start;
+    }
   }
 
   &.active {
@@ -103,6 +112,33 @@
   &[data-section-id='topstories'] .card-outer:first-child {
     @media (min-width: $break-point-medium) and (max-width: $break-point-large - 1) {
       display: none;
+    }
+  }
+
+  .button-topic-selection {
+    // Note: the 'primary' theme uses a solid color and does not need this override
+    moz-button[type='default'] {
+      // Bug 1908010 - This overwrites the design system color because of a
+      // know transparency issue with color-mix syntax when a wallpaper is set
+      .lightWallpaper &,
+      .darkWallpaper & {
+        &::part(button) {
+          background-color: var(--newtab-weather-background-color);
+
+          &:hover {
+            background-color: var(--newtab-button-static-hover-background);
+          }
+
+          &:hover:active {
+            background-color: var(--newtab-button-static-active-background);
+          }
+
+          @media (prefers-contrast) {
+            background-color: var(--background-color-box);
+          }
+        }
+
+      }
     }
   }
 }

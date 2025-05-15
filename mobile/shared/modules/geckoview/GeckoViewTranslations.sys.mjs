@@ -51,7 +51,11 @@ export class GeckoViewTranslations extends GeckoViewModule {
             );
           try {
             this.getActor("Translations")
-              .translate(fromLanguage, toLanguage)
+              .translate(
+                fromLanguage,
+                toLanguage,
+                /* reportAsAutoTranslate */ false
+              )
               .then(() => {
                 aCallback.onSuccess();
               });
@@ -219,6 +223,18 @@ export const GeckoViewTranslationsSettings = {
               }
             );
           }
+          if (operationLevel === "cache") {
+            await lazy.TranslationsParent.deleteCachedLanguageFiles().then(
+              function () {
+                aCallback.onSuccess();
+              },
+              function (error) {
+                aCallback.onError(
+                  `COULD_NOT_DELETE - An issue occurred while deleting the cache: ${error}`
+                );
+              }
+            );
+          }
         } else if (operation === "download") {
           if (operationLevel === "all") {
             lazy.TranslationsParent.downloadAllFiles().then(
@@ -249,6 +265,12 @@ export const GeckoViewTranslationsSettings = {
                   `COULD_NOT_DOWNLOAD - An issue occurred while downloading a language files: ${error}`
                 );
               }
+            );
+          }
+          if (operationLevel === "cache") {
+            aCallback.onError(
+              `COULD_NOT_DOWNLOAD - Downloading the cache is not a valid option. Please check the parameters and try again.
+               Language: ${language}, Operation: ${operation}, Operation Level: ${operationLevel}`
             );
           }
         } else {
@@ -354,12 +376,18 @@ export const GeckoViewTranslationsSettings = {
             const languageList =
               lazy.TranslationsParent.getLanguageList(supportedLanguages);
             const results = [];
+            const pivotIsDownloaded =
+              await lazy.TranslationsParent.hasAllFilesForLanguage(
+                lazy.TranslationsParent.PIVOT_LANGUAGE
+              );
+
             // For each language, process the related remote server model records
             languageList.forEach(language => {
+              // No need to include the pivot in the download size, once it has been downloaded.
               const recordsResult =
                 lazy.TranslationsParent.getRecordsForTranslatingToAndFromAppLanguage(
                   language.langTag,
-                  false
+                  /* includePivotRecords */ !pivotIsDownloaded
                 ).then(
                   async function (records) {
                     return _processLanguageModelData(language, records);
@@ -377,7 +405,10 @@ export const GeckoViewTranslationsSettings = {
             Promise.all(results).then(models => {
               const response = [];
               models.forEach(item => {
-                response.push(item);
+                // Ensures unactionable models do not appear in the list
+                if (parseInt(item.size) !== 0) {
+                  response.push(item);
+                }
               });
               aCallback.onSuccess({ models: response });
             });

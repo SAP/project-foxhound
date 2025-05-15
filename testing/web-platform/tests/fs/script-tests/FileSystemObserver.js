@@ -1,57 +1,68 @@
 'use strict';
 
-// This script depends on the following scripts:
-//    /fs/resources/messaging-helpers.js
-//    /service-worker/resources/test-helpers.sub.js
-
 promise_test(async t => {
-  function dummyCallback(records, observer) {};
-  let success = true;
   try {
-    const observer = new FileSystemObserver(dummyCallback);
-  } catch (error) {
-    success = false;
+    const observer = new FileSystemObserver(() => {});
+  } catch {
+    assert_unreached();
   }
-  assert_true(success);
-}, 'Creating a FileSystemObserver from a window succeeds');
+}, 'Creating a FileSystemObserver from a supported global succeeds');
+
+directory_test(async (t, root_dir) => {
+  const observer = new FileSystemObserver(() => {});
+  try {
+    observer.unobserve(root_dir);
+  } catch {
+    assert_unreached();
+  }
+}, 'Calling unobserve() without a corresponding observe() shouldn\'t throw');
+
+directory_test(async (t, root_dir) => {
+  const observer = new FileSystemObserver(() => {});
+  try {
+    observer.unobserve(root_dir);
+    observer.unobserve(root_dir);
+  } catch {
+    assert_unreached();
+  }
+}, 'unobserve() is idempotent');
 
 promise_test(async t => {
-  const dedicated_worker =
-      create_dedicated_worker(t, kDedicatedWorkerMessageTarget);
-  dedicated_worker.postMessage({type: 'create-file-system-observer'});
-
-  const event_watcher = new EventWatcher(t, dedicated_worker, 'message');
-  const message_event = await event_watcher.wait_for('message');
-  const response = message_event.data;
-
-  assert_true(response.createObserverSuccess);
-}, 'Creating a FileSystemObserver from a dedicated worker succeeds');
-
-if (self.SharedWorker !== undefined) {
-  promise_test(async t => {
-    const shared_worker = new SharedWorker(kSharedWorkerMessageTarget);
-    shared_worker.port.start();
-    shared_worker.port.postMessage({type: 'create-file-system-observer'});
-
-    const event_watcher = new EventWatcher(t, shared_worker.port, 'message');
-    const message_event = await event_watcher.wait_for('message');
-    const response = message_event.data;
-
-    assert_true(response.createObserverSuccess);
-  }, 'Creating a FileSystemObserver from a shared worker succeeds');
-}
+  const observer = new FileSystemObserver(() => {});
+  try {
+    observer.disconnect();
+  } catch {
+    assert_unreached();
+  }
+}, 'Calling disconnect() without observing shouldn\'t throw');
 
 promise_test(async t => {
-  const scope = `${kServiceWorkerMessageTarget}?create-observer`;
-  const registration =
-      await create_service_worker(t, kServiceWorkerMessageTarget, scope);
-  await wait_for_state(t, registration.installing, 'activated');
+  const observer = new FileSystemObserver(() => {});
+  try {
+    observer.disconnect();
+    observer.disconnect();
+  } catch {
+    assert_unreached();
+  }
+}, 'disconnect() is idempotent');
 
-  registration.active.postMessage({type: 'create-file-system-observer'});
+directory_test(async (t, root_dir) => {
+  const observer = new FileSystemObserver(() => {});
 
-  const event_watcher = new EventWatcher(t, navigator.serviceWorker, 'message');
-  const message_event = await event_watcher.wait_for('message');
-  const response = message_event.data;
+  // Create a `FileSystemFileHandle` and delete its underlying file entry.
+  const file = await root_dir.getFileHandle(getUniqueName(), {create: true});
+  await file.remove();
 
-  assert_false(response.createObserverSuccess);
-}, 'Creating a FileSystemObserver from a service worker fails');
+  await promise_rejects_dom(t, 'NotFoundError', observer.observe(file));
+}, 'observe() fails when file does not exist');
+
+directory_test(async (t, root_dir) => {
+  const observer = new FileSystemObserver(() => {});
+
+  // Create a `FileSystemDirectoryHandle` and delete its underlying file entry.
+  const dir =
+      await root_dir.getDirectoryHandle(getUniqueName(), {create: true});
+  await dir.remove();
+
+  await promise_rejects_dom(t, 'NotFoundError', observer.observe(dir));
+}, 'observe() fails when directory does not exist');

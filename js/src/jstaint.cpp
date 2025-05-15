@@ -93,19 +93,16 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str)
   return std::u16string(buf.get(), len);
 }
 
-std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
+std::u16string JS::taintarg_jsstring(JSContext* cx, const JSLinearString* const& str)
 {
   if (!str) {
     return std::u16string();
   }
 
   size_t len = str->length();
-  JSLinearString* linear = str->ensureLinear(cx);
-  if (!linear)
-    return std::u16string();
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(len));
-  js::CopyChars(buf.get(), *linear);
+  js::CopyChars(buf.get(), *str);
   if(len > max_length) {
     // Foxhound was crashing after startup after copying start and end
     // of the long strings, so disable copying here
@@ -122,6 +119,14 @@ std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
 #  endif
   }
   return std::u16string(buf.get(), len);
+}
+
+std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str) {
+  if (!str) {
+    return std::u16string();
+  }
+  JSLinearString* linear = str->ensureLinear(cx);
+  return taintarg_jsstring(cx, linear);
 }
 
 std::u16string JS::taintarg_jsstring_full(JSContext* cx, JSString* const& str)
@@ -219,6 +224,14 @@ std::vector<std::u16string> JS::taintargs_jsstring(JSContext* cx, JSString* cons
   return args;
 }
 
+std::vector<std::u16string> JS::taintargs_jsstring(JSContext* cx, const JSLinearString* const& str1, const JSLinearString* const& str2)
+{
+  std::vector<std::u16string> args;
+  args.push_back(taintarg_jsstring(cx, str1));
+  args.push_back(taintarg_jsstring(cx, str2));
+  return args;
+}
+
 std::string JS::convertDigestToHexString(const TaintMd5& digest)
 {
   std::stringstream ss;
@@ -299,6 +312,10 @@ TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* 
 }
 
 TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& arg1, JSString* const& arg2) { 
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
+}
+
+TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, const JSLinearString* const& arg1, const JSLinearString* const& arg2) { 
   return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
 }
 

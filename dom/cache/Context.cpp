@@ -15,6 +15,7 @@
 #include "mozilla/dom/cache/ManagerId.h"
 #include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/DirectoryLock.h"
+#include "mozilla/dom/quota/DirectoryLockInlines.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
@@ -402,12 +403,11 @@ Context::QuotaInitRunnable::Run() {
         QM_TRY(MOZ_TO_RESULT(
             quotaManager->EnsureTemporaryStorageIsInitializedInternal()));
 
-        QM_TRY_UNWRAP(
-            mDirectoryMetadata->mDir,
-            quotaManager
-                ->EnsureTemporaryOriginIsInitialized(
-                    mDirectoryMetadata->mPersistenceType, *mDirectoryMetadata)
-                .map([](const auto& res) { return res.first; }));
+        QM_TRY_UNWRAP(mDirectoryMetadata->mDir,
+                      quotaManager
+                          ->EnsureTemporaryOriginIsInitializedInternal(
+                              *mDirectoryMetadata)
+                          .map([](const auto& res) { return res.first; }));
 
         auto* cacheQuotaClient = CacheQuotaClient::Get();
         MOZ_DIAGNOSTIC_ASSERT(cacheQuotaClient);
@@ -952,6 +952,8 @@ Context::~Context() {
   if (mThreadsafeHandle) {
     mThreadsafeHandle->ContextDestroyed(*this);
   }
+
+  SafeDropDirectoryLock(mDirectoryLock);
 
   // Note, this may set the mOrphanedData flag.
   mManager->RemoveContext(*this);

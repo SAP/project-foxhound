@@ -39,9 +39,12 @@ This compatibility table explains which Telemetry probe types can be mirrors for
 | [labeled_string](https://mozilla.github.io/glean/book/reference/metrics/labeled_strings.html) | *No Supported Telemetry Type* |
 | [string_list](https://mozilla.github.io/glean/book/reference/metrics/string_list.html) | [Keyed Scalar of kind: boolean](/toolkit/components/telemetry/collection/scalars.html). The keys are the strings. The values are all `true`. Calling `Set` on the labeled_string is not mirrored (since there's no way to remove keys from a keyed scalar of kind boolean). Doing so will log a warning. |
 | [timespan](https://mozilla.github.io/glean/book/reference/metrics/timespan.html) | [Scalar of kind: uint](/toolkit/components/telemetry/collection/scalars.html). The value is in units of milliseconds. |
-| [timing_distribution](https://mozilla.github.io/glean/book/reference/metrics/timing_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.html#exponential). Samples will be in units of milliseconts. |
+| [timing_distribution](https://mozilla.github.io/glean/book/reference/metrics/timing_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.html#exponential). Samples will be in units of milliseconds. |
+| [labeled_timing_distribution](https://mozilla.github.io/glean/book/reference/metrics/labeled_timing_distributions.html) | [Keyed Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.html#exponential). Samples will be in units of milliseconds. |
 | [memory_distribution](https://mozilla.github.io/glean/book/reference/metrics/memory_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.html#exponential). Samples will be in `memory_unit` units. |
+| [labeled_memory_distribution](https://mozilla.github.io/glean/book/reference/metrics/labeled_memory_distributions.html) | [Keyed Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.html#exponential). Samples will be in `memory_unit` units. |
 | [custom_distribution](https://mozilla.github.io/glean/book/reference/metrics/custom_distribution.html) | [Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.html#exponential). Samples will be used as is. Ensure the bucket count and range match. |
+| [labeled_custom_distribution](https://mozilla.github.io/glean/book/reference/metrics/labeled_custom_distributions.html) | [Keyed Histogram of kind "linear" or "exponential"](/toolkit/components/telemetry/collection/histograms.html#exponential). Samples will be used as is. Ensure the bucket count and range match. |
 | [uuid](https://mozilla.github.io/glean/book/reference/metrics/uuid.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.html). Value will be in canonical 8-4-4-4-12 format. Value is not guaranteed to be valid, and invalid values may be present in the mirrored scalar while the uuid metric remains empty. Calling `GenerateAndSet` on the uuid is not mirrored, and will log a warning. |
 | [url](https://mozilla.github.io/glean/book/reference/metrics/url.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.html). The stringified Url will be cropped to the maximum length allowed by the legacy type. |
 | [datetime](https://mozilla.github.io/glean/book/reference/metrics/datetime.html) | [Scalar of kind: string](/toolkit/components/telemetry/collection/scalars.html). Value will be in ISO8601 format. |
@@ -129,12 +132,10 @@ the schedules could line up exactly or be entirely unrelated.
 
 ### Labels
 
-Labeled metrics supported by GIFFT
-(`labeled_boolean` and `labeled_counter`)
-adhere to the Glean SDK's
+Labeled metrics supported by GIFFT adhere to the Glean SDK's
 [label format](https://mozilla.github.io/glean/book/reference/metrics/index.html#label-format).
 
-Keyed Scalars, on the other hand, do not have a concept of an "Invalid key".
+Keyed Scalars and Keyed Histograms, on the other hand, do not have a concept of an "Invalid key".
 Firefox Telemetry will accept just about any sequence of bytes as a key.
 
 This means that a label deemed invalid by the Glean SDK may appear in the mirrored probe's data.

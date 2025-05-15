@@ -71,6 +71,8 @@ skip-if = ["debug"] # Bug 1444565, Bug 1457887
 
 ["browser_e10s_switchbrowser.js"]
 
+["browser_exclude_fxview_hidden_tabs.js"]
+
 ["browser_file_to_http_named_popup.js"]
 
 ["browser_file_to_http_script_closable.js"]
@@ -202,6 +204,10 @@ skip-if = ["verify && os == 'mac'"]
 
 ["browser_new_file_whitelisted_http_tab.js"]
 https_first_disabled = true
+support-files = [
+  "file_coop_coep.html",
+  "file_coop_coep.html^headers^",
+]
 
 ["browser_new_tab_bookmarks_toolbar_height.js"]
 skip-if = ["!verify && os == 'mac'"] # Bug 1872477
@@ -287,6 +293,9 @@ skip-if = [
 
 ["browser_replacewithwindow_commands.js"]
 
+["browser_replacewithwindow_dialog.js"]
+support-files = ["tab_that_opens_dialog.html"]
+
 ["browser_switch_by_scrolling.js"]
 
 ["browser_tabCloseProbes.js"]
@@ -299,6 +308,8 @@ skip-if = ["true"] # Bug 1616418 Bug 1549985
 ["browser_tabReorder.js"]
 
 ["browser_tabReorder_overflow.js"]
+
+["browser_tabReorder_vertical.js"]
 
 ["browser_tabSpinnerProbe.js"]
 
@@ -315,6 +326,7 @@ skip-if = ["true"] # Bug 1616418 Bug 1549985
 ["browser_tab_manager_drag.js"]
 
 ["browser_tab_manager_keyboard_access.js"]
+skip-if = ["true"] # Bug 1900477
 
 ["browser_tab_manager_visibility.js"]
 

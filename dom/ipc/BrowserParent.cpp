@@ -29,6 +29,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/indexedDB/ActorsParent.h"
 #include "mozilla/dom/PaymentRequestParent.h"
+#include "mozilla/dom/PContentPermissionRequestParent.h"
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/RemoteDragStartData.h"
@@ -64,6 +65,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
+#include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsFocusManager.h"
@@ -261,8 +263,10 @@ BrowserParent::LayerToBrowserParentTable*
     BrowserParent::sLayerToBrowserParentTable = nullptr;
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserParent)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(BrowserParent)
   NS_INTERFACE_MAP_ENTRY(nsIAuthPromptProvider)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
+  NS_INTERFACE_MAP_ENTRY(nsIDOMEventListener)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMEventListener)
 NS_INTERFACE_MAP_END
 
@@ -327,6 +331,10 @@ BrowserParent::BrowserParent(ContentParent* aManager, const TabId& aTabId,
   // We access `Manager()` when updating priorities later in this constructor,
   // so need to initialize it before IPC does.
   SetManager(aManager);
+
+  // Add a KeepAlive for this BrowserParent upon creation.
+  mContentParentKeepAlive =
+      aManager->TryAddKeepAlive(aBrowsingContext->BrowserId());
 
   RequestingAccessKeyEventData::OnBrowserParentCreated();
 
@@ -736,25 +744,28 @@ void BrowserParent::Destroy() {
   }
 #endif
 
-  {
-    // The following sequence assumes that the keepalive state does not change
-    // between the calls, but our ThreadsafeHandle might be accessed from other
-    // threads in the meantime.
-    RecursiveMutexAutoLock lock(Manager()->ThreadsafeHandleMutex());
+  // If this fails, it's most likely due to a content-process crash, and
+  // auto-cleanup will kick in.  Otherwise, the child side will destroy itself
+  // and send back __delete__().
+  (void)SendDestroy();
+  mIsDestroyed = true;
 
-    // If we are shutting down everything or we know to be the last
-    // BrowserParent, signal the impending shutdown early to the content process
-    // to avoid to run the SendDestroy before we know we are ExpectingShutdown.
-    Manager()->NotifyTabWillDestroy();
-
-    // If this fails, it's most likely due to a content-process crash, and
-    // auto-cleanup will kick in.  Otherwise, the child side will destroy itself
-    // and send back __delete__().
-    (void)SendDestroy();
-    mIsDestroyed = true;
-
-    Manager()->NotifyTabDestroying();
-  }
+#if !defined(MOZ_WIDGET_ANDROID)
+  // We're beginning to destroy this BrowserParent. Immediately drop the
+  // keepalive. This can start the shutdown timer, however the ShutDown message
+  // will wait for the BrowserParent to be fully destroyed.
+  //
+  // NOTE: We intentionally skip this step on Android, keeping the KeepAlive
+  // active until the BrowserParent is fully destroyed:
+  // 1. Android has a fixed upper bound on the number of content processes, so
+  //    we prefer to re-use them whenever possible (as opposed to letting an
+  //    old process wind down while we launch a new one). This restriction will
+  //    be relaxed after bug 1565196.
+  // 2. GeckoView always hard-kills content processes (and if it does not,
+  //    Android itself will), so we don't concern ourselves with the ForceKill
+  //    timer either.
+  mContentParentKeepAlive = nullptr;
+#endif
 
   // This `AddKeepAlive` will be cleared if `mMarkedDestroying` is set in
   // `ActorDestroy`. Out of caution, we don't add the `KeepAlive` if our IPC
@@ -788,7 +799,20 @@ mozilla::ipc::IPCResult BrowserParent::RecvEnsureLayersConnected(
 }
 
 void BrowserParent::ActorDestroy(ActorDestroyReason why) {
-  Manager()->NotifyTabDestroyed(mTabId, mMarkedDestroying);
+  // Need to close undeleted ContentPermissionRequestParents before tab is
+  // closed.
+  // FIXME: Why is PContentPermissionRequest not managed by PBrowser?
+  nsTArray<PContentPermissionRequestParent*> parentArray =
+      nsContentPermissionUtils::GetContentPermissionRequestParentById(mTabId);
+  for (auto& permissionRequestParent : parentArray) {
+    Unused << PContentPermissionRequestParent::Send__delete__(
+        permissionRequestParent);
+  }
+
+  // Ensure the ContentParentKeepAlive has been cleared when the actor is
+  // destroyed, and re-check if it's time to send the ShutDown message.
+  mContentParentKeepAlive = nullptr;
+  Manager()->MaybeBeginShutDown();
 
   ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
   if (cpm) {
@@ -1581,7 +1605,13 @@ void BrowserParent::SendRealMouseEvent(WidgetMouseEvent& aEvent) {
 
   DebugOnly<bool> ret =
       isInputPriorityEventEnabled
-          ? SendRealMouseButtonEvent(aEvent, guid, blockId)
+          ? aEvent.mClass == ePointerEventClass
+                ? SendRealPointerButtonEvent(*aEvent.AsPointerEvent(), guid,
+                                             blockId)
+                : SendRealMouseButtonEvent(aEvent, guid, blockId)
+      : aEvent.mClass == ePointerEventClass
+          ? SendNormalPriorityRealPointerButtonEvent(*aEvent.AsPointerEvent(),
+                                                     guid, blockId)
           : SendNormalPriorityRealMouseButtonEvent(aEvent, guid, blockId);
   NS_WARNING_ASSERTION(ret, "SendRealMouseButtonEvent() failed");
   MOZ_ASSERT(!ret || aEvent.HasBeenPostedToRemoteProcess());
@@ -1597,7 +1627,8 @@ LayoutDeviceToCSSScale BrowserParent::GetLayoutDeviceToCSSScale() {
 bool BrowserParent::QueryDropLinksForVerification() {
   // Before sending the dragEvent, we query the links being dragged and
   // store them on the parent, to make sure the child can not modify links.
-  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  RefPtr<nsIWidget> widget = GetTopLevelWidget();
+  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession(widget);
   if (!dragSession) {
     NS_WARNING("No dragSession to query links for verification");
     return false;
@@ -3838,9 +3869,8 @@ mozilla::ipc::IPCResult BrowserParent::RecvInvokeDragSession(
     const MaybeDiscarded<WindowContext>& aSourceTopWindowContext) {
   PresShell* presShell = mFrameElement->OwnerDoc()->GetPresShell();
   if (!presShell) {
-    Unused << Manager()->SendEndDragSession(
-        true, true, LayoutDeviceIntPoint(), 0,
-        nsIDragService::DRAGDROP_ACTION_NONE);
+    Unused << SendEndDragSession(true, true, LayoutDeviceIntPoint(), 0,
+                                 nsIDragService::DRAGDROP_ACTION_NONE);
     // Continue sending input events with input priority when stopping the dnd
     // session.
     Manager()->SetInputPriorityEventEnabled(true);
@@ -3869,13 +3899,108 @@ mozilla::ipc::IPCResult BrowserParent::RecvInvokeDragSession(
   nsCOMPtr<nsIDragService> dragService =
       do_GetService("@mozilla.org/widget/dragservice;1");
   if (dragService) {
-    dragService->MaybeAddChildProcess(Manager());
+    dragService->MaybeAddBrowser(this);
   }
 
   presShell->GetPresContext()
       ->EventStateManager()
       ->BeginTrackingRemoteDragGesture(mFrameElement, dragStartData);
 
+  nsCOMPtr<nsIObserverService> os = services::GetObserverService();
+  os->NotifyObservers(nullptr, "content-invoked-drag", nullptr);
+
+  return IPC_OK();
+}
+
+void BrowserParent::GetIPCTransferableData(
+    nsIDragSession* aSession,
+    nsTArray<IPCTransferableData>& aIPCTransferables) {
+  MOZ_ASSERT(aSession);
+  RefPtr<DataTransfer> transfer = aSession->GetDataTransfer();
+  if (!transfer) {
+    // Pass eDrop to get DataTransfer with external
+    // drag formats cached.
+    transfer = new DataTransfer(nullptr, eDrop, true, Nothing());
+    aSession->SetDataTransfer(transfer);
+  }
+  // Note, even though this fills the DataTransfer object with
+  // external data, the data is usually transfered over IPC lazily when
+  // needed.
+  transfer->FillAllExternalData();
+  nsCOMPtr<nsILoadContext> lc = GetLoadContext();
+  nsCOMPtr<nsIArray> transferables = transfer->GetTransferables(lc);
+  nsContentUtils::TransferablesToIPCTransferableDatas(
+      transferables, aIPCTransferables, false, Manager());
+}
+
+void BrowserParent::MaybeInvokeDragSession(EventMessage aMessage) {
+  // dnd uses IPCBlob to transfer data to the content process and the IPC
+  // message is sent as normal priority. When sending input events with input
+  // priority, the message may be preempted by the later dnd events. To make
+  // sure the input events and the blob message are processed in time order
+  // on the content process, we temporarily send the input events with normal
+  // priority when there is an active dnd session.
+  Manager()->SetInputPriorityEventEnabled(false);
+
+  nsCOMPtr<nsIDragService> dragService =
+      do_GetService("@mozilla.org/widget/dragservice;1");
+  RefPtr<nsIWidget> widget = GetTopLevelWidget();
+  if (!dragService || !widget || !GetBrowsingContext()) {
+    return;
+  }
+
+  RefPtr<nsIDragSession> session = dragService->GetCurrentSession(widget);
+  if (dragService->MaybeAddBrowser(this)) {
+    if (session) {
+      // We need to send transferable data to child process.
+      nsTArray<IPCTransferableData> ipcTransferables;
+      GetIPCTransferableData(session, ipcTransferables);
+      uint32_t action;
+      session->GetDragAction(&action);
+
+      RefPtr<WindowContext> sourceWC;
+      session->GetSourceWindowContext(getter_AddRefs(sourceWC));
+      RefPtr<WindowContext> sourceTopWC;
+      session->GetSourceTopWindowContext(getter_AddRefs(sourceTopWC));
+      RefPtr<nsIPrincipal> principal;
+      session->GetTriggeringPrincipal(getter_AddRefs(principal));
+      mozilla::Unused << SendInvokeChildDragSession(
+          sourceWC, sourceTopWC, principal, std::move(ipcTransferables),
+          action);
+    }
+    return;
+  }
+
+  if (session && session->MustUpdateDataTransfer(aMessage)) {
+    // We need to send transferable data to child process.
+    nsTArray<IPCTransferableData> ipcTransferables;
+    GetIPCTransferableData(session, ipcTransferables);
+
+    RefPtr<nsIPrincipal> principal;
+    session->GetTriggeringPrincipal(getter_AddRefs(principal));
+    mozilla::Unused << SendUpdateDragSession(
+        principal, std::move(ipcTransferables), aMessage);
+  }
+}
+
+mozilla::ipc::IPCResult BrowserParent::RecvUpdateDropEffect(
+    const uint32_t& aDragAction, const uint32_t& aDropEffect) {
+  nsCOMPtr<nsIDragService> dragService =
+      do_GetService("@mozilla.org/widget/dragservice;1");
+  if (!dragService) {
+    return IPC_OK();
+  }
+
+  RefPtr<nsIWidget> widget = GetTopLevelWidget();
+  NS_ENSURE_TRUE(widget, IPC_OK());
+  RefPtr<nsIDragSession> dragSession = dragService->GetCurrentSession(widget);
+  NS_ENSURE_TRUE(dragSession, IPC_OK());
+  dragSession->SetDragAction(aDragAction);
+  RefPtr<DataTransfer> dt = dragSession->GetDataTransfer();
+  if (dt) {
+    dt->SetDropEffectInt(aDropEffect);
+  }
+  dragSession->UpdateDragEffect();
   return IPC_OK();
 }
 

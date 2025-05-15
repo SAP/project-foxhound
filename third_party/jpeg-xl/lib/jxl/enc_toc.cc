@@ -5,9 +5,10 @@
 
 #include "lib/jxl/enc_toc.h"
 
-#include <memory>
+#include <stdint.h>
 
 #include "lib/jxl/base/common.h"
+#include "lib/jxl/coeff_order.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_coeff_order.h"
 #include "lib/jxl/field_encodings.h"
@@ -15,10 +16,9 @@
 #include "lib/jxl/toc.h"
 
 namespace jxl {
-Status WriteGroupOffsets(
-    const std::vector<std::unique_ptr<BitWriter>>& group_codes,
-    const std::vector<coeff_order_t>& permutation,
-    BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
+Status WriteGroupOffsets(const std::vector<BitWriter>& group_codes,
+                         const std::vector<coeff_order_t>& permutation,
+                         BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
   BitWriter::Allotment allotment(writer, MaxBits(group_codes.size()));
   if (!permutation.empty() && !group_codes.empty()) {
     // Don't write a permutation at all for an empty group_codes.
@@ -32,9 +32,9 @@ Status WriteGroupOffsets(
   }
   writer->ZeroPadToByte();  // before TOC entries
 
-  for (const auto& bw : group_codes) {
-    JXL_ASSERT(bw->BitsWritten() % kBitsPerByte == 0);
-    const size_t group_size = bw->BitsWritten() / kBitsPerByte;
+  for (size_t i = 0; i < group_codes.size(); i++) {
+    JXL_ASSERT(group_codes[i].BitsWritten() % kBitsPerByte == 0);
+    const size_t group_size = group_codes[i].BitsWritten() / kBitsPerByte;
     JXL_RETURN_IF_ERROR(U32Coder::Write(kTocDist, group_size, writer));
   }
   writer->ZeroPadToByte();  // before first group

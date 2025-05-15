@@ -160,6 +160,8 @@ treeherder:
         'W-b': 'Web platform tests (backlog)'
         'W-b-nofis': 'Web platform tests (backlog) without fission enabled'
         'W-pb': 'Web platform tests with private browsing enabled'
+        'W-emewmf': 'Web platform tests with Windows Media Foundation based CDM enabled'
+        'W-emewmf-cf': 'Web platform tests confirm failure with Windows Media Foundation based CDM enabled'
         'X': 'Xpcshell tests'
         'X-cf': 'Xpcshell tests confirm failure'
         'X-condprof': 'Xpcshell tests with a conditioned profile'
@@ -197,10 +199,12 @@ treeherder:
         'Ub18': 'Packages for Ubuntu 18.04'
         'Ub20': 'Packages for Ubuntu 20.04'
         'Ub22': 'Packages for Ubuntu 22.04'
+        'Ub22a64': 'AArch64 packages for Ubuntu 22.04'
         'I': 'Docker Image Builds'
         'TA': 'Toolchain builds for Android'
         'TL': 'Toolchain builds for Linux 64-bits'
         'TL32': 'Toolchain builds for Linux 32-bits'
+        'TLA64': 'Toolchain builds for Linux AArch64'
         'TM': 'Toolchain builds for OSX'
         'TMW': 'Toolchain builds for Windows MinGW'
         'TW32': 'Toolchain builds for Windows 32-bits'
@@ -240,8 +244,9 @@ treeherder:
         'doc': 'Documentation'
         'perftest': 'Performance tests'
         'perftest-detect': 'Performance regression detection tooling'
-        'perftest-chrome': 'Performance tests using Chrone'
+        'perftest-chrome': 'Performance tests using Chrome Release'
         'perftest-http3': 'Performance tests with HTTP/3'
+        'perftest-fenix': 'Performance tests using Fenix'
         'l10n': 'Localization checks'
         'fxrec': 'Desktop startup recorder (fxrecord)'
         'wc': 'webcompat'
@@ -689,11 +694,6 @@ taskgraph:
 
 workers:
     aliases:
-        b-linux-gcp-aarch64:
-            provisioner: '{trust-domain}-{level}'
-            implementation: generic-worker
-            os: linux
-            worker-type: '{alias}'
         b-linux.*:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
@@ -720,6 +720,11 @@ workers:
             os: linux
             worker-type: '{alias}'
         images-gcp:
+            provisioner: '{trust-domain}-{level}'
+            implementation: docker-worker
+            os: linux
+            worker-type: '{alias}'
+        images-gcp-aarch64:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
             os: linux
@@ -882,6 +887,11 @@ workers:
             implementation: generic-worker
             os: linux
             worker-type: 't-linux-vm-2204-wayland'
+        t-linux-wayland-snap:
+            provisioner: '{trust-domain}-t'
+            implementation: generic-worker
+            os: linux
+            worker-type: 't-linux-2204-wayland-snap'
         t-osx-1015-r8:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -937,6 +947,11 @@ workers:
             os: windows
             worker-type: 'gecko-{alias}'
         win11-64-2009(-hw-ref):
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
+        win11-64-2009-hw:
             provisioner: releng-hardware
             implementation: generic-worker
             os: windows

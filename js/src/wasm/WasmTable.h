@@ -37,16 +37,16 @@ namespace wasm {
 using TableAnyRefVector = GCVector<HeapPtr<AnyRef>, 0, SystemAllocPolicy>;
 
 class Table : public ShareableBase<Table> {
-  using InstanceSet =
-      WeakCache<GCHashSet<WeakHeapPtr<WasmInstanceObject*>,
-                          StableCellHasher<WeakHeapPtr<WasmInstanceObject*>>,
-                          SystemAllocPolicy>>;
+  using InstanceSet = JS::WeakCache<GCHashSet<
+      WeakHeapPtr<WasmInstanceObject*>,
+      StableCellHasher<WeakHeapPtr<WasmInstanceObject*>>, SystemAllocPolicy>>;
   using FuncRefVector = Vector<FunctionTableElem, 0, SystemAllocPolicy>;
 
   WeakHeapPtr<WasmTableObject*> maybeObject_;
   InstanceSet observers_;
   FuncRefVector functions_;    // either functions_ has data
   TableAnyRefVector objects_;  // or objects_, but not both
+  const IndexType indexType_;
   const RefType elemType_;
   const bool isAsmJS_;
   uint32_t length_;
@@ -68,6 +68,7 @@ class Table : public ShareableBase<Table> {
   ~Table();
   void trace(JSTracer* trc);
 
+  IndexType indexType() const { return indexType_; }
   RefType elemType() const { return elemType_; }
   TableRepr repr() const { return elemType_.tableRepr(); }
 

@@ -747,9 +747,21 @@ void Assembler::writeCodePointer(CodeLabel* label) {
 }
 
 void Assembler::Bind(uint8_t* rawCode, const CodeLabel& label) {
+  auto mode = label.linkMode();
   size_t offset = label.patchAt().offset();
   size_t target = label.target().offset();
-  *reinterpret_cast<const void**>(rawCode + offset) = rawCode + target;
+
+  if (mode == CodeLabel::MoveImmediate) {
+    uint32_t imm = uint32_t(rawCode + target);
+    Instruction* inst = (Instruction*)(rawCode + offset);
+    if (ARMFlags::HasMOVWT()) {
+      Assembler::PatchMovwt(inst, imm);
+    } else {
+      Assembler::WritePoolEntry(inst, Always, imm);
+    }
+  } else {
+    *reinterpret_cast<const void**>(rawCode + offset) = rawCode + target;
+  }
 }
 
 Assembler::Condition Assembler::InvertCondition(Condition cond) {
@@ -1301,12 +1313,12 @@ BufferOffset Assembler::as_uxth(Register dest, Register src, int rotate,
 }
 
 static uint32_t EncodeMovW(Register dest, Imm16 imm, Assembler::Condition c) {
-  MOZ_ASSERT(HasMOVWT());
+  MOZ_ASSERT(ARMFlags::HasMOVWT());
   return 0x03000000 | c | imm.encode() | RD(dest);
 }
 
 static uint32_t EncodeMovT(Register dest, Imm16 imm, Assembler::Condition c) {
-  MOZ_ASSERT(HasMOVWT());
+  MOZ_ASSERT(ARMFlags::HasMOVWT());
   return 0x03400000 | c | imm.encode() | RD(dest);
 }
 
@@ -1331,6 +1343,23 @@ BufferOffset Assembler::as_movt(Register dest, Imm16 imm, Condition c) {
 void Assembler::as_movt_patch(Register dest, Imm16 imm, Condition c,
                               Instruction* pos) {
   WriteInstStatic(EncodeMovT(dest, imm, c), (uint32_t*)pos);
+}
+
+void Assembler::PatchMovwt(Instruction* addr, uint32_t imm) {
+  InstructionIterator iter(addr);
+  Instruction* movw = iter.cur();
+  MOZ_ASSERT(movw->is<InstMovW>());
+  Instruction* movt = iter.next();
+  MOZ_ASSERT(movt->is<InstMovT>());
+
+  Register dest = toRD(*movw);
+  Condition c = movw->extractCond();
+  MOZ_ASSERT(toRD(*movt) == dest && movt->extractCond() == c);
+
+  Assembler::WriteInstStatic(EncodeMovW(dest, Imm16(imm & 0xffff), c),
+                             (uint32_t*)movw);
+  Assembler::WriteInstStatic(EncodeMovT(dest, Imm16(imm >> 16 & 0xffff), c),
+                             (uint32_t*)movt);
 }
 
 static const int mull_tag = 0x90;
@@ -2087,6 +2116,24 @@ BufferOffset Assembler::as_vcvtFixed(VFPRegister vd, bool isSigned,
                               (!isSigned) << 16 | imm5 | c);
 }
 
+BufferOffset Assembler::as_vcvtb_s2h(VFPRegister vd, VFPRegister vm,
+                                     Condition c) {
+  MOZ_ASSERT(ARMFlags::HasFPHalfPrecision());
+  MOZ_ASSERT(vd.isSingle());
+  MOZ_ASSERT(vm.isSingle());
+
+  return writeVFPInst(IsSingle, c | 0x02B30040 | VM(vm) | VD(vd));
+}
+
+BufferOffset Assembler::as_vcvtb_h2s(VFPRegister vd, VFPRegister vm,
+                                     Condition c) {
+  MOZ_ASSERT(ARMFlags::HasFPHalfPrecision());
+  MOZ_ASSERT(vd.isSingle());
+  MOZ_ASSERT(vm.isSingle());
+
+  return writeVFPInst(IsSingle, c | 0x02B20040 | VM(vm) | VD(vd));
+}
+
 // Transfer between VFP and memory.
 static uint32_t EncodeVdtr(LoadStore ls, VFPRegister vd, VFPAddr addr,
                            Assembler::Condition c) {
@@ -2125,7 +2172,7 @@ BufferOffset Assembler::as_vdtm(LoadStore st, Register rn, VFPRegister vd,
 }
 
 BufferOffset Assembler::as_vldr_unaligned(VFPRegister vd, Register rn) {
-  MOZ_ASSERT(HasNEON());
+  MOZ_ASSERT(ARMFlags::HasNEON());
   if (vd.isDouble()) {
     // vld1 (multiple single elements) with align=0, size=3, numregs=1
     return writeInst(0xF42007CF | RN(rn) | VD(vd));
@@ -2137,7 +2184,7 @@ BufferOffset Assembler::as_vldr_unaligned(VFPRegister vd, Register rn) {
 }
 
 BufferOffset Assembler::as_vstr_unaligned(VFPRegister vd, Register rn) {
-  MOZ_ASSERT(HasNEON());
+  MOZ_ASSERT(ARMFlags::HasNEON());
   if (vd.isDouble()) {
     // vst1 (multiple single elements) with align=0, size=3, numregs=1
     return writeInst(0xF40007CF | RN(rn) | VD(vd));
@@ -2189,11 +2236,11 @@ void Assembler::bind(Label* label, BufferOffset boff) {
     return;
   }
 
+  BufferOffset dest = boff.assigned() ? boff : nextOffset();
   if (label->used()) {
     bool more;
     // If our caller didn't give us an explicit target to bind to then we
     // want to bind to the location of the next instruction.
-    BufferOffset dest = boff.assigned() ? boff : nextOffset();
     BufferOffset b(label);
     do {
       BufferOffset next;
@@ -2213,7 +2260,7 @@ void Assembler::bind(Label* label, BufferOffset boff) {
       b = next;
     } while (more);
   }
-  label->bind(nextOffset().getOffset());
+  label->bind(dest.getOffset());
   MOZ_ASSERT(!oom());
 }
 

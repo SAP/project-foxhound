@@ -40,6 +40,7 @@
 #ifdef XP_WIN
 #  include "mozilla/FileUtilsWin.h"
 #  include "mozilla/WinDllServices.h"
+#  include "PDMFactory.h"
 #  include "WMFDecoderModule.h"
 #endif
 #if defined(MOZ_WIDGET_ANDROID)
@@ -741,7 +742,8 @@ bool GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
         // certain services packs.
         if (tag.EqualsLiteral(kClearKeyKeySystemName)) {
           if (capabilities.mAPIName.EqualsLiteral(GMP_API_VIDEO_DECODER)) {
-            if (!WMFDecoderModule::CanCreateMFTDecoder(WMFStreamType::H264)) {
+            auto pdmFactory = MakeRefPtr<PDMFactory>();
+            if (pdmFactory->SupportsMimeType("video/avc"_ns).isEmpty()) {
               continue;
             }
           }
@@ -1138,7 +1140,7 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
 #if XP_WIN
       // psapi.dll added for GetMappedFileNameW, which could possibly be avoided
       // in future versions, see bug 1383611 for details.
-      mLibs = "dxva2.dll, ole32.dll, psapi.dll, winmm.dll"_ns;
+      mLibs = "dxva2.dll, ole32.dll, psapi.dll, shell32.dll, winmm.dll"_ns;
 #endif
       break;
 #ifdef MOZ_WMF_CDM

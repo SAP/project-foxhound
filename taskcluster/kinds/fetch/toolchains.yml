@@ -296,8 +296,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.7.7 release
-        revision: e976c42c2141969915bdd39dd3177db6f27405a8
+        # 0.8.1 release
+        revision: 634d8af1401d7703c4837b4974d3f80ed3c5aacc
 
 fxc2:
     description: fxc2 source code
@@ -354,19 +354,12 @@ clang-14:
         repo: https://github.com/llvm/llvm-project
         revision: 4bc1d0b51c8e488d78ab69c8b19cfbcd1f7db6a4
 
-clang-17:
-    description: clang 17.0.6 source code
-    fetch:
-        type: git
-        repo: https://github.com/llvm/llvm-project
-        revision: 6009708b4367171ccdbf4b5905cb6a803753fe18
-
 clang-18:
-    description: clang 18.1.5 source code
+    description: clang 18.1.7 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: 617a15a9eac96088ae5e9134248d8236e34b91b1
+        revision: 768118d1ad38bf13c545828f67bd6b474d61fc55
 
 clang-trunk:
     description: clang main branch source code
@@ -380,13 +373,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.78.0:
-    description: Rust 1.78.0 source code
+rust-1.79.0:
+    description: Rust 1.79.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 9b00956e56009bab2aa15d7bff10916599e3d6d6
+        revision: 129f3b9964af4d4a709d1383930ade12dfe7c081
 
 rust-nightly:
     description: Rust nightly source code
@@ -474,9 +467,9 @@ jdk-8-linux64:
     description: Java 8 JDK
     fetch:
         type: static-url
-        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u412-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u412b08.tar.gz
-        sha256: b9884a96f78543276a6399c3eb8c2fd8a80e6b432ea50e87d3d12d495d1d2808
-        size: 103005511
+        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u422-b05/OpenJDK8U-jdk_x64_linux_hotspot_8u422b05.tar.gz
+        sha256: 4c6056f6167fae73ace7c3080b78940be5c87d54f5b08894b3517eed1cbb2c06
+        size: 103022651
         artifact-name: jdk-8.tar.zst
         strip-components: 1
         add-prefix: jdk-8/
@@ -558,9 +551,9 @@ gnumake:
     description: GNU make source
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/make/make-4.3.tar.gz
-        sha256: e05fdde47c5f7ca45cb697e973894ff4f5d79e13b750ed57d7b66d8defc78e19
-        size: 2317073
+        url: https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz
+        sha256: dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3
+        size: 2348200
         artifact-name: make.tar.zst
         strip-components: 1
         add-prefix: make/
@@ -588,21 +581,21 @@ afl-plus-plus-4.0:
     fetch:
         type: git
         repo: https://github.com/AFLplusplus/AFLplusplus
-        revision: 0d164e4c1811c4d05f940f78e90fc56b661fb3b4
+        revision: 36db3428ab16156dd72196213d2a02a5eadaed11
 
 cargo-vet:
     description: cargo-vet source
     fetch:
         type: git
         repo: https://github.com/mozilla/cargo-vet
-        revision: 5bd670061a22074eb5ee9d69feccc5900df00ec3
+        revision: 25f4898add9e22b206eae9e15a57e2e351694aa7
 
 symbol-scrapers:
     description: Linux distribution symbol scraper source
     fetch:
         type: git
         repo: https://github.com/mozilla/symbol-scrapers
-        revision: 7b41cce89470708da3a12a8035d217e5c7eca243
+        revision: 239e4055425bf4a56e877e1919ec49506b784748
 
 xz-5.4.4:
     description: xz 5.4.4 source code
@@ -683,3 +676,12 @@ mozilla-pdf.js:
         type: git
         repo: https://github.com/mozilla/pdf.js
         revision: d64f334f98d4b7f1c2e09a731a63b68629c946f9
+
+xmlstarlet-1.6.1:
+    description: xmlstarlet for Android Performance Tests
+    fetch:
+        type: static-url
+        url: http://ca.archive.ubuntu.com/ubuntu/pool/universe/x/xmlstarlet/xmlstarlet_1.6.1-2build1_amd64.deb
+        sha256: d1d7f55f7887d2d1c3283e1b06a68675b5bead2eebf14939f9cdd84b849ced19
+        size: 267112
+        artifact-name: xmlstarlet.deb

@@ -6,6 +6,9 @@ package org.mozilla.fenix.components.menu
 
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
+import androidx.navigation.NavOptions
+import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
@@ -13,11 +16,14 @@ import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.concept.engine.prompt.ShareData
+import mozilla.components.feature.addons.Addon
+import mozilla.components.feature.pwa.WebAppUseCases
 import mozilla.components.service.fxa.manager.AccountState.Authenticated
 import mozilla.components.service.fxa.manager.AccountState.AuthenticationProblem
 import mozilla.components.service.fxa.manager.AccountState.NotAuthenticated
 import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
@@ -39,6 +45,7 @@ import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.SupportUtils.AMO_HOMEPAGE_FOR_ANDROID
 import org.mozilla.fenix.settings.SupportUtils.SumoTopic
+import org.mozilla.fenix.utils.Settings
 
 class MenuNavigationMiddlewareTest {
 
@@ -48,6 +55,8 @@ class MenuNavigationMiddlewareTest {
 
     private val navController: NavController = mockk(relaxed = true)
     private val navHostController: NavHostController = mockk(relaxed = true)
+    private val webAppUseCases: WebAppUseCases = mockk(relaxed = true)
+    private val settings: Settings = mockk(relaxed = true)
 
     @Test
     fun `GIVEN account state is authenticated WHEN navigate to Mozilla account action is dispatched THEN dispatch navigate action to Mozilla account settings`() = runTest {
@@ -258,6 +267,53 @@ class MenuNavigationMiddlewareTest {
         store.dispatch(MenuAction.Navigate.Back).join()
 
         verify { navHostController.popBackStack() }
+    }
+
+    @Test
+    fun `GIVEN current site is installable WHEN navigate to add to home screen is dispatched THEN invoke add to home screen use case`() = runTest {
+        val tab = createTab(url = "https://www.mozilla.org")
+        var dismissWasCalled = false
+        val store = createStore(
+            menuState = MenuState(
+                browserMenuState = BrowserMenuState(
+                    selectedTab = tab,
+                ),
+            ),
+            onDismiss = { dismissWasCalled = true },
+        )
+
+        every { webAppUseCases.isInstallable() } returns true
+
+        store.dispatch(MenuAction.Navigate.AddToHomeScreen).join()
+
+        coVerify(exactly = 1) { webAppUseCases.addToHomescreen() }
+        assertTrue(dismissWasCalled)
+    }
+
+    @Test
+    fun `GIVEN current site is not installable WHEN navigate to add to home screen is dispatched THEN navigate to create home screen shortcut fragment`() = runTest {
+        val tab = createTab(url = "https://www.mozilla.org")
+        val store = createStore(
+            menuState = MenuState(
+                browserMenuState = BrowserMenuState(
+                    selectedTab = tab,
+                ),
+            ),
+        )
+
+        every { webAppUseCases.isInstallable() } returns false
+
+        store.dispatch(MenuAction.Navigate.AddToHomeScreen).join()
+
+        verify {
+            navController.nav(
+                R.id.menuDialogFragment,
+                MenuDialogFragmentDirections.actionMenuDialogFragmentToCreateShortcutFragment(),
+                navOptions = NavOptions.Builder()
+                    .setPopUpTo(R.id.browserFragment, false)
+                    .build(),
+            )
+        }
     }
 
     @Test
@@ -494,10 +550,25 @@ class MenuNavigationMiddlewareTest {
         }
     }
 
+    @Test
+    fun `WHEN navigate to addon details is dispatched THEN navigate to the addon details`() = runTest {
+        val addon = Addon(id = "ext1")
+        val store = createStore()
+        store.dispatch(MenuAction.Navigate.AddonDetails(addon = addon)).join()
+
+        verify {
+            navController.nav(
+                R.id.menuDialogFragment,
+                MenuDialogFragmentDirections.actionMenuDialogFragmenToAddonDetailsFragment(addon = addon),
+            )
+        }
+    }
+
     private fun createStore(
         menuState: MenuState = MenuState(),
         browsingModeManager: BrowsingModeManager = mockk(relaxed = true),
         openToBrowser: (params: BrowserNavigationParams) -> Unit = {},
+        onDismiss: suspend () -> Unit = {},
     ) = MenuStore(
         initialState = menuState,
         middleware = listOf(
@@ -506,6 +577,9 @@ class MenuNavigationMiddlewareTest {
                 navHostController = navHostController,
                 browsingModeManager = browsingModeManager,
                 openToBrowser = openToBrowser,
+                webAppUseCases = webAppUseCases,
+                settings = settings,
+                onDismiss = onDismiss,
                 scope = scope,
             ),
         ),

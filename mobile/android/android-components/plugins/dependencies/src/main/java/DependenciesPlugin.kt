@@ -19,10 +19,10 @@ object Versions {
     const val serialization = "1.6.3"
     const val python_envs_plugin = "0.0.31"
 
-    const val mozilla_glean = "60.1.1"
+    const val mozilla_glean = "60.4.0"
 
     const val junit = "4.13.2"
-    const val robolectric = "4.12.1"
+    const val robolectric = "4.13"
     const val mockito = "5.12.0"
     const val maven_ant_tasks = "2.1.3"
     const val jacoco = "0.8.11"
@@ -38,7 +38,7 @@ object Versions {
     const val detekt = "1.23.6"
     const val ktlint = "0.49.1"
 
-    const val sentry = "7.9.0"
+    const val sentry = "7.11.0"
 
     const val zxing = "3.5.3"
 
@@ -54,39 +54,42 @@ object Versions {
     const val compose_compiler = "1.5.14"
 
     object AndroidX {
-        const val activityCompose = "1.7.2"
-        const val annotation = "1.8.0"
+        const val activity = "1.7.2"
+        const val annotation = "1.8.1"
         const val appcompat = "1.7.0"
         const val autofill = "1.1.0"
         const val browser = "1.8.0"
         const val biometric = "1.1.0"
         const val cardview = "1.0.0"
-        const val collection = "1.4.0"
-        const val compose_bom = "2024.05.00"
+        const val collection = "1.4.2"
+        const val compose_bom = "2024.06.00"
         const val constraintlayout = "2.1.4"
         const val coordinatorlayout = "1.2.0"
         const val core = "1.13.1"
         const val drawerlayout = "1.2.0"
         const val fragment = "1.6.2"
         const val recyclerview = "1.3.2"
-        const val test = "1.5.0"
-        const val test_ext = "1.1.5"
-        const val test_runner = "1.5.2"
-        const val espresso = "3.5.1"
         const val room = "2.6.1"
         const val savedstate = "1.2.1"
-        const val paging = "3.3.0"
+        const val paging = "3.3.1"
         const val palette = "1.0.0"
         const val preferences = "1.2.1"
-        const val lifecycle = "2.7.0"
+        const val lifecycle = "2.8.4"
         const val media = "1.7.0"
         const val navigation = "2.7.7"
+        const val transition = "1.5.1"
+        const val tracing = "1.2.0"
         const val work = "2.9.0"
         const val arch = "2.2.0"
-        const val uiautomator = "2.3.0"
         const val localbroadcastmanager = "1.0.0"
         const val swiperefreshlayout = "1.1.0"
         const val datastore="1.1.1"
+        const val test = "1.6.1"
+        const val test_ext = "1.2.1"
+        const val test_espresso = "3.6.1"
+        const val test_orchestrator = "1.5.0"
+        const val test_runner = "1.6.1"
+        const val test_uiautomator = "2.3.0"
     }
 
     object Firebase {
@@ -95,7 +98,9 @@ object Versions {
 
     object Google {
         const val play_review = "2.0.1"
-        const val play_services = "18.4.0"
+        const val play_services_ads_id = "16.0.0"
+        const val play_services_base = "18.5.0"
+        const val play_services_fido = "21.1.0"
     }
 }
 
@@ -114,7 +119,8 @@ object ComponentsDependencies {
     const val testing_maven_ant_tasks = "org.apache.maven:maven-ant-tasks:${Versions.maven_ant_tasks}"
     const val testing_leakcanary = "com.squareup.leakcanary:leakcanary-android-instrumentation:${Versions.leakcanary}"
 
-    const val androidx_activity_compose = "androidx.activity:activity-compose:${Versions.AndroidX.activityCompose}"
+    const val androidx_activity = "androidx.activity:activity:${Versions.AndroidX.activity}"
+    const val androidx_activity_ktx = "androidx.activity:activity-ktx:${Versions.AndroidX.activity}"
     const val androidx_annotation = "androidx.annotation:annotation:${Versions.AndroidX.annotation}"
     const val androidx_appcompat = "androidx.appcompat:appcompat:${Versions.AndroidX.appcompat}"
     const val androidx_autofill = "androidx.autofill:autofill:${Versions.AndroidX.autofill}"
@@ -136,6 +142,7 @@ object ComponentsDependencies {
     const val androidx_compose_foundation = "androidx.compose.foundation:foundation"
     const val androidx_compose_material = "androidx.compose.material:material"
     const val androidx_compose_runtime_livedata = "androidx.compose.runtime:runtime-livedata"
+    const val androidx_compose_runtime_saveable = "androidx.compose.runtime:runtime-saveable"
 
     const val androidx_safeargs = "androidx.navigation:navigation-safe-args-gradle-plugin:${Versions.AndroidX.navigation}"
     const val androidx_navigation_fragment = "androidx.navigation:navigation-fragment-ktx:${Versions.AndroidX.navigation}"
@@ -148,6 +155,7 @@ object ComponentsDependencies {
     const val androidx_drawerlayout = "androidx.drawerlayout:drawerlayout:${Versions.AndroidX.drawerlayout}"
     const val androidx_fragment = "androidx.fragment:fragment:${Versions.AndroidX.fragment}"
     const val androidx_lifecycle_common = "androidx.lifecycle:lifecycle-common:${Versions.AndroidX.lifecycle}"
+    const val androidx_lifecycle_compose = "androidx.lifecycle:lifecycle-runtime-compose:${Versions.AndroidX.lifecycle}"
     const val androidx_lifecycle_livedata = "androidx.lifecycle:lifecycle-livedata-ktx:${Versions.AndroidX.lifecycle}"
     const val androidx_lifecycle_process = "androidx.lifecycle:lifecycle-process:${Versions.AndroidX.lifecycle}"
     const val androidx_lifecycle_runtime = "androidx.lifecycle:lifecycle-runtime-ktx:${Versions.AndroidX.lifecycle}"
@@ -162,18 +170,26 @@ object ComponentsDependencies {
     const val androidx_room_compiler = "androidx.room:room-compiler:${Versions.AndroidX.room}"
     const val androidx_room_testing = "androidx.room:room-testing:${Versions.AndroidX.room}"
     const val androidx_savedstate = "androidx.savedstate:savedstate:${Versions.AndroidX.savedstate}"
-    const val androidx_test_core = "androidx.test:core-ktx:${Versions.AndroidX.test}"
-    const val androidx_test_junit = "androidx.test.ext:junit-ktx:${Versions.AndroidX.test_ext}"
-    const val androidx_test_runner = "androidx.test:runner:${Versions.AndroidX.test_runner}"
-    const val androidx_test_rules = "androidx.test:rules:${Versions.AndroidX.test}"
-    const val androidx_test_uiautomator = "androidx.test.uiautomator:uiautomator:${Versions.AndroidX.uiautomator}"
+    const val androidx_tracing = "androidx.tracing:tracing:${Versions.AndroidX.tracing}"
+    const val androidx_transition = "androidx.transition:transition:${Versions.AndroidX.transition}"
     const val androidx_work_runtime = "androidx.work:work-runtime:${Versions.AndroidX.work}"
     const val androidx_work_testing = "androidx.work:work-testing:${Versions.AndroidX.work}"
-    const val androidx_espresso_core = "androidx.test.espresso:espresso-core:${Versions.AndroidX.espresso}"
     const val androidx_localbroadcastmanager = "androidx.localbroadcastmanager:localbroadcastmanager:${Versions.AndroidX.localbroadcastmanager}"
     const val androidx_swiperefreshlayout = "androidx.swiperefreshlayout:swiperefreshlayout:${Versions.AndroidX.swiperefreshlayout}"
     const val androidx_datastore = "androidx.datastore:datastore:${Versions.AndroidX.datastore}"
     const val androidx_datastore_preferences = "androidx.datastore:datastore-preferences:${Versions.AndroidX.datastore}"
+
+    const val androidx_espresso_contrib = "androidx.test.espresso:espresso-contrib:${Versions.AndroidX.test_espresso}"
+    const val androidx_espresso_core = "androidx.test.espresso:espresso-core:${Versions.AndroidX.test_espresso}"
+    const val androidx_espresso_idling_resource = "androidx.test.espresso:espresso-idling-resource:${Versions.AndroidX.test_espresso}"
+    const val androidx_espresso_intents = "androidx.test.espresso:espresso-intents:${Versions.AndroidX.test_espresso}"
+    const val androidx_espresso_web = "androidx.test.espresso:espresso-web:${Versions.AndroidX.test_espresso}"
+    const val androidx_test_core = "androidx.test:core-ktx:${Versions.AndroidX.test}"
+    const val androidx_test_junit = "androidx.test.ext:junit-ktx:${Versions.AndroidX.test_ext}"
+    const val androidx_test_orchestrator = "androidx.test:orchestrator:${Versions.AndroidX.test_orchestrator}"
+    const val androidx_test_runner = "androidx.test:runner:${Versions.AndroidX.test_runner}"
+    const val androidx_test_rules = "androidx.test:rules:${Versions.AndroidX.test}"
+    const val androidx_test_uiautomator = "androidx.test.uiautomator:uiautomator:${Versions.AndroidX.test_uiautomator}"
 
     const val google_material = "com.google.android.material:material:${Versions.material}"
 
@@ -194,7 +210,6 @@ object ComponentsDependencies {
 
     val mozilla_appservices_fxaclient = "${ApplicationServicesConfig.groupId}:fxaclient:${ApplicationServicesConfig.version}"
     val mozilla_appservices_nimbus = "${ApplicationServicesConfig.groupId}:nimbus:${ApplicationServicesConfig.version}"
-    const val mozilla_glean_forUnitTests = "org.mozilla.telemetry:glean-native-forUnitTests:${Versions.mozilla_glean}"
     val mozilla_appservices_autofill = "${ApplicationServicesConfig.groupId}:autofill:${ApplicationServicesConfig.version}"
     val mozilla_appservices_logins = "${ApplicationServicesConfig.groupId}:logins:${ApplicationServicesConfig.version}"
     val mozilla_appservices_places = "${ApplicationServicesConfig.groupId}:places:${ApplicationServicesConfig.version}"
@@ -211,6 +226,9 @@ object ComponentsDependencies {
     val mozilla_appservices_rust_log_forwarder = "${ApplicationServicesConfig.groupId}:rust-log-forwarder:${ApplicationServicesConfig.version}"
     val mozilla_appservices_sync15 = "${ApplicationServicesConfig.groupId}:sync15:${ApplicationServicesConfig.version}"
 
+    const val mozilla_glean = "org.mozilla.telemetry:glean:${Versions.mozilla_glean}"
+    const val mozilla_glean_forUnitTests = "org.mozilla.telemetry:glean-native-forUnitTests:${Versions.mozilla_glean}"
+
     const val thirdparty_okhttp = "com.squareup.okhttp3:okhttp:${Versions.okhttp}"
     const val thirdparty_okhttp_urlconnection = "com.squareup.okhttp3:okhttp-urlconnection:${Versions.okhttp}"
     const val thirdparty_okio = "com.squareup.okio:okio:${Versions.okio}"
@@ -223,5 +241,7 @@ object ComponentsDependencies {
 
     const val play_review = "com.google.android.play:review:${Versions.Google.play_review}"
     const val play_review_ktx = "com.google.android.play:review-ktx:${Versions.Google.play_review}"
-    const val play_services_base = "com.google.android.gms:play-services-base:${Versions.Google.play_services}"
+    const val play_services_ads_id = "com.google.android.gms:play-services-ads-identifier:${Versions.Google.play_services_ads_id}"
+    const val play_services_base = "com.google.android.gms:play-services-base:${Versions.Google.play_services_base}"
+    const val play_services_fido = "com.google.android.gms:play-services-fido:${Versions.Google.play_services_fido}"
 }

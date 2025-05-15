@@ -16512,6 +16512,23 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
+  css_field_sizing:
+    type: counter
+    description: >
+      Whether a page used the CSS property field-sizing.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   css_flex_direction:
     type: counter
     description: >
@@ -18233,6 +18250,23 @@ use.counter.css.page:
     type: counter
     description: >
       Whether a page used the CSS property visibility.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_webkit_font_feature_settings:
+    type: counter
+    description: >
+      Whether a page used the CSS property -webkit-font-feature-settings.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -20337,10 +20371,10 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
-  css_position_try_options:
+  css_position_try_fallbacks:
     type: counter
     description: >
-      Whether a page used the CSS property position-try-options.
+      Whether a page used the CSS property position-try-fallbacks.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -28448,6 +28482,23 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
+  css_field_sizing:
+    type: counter
+    description: >
+      Whether a document used the CSS property field-sizing.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   css_flex_direction:
     type: counter
     description: >
@@ -30170,6 +30221,23 @@ use.counter.css.doc:
     description: >
       Whether a document used the CSS property visibility.
       Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_webkit_font_feature_settings:
+    type: counter
+    description: >
+      Whether a page used the CSS property -webkit-font-feature-settings.
+      Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
@@ -32273,10 +32341,10 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
-  css_position_try_options:
+  css_position_try_fallbacks:
     type: counter
     description: >
-      Whether a document used the CSS property position-try-options.
+      Whether a document used the CSS property position-try-fallbacks.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:

@@ -24,9 +24,11 @@
 #include "wasm/WasmBuiltinModuleGenerated.h"
 
 namespace js {
+class JitFrameIter;
 namespace jit {
+class AutoMarkJitCodeWritableForThread;
 struct ResumeFromException;
-}
+}  // namespace jit
 namespace wasm {
 
 class WasmFrameIter;
@@ -69,6 +71,7 @@ enum class SymbolicAddress {
   PowD,
   ATan2D,
   HandleDebugTrap,
+  HandleRequestTierUp,
   HandleThrow,
   HandleTrap,
   ReportV128JSCall,
@@ -303,7 +306,7 @@ bool NeedsBuiltinThunk(SymbolicAddress sym);
 // CodeRange is relative to.
 
 bool LookupBuiltinThunk(void* pc, const CodeRange** codeRange,
-                        uint8_t** codeBase);
+                        const uint8_t** codeBase);
 
 // EnsureBuiltinThunksInitialized() must be called, and must succeed, before
 // SymbolicAddressTarget() or MaybeGetBuiltinThunk(). This function creates all
@@ -312,9 +315,11 @@ bool LookupBuiltinThunk(void* pc, const CodeRange** codeRange,
 // executable code has been released.
 
 bool EnsureBuiltinThunksInitialized();
+bool EnsureBuiltinThunksInitialized(
+    jit::AutoMarkJitCodeWritableForThread& writable);
 
-bool HandleThrow(JSContext* cx, WasmFrameIter& iter,
-                 jit::ResumeFromException* rfe);
+void HandleExceptionWasm(JSContext* cx, JitFrameIter& iter,
+                         jit::ResumeFromException* rfe);
 
 void* SymbolicAddressTarget(SymbolicAddress sym);
 

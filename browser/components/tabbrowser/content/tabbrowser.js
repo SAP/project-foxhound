@@ -346,6 +346,12 @@
       return (this.tabpanels = document.getElementById("tabbrowser-tabpanels"));
     },
 
+    get verticalPinnedTabsContainer() {
+      return (this.verticalPinnedTabsContainer = document.getElementById(
+        "vertical-pinned-tabs-container"
+      ));
+    },
+
     addEventListener(...args) {
       this.tabpanels.addEventListener(...args);
     },
@@ -841,7 +847,15 @@
       }
 
       this.showTab(aTab);
-      this.moveTabTo(aTab, this._numPinnedTabs);
+      if (this.tabContainer.verticalMode) {
+        let wasFocused = document.activeElement == this.selectedTab;
+        let oldPosition = aTab._tPos;
+        this.tabContainer._invalidateCachedTabs();
+        this.verticalPinnedTabsContainer.appendChild(aTab);
+        this._updateAfterMoveTabTo(aTab, oldPosition, wasFocused);
+      } else {
+        this.moveTabTo(aTab, this._numPinnedTabs);
+      }
       aTab.setAttribute("pinned", "true");
       this._updateTabBarForPinnedTabs();
       this._notifyPinnedStatus(aTab);
@@ -852,8 +866,20 @@
         return;
       }
 
-      this.moveTabTo(aTab, this._numPinnedTabs - 1);
-      aTab.removeAttribute("pinned");
+      if (this.tabContainer.verticalMode) {
+        let wasFocused = document.activeElement == this.selectedTab;
+        let oldPosition = aTab._tPos;
+        // we remove this attribute first, so that allTabs represents
+        // the moving of a tab from the vertical pinned tabs container
+        // and back into arrowscrollbox.
+        aTab.removeAttribute("pinned");
+        this.tabContainer._invalidateCachedTabs();
+        this.tabContainer.arrowScrollbox.prepend(aTab);
+        this._updateAfterMoveTabTo(aTab, oldPosition, wasFocused);
+      } else {
+        this.moveTabTo(aTab, this._numPinnedTabs - 1);
+        aTab.removeAttribute("pinned");
+      }
       aTab.style.marginInlineStart = "";
       aTab._pinnedUnscrollable = false;
       this._updateTabBarForPinnedTabs();
@@ -2814,9 +2840,7 @@
           // but we were opened from another browser, set the cross group
           // opener ID:
           if (openerBrowser && !openWindowInfo) {
-            b.browsingContext.setCrossGroupOpener(
-              openerBrowser.browsingContext
-            );
+            b.browsingContext.crossGroupOpener = openerBrowser.browsingContext;
           }
         }
       } catch (e) {
@@ -2856,6 +2880,10 @@
           globalHistoryOptions,
           triggeringRemoteType,
           wasSchemelessInput,
+          hasValidUserGestureActivation:
+            !!openWindowInfo?.hasValidUserGestureActivation,
+          textDirectiveUserActivation:
+            !!openWindowInfo?.textDirectiveUserActivation,
         });
       }
 
@@ -2894,6 +2922,14 @@
         this.selectedTab = t;
       }
       return t;
+    },
+
+    addTabGroup(color, label = "") {
+      let group = document.createXULElement("tab-group", { is: "tab-group" });
+      group.id = `${Date.now()}-${Math.round(Math.random() * 100)}`;
+      group.color = color;
+      group.label = label;
+      this.tabContainer.appendChild(group);
     },
 
     _determineURIToLoad(uriString, createLazyBrowser) {
@@ -3109,6 +3145,8 @@
         globalHistoryOptions,
         triggeringRemoteType,
         wasSchemelessInput,
+        hasValidUserGestureActivation,
+        textDirectiveUserActivation,
       }
     ) {
       if (
@@ -3173,6 +3211,8 @@
             globalHistoryOptions,
             triggeringRemoteType,
             wasSchemelessInput,
+            hasValidUserGestureActivation,
+            textDirectiveUserActivation,
           });
         } catch (ex) {
           console.error(ex);
@@ -3370,12 +3410,12 @@
     },
 
     warnAboutClosingTabs(tabsToClose, aCloseTabs, aSource) {
-      if (tabsToClose <= 1) {
-        return true;
-      }
-
+      // We want to warn about closing duplicates even if there was only a
+      // single duplicate, so we intentionally place this above the check for
+      // tabsToClose <= 1.
       const shownDupeDialogPref =
         "browser.tabs.haveShownCloseAllDuplicateTabsWarning";
+      var ps = Services.prompt;
       if (
         aCloseTabs == this.closingTabsEnum.ALL_DUPLICATES &&
         !Services.prefs.getBoolPref(shownDupeDialogPref, false)
@@ -3385,11 +3425,36 @@
         Services.prefs.setBoolPref(shownDupeDialogPref, true);
 
         window.focus();
-        const [title, text] = this.tabLocalization.formatValuesSync([
-          { id: "tabbrowser-confirm-close-duplicate-tabs-title" },
-          { id: "tabbrowser-confirm-close-duplicate-tabs-text" },
+        const [title, text, button] = this.tabLocalization.formatValuesSync([
+          { id: "tabbrowser-confirm-close-all-duplicate-tabs-title" },
+          { id: "tabbrowser-confirm-close-all-duplicate-tabs-text" },
+          {
+            id: "tabbrowser-confirm-close-all-duplicate-tabs-button-closetabs",
+          },
         ]);
-        return Services.prompt.confirm(window, title, text);
+
+        const flags =
+          ps.BUTTON_POS_0 * ps.BUTTON_TITLE_IS_STRING +
+          ps.BUTTON_POS_1 * ps.BUTTON_TITLE_CANCEL +
+          ps.BUTTON_POS_0_DEFAULT;
+
+        // buttonPressed will be 0 for close tabs, 1 for cancel.
+        const buttonPressed = ps.confirmEx(
+          window,
+          title,
+          text,
+          flags,
+          button,
+          null,
+          null,
+          null,
+          {}
+        );
+        return buttonPressed == 0;
+      }
+
+      if (tabsToClose <= 1) {
+        return true;
       }
 
       const pref =
@@ -3413,8 +3478,6 @@
 
       // Our prompt to close this window is most important, so replace others.
       gDialogBox.replaceDialogIfOpen();
-
-      var ps = Services.prompt;
 
       // default to true: if it were false, we wouldn't get this far
       var warnOnClose = { value: true };
@@ -4515,30 +4578,28 @@
       }
     },
     /**
-     * Closes tabs within the browser that match a given list of nsURIs. Returns
-     * any nsURIs that could not be closed successfully. This does not close any
-     * tabs that have a beforeUnload prompt
+     * Closes all tabs matching the list of nsURIs.
+     * This does not close any tabs that have a beforeUnload prompt.
      *
      * @param {nsURI[]} urisToClose
      *   The set of uris to remove.
-     * @returns {nsURI[]}
-     *  the nsURIs that weren't found in this browser
+     * @returns {number} The count of successfully closed tabs.
      */
     async closeTabsByURI(urisToClose) {
-      let remainingURIsToClose = [...urisToClose];
       let tabsToRemove = [];
       for (let tab of this.tabs) {
         let currentURI = tab.linkedBrowser.currentURI;
         // Find any URI that matches the current tab's URI
-        const matchedIndex = remainingURIsToClose.findIndex(uriToClose =>
+        const matchedIndex = urisToClose.findIndex(uriToClose =>
           uriToClose.equals(currentURI)
         );
 
         if (matchedIndex > -1) {
           tabsToRemove.push(tab);
-          remainingURIsToClose.splice(matchedIndex, 1); // Remove the matched URI
         }
       }
+
+      let closedCount = 0;
 
       if (tabsToRemove.length) {
         const { beforeUnloadComplete, lastToClose } = this._startRemoveTabs(
@@ -4555,14 +4616,16 @@
         // Wait for the beforeUnload handlers to complete.
         await beforeUnloadComplete;
 
+        closedCount = tabsToRemove.length - (lastToClose ? 1 : 0);
+
         // _startRemoveTabs doesn't close the last tab in the window
         // for this use case, we simply close it
         if (lastToClose) {
           this.removeTab(lastToClose);
+          closedCount++;
         }
       }
-      // If we still have uris, that means we couldn't find them in this window instance
-      return remainingURIsToClose;
+      return closedCount;
     },
 
     /**
@@ -5257,11 +5320,24 @@
 
       let wasFocused = document.activeElement == this.selectedTab;
 
-      aIndex = aIndex < aTab._tPos ? aIndex : aIndex + 1;
+      let neighbor = this.tabs[aIndex];
+      if (aIndex < aTab._tPos) {
+        neighbor.before(aTab);
+      } else if (!neighbor) {
+        // Put the tab after the neighbor, as once we remove the tab from its current position,
+        // the indexing of the tabs will shift.
+        aTab.parentElement.append(aTab);
+      } else {
+        neighbor.after(aTab);
+      }
 
-      let neighbor = this.tabs[aIndex] || null;
+      // We want to clear _allTabs after moving nodes because the order of
+      // vertical tabs may have changed.
       this.tabContainer._invalidateCachedTabs();
-      this.tabContainer.insertBefore(aTab, neighbor);
+      this._updateAfterMoveTabTo(aTab, oldPosition, wasFocused);
+    },
+
+    _updateAfterMoveTabTo(aTab, oldPosition, wasFocused = null) {
       this._updateTabsAfterInsert();
 
       if (wasFocused) {
@@ -5273,7 +5349,11 @@
       if (aTab.pinned) {
         this.tabContainer._positionPinnedTabs();
       }
-
+      // Pinning and unpinning vertical tabs bypasses moveTabTo,
+      // so we still want to check whether its worth dispatching an event
+      if (oldPosition == aTab._tPos) {
+        return;
+      }
       var evt = document.createEvent("UIEvents");
       evt.initUIEvent("TabMove", true, false, window, oldPosition);
       aTab.dispatchEvent(evt);
@@ -6314,7 +6394,7 @@
         "DOMModalDialogClosed",
         event => {
           if (
-            !event.detail?.wasPermitUnload ||
+            event.detail?.promptType != "beforeunload" ||
             event.detail.areLeaving ||
             event.target.nodeName != "browser"
           ) {
@@ -7169,6 +7249,12 @@
               // to this new document and not to tabs opened by the previous one.
               gBrowser.clearRelatedTabs();
             }
+          }
+
+          // Bug 1804166: Allow new tabs to set the favicon correctly if the
+          // new tabs behavior is set to open a blank page
+          if (!isReload && !aWebProgress.isLoadingDocument) {
+            gBrowser.setDefaultIcon(this.mTab, this.mBrowser._documentURI);
           }
 
           if (

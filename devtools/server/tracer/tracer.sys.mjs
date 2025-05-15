@@ -50,6 +50,10 @@ const isWorker =
   globalThis.isWorker ||
   globalThis.constructor.name == "WorkerDebuggerGlobalScope";
 
+// The following preference controls the depth limit which, when hit,
+// will automatically stop the tracer and declare the current stack as an infinite loop.
+const MAX_DEPTH_PREF = "devtools.debugger.javascript-tracing-max-depth";
+
 // This module can be loaded from the worker thread, where we can't use ChromeUtils.
 // So implement custom lazy getters (without XPCOMUtils ESM) from here.
 // Worker codepath in DevTools will pass a custom Debugger instance.
@@ -215,6 +219,9 @@ class JavaScriptTracer {
     this.traceValues = !!options.traceValues;
     this.traceFunctionReturn = !!options.traceFunctionReturn;
     this.maxDepth = options.maxDepth;
+    this.infiniteLoopDepthLimit = isWorker
+      ? 200
+      : Services.prefs.getIntPref(MAX_DEPTH_PREF, 200);
     this.maxRecords = options.maxRecords;
     this.records = 0;
     if ("pauseOnStep" in options) {
@@ -362,22 +369,25 @@ class JavaScriptTracer {
       signal: this.abortController.signal,
       capture: true,
     };
+    // When used for the parent process target, `tracedGlobal` is browser.xhtml's window, which doesn't have a chromeEventHandler.
+    const eventHandler =
+      this.tracedGlobal.docShell.chromeEventHandler || this.tracedGlobal;
     if (this.traceDOMMutations.includes(DOM_MUTATIONS.ADD)) {
-      this.tracedGlobal.docShell.chromeEventHandler.addEventListener(
+      eventHandler.addEventListener(
         "devtoolschildinserted",
         this.#onDOMMutation,
         eventOptions
       );
     }
     if (this.traceDOMMutations.includes(DOM_MUTATIONS.ATTRIBUTES)) {
-      this.tracedGlobal.docShell.chromeEventHandler.addEventListener(
+      eventHandler.addEventListener(
         "devtoolsattrmodified",
         this.#onDOMMutation,
         eventOptions
       );
     }
     if (this.traceDOMMutations.includes(DOM_MUTATIONS.REMOVE)) {
-      this.tracedGlobal.docShell.chromeEventHandler.addEventListener(
+      eventHandler.addEventListener(
         "devtoolschildremoved",
         this.#onDOMMutation,
         eventOptions
@@ -417,13 +427,17 @@ class JavaScriptTracer {
     }
 
     let shouldLogToStdout = true;
+
+    // The depth is the depth of the parent frame, consider the dom mutation as nested to it
+    const depth = this.depth + 1;
+
     if (listeners.size > 0) {
       shouldLogToStdout = false;
       for (const listener of listeners) {
         // If any listener return true, also log to stdout
         if (typeof listener.onTracingDOMMutation == "function") {
           shouldLogToStdout |= listener.onTracingDOMMutation({
-            depth: this.depth,
+            depth,
             prefix: this.prefix,
 
             type,
@@ -435,7 +449,7 @@ class JavaScriptTracer {
     }
 
     if (shouldLogToStdout) {
-      const padding = "—".repeat(this.depth + 1);
+      const padding = "—".repeat(depth + 1);
       this.loggingMethod(
         this.prefix +
           padding +
@@ -609,7 +623,7 @@ class JavaScriptTracer {
     if (shouldLogToStdout) {
       this.loggingMethod(
         this.prefix +
-          "Looks like an infinite recursion? We stopped the JavaScript tracer, but code may still be running!\n"
+          `Looks like an infinite recursion? We stopped the JavaScript tracer, but code may still be running!\n(This is configurable via ${MAX_DEPTH_PREF} preference)\n`
       );
     }
   }
@@ -662,8 +676,8 @@ class JavaScriptTracer {
         this.records++;
       }
 
-      // Consider depth > 100 as an infinite recursive loop and stop the tracer.
-      if (depth == 100) {
+      // Consider that beyond some depth, we are running an infinite recursive loop and stop the tracer.
+      if (depth == this.infiniteLoopDepthLimit) {
         this.notifyInfiniteLoop();
         this.stopTracing("infinite-loop");
         return;
@@ -750,6 +764,8 @@ class JavaScriptTracer {
       }
 
       frame.onPop = completion => {
+        this.depth--;
+
         // Special case async frames. We are exiting the current frame because of waiting for an async task.
         // (this is typically a `await foo()` from an async function)
         // This frame should later be "entered" again.
@@ -1116,4 +1132,5 @@ export const JSTracer = {
   removeTracingListener,
   NEXT_INTERACTION_MESSAGE,
   DOM_MUTATIONS,
+  MAX_DEPTH_PREF,
 };

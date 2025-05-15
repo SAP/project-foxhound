@@ -32,7 +32,76 @@ namespace js::temporal {
 
 enum class CalendarId : int32_t {
   ISO8601,
+
+  // Thai Buddhist solar calendar.
+  Buddhist,
+
+  // Chinese lunisolar calendar.
+  Chinese,
+
+  // Coptic calendar.
+  Coptic,
+
+  // Korean lunisolar calendar.
+  Dangi,
+
+  // Ethiopian Amete Mihret calendar.
+  Ethiopian,
+
+  // Ethiopian Amete Alem calendar.
+  EthiopianAmeteAlem,
+
+  // Gregorian calendar.
+  Gregorian,
+
+  // Hebrew lunisolar calendar.
+  Hebrew,
+
+  // Indian national calendar.
+  Indian,
+
+  // Islamic lunar calendars.
+  Islamic,
+  IslamicCivil,
+  IslamicRGSA,
+  IslamicTabular,
+  IslamicUmmAlQura,
+
+  // Japanese calendar.
+  Japanese,
+
+  // Persian solar Hijri calendar.
+  Persian,
+
+  // Republic of China (ROC) calendar.
+  ROC,
 };
+
+inline constexpr auto availableCalendars = {
+    CalendarId::ISO8601,
+    CalendarId::Buddhist,
+    CalendarId::Chinese,
+    CalendarId::Coptic,
+    CalendarId::Dangi,
+    CalendarId::Ethiopian,
+    CalendarId::EthiopianAmeteAlem,
+    CalendarId::Gregorian,
+    CalendarId::Hebrew,
+    CalendarId::Indian,
+    CalendarId::Islamic,
+    CalendarId::IslamicCivil,
+    CalendarId::IslamicRGSA,
+    CalendarId::IslamicTabular,
+    CalendarId::IslamicUmmAlQura,
+    CalendarId::Japanese,
+    CalendarId::Persian,
+    CalendarId::ROC,
+};
+
+/**
+ * AvailableCalendars ( )
+ */
+constexpr auto& AvailableCalendars() { return availableCalendars; }
 
 class CalendarObject : public NativeObject {
  public:
@@ -861,13 +930,6 @@ bool CalendarEquals(JSContext* cx, JS::Handle<CalendarValue> one,
  */
 bool CalendarEqualsOrThrow(JSContext* cx, JS::Handle<CalendarValue> one,
                            JS::Handle<CalendarValue> two);
-
-/**
- * ConsolidateCalendars ( one, two )
- */
-bool ConsolidateCalendars(JSContext* cx, JS::Handle<CalendarValue> one,
-                          JS::Handle<CalendarValue> two,
-                          JS::MutableHandle<CalendarValue> result);
 
 /**
  * CreateCalendarMethodsRecord ( calendar, methods )

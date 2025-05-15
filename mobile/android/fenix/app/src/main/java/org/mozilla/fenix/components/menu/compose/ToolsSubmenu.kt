@@ -23,10 +23,16 @@ internal const val TOOLS_MENU_ROUTE = "tools_menu"
 @Suppress("LongParameterList")
 @Composable
 internal fun ToolsSubmenu(
+    isReaderable: Boolean,
     isReaderViewActive: Boolean,
     isTranslated: Boolean,
+    isTranslationSupported: Boolean,
+    hasExternalApp: Boolean,
+    externalAppName: String,
+    translatedLanguage: String,
     onBackButtonClick: () -> Unit,
     onReaderViewMenuClick: () -> Unit,
+    onCustomizeReaderViewMenuClick: () -> Unit,
     onTranslatePageMenuClick: () -> Unit,
     onPrintMenuClick: () -> Unit,
     onShareMenuClick: () -> Unit,
@@ -42,16 +48,29 @@ internal fun ToolsSubmenu(
     ) {
         MenuGroup {
             ReaderViewMenuItem(
+                isReaderable = isReaderable,
                 isReaderViewActive = isReaderViewActive,
                 onClick = onReaderViewMenuClick,
             )
 
-            Divider(color = FirefoxTheme.colors.borderSecondary)
+            if (isReaderViewActive) {
+                MenuItem(
+                    label = stringResource(id = R.string.browser_menu_customize_reader_view_2),
+                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_reader_view_customize_24),
+                    onClick = onCustomizeReaderViewMenuClick,
+                )
+            }
 
-            TranslationMenuItem(
-                isTranslated = isTranslated,
-                onClick = onTranslatePageMenuClick,
-            )
+            if (isTranslationSupported) {
+                Divider(color = FirefoxTheme.colors.borderSecondary)
+
+                TranslationMenuItem(
+                    isTranslated = isTranslated,
+                    isReaderViewActive = isReaderViewActive,
+                    translatedLanguage = translatedLanguage,
+                    onClick = onTranslatePageMenuClick,
+                )
+            }
         }
 
         MenuGroup {
@@ -71,17 +90,31 @@ internal fun ToolsSubmenu(
 
             Divider(color = FirefoxTheme.colors.borderSecondary)
 
-            MenuItem(
-                label = stringResource(id = R.string.browser_menu_open_app_link),
-                beforeIconPainter = painterResource(id = R.drawable.mozac_ic_more_grid_24),
-                onClick = onOpenInAppMenuClick,
-            )
+            if (hasExternalApp) {
+                MenuItem(
+                    label = if (externalAppName != "") {
+                        stringResource(id = R.string.browser_menu_open_in_fenix, externalAppName)
+                    } else {
+                        stringResource(id = R.string.browser_menu_open_app_link)
+                    },
+                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_more_grid_24),
+                    state = MenuItemState.ENABLED,
+                    onClick = onOpenInAppMenuClick,
+                )
+            } else {
+                MenuItem(
+                    label = stringResource(id = R.string.browser_menu_open_app_link),
+                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_more_grid_24),
+                    state = MenuItemState.DISABLED,
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun ReaderViewMenuItem(
+    isReaderable: Boolean,
     isReaderViewActive: Boolean,
     onClick: () -> Unit,
 ) {
@@ -96,6 +129,7 @@ private fun ReaderViewMenuItem(
         MenuItem(
             label = stringResource(id = R.string.browser_menu_turn_on_reader_view),
             beforeIconPainter = painterResource(id = R.drawable.mozac_ic_reader_view_24),
+            state = if (isReaderable) MenuItemState.ENABLED else MenuItemState.DISABLED,
             onClick = onClick,
         )
     }
@@ -104,22 +138,25 @@ private fun ReaderViewMenuItem(
 @Composable
 private fun TranslationMenuItem(
     isTranslated: Boolean,
+    isReaderViewActive: Boolean,
+    translatedLanguage: String,
     onClick: () -> Unit,
 ) {
     if (isTranslated) {
         MenuItem(
             label = stringResource(
                 id = R.string.browser_menu_translated_to,
-                stringResource(id = R.string.app_name),
+                translatedLanguage,
             ),
             beforeIconPainter = painterResource(id = R.drawable.mozac_ic_translate_24),
-            state = MenuItemState.ACTIVE,
+            state = if (isReaderViewActive) MenuItemState.DISABLED else MenuItemState.ENABLED,
             onClick = onClick,
         )
     } else {
         MenuItem(
             label = stringResource(id = R.string.browser_menu_translate_page),
             beforeIconPainter = painterResource(id = R.drawable.mozac_ic_translate_24),
+            state = if (isReaderViewActive) MenuItemState.DISABLED else MenuItemState.ENABLED,
             onClick = onClick,
         )
     }
@@ -133,10 +170,16 @@ private fun ToolsSubmenuPreview() {
             modifier = Modifier.background(color = FirefoxTheme.colors.layer3),
         ) {
             ToolsSubmenu(
+                isReaderable = true,
                 isReaderViewActive = false,
                 isTranslated = false,
+                isTranslationSupported = false,
+                hasExternalApp = true,
+                externalAppName = "Pocket",
+                translatedLanguage = "",
                 onBackButtonClick = {},
                 onReaderViewMenuClick = {},
+                onCustomizeReaderViewMenuClick = {},
                 onTranslatePageMenuClick = {},
                 onPrintMenuClick = {},
                 onShareMenuClick = {},
@@ -154,10 +197,16 @@ private fun ToolsSubmenuPrivatePreview() {
             modifier = Modifier.background(color = FirefoxTheme.colors.layer3),
         ) {
             ToolsSubmenu(
+                isReaderable = true,
                 isReaderViewActive = false,
                 isTranslated = false,
+                isTranslationSupported = true,
+                hasExternalApp = true,
+                externalAppName = "Pocket",
+                translatedLanguage = "",
                 onBackButtonClick = {},
                 onReaderViewMenuClick = {},
+                onCustomizeReaderViewMenuClick = {},
                 onTranslatePageMenuClick = {},
                 onPrintMenuClick = {},
                 onShareMenuClick = {},

@@ -9,6 +9,7 @@
  */
 
 #include <stddef.h>
+#include <stdio.h>
 
 #include "vp9/encoder/vp9_ext_ratectrl.h"
 #include "vp9/encoder/vp9_encoder.h"
@@ -51,6 +52,14 @@ vpx_codec_err_t vp9_extrc_create(vpx_rc_funcs_t funcs,
   if (rc_firstpass_stats->frame_stats == NULL) {
     return VPX_CODEC_MEM_ERROR;
   }
+  if (funcs.rate_ctrl_log_path != NULL) {
+    ext_ratectrl->log_file = fopen(funcs.rate_ctrl_log_path, "w");
+    if (!ext_ratectrl->log_file) {
+      return VPX_CODEC_ERROR;
+    }
+  } else {
+    ext_ratectrl->log_file = NULL;
+  }
   ext_ratectrl->ready = 1;
   return VPX_CODEC_OK;
 }
@@ -60,6 +69,9 @@ vpx_codec_err_t vp9_extrc_delete(EXT_RATECTRL *ext_ratectrl) {
     return VPX_CODEC_INVALID_PARAM;
   }
   if (ext_ratectrl->ready) {
+    if (ext_ratectrl->log_file) {
+      fclose(ext_ratectrl->log_file);
+    }
     vpx_rc_status_t rc_status =
         ext_ratectrl->funcs.delete_model(ext_ratectrl->model);
     if (rc_status == VPX_RC_ERROR) {
@@ -217,6 +229,18 @@ vpx_codec_err_t vp9_extrc_get_gop_decision(
     return VPX_CODEC_ERROR;
   }
   return VPX_CODEC_OK;
+}
+
+vpx_codec_err_t vp9_extrc_get_key_frame_decision(
+    EXT_RATECTRL *ext_ratectrl,
+    vpx_rc_key_frame_decision_t *key_frame_decision) {
+  if (ext_ratectrl == NULL || !ext_ratectrl->ready ||
+      (ext_ratectrl->funcs.rc_type & VPX_RC_GOP) == 0) {
+    return VPX_CODEC_INVALID_PARAM;
+  }
+  vpx_rc_status_t rc_status = ext_ratectrl->funcs.get_key_frame_decision(
+      ext_ratectrl->model, key_frame_decision);
+  return rc_status == VPX_RC_OK ? VPX_CODEC_OK : VPX_CODEC_ERROR;
 }
 
 vpx_codec_err_t vp9_extrc_get_frame_rdmult(

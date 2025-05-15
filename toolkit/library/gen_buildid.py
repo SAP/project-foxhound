@@ -10,10 +10,9 @@
 
 
 import os
-from io import StringIO
 
 import buildconfig
-from mozbuild.preprocessor import Preprocessor
+from variables import get_buildid
 
 
 def main(output, input_file):
@@ -34,11 +33,7 @@ def tests(output, buildid):
 
 
 def write_file(output, maybe_buildid):
-    pp = Preprocessor()
-    pp.out = StringIO()
-    pp.do_include(os.path.join(buildconfig.topobjdir, "buildid.h"))
-    buildid = pp.context["MOZ_BUILDID"] if maybe_buildid is None else maybe_buildid
-
+    buildid = maybe_buildid or get_buildid()
     keyword_extern = "extern" if maybe_buildid is None else ""
     attribute_used = "__attribute__((used))" if maybe_buildid is not None else ""
 
@@ -77,17 +72,25 @@ def write_file(output, maybe_buildid):
 #define NT_VERSION 1
 #endif
 
+#if defined(__clang__)
+#define NO_SANITIZE_ADDRESS __attribute__((no_sanitize("address")))
+#else
+// gcc doesn't sanitize address of const variable
+#define NO_SANITIZE_ADDRESS
+#endif
+
 struct note {{
     Elf32_Nhdr header; // Elf32 or Elf64 doesn't matter, they're the same size
     char name[(sizeof(note_name) + 3) / 4 * 4];
     char desc[(sizeof(note_desc) + 3) / 4 * 4];
 }};
 
-{extern} const struct note gNoteToolkitBuildID __attribute__((section(MOZ_BUILDID_SECTION_NAME), aligned(4), used)) = {{
+{extern} const struct note gNoteToolkitBuildID NO_SANITIZE_ADDRESS __attribute__((section(MOZ_BUILDID_SECTION_NAME), aligned(4), used)) = {{
     {{ sizeof(note_name), sizeof(note_desc), NT_VERSION }},
     note_name,
     note_desc
 }};
+
 """
         output.write(
             "{}".format(

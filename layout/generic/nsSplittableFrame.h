@@ -48,12 +48,12 @@ class nsSplittableFrame : public nsIFrame {
   nsIFrame* GetNextContinuation() const final;
 
   // Set a previous non-fluid continuation.
-  void SetPrevContinuation(nsIFrame*) final;
-
-  // Set a next non-fluid continuation.
   //
   // WARNING: this method updates caches for next-continuations, so it has O(n)
   // time complexity over the length of next-continuations in the chain.
+  void SetPrevContinuation(nsIFrame*) final;
+
+  // Set a next non-fluid continuation.
   void SetNextContinuation(nsIFrame*) final;
 
   // Get the first/last continuation for this frame.
@@ -71,27 +71,37 @@ class nsSplittableFrame : public nsIFrame {
   nsIFrame* GetNextInFlow() const final;
 
   // Set a previous fluid continuation.
-  void SetPrevInFlow(nsIFrame*) final;
-
-  // Set a next fluid continuation.
   //
   // WARNING: this method updates caches for next-continuations, so it has O(n)
   // time complexity over the length of next-continuations in the chain.
+  void SetPrevInFlow(nsIFrame*) final;
+
+  // Set a next fluid continuation.
   void SetNextInFlow(nsIFrame*) final;
 
   // Get the first/last frame in the current flow.
   nsIFrame* FirstInFlow() const final;
   nsIFrame* LastInFlow() const final;
 
-  // Remove the frame from the flow. Connects the frame's prev-in-flow
-  // and its next-in-flow. This should only be called in frame Destroy()
-  // methods.
+  // Remove the frame from the flow. Connects the frame's prev-in-flow and its
+  // next-in-flow. This should only be called during frame destruction, e.g. in
+  // frame's Destroy() method.
   static void RemoveFromFlow(nsIFrame* aFrame);
 
  protected:
   nsSplittableFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
                     ClassID aID)
       : nsIFrame(aStyle, aPresContext, aID) {}
+
+  // Return the first-continuation for this frame if this frame is the
+  // first-continuation in the chain or if it has a cached first-continuation.
+  // Otherwise, return nullptr.
+  nsIFrame* GetFirstContinuationIfCached() const;
+
+  // Return the first-in-flow for this frame if this frame is the first-in-flow
+  // in the chain or if it has a cached first-in-flow. Otherwise, return
+  // nullptr.
+  nsIFrame* GetFirstInFlowIfCached() const;
 
   // Update the first-continuation and first-in-flow cache for this frame and
   // the next-continuations in the chain.

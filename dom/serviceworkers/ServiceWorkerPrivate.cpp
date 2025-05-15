@@ -62,6 +62,7 @@
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsISupportsImpl.h"
+#include "nsISupportsPriority.h"
 #include "nsIURI.h"
 #include "nsIUploadChannel2.h"
 #include "nsNetUtil.h"
@@ -321,6 +322,14 @@ Result<IPCInternalRequest, nsresult> GetIPCInternalRequest(
   MOZ_ALWAYS_SUCCEEDS(internalChannel->GetRedirectMode(&redirectMode));
   RequestRedirect requestRedirect = static_cast<RequestRedirect>(redirectMode);
 
+  // request's priority is not copied by the new Request() constructor used by
+  // a fetch() call while request's internal priority is. So let's use the
+  // default, otherwise a fetch(event.request) from a worker on an intercepted
+  // fetch event would adjust priority twice.
+  // https://fetch.spec.whatwg.org/#dom-global-fetch
+  // https://fetch.spec.whatwg.org/#dom-request
+  RequestPriority requestPriority = RequestPriority::Auto;
+
   RequestCredentials requestCredentials =
       InternalRequest::MapChannelToRequestCredentials(underlyingChannel);
 
@@ -339,6 +348,11 @@ Result<IPCInternalRequest, nsresult> GetIPCInternalRequest(
 
   nsCOMPtr<nsILoadInfo> loadInfo = underlyingChannel->LoadInfo();
   nsContentPolicyType contentPolicyType = loadInfo->InternalContentPolicyType();
+
+  int32_t internalPriority = nsISupportsPriority::PRIORITY_NORMAL;
+  if (nsCOMPtr<nsISupportsPriority> p = do_QueryInterface(underlyingChannel)) {
+    p->GetPriority(&internalPriority);
+  }
 
   nsAutoString integrity;
   MOZ_TRY(internalChannel->GetIntegrityMetadata(integrity));
@@ -403,11 +417,11 @@ Result<IPCInternalRequest, nsresult> GetIPCInternalRequest(
   // efficient, because there's no move-friendly constructor generated.
   return IPCInternalRequest(
       method, {spec}, ipcHeadersGuard, ipcHeaders, Nothing(), -1,
-      alternativeDataType, contentPolicyType, referrer, referrerPolicy,
-      environmentReferrerPolicy, requestMode, requestCredentials, cacheMode,
-      requestRedirect, integrity, fragment, principalInfo,
-      interceptionPrincipalInfo, contentPolicyType, redirectChain,
-      isThirdPartyChannel, embedderPolicy);
+      alternativeDataType, contentPolicyType, internalPriority, referrer,
+      referrerPolicy, environmentReferrerPolicy, requestMode,
+      requestCredentials, cacheMode, requestRedirect, requestPriority,
+      integrity, false, fragment, principalInfo, interceptionPrincipalInfo,
+      contentPolicyType, redirectChain, isThirdPartyChannel, embedderPolicy);
 }
 
 nsresult MaybeStoreStreamForBackgroundThread(nsIInterceptedChannel* aChannel,
@@ -1561,8 +1575,8 @@ void ServiceWorkerPrivate::ErrorReceived(const ErrorValue& aError) {
   ServiceWorkerInfo* info = mInfo;
 
   swm->HandleError(nullptr, info->Principal(), info->Scope(),
-                   NS_ConvertUTF8toUTF16(info->ScriptSpec()), u""_ns, u""_ns,
-                   u""_ns, 0, 0, nsIScriptError::errorFlag, JSEXN_ERR);
+                   info->ScriptSpec(), u""_ns, ""_ns, u""_ns, 0, 0,
+                   nsIScriptError::errorFlag, JSEXN_ERR);
 }
 
 void ServiceWorkerPrivate::Terminated() {

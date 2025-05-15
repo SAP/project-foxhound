@@ -50,6 +50,7 @@
 
 #include "BodyExtractor.h"
 #include "FetchChild.h"
+#include "FetchUtil.h"
 #include "FetchObserver.h"
 #include "InternalRequest.h"
 #include "InternalResponse.h"
@@ -512,7 +513,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
   request->GetUrl(url);
   ReportTaintSink(url, "fetch.url");
 
-  SafeRefPtr<InternalRequest> r = request->GetInternalRequest();
+  SafeRefPtr<InternalRequest> internalRequest = request->GetInternalRequest();
 
   // Restore information of InterceptedHttpChannel if they are passed with the
   // Request. Since Request::Constructor would not copy these members.
@@ -520,16 +521,16 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     RefPtr<Request> inputReq = &aInput.GetAsRequest();
     SafeRefPtr<InternalRequest> inputInReq = inputReq->GetInternalRequest();
     if (inputInReq->GetInterceptionTriggeringPrincipalInfo()) {
-      r->SetInterceptionContentPolicyType(
+      internalRequest->SetInterceptionContentPolicyType(
           inputInReq->InterceptionContentPolicyType());
-      r->SetInterceptionTriggeringPrincipalInfo(
+      internalRequest->SetInterceptionTriggeringPrincipalInfo(
           MakeUnique<mozilla::ipc::PrincipalInfo>(
               *(inputInReq->GetInterceptionTriggeringPrincipalInfo().get())));
       if (!inputInReq->InterceptionRedirectChain().IsEmpty()) {
-        r->SetInterceptionRedirectChain(
+        internalRequest->SetInterceptionRedirectChain(
             inputInReq->InterceptionRedirectChain());
       }
-      r->SetInterceptionFromThirdParty(
+      internalRequest->SetInterceptionFromThirdParty(
           inputInReq->InterceptionFromThirdParty());
     }
   }
@@ -550,7 +551,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
   JS::Realm* realm = JS::GetCurrentRealmOrNull(cx);
   if (realm && JS::GetDebuggerObservesWasm(realm)) {
-    r->SetSkipWasmCaching();
+    internalRequest->SetSkipWasmCaching();
   }
 
   RefPtr<FetchObserver> observer;
@@ -559,7 +560,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     aInit.mObserve.Value().HandleEvent(*observer);
   }
 
-  if (NS_IsMainThread()) {
+  if (NS_IsMainThread() && !internalRequest->GetKeepalive()) {
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal);
     nsCOMPtr<Document> doc;
     nsCOMPtr<nsILoadGroup> loadGroup;
@@ -597,22 +598,114 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
     RefPtr<MainThreadFetchResolver> resolver = new MainThreadFetchResolver(
         p, observer, signalImpl, request->MozErrors());
-    RefPtr<FetchDriver> fetch = new FetchDriver(
-        std::move(r), principal, loadGroup, aGlobal->SerialEventTarget(),
-        cookieJarSettings, nullptr,  // PerformanceStorage
-        isTrackingFetch);
+    RefPtr<FetchDriver> fetch =
+        new FetchDriver(std::move(internalRequest), principal, loadGroup,
+                        aGlobal->SerialEventTarget(), cookieJarSettings,
+                        nullptr,  // PerformanceStorage
+                        isTrackingFetch);
     fetch->SetDocument(doc);
     resolver->SetLoadGroup(loadGroup);
     aRv = fetch->Fetch(signalImpl, resolver);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
+  } else if (NS_IsMainThread() && internalRequest->GetKeepalive()) {
+    // keepalive is set to true, route the request through PFetch
+    // We plan to route all main-thread fetch request through PFetch.
+    // See Bug 1897129.
+
+    uint64_t bodyLength =
+        internalRequest->BodyLength() > 0 ? internalRequest->BodyLength() : 0;
+
+    nsCOMPtr<nsILoadGroup> loadGroup =
+        FetchUtil::GetLoadGroupFromGlobal(aGlobal);
+
+    if (loadGroup && !FetchUtil::IncrementPendingKeepaliveRequestSize(
+                         loadGroup, bodyLength)) {
+      p->MaybeRejectWithTypeError<MSG_FETCH_FAILED>();
+      return p.forget();
+    };
+
+    if (!loadGroup) {
+      // if there is no load group for this request ensure that the request
+      // size does not exceed FETCH_KEEPALIVE_MAX_SIZE
+      if (bodyLength > FETCH_KEEPALIVE_MAX_SIZE) {
+        p->MaybeRejectWithTypeError<MSG_FETCH_FAILED>();
+        return p.forget();
+      }
+    }
+
+    RefPtr<FetchChild> actor =
+        FetchChild::CreateForMainThread(p, signalImpl, observer);
+    if (!actor) {
+      NS_WARNING("Could not start keepalive request.");
+      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+      return nullptr;
+    }
+
+    Maybe<ClientInfo> clientInfo(aGlobal->GetClientInfo());
+    if (clientInfo.isNothing()) {
+      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+      return nullptr;
+    }
+
+    auto* backgroundChild =
+        mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
+    Unused << NS_WARN_IF(!backgroundChild->SendPFetchConstructor(actor));
+
+    FetchOpArgs ipcArgs;
+
+    ipcArgs.request() = IPCInternalRequest();
+    internalRequest->ToIPCInternalRequest(&(ipcArgs.request()),
+                                          backgroundChild);
+
+    ipcArgs.clientInfo() = clientInfo.ref().ToIPC();
+    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal);
+    nsCOMPtr<Document> doc;
+    nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+    nsIPrincipal* principal;
+    // we don't check if we this request is invoked from a tracking script
+    // we might add this capability in future.
+    // See Bug 1892406
+    if (window) {
+      doc = window->GetExtantDoc();
+      if (!doc) {
+        aRv.Throw(NS_ERROR_FAILURE);
+        return nullptr;
+      }
+      principal = doc->NodePrincipal();
+      cookieJarSettings = doc->CookieJarSettings();
+
+    } else {
+      principal = aGlobal->PrincipalOrNull();
+      if (NS_WARN_IF(!principal)) {
+        aRv.Throw(NS_ERROR_FAILURE);
+        return nullptr;
+      }
+      cookieJarSettings = mozilla::net::CookieJarSettings::Create(principal);
+    }
+
+    if (cookieJarSettings) {
+      net::CookieJarSettingsArgs csArgs;
+      net::CookieJarSettings::Cast(cookieJarSettings)->Serialize(csArgs);
+      ipcArgs.cookieJarSettings() = Some(csArgs);
+    }
+
+    nsresult rv = PrincipalToPrincipalInfo(principal, &ipcArgs.principalInfo());
+    NS_ENSURE_SUCCESS(rv, nullptr);
+
+    ipcArgs.hasCSPEventListener() = false;
+    ipcArgs.isWorkerRequest() = false;
+
+    actor->DoFetchOp(ipcArgs);
+
+    return p.forget();
   } else {
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(worker);
 
     if (worker->IsServiceWorker()) {
-      r->SetSkipServiceWorker();
+      internalRequest->SetSkipServiceWorker();
     }
 
     // PFetch gives no benefit for the fetch in the parent process.
@@ -620,7 +713,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     // For child process, dispatch fetch op to the parent.
     if (StaticPrefs::dom_workers_pFetch_enabled() && !XRE_IsParentProcess()) {
       RefPtr<FetchChild> actor =
-          FetchChild::Create(worker, p, signalImpl, observer);
+          FetchChild::CreateForWorker(worker, p, signalImpl, observer);
       if (!actor) {
         NS_WARNING("Could not keep the worker alive.");
         aRv.Throw(NS_ERROR_DOM_ABORT_ERR);
@@ -638,9 +731,9 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       Unused << NS_WARN_IF(!backgroundChild->SendPFetchConstructor(actor));
 
       FetchOpArgs ipcArgs;
-
       ipcArgs.request() = IPCInternalRequest();
-      r->ToIPCInternalRequest(&(ipcArgs.request()), backgroundChild);
+      internalRequest->ToIPCInternalRequest(&(ipcArgs.request()),
+                                            backgroundChild);
 
       ipcArgs.principalInfo() = worker->GetPrincipalInfo();
       ipcArgs.clientInfo() = clientInfo.ref().ToIPC();
@@ -672,11 +765,15 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
       ipcArgs.isThirdPartyContext() = worker->IsThirdPartyContext();
 
+      ipcArgs.isWorkerRequest() = true;
+
       actor->DoFetchOp(ipcArgs);
 
       return p.forget();
     }
-
+    // Dispatch worker fetch to the main thread
+    // We do not check if keepalive flag is set for ChromeWorkers
+    // See Bug 1898664
     RefPtr<WorkerFetchResolver> resolver =
         WorkerFetchResolver::Create(worker, p, signalImpl, observer);
     if (!resolver) {
@@ -698,7 +795,8 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
     RefPtr<MainThreadFetchRunnable> run = new MainThreadFetchRunnable(
         resolver, clientInfo.ref(), worker->GlobalScope()->GetController(),
-        worker->CSPEventListener(), std::move(r), std::move(stack));
+        worker->CSPEventListener(), std::move(internalRequest),
+        std::move(stack));
     worker->DispatchToMainThread(run.forget());
   }
 
@@ -1357,8 +1455,9 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
            mozilla::ipc::PrincipalInfo::TSystemPrincipalInfo ||
        (principalInfo->type() ==
             mozilla::ipc::PrincipalInfo::TContentPrincipalInfo &&
-        principalInfo->get_ContentPrincipalInfo().attrs().mPrivateBrowsingId ==
-            0))) {
+        !principalInfo->get_ContentPrincipalInfo()
+             .attrs()
+             .IsPrivateBrowsing()))) {
     blobStorageType = MutableBlobStorage::eCouldBeInTemporaryFile;
   }
 

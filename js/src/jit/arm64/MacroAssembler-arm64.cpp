@@ -17,11 +17,13 @@
 #include "jit/BaselineFrame.h"
 #include "jit/JitRuntime.h"
 #include "jit/MacroAssembler.h"
+#include "jit/ProcessExecutableMemory.h"
 #include "util/Memory.h"
 #include "vm/BigIntType.h"
 #include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/JSContext.h"
 #include "vm/StringType.h"
+#include "wasm/WasmStubs.h"
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -181,8 +183,9 @@ void MacroAssemblerCompat::loadPrivate(const Address& src, Register dest) {
   loadPtr(src, dest);
 }
 
-void MacroAssemblerCompat::handleFailureWithHandlerTail(Label* profilerExitTail,
-                                                        Label* bailoutTail) {
+void MacroAssemblerCompat::handleFailureWithHandlerTail(
+    Label* profilerExitTail, Label* bailoutTail,
+    uint32_t* returnValueCheckOffset) {
   // Fail rather than silently create wrong code.
   MOZ_RELEASE_ASSERT(GetStackPointer64().Is(PseudoStackPointer64));
 
@@ -201,13 +204,15 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(Label* profilerExitTail,
   asMasm().callWithABI<Fn, HandleException>(
       ABIType::General, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
+  *returnValueCheckOffset = asMasm().currentOffset();
+
   Label entryFrame;
   Label catch_;
   Label finally;
   Label returnBaseline;
   Label returnIon;
   Label bailout;
-  Label wasm;
+  Label wasmInterpEntry;
   Label wasmCatch;
 
   // Check the `asMasm` calls above didn't mess with the StackPointer identity.
@@ -227,8 +232,9 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(Label* profilerExitTail,
                     Imm32(ExceptionResumeKind::ForcedReturnIon), &returnIon);
   asMasm().branch32(Assembler::Equal, r0, Imm32(ExceptionResumeKind::Bailout),
                     &bailout);
-  asMasm().branch32(Assembler::Equal, r0, Imm32(ExceptionResumeKind::Wasm),
-                    &wasm);
+  asMasm().branch32(Assembler::Equal, r0,
+                    Imm32(ExceptionResumeKind::WasmInterpEntry),
+                    &wasmInterpEntry);
   asMasm().branch32(Assembler::Equal, r0, Imm32(ExceptionResumeKind::WasmCatch),
                     &wasmCatch);
 
@@ -363,31 +369,21 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(Label* profilerExitTail,
   Mov(x0, 1);
   jump(bailoutTail);
 
-  // If we are throwing and the innermost frame was a wasm frame, reset SP and
-  // FP; SP is pointing to the unwound return address to the wasm entry, so
-  // we can just ret().
-  bind(&wasm);
+  // Reset SP and FP; SP is pointing to the unwound return address to the wasm
+  // interpreter entry, so we can just ret().
+  bind(&wasmInterpEntry);
   Ldr(x29, MemOperand(PseudoStackPointer64,
                       ResumeFromException::offsetOfFramePointer()));
   Ldr(PseudoStackPointer64,
       MemOperand(PseudoStackPointer64,
                  ResumeFromException::offsetOfStackPointer()));
   syncStackPtr();
-  Mov(x23, int64_t(wasm::FailInstanceReg));
+  Mov(x23, int64_t(wasm::InterpFailInstanceReg));
   ret();
 
   // Found a wasm catch handler, restore state and jump to it.
   bind(&wasmCatch);
-  loadPtr(Address(PseudoStackPointer, ResumeFromException::offsetOfTarget()),
-          r0);
-  loadPtr(
-      Address(PseudoStackPointer, ResumeFromException::offsetOfFramePointer()),
-      r29);
-  loadPtr(
-      Address(PseudoStackPointer, ResumeFromException::offsetOfStackPointer()),
-      PseudoStackPointer);
-  syncStackPtr();
-  Br(x0);
+  wasm::GenerateJumpToCatchHandler(asMasm(), PseudoStackPointer, r0, r1);
 
   MOZ_ASSERT(GetStackPointer64().Is(PseudoStackPointer64));
 }
@@ -1411,6 +1407,21 @@ void MacroAssembler::patchFarJump(CodeOffset farJump, uint32_t targetOffset) {
   Instruction* inst2 = getInstructionAt(BufferOffset(farJump.offset() + 8));
 
   int64_t distance = (int64_t)targetOffset - (int64_t)farJump.offset();
+
+  MOZ_ASSERT(inst1->InstructionBits() == UINT32_MAX);
+  MOZ_ASSERT(inst2->InstructionBits() == UINT32_MAX);
+
+  inst1->SetInstructionBits((uint32_t)distance);
+  inst2->SetInstructionBits((uint32_t)(distance >> 32));
+}
+
+void MacroAssembler::patchFarJump(uint8_t* farJump, uint8_t* target) {
+  Instruction* inst1 = (Instruction*)(farJump + 4);
+  Instruction* inst2 = (Instruction*)(farJump + 8);
+
+  int64_t distance = (int64_t)target - (int64_t)farJump;
+  MOZ_RELEASE_ASSERT(mozilla::Abs(distance) <=
+                     (intptr_t)jit::MaxCodeBytesPerProcess);
 
   MOZ_ASSERT(inst1->InstructionBits() == UINT32_MAX);
   MOZ_ASSERT(inst2->InstructionBits() == UINT32_MAX);

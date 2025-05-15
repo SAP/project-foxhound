@@ -18,9 +18,9 @@ import mozilla.components.concept.engine.webextension.DisabledFlags
 import mozilla.components.concept.engine.webextension.Metadata
 import mozilla.components.concept.engine.webextension.WebExtension
 import mozilla.components.feature.addons.migration.DefaultSupportedAddonsChecker
-import mozilla.components.service.glean.testing.GleanTestRule
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.BrowsersCache
+import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -193,7 +193,6 @@ class FenixApplicationTest {
         assertEquals("standard", Preferences.enhancedTrackingProtection.testGetValue())
         assertEquals(listOf("switch", "touch exploration"), Preferences.accessibilityServices.testGetValue())
         assertEquals(true, Preferences.inactiveTabsEnabled.testGetValue())
-        assertEquals(expectedAppInstallSource, Metrics.installSource.testGetValue())
         assertEquals(true, Metrics.defaultWallpaper.testGetValue())
         assertEquals(true, Metrics.ramMoreThanThreshold.testGetValue())
         assertEquals(7L, Metrics.deviceTotalRam.testGetValue())

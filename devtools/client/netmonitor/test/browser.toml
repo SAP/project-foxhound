@@ -1,4 +1,5 @@
 [DEFAULT]
+https_first_disabled = true
 tags = "devtools"
 subsuite = "devtools"
 skip-if = [
@@ -115,6 +116,8 @@ support-files = [
 
 ["browser_net_basic-search.js"]
 
+["browser_net_block-before-network.js"]
+
 ["browser_net_block-context.js"]
 
 ["browser_net_block-csp.js"]
@@ -176,6 +179,10 @@ skip-if = [
 ["browser_net_columns_last_column.js"]
 
 ["browser_net_columns_pref.js"]
+skip-if = [
+  # Frequent intermittents on win + beta after enabling throttling. See Bug 1902326
+  "release_or_beta && os == 'win'",
+]
 
 ["browser_net_columns_reset.js"]
 
@@ -294,6 +301,10 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_net_headers-resize.js"]
+skip-if = [
+  # Frequent intermittents on win + beta after enabling throttling. See Bug 1902326
+  "release_or_beta && os == 'win'",
+]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_net_headers_filter.js"]
@@ -506,10 +517,15 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 skip-if = ["true"] # TODO: fix the test
 
 ["browser_net_timing-division.js"]
+skip-if = [
+  # Frequent intermittents on win + beta after enabling throttling. See Bug 1902326
+  "release_or_beta && os == 'win'",
+]
 
 ["browser_net_tracking-resources.js"]
 
 ["browser_net_truncate-post-data.js"]
+https_first_disabled = true # Intermittent crashes on macos when using HTTPS, Bug 1732865
 skip-if = ["socketprocess_networking"] # Bug 1772211
 
 ["browser_net_truncate.js"]

@@ -10,7 +10,9 @@
 #define mozilla_Casting_h
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Sprintf.h"
 
+#include <cinttypes>
 #include <cstring>
 #include <type_traits>
 #include <limits>
@@ -76,6 +78,48 @@ template <typename T>
 constexpr uint64_t safe_integer_unsigned() {
   static_assert(std::is_floating_point_v<T>);
   return std::pow(2, std::numeric_limits<T>::digits);
+}
+
+template <typename T>
+const char* TypeToString();
+template <typename T>
+const char* TypeToFormatString();
+
+#define T2S(type, formatstring)                             \
+  template <>                                               \
+  inline constexpr const char* TypeToString<type>() {       \
+    return #type;                                           \
+  }                                                         \
+  template <>                                               \
+  inline constexpr const char* TypeToFormatString<type>() { \
+    return "%" formatstring;                                \
+  }
+
+T2S(uint8_t, PRIu8);
+T2S(uint16_t, PRIu16);
+T2S(uint32_t, PRIu32);
+T2S(uint64_t, PRIu64);
+T2S(int8_t, PRId8);
+T2S(int16_t, PRId16);
+T2S(int32_t, PRId32);
+T2S(int64_t, PRId64);
+T2S(char16_t, PRIu16);  // print as a number
+T2S(char32_t, PRIu32);  // print as a number
+#if defined(XP_DARWIN) || defined(XP_WIN) || defined(__wasm__)
+T2S(long, "ld");
+T2S(unsigned long, "lu");
+#endif
+T2S(float, "f");
+T2S(double, "lf");
+
+#undef T2S
+
+template <typename In, typename Out>
+inline void DiagnosticMessage(In aIn, char aDiagnostic[1024]) {
+  char number[128];
+  SprintfBuf(number, 128, TypeToFormatString<In>(), aIn);
+  SprintfBuf(aDiagnostic, 1024, "Cannot cast %s from %s to %s: out of range",
+             number, TypeToString<In>(), TypeToString<Out>());
 }
 
 // This is working around https://gcc.gnu.org/bugzilla/show_bug.cgi?id=81676,
@@ -180,7 +224,14 @@ bool IsInBounds(In aIn) {
 template <typename To, typename From>
 inline To AssertedCast(const From aFrom) {
   static_assert(std::is_arithmetic_v<To> && std::is_arithmetic_v<From>);
-  MOZ_ASSERT((detail::IsInBounds<From, To>(aFrom)));
+#ifdef DEBUG
+  if (!detail::IsInBounds<From, To>(aFrom)) {
+    char buf[1024];
+    detail::DiagnosticMessage<From, To>(aFrom, buf);
+    fprintf(stderr, "AssertedCast error: %s\n", buf);
+    MOZ_CRASH();
+  }
+#endif
   return static_cast<To>(aFrom);
 }
 
@@ -196,6 +247,60 @@ inline To ReleaseAssertedCast(const From aFrom) {
   static_assert(std::is_arithmetic_v<To> && std::is_arithmetic_v<From>);
   MOZ_RELEASE_ASSERT((detail::IsInBounds<From, To>(aFrom)));
   return static_cast<To>(aFrom);
+}
+
+/**
+ * Cast from type From to type To, clamping to minimum and maximum value of the
+ * destination type if needed.
+ */
+template <typename To, typename From>
+inline To SaturatingCast(const From aFrom) {
+  static_assert(std::is_arithmetic_v<To> && std::is_arithmetic_v<From>);
+  // This implementation works up to 64-bits integers.
+  static_assert(sizeof(From) <= 8 && sizeof(To) <= 8);
+  constexpr bool fromFloat = std::is_floating_point_v<From>;
+  constexpr bool toFloat = std::is_floating_point_v<To>;
+
+  // It's not clear what the caller wants here, it could be round, truncate,
+  // closest value, etc.
+  static_assert((fromFloat && !toFloat) || (!fromFloat && !toFloat),
+                "Handle manually depending on desired behaviour");
+
+  // If the source is floating point and the destination isn't, it can be that
+  // casting changes the value unexpectedly. Casting to double and clamping to
+  // the max of the destination type is correct, this also handles infinity.
+  if constexpr (fromFloat) {
+    if (aFrom > static_cast<double>(std::numeric_limits<To>::max())) {
+      return std::numeric_limits<To>::max();
+    }
+    if (aFrom < static_cast<double>(std::numeric_limits<To>::lowest())) {
+      return std::numeric_limits<To>::lowest();
+    }
+    return static_cast<To>(aFrom);
+  }
+  // Source and destination are of opposite signedness
+  if constexpr (std::is_signed_v<From> != std::is_signed_v<To>) {
+    // Input is negative, output is unsigned, return 0
+    if (std::is_signed_v<From> && aFrom < 0) {
+      return 0;
+    }
+    // At this point the input is positive, cast everything to uint64_t for
+    // simplicity and compare
+    uint64_t inflated = AssertedCast<uint64_t>(aFrom);
+    if (inflated > static_cast<uint64_t>(std::numeric_limits<To>::max())) {
+      return std::numeric_limits<To>::max();
+    }
+    return static_cast<To>(aFrom);
+  } else {
+    // Regular case: clamp to destination type range
+    if (aFrom > std::numeric_limits<To>::max()) {
+      return std::numeric_limits<To>::max();
+    }
+    if (aFrom < std::numeric_limits<To>::lowest()) {
+      return std::numeric_limits<To>::lowest();
+    }
+    return static_cast<To>(aFrom);
+  }
 }
 
 namespace detail {

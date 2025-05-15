@@ -1626,6 +1626,11 @@ export class StyleEditorUI extends EventEmitter {
   };
 
   #onResourceUpdated = async updates => {
+    // The editors are instantiated asynchronously from onResourceAvailable,
+    // but we may receive updates right after due to throttling.
+    // Ensure waiting for this async work before trying to update the related editors.
+    await this.#waitForLoadingStyleSheets();
+
     for (const { resource, update } of updates) {
       if (
         update.resourceType === this.#toolbox.resourceCommand.TYPES.STYLESHEET
@@ -1633,6 +1638,13 @@ export class StyleEditorUI extends EventEmitter {
         const editor = this.editors.find(
           e => e.resourceId === update.resourceId
         );
+
+        if (!editor) {
+          console.warn(
+            "Could not find StyleEditor to apply STYLESHEET resource update"
+          );
+          continue;
+        }
 
         switch (update.updateType) {
           case "style-applied": {

@@ -60,6 +60,12 @@ loader.lazyGetter(this, "PSEUDO_ELEMENTS", () => {
 loader.lazyGetter(this, "FONT_VARIATIONS_ENABLED", () => {
   return Services.prefs.getBoolPref("layout.css.font-variations.enabled");
 });
+loader.lazyGetter(this, "DISPLAY_STARTING_STYLE_RULES", () => {
+  return Services.prefs.getBoolPref(
+    "devtools.inspector.rule-view.starting-style",
+    false
+  );
+});
 
 const NORMAL_FONT_WEIGHT = 400;
 const BOLD_FONT_WEIGHT = 700;
@@ -249,27 +255,49 @@ class PageStyleActor extends Actor {
   getComputed(node, options) {
     const ret = Object.create(null);
 
+    const filterProperties = Array.isArray(options.filterProperties)
+      ? options.filterProperties
+      : null;
     this.cssLogic.sourceFilter = options.filter || SharedCssLogic.FILTER.UA;
     this.cssLogic.highlight(node.rawNode);
     const computed = this.cssLogic.computedStyle || [];
+    const targetDocument = this.inspector.targetActor.window.document;
 
-    Array.prototype.forEach.call(computed, name => {
-      if (
-        Array.isArray(options.filterProperties) &&
-        !options.filterProperties.includes(name)
-      ) {
-        return;
+    for (const name of computed) {
+      if (filterProperties && !filterProperties.includes(name)) {
+        continue;
       }
       ret[name] = {
         value: computed.getPropertyValue(name),
         priority: computed.getPropertyPriority(name) || undefined,
       };
-    });
+
+      if (name.startsWith("--")) {
+        const registeredProperty = InspectorUtils.getCSSRegisteredProperty(
+          targetDocument,
+          name
+        );
+        if (registeredProperty) {
+          ret[name].registeredPropertyInitialValue =
+            registeredProperty.initialValue;
+          if (
+            !InspectorUtils.valueMatchesSyntax(
+              targetDocument,
+              ret[name].value,
+              registeredProperty.syntax
+            )
+          ) {
+            ret[name].invalidAtComputedValueTime = true;
+            ret[name].registeredPropertySyntax = registeredProperty.syntax;
+          }
+        }
+      }
+    }
 
     if (options.markMatched || options.onlyMatched) {
       const matched = this.cssLogic.hasMatchedSelectors(Object.keys(ret));
       for (const key in ret) {
-        if (matched[key]) {
+        if (matched.has(key)) {
           ret[key].matched = options.markMatched ? true : undefined;
         } else if (options.onlyMatched) {
           delete ret[key];
@@ -459,8 +487,17 @@ class PageStyleActor extends Actor {
     this.cssLogic.highlight(node.rawNode);
 
     const rules = new Set();
-
     const matched = [];
+
+    const targetDocument = this.inspector.targetActor.window.document;
+    let registeredProperty;
+    if (property.startsWith("--")) {
+      registeredProperty = InspectorUtils.getCSSRegisteredProperty(
+        targetDocument,
+        property
+      );
+    }
+
     const propInfo = this.cssLogic.getPropertyInfo(property);
     for (const selectorInfo of propInfo.matchedSelectors) {
       const cssRule = selectorInfo.selector.cssRule;
@@ -469,14 +506,26 @@ class PageStyleActor extends Actor {
       const rule = this._styleRef(domRule);
       rules.add(rule);
 
-      matched.push({
+      const match = {
         rule,
         sourceText: this.getSelectorSource(selectorInfo, node.rawNode),
         selector: selectorInfo.selector.text,
         name: selectorInfo.property,
         value: selectorInfo.value,
         status: selectorInfo.status,
-      });
+      };
+      if (
+        registeredProperty &&
+        !InspectorUtils.valueMatchesSyntax(
+          targetDocument,
+          match.value,
+          registeredProperty.syntax
+        )
+      ) {
+        match.invalidAtComputedValueTime = true;
+        match.registeredPropertySyntax = registeredProperty.syntax;
+      }
+      matched.push(match);
     }
 
     return {
@@ -748,10 +797,14 @@ class PageStyleActor extends Actor {
    * @returns Array
    */
   _getElementRules(node, pseudo, inherited, options) {
+    // we don't need to retrieve inherited starting style rules
+    const includeStartingStyleRules =
+      !inherited && DISPLAY_STARTING_STYLE_RULES;
     const domRules = InspectorUtils.getCSSStyleRules(
       node,
       pseudo,
-      CssLogic.hasVisitedState(node)
+      CssLogic.hasVisitedState(node),
+      includeStartingStyleRules
     );
 
     if (!domRules) {

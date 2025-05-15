@@ -174,13 +174,24 @@ commit ($MOZ_CHANGED).  This may indicate a mismatch between the vendoring
 script and this script, or it could be a true error in the import
 processing.  Once the issue has been resolved, the following steps
 remain for this commit:
+  # save the patch-stack
+  ./mach python $SCRIPT_DIR/save_patch_stack.py \\
+    --skip-startup-sanity \\
+    --repo-path $MOZ_LIBWEBRTC_SRC \\
+    --branch $MOZ_LIBWEBRTC_BRANCH \\
+    --patch-path \"third_party/libwebrtc/moz-patch-stack\" \\
+    --state-path $STATE_DIR \\
+    --target-branch-head $MOZ_TARGET_UPSTREAM_BRANCH_HEAD
   # generate moz.build files (may not be necessary)
   ./mach python python/mozbuild/mozbuild/gn_processor.py \\
       $SCRIPT_DIR/gn-configs/webrtc.json
   # commit the updated moz.build files with the appropriate commit msg
   bash $SCRIPT_DIR/commit-build-file-changes.sh
   # do a (hopefully) quick test build
-  ./mach build
+  ./mach build && ./mach build recurse_gtest && echo \"Successful build\"
+
+After a successful build, you may resume this script:
+    bash $SCRIPT_DIR/loop-ff.sh
 "
 echo_log "Verify number of files changed MOZ($MOZ_CHANGED) GIT($GIT_CHANGED)"
 if [ "x$HANDLE_NOOP_COMMIT" == "x1" ]; then
@@ -219,8 +230,10 @@ Then complete these steps:
   # commit the updated moz.build files with the appropriate commit msg
   bash $SCRIPT_DIR/commit-build-file-changes.sh
   # do a (hopefully) quick test build
-  ./mach build
-After a successful build, you may resume this script.
+  ./mach build && ./mach build recurse_gtest && echo \"Successful build\"
+
+After a successful build, you may resume this script:
+    bash $SCRIPT_DIR/loop-ff.sh
 "
 echo_log "Modified BUILD.gn (or webrtc.gni) files: $MODIFIED_BUILD_RELATED_FILE_CNT"
 MOZ_BUILD_CHANGE_CNT=0
@@ -243,10 +256,13 @@ The test build has failed.  Most likely this is due to an upstream api
 change that must be reflected in Mozilla code outside of the
 third_party/libwebrtc directory. After fixing the build, you may resume
 running this script with the following command:
+    ./mach build && ./mach build recurse_gtest && \\
     bash $SCRIPT_DIR/loop-ff.sh
 "
-echo_log "Test build"
+echo_log "Test build - ./mach build"
 ./mach build 2>&1| tee -a $LOOP_OUTPUT_LOG
+echo_log "Test build - ./mach build recurse_gtest"
+./mach build recurse_gtest 2>&1| tee -a $LOOP_OUTPUT_LOG
 ERROR_HELP=""
 
 # If we've committed moz.build changes, spin up try builds.

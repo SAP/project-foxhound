@@ -53,8 +53,8 @@ const DEFAULT_TEXT_LAYOUT = {
   fontWeight: "regular",
   contentWidth: 3,
   lineSpacing: 4,
-  characterSpacing: 0,
-  wordSpacing: 0,
+  characterSpacing: 1,
+  wordSpacing: 1,
   textAlignment: "start",
 };
 
@@ -173,6 +173,7 @@ export var AboutReader = function (
   );
 
   doc.addEventListener("mousedown", this);
+  doc.addEventListener("keydown", this);
   doc.addEventListener("click", this);
   doc.addEventListener("touchstart", this);
 
@@ -248,6 +249,7 @@ export var AboutReader = function (
       "custom-colors-reset-button",
       this._resetCustomColors.bind(this)
     );
+    this._handleThemeFocus();
   } else {
     this._setupSegmentedButton(
       "color-scheme-buttons",
@@ -416,7 +418,7 @@ export var AboutReader = function (
 
     let characterSpacing = Services.prefs.getIntPref(
       "reader.character_spacing",
-      0
+      1
     );
     this._setupSlider(
       "character-spacing",
@@ -426,7 +428,7 @@ export var AboutReader = function (
     );
     this._setCharacterSpacing(characterSpacing);
 
-    let wordSpacing = Services.prefs.getIntPref("reader.word_spacing", 0);
+    let wordSpacing = Services.prefs.getIntPref("reader.word_spacing", 1);
     this._setupSlider(
       "word-spacing",
       wordSpacingSliderOptions,
@@ -451,6 +453,8 @@ export var AboutReader = function (
       "text-layout-reset-button",
       this._resetTextLayout.bind(this)
     );
+
+    this._handleTextLayoutFocus();
   } else {
     this._setupSegmentedButton(
       "font-type-buttons",
@@ -619,6 +623,11 @@ AboutReader.prototype = {
           // the dropdown will get toggled with the 'click' event.
           !target.classList.contains("dropdown-toggle")
         ) {
+          this._closeDropdowns();
+        }
+        break;
+      case "keydown":
+        if (aEvent.keyCode == 27) {
           this._closeDropdowns();
         }
         break;
@@ -1126,6 +1135,20 @@ AboutReader.prototype = {
       return false;
     }
 
+    const blockImageMarginRight = {
+      left: "auto",
+      center: "auto",
+      right: "0",
+      start: "unset",
+    };
+
+    const blockImageMarginLeft = {
+      left: "0",
+      center: "auto",
+      right: "auto",
+      start: "unset",
+    };
+
     if (newTextAlignment === "start") {
       let startAlignButton;
       if (isAppLocaleRTL) {
@@ -1141,6 +1164,16 @@ AboutReader.prototype = {
       newTextAlignment
     );
 
+    this._containerElement.style.setProperty(
+      "--block-img-margin-right",
+      blockImageMarginRight[newTextAlignment]
+    );
+
+    this._containerElement.style.setProperty(
+      "--block-img-margin-left",
+      blockImageMarginLeft[newTextAlignment]
+    );
+
     lazy.AsyncPrefs.set("reader.text_alignment", newTextAlignment);
     return true;
   },
@@ -1151,6 +1184,11 @@ AboutReader.prototype = {
     const changeEvent = new Event("change", { bubbles: true });
 
     this._resetFontSize();
+    let plusButton = this._doc.querySelector(".text-size-plus-button");
+    let minusButton = this._doc.querySelector(".text-size-minus-button");
+    plusButton.removeAttribute("disabled");
+    minusButton.removeAttribute("disabled");
+
     let fontType = doc.getElementById("font-type-selector");
     fontType.value = initial.fontType;
     fontType.dispatchEvent(changeEvent);
@@ -1178,6 +1216,28 @@ AboutReader.prototype = {
     this._setWordSpacing(initial.wordSpacing);
 
     this._setTextAlignment(initial.textAlignment);
+  },
+
+  _handleTextLayoutFocus() {
+    // Retain focus inside the menu panel.
+    let doc = this._doc;
+    let accordion = doc.querySelector("#about-reader-advanced-layout");
+    let advancedHeader = doc.querySelector(".accordion-header");
+    let textResetButton = doc.querySelector(".text-layout-reset-button");
+    let textFirstFocusable = doc.querySelector(".text-size-minus-button");
+
+    textResetButton.addEventListener("keydown", e => {
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        textFirstFocusable.focus();
+      }
+    });
+    advancedHeader.addEventListener("keydown", e => {
+      if (!accordion.hasAttribute("open") && e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        textFirstFocusable.focus();
+      }
+    });
   },
 
   _setColorScheme(newColorScheme) {
@@ -1626,6 +1686,11 @@ AboutReader.prototype = {
 
   _handleColorsTabClick(option) {
     let doc = this._doc;
+    let deck = doc.querySelector("named-deck");
+    if (option == deck.getAttribute("selected-view")) {
+      return;
+    }
+
     if (option == "customtheme") {
       this._setColorSchemePref("custom");
       lazy.AsyncPrefs.set("reader.color_scheme", "custom");
@@ -1640,8 +1705,7 @@ AboutReader.prototype = {
           lastSelectedTheme = label.className.split("-")[0];
         }
       });
-    }
-    if (option == "fxtheme") {
+    } else if (option == "fxtheme") {
       this._setColorSchemePref(lastSelectedTheme);
       lazy.AsyncPrefs.set("reader.color_scheme", lastSelectedTheme);
       // set the last selected button to checked.
@@ -1736,6 +1800,32 @@ AboutReader.prototype = {
 
       let defaultColor = DEFAULT_COLORS[property];
       input.setAttribute("color", defaultColor);
+    });
+  },
+
+  _handleThemeFocus() {
+    // Retain focus inside the menu panel.
+    let doc = this._doc;
+    let themeButtons = doc.querySelector(".colors-menu-color-scheme-buttons");
+    let defaultThemeFirstFocusable = doc.querySelector(
+      "#tabs-deck-button-fxtheme"
+    );
+    let themeResetButton = doc.querySelector(".custom-colors-reset-button");
+    let customThemeFirstFocusable = doc.querySelector(
+      "#tabs-deck-button-customtheme"
+    );
+
+    themeButtons.addEventListener("keydown", e => {
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        defaultThemeFirstFocusable.focus();
+      }
+    });
+    themeResetButton.addEventListener("keydown", e => {
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        customThemeFirstFocusable.focus();
+      }
     });
   },
 

@@ -246,7 +246,7 @@ nsresult ContentAnalysis::CreateContentAnalysisClient(
     if (orgName) {
       auto dependentOrgName = nsDependentString(orgName.get());
       LOGD("Content analysis client signed with organization name \"%S\"",
-           static_cast<const wchar_t*>(dependentOrgName.get()));
+           dependentOrgName.getW());
       signatureMatches = aClientSignatureSetting.Equals(dependentOrgName);
     } else {
       LOGD("Content analysis client has no signature");
@@ -1048,6 +1048,16 @@ ContentAnalysis::GetMightBeActive(bool* aMightBeActive) {
   return NS_OK;
 }
 
+/* static */ bool ContentAnalysis::MightBeActive() {
+  nsCOMPtr<nsIContentAnalysis> contentAnalysis =
+      mozilla::components::nsIContentAnalysis::Service();
+  NS_ENSURE_TRUE(contentAnalysis, false);
+
+  bool maybeActive = false;
+  return NS_SUCCEEDED(contentAnalysis->GetMightBeActive(&maybeActive)) &&
+         maybeActive;
+}
+
 NS_IMETHODIMP
 ContentAnalysis::GetIsSetByEnterprisePolicy(bool* aSetByEnterprise) {
   *aSetByEnterprise = mSetByEnterprise;
@@ -1815,18 +1825,28 @@ ClipboardContentAnalysisResult CheckClipboardContentAnalysisAsText(
           aTextTrans->GetTransferData(aFlavor, getter_AddRefs(transferData)))) {
     return false;
   }
-  nsCOMPtr<nsISupportsString> textData = do_QueryInterface(transferData);
-  if (MOZ_UNLIKELY(!textData)) {
-    return false;
-  }
   nsString text;
-  if (NS_FAILED(textData->GetData(text))) {
-    return mozilla::Err(NoContentAnalysisResult::DENY_DUE_TO_OTHER_ERROR);
+  nsCOMPtr<nsISupportsString> textData = do_QueryInterface(transferData);
+  if (MOZ_LIKELY(textData)) {
+    if (NS_FAILED(textData->GetData(text))) {
+      return mozilla::Err(NoContentAnalysisResult::DENY_DUE_TO_OTHER_ERROR);
+    }
+  }
+  if (text.IsEmpty()) {
+    nsCOMPtr<nsISupportsCString> cStringData = do_QueryInterface(transferData);
+    if (cStringData) {
+      nsCString cText;
+      if (NS_FAILED(cStringData->GetData(cText))) {
+        return mozilla::Err(NoContentAnalysisResult::DENY_DUE_TO_OTHER_ERROR);
+      }
+      text = NS_ConvertUTF8toUTF16(cText);
+    }
   }
   if (text.IsEmpty()) {
     // Content Analysis doesn't expect to analyze an empty string.
     // Just approve it.
-    return true;
+    return mozilla::Err(NoContentAnalysisResult::
+                            ALLOW_DUE_TO_CONTEXT_EXEMPT_FROM_CONTENT_ANALYSIS);
   }
   RefPtr<mozilla::dom::WindowGlobalParent> window =
       mozilla::dom::WindowGlobalParent::GetByInnerWindowId(aInnerWindowId);
@@ -1891,7 +1911,7 @@ ClipboardContentAnalysisResult CheckClipboardContentAnalysisAsFile(
 
 void ContentAnalysis::CheckClipboardContentAnalysis(
     nsBaseClipboard* aClipboard, mozilla::dom::WindowGlobalParent* aWindow,
-    nsITransferable* aTransferable, int32_t aClipboardType,
+    nsITransferable* aTransferable, nsIClipboard::ClipboardType aClipboardType,
     SafeContentAnalysisResultCallback* aResolver) {
   using namespace mozilla::contentanalysis;
 
@@ -1960,40 +1980,40 @@ void ContentAnalysis::CheckClipboardContentAnalysis(
     }
     keepChecking = !fileResult.unwrap();
   }
-  if (keepChecking) {
-    // Failed to get the clipboard data as a file, so try as text
+  if (!keepChecking) {
+    return;
+  }
+  // Note that on Windows, kNativeHTMLMime will return the text in the native
+  // Windows clipboard CF_HTML format - see
+  // https://learn.microsoft.com/en-us/windows/win32/dataxchg/html-clipboard-format
+  auto textFormats = {kTextMime, kHTMLMime, kNativeHTMLMime};
+  for (const auto& textFormat : textFormats) {
     auto textResult = CheckClipboardContentAnalysisAsText(
         innerWindowId, aResolver, currentURI, contentAnalysis, aTransferable,
-        kTextMime);
+        textFormat);
     if (textResult.isErr()) {
       aResolver->Callback(
           ContentAnalysisResult::FromNoResult(textResult.unwrapErr()));
       return;
     }
     keepChecking = !textResult.unwrap();
+    if (!keepChecking) {
+      break;
+    }
   }
+
   if (keepChecking) {
-    // Failed to get the clipboard data as a file or text, so try as html
-    auto htmlResult = CheckClipboardContentAnalysisAsText(
-        innerWindowId, aResolver, currentURI, contentAnalysis, aTransferable,
-        kHTMLMime);
-    if (htmlResult.isErr()) {
-      aResolver->Callback(
-          ContentAnalysisResult::FromNoResult(htmlResult.unwrapErr()));
-      return;
-    }
-    if (!htmlResult.unwrap()) {
-      // Couldn't get file or text or html data from this
-      aResolver->Callback(ContentAnalysisResult::FromNoResult(
-          NoContentAnalysisResult::ALLOW_DUE_TO_COULD_NOT_GET_DATA));
-      return;
-    }
+    // Couldn't get any data from this
+    aResolver->Callback(ContentAnalysisResult::FromNoResult(
+        NoContentAnalysisResult::ALLOW_DUE_TO_COULD_NOT_GET_DATA));
+    return;
   }
 }
 
 bool ContentAnalysis::CheckClipboardContentAnalysisSync(
     nsBaseClipboard* aClipboard, mozilla::dom::WindowGlobalParent* aWindow,
-    const nsCOMPtr<nsITransferable>& trans, int32_t aClipboardType) {
+    const nsCOMPtr<nsITransferable>& trans,
+    nsIClipboard::ClipboardType aClipboardType) {
   bool requestDone = false;
   RefPtr<nsIContentAnalysisResult> result;
   auto callback = mozilla::MakeRefPtr<SafeContentAnalysisResultCallback>(

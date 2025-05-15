@@ -124,6 +124,10 @@ urlbar:
           `rust_adm_nonsponsored`,
           `rust_adm_sponsored`,
           `rust_amo`,
+          `rust_fakespot_amazon`,
+          `rust_fakespot_bestbuy`,
+          `rust_fakespot_other`,
+          `rust_fakespot_walmart`,
           `rust_mdn`,
           `rust_pocket`,
           `rust_yelp`,
@@ -135,7 +139,6 @@ urlbar:
           `tab_to_search`,
           `tip_dismissal_acknowledgment`,
           `tip_onboard`,
-          `tip_persist`,
           `tip_redirect`,
           `tip_unknown`,
           `top_site`,
@@ -144,6 +147,15 @@ urlbar:
           `unit`,
           `url`,
           `weather`
+        type: string
+      actions:
+        description: >
+          Comma separated list of actions keys in the order they were shown to
+          the user. Possible keys are: `addons`, `bookmarks`, `clear`, `downloads`,
+          `extensions`, `inspect`, `logins`, `plugins`, `print`, `private`,
+          `refresh`, `restart`, `savepdf`, `screenshot`, `settings`, `tabswitch`,
+          `themes`, `update`, `viewsource`.
+          If there is no action shown in a position that is denoted with `none`.
         type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800414
@@ -223,7 +235,6 @@ urlbar:
         description: >
           The type of the result the user selected. The `unknown` type should
           not occur and indicates a bug. The possible types are:
-          `action`,
           `addon`,
           `autofill_about`,
           `autofill_adaptive`,
@@ -256,6 +267,10 @@ urlbar:
           `rust_adm_nonsponsored`,
           `rust_adm_sponsored`,
           `rust_amo`,
+          `rust_fakespot_amazon`,
+          `rust_fakespot_bestbuy`,
+          `rust_fakespot_other`,
+          `rust_fakespot_walmart`,
           `rust_mdn`,
           `rust_pocket`,
           `rust_yelp`,
@@ -269,7 +284,6 @@ urlbar:
           `tab_to_search`,
           `tip_dismissal_acknowledgment`,
           `tip_onboard`,
-          `tip_persist`,
           `tip_redirect`,
           `tip_unknown`,
           `top_site`,
@@ -278,15 +292,11 @@ urlbar:
           `unit`,
           `url`,
           `weather`
-        type: string
-      selected_result_subtype:
-        description: >
-          The subtype of the result the user selected. Currently, only the
-          action of the quick actions is the target to this. The possible values
-          are: `addon`, `bookmarks`, `clear`, `downloads`, `extensions`,
-          `inspect`, `logins`, `plugins`, `print`, `private`, `refresh`,
-          `restart`, `screenshot`, `settings`, `themes`, `update` and
-          `viewsource`. Otherwise, an empty string is returned.
+          If the user has selected an action this will be set with an action
+          prefix as followed
+          `action_*`
+          Where the wildcard(*) will be replaced by one of the values
+          documented in the actions field.
         type: string
       selected_position:
         description: >
@@ -345,7 +355,6 @@ urlbar:
           Comma separated list of result types in the order they were shown to
           the user. The `unknown` type should not occur and indicates a bug. The
           possible types are:
-          `action`,
           `addon`,
           `autofill_about`,
           `autofill_adaptive`,
@@ -376,6 +385,10 @@ urlbar:
           `rust_adm_nonsponsored`,
           `rust_adm_sponsored`,
           `rust_amo`,
+          `rust_fakespot_amazon`,
+          `rust_fakespot_bestbuy`,
+          `rust_fakespot_other`,
+          `rust_fakespot_walmart`,
           `rust_mdn`,
           `rust_pocket`,
           `rust_yelp`,
@@ -387,7 +400,6 @@ urlbar:
           `tab_to_search`,
           `tip_dismissal_acknowledgment`,
           `tip_onboard`,
-          `tip_persist`,
           `tip_redirect`,
           `tip_unknown`,
           `top_site`,
@@ -397,6 +409,15 @@ urlbar:
           `url`,
           `weather`
         type: string
+      actions:
+        description: >
+          Comma separated list of actions keys in the order they were shown to
+          the user. Possible keys are: `addons`, `bookmarks`, `clear`, `downloads`,
+          `extensions`, `inspect`, `logins`, `plugins`, `print`, `private`,
+          `refresh`, `restart`, `savepdf`, `screenshot`, `settings`, `tabswitch`,
+          `themes`, `update`, `viewsource`.
+          If there is no action shown in a position that is denoted with `none`.
+        type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1797265
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717
@@ -405,6 +426,33 @@ urlbar:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1797265#c3
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717#c4
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247#c3
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+
+  fakespot_engagement:
+    type: event
+    description: >
+      Recorded when the user engages with a Fakespot suggestion.
+    extra_keys:
+      grade:
+        description: >
+          The Fakespot grade: "A", "B", etc.
+        type: string
+      rating:
+        description: >
+          The Fakespot rating: "4.1", "5.0", etc.
+        type: string
+      provider:
+        description: >
+          The product provider: "amazon", "bestbuy", "walmart"
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907990
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907990
     data_sensitivity:
       - interaction
     notification_emails:
@@ -592,6 +640,22 @@ urlbar:
     expires: never
     send_in_pings:
       - events
+
+  quick_suggest_ingest_time:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      Counts how long each successful ingest takes in the Firefox Suggest Rust
+      component. Ingests that fail for whatever reason are not included.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907227
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907227
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
 
 # Replacement for PingCentre "quicksuggest-block|impression|click" pings.
 quick_suggest:

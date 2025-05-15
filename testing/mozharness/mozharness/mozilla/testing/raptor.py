@@ -628,6 +628,15 @@ class Raptor(
                     "help": "Take a screenshot when the test fails.",
                 },
             ],
+            [
+                ["--power-test"],
+                {
+                    "action": "store_true",
+                    "dest": "power_test",
+                    "default": False,
+                    "help": "Run power usage testing on mobile tests using a USB power meter.",
+                },
+            ],
         ]
         + testing_config_options
         + copy.deepcopy(code_coverage_config_options)
@@ -1114,6 +1123,8 @@ class Raptor(
             or os.environ.get("MOZ_AUTOMATION", None) is not None
         ):
             options.extend(["--screenshot-on-failure"])
+        if self.config.get("power_test", False):
+            options.extend(["--power-test"])
 
         for (arg,), details in Raptor.browsertime_options:
             # Allow overriding defaults on the `./mach raptor-test ...` command-line
@@ -1503,5 +1514,15 @@ class RaptorOutputParser(OutputParser):
             )
             return  # skip base parse_single_line
         if line.startswith("raptor-browsertime Info: "):
-            SystemResourceMonitor.record_event(line[len("raptor-browsertime Info: ") :])
+            raptor_line = line[len("raptor-browsertime Info: ") :]
+            if raptor_line.startswith("BEGIN: "):
+                SystemResourceMonitor.begin_marker(
+                    "test", raptor_line[len("BEGIN: ") :]
+                )
+                return
+            elif raptor_line.startswith("END: "):
+                SystemResourceMonitor.end_marker("test", raptor_line[len("END: ") :])
+                return
+            else:
+                SystemResourceMonitor.record_event(raptor_line)
         super(RaptorOutputParser, self).parse_single_line(line)

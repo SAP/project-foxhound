@@ -5,11 +5,11 @@
 #include "MediaStatusManager.h"
 
 #include "MediaControlService.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MediaControlUtils.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "nsContentUtils.h"
 #include "nsIChromeRegistry.h"
 #include "nsIObserverService.h"
@@ -288,7 +288,7 @@ MediaSessionPlaybackState MediaStatusManager::GetCurrentDeclaredPlaybackState()
 void MediaStatusManager::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
                                                     MediaPlaybackState aState) {
   LOG("UpdateMediaPlaybackState %s for context %" PRIu64,
-      ToMediaPlaybackStateStr(aState), aBrowsingContextId);
+      EnumValueToString(aState), aBrowsingContextId);
   const bool oldPlaying = mPlaybackStatusDelegate.IsPlaying();
   mPlaybackStatusDelegate.UpdateMediaPlaybackState(aBrowsingContextId, aState);
 

@@ -26,7 +26,6 @@ button {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: var(--space-small);
 
   &[size=small] {
     min-height: var(--button-min-height-small);
@@ -129,6 +128,10 @@ button {
     }
   }
 
+  &.labelled {
+    gap: var(--space-small)
+  }
+
   &[type~=icon]:not(.labelled) {
     background-size: var(--icon-size-default);
     background-position: center;
@@ -157,5 +160,6 @@ button {
   img {
     width: var(--icon-size-default);
     height: var(--icon-size-default);
+    pointer-events: none;
   }
 }

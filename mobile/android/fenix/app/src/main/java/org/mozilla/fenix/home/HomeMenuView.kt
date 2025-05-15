@@ -18,15 +18,15 @@ import mozilla.appservices.fxaclient.contentUrl
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.menu.view.MenuButton
 import mozilla.components.concept.sync.FxAEntryPoint
-import mozilla.components.service.glean.private.NoExtras
+import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeScreen
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.accounts.AccountState
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.SupportUtils
@@ -71,13 +71,15 @@ class HomeMenuView(
      * Builds the [HomeMenu].
      */
     fun build() {
-        HomeMenu(
-            lifecycleOwner = lifecycleOwner,
-            context = context,
-            onItemTapped = ::onItemTapped,
-            onHighlightPresent = { menuButton.get()?.setHighlight(it) },
-            onMenuBuilderChanged = { menuButton.get()?.menuBuilder = it },
-        )
+        if (!context.settings().enableMenuRedesign) {
+            HomeMenu(
+                lifecycleOwner = lifecycleOwner,
+                context = context,
+                onItemTapped = ::onItemTapped,
+                onHighlightPresent = { menuButton.get()?.setHighlight(it) },
+                onMenuBuilderChanged = { menuButton.get()?.menuBuilder = it },
+            )
+        }
 
         menuButton.get()?.setColorFilter(
             ContextCompat.getColor(
@@ -89,6 +91,15 @@ class HomeMenuView(
         menuButton.get()?.register(
             object : mozilla.components.concept.menu.MenuButton.Observer {
                 override fun onShow() {
+                    if (context.settings().enableMenuRedesign) {
+                        navController.nav(
+                            R.id.homeFragment,
+                            HomeFragmentDirections.actionGlobalMenuDialogFragment(
+                                accesspoint = MenuAccessPoint.Home,
+                            ),
+                        )
+                    }
+
                     // MenuButton used in [HomeMenuView] doesn't emit toolbar facts.
                     // A wrapper is responsible for that, but we are using the button
                     // directly, hence recording the event directly.
@@ -205,16 +216,9 @@ class HomeMenuView(
                 )
             }
             HomeMenu.Item.Quit -> {
-                // We need to show the snackbar while the browsing data is deleting (if "Delete
-                // browsing data on quit" is activated). After the deletion is over, the snackbar
-                // is dismissed.
                 deleteAndQuit(
                     activity = homeActivity,
-                    coroutineScope = lifecycleOwner.lifecycleScope,
-                    snackbar = FenixSnackbar.make(
-                        view = view,
-                        isDisplayedWithBrowserToolbar = false,
-                    ),
+                    coroutineScope = homeActivity.lifecycleScope,
                 )
             }
             HomeMenu.Item.ReconnectSync -> {

@@ -103,6 +103,7 @@
 
 namespace js {
 
+class PromiseObject;
 class WasmStructObject;
 
 namespace wasm {
@@ -148,7 +149,7 @@ class SuspenderObjectData
 
   SuspenderState state_;
 
-#ifdef _WIN64
+#if defined(_WIN32)
   // The storage of main stack limits during stack switching.
   // See updateTibFields and restoreTibFields below.
   void* savedStackBase_;
@@ -173,9 +174,14 @@ class SuspenderObjectData
 
   void releaseStackMemory();
 
-#ifdef _WIN64
+#if defined(_WIN32)
   void updateTIBStackFields();
   void restoreTIBStackFields();
+#endif
+
+#if defined(JS_SIMULATOR_ARM64) || defined(JS_SIMULATOR_ARM)
+  void switchSimulatorToMain();
+  void switchSimulatorToSuspendable();
 #endif
 
   static constexpr size_t offsetOfMainFP() {
@@ -227,10 +233,19 @@ JSFunction* WasmPromisingFunctionCreate(JSContext* cx, HandleObject func,
 
 SuspenderObject* CurrentSuspender(Instance* instance, int reserved);
 
+SuspenderObject* CreateSuspender(Instance* instance, int reserved);
+
+PromiseObject* CreatePromisingPromise(Instance* instance,
+                                      SuspenderObject* suspender);
+
 SuspenderObject* CheckSuspender(Instance* instance, JSObject* maybeSuspender);
 
 JSObject* GetSuspendingPromiseResult(Instance* instance,
                                      SuspenderObject* suspender);
+
+int32_t AddPromiseReactions(Instance* instance, SuspenderObject* suspender,
+                            PromiseObject* promise,
+                            JSFunction* continueOnSuspendable);
 
 int32_t SetPromisingPromiseResults(Instance* instance,
                                    SuspenderObject* suspender,

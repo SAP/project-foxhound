@@ -37,6 +37,8 @@ class nsPresContext;
 class imgIRequest;
 class nsIRunnable;
 
+struct DocumentFrameCallbacks;
+
 namespace mozilla {
 class AnimationEventDispatcher;
 class PendingFullscreenEvent;
@@ -208,16 +210,6 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   bool ViewManagerFlushIsPending() { return mViewManagerFlushIsPending; }
   bool HasScheduleFlush() { return mHasScheduleFlush; }
   void ClearHasScheduleFlush() { mHasScheduleFlush = false; }
-
-  /**
-   * Add a document for which we have FrameRequestCallbacks
-   */
-  void ScheduleFrameRequestCallbacks(Document* aDocument);
-
-  /**
-   * Remove a document for which we have FrameRequestCallbacks
-   */
-  void RevokeFrameRequestCallbacks(Document* aDocument);
 
   /**
    * Queue a new fullscreen event to be dispatched in next tick before
@@ -406,6 +398,11 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     mNeedToUpdateIntersectionObservations = true;
   }
 
+  void EnsureFrameRequestCallbacksHappen() {
+    EnsureTimerStarted();
+    mNeedToRunFrameRequestCallbacks = true;
+  }
+
   void EnsureResizeObserverUpdateHappens() {
     EnsureTimerStarted();
     mNeedToUpdateResizeObservers = true;
@@ -446,6 +443,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     eNeedsToNotifyResizeObservers = 1 << 8,
     eRootNeedsMoreTicksForUserInput = 1 << 9,
     eNeedsToUpdateAnimations = 1 << 10,
+    eNeedsToRunFrameRequestCallbacks = 1 << 11,
   };
 
   void AddForceNotifyContentfulPaintPresContext(nsPresContext* aPresContext);
@@ -488,8 +486,15 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void FlushAutoFocusDocuments();
   void RunFullscreenSteps();
   void UpdateAnimationsAndSendEvents();
+
   MOZ_CAN_RUN_SCRIPT
-  void RunFrameRequestCallbacks(mozilla::TimeStamp aNowTime);
+  void RunVideoAndFrameRequestCallbacks(mozilla::TimeStamp aNowTime);
+  MOZ_CAN_RUN_SCRIPT
+  void RunVideoFrameCallbacks(const nsTArray<RefPtr<mozilla::dom::Document>>&,
+                              mozilla::TimeStamp aNowTime);
+  MOZ_CAN_RUN_SCRIPT
+  void RunFrameRequestCallbacks(const nsTArray<RefPtr<mozilla::dom::Document>>&,
+                                mozilla::TimeStamp aNowTime);
   void UpdateIntersectionObservations(mozilla::TimeStamp aNowTime);
   void UpdateRelevancyOfContentVisibilityAutoFrames();
   MOZ_CAN_RUN_SCRIPT void
@@ -541,6 +546,9 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void UpdateAnimatedImages(mozilla::TimeStamp aPreviousRefresh,
                             mozilla::TimeStamp aNowTime);
 
+  bool HasReasonsToTick() const {
+    return GetReasonsToTick() != TickReasons::eNone;
+  }
   TickReasons GetReasonsToTick() const;
   void AppendTickReasonsToString(TickReasons aReasons, nsACString& aStr) const;
 
@@ -548,10 +556,6 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   static double GetThrottledTimerInterval();
 
   static mozilla::TimeDuration GetMinRecomputeVisibilityInterval();
-
-  bool HaveFrameRequestCallbacks() const {
-    return mFrameRequestCallbackDocs.Length() != 0;
-  }
 
   void FinishedWaitingForTransaction();
 
@@ -643,6 +647,9 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // all our documents.
   bool mNeedToUpdateResizeObservers : 1;
 
+  // True if we may need to run any frame callback.
+  bool mNeedToRunFrameRequestCallbacks : 1;
+
   // True if we need to update animations.
   bool mNeedToUpdateAnimations : 1;
 
@@ -692,9 +699,6 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   AutoTArray<mozilla::PresShell*, 16> mResizeEventFlushObservers;
   AutoTArray<mozilla::PresShell*, 16> mDelayedResizeEventFlushObservers;
   AutoTArray<mozilla::PresShell*, 16> mStyleFlushObservers;
-  // nsTArray on purpose, because we want to be able to swap.
-  nsTArray<Document*> mFrameRequestCallbackDocs;
-  nsTArray<Document*> mThrottledFrameRequestCallbackDocs;
   nsTArray<RefPtr<Document>> mAutoFocusFlushDocuments;
   nsTObserverArray<nsAPostRefreshObserver*> mPostRefreshObservers;
   nsTArray<mozilla::UniquePtr<mozilla::PendingFullscreenEvent>>

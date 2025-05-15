@@ -49,8 +49,6 @@
 #include "mozilla/Try.h"
 #include "nsFrameSelection.h"
 
-#define DEFAULT_COLUMN_WIDTH 20
-
 using namespace mozilla;
 using namespace mozilla::dom;
 
@@ -63,9 +61,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsTextControlFrame)
 
 NS_QUERYFRAME_HEAD(nsTextControlFrame)
   NS_QUERYFRAME_ENTRY(nsTextControlFrame)
-  NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
-  NS_QUERYFRAME_ENTRY(nsITextControlFrame)
   NS_QUERYFRAME_ENTRY(nsIStatefulFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
@@ -143,7 +139,8 @@ void nsTextControlFrame::Destroy(DestroyContext& aContext) {
   // text node in the text control.  If so, we should set source node to the
   // text control because another text node may be recreated soon if the text
   // control is just reframed.
-  if (nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession()) {
+  if (nsCOMPtr<nsIDragSession> dragSession =
+          nsContentUtils::GetDragSession(PresContext())) {
     if (dragSession->IsDraggingTextInTextControl() && mRootNode &&
         mRootNode->GetFirstChild()) {
       nsCOMPtr<nsINode> sourceNode;
@@ -301,20 +298,6 @@ nsresult nsTextControlFrame::EnsureEditorInitialized() {
     // for why this is needed.
     mozilla::dom::AutoNoJSAPI nojsapi;
 
-    // Make sure that we try to focus the content even if the method fails
-    class EnsureSetFocus {
-     public:
-      explicit EnsureSetFocus(nsTextControlFrame* aFrame) : mFrame(aFrame) {}
-      ~EnsureSetFocus() {
-        if (nsContentUtils::IsFocusedContent(mFrame->GetContent()))
-          mFrame->SetFocus(true, false);
-      }
-
-     private:
-      nsTextControlFrame* mFrame;
-    };
-    EnsureSetFocus makeSureSetFocusHappens(this);
-
 #ifdef DEBUG
     // Make sure we are not being called again until we're finished.
     // If reentrancy happens, just pretend that we don't have an editor.
@@ -344,7 +327,7 @@ nsresult nsTextControlFrame::EnsureEditorInitialized() {
         position = val.Length();
       }
 
-      SetSelectionEndPoints(position, position);
+      SetSelectionEndPoints(position, position, SelectionDirection::None);
     }
   }
   NS_ENSURE_STATE(weakFrame.IsAlive());
@@ -481,7 +464,8 @@ bool nsTextControlFrame::ShouldInitializeEagerly() const {
   // If text in the editor is being dragged, we need the editor to create
   // new source node for the drag session (TextEditor creates the text node
   // in the anonymous <div> element.
-  if (nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession()) {
+  if (nsCOMPtr<nsIDragSession> dragSession =
+          nsContentUtils::GetDragSession(PresContext())) {
     if (dragSession->IsDraggingTextInTextControl()) {
       nsCOMPtr<nsINode> sourceNode;
       if (NS_SUCCEEDED(
@@ -575,15 +559,12 @@ void nsTextControlFrame::AppendAnonymousContentTo(
   aElements.AppendElement(mRootNode);
 }
 
-nscoord nsTextControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  WritingMode wm = GetWritingMode();
-  return CalcIntrinsicSize(aRenderingContext, wm).ISize(wm);
-}
-
-nscoord nsTextControlFrame::GetMinISize(gfxContext* aRenderingContext) {
+nscoord nsTextControlFrame::IntrinsicISize(gfxContext* aContext,
+                                           IntrinsicISizeType aType) {
   // Our min inline size is just our preferred inline-size if we have auto
   // inline size.
-  return GetPrefISize(aRenderingContext);
+  WritingMode wm = GetWritingMode();
+  return CalcIntrinsicSize(aContext, wm).ISize(wm);
 }
 
 Maybe<nscoord> nsTextControlFrame::ComputeBaseline(
@@ -763,13 +744,7 @@ void nsTextControlFrame::ReflowTextControlChild(
 }
 
 // IMPLEMENTING NS_IFORMCONTROLFRAME
-void nsTextControlFrame::SetFocus(bool aOn, bool aRepaint) {
-  // If 'dom.placeholeder.show_on_focus' preference is 'false', focusing or
-  // blurring the frame can have an impact on the placeholder visibility.
-  if (!aOn) {
-    return;
-  }
-
+void nsTextControlFrame::OnFocus() {
   nsISelectionController* selCon = GetSelectionController();
   if (!selCon) {
     return;
@@ -809,30 +784,6 @@ void nsTextControlFrame::SetFocus(bool aOn, bool aRepaint) {
   if (RefPtr<nsFrameSelection> frameSelection = presShell->FrameSelection()) {
     frameSelection->SetDragState(false);
   }
-}
-
-nsresult nsTextControlFrame::SetFormProperty(nsAtom* aName,
-                                             const nsAString& aValue) {
-  if (!mIsProcessing) {  // some kind of lock.
-    mIsProcessing = true;
-    if (nsGkAtoms::select == aName) {
-      // Select all the text.
-      //
-      // XXX: This is lame, we can't call editor's SelectAll method
-      //      because that triggers AutoCopies in unix builds.
-      //      Instead, we have to call our own homegrown version
-      //      of select all which merely builds a range that selects
-      //      all of the content and adds that to the selection.
-
-      AutoWeakFrame weakThis = this;
-      SelectAllOrCollapseToEndOfText(true);  // NOTE: can destroy the world
-      if (!weakThis.IsAlive()) {
-        return NS_OK;
-      }
-    }
-    mIsProcessing = false;
-  }
-  return NS_OK;
 }
 
 already_AddRefed<TextEditor> nsTextControlFrame::GetTextEditor() {
@@ -886,7 +837,7 @@ void nsTextControlFrame::ScrollSelectionIntoViewAsync(
       nsISelectionController::SELECTION_FOCUS_REGION, flags);
 }
 
-nsresult nsTextControlFrame::SelectAllOrCollapseToEndOfText(bool aSelect) {
+nsresult nsTextControlFrame::SelectAll() {
   nsresult rv = EnsureEditorInitialized();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -900,7 +851,7 @@ nsresult nsTextControlFrame::SelectAllOrCollapseToEndOfText(bool aSelect) {
 
   uint32_t length = text->Length();
 
-  rv = SetSelectionInternal(text, aSelect ? 0 : length, text, length);
+  rv = SetSelectionInternal(text, 0, text, length, SelectionDirection::None);
   NS_ENSURE_SUCCESS(rv, rv);
 
   ScrollSelectionIntoViewAsync();
@@ -908,8 +859,7 @@ nsresult nsTextControlFrame::SelectAllOrCollapseToEndOfText(bool aSelect) {
 }
 
 nsresult nsTextControlFrame::SetSelectionEndPoints(
-    uint32_t aSelStart, uint32_t aSelEnd,
-    nsITextControlFrame::SelectionDirection aDirection) {
+    uint32_t aSelStart, uint32_t aSelEnd, SelectionDirection aDirection) {
   NS_ASSERTION(aSelStart <= aSelEnd, "Invalid selection offsets!");
 
   if (aSelStart > aSelEnd) return NS_ERROR_FAILURE;
@@ -942,9 +892,8 @@ nsresult nsTextControlFrame::SetSelectionEndPoints(
 }
 
 NS_IMETHODIMP
-nsTextControlFrame::SetSelectionRange(
-    uint32_t aSelStart, uint32_t aSelEnd,
-    nsITextControlFrame::SelectionDirection aDirection) {
+nsTextControlFrame::SetSelectionRange(uint32_t aSelStart, uint32_t aSelEnd,
+                                      SelectionDirection aDirection) {
   nsresult rv = EnsureEditorInitialized();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1029,12 +978,12 @@ void nsTextControlFrame::HandleReadonlyOrDisabledChange() {
     return;
   }
   if (el->IsDisabledOrReadOnly()) {
-    if (nsContentUtils::IsFocusedContent(el)) {
+    if (nsFocusManager::GetFocusedElementStatic() == el) {
       selCon->SetCaretEnabled(false);
     }
     editor->AddFlags(nsIEditor::eEditorReadonlyMask);
   } else {
-    if (nsContentUtils::IsFocusedContent(el)) {
+    if (nsFocusManager::GetFocusedElementStatic() == el) {
       selCon->SetCaretEnabled(true);
     }
     editor->RemoveFlags(nsIEditor::eEditorReadonlyMask);
@@ -1045,6 +994,10 @@ void nsTextControlFrame::ElementStateChanged(dom::ElementState aStates) {
   if (aStates.HasAtLeastOneOfStates(dom::ElementState::READONLY |
                                     dom::ElementState::DISABLED)) {
     HandleReadonlyOrDisabledChange();
+  }
+  if (aStates.HasState(dom::ElementState::FOCUS) &&
+      mContent->AsElement()->State().HasState(dom::ElementState::FOCUS)) {
+    OnFocus();
   }
   return nsContainerFrame::ElementStateChanged(aStates);
 }
@@ -1216,7 +1169,8 @@ nsTextControlFrame::EditorInitializer::Run() {
   // and its source node is the text control element, we're being reframed.
   // In this case we should restore the source node of the drag session to
   // new text node because it's required for dispatching `dragend` event.
-  if (nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession()) {
+  if (nsCOMPtr<nsIDragSession> dragSession =
+          nsContentUtils::GetDragSession(mFrame->PresContext())) {
     if (dragSession->IsDraggingTextInTextControl()) {
       nsCOMPtr<nsINode> sourceNode;
       if (NS_SUCCEEDED(

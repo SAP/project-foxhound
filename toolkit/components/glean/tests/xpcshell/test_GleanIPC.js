@@ -75,6 +75,25 @@ add_task({ skip_if: () => runningInParent }, async function run_child_stuff() {
 
   Glean.testOnlyIpc.irate.addToNumerator(44);
   Glean.testOnlyIpc.irate.addToDenominator(14);
+
+  Glean.testOnly.mabelsCustomLabelLengths.serif.accumulateSamples([5, 6]);
+
+  for (let memory of MEMORIES) {
+    Glean.testOnly.whatDoYouRemember.trivia.accumulate(memory);
+  }
+
+  let l1 = Glean.testOnly.whereHasTheTimeGone.relatively.start();
+  let l2 = Glean.testOnly.whereHasTheTimeGone.relatively.start();
+
+  await sleep(5);
+
+  let l3 = Glean.testOnly.whereHasTheTimeGone.relatively.start();
+  Glean.testOnly.whereHasTheTimeGone.relatively.cancel(l1);
+
+  await sleep(5);
+
+  Glean.testOnly.whereHasTheTimeGone.relatively.stopAndAccumulate(l2); // 10ms
+  Glean.testOnly.whereHasTheTimeGone.relatively.stopAndAccumulate(l3); // 5ms
 });
 
 add_task(
@@ -149,6 +168,36 @@ add_task(
     Assert.deepEqual(
       { numerator: 44, denominator: 14 },
       Glean.testOnlyIpc.irate.testGetValue()
+    );
+
+    const serifData =
+      Glean.testOnly.mabelsCustomLabelLengths.serif.testGetValue();
+    Assert.equal(5 + 6, serifData.sum, "Sum's correct");
+
+    const labeledData = Glean.testOnly.whatDoYouRemember.trivia.testGetValue();
+    Assert.equal(
+      MEMORIES.reduce((a, b) => a + b, 0) * 1024 * 1024,
+      labeledData.sum
+    );
+    for (let [bucket, count] of Object.entries(labeledData.values)) {
+      // We could assert instead, but let's skip to save the logspam.
+      if (count == 0) {
+        continue;
+      }
+      Assert.ok(count == 1 && MEMORY_BUCKETS.includes(bucket));
+    }
+
+    const labeledTimes =
+      Glean.testOnly.whereHasTheTimeGone.relatively.testGetValue();
+    Assert.greater(labeledTimes.sum, 15 * NANOS_IN_MILLIS - EPSILON);
+    // We can't guarantee any specific time values (thank you clocks),
+    // but we can assert there are only two samples.
+    Assert.equal(
+      2,
+      Object.entries(labeledTimes.values).reduce(
+        (acc, [, count]) => acc + count,
+        0
+      )
     );
   }
 );

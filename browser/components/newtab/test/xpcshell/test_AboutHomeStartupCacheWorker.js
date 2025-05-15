@@ -26,13 +26,6 @@ const { DiscoveryStreamFeed } = ChromeUtils.importESModule(
 );
 
 SearchTestUtils.init(this);
-AddonTestUtils.init(this);
-AddonTestUtils.createAppInfo(
-  "xpcshell@tests.mozilla.org",
-  "XPCShell",
-  "42",
-  "42"
-);
 
 const { AboutNewTab } = ChromeUtils.importESModule(
   "resource:///modules/AboutNewTab.sys.mjs"
@@ -61,7 +54,7 @@ add_setup(async function () {
   do_get_profile();
   // The SearchService is also needed in order to construct the initial state,
   // which means that the AddonManager needs to be available.
-  await AddonTestUtils.promiseStartupManager();
+  await SearchTestUtils.initXPCShellAddonManager();
 
   // The example.com domain will be used to host the dynamic layout JSON and
   // the top stories JSON.
@@ -83,6 +76,17 @@ add_setup(async function () {
   );
   Services.prefs.setBoolPref(
     "browser.newtabpage.activity-stream.newtabWallpapers.enabled",
+    false
+  );
+  Services.prefs.setBoolPref(
+    "browser.newtabpage.activity-stream.newtabWallpapers.v2.enabled",
+    false
+  );
+  // While this is on in nightly only, we still want to be testing what's going to release.
+  // Once this is on in release, we should update this test to also test against the new data,
+  // including updating the static data in topstories.json to match what Merino returns.
+  Services.prefs.setBoolPref(
+    "browser.newtabpage.activity-stream.discoverystream.merino-provider.enabled",
     false
   );
 

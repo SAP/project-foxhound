@@ -241,8 +241,7 @@ class SavedStacks {
     WeakHeapPtr<JSScript*> script;
     jsbytecode* pc;
 
-    void trace(JSTracer* trc) { /* PCKey is weak. */
-    }
+    void trace(JSTracer* trc) { /* PCKey is weak. */ }
     bool traceWeak(JSTracer* trc) {
       return TraceWeakEdge(trc, &script, "traceWeak");
     }

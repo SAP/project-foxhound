@@ -46,9 +46,9 @@ NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
 #endif
 
 /* virtual */
-void nsPlaceholderFrame::AddInlineMinISize(
-    gfxContext* aRenderingContext, nsIFrame::InlineMinISizeData* aData) {
-  // Override AddInlineMinWith so that *nothing* happens.  In
+void nsPlaceholderFrame::AddInlineMinISize(gfxContext* aRenderingContext,
+                                           InlineMinISizeData* aData) {
+  // Override AddInlineMinISize so that *nothing* happens. In
   // particular, we don't want to zero out |aData->mTrailingWhitespace|,
   // since nsLineLayout skips placeholders when trimming trailing
   // whitespace, and we don't want to set aData->mSkipWhitespace to
@@ -56,17 +56,16 @@ void nsPlaceholderFrame::AddInlineMinISize(
 
   // ...but push floats onto the list
   if (mOutOfFlowFrame->IsFloating()) {
-    nscoord floatWidth = nsLayoutUtils::IntrinsicForContainer(
+    const nscoord floatISize = nsLayoutUtils::IntrinsicForContainer(
         aRenderingContext, mOutOfFlowFrame, IntrinsicISizeType::MinISize);
-    aData->mFloats.AppendElement(
-        InlineIntrinsicISizeData::FloatInfo(mOutOfFlowFrame, floatWidth));
+    aData->mFloats.EmplaceBack(mOutOfFlowFrame, floatISize);
   }
 }
 
 /* virtual */
-void nsPlaceholderFrame::AddInlinePrefISize(
-    gfxContext* aRenderingContext, nsIFrame::InlinePrefISizeData* aData) {
-  // Override AddInlinePrefWith so that *nothing* happens.  In
+void nsPlaceholderFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
+                                            InlinePrefISizeData* aData) {
+  // Override AddInlinePrefISize so that *nothing* happens. In
   // particular, we don't want to zero out |aData->mTrailingWhitespace|,
   // since nsLineLayout skips placeholders when trimming trailing
   // whitespace, and we don't want to set aData->mSkipWhitespace to
@@ -74,10 +73,9 @@ void nsPlaceholderFrame::AddInlinePrefISize(
 
   // ...but push floats onto the list
   if (mOutOfFlowFrame->IsFloating()) {
-    nscoord floatWidth = nsLayoutUtils::IntrinsicForContainer(
+    const nscoord floatISize = nsLayoutUtils::IntrinsicForContainer(
         aRenderingContext, mOutOfFlowFrame, IntrinsicISizeType::PrefISize);
-    aData->mFloats.AppendElement(
-        InlineIntrinsicISizeData::FloatInfo(mOutOfFlowFrame, floatWidth));
+    aData->mFloats.EmplaceBack(mOutOfFlowFrame, floatISize);
   }
 }
 

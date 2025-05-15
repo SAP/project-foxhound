@@ -6,13 +6,8 @@ import React, { Component } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 
-import {
-  toEditorPosition,
-  fromEditorLine,
-  getDocument,
-} from "../../utils/editor/index";
-import { createLocation } from "../../utils/location";
-
+import { getDocument } from "../../utils/editor/index";
+import { markerTypes } from "../../constants";
 import { features } from "../../utils/prefs";
 
 import Exception from "./Exception";
@@ -31,46 +26,59 @@ class Exceptions extends Component {
     };
   }
 
-  componentDidUpdate() {
-    const { exceptions, selectedSource, editor } = this.props;
+  componentDidMount() {
+    this.setMarkers();
+  }
 
-    if (!features.codemirrorNext) {
+  componentDidUpdate(prevProps) {
+    this.clearMarkers(prevProps);
+    this.setMarkers();
+  }
+
+  componentWillUnmount() {
+    this.clearMarkers();
+  }
+
+  clearMarkers(prevProps) {
+    const { exceptions, selectedSource, editor } = this.props;
+    if (!features.codemirrorNext || !editor) {
       return;
     }
 
-    if (!selectedSource || !editor || !exceptions.length) {
-      editor.removeLineContentMarker("line-exception-marker");
-      editor.removePositionContentMarker("exception-position-marker");
+    if (
+      !selectedSource ||
+      !exceptions.length ||
+      prevProps?.selectedSource !== selectedSource
+    ) {
+      editor.removeLineContentMarker(markerTypes.LINE_EXCEPTION_MARKER);
+      editor.removePositionContentMarker(markerTypes.EXCEPTION_POSITION_MARKER);
+    }
+  }
+
+  setMarkers() {
+    const { exceptions, selectedSource, editor } = this.props;
+    if (
+      !features.codemirrorNext ||
+      !selectedSource ||
+      !editor ||
+      !exceptions.length
+    ) {
       return;
     }
 
     editor.setLineContentMarker({
-      id: "line-exception-marker",
+      id: markerTypes.LINE_EXCEPTION_MARKER,
       lineClassName: "line-exception",
-      condition: line => {
-        const lineNumber = fromEditorLine(selectedSource.id, line);
-
-        const exception = exceptions.find(e => e.lineNumber == lineNumber);
-        if (!exception) {
-          return false;
-        }
-        const exceptionLocation = createLocation({
-          source: selectedSource,
-          line: exception.lineNumber,
-          // Exceptions are reported with column being 1-based
-          // while the frontend uses 0-based column.
-          column: exception.columnNumber - 1,
-        });
-        const editorLocation = toEditorPosition(exceptionLocation);
-        return editorLocation.line == lineNumber;
-      },
+      lines: exceptions.map(e => ({ line: e.lineNumber })),
     });
 
     editor.setPositionContentMarker({
-      id: "exception-position-marker",
+      id: markerTypes.EXCEPTION_POSITION_MARKER,
       positionClassName: "mark-text-exception",
       positions: exceptions.map(e => ({
         line: e.lineNumber,
+        // Exceptions are reported with column being 1-based
+        // while the frontend uses 0-based column.
         column: e.columnNumber - 1,
       })),
     });

@@ -1428,10 +1428,12 @@ static NativeObject* DefineConstructorAndPrototype(
     return nullptr;
   }
 
-  RootedId id(cx, AtomToId(atom));
-  RootedValue value(cx, ObjectValue(*ctor));
-  if (!DefineDataProperty(cx, obj, id, value, 0)) {
-    return nullptr;
+  if (clasp->specShouldDefineConstructor()) {
+    RootedId id(cx, AtomToId(atom));
+    RootedValue value(cx, ObjectValue(*ctor));
+    if (!DefineDataProperty(cx, obj, id, value, 0)) {
+      return nullptr;
+    }
   }
 
   if (ctorp) {
@@ -2268,7 +2270,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
   }
 #endif
 
-#ifdef NIGHTLY_BUILD
   if (key == JSProto_Math && !JS::Prefs::experimental_float16array() &&
       (id == NameToId(cx->names().f16round))) {
     return true;
@@ -2278,7 +2279,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
        id == NameToId(cx->names().setFloat16))) {
     return true;
   }
-#endif
 
   return false;
 }

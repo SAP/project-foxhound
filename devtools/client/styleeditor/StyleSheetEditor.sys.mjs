@@ -35,9 +35,10 @@ import {
   showFilePicker,
 } from "resource://devtools/client/styleeditor/StyleEditorUtil.sys.mjs";
 
+import { TYPES as HIGHLIGHTER_TYPES } from "resource://devtools/shared/highlighters.mjs";
+
 const LOAD_ERROR = "error-load";
 const SAVE_ERROR = "error-save";
-const SELECTOR_HIGHLIGHTER_TYPE = "SelectorHighlighter";
 
 // max update frequency in ms (avoid potential typing lag and/or flicker)
 // @see StyleEditor.updateStylesheet
@@ -418,7 +419,15 @@ StyleSheetEditor.prototype = {
     }
 
     if (this.sourceEditor) {
-      await this._fetchSourceText();
+      try {
+        await this._fetchSourceText();
+      } catch (e) {
+        if (this._isDestroyed) {
+          // Source editor was destroyed while trying to apply an update, bail.
+          return;
+        }
+        throw e;
+      }
 
       // sourceEditor is already loaded, so we can prettify immediately.
       this._prettifySourceTextIfNeeded();
@@ -727,7 +736,7 @@ StyleSheetEditor.prototype = {
     const walker = await this.getWalker();
     try {
       this.highlighter = await walker.parentFront.getHighlighterByType(
-        SELECTOR_HIGHLIGHTER_TYPE
+        HIGHLIGHTER_TYPES.SELECTOR
       );
       return this.highlighter;
     } catch (e) {

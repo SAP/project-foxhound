@@ -7,7 +7,6 @@
 :root {
   --urlbar-container-padding: 1px;
   --urlbar-margin-inline: 5px;
-  --urlbar-search-button-width: calc(16px + 2 * var(--urlbar-icon-padding));
 }
 
 #urlbar[actiontype="switchtab"][action-override] > .urlbar-input-container > #urlbar-label-box,
@@ -29,7 +28,7 @@
  * align the results and urlbar text */
 /* stylelint-disable-next-line media-query-no-invalid */
 @media (-moz-bool-pref: "browser.urlbar.richSuggestions.featureGate") {
-  #urlbar:not(.searchButton) > .urlbar-input-container > #identity-box[pageproxystate="invalid"] > .identity-box-button {
+  #identity-box[pageproxystate="invalid"] > .identity-box-button {
     padding-inline: calc(6px + var(--urlbar-icon-padding));
   }
 }
@@ -220,19 +219,6 @@
   caret-color: transparent;
 }
 
-#urlbar.searchButton > .urlbar-input-container > .urlbar-search-button {
-  width: var(--urlbar-search-button-width);
-  background-image: url(chrome://global/skin/icons/search-glass.svg);
-  background-repeat: no-repeat;
-  background-position: center;
-  -moz-context-properties: fill, fill-opacity;
-  fill: var(--toolbarbutton-icon-fill);
-}
-
-#urlbar.searchButton > .urlbar-input-container[pageproxystate="invalid"] > .urlbar-search-button {
-  margin-inline-end: 6px;
-}
-
 /**
  * The urlbar background is a separate element so we can animate it
  * independently from the content. It's positioned absolutely and stretched to
@@ -249,11 +235,6 @@
   display: block;
   position: absolute;
   inset: 0;
-}
-
-:root:not([chromehidden~="toolbar"]) #urlbar.searchButton:not([breakout]) > #urlbar-background,
-:root:not([chromehidden~="toolbar"]) #urlbar.searchButton:not([breakout-extend]) > #urlbar-background {
-  inset-inline-start: var(--urlbar-search-button-width);
 }
 
 .urlbar-input-container {
@@ -302,11 +283,6 @@
     padding-block: calc((var(--urlbar-container-height) - var(--urlbar-height)) / 2 + var(--urlbar-container-padding));
     padding-inline: calc(var(--urlbar-margin-inline) + var(--urlbar-container-padding));
   }
-}
-
-#urlbar.searchButton[breakout][breakout-extend] > .urlbar-input-container > .urlbar-search-button {
-  fill: currentColor;
-  fill-opacity: .6;
 }
 
 @keyframes urlbar-grow {
@@ -521,6 +497,7 @@
 
 /* Page action panel */
 .pageAction-panel-button > .toolbarbutton-icon {
+  list-style-image: var(--pageAction-image, inherit);
   width: 16px;
   height: 16px;
 }
@@ -584,22 +561,30 @@
   border-radius: var(--urlbar-icon-border-radius);
   padding: var(--urlbar-icon-padding);
   color: inherit;
+  outline: var(--toolbarbutton-outline);
+  outline-offset: var(--toolbarbutton-outline-offset);
 
   &:not([disabled]):hover {
     background-color: var(--urlbar-box-hover-bgcolor);
     color: var(--urlbar-box-hover-text-color);
+    outline-color: var(--toolbarbutton-hover-outline-color);
   }
 
   &:not([disabled])[open],
   &:not([disabled]):hover:active {
     background-color: var(--urlbar-box-active-bgcolor);
     color: var(--urlbar-box-hover-text-color);
+    outline-color: var(--toolbarbutton-active-outline-color);
   }
 }
 
-.urlbar-page-action:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-inset);
+.urlbar-page-action {
+  list-style-image: var(--pageAction-image, inherit);
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
 }
 
 .urlbar-go-button,
@@ -1091,4 +1076,80 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left::after {
 }
 .searchbar-engine-one-off-add-engine[image]:hover > .button-box > .button-icon {
   opacity: 1;
+}
+
+#urlbar-searchmode-switcher {
+  /* Hidden until urlbar opens */
+  display: none;
+  margin-inline-end: var(--urlbar-icon-padding);
+  background-color: var(--toolbar-field-background-color);
+  border-radius: var(--toolbarbutton-border-radius);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "browser.urlbar.searchModeSwitcher.featureGate") or (-moz-bool-pref: "browser.urlbar.scotchBonnet.enableOverride") {
+    /* Don't show on mousedown to avoid shifting input field text */
+    #urlbar[focused]:not([focusing-via-mousedown]) & {
+      display: flex;
+    }
+  }
+}
+
+#searchmode-switcher-icon {
+  width: calc(var(--urlbar-min-height) - 2px - 2 * var(--urlbar-container-padding));
+  height: calc(var(--urlbar-min-height) - 2px - 2 * var(--urlbar-container-padding));
+  border-radius: var(--urlbar-icon-border-radius);
+  padding: var(--urlbar-icon-padding);
+  -moz-context-properties: fill;
+  fill: var(--text-color-deemphasized);
+}
+
+#searchmode-switcher-title {
+  margin-inline-start: 0px;
+
+  &:empty {
+    display: none;
+  }
+}
+
+#searchmode-switcher-close {
+  list-style-image: url("chrome://global/skin/icons/close-12.svg");
+  pointer-events: all;
+  display: none;
+  -moz-context-properties: fill;
+  fill: var(--text-color-deemphasized);
+
+  #urlbar[searchmode] & {
+    display: inline-flex;
+  }
+}
+
+#searchmode-switcher-dropmarker {
+  #urlbar[searchmode] & {
+    display: none;
+  }
+  #urlbar-searchmode-switcher[open] & {
+    transform: rotate(180deg);
+  }
+}
+
+#searchmode-switcher-popup {
+  --panel-padding: var(--space-small);
+  --arrowpanel-menuitem-margin: 0;
+}
+
+#searchmode-switcher-popup-description {
+  margin: var(--space-small);
+}
+
+#searchmode-switcher-popup-search-settings-icon {
+  list-style-image: url("chrome://global/skin/icons/settings.svg");
+}
+
+/* stylelint-disable-next-line media-query-no-invalid */
+@media (-moz-bool-pref: "browser.urlbar.searchModeSwitcher.featureGate") or (-moz-bool-pref: "browser.urlbar.scotchBonnet.enableOverride") {
+  /* Don't hide on mousedown to avoid shifting input field text */
+  #urlbar[focused]:not([focusing-via-mousedown]) #identity-box,
+  #urlbar[searchmode] > .urlbar-input-container > #urlbar-search-mode-indicator {
+    display: none;
+  }
 }

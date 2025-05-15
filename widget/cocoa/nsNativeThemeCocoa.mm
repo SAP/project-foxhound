@@ -2191,6 +2191,7 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
     case StyleAppearance::Separator:
       return Some(WidgetInfo::Separator());
 
+    case StyleAppearance::MozSidebar:
     case StyleAppearance::MozWindowTitlebar: {
       return Nothing();
     }
@@ -2525,7 +2526,6 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     case StyleAppearance::SpinnerDownbutton:
     case StyleAppearance::Toolbarbutton:
     case StyleAppearance::Separator:
-    case StyleAppearance::MozWindowTitlebar:
     case StyleAppearance::Statusbar:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
@@ -2589,14 +2589,6 @@ LayoutDeviceIntMargin nsNativeThemeCocoa::GetWidgetBorder(
 
     case StyleAppearance::Toolbarbutton: {
       result = DirectionAwareMargin(LayoutDeviceIntMargin(1, 4, 1, 4), aFrame);
-      break;
-    }
-
-    case StyleAppearance::Checkbox:
-    case StyleAppearance::Radio: {
-      // nsCheckboxRadioFrame::GetIntrinsicWidth and
-      // nsCheckboxRadioFrame::GetIntrinsicHeight assume a border width of 2px.
-      result.SizeTo(2, 2, 2, 2);
       break;
     }
 
@@ -2887,6 +2879,7 @@ nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame,
   // Some widget types just never change state.
   switch (aAppearance) {
     case StyleAppearance::MozWindowTitlebar:
+    case StyleAppearance::MozSidebar:
     case StyleAppearance::Statusbar:
     case StyleAppearance::Tooltip:
     case StyleAppearance::Tabpanels:
@@ -2958,6 +2951,7 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::Listbox:
     case StyleAppearance::MozWindowButtonBox:
     case StyleAppearance::MozWindowTitlebar:
+    case StyleAppearance::MozSidebar:
     case StyleAppearance::Menupopup:
     case StyleAppearance::Tooltip:
 
@@ -2966,7 +2960,7 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::MozMacHelpButton:
     case StyleAppearance::MozMacDisclosureButtonOpen:
     case StyleAppearance::MozMacDisclosureButtonClosed:
-    case StyleAppearance::MozMacUnifiedToolbarWindow:
+    case StyleAppearance::MozMacWindow:
     case StyleAppearance::Button:
     case StyleAppearance::Toolbarbutton:
     case StyleAppearance::Spinner:
@@ -3065,6 +3059,8 @@ bool nsNativeThemeCocoa::WidgetAppearanceDependsOnWindowFocus(
 nsITheme::ThemeGeometryType nsNativeThemeCocoa::ThemeGeometryTypeForWidget(
     nsIFrame* aFrame, StyleAppearance aAppearance) {
   switch (aAppearance) {
+    case StyleAppearance::MozSidebar:
+      return eThemeGeometryTypeSidebar;
     case StyleAppearance::MozWindowTitlebar:
       return eThemeGeometryTypeTitlebar;
     case StyleAppearance::MozWindowButtonBox:
@@ -3084,7 +3080,7 @@ nsITheme::Transparency nsNativeThemeCocoa::GetWidgetTransparency(
     case StyleAppearance::Menupopup:
     case StyleAppearance::Tooltip:
       return eTransparent;
-    case StyleAppearance::MozMacUnifiedToolbarWindow:
+    case StyleAppearance::MozMacWindow:
       // We want these to be treated as opaque by Gecko. We ensure there's an
       // appropriate OS-level clear color to make sure that's the case.
       return eOpaque;

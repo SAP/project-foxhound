@@ -58,8 +58,18 @@ class VideoStreamFactory
   // This gets called off-main thread and may hold internal webrtc.org
   // locks. May *NOT* lock the conduit's mutex, to avoid deadlocks.
   std::vector<webrtc::VideoStream> CreateEncoderStreams(
+      const webrtc::FieldTrialsView& field_trials,
       int aWidth, int aHeight,
       const webrtc::VideoEncoderConfig& aConfig) override;
+
+  /**
+   * Called by CreateEncoderStreams and
+   * WebrtcVideoConduit::OnControlConfigChange to set VideoStream.max_framerate.
+   */
+  void SelectMaxFramerate(int aWidth, int aHeight,
+                          const VideoCodecConfig::Encoding& aEncoding,
+                          webrtc::VideoStream& aVideoStream);
+
   /**
    * Function to select and change the encoding resolution based on incoming
    * frame size and current available bandwidth.

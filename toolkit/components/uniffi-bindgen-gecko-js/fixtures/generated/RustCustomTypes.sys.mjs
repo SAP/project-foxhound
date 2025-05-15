@@ -164,9 +164,8 @@ function handleRustResult(result, liftCallback, liftErrCallback) {
             throw liftErrCallback(result.data);
 
         case "internal-error":
-            let message = result.internalErrorMessage;
-            if (message) {
-                throw new UniFFIInternalError(message);
+            if (result.data) {
+                throw new UniFFIInternalError(FfiConverterString.lift(result.data));
             } else {
                 throw new UniFFIInternalError("Unknown error");
             }
@@ -455,7 +454,7 @@ export function getCustomTypesDemo(demo) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                61, // custom_types:uniffi_uniffi_custom_types_fn_func_get_custom_types_demo
+                62, // custom_types:uniffi_uniffi_custom_types_fn_func_get_custom_types_demo
                 FfiConverterOptionalTypeCustomTypesDemo.lower(demo),
             )
         }

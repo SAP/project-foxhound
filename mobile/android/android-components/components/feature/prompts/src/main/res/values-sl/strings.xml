@@ -49,7 +49,9 @@
     <!-- Prompt message displayed when app detects a user has entered a new password for an existing login and user decides if app should update the password. -->
     <string name="mozac_feature_prompt_login_update_headline_2">Posodobim geslo?</string>
     <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
-    <string name="mozac_feature_prompt_login_add_username_headline">Dodaj shranjenemu geslu uporabniško ime?</string>
+    <string name="mozac_feature_prompt_login_add_username_headline" moz:removedIn="130" tools:ignore="UnusedResources">Dodaj shranjenemu geslu uporabniško ime?</string>
+    <!-- Prompt message displayed when app detects a user has entered a username for an existing login without a username and user decides if app should update the login. -->
+    <string name="mozac_feature_prompt_login_add_username_headline_2">Posodobim uporabniško ime?</string>
     <!-- Text for a label for the field when prompt requesting a text is shown. -->
     <!-- For more info take a look here https://developer.mozilla.org/en-US/docs/Web/API/Window/prompt -->
     <string name="mozac_feature_prompts_content_description_input_label">Oznaka polja za vnos besedila</string>
@@ -116,9 +118,28 @@
     <!-- Content description for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
     <string name="mozac_feature_prompts_suggest_strong_password_content_description">Predlagaj močno geslo</string>
     <!-- Header for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
-    <string name="mozac_feature_prompts_suggest_strong_password">Predlagaj močno geslo</string>
+    <string name="mozac_feature_prompts_suggest_strong_password" moz:removedIn="128" tools:ignore="UnusedResources">Predlagaj močno geslo</string>
+    <!-- Header for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
+    <string name="mozac_feature_prompts_suggest_strong_password_2">Uporabite močno geslo</string>
     <!-- Title for using the suggest strong password confirmation dialog. %1$s will be replaced with the generated password -->
     <string name="mozac_feature_prompts_suggest_strong_password_message">Uporabi močno geslo: %1$s</string>
+
+    <!-- Title for using the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_title">Želite uporabiti močno geslo?</string>
+    <!-- Content description for the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_description">Zaščitite svoje račune z močnimi, naključno ustvarjenimi gesli. Za hiter dostop si jih shranite v račun.</string>
+    <!-- Pressing this will use the suggested strong password -->
+    <string name="mozac_feature_prompts_suggest_strong_password_use_password">Uporabi geslo</string>
+    <!-- Pressing this will dismiss the suggested strong password dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Ne zdaj</string>
+    <!-- Title for showing the suggest strong password saved confirmation snackbar -->
+    <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title">Geslo shranjeno</string>
+    <!-- Title for showing the suggest strong password updated confirmation snackbar -->
+    <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Geslo posodobljeno</string>
+
+
+    <!-- Title for showing the username updated confirmation snackbar -->
+    <string name="mozac_feature_prompt_login_snackbar_username_updated">Uporabniško ime posodobljeno</string>
 
     <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
     <string name="mozac_feature_prompt_repost_title">Ponovno pošlji podatke spletnemu mestu?</string>

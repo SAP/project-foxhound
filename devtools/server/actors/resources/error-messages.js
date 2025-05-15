@@ -5,9 +5,6 @@
 "use strict";
 
 const nsIConsoleListenerWatcher = require("resource://devtools/server/actors/resources/utils/nsi-console-listener-watcher.js");
-const {
-  DevToolsServer,
-} = require("resource://devtools/server/devtools-server.js");
 const ErrorDocs = require("resource://devtools/server/actors/errordocs.js");
 const {
   createStringGrip,
@@ -21,9 +18,6 @@ const {
   WebConsoleUtils,
 } = require("resource://devtools/server/actors/webconsole/utils.js");
 
-const {
-  TYPES: { ERROR_MESSAGE },
-} = require("resource://devtools/server/actors/resources/index.js");
 const Targets = require("resource://devtools/server/actors/targets/index.js");
 
 const { MESSAGE_CATEGORY } = require("resource://devtools/shared/constants.js");
@@ -127,13 +121,6 @@ class ErrorMessageWatcher extends nsIConsoleListenerWatcher {
    */
   buildResource(targetActor, error) {
     const stack = this.prepareStackForRemote(targetActor, error.stack);
-    let lineText = error.sourceLine;
-    if (
-      lineText &&
-      lineText.length > DevToolsServer.LONG_STRING_INITIAL_LENGTH
-    ) {
-      lineText = lineText.substr(0, DevToolsServer.LONG_STRING_INITIAL_LENGTH);
-    }
 
     const notesArray = this.prepareNotesForRemote(targetActor, error.notes);
 
@@ -153,7 +140,6 @@ class ErrorMessageWatcher extends nsIConsoleListenerWatcher {
       exceptionDocURL: ErrorDocs.GetURL(error),
       sourceName,
       sourceId: getActorIdForInternalSourceId(targetActor, sourceId),
-      lineText,
       lineNumber,
       columnNumber,
       category: error.category,
@@ -185,7 +171,6 @@ class ErrorMessageWatcher extends nsIConsoleListenerWatcher {
 
     return {
       pageError,
-      resourceType: ERROR_MESSAGE,
     };
   }
 }

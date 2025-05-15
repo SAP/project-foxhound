@@ -25,6 +25,7 @@
 #include "mozilla/dom/quota/DirectoryLockCategory.h"
 #include "mozilla/dom/quota/ForwardDecls.h"
 #include "mozilla/dom/quota/InitializationTypes.h"
+#include "mozilla/dom/quota/OriginOperationCallbacks.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "nsCOMPtr.h"
@@ -140,10 +141,10 @@ class QuotaManager final : public BackgroundThreadObject {
 
   void UnregisterNormalOriginOp(NormalOriginOperationBase& aNormalOriginOp);
 
-  bool IsOriginInitialized(const nsACString& aOrigin) const {
+  bool IsPersistentOriginInitializedInternal(const nsACString& aOrigin) const {
     AssertIsOnIOThread();
 
-    return mInitializedOrigins.Contains(aOrigin);
+    return mInitializedOriginsInternal.Contains(aOrigin);
   }
 
   bool IsTemporaryStorageInitializedInternal() const {
@@ -291,10 +292,9 @@ class QuotaManager final : public BackgroundThreadObject {
   // is resolved, there are no longer other strong references except the one
   // held by the resolve value itself. So it's up to client to add a new
   // reference in order to keep the lock alive.
-  // Unlocking is simply done by dropping all references to the lock object.
-  // In other words, protection which the lock represents dies with the lock
-  // object itself (Note that it's now possible to release directory locks
-  // sooner by calling newly added Drop method).
+  // Unlocking is simply done by calling lock object's Drop method. Unlocking
+  // must be always done explicitly before the lock object is destroyed (when
+  // the last strong reference is removed).
   RefPtr<ClientDirectoryLockPromise> OpenClientDirectory(
       const ClientMetadata& aClientMetadata,
       Maybe<RefPtr<ClientDirectoryLock>&> aPendingDirectoryLockOut = Nothing());
@@ -359,19 +359,34 @@ class QuotaManager final : public BackgroundThreadObject {
   nsresult EnsureStorageIsInitializedInternal();
 
  public:
+  RefPtr<BoolPromise> InitializePersistentOrigin(
+      const PrincipalInfo& aPrincipalInfo);
+
+  RefPtr<BoolPromise> InitializePersistentOrigin(
+      const PrincipalInfo& aPrincipalInfo,
+      RefPtr<UniversalDirectoryLock> aDirectoryLock);
+
   // Returns a pair of an nsIFile object referring to the directory, and a bool
   // indicating whether the directory was newly created.
   Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult>
-  EnsurePersistentOriginIsInitialized(const OriginMetadata& aOriginMetadata);
+  EnsurePersistentOriginIsInitializedInternal(
+      const OriginMetadata& aOriginMetadata);
 
-  bool IsTemporaryOriginInitialized(
+  RefPtr<BoolPromise> InitializeTemporaryOrigin(
+      PersistenceType aPersistenceType, const PrincipalInfo& aPrincipalInfo);
+
+  RefPtr<BoolPromise> InitializeTemporaryOrigin(
+      PersistenceType aPersistenceType, const PrincipalInfo& aPrincipalInfo,
+      RefPtr<UniversalDirectoryLock> aDirectoryLock);
+
+  bool IsTemporaryOriginInitializedInternal(
       const OriginMetadata& aOriginMetadata) const;
 
   // Returns a pair of an nsIFile object referring to the directory, and a bool
   // indicating whether the directory was newly created.
   Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult>
-  EnsureTemporaryOriginIsInitialized(PersistenceType aPersistenceType,
-                                     const OriginMetadata& aOriginMetadata);
+  EnsureTemporaryOriginIsInitializedInternal(
+      const OriginMetadata& aOriginMetadata);
 
   RefPtr<BoolPromise> InitializePersistentClient(
       const PrincipalInfo& aPrincipalInfo, Client::Type aClientType);
@@ -419,7 +434,9 @@ class QuotaManager final : public BackgroundThreadObject {
 
   RefPtr<BoolPromise> ClearStorage();
 
-  RefPtr<BoolPromise> ShutdownStorage();
+  RefPtr<BoolPromise> ShutdownStorage(
+      Maybe<OriginOperationCallbackOptions> aCallbackOptions = Nothing(),
+      Maybe<OriginOperationCallbacks&> aCallbacks = Nothing());
 
   void ShutdownStorageInternal();
 
@@ -443,6 +460,8 @@ class QuotaManager final : public BackgroundThreadObject {
     for (const auto& client : *mClients) {
       client->StartIdleMaintenance();
     }
+
+    NotifyMaintenanceStarted();
   }
 
   void StopIdleMaintenance() {
@@ -498,6 +517,8 @@ class QuotaManager final : public BackgroundThreadObject {
       const OriginMetadata& aOriginMetadata);
 
   void NotifyStoragePressure(uint64_t aUsage);
+
+  void NotifyMaintenanceStarted();
 
   // Record a quota client shutdown step, if shutting down.
   // Assumes that the QuotaManager singleton is alive.
@@ -765,7 +786,7 @@ class QuotaManager final : public BackgroundThreadObject {
 
   // A list of all successfully initialized persistent origins. This list isn't
   // protected by any mutex but it is only ever touched on the IO thread.
-  nsTArray<nsCString> mInitializedOrigins;
+  nsTArray<nsCString> mInitializedOriginsInternal;
 
   // A hash table that is used to cache origin parser results for given
   // sanitized origin strings. This hash table isn't protected by any mutex but
@@ -803,7 +824,6 @@ class QuotaManager final : public BackgroundThreadObject {
   uint64_t mTemporaryStorageLimit;
   uint64_t mTemporaryStorageUsage;
   int64_t mNextDirectoryLockId;
-  uint64_t mShutdownStorageOpCount;
   bool mStorageInitialized;
   bool mTemporaryStorageInitialized;
   bool mTemporaryStorageInitializedInternal;

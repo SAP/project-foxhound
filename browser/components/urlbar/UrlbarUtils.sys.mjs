@@ -56,6 +56,7 @@ export var UrlbarUtils = {
     RECENT_SEARCH: "recentSearch",
     REMOTE_SUGGESTION: "remoteSuggestion",
     REMOTE_TAB: "remoteTab",
+    RESTRICT_SEARCH_KEYWORD: "restrictSearchKeyword",
     SUGGESTED_INDEX: "suggestedIndex",
     TAIL_SUGGESTION: "tailSuggestion",
   },
@@ -94,6 +95,8 @@ export var UrlbarUtils = {
     TIP: 7,
     // A type of result which layout is defined at runtime.
     DYNAMIC: 8,
+    // A restrict keyword result, could be @bookmarks, @history, or @tabs.
+    RESTRICT: 9,
 
     // When you add a new type, also add its schema to
     // UrlbarUtils.RESULT_PAYLOAD_SCHEMA below.  Also consider checking if
@@ -212,6 +215,7 @@ export var UrlbarUtils = {
         icon: "chrome://browser/skin/bookmark.svg",
         pref: "shortcuts.bookmarks",
         telemetryLabel: "bookmarks",
+        uiLabel: "urlbar-searchmode-bookmarks",
       },
       {
         source: UrlbarUtils.RESULT_SOURCE.TABS,
@@ -219,6 +223,7 @@ export var UrlbarUtils = {
         icon: "chrome://browser/skin/tab.svg",
         pref: "shortcuts.tabs",
         telemetryLabel: "tabs",
+        uiLabel: "urlbar-searchmode-tabs",
       },
       {
         source: UrlbarUtils.RESULT_SOURCE.HISTORY,
@@ -226,6 +231,7 @@ export var UrlbarUtils = {
         icon: "chrome://browser/skin/history.svg",
         pref: "shortcuts.history",
         telemetryLabel: "history",
+        uiLabel: "urlbar-searchmode-history",
       },
     ];
   },
@@ -557,6 +563,8 @@ export var UrlbarUtils = {
         return UrlbarUtils.RESULT_GROUP.OMNIBOX;
       case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
         return UrlbarUtils.RESULT_GROUP.REMOTE_TAB;
+      case UrlbarUtils.RESULT_TYPE.RESTRICT:
+        return UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD;
     }
     return UrlbarUtils.RESULT_GROUP.GENERAL;
   },
@@ -1314,21 +1322,29 @@ export var UrlbarUtils = {
    * @param {object} [options] Preparation options.
    * @param {boolean} [options.trimURL] Whether the displayed URL should be
    *                  trimmed or not.
+   * @param {boolean} [options.schemeless] Trim `http(s)://`.
    * @returns {string} Prepared url.
    */
-  prepareUrlForDisplay(url, { trimURL = true } = {}) {
+  prepareUrlForDisplay(url, { trimURL = true, schemeless = false } = {}) {
     // Some domains are encoded in punycode. The following ensures we display
     // the url in utf-8.
     try {
       url = new URL(url).URI.displaySpec;
     } catch {} // In some cases url is not a valid url.
 
-    if (url && trimURL && lazy.UrlbarPrefs.get("trimURLs")) {
-      url = lazy.BrowserUIUtils.removeSingleTrailingSlashFromURL(url);
-      if (url.startsWith("https://")) {
-        url = url.substring(8);
-        if (url.startsWith("www.")) {
-          url = url.substring(4);
+    if (url) {
+      if (schemeless) {
+        url = UrlbarUtils.stripPrefixAndTrim(url, {
+          stripHttp: true,
+          stripHttps: true,
+        })[0];
+      } else if (trimURL && lazy.UrlbarPrefs.get("trimURLs")) {
+        url = lazy.BrowserUIUtils.removeSingleTrailingSlashFromURL(url);
+        if (url.startsWith("https://")) {
+          url = url.substring(8);
+          if (url.startsWith("www.")) {
+            url = url.substring(4);
+          }
         }
       }
     }
@@ -1485,8 +1501,6 @@ export var UrlbarUtils = {
         switch (result.payload.type) {
           case lazy.UrlbarProviderSearchTips.TIP_TYPE.ONBOARD:
             return "tip_onboard";
-          case lazy.UrlbarProviderSearchTips.TIP_TYPE.PERSIST:
-            return "tip_persist";
           case lazy.UrlbarProviderSearchTips.TIP_TYPE.REDIRECT:
             return "tip_redirect";
           case "dismissalAcknowledgment":
@@ -1519,6 +1533,15 @@ export var UrlbarUtils = {
     }
 
     return "unknown";
+  },
+
+  searchEngagementTelemetryAction(result, index) {
+    let action =
+      index == 0
+        ? lazy.UrlbarProvidersManager.getGlobalAction()
+        : result.payload.action;
+
+    return action?.key ?? "none";
   },
 
   _getQuickSuggestTelemetryType(result) {
@@ -2054,7 +2077,6 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
           "intervention_update_restart",
           "intervention_update_web",
           "searchTip_onboard",
-          "searchTip_persist",
           "searchTip_redirect",
           "test", // for tests only
         ],
@@ -2072,6 +2094,23 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       // property, when the result is selected the browser will navigate to the
       // `url`.
       shouldNavigate: {
+        type: "boolean",
+      },
+    },
+  },
+  [UrlbarUtils.RESULT_TYPE.RESTRICT]: {
+    type: "object",
+    properties: {
+      icon: {
+        type: "string",
+      },
+      keyword: {
+        type: "string",
+      },
+      l10nRestrictKeyword: {
+        type: "string",
+      },
+      providesSearchMode: {
         type: "boolean",
       },
     },
@@ -3058,10 +3097,7 @@ export class TaskQueue {
    *   then a resolved promise is returned.
    */
   get emptyPromise() {
-    if (!this._queue.length) {
-      return Promise.resolve();
-    }
-    return new Promise(resolve => this._emptyCallbacks.push(resolve));
+    return this.#emptyPromise;
   }
 
   /**
@@ -3079,10 +3115,38 @@ export class TaskQueue {
    */
   queue(callback) {
     return new Promise((resolve, reject) => {
-      this._queue.push({ callback, resolve, reject });
-      if (this._queue.length == 1) {
-        this._doNextTask();
+      this.#queue.push({ callback, resolve, reject });
+      if (this.#queue.length == 1) {
+        this.#emptyDeferred = Promise.withResolvers();
+        this.#emptyPromise = this.#emptyDeferred.promise;
+        this.#doNextTask();
       }
+    });
+  }
+
+  /**
+   * Adds a callback function to the task queue that will be called on idle.
+   *
+   * @param {Function} callback
+   *   The function to queue.
+   * @returns {Promise}
+   *   Resolved after the task queue calls and awaits `callback`. It will be
+   *   resolved with the value returned by `callback`. If `callback` throws an
+   *   error, then it will be rejected with the error.
+   */
+  queueIdleCallback(callback) {
+    return this.queue(async () => {
+      await new Promise((resolve, reject) => {
+        ChromeUtils.idleDispatch(async () => {
+          try {
+            let value = await callback();
+            resolve(value);
+          } catch (error) {
+            console.error(error);
+            reject(error);
+          }
+        });
+      });
     });
   }
 
@@ -3090,16 +3154,17 @@ export class TaskQueue {
    * Calls the next function in the task queue and recurses until the queue is
    * empty. Once empty, all empty callback functions are called.
    */
-  async _doNextTask() {
-    if (!this._queue.length) {
-      while (this._emptyCallbacks.length) {
-        let callback = this._emptyCallbacks.shift();
-        callback();
-      }
+  async #doNextTask() {
+    if (!this.#queue.length) {
+      this.#emptyDeferred.resolve();
+      this.#emptyDeferred = null;
       return;
     }
 
-    let { callback, resolve, reject } = this._queue[0];
+    // Leave the callback in the queue while awaiting it. If we remove it now
+    // the queue could become empty, and if `queue()` were called while we're
+    // awaiting the callback, `#doNextTask()` would be re-entered.
+    let { callback, resolve, reject } = this.#queue[0];
     try {
       let value = await callback();
       resolve(value);
@@ -3107,10 +3172,11 @@ export class TaskQueue {
       console.error(error);
       reject(error);
     }
-    this._queue.shift();
-    this._doNextTask();
+    this.#queue.shift();
+    this.#doNextTask();
   }
 
-  _queue = [];
-  _emptyCallbacks = [];
+  #queue = [];
+  #emptyDeferred = null;
+  #emptyPromise = Promise.resolve();
 }

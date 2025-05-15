@@ -15,7 +15,6 @@
 #include "mozilla/net/NeckoChannelParams.h"
 
 class nsIChannel;
-class nsIConsoleReportCollector;
 class nsICookieJarSettings;
 class nsIEffectiveTLDService;
 class nsIPrincipal;
@@ -45,6 +44,7 @@ enum CookieStatus {
 };
 
 class Cookie;
+class CookieParser;
 
 // pref string constants
 static const char kPrefMaxNumberOfCookies[] = "network.cookie.maxNumber";
@@ -100,12 +100,12 @@ class CookieCommons final {
                                     CookieStruct& aCookieData);
 
   static already_AddRefed<Cookie> CreateCookieFromDocument(
-      dom::Document* aDocument, const nsACString& aCookieString,
-      int64_t aCurrentTimeInUsec, nsIEffectiveTLDService* aTLDService,
-      mozIThirdPartyUtil* aThirdPartyUtil,
+      CookieParser& aCookieParser, dom::Document* aDocument,
+      const nsACString& aCookieString, int64_t aCurrentTimeInUsec,
+      nsIEffectiveTLDService* aTLDService, mozIThirdPartyUtil* aThirdPartyUtil,
       std::function<bool(const nsACString&, const OriginAttributes&)>&&
           aHasExistingCookiesLambda,
-      nsIURI** aDocumentURI, nsACString& aBaseDomain, OriginAttributes& aAttrs);
+      nsACString& aBaseDomain, OriginAttributes& aAttrs);
 
   static already_AddRefed<nsICookieJarSettings> GetCookieJarSettings(
       nsIChannel* aChannel);
@@ -134,6 +134,11 @@ class CookieCommons final {
   // redirect before the final URI.
   static bool IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI,
                                 bool* aHadCrossSiteRedirects);
+
+  static void RecordUnicodeTelemetry(const CookieStruct& cookieData);
+
+  static bool ChipsLimitEnabledAndChipsCookie(
+      const Cookie& cookie, dom::BrowsingContext* aBrowsingContext);
 };
 
 }  // namespace net

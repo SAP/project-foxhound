@@ -821,12 +821,12 @@ JS_PUBLIC_API bool JS_RefreshCrossCompartmentWrappers(JSContext* cx,
   return RemapAllWrappersForObject(cx, obj, obj);
 }
 
-typedef struct JSStdName {
+struct JSStdName {
   size_t atomOffset; /* offset of atom pointer in JSAtomState */
   JSProtoKey key;
   bool isDummy() const { return key == JSProto_Null; }
   bool isSentinel() const { return key == JSProto_LIMIT; }
-} JSStdName;
+};
 
 static const JSStdName* LookupStdName(const JSAtomState& names, JSAtom* name,
                                       const JSStdName* table) {
@@ -1439,7 +1439,7 @@ JS_PUBLIC_API void JS_SetGCParametersBasedOnAvailableMemory(
   };
 
   static const JSGCConfig minimal[] = {
-      {JSGC_SLICE_TIME_BUDGET_MS, 10},
+      {JSGC_SLICE_TIME_BUDGET_MS, 5},
       {JSGC_HIGH_FREQUENCY_TIME_LIMIT, 1500},
       {JSGC_LARGE_HEAP_SIZE_MIN, 250},
       {JSGC_SMALL_HEAP_SIZE_MAX, 50},
@@ -1453,7 +1453,7 @@ JS_PUBLIC_API void JS_SetGCParametersBasedOnAvailableMemory(
       {JSGC_URGENT_THRESHOLD_MB, 8}};
 
   static const JSGCConfig nominal[] = {
-      {JSGC_SLICE_TIME_BUDGET_MS, 10},
+      {JSGC_SLICE_TIME_BUDGET_MS, 5},
       {JSGC_HIGH_FREQUENCY_TIME_LIMIT, 1000},
       {JSGC_LARGE_HEAP_SIZE_MIN, 500},
       {JSGC_SMALL_HEAP_SIZE_MAX, 100},
@@ -4460,10 +4460,13 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
       break;
-
-#ifdef NIGHTLY_BUILD
     case JSJITCOMPILER_REGEXP_DUPLICATE_NAMED_GROUPS:
       jit::JitOptions.js_regexp_duplicate_named_groups = !!value;
+      break;
+
+#ifdef NIGHTLY_BUILD
+    case JSJITCOMPILER_REGEXP_MODIFIERS:
+      jit::JitOptions.js_regexp_modifiers = !!value;
       break;
 #endif
 
@@ -5108,6 +5111,18 @@ JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,
     return false;
   }
   if (!script->scriptSource()->xdrFinalizeEncoder(cx, buffer)) {
+    return false;
+  }
+  return true;
+}
+
+JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,
+                                                 JS::HandleScript script,
+                                                 JS::Stencil** stencilOut) {
+  if (!script) {
+    return false;
+  }
+  if (!script->scriptSource()->xdrFinalizeEncoder(cx, stencilOut)) {
     return false;
   }
   return true;

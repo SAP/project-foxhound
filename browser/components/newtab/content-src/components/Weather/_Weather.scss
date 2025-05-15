@@ -6,22 +6,116 @@
 
 .weather {
   font-size: var(--font-size-root);
-  position: absolute;
-  inset-inline-start: var(--space-xlarge);
-  top: var(--space-xlarge);
-  z-index: 1;
+  margin-block-start: var(--space-xlarge);
+  margin-inline-start: var(--space-xlarge);
+  display: inline-block;
+
+  @media (min-width: $break-point-medium) {
+    position: absolute;
+    inset-inline-start: var(--space-xlarge);
+    inset-block-start: var(--space-xlarge);
+    margin-block-start: 0;
+    margin-inline-start: 0;
+    z-index: 1;
+  }
+
+  // Edge case: users with weather enabled/search disabled
+  .no-search & {
+    position: relative;
+    margin-block-start: var(--space-xlarge);
+    margin-inline-start: var(--space-xlarge);
+
+    @media (min-width: $break-point-medium) {
+      margin-block-start: 0;
+      margin-inline-start: 0;
+    }
+
+    @media (min-width: $break-point-weather) {
+      position: absolute;
+      inset-inline-start: var(--space-xlarge);
+      inset-block-start: var(--space-xlarge);
+      margin-block-start: 0;
+      margin-inline-start: 0;
+    }
+  }
+}
+
+// Edge case: users with weather enabled/search disabled
+.has-weather.no-search {
+  .outer-wrapper {
+    padding-top: 0;
+
+    @media (min-width: $break-point-medium) {
+      padding-top: 30px;
+    }
+  }
+}
+
+// Edge case: users with weather enabled/search enabled
+.has-weather.has-search {
+  .outer-wrapper:not(.only-search) {
+    padding-top: 0;
+
+    @media (min-width: $break-point-medium) {
+      padding-top: 30px;
+    }
+  }
+
+  // Edge case: medium screens where we hide the weather icon and
+  // detail info row for overlap issues
+  .weatherIconCol, .weatherDetailedSummaryRow {
+    display: flex;
+
+    @media (min-width: $break-point-medium) {
+      display: none;
+    }
+
+    @media (min-width: $break-point-large) {
+      display: flex;
+    }
+  }
 }
 
 // Unavailable / Error State
 .weatherNotAvailable {
   font-size: var(--newtab-weather-content-font-size);
-  color: var(--text-color-error);
   display: flex;
   align-items: center;
+  border-radius: var(--border-radius-medium);
+  height: 52px;
+  max-width: 205px;
+
+  &:hover {
+    background-color: var(--button-background-color-ghost-hover);
+  }
+
+  &:active {
+    background-color: var(--button-background-color-ghost-active);
+  }
 
   .icon {
-    fill: var(--icon-color-critical);
-    -moz-context-properties: fill;
+    margin-inline-start: var(--space-small);
+    min-width: var(--size-item-small);
+  }
+
+  p {
+    margin-inline-start: var(--space-small);
+  }
+
+  .weatherButtonContextMenuWrapper {
+    align-self: stretch;
+    padding-inline: var(--space-small);
+  }
+
+  // Bug 1908010 - This overwrites the design system color because of a
+  // know transparency issue with color-mix syntax when a wallpaper is set
+  .lightWallpaper &,
+  .darkWallpaper & {
+    background-color: var(--newtab-weather-background-color);
+
+    @media (prefers-contrast) {
+      background-color: var(--background-color-box);
+    }
   }
 }
 
@@ -75,7 +169,6 @@
   cursor: pointer;
 
   &:hover {
-    // TODO: Add Wallpaper Background Color Fix
     background-color: var(--button-background-color-ghost-hover);
 
     &::after {
@@ -83,7 +176,6 @@
     }
 
     &:active {
-      // TODO: Add Wallpaper Background Color Fix
       background-color: var(--button-background-color-ghost-active);
     }
   }
@@ -92,7 +184,8 @@
     outline: var(--focus-outline);
   }
 
-  // Contrast fix for users who have wallpapers set
+  // Bug 1908010 - This overwrites the design system color because of a
+  // know transparency issue with color-mix syntax when a wallpaper is set
   .lightWallpaper &,
   .darkWallpaper & {
     background-color: var(--newtab-weather-background-color);
@@ -382,10 +475,11 @@
   background-color: light-dark(var(--color-white), var(--newtab-background-color-secondary));
   color: var(--newtab-text-primary-color);
   border-radius: var(--border-radius-medium);
-  padding: 8px;
+  padding: var(--space-small);
   position: relative;
 
-  // Contrast fix for users who have wallpapers set
+  // Bug 1908010 - This overwrites the design system color because of a
+  // know transparency issue with color-mix syntax when a wallpaper is set
   .lightWallpaper &,
   .darkWallpaper & {
     background-color: var(--newtab-weather-background-color);

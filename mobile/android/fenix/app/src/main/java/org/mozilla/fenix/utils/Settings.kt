@@ -41,6 +41,7 @@ import org.mozilla.fenix.components.settings.counterPreference
 import org.mozilla.fenix.components.settings.featureFlagPreference
 import org.mozilla.fenix.components.settings.lazyFeatureFlagPreference
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
+import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.nimbus.CookieBannersSection
@@ -345,7 +346,7 @@ class Settings(private val appContext: Context) : PreferencesHolder {
 
     var isMarketingTelemetryEnabled by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_marketing_telemetry),
-        default = !Config.channel.isMozillaOnline,
+        default = false,
     )
 
     var isExperimentationEnabled by booleanPreference(
@@ -851,6 +852,30 @@ class Settings(private val appContext: Context) : PreferencesHolder {
         true,
     )
 
+    val blockSuspectedFingerprintersInCustomTrackingProtection by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_tracking_protection_suspected_fingerprinters),
+        true,
+    )
+
+    val blockSuspectedFingerprintersSelectionInCustomTrackingProtection by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_tracking_protection_suspected_fingerprinters_select),
+        "private",
+    )
+
+    val blockSuspectedFingerprinters: Boolean
+        get() {
+            return blockSuspectedFingerprintersInCustomTrackingProtection &&
+                blockSuspectedFingerprintersSelectionInCustomTrackingProtection == appContext.getString(R.string.all)
+        }
+
+    val blockSuspectedFingerprintersPrivateBrowsing: Boolean
+        get() {
+            return blockSuspectedFingerprintersInCustomTrackingProtection &&
+                blockSuspectedFingerprintersSelectionInCustomTrackingProtection == appContext.getString(
+                    R.string.private_string,
+                )
+        }
+
     /**
      * Prefer to use a fixed top toolbar when:
      * - a talkback service is enabled or
@@ -1284,6 +1309,16 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     fun incrementNumTimesPrivateModeOpened() = numTimesPrivateModeOpened.increment()
+
+    /**
+     * Updates the number of times that private mode has been opened.
+     *
+     * @param newVal The new value to set [numTimesPrivateModeOpened] to.
+     */
+    @VisibleForTesting
+    internal fun setNumTimesPrivateModeOpened(newVal: Int) {
+        numTimesPrivateModeOpened.value = newVal
+    }
 
     var showedPrivateModeContextualFeatureRecommender by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_showed_private_mode_cfr),
@@ -1757,6 +1792,22 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     /**
+     * Indicates if the navigation bar CFR should be displayed to the user.
+     */
+    var shouldShowNavigationBarCFR by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_should_navbar_cfr),
+        default = true,
+    )
+
+    /**
+     * Indicates Navigation Bar's Navigation buttons CFR should be displayed to the user.
+     */
+    var shouldShowNavigationButtonsCFR by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_toolbar_navigation_cfr),
+        default = true,
+    )
+
+    /**
      * Time in milliseconds when the user was first presented the review quality check feature CFR.
      */
     var reviewQualityCheckCfrDisplayTimeInMillis by longPreference(
@@ -1875,11 +1926,28 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     /**
+     * Indicates if the Compose Homepage is enabled.
+     */
+    var enableComposeHomepage by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_compose_homepage),
+        default = FeatureFlags.composeHomepage,
+    )
+
+    /**
      * Indicates if the menu redesign is enabled.
      */
-    var enableMenuRedesign by booleanPreference(
+    var enableMenuRedesign by lazyFeatureFlagPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_menu_redesign),
-        default = FeatureFlags.menuRedesignEnabled,
+        default = { FxNimbus.features.menuRedesign.value().enabled },
+        featureFlag = true,
+    )
+
+    /**
+     * Indicates if the Homepage as a New Tab is enabled.
+     */
+    var enableHomepageAsNewTab by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_homepage_as_new_tab),
+        default = FeatureFlags.homepageAsNewTab,
     )
 
     /**
@@ -1944,12 +2012,11 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     /**
-     * Indicates if SuggestStrongPassword feature is enabled.
+     * Indicates first time engaging with signup
      */
-    var enableSuggestStrongPassword by lazyFeatureFlagPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_suggest_strong_password),
-        default = { FxNimbus.features.fxStrongPassword.value().enabled },
-        featureFlag = FeatureFlags.suggestStrongPassword,
+    var isFirstTimeEngagingWithSignup: Boolean by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_first_time_engage_with_signup),
+        default = true,
     )
 
     /**
@@ -1983,15 +2050,6 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     )
 
     /**
-     * Indicates if the user is shown new redesigned Toolbar UI.
-     */
-    var enableRedesignToolbar by lazyFeatureFlagPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_toolbar_use_redesign),
-        default = { FeatureFlags.completeToolbarRedesignEnabled },
-        featureFlag = FeatureFlags.completeToolbarRedesignEnabled,
-    )
-
-    /**
      * Indicates if the feature to close synced tabs is enabled.
      */
     val enableCloseSyncedTabs: Boolean
@@ -2000,19 +2058,38 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     /**
      * Returns the height of the bottom toolbar.
      *
-     * The bottom toolbar can consist of a navigation bar,
-     * a combination of a navigation and address bar, or be absent.
+     * The bottom toolbar can consist of:
+     *  - a navigation bar.
+     *  - a combination of a navigation and address bar.
+     *  - a combination of a navigation and address bar & a microsurvey.
+     *  - a combination of address bar & a microsurvey.
+     *  - be absent.
+     *
+     *  @param context to be used for [shouldAddNavigationBar] function
      */
-    fun getBottomToolbarHeight(): Int {
-        val isNavBarEnabled = enableIncompleteToolbarRedesign
+    fun getBottomToolbarHeight(context: Context): Int {
+        val isNavbarVisible = context.shouldAddNavigationBar()
+        val isMicrosurveyEnabled = shouldShowMicrosurveyPrompt
         val isToolbarAtBottom = toolbarPosition == ToolbarPosition.BOTTOM
-        val toolbarHeight = appContext.resources.getDimensionPixelSize(R.dimen.browser_toolbar_height)
+
         val navbarHeight = appContext.resources.getDimensionPixelSize(R.dimen.browser_navbar_height)
+        val microsurveyHeight =
+            appContext.resources.getDimensionPixelSize(R.dimen.browser_microsurvey_height)
+        val toolbarHeight =
+            appContext.resources.getDimensionPixelSize(R.dimen.browser_toolbar_height)
 
         return when {
-            isNavBarEnabled && isToolbarAtBottom -> toolbarHeight + navbarHeight
-            isNavBarEnabled -> navbarHeight
+            isNavbarVisible && isMicrosurveyEnabled && isToolbarAtBottom ->
+                navbarHeight + microsurveyHeight + toolbarHeight
+
+            isNavbarVisible && isMicrosurveyEnabled -> navbarHeight + microsurveyHeight
+            isNavbarVisible && isToolbarAtBottom -> navbarHeight + toolbarHeight
+            isMicrosurveyEnabled && isToolbarAtBottom -> microsurveyHeight + toolbarHeight
+
+            isNavbarVisible -> navbarHeight
+            isMicrosurveyEnabled -> microsurveyHeight
             isToolbarAtBottom -> toolbarHeight
+
             else -> 0
         }
     }
@@ -2036,11 +2113,48 @@ class Settings(private val appContext: Context) : PreferencesHolder {
     }
 
     /**
-     * Indicates if the user is shown incomplete new redesigned Toolbar UI components and behaviors.
+     * Returns the height of the bottom toolbar container.
+     *
+     * The bottom toolbar container can consist of a navigation bar, the microsurvey prompt
+     * a combination of a navigation and microsurvey prompt, or be absent.
      */
-    var enableIncompleteToolbarRedesign by lazyFeatureFlagPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_toolbar_use_redesign_incomplete),
-        default = { false },
-        featureFlag = FxNimbus.features.toolbarRedesign.value().enabled,
+    fun getBottomToolbarContainerHeight(): Int {
+        val isNavBarEnabled = navigationToolbarEnabled
+        val isMicrosurveyEnabled = shouldShowMicrosurveyPrompt
+        val navbarHeight = appContext.resources.getDimensionPixelSize(R.dimen.browser_navbar_height)
+        val microsurveyHeight =
+            appContext.resources.getDimensionPixelSize(R.dimen.browser_microsurvey_height)
+
+        return when {
+            isNavBarEnabled && isMicrosurveyEnabled -> navbarHeight + microsurveyHeight
+            isNavBarEnabled -> navbarHeight
+            isMicrosurveyEnabled -> microsurveyHeight
+            else -> 0
+        }
+    }
+
+    /**
+     * Indicates if the user is shown the new navigation toolbar.
+     */
+    var navigationToolbarEnabled by lazyFeatureFlagPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_toolbar_show_navigation_toolbar),
+        default = { FxNimbus.features.navigationToolbar.value().enabled },
+        featureFlag = FeatureFlags.navigationToolbarEnabled,
+    )
+
+    /**
+     * Indicates if the microsurvey feature is enabled.
+     */
+    var microsurveyFeatureEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_microsurvey_feature_enabled),
+        default = FxNimbus.features.microsurveys.value().enabled,
+    )
+
+    /**
+     * Indicates if a microsurvey should be shown to the user.
+     */
+    var shouldShowMicrosurveyPrompt by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_should_show_microsurvey_prompt),
+        default = false,
     )
 }

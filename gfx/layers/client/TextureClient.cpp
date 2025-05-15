@@ -375,9 +375,13 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
   if (aAllocFlags & ALLOC_FORCE_REMOTE) {
     RefPtr<CanvasChild> canvasChild = aAllocator->GetCanvasChild();
     if (canvasChild) {
-      return new RecordedTextureData(canvasChild.forget(), aSize, aFormat,
-                                     textureType,
-                                     layers::TexTypeForWebgl(aKnowsCompositor));
+      TextureType webglTextureType =
+          TexTypeForWebgl(aKnowsCompositor, /* aIsWebglOop */ true);
+      if (canvasChild->EnsureRecorder(aSize, aFormat, textureType,
+                                      webglTextureType)) {
+        return new RecordedTextureData(canvasChild.forget(), aSize, aFormat,
+                                       textureType, webglTextureType);
+      }
     }
     // If we must be remote, but there is no canvas child, then falling back
     // is not possible.
@@ -1608,8 +1612,9 @@ void TextureClient::GetSurfaceDescriptorRemoteDecoder(
   MOZ_RELEASE_ASSERT(mData);
   mData->GetSubDescriptor(&subDesc);
 
-  *aOutDesc =
-      SurfaceDescriptorRemoteDecoder(handle, std::move(subDesc), Nothing());
+  *aOutDesc = SurfaceDescriptorRemoteDecoder(
+      handle, std::move(subDesc), Nothing(),
+      SurfaceDescriptorRemoteDecoderId::GetNext());
 }
 
 class MemoryTextureReadLock : public NonBlockingTextureReadLock {
@@ -1723,10 +1728,14 @@ class CrossProcessSemaphoreReadLock : public TextureReadLock {
 already_AddRefed<TextureReadLock> TextureReadLock::Deserialize(
     ReadLockDescriptor&& aDescriptor, ISurfaceAllocator* aAllocator) {
   switch (aDescriptor.type()) {
-    case ReadLockDescriptor::TShmemSection: {
-      const ShmemSection& section = aDescriptor.get_ShmemSection();
-      MOZ_RELEASE_ASSERT(section.shmem().IsReadable());
-      return MakeAndAddRef<ShmemTextureReadLock>(section);
+    case ReadLockDescriptor::TUntrustedShmemSection: {
+      const UntrustedShmemSection& untrusted =
+          aDescriptor.get_UntrustedShmemSection();
+      Maybe<ShmemSection> section = ShmemSection::FromUntrusted(untrusted);
+      if (section.isNothing()) {
+        return nullptr;
+      }
+      return MakeAndAddRef<ShmemTextureReadLock>(section.value());
     }
     case ReadLockDescriptor::Tuintptr_t: {
       if (!aAllocator->IsSameProcess()) {
@@ -1833,7 +1842,7 @@ ShmemTextureReadLock::~ShmemTextureReadLock() {
 
 bool ShmemTextureReadLock::Serialize(ReadLockDescriptor& aOutput,
                                      base::ProcessId aOther) {
-  aOutput = ReadLockDescriptor(GetShmemSection());
+  aOutput = ReadLockDescriptor(GetShmemSection().AsUntrusted());
   return true;
 }
 

@@ -49,19 +49,11 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
 
   void Destroy(DestroyContext&) override;
 
-  nscoord GetMinISize(gfxContext* aRenderingContext) override;
-  nscoord GetPrefISize(gfxContext* aRenderingContext) override;
+  nscoord IntrinsicISize(gfxContext* aContext,
+                         mozilla::IntrinsicISizeType aType) override;
 
   mozilla::IntrinsicSize GetIntrinsicSize() override;
   mozilla::AspectRatio GetIntrinsicRatio() const override;
-
-  mozilla::LogicalSize ComputeAutoSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWritingMode,
-      const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
-      const mozilla::LogicalSize& aMargin,
-      const mozilla::LogicalSize& aBorderPadding,
-      const mozilla::StyleSizeOverrides& aSizeOverrides,
-      mozilla::ComputeSizeFlags aFlags) override;
 
   SizeComputationResult ComputeSize(
       gfxContext* aRenderingContext, mozilla::WritingMode aWM,
@@ -155,23 +147,6 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   void UpdateEmbeddedBrowsingContextDependentData();
 
   bool IsInline() const { return mIsInline; }
-
-  nscoord GetIntrinsicBSize() {
-    auto size = GetIntrinsicSize();
-    Maybe<nscoord> bSize =
-        GetWritingMode().IsVertical() ? size.width : size.height;
-    return bSize.valueOr(0);
-  }
-
-  nscoord GetIntrinsicISize() {
-    if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
-      return *containISize;
-    }
-    auto size = GetIntrinsicSize();
-    Maybe<nscoord> iSize =
-        GetWritingMode().IsVertical() ? size.height : size.width;
-    return iSize.valueOr(0);
-  }
 
   // Show our document viewer. The document viewer is hidden via a script
   // runner, so that we can save and restore the presentation if we're

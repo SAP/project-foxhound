@@ -11,7 +11,8 @@ WorkerNavigator includes NavigatorML;
 
 enum MLDeviceType {
   "cpu",
-  "gpu"
+  "gpu",
+  "npu"
 };
 
 enum MLPowerPreference {
@@ -90,8 +91,8 @@ interface MLGraphBuilder {
   // Create an operand for a graph constant.
   MLOperand constant(MLOperandDescriptor descriptor, ArrayBufferView bufferView);
 
-  // Create a single-value operand from the specified number of the specified type.
-  MLOperand constant(double value, optional MLOperandDataType type = "float32");
+  // Create a scalar operand from the specified number of the specified type.
+  MLOperand constant(MLOperandDataType type, double value);
 
   // Compile the graph up to the specified output operands asynchronously.
   Promise<MLGraph> build(MLNamedOperands outputs);
@@ -131,7 +132,6 @@ dictionary MLClampOptions {
 
 partial interface MLGraphBuilder {
   MLOperand clamp(MLOperand input, optional MLClampOptions options = {});
-  MLActivation clamp(optional MLClampOptions options = {});
 };
 
 partial interface MLGraphBuilder {
@@ -200,7 +200,7 @@ partial interface MLGraphBuilder {
   MLOperand greaterOrEqual(MLOperand a, MLOperand b);
   MLOperand lesser(MLOperand a, MLOperand b);
   MLOperand lesserOrEqual(MLOperand a, MLOperand b);
-  MLOperand not(MLOperand a);
+  MLOperand logicalNot(MLOperand a);
 };
 
 partial interface MLGraphBuilder {
@@ -513,7 +513,6 @@ partial interface MLGraphBuilder {
 
 partial interface MLGraphBuilder {
   MLOperand softmax(MLOperand input, unsigned long axis);
-  MLActivation softmax(unsigned long axis);
 };
 
 partial interface MLGraphBuilder {

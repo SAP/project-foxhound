@@ -70,14 +70,28 @@ TrampolinePtr MacroAssembler::preBarrierTrampoline(MIRType type) {
   return rt->preBarrier(type);
 }
 
-template <typename S, typename T>
-static void StoreToTypedFloatArray(MacroAssembler& masm, int arrayType,
-                                   const S& value, const T& dest) {
+template <typename T>
+static void StoreToTypedFloatArray(MacroAssembler& masm, Scalar::Type arrayType,
+                                   FloatRegister value, const T& dest,
+                                   Register temp,
+                                   LiveRegisterSet volatileLiveRegs) {
   switch (arrayType) {
-    case Scalar::Float32:
-      masm.storeFloat32(value, dest);
+    case Scalar::Float16:
+      masm.storeFloat16(value, dest, temp, volatileLiveRegs);
       break;
+    case Scalar::Float32: {
+      if (value.isDouble()) {
+        ScratchFloat32Scope fpscratch(masm);
+        masm.convertDoubleToFloat32(value, fpscratch);
+        masm.storeFloat32(fpscratch, dest);
+      } else {
+        MOZ_ASSERT(value.isSingle());
+        masm.storeFloat32(value, dest);
+      }
+      break;
+    }
     case Scalar::Float64:
+      MOZ_ASSERT(value.isDouble());
       masm.storeDouble(value, dest);
       break;
     default:
@@ -87,13 +101,16 @@ static void StoreToTypedFloatArray(MacroAssembler& masm, int arrayType,
 
 void MacroAssembler::storeToTypedFloatArray(Scalar::Type arrayType,
                                             FloatRegister value,
-                                            const BaseIndex& dest) {
-  StoreToTypedFloatArray(*this, arrayType, value, dest);
+                                            const BaseIndex& dest,
+                                            Register temp,
+                                            LiveRegisterSet volatileLiveRegs) {
+  StoreToTypedFloatArray(*this, arrayType, value, dest, temp, volatileLiveRegs);
 }
 void MacroAssembler::storeToTypedFloatArray(Scalar::Type arrayType,
                                             FloatRegister value,
-                                            const Address& dest) {
-  StoreToTypedFloatArray(*this, arrayType, value, dest);
+                                            const Address& dest, Register temp,
+                                            LiveRegisterSet volatileLiveRegs) {
+  StoreToTypedFloatArray(*this, arrayType, value, dest, temp, volatileLiveRegs);
 }
 
 template <typename S, typename T>
@@ -136,8 +153,9 @@ void MacroAssembler::boxUint32(Register source, ValueOperand dest,
 
 template <typename T>
 void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
-                                        AnyRegister dest, Register temp,
-                                        Label* fail) {
+                                        AnyRegister dest, Register temp1,
+                                        Register temp2, Label* fail,
+                                        LiveRegisterSet volatileLiveRegs) {
   switch (arrayType) {
     case Scalar::Int8:
       load8SignExtend(src, dest.gpr());
@@ -157,8 +175,8 @@ void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
       break;
     case Scalar::Uint32:
       if (dest.isFloat()) {
-        load32(src, temp);
-        convertUInt32ToDouble(temp, dest.fpu());
+        load32(src, temp1);
+        convertUInt32ToDouble(temp1, dest.fpu());
       } else {
         load32(src, dest.gpr());
 
@@ -167,6 +185,10 @@ void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
         // MIRType::Int32 for UInt32 array loads.
         branchTest32(Assembler::Signed, dest.gpr(), dest.gpr(), fail);
       }
+      break;
+    case Scalar::Float16:
+      loadFloat16(src, dest.fpu(), temp1, temp2, volatileLiveRegs);
+      canonicalizeFloat(dest.fpu());
       break;
     case Scalar::Float32:
       loadFloat32(src, dest.fpu());
@@ -183,20 +205,21 @@ void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
   }
 }
 
-template void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType,
-                                                 const Address& src,
-                                                 AnyRegister dest,
-                                                 Register temp, Label* fail);
-template void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType,
-                                                 const BaseIndex& src,
-                                                 AnyRegister dest,
-                                                 Register temp, Label* fail);
+template void MacroAssembler::loadFromTypedArray(
+    Scalar::Type arrayType, const Address& src, AnyRegister dest,
+    Register temp1, Register temp2, Label* fail,
+    LiveRegisterSet volatileLiveRegs);
+template void MacroAssembler::loadFromTypedArray(
+    Scalar::Type arrayType, const BaseIndex& src, AnyRegister dest,
+    Register temp1, Register temp2, Label* fail,
+    LiveRegisterSet volatileLiveRegs);
 
 template <typename T>
 void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
                                         const ValueOperand& dest,
                                         Uint32Mode uint32Mode, Register temp,
-                                        Label* fail) {
+                                        Label* fail,
+                                        LiveRegisterSet volatileLiveRegs) {
   switch (arrayType) {
     case Scalar::Int8:
     case Scalar::Uint8:
@@ -205,27 +228,35 @@ void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
     case Scalar::Uint16:
     case Scalar::Int32:
       loadFromTypedArray(arrayType, src, AnyRegister(dest.scratchReg()),
-                         InvalidReg, nullptr);
+                         InvalidReg, InvalidReg, nullptr, LiveRegisterSet{});
       tagValue(JSVAL_TYPE_INT32, dest.scratchReg(), dest);
       break;
     case Scalar::Uint32:
-      // Don't clobber dest when we could fail, instead use temp.
-      load32(src, temp);
-      boxUint32(temp, dest, uint32Mode, fail);
+      load32(src, dest.scratchReg());
+      boxUint32(dest.scratchReg(), dest, uint32Mode, fail);
       break;
-    case Scalar::Float32: {
+    case Scalar::Float16: {
       ScratchDoubleScope dscratch(*this);
       FloatRegister fscratch = dscratch.asSingle();
       loadFromTypedArray(arrayType, src, AnyRegister(fscratch),
-                         dest.scratchReg(), nullptr);
+                         dest.scratchReg(), temp, nullptr, volatileLiveRegs);
+      convertFloat32ToDouble(fscratch, dscratch);
+      boxDouble(dscratch, dest, dscratch);
+      break;
+    }
+    case Scalar::Float32: {
+      ScratchDoubleScope dscratch(*this);
+      FloatRegister fscratch = dscratch.asSingle();
+      loadFromTypedArray(arrayType, src, AnyRegister(fscratch), InvalidReg,
+                         InvalidReg, nullptr, LiveRegisterSet{});
       convertFloat32ToDouble(fscratch, dscratch);
       boxDouble(dscratch, dest, dscratch);
       break;
     }
     case Scalar::Float64: {
       ScratchDoubleScope fpscratch(*this);
-      loadFromTypedArray(arrayType, src, AnyRegister(fpscratch),
-                         dest.scratchReg(), nullptr);
+      loadFromTypedArray(arrayType, src, AnyRegister(fpscratch), InvalidReg,
+                         InvalidReg, nullptr, LiveRegisterSet{});
       boxDouble(fpscratch, dest, fpscratch);
       break;
     }
@@ -236,16 +267,14 @@ void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
   }
 }
 
-template void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType,
-                                                 const Address& src,
-                                                 const ValueOperand& dest,
-                                                 Uint32Mode uint32Mode,
-                                                 Register temp, Label* fail);
-template void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType,
-                                                 const BaseIndex& src,
-                                                 const ValueOperand& dest,
-                                                 Uint32Mode uint32Mode,
-                                                 Register temp, Label* fail);
+template void MacroAssembler::loadFromTypedArray(
+    Scalar::Type arrayType, const Address& src, const ValueOperand& dest,
+    Uint32Mode uint32Mode, Register temp, Label* fail,
+    LiveRegisterSet volatileLiveRegs);
+template void MacroAssembler::loadFromTypedArray(
+    Scalar::Type arrayType, const BaseIndex& src, const ValueOperand& dest,
+    Uint32Mode uint32Mode, Register temp, Label* fail,
+    LiveRegisterSet volatileLiveRegs);
 
 template <typename T>
 void MacroAssembler::loadFromTypedBigIntArray(Scalar::Type arrayType,
@@ -2757,17 +2786,16 @@ void MacroAssembler::emitExtractValueFromMegamorphicCacheEntry(
     ValueOperand output, Label* cacheHit, Label* cacheMiss) {
   Label isMissing, dynamicSlot, protoLoopHead, protoLoopTail;
 
-  // scratch2 = entry->numHops_
-  load8ZeroExtend(Address(entry, MegamorphicCache::Entry::offsetOfNumHops()),
-                  scratch2);
-  // if (scratch2 == NumHopsForMissingOwnProperty) goto cacheMiss
-  branch32(Assembler::Equal, scratch2,
-           Imm32(MegamorphicCache::Entry::NumHopsForMissingOwnProperty),
-           cacheMiss);
+  // scratch2 = entry->hopsAndKind_
+  load8ZeroExtend(
+      Address(entry, MegamorphicCache::Entry::offsetOfHopsAndKind()), scratch2);
   // if (scratch2 == NumHopsForMissingProperty) goto isMissing
   branch32(Assembler::Equal, scratch2,
            Imm32(MegamorphicCache::Entry::NumHopsForMissingProperty),
            &isMissing);
+  // if (scratch2 & NonDataPropertyFlag) goto cacheMiss
+  branchTest32(Assembler::NonZero, scratch2,
+               Imm32(MegamorphicCache::Entry::NonDataPropertyFlag), cacheMiss);
 
   // NOTE: Where this is called, `output` can actually alias `obj`, and before
   // the last cacheMiss branch above we can't write to `obj`, so we can't
@@ -2982,21 +3010,20 @@ void MacroAssembler::emitMegamorphicCacheLookupExists(
                                           outEntryPtr, &cacheMiss,
                                           &cacheMissWithEntry);
 
-  // scratch1 = outEntryPtr->numHops_
+  // scratch1 = outEntryPtr->hopsAndKind_
   load8ZeroExtend(
-      Address(outEntryPtr, MegamorphicCache::Entry::offsetOfNumHops()),
+      Address(outEntryPtr, MegamorphicCache::Entry::offsetOfHopsAndKind()),
       scratch1);
 
   branch32(Assembler::Equal, scratch1,
            Imm32(MegamorphicCache::Entry::NumHopsForMissingProperty),
            &cacheHitFalse);
+  branchTest32(Assembler::NonZero, scratch1,
+               Imm32(MegamorphicCache::Entry::NonDataPropertyFlag),
+               &cacheMissWithEntry);
 
   if (hasOwn) {
     branch32(Assembler::NotEqual, scratch1, Imm32(0), &cacheHitFalse);
-  } else {
-    branch32(Assembler::Equal, scratch1,
-             Imm32(MegamorphicCache::Entry::NumHopsForMissingOwnProperty),
-             &cacheMissWithEntry);
   }
 
   move32(Imm32(1), output);
@@ -3718,58 +3745,79 @@ void MacroAssembler::printf(const char* output, Register value) {
 void MacroAssembler::convertInt32ValueToDouble(ValueOperand val) {
   Label done;
   branchTestInt32(Assembler::NotEqual, val, &done);
-  unboxInt32(val, val.scratchReg());
   ScratchDoubleScope fpscratch(*this);
-  convertInt32ToDouble(val.scratchReg(), fpscratch);
+  convertInt32ToDouble(val.payloadOrValueReg(), fpscratch);
   boxDouble(fpscratch, val, fpscratch);
   bind(&done);
 }
 
-void MacroAssembler::convertValueToFloatingPoint(ValueOperand value,
-                                                 FloatRegister output,
-                                                 Label* fail,
-                                                 MIRType outputType) {
-  Label isDouble, isInt32, isBool, isNull, done;
+void MacroAssembler::convertValueToFloatingPoint(
+    ValueOperand value, FloatRegister output, Register maybeTemp,
+    LiveRegisterSet volatileLiveRegs, Label* fail,
+    FloatingPointType outputType) {
+  Label isDouble, isInt32OrBool, isNull, done;
 
   {
     ScratchTagScope tag(*this, value);
     splitTagForTest(value, tag);
 
     branchTestDouble(Assembler::Equal, tag, &isDouble);
-    branchTestInt32(Assembler::Equal, tag, &isInt32);
-    branchTestBoolean(Assembler::Equal, tag, &isBool);
+    branchTestInt32(Assembler::Equal, tag, &isInt32OrBool);
+    branchTestBoolean(Assembler::Equal, tag, &isInt32OrBool);
     branchTestNull(Assembler::Equal, tag, &isNull);
     branchTestUndefined(Assembler::NotEqual, tag, fail);
   }
 
   // fall-through: undefined
-  loadConstantFloatingPoint(GenericNaN(), float(GenericNaN()), output,
-                            outputType);
+  if (outputType == FloatingPointType::Float16 ||
+      outputType == FloatingPointType::Float32) {
+    loadConstantFloat32(float(GenericNaN()), output);
+  } else {
+    loadConstantDouble(GenericNaN(), output);
+  }
   jump(&done);
 
   bind(&isNull);
-  loadConstantFloatingPoint(0.0, 0.0f, output, outputType);
+  if (outputType == FloatingPointType::Float16 ||
+      outputType == FloatingPointType::Float32) {
+    loadConstantFloat32(0.0f, output);
+  } else {
+    loadConstantDouble(0.0, output);
+  }
   jump(&done);
 
-  bind(&isBool);
-  boolValueToFloatingPoint(value, output, outputType);
-  jump(&done);
-
-  bind(&isInt32);
-  int32ValueToFloatingPoint(value, output, outputType);
+  bind(&isInt32OrBool);
+  if (outputType == FloatingPointType::Float16) {
+    convertInt32ToFloat16(value.payloadOrValueReg(), output, maybeTemp,
+                          volatileLiveRegs);
+  } else if (outputType == FloatingPointType::Float32) {
+    convertInt32ToFloat32(value.payloadOrValueReg(), output);
+  } else {
+    convertInt32ToDouble(value.payloadOrValueReg(), output);
+  }
   jump(&done);
 
   // On some non-multiAlias platforms, unboxDouble may use the scratch register,
   // so do not merge code paths here.
   bind(&isDouble);
-  if (outputType == MIRType::Float32 && hasMultiAlias()) {
+  if ((outputType == FloatingPointType::Float16 ||
+       outputType == FloatingPointType::Float32) &&
+      hasMultiAlias()) {
     ScratchDoubleScope tmp(*this);
     unboxDouble(value, tmp);
-    convertDoubleToFloat32(tmp, output);
+
+    if (outputType == FloatingPointType::Float16) {
+      convertDoubleToFloat16(tmp, output, maybeTemp, volatileLiveRegs);
+    } else {
+      convertDoubleToFloat32(tmp, output);
+    }
   } else {
     FloatRegister tmp = output.asDouble();
     unboxDouble(value, tmp);
-    if (outputType == MIRType::Float32) {
+
+    if (outputType == FloatingPointType::Float16) {
+      convertDoubleToFloat16(tmp, output, maybeTemp, volatileLiveRegs);
+    } else if (outputType == FloatingPointType::Float32) {
       convertDoubleToFloat32(tmp, output);
     }
   }
@@ -3885,8 +3933,7 @@ void MacroAssembler::convertValueToInt(
     splitTagForTest(value, tag);
 
     branchTestInt32(Equal, tag, &isInt32);
-    if (conversion == IntConversionInputKind::Any ||
-        conversion == IntConversionInputKind::NumbersOrBoolsOnly) {
+    if (conversion == IntConversionInputKind::Any) {
       branchTestBoolean(Equal, tag, &isBool);
     }
     branchTestDouble(Equal, tag, &isDouble);
@@ -4153,20 +4200,6 @@ WasmMacroAssembler::WasmMacroAssembler(TempAllocator& alloc, bool limitedSize)
   }
 }
 
-WasmMacroAssembler::WasmMacroAssembler(TempAllocator& alloc,
-                                       const wasm::ModuleEnvironment& env,
-                                       bool limitedSize)
-    : MacroAssembler(alloc) {
-#if defined(JS_CODEGEN_ARM64)
-  // Stubs + builtins + the baseline compiler all require the native SP,
-  // not the PSP.
-  SetStackPointer64(sp);
-#endif
-  if (!limitedSize) {
-    setUnlimitedBuffer();
-  }
-}
-
 bool MacroAssembler::icBuildOOLFakeExitFrame(void* fakeReturnAddr,
                                              AutoSaveLiveRegisters& save) {
   return buildOOLFakeExitFrame(fakeReturnAddr);
@@ -4419,15 +4452,8 @@ void MacroAssembler::setupABICallHelper() {
   abiArgs_ = ABIArgGeneratorT();
 
 #if defined(JS_CODEGEN_ARM)
-  // On ARM, we need to know what ABI we are using, either in the
-  // simulator, or based on the configure flags.
-#  if defined(JS_SIMULATOR_ARM)
-  abiArgs_.setUseHardFp(UseHardFpABI());
-#  elif defined(JS_CODEGEN_ARM_HARDFP)
-  abiArgs_.setUseHardFp(true);
-#  else
-  abiArgs_.setUseHardFp(false);
-#  endif
+  // On ARM, we need to know what ABI we are using.
+  abiArgs_.setUseHardFp(ARMFlags::UseHardFpABI());
 #endif
 
 #if defined(JS_CODEGEN_MIPS32)
@@ -6301,6 +6327,20 @@ void MacroAssembler::wasmBoundsCheckRange32(
   bind(&ok);
 }
 
+#ifdef ENABLE_WASM_MEMORY64
+void MacroAssembler::wasmClampTable64Index(Register64 index, Register out) {
+  Label oob;
+  Label ret;
+  branch64(Assembler::Above, index, Imm64(UINT32_MAX), &oob);
+  move64To32(index, out);
+  jump(&ret);
+  bind(&oob);
+  static_assert(wasm::MaxTableLength < UINT32_MAX);
+  move32(Imm32(UINT32_MAX), out);
+  bind(&ret);
+};
+#endif
+
 BranchWasmRefIsSubtypeRegisters MacroAssembler::regsForBranchWasmRefIsSubtype(
     wasm::RefType type) {
   MOZ_ASSERT(type.isValid());
@@ -6686,9 +6726,15 @@ void MacroAssembler::truncate32ToWasmI31Ref(Register src, Register dest) {
   lshift32(Imm32(1), dest);
   // Add the i31 tag to the integer.
   orPtr(Imm32(int32_t(wasm::AnyRefTag::I31)), dest);
+#ifdef JS_64BIT
+  debugAssertCanonicalInt32(dest);
+#endif
 }
 
 void MacroAssembler::convertWasmI31RefTo32Signed(Register src, Register dest) {
+#ifdef JS_64BIT
+  debugAssertCanonicalInt32(src);
+#endif
   // This will either zero-extend or sign-extend the high 32-bits on 64-bit
   // platforms (see comments on invariants in MacroAssembler.h). Either case
   // is fine, as we won't use this bits.
@@ -6700,6 +6746,9 @@ void MacroAssembler::convertWasmI31RefTo32Signed(Register src, Register dest) {
 
 void MacroAssembler::convertWasmI31RefTo32Unsigned(Register src,
                                                    Register dest) {
+#ifdef JS_64BIT
+  debugAssertCanonicalInt32(src);
+#endif
   // This will either zero-extend or sign-extend the high 32-bits on 64-bit
   // platforms (see comments on invariants in MacroAssembler.h). Either case
   // is fine, as we won't use this bits.
@@ -6771,7 +6820,7 @@ void MacroAssembler::convertValueToWasmAnyRef(ValueOperand src, Register dest,
   branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
            oolConvert);
   lshiftPtr(Imm32(1), dest);
-  orPtr(Imm32((int32_t)wasm::AnyRefTag::I31), dest);
+  or32(Imm32((int32_t)wasm::AnyRefTag::I31), dest);
   jump(&done);
 
   bind(&int32Value);
@@ -6780,8 +6829,7 @@ void MacroAssembler::convertValueToWasmAnyRef(ValueOperand src, Register dest,
            oolConvert);
   branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
            oolConvert);
-  lshiftPtr(Imm32(1), dest);
-  orPtr(Imm32((int32_t)wasm::AnyRefTag::I31), dest);
+  truncate32ToWasmI31Ref(dest, dest);
   jump(&done);
 
   bind(&nullValue);
@@ -7556,6 +7604,220 @@ void MacroAssembler::memoryBarrierAfter(Synchronization sync) {
   memoryBarrier(sync.barrierAfter);
 }
 
+void MacroAssembler::convertDoubleToFloat16(FloatRegister src,
+                                            FloatRegister dest, Register temp,
+                                            LiveRegisterSet volatileLiveRegs) {
+  if (MacroAssembler::SupportsFloat64To16()) {
+    convertDoubleToFloat16(src, dest);
+
+    // Float16 is currently passed as Float32, so expand again to Float32.
+    convertFloat16ToFloat32(dest, dest);
+    return;
+  }
+
+  LiveRegisterSet save = volatileLiveRegs;
+  save.takeUnchecked(dest);
+  save.takeUnchecked(dest.asDouble());
+  save.takeUnchecked(temp);
+
+  PushRegsInMask(save);
+
+  using Fn = float (*)(double);
+  setupUnalignedABICall(temp);
+  passABIArg(src, ABIType::Float64);
+  callWithABI<Fn, jit::RoundFloat16ToFloat32>(ABIType::Float32);
+  storeCallFloatResult(dest);
+
+  PopRegsInMask(save);
+}
+
+void MacroAssembler::convertFloat32ToFloat16(FloatRegister src,
+                                             FloatRegister dest, Register temp,
+                                             LiveRegisterSet volatileLiveRegs) {
+  if (MacroAssembler::SupportsFloat32To16()) {
+    convertFloat32ToFloat16(src, dest);
+
+    // Float16 is currently passed as Float32, so expand again to Float32.
+    convertFloat16ToFloat32(dest, dest);
+    return;
+  }
+
+  LiveRegisterSet save = volatileLiveRegs;
+  save.takeUnchecked(dest);
+  save.takeUnchecked(dest.asDouble());
+  save.takeUnchecked(temp);
+
+  PushRegsInMask(save);
+
+  using Fn = float (*)(float);
+  setupUnalignedABICall(temp);
+  passABIArg(src, ABIType::Float32);
+  callWithABI<Fn, jit::RoundFloat16ToFloat32>(ABIType::Float32);
+  storeCallFloatResult(dest);
+
+  PopRegsInMask(save);
+}
+
+void MacroAssembler::convertInt32ToFloat16(Register src, FloatRegister dest,
+                                           Register temp,
+                                           LiveRegisterSet volatileLiveRegs) {
+  if (MacroAssembler::SupportsFloat32To16()) {
+    convertInt32ToFloat16(src, dest);
+
+    // Float16 is currently passed as Float32, so expand again to Float32.
+    convertFloat16ToFloat32(dest, dest);
+    return;
+  }
+
+  LiveRegisterSet save = volatileLiveRegs;
+  save.takeUnchecked(dest);
+  save.takeUnchecked(dest.asDouble());
+  save.takeUnchecked(temp);
+
+  PushRegsInMask(save);
+
+  using Fn = float (*)(int32_t);
+  setupUnalignedABICall(temp);
+  passABIArg(src);
+  callWithABI<Fn, jit::RoundFloat16ToFloat32>(ABIType::Float32);
+  storeCallFloatResult(dest);
+
+  PopRegsInMask(save);
+}
+
+template <typename T>
+void MacroAssembler::loadFloat16(const T& src, FloatRegister dest,
+                                 Register temp1, Register temp2,
+                                 LiveRegisterSet volatileLiveRegs) {
+  if (MacroAssembler::SupportsFloat32To16()) {
+    loadFloat16(src, dest, temp1);
+
+    // Float16 is currently passed as Float32, so expand again to Float32.
+    convertFloat16ToFloat32(dest, dest);
+    return;
+  }
+
+  load16ZeroExtend(src, temp1);
+
+  LiveRegisterSet save = volatileLiveRegs;
+  save.takeUnchecked(dest);
+  save.takeUnchecked(dest.asDouble());
+  save.takeUnchecked(temp1);
+  save.takeUnchecked(temp2);
+
+  PushRegsInMask(save);
+
+  using Fn = float (*)(int32_t);
+  setupUnalignedABICall(temp2);
+  passABIArg(temp1);
+  callWithABI<Fn, jit::Float16ToFloat32>(ABIType::Float32);
+  storeCallFloatResult(dest);
+
+  PopRegsInMask(save);
+}
+
+template void MacroAssembler::loadFloat16(const Address& src,
+                                          FloatRegister dest, Register temp1,
+                                          Register temp2,
+                                          LiveRegisterSet volatileLiveRegs);
+
+template void MacroAssembler::loadFloat16(const BaseIndex& src,
+                                          FloatRegister dest, Register temp1,
+                                          Register temp2,
+                                          LiveRegisterSet volatileLiveRegs);
+
+template <typename T>
+void MacroAssembler::storeFloat16(FloatRegister src, const T& dest,
+                                  Register temp,
+                                  LiveRegisterSet volatileLiveRegs) {
+  ScratchFloat32Scope fpscratch(*this);
+
+  if (src.isDouble()) {
+    if (MacroAssembler::SupportsFloat64To16()) {
+      canonicalizeDoubleIfDeterministic(src);
+      convertDoubleToFloat16(src, fpscratch);
+      storeUncanonicalizedFloat16(fpscratch, dest, temp);
+      return;
+    }
+
+    convertDoubleToFloat16(src, fpscratch, temp, volatileLiveRegs);
+    src = fpscratch;
+  }
+  MOZ_ASSERT(src.isSingle());
+
+  if (MacroAssembler::SupportsFloat32To16()) {
+    canonicalizeFloatIfDeterministic(src);
+    convertFloat32ToFloat16(src, fpscratch);
+    storeUncanonicalizedFloat16(fpscratch, dest, temp);
+    return;
+  }
+
+  canonicalizeFloatIfDeterministic(src);
+  moveFloat16ToGPR(src, temp, volatileLiveRegs);
+  store16(temp, dest);
+}
+
+template void MacroAssembler::storeFloat16(FloatRegister src,
+                                           const Address& dest, Register temp,
+                                           LiveRegisterSet volatileLiveRegs);
+
+template void MacroAssembler::storeFloat16(FloatRegister src,
+                                           const BaseIndex& dest, Register temp,
+                                           LiveRegisterSet volatileLiveRegs);
+
+void MacroAssembler::moveFloat16ToGPR(FloatRegister src, Register dest,
+                                      LiveRegisterSet volatileLiveRegs) {
+  if (MacroAssembler::SupportsFloat32To16()) {
+    ScratchFloat32Scope fpscratch(*this);
+
+    // Float16 is currently passed as Float32, so first narrow to Float16.
+    convertFloat32ToFloat16(src, fpscratch);
+
+    moveFloat16ToGPR(fpscratch, dest);
+    return;
+  }
+
+  LiveRegisterSet save = volatileLiveRegs;
+  save.takeUnchecked(dest);
+
+  PushRegsInMask(save);
+
+  using Fn = int32_t (*)(float);
+  setupUnalignedABICall(dest);
+  passABIArg(src, ABIType::Float32);
+  callWithABI<Fn, jit::Float32ToFloat16>();
+  storeCallInt32Result(dest);
+
+  PopRegsInMask(save);
+}
+
+void MacroAssembler::moveGPRToFloat16(Register src, FloatRegister dest,
+                                      Register temp,
+                                      LiveRegisterSet volatileLiveRegs) {
+  if (MacroAssembler::SupportsFloat32To16()) {
+    moveGPRToFloat16(src, dest);
+
+    // Float16 is currently passed as Float32, so expand again to Float32.
+    convertFloat16ToFloat32(dest, dest);
+    return;
+  }
+
+  LiveRegisterSet save = volatileLiveRegs;
+  save.takeUnchecked(dest);
+  save.takeUnchecked(dest.asDouble());
+  save.takeUnchecked(temp);
+
+  PushRegsInMask(save);
+
+  using Fn = float (*)(int32_t);
+  setupUnalignedABICall(temp);
+  passABIArg(src);
+  callWithABI<Fn, jit::Float16ToFloat32>(ABIType::Float32);
+  storeCallFloatResult(dest);
+
+  PopRegsInMask(save);
+}
+
 void MacroAssembler::debugAssertIsObject(const ValueOperand& val) {
 #ifdef DEBUG
   Label ok;
@@ -8029,8 +8291,7 @@ void MacroAssembler::resizableTypedArrayElementShiftBy(Register obj,
   static_assert(
       ValidateSizeRange(Scalar::Float16, Scalar::MaxTypedArrayViewType),
       "element shift is one in [Float16, MaxTypedArrayViewType)");
-  branchPtr(Assembler::Below, scratch, ImmPtr(classForType(Scalar::Float16)),
-            &one);
+  jump(&one);
 
   bind(&three);
   rshiftPtr(Imm32(3), output);
@@ -9074,6 +9335,46 @@ void MacroAssembler::touchFrameValues(Register numStackValues,
 
   moveToStackPtr(scratch2);
 }
+
+#ifdef FUZZING_JS_FUZZILLI
+void MacroAssembler::fuzzilliHashDouble(FloatRegister src, Register result,
+                                        Register temp) {
+  canonicalizeDouble(src);
+
+#  ifdef JS_PUNBOX64
+  Register64 r64(temp);
+#  else
+  Register64 r64(temp, result);
+#  endif
+
+  moveDoubleToGPR64(src, r64);
+
+#  ifdef JS_PUNBOX64
+  // Move the high word into |result|.
+  move64(r64, Register64(result));
+  rshift64(Imm32(32), Register64(result));
+#  endif
+
+  // Add the high and low words of |r64|.
+  add32(temp, result);
+}
+
+void MacroAssembler::fuzzilliStoreHash(Register value, Register temp1,
+                                       Register temp2) {
+  loadJSContext(temp1);
+
+  // stats
+  Address addrExecHashInputs(temp1, offsetof(JSContext, executionHashInputs));
+  add32(Imm32(1), addrExecHashInputs);
+
+  // hash
+  Address addrExecHash(temp1, offsetof(JSContext, executionHash));
+  load32(addrExecHash, temp2);
+  add32(value, temp2);
+  rotateLeft(Imm32(1), temp2, temp2);
+  store32(temp2, addrExecHash);
+}
+#endif
 
 namespace js {
 namespace jit {

@@ -27,6 +27,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{env, mem, ptr, slice};
 use thin_vec::ThinVec;
+use webrender::glyph_rasterizer::GlyphRasterThread;
 
 use euclid::SideOffsets2D;
 use moz2d_renderer::Moz2dBlobImageHandler;
@@ -40,7 +41,7 @@ use webrender::{
     MappableCompositor, MappedTileInfo, NativeSurfaceId, NativeSurfaceInfo, NativeTileId, PartialPresentCompositor,
     PipelineInfo, ProfilerHooks, RecordedFrameHandle, Renderer, RendererStats, SWGLCompositeSurfaceInfo,
     SceneBuilderHooks, ShaderPrecacheFlags, Shaders, SharedShaders, TextureCacheConfig, UploadMethod, WebRenderOptions,
-    WindowVisibility, ONE_TIME_USAGE_HINT,
+    WindowVisibility, RenderBackendHooks, ONE_TIME_USAGE_HINT,
 };
 use wr_malloc_size_of::MallocSizeOfOps;
 
@@ -261,9 +262,7 @@ impl WrVecU8 {
         //
         // For the empty case we follow this requirement rather than the more stringent
         // requirement from the `Vec::from_raw_parts` docs.
-        let vec = unsafe {
-            Vec::from_raw_parts(self.data, self.length, self.capacity)
-        };
+        let vec = unsafe { Vec::from_raw_parts(self.data, self.length, self.capacity) };
         self.data = ptr::NonNull::dangling().as_ptr();
         self.length = 0;
         self.capacity = 0;
@@ -1010,7 +1009,12 @@ impl APZCallbacks {
 
 impl SceneBuilderHooks for APZCallbacks {
     fn register(&self) {
-        unsafe { apz_register_updater(self.window_id) }
+        unsafe {
+            if static_prefs::pref!("gfx.webrender.scene-builder-thread-local-arena") {
+                wr_register_thread_local_arena();
+            }
+            apz_register_updater(self.window_id);
+        }
     }
 
     fn pre_scene_build(&self) {
@@ -1051,6 +1055,16 @@ impl SceneBuilderHooks for APZCallbacks {
 
     fn deregister(&self) {
         unsafe { apz_deregister_updater(self.window_id) }
+    }
+}
+
+struct RenderBackendCallbacks;
+
+impl RenderBackendHooks for RenderBackendCallbacks {
+    fn init_thread(&self) {
+        if static_prefs::pref!("gfx.webrender.frame-builder-thread-local-arena") {
+            unsafe { wr_register_thread_local_arena() };
+        }
     }
 }
 
@@ -1119,12 +1133,14 @@ pub extern "C" fn wr_thread_pool_new(low_priority: bool) -> *mut WrThreadPool {
 
     let priority_tag = if low_priority { "LP" } else { "" };
 
+    let use_thread_local_arena = static_prefs::pref!("gfx.webrender.worker-thread-local-arena");
+
     let worker = rayon::ThreadPoolBuilder::new()
         .thread_name(move |idx| format!("WRWorker{}#{}", priority_tag, idx))
         .num_threads(num_threads)
         .start_handler(move |idx| {
-            unsafe {
-                wr_register_thread_local_arena();
+            if use_thread_local_arena {
+                unsafe { wr_register_thread_local_arena(); }
             }
             let name = format!("WRWorker{}#{}", priority_tag, idx);
             register_thread_with_profiler(name.clone());
@@ -1535,6 +1551,35 @@ impl PartialPresentCompositor for WrPartialPresentCompositor {
 /// A wrapper around a strong reference to a Shaders object.
 pub struct WrShaders(SharedShaders);
 
+pub struct WrGlyphRasterThread(GlyphRasterThread);
+
+#[no_mangle]
+pub extern "C" fn wr_glyph_raster_thread_new() -> *mut WrGlyphRasterThread {
+    let thread = GlyphRasterThread::new(
+        || {
+            gecko_profiler::register_thread("WrGlyphRasterizer");
+        },
+        || {
+            gecko_profiler::unregister_thread();
+        },
+    );
+
+    match thread {
+        Ok(thread) => {
+            return Box::into_raw(Box::new(WrGlyphRasterThread(thread)));
+        },
+        Err(..) => {
+            return std::ptr::null_mut();
+        },
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn wr_glyph_raster_thread_delete(thread: *mut WrGlyphRasterThread) {
+    let thread = unsafe { Box::from_raw(thread) };
+    thread.0.shut_down();
+}
+
 // Call MakeCurrent before this.
 #[no_mangle]
 pub extern "C" fn wr_window_new(
@@ -1553,6 +1598,7 @@ pub extern "C" fn wr_window_new(
     shaders: Option<&mut WrShaders>,
     thread_pool: *mut WrThreadPool,
     thread_pool_low_priority: *mut WrThreadPool,
+    glyph_raster_thread: Option<&WrGlyphRasterThread>,
     size_of_op: VoidPtrToSizeFn,
     enclosing_size_of_op: VoidPtrToSizeFn,
     document_id: u32,
@@ -1685,6 +1731,7 @@ pub extern "C" fn wr_window_new(
         ))),
         crash_annotator: Some(Box::new(MozCrashAnnotator)),
         workers: Some(workers),
+        dedicated_glyph_raster_thread: glyph_raster_thread.map(|grt| grt.0.clone()),
         size_of_op: Some(size_of_op),
         enclosing_size_of_op: Some(enclosing_size_of_op),
         cached_programs,
@@ -1703,6 +1750,7 @@ pub extern "C" fn wr_window_new(
         renderer_id: Some(window_id.0),
         upload_method,
         scene_builder_hooks: Some(Box::new(APZCallbacks::new(window_id))),
+        render_backend_hooks: Some(Box::new(RenderBackendCallbacks)),
         sampler: Some(Box::new(SamplerCallback::new(window_id))),
         max_internal_texture_size: Some(8192), // We want to tile if larger than this
         clear_color: color,
@@ -1817,6 +1865,11 @@ pub extern "C" fn wr_api_set_bool(dh: &mut DocumentHandle, param_name: BoolParam
 #[no_mangle]
 pub extern "C" fn wr_api_set_int(dh: &mut DocumentHandle, param_name: IntParameter, val: i32) {
     dh.api.set_parameter(Parameter::Int(param_name, val));
+}
+
+#[no_mangle]
+pub extern "C" fn wr_api_set_float(dh: &mut DocumentHandle, param_name: FloatParameter, val: f32) {
+    dh.api.set_parameter(Parameter::Float(param_name, val));
 }
 
 #[no_mangle]
@@ -2349,8 +2402,11 @@ pub extern "C" fn wr_api_stop_capture_sequence(dh: &mut DocumentHandle) {
 
 #[cfg(target_os = "windows")]
 fn read_font_descriptor(bytes: &mut WrVecU8, index: u32) -> NativeFontHandle {
-    let wchars: Vec<u16> =
-        bytes.as_slice().chunks_exact(2).map(|c| u16::from_ne_bytes([c[0], c[1]])).collect();
+    let wchars: Vec<u16> = bytes
+        .as_slice()
+        .chunks_exact(2)
+        .map(|c| u16::from_ne_bytes([c[0], c[1]]))
+        .collect();
     NativeFontHandle {
         path: PathBuf::from(OsString::from_wide(&wchars)),
         index,
@@ -2410,13 +2466,16 @@ pub extern "C" fn wr_resource_updates_add_font_instance(
     // Every FontVariation is 8 bytes: one u32 and one f32.
     // The code below would look better with slice::chunk_arrays:
     // https://github.com/rust-lang/rust/issues/74985
-    let variations: Vec<FontVariation> =
-        variations.as_slice().chunks_exact(8).map(|c| {
+    let variations: Vec<FontVariation> = variations
+        .as_slice()
+        .chunks_exact(8)
+        .map(|c| {
             assert_eq!(c.len(), 8);
             let tag = u32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
             let value = f32::from_ne_bytes([c[4], c[5], c[6], c[7]]);
             FontVariation { tag, value }
-        }).collect();
+        })
+        .collect();
     txn.add_font_instance(
         key,
         font_key,
@@ -2800,18 +2859,18 @@ pub extern "C" fn wr_dp_define_sticky_frame(
     horizontal_bounds: StickyOffsetBounds,
     applied_offset: LayoutVector2D,
     key: SpatialTreeItemKey,
-    animation: *const WrAnimationProperty
+    animation: *const WrAnimationProperty,
 ) -> WrSpatialId {
     assert!(unsafe { is_in_main_thread() });
     let anim = unsafe { animation.as_ref() };
     let transform = anim.map(|anim| {
-      debug_assert!(anim.id > 0);
-      match anim.effect_type {
-        WrAnimationType::Transform => {
-          PropertyBinding::Binding(PropertyBindingKey::new(anim.id), LayoutTransform::identity())
-        },
-        _ => unreachable!("sticky elements can only have a transform animated")
-      }
+        debug_assert!(anim.id > 0);
+        match anim.effect_type {
+            WrAnimationType::Transform => {
+                PropertyBinding::Binding(PropertyBindingKey::new(anim.id), LayoutTransform::identity())
+            },
+            _ => unreachable!("sticky elements can only have a transform animated"),
+        }
     });
     let spatial_id = state.frame_builder.dl_builder.define_sticky_frame(
         parent_spatial_id.to_webrender(state.pipeline_id),
@@ -2826,7 +2885,7 @@ pub extern "C" fn wr_dp_define_sticky_frame(
         horizontal_bounds,
         applied_offset,
         key,
-        transform
+        transform,
     );
 
     WrSpatialId { id: spatial_id.0 }

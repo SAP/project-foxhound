@@ -78,10 +78,17 @@ loader.lazyRequireGetter(
   "resource://devtools/shared/commands/target/actions/targets.js",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "TRACER_LOG_METHODS",
+  "resource://devtools/shared/specs/tracer.js",
+  true
+);
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+  TYPES: "resource://devtools/shared/highlighters.mjs",
 });
 loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
 loader.lazyRequireGetter(
@@ -234,6 +241,9 @@ const BOOLEAN_CONFIGURATION_PREFS = {
     name: "pauseOverlay",
     thread: true,
   },
+  "devtools.debugger.features.javascript-tracing": {
+    name: "isTracerFeatureEnabled",
+  },
 };
 
 /**
@@ -282,7 +292,7 @@ function Toolbox(commands, selectedTool, hostType, contentWindow, frameId) {
   this.selectedFrameId = null;
 
   // Number of targets currently paused
-  this._pausedTargets = 0;
+  this._pausedTargets = new Set();
 
   /**
    * KeyShortcuts instance specific to WINDOW host type.
@@ -686,9 +696,31 @@ Toolbox.prototype = {
    */
   _onThreadStateChanged(resource) {
     if (resource.state == "paused") {
-      this._pauseToolbox(resource.why.type);
+      this._onTargetPaused(resource.targetFront, resource.why.type);
     } else if (resource.state == "resumed") {
-      this._resumeToolbox();
+      this._onTargetResumed(resource.targetFront);
+    }
+  },
+
+  /**
+   * This listener is called by TracerCommand, sooner than the JSTRACER_STATE resource.
+   * This is called when the frontend toggles the tracer, before the server started interpreting the request.
+   * This allows to open the console before we start receiving traces.
+   */
+  async onTracerToggled() {
+    const { tracerCommand } = this.commands;
+    if (!tracerCommand.isTracingEnabled) {
+      return;
+    }
+    const { logMethod } = this.commands.tracerCommand.getTracingOptions();
+    if (
+      logMethod == TRACER_LOG_METHODS.CONSOLE &&
+      this.currentToolId !== "webconsole"
+    ) {
+      await this.openSplitConsole({ focusConsoleInput: false });
+    } else if (logMethod == TRACER_LOG_METHODS.DEBUGGER_SIDEBAR) {
+      const panel = await this.selectTool("jsdebugger");
+      panel.showTracerSidebar();
     }
   },
 
@@ -702,7 +734,7 @@ Toolbox.prototype = {
     if (!profile) {
       return;
     }
-    const browser = await openProfilerTab();
+    const browser = await openProfilerTab({ defaultPanel: "stack-chart" });
 
     const profileCaptureResult = {
       type: "SUCCESS",
@@ -716,10 +748,16 @@ Toolbox.prototype = {
   },
 
   /**
+   * Called whenever a given target got its execution paused.
+   *
    * Be careful, this method is synchronous, but highlightTool, raise, selectTool
    * are all async.
+   *
+   * @param {TargetFront} targetFront
+   * @param {string} reason
+   *        Reason why the execution paused
    */
-  _pauseToolbox(reason) {
+  _onTargetPaused(targetFront, reason) {
     // Suppress interrupted events by default because the thread is
     // paused/resumed a lot for various actions.
     if (reason === "interrupted") {
@@ -743,15 +781,20 @@ Toolbox.prototype = {
       // Each Target/Thread can be paused only once at a time,
       // so, for each pause, we should have a related resumed event.
       // But we may have multiple targets paused at the same time
-      this._pausedTargets++;
+      this._pausedTargets.add(targetFront);
       this.emit("toolbox-paused");
     }
   },
 
-  _resumeToolbox() {
+  /**
+   * Called whenever a given target got its execution resumed.
+   *
+   * @param {TargetFront} targetFront
+   */
+  _onTargetResumed(targetFront) {
     if (this.isHighlighted("jsdebugger")) {
-      this._pausedTargets--;
-      if (this._pausedTargets == 0) {
+      this._pausedTargets.delete(targetFront);
+      if (this._pausedTargets.size == 0) {
         this.emit("toolbox-resumed");
         this.unhighlightTool("jsdebugger");
       }
@@ -843,8 +886,8 @@ Toolbox.prototype = {
     // navigations when paused, so lets make sure we resumed if not.
     //
     // We should also resume if a paused non-top-level target is destroyed
-    if (targetFront.isTopLevel || targetFront.threadFront?.paused) {
-      this._resumeToolbox();
+    if (targetFront.isTopLevel || this._pausedTargets.has(targetFront)) {
+      this._onTargetResumed(targetFront);
     }
 
     if (targetFront.targetForm.ignoreSubFrames) {
@@ -946,6 +989,8 @@ Toolbox.prototype = {
       ) {
         watchedResources.push(this.resourceCommand.TYPES.JSTRACER_STATE);
         tracerInitialization = this.commands.tracerCommand.initialize();
+        this.onTracerToggled = this.onTracerToggled.bind(this);
+        this.commands.tracerCommand.on("toggle", this.onTracerToggled);
       }
 
       if (!this.isBrowserToolbox) {
@@ -1611,9 +1656,17 @@ Toolbox.prototype = {
       // holding buttons. By default the buttons are placed in the end container.
       isInStartContainer: !!isInStartContainer,
       experimentalURL,
+      getContextMenu() {
+        if (options.getContextMenu) {
+          return options.getContextMenu(toolbox);
+        }
+        return null;
+      },
     };
     if (typeof setup == "function") {
-      const onChange = () => {
+      // Use async function as tracer's definition requires an async function to be passed
+      // for "toggle" event listener.
+      const onChange = async () => {
         button.emit("updatechecked");
       };
       setup(this, onChange);
@@ -2287,8 +2340,8 @@ Toolbox.prototype = {
     // on will-navigate, otherwise we hold on to the stale highlighter
     const hasHighlighters =
       inspectorFront &&
-      (inspectorFront.hasHighlighter("RulersHighlighter") ||
-        inspectorFront.hasHighlighter("MeasuringToolHighlighter"));
+      (inspectorFront.hasHighlighter(lazy.TYPES.RULERS) ||
+        inspectorFront.hasHighlighter(lazy.TYPES.MEASURING));
     if (hasHighlighters) {
       inspectorFront.destroyHighlighters();
       this.component.setToolboxButtons(this.toolbarButtons);
@@ -3214,9 +3267,9 @@ Toolbox.prototype = {
     // issue which can cause loosing outgoing messages/RDP packets, the THREAD_STATE
     // resources for the resumed state might not get received. So let assume it happens
     // make use the UI is the appropriate state.
-    if (this._pausedTargets > 0) {
+    if (this._pausedTargets.size > 0) {
       this.emit("toolbox-resumed");
-      this._pausedTargets = 0;
+      this._pausedTargets.clear();
       if (this.isHighlighted("jsdebugger")) {
         this.unhighlightTool("jsdebugger");
       }
@@ -4164,6 +4217,16 @@ Toolbox.prototype = {
       watchedResources.push(this.resourceCommand.TYPES.NETWORK_EVENT);
     }
 
+    if (
+      Services.prefs.getBoolPref(
+        "devtools.debugger.features.javascript-tracing",
+        false
+      )
+    ) {
+      watchedResources.push(this.resourceCommand.TYPES.JSTRACER_STATE);
+      this.commands.tracerCommand.off("toggle", this.onTracerToggled);
+    }
+
     this.resourceCommand.unwatchResources(watchedResources, {
       onAvailable: this._onResourceAvailable,
     });
@@ -4690,7 +4753,9 @@ Toolbox.prototype = {
       }
 
       if (resourceType === TYPES.CONSOLE_MESSAGE) {
-        const { level } = resource.message;
+        // @backward-compat { version 129 } Once Fx129 is release, CONSOLE_MESSAGE resource
+        // are no longer encapsulated into a sub "message" attribute.
+        const { level } = resource.message || resource;
         if (level === "error" || level === "exception" || level === "assert") {
           errors++;
         }

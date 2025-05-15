@@ -184,6 +184,10 @@ conditioned_profile:
                     || "xpcshell" == task["try-name"]
                 )'
     merge:
+        worker:
+            env:
+                MOZHARNESS_TEST_TAG:
+                    - "condprof"
         mozharness:
             extra-options:
                 - "--conditioned-profile"
@@ -329,13 +333,41 @@ wmf-media-engine:
     replace:
         tier: 2
     merge:
+        worker:
+            env:
+                MOZHARNESS_TEST_TAG:
+                    - "media-engine-compatible"
         mozharness:
             extra-options:
-                - "--tag=media-engine-compatible"
                 - "--setpref=media.wmf.media-engine.enabled=1"
                 - "--setpref=media.wmf.media-engine.channel-decoder.enabled=true"
                 - "--setpref=media.eme.wmf.clearkey.enabled=true"
                 - "--setpref=media.wmf.media-engine.bypass-gfx-blocklist=true"
+                - "--setpref=media.eme.mfcdm.origin-filter.enabled=0"
+
+# For EME wpts, where we need non-local connection to the license server
+eme-wmf:
+    description: "{description} with Windows Media Foundation based CDM enabled for EME wpt"
+    component: "Core::Audio/Video: Playback"
+    expiration: "2025-06-30"
+    when:
+        $eval: '"windows1" in task["test-platform"]'
+    suffix: "emewmf"
+    mozinfo: "emewmf"
+    replace:
+        tier: 2
+    merge:
+        worker:
+            env:
+                MOZ_DISABLE_NONLOCAL_CONNECTIONS:
+                    '0'
+        virtualization: virtual-with-gpu
+        mozharness:
+            extra-options:
+                - "--setpref=media.eme.playready.enabled=true"
+                - "--setpref=media.wmf.media-engine.enabled=2"
+                - "--setpref=media.wmf.media-engine.bypass-gfx-blocklist=true"
+                - "--setpref=media.eme.mfcdm.origin-filter.enabled=0"
 
 media-gpu:
     description: "{description} for running media tests on the GPU worker"
@@ -349,10 +381,14 @@ media-gpu:
                     || "macosx" in task["test-platform"]
                 '
     merge:
+        worker:
+            env:
+                MOZHARNESS_TEST_TAG:
+                    - "media-gpu"
+                USE_HARDWARE: "1"
         virtualization: virtual-with-gpu
         mozharness:
             extra-options:
-                - "--tag=media-gpu"
                 - "--setpref=media.hardware-video-decoding.force-enabled=true"
 
 msix:
@@ -363,7 +399,7 @@ msix:
     mozinfo: "msix"
     when:
         $eval: '
-                    "windows1" in task["test-platform"]
+                    "windows11" in task["test-platform"]
                     && "-64" in task["test-platform"]
                     && (
                         "opt" in task["test-platform"]
@@ -371,6 +407,7 @@ msix:
                     ) && !(
                         "asan" in task["test-platform"]
                         || "ccov" in task["test-platform"]
+                        || "devedition" in task["test-platform"]
                     )
                 '
     replace:

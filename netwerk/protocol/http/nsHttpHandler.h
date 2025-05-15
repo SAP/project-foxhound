@@ -394,6 +394,11 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_RESPONSE_TOPIC);
   }
 
+  // Called by the channel once the cookie processing is completed.
+  void OnAfterExamineResponse(nsIHttpChannel* chan) {
+    NotifyObservers(chan, NS_HTTP_ON_AFTER_EXAMINE_RESPONSE_TOPIC);
+  }
+
   // Called by the channel once headers have been merged with cached headers
   void OnExamineMergedResponse(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_MERGED_RESPONSE_TOPIC);
@@ -502,6 +507,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
                                    uint32_t aActivitySubtype, PRTime aTimestamp,
                                    uint64_t aExtraSizeData,
                                    const nsACString& aExtraStringData);
+
+  static bool GetParentalControlsEnabled() { return sParentalControlsEnabled; }
+  static void UpdateParentalControlsEnabled(bool waitForCompletion);
 
  private:
   nsHttpHandler();
@@ -654,7 +662,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // for broadcasting safe hint;
   bool mSafeHintEnabled{false};
-  bool mParentalControlEnabled{false};
+  static Atomic<bool, Relaxed> sParentalControlsEnabled;
 
   // true in between init and shutdown states
   Atomic<bool, Relaxed> mHandlerActive{false};

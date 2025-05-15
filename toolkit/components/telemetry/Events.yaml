@@ -54,6 +54,8 @@ activity_stream:
       "OPEN_NEW_WINDOW",
       "OPEN_PRIVATE_WINDOW",
       "PIN",
+      "POCKET_THUMBS_DOWN",
+      "POCKET_THUMBS_UP",
       "PREF_CHANGED",
       "PREVIEW_REQUEST",
       "SAVE_TO_POCKET",
@@ -464,7 +466,7 @@ address:
     expiry_version: never
     products:
       - "firefox"
-    record_in_processes: ["content"]
+    record_in_processes: ["main"]
     release_channel_collection: opt-out
     extra_keys:
       street_address: street address result, filled when method is `detected`, `filled`, or `filled_modified`
@@ -487,7 +489,7 @@ address:
     expiry_version: never
     products:
       - "firefox"
-    record_in_processes: ["content"]
+    record_in_processes: ["main"]
     release_channel_collection: opt-out
     extra_keys:
       name: name
@@ -568,7 +570,7 @@ creditcard:
     expiry_version: never
     products:
       - "firefox"
-    record_in_processes: ["content"]
+    record_in_processes: ["main"]
     release_channel_collection: opt-out
     extra_keys:
       cc_name: cardholder name field result. Used by `detected`, `filled`, and `filled_modified` methods.
@@ -811,8 +813,19 @@ normandy:
       changedPref: >
         For preference_study or nimbus_experiment, the preference that was
         detected to change that caused the unenrollment.
-    bug_numbers: [1443560, 1843126]
-    notification_emails: ["normandy-notifications@mozilla.com"]
+      conflictingSlug: >
+        For nimbus_experiment, if reason == "prefFlips-conflict", the conflicting
+        experiment that caused the unenrollment.
+      prefName: >
+        For nimbus_experiment, if reason == "prefFlips-failed", the name of the
+        pref that failed to set.
+      prefType: >
+        For nimbus_experiment, if reason = "prefFlips-failed", the type of the
+        existing pref value (one of "bool", "string", "int", or "invalid").
+    bug_numbers: [1443560, 1843126, 1896718, 1907649]
+    notification_emails:
+      - "normandy-notifications@mozilla.com"
+      - "nimbus-team@mozilla.com"
     products:
       - "firefox"
       - "fennec"
@@ -911,7 +924,7 @@ normandy:
     description: >
       This records when validation of a recipe fails.
     bug_numbers: [1762652]
-    notification_emails: ["barret@mozilla.com"]
+    notification_emails: ["beth@mozilla.com"]
     expiry_version: never
     extra_keys:
       reason: Why validation failed (one of "invalid-recipe", "invalid-branch", or "invalid-reason").
@@ -1492,6 +1505,7 @@ messaging_experiments:
       "infobar",
       "spotlight",
       "featureCallout",
+      "fxms_bmb_button",
       "fxms_message_1",
       "fxms_message_2",
       "fxms_message_3",
@@ -2847,7 +2861,7 @@ pictureinpicture:
     expiry_version: "never"
     release_channel_collection: opt-out
   opened_method:
-    objects: ["toggle", "contextMenu", "urlBar", "shortcut"]
+    objects: ["toggle", "contextMenu", "urlBar", "shortcut", "autoPip"]
     description: >
       Records the method for opening the Picture-in-Picture window.
     extra_keys:
@@ -2868,7 +2882,7 @@ pictureinpicture:
     expiry_version: "never"
     release_channel_collection: opt-out
   closed_method:
-    objects: ["closeButton", "unpip", "pagehide", "fullscreen", "setupFailure", "closePlayerShortcut", "contextMenu", "videoElRemove", "videoElEmptied", "urlBar", "shortcut"]
+    objects: ["closeButton", "unpip", "pagehide", "foregrounded","fullscreen", "setupFailure", "closePlayerShortcut", "contextMenu", "videoElRemove", "videoElEmptied", "urlBar", "shortcut"]
     description: >
       Records the method for closing the Picture-in-Picture window.
     notification_emails:
@@ -2961,6 +2975,20 @@ pictureinpicture.settings:
       - main
     bug_numbers:
       - 1639774
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  enable_autotrigger:
+    objects: ["settings"]
+    description: Recorded when the Picture-in-Picture auto-trigger is enabled.
+    notification_emails:
+      - mconley@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1647800
+      - 1910505
     expiry_version: "never"
     release_channel_collection: opt-out
 
@@ -3234,6 +3262,7 @@ security.ui.certerror:
     extra_keys:
       is_frame: If the error page is loaded in an iframe.
       has_sts: If the error page is for a site with HSTS headers or with a pinned key.
+      channel_status: The status of the failed channel, as an nsresult.
   click:
     objects: [
       "advanced_button",
@@ -3284,6 +3313,7 @@ security.ui.tlserror:
     record_in_processes: ["content"]
     extra_keys:
       is_frame: If the error page is loaded in an iframe.
+      channel_status: The status of the failed channel, as an nsresult.
 
 slow_script_warning:
   shown:
@@ -3455,7 +3485,7 @@ avif:
 mfcdm:
   eme_playback:
     objects: ["gecko"]
-    bug_numbers: [1873394]
+    bug_numbers: [1873394, 1902169]
     description:
       Record the information about the EME playback when using the media engine.
       The value of this event is the key system name.
@@ -3463,7 +3493,7 @@ mfcdm:
       - firefox
     record_in_processes: ["all"]
     release_channel_collection: opt-out
-    expiry_version: "130"
+    expiry_version: "140"
     notification_emails:
       - media-alerts@mozilla.com
     extra_keys:
@@ -3475,7 +3505,7 @@ mfcdm:
       dropped_frames: The amount of video frames don't get rendered but dropped
   error:
     objects: ["gecko"]
-    bug_numbers: [1873394]
+    bug_numbers: [1873394, 1902169]
     description:
       Record the error or crash happened while using the media engine playback.
       The value of this event is the name of error.
@@ -3483,7 +3513,7 @@ mfcdm:
       - firefox
     record_in_processes: ["all"]
     release_channel_collection: opt-out
-    expiry_version: "130"
+    expiry_version: "140"
     notification_emails:
       - media-alerts@mozilla.com
     extra_keys:

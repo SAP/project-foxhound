@@ -196,6 +196,9 @@ class WindowGlobalChild final : public WindowGlobalActor,
   mozilla::ipc::IPCResult RecvNotifyPermissionChange(const nsCString& aType,
                                                      uint32_t aPermission);
 
+  mozilla::ipc::IPCResult RecvNavigateForIdentityCredentialDiscovery(
+      const nsString& aURI, const IdentityLoginTargetType& aType);
+
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:

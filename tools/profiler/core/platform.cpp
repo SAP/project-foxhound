@@ -41,10 +41,13 @@
 #include "ProfilerCPUFreq.h"
 #include "ProfilerIOInterposeObserver.h"
 #include "ProfilerParent.h"
+#include "ProfilerNativeStack.h"
+#include "ProfilerStackWalk.h"
 #include "ProfilerRustBindings.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/Perfetto.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsXPCOM.h"
@@ -541,6 +544,101 @@ using JsFrame = mozilla::profiler::ThreadRegistrationData::JsFrame;
 using JsFrameBuffer = mozilla::profiler::ThreadRegistrationData::JsFrameBuffer;
 
 #if defined(GECKO_PROFILER_ASYNC_POSIX_SIGNAL_CONTROL)
+
+// ASYNC POSIX SIGNAL HANDLING SUPPORT
+//
+// Integrating POSIX signals
+// (https://man7.org/linux/man-pages/man7/signal.7.html) into a complex
+// multi-threaded application such as Firefox can be a tricky proposition.
+// Signals are delivered by the operating system to a program, which then
+// invokes a signal handler
+// (https://man7.org/linux/man-pages/man2/sigaction.2.html) outside the normal
+// flow of control. This handler is responsible for performing operations in
+// response to the signal. If there is no "custom" handler defined, then default
+// behaviour is triggered, which usually results in a terminated program.
+//
+// As signal handlers interrupt the normal flow of control, Firefox may not be
+// in a safe state while the handler is running (e.g. it may be halfway through
+// a garbage collection cycle, or a critical lock may be held by the current
+// thread). This is something we must be aware of while writing one, and we are
+// additionally limited in terms of which POSIX functions we can call to those
+// which are async signal safe
+// (https://man7.org/linux/man-pages/man7/signal-safety.7.html).
+//
+// In the context of Firefox, this presents a number of details that we must be
+// aware of:
+//
+// * We are very limited by what we can call when we handle a signal: Many
+//   functions in Firefox, and in the profiler specifically, allocate memory
+//   when called. Allocating memory is specifically **not** async-signal-safe,
+//   and so any functions that allocate should not be called from a signal
+//   handler.
+//
+// * We need to be careful with how we communicate to other threads in the
+//   process. The signal handler runs asynchronously, interrupting the current
+//   thread of execution. Communication should therefore use atomics or other
+//   concurrency constructs to ensure that data is read and written correctly.
+//   We should avoid taking locks, as we may easily deadlock while within the
+//   signal handler.
+//
+// * We cannot use the usual Firefox mechanisms for triggering behaviour in
+//   other threads. For instance, tools such as ``NS_DispatchToMainThread``
+//   allocate memory when called, which is not allowed within a signal handler.
+//
+// We solve these constraints by introducing a new thread within the Firefox
+// profiler, the AsyncSignalControlThread which is responsible for carrying out
+// the actions triggered by a signal handler. We communicate between handlers
+// and this thread with the use of a libc pipe
+// (https://pubs.opengroup.org/onlinepubs/9699919799/functions/write.html#tag_16_685_08).
+// Writing to a pipe is async-signal-safe, so we can do so from a signal
+// handler, and we can set the pipe to be "blocking", meaning that when our
+// control thread tries to read it will block at the OS level (consuming no CPU)
+// until the handler writes to it. This is in contrast to (e.g.) an atomic
+// variable, where our thread would have to "busy wait" for it to be set.
+//
+// We have one "control" thread per process, and use a single byte for messages
+// we send. Writes to pipes are atomic if the size is less than or equal to
+// ``PIPE_BUF``, which (although implementation defined) in our case is always
+// one, thus trivially atomic.
+//
+// The control flow for a typical Firefox session in which a user starts and
+// stops profiling using POSIX signals therefore looks something like the
+// following:
+//
+// * Profiler initialization.
+//
+//   * The main thread of each process starts the signal control thread, and
+//     initialises signal handlers for ``SIGUSR1`` and ``SIGSUR2``.
+//   * The signal control thread sets up pipes for communication, and begins
+//     reading, blocking itself.
+//
+// * *After some time...*
+// * The user sends ``SIGUSR1`` to Firefox, e.g. using ``kill -s USR1 <firefox
+//   pid>``
+//
+//   * The profiler_start_signal_handler signal handler for ``SIGUSR1`` is
+//     triggered by the operating system. This writes the "start" control
+//     character to the communication pipe and returns.
+//   * The signal control thread wakes up, as there is now data on the pipe.
+//   * The control thread recognises the "start" character, and starts the
+//     profiler with a set of default presets.
+//   * The control thread loops, and goes back to waiting on the pipe.
+//
+// * *The user uses Firefox, or waits for it to do something...*
+// * The user sends ``SIGUSR2`` to Firefox, e.g. using ``kill -s USR1 <firefox
+//   pid>``
+//
+//   * The profiler_stop_signal_handler signal handler for ``SIGUSR2`` is
+//     triggered by the operating system. This writes the "stop" control
+//     character to the communication pipe and returns.
+//   * The signal control thread wakes up, as there is now data on the pipe.
+//   * The control thread recognises the "stop" character, and calls
+//     profiler_stop_signal_handler to dump the profile to disk.
+//   * The control thread loops, and goes back to waiting on the pipe.
+//
+// * *The user can now start another profiling session...*
+//
+
 // Forward declare this, so we can call it from the constructor.
 static void* AsyncSignalControlThreadEntry(void* aArg);
 
@@ -693,6 +791,21 @@ static void* AsyncSignalControlThreadEntry(void* aArg) {
 // - mProcessStartTime, because it's immutable;
 class CorePS {
  private:
+#ifdef MOZ_PERFETTO
+  class PerfettoObserver : public perfetto::TrackEventSessionObserver {
+   public:
+    PerfettoObserver() { perfetto::TrackEvent::AddSessionObserver(this); }
+    ~PerfettoObserver() { perfetto::TrackEvent::RemoveSessionObserver(this); }
+
+    void OnStart(const perfetto::DataSourceBase::StartArgs&) override {
+      mozilla::profiler::detail::RacyFeatures::SetPerfettoTracingActive();
+    }
+    void OnStop(const perfetto::DataSourceBase::StopArgs&) override {
+      mozilla::profiler::detail::RacyFeatures::SetPerfettoTracingInactive();
+    }
+  } perfettoObserver;
+#endif
+
   CorePS()
       : mProcessStartTime(TimeStamp::ProcessCreation()),
         mMaybeBandwidthCounter(nullptr)
@@ -1932,18 +2045,6 @@ class Registers {
 #endif
 };
 
-// Setting MAX_NATIVE_FRAMES too high risks the unwinder wasting a lot of time
-// looping on corrupted stacks.
-static const size_t MAX_NATIVE_FRAMES = 1024;
-
-struct NativeStack {
-  void* mPCs[MAX_NATIVE_FRAMES];
-  void* mSPs[MAX_NATIVE_FRAMES];
-  size_t mCount;  // Number of frames filled.
-
-  NativeStack() : mPCs(), mSPs(), mCount(0) {}
-};
-
 Atomic<bool> WALKING_JS_STACK(false);
 
 struct AutoWalkJSStack {
@@ -2751,6 +2852,66 @@ static void DoNativeBacktrace(
 #    error "Invalid configuration"
 #  endif
 }
+
+void DoNativeBacktraceDirect(const void* stackTop, NativeStack& aNativeStack,
+                             StackWalkControl* aStackWalkControlIfSupported) {
+#  if defined(MOZ_PROFILING)
+#    if defined(USE_FRAME_POINTER_STACK_WALK) || defined(USE_MOZ_STACK_WALK)
+  // StackWalkCallback(/* frameNum */ 0, aRegs.mPC, aRegs.mSP, &aNativeStack);
+  void* previousResumeSp = nullptr;
+  for (;;) {
+    MozStackWalk(StackWalkCallback, stackTop,
+                 uint32_t(MAX_NATIVE_FRAMES - aNativeStack.mCount),
+                 &aNativeStack);
+    if constexpr (!StackWalkControl::scIsSupported) {
+      break;
+    } else {
+      if (aNativeStack.mCount >= MAX_NATIVE_FRAMES) {
+        // No room to add more frames.
+        break;
+      }
+      if (!aStackWalkControlIfSupported ||
+          aStackWalkControlIfSupported->ResumePointCount() == 0) {
+        // No resume information.
+        break;
+      }
+      void* lastSP = aNativeStack.mSPs[aNativeStack.mCount - 1];
+      if (previousResumeSp &&
+          ((uintptr_t)lastSP <= (uintptr_t)previousResumeSp)) {
+        // No progress after the previous resume point.
+        break;
+      }
+      const StackWalkControl::ResumePoint* resumePoint =
+          aStackWalkControlIfSupported->GetResumePointCallingSp(lastSP);
+      if (!resumePoint) {
+        break;
+      }
+      void* sp = resumePoint->resumeSp;
+      if (!sp) {
+        // Null SP in a resume point means we stop here.
+        break;
+      }
+      void* pc = resumePoint->resumePc;
+      StackWalkCallback(/* frameNum */ aNativeStack.mCount, pc, sp,
+                        &aNativeStack);
+      ++aNativeStack.mCount;
+      if (aNativeStack.mCount >= MAX_NATIVE_FRAMES) {
+        break;
+      }
+      previousResumeSp = sp;
+    }
+  }
+#    else   // defined(USE_FRAME_POINTER_STACK_WALK) ||
+            // defined(USE_MOZ_STACK_WALK)
+  MOZ_CRASH(
+      "Cannot call DoNativeBacktraceDirect without either "
+      "USE_FRAME_POINTER_STACK_WALK USE_MOZ_STACK_WALK");
+#    endif  // defined(USE_FRAME_POINTER_STACK_WALK) ||
+            // defined(USE_MOZ_STACK_WALK)
+#  else
+  aNativeStack.mCount = 0;
+#  endif
+}
 #endif
 
 // Writes some components shared by periodic and synchronous profiles to
@@ -2786,7 +2947,7 @@ static inline void DoSharedSample(
       aJsFrames ? ExtractJsFrames(aIsSynchronous, aThreadData, aRegs, collector,
                                   aJsFrames, stackWalkControlIfSupported)
                 : 0;
-  NativeStack nativeStack;
+  NativeStack nativeStack{.mCount = 0};
 #if defined(HAVE_NATIVE_UNWIND)
   if (captureNative) {
     DoNativeBacktrace(aThreadData, aRegs, nativeStack,
@@ -5628,6 +5789,7 @@ void profiler_init(void* aStackTop) {
 
   VTUNE_INIT();
   ETW::Init();
+  InitPerfetto();
 
   MOZ_RELEASE_ASSERT(!CorePS::Exists());
 
@@ -7413,6 +7575,45 @@ bool profiler_capture_backtrace_into(ProfileChunkedBuffer& aChunkedBuffer,
       false);
 }
 
+bool profiler_backtrace_into_buffer(ProfileChunkedBuffer& aChunkedBuffer,
+                                    NativeStack& aNativeStack) {
+  MOZ_RELEASE_ASSERT(CorePS::Exists());
+
+  return ThreadRegistration::WithOnThreadRefOr(
+      [&](ThreadRegistration::OnThreadRef aOnThreadRef) {
+        mozilla::Maybe<uint32_t> maybeFeatures =
+            RacyFeatures::FeaturesIfActiveAndUnpaused();
+        if (!maybeFeatures) {
+          return false;
+        }
+
+        ProfileBuffer profileBuffer(aChunkedBuffer);
+        const uint64_t bufferRangeStart = profileBuffer.BufferRangeStart();
+        const uint64_t samplePos = profileBuffer.AddThreadIdEntry(
+            aOnThreadRef.UnlockedReaderAndAtomicRWOnThreadCRef()
+                .Info()
+                .ThreadId());
+
+        TimeDuration delta = TimeStamp::Now() - CorePS::ProcessStartTime();
+        profileBuffer.AddEntry(
+            ProfileBufferEntry::Time(delta.ToMilliseconds()));
+
+        ProfileBufferCollector collector(profileBuffer, samplePos,
+                                         bufferRangeStart);
+
+        for (int nativeIndex = (int)(aNativeStack.mCount); nativeIndex >= 0;
+             --nativeIndex) {
+          collector.CollectNativeLeafAddr(
+              (void*)aNativeStack.mPCs[nativeIndex]);
+        }
+
+        return true;
+      },
+      // If this was called from a non-registered thread, return false and do no
+      // more work. This can happen from a memory hook.
+      false);
+}
+
 UniquePtr<ProfileChunkedBuffer> profiler_capture_backtrace() {
   MOZ_RELEASE_ASSERT(CorePS::Exists());
   AUTO_PROFILER_LABEL_HOT("profiler_capture_backtrace", PROFILER);
@@ -7562,7 +7763,7 @@ static void profiler_suspend_and_sample_thread(
   }
 
   // Allocate the space for the native stack
-  NativeStack nativeStack;
+  NativeStack nativeStack{.mCount = 0};
 
   auto collectStack = [&](const Registers& aRegs, const TimeStamp& aNow) {
     // The target thread is now suspended. Collect a native backtrace,

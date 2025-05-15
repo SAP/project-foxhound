@@ -198,6 +198,13 @@ class Decoder {
   bool IsMetadataDecode() const { return mMetadataDecode; }
 
   /**
+   * Should we return how many frames we expect are in the animation.
+   */
+  bool WantsFrameCount() const {
+    return bool(mDecoderFlags & DecoderFlags::COUNT_FRAMES);
+  }
+
+  /**
    * Sets the output size of this decoder. If this is smaller than the intrinsic
    * size of the image, we'll downscale it while decoding. For memory usage
    * reasons, upscaling is forbidden and will trigger assertions in debug
@@ -300,7 +307,7 @@ class Decoder {
   /// useless?
   bool GetDecodeDone() const {
     return mReachedTerminalState || mDecodeDone ||
-           (mMetadataDecode && HasSize()) || HasError();
+           (mMetadataDecode && HasSize() && !WantsFrameCount()) || HasError();
   }
 
   /// Are we in the middle of a frame right now? Used for assertions only.
@@ -505,6 +512,10 @@ class Decoder {
   //                 we advance to the next frame.
   void PostIsAnimated(FrameTimeout aFirstFrameTimeout);
 
+  // Called by decoders if they determine the expected frame count.
+  // @param aFrameCount The expected frame count.
+  void PostFrameCount(uint32_t aFrameCount);
+
   // Called by decoders when they end a frame. Informs the image, sends
   // notifications, and does internal book-keeping.
   // Specify whether this frame is opaque as an optimization.
@@ -527,15 +538,16 @@ class Decoder {
       const OrientedIntRect& aRect,
       const Maybe<OrientedIntRect>& aRectAtOutputSize = Nothing());
 
+  // For animated images, specify the loop count. -1 means loop forever, 0
+  // means a single iteration, stopping on the last frame.
+  void PostLoopCount(int32_t aLoopCount);
+
   // Called by the decoders when they have successfully decoded the image. This
   // may occur as the result of the decoder getting to the appropriate point in
   // the stream, or by us calling FinishInternal().
   //
   // May not be called mid-frame.
-  //
-  // For animated images, specify the loop count. -1 means loop forever, 0
-  // means a single iteration, stopping on the last frame.
-  void PostDecodeDone(int32_t aLoopCount = 0);
+  void PostDecodeDone();
 
   /**
    * Allocates a new frame, making it our current frame if successful.

@@ -387,7 +387,7 @@ def instruments(value, target):
 
 set_config("MOZ_INSTRUMENTS", instruments)
 set_define("MOZ_INSTRUMENTS", instruments)
-add_old_configure_assignment("MOZ_INSTRUMENTS", instruments)
+
 imply_option("--enable-profiling", instruments, reason="--enable-instruments")
 
 option("--enable-callgrind", env="MOZ_CALLGRIND", help="Enable callgrind profiling")
@@ -806,7 +806,7 @@ def default_wasm_jspi(
     tail_calls,
     target,
 ):
-    if not jit_enabled or simulator:
+    if not jit_enabled:
         return
 
     if not gc or not tail_calls:
@@ -815,7 +815,10 @@ def default_wasm_jspi(
     if not is_nightly:
         return
 
-    if target.cpu in ("x86_64", "aarch64"):
+    if simulator:
+        return simulator[0] == "arm64" or simulator[0] == "arm"
+
+    if target.cpu in ("x86_64", "x86", "aarch64", "arm"):
         return True
 
 
@@ -848,13 +851,13 @@ def wasm_jspi(value, jit_enabled, simulator, gc, tail_calls, no_experimental, ta
     if not tail_calls:
         die("--enable-wasm-jspi requires --enable-wasm-tail-calls")
 
-    if simulator:
-        die("--enable-wasm-jspi is not supported for simulators")
+    if simulator and not (simulator[0] == "arm64" or simulator[0] == "arm"):
+        die("--enable-wasm-jspi is only supported for arm64/arm simulators")
 
-    if target.cpu in ("x86_64", "aarch64"):
+    if target.cpu in ("x86_64", "x86", "aarch64", "arm"):
         return True
 
-    die("--enable-wasm-jspi only possible when targeting the x86_64/arm64 jits")
+    die("--enable-wasm-jspi only possible when targeting the x86_64/x86/arm64/arm jits")
 
 
 set_config("ENABLE_WASM_JSPI", wasm_jspi)
@@ -1326,6 +1329,18 @@ set_config("MOZ_ICU_CFLAGS", [], when=in_tree_icu)
 set_config("MOZ_SYSTEM_ICU", True, when=system_icu)
 set_define("MOZ_SYSTEM_ICU", True, when=system_icu)
 
+option("--disable-icu4x", help="Disable using ICU4X")
+
+
+@depends("--enable-icu4x", js_standalone)
+def check_icu4x(enabled, js_standalone):
+    if not enabled and not js_standalone:
+        die("--disable-icu4x is not supported")
+
+
+set_config("MOZ_ICU4X", True, when="--enable-icu4x")
+set_define("MOZ_ICU4X", True, when="--enable-icu4x")
+
 option("--without-intl-api", help="Disable ECMAScript Internationalization API")
 
 
@@ -1368,7 +1383,7 @@ set_define("U_USING_ICU_NAMESPACE", "0", when="--with-intl-api")
 set_define("U_STATIC_IMPLEMENTATION", True, when=depends(system_icu)(lambda x: not x))
 
 
-# ECMAScript Temporal API Support (uses ICU)
+# ECMAScript Temporal API Support (uses ICU and ICU4X)
 # ======================================================
 
 option("--with-temporal-api", default=False, help="Enable ECMAScript Temporal API")
@@ -1377,10 +1392,10 @@ set_config("JS_HAS_TEMPORAL_API", True, when="--with-temporal-api")
 set_define("JS_HAS_TEMPORAL_API", True, when="--with-temporal-api")
 
 
-@depends("--with-temporal-api", "--with-intl-api")
-def check_temporal_api(temporal_enabled, intl_enabled):
-    if temporal_enabled and not intl_enabled:
-        die("Can't use both --with-temporal-api and --without-intl-api")
+@depends("--with-temporal-api", "--with-intl-api", "--enable-icu4x")
+def check_temporal_api(temporal_enabled, intl_enabled, icu4x_enabled):
+    if temporal_enabled and not (intl_enabled and icu4x_enabled):
+        die("Can't use --with-temporal-api with --without-intl-api or --disable-icu4x")
 
 
 # Initial support for WebAssembly JS-API Type Reflections
@@ -1437,7 +1452,6 @@ set_config(
     ),
 )
 
-
 # Some platforms have HeapReg, some don't
 # =====================================================
 
@@ -1467,6 +1481,49 @@ with only_when(compile_environment):
             check_msg="for tm_zone and tm_gmtoff in struct tm",
         ),
     )
+
+
+# link executables against mozglue
+# ==============================================================
+@depends(
+    target_is_android | target_is_windows | target_is_darwin,
+    js_standalone & ~depends(when="--enable-jemalloc")(True),
+)
+def moz_glue_in_program(is_excluded_target, is_js_without_jemalloc):
+    return not is_excluded_target and not is_js_without_jemalloc
+
+
+set_define("MOZ_GLUE_IN_PROGRAM", True, when=moz_glue_in_program)
+set_config("MOZ_GLUE_IN_PROGRAM", True, when=moz_glue_in_program)
+
+
+# JavaScript shell
+# ==============================================================
+@depends(milestone.symbolversion, js_standalone)
+def js_library_name(symbolversion, js_standalone):
+    if js_standalone:
+        return f"mozjs-{symbolversion}"
+    else:
+        return "mozjs"
+
+
+set_config("JS_LIBRARY_NAME", js_library_name)
+add_old_configure_assignment("JS_LIBRARY_NAME", js_library_name)
+
+
+@depends(nspr_config.libs, nspr_pkg.libs, instruments)
+def js_config_libs(nspr_libs, nspr_pkg_libs, instruments):
+    libs = []
+    if nspr_libs:
+        libs += nspr_libs
+    if nspr_pkg_libs:
+        libs += nspr_pkg_libs
+    if instruments:
+        libs += ["-framework", "CoreFoundation"]
+    return libs
+
+
+set_config("JS_CONFIG_LIBS", js_config_libs)
 
 #
 # Checks for library functions

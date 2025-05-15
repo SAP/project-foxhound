@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "js/MapAndSet.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Fetch.h"
@@ -14,18 +15,25 @@
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/Components.h"
+#include "mozilla/CredentialChosenCallback.h"
 #include "mozilla/ExpandedPrincipal.h"
+#include "mozilla/IdentityCredentialRequestManager.h"
 #include "mozilla/NullPrincipal.h"
 #include "nsEffectiveTLDService.h"
+#include "nsICredentialChooserService.h"
 #include "nsIGlobalObject.h"
 #include "nsIIdentityCredentialPromptService.h"
 #include "nsIIdentityCredentialStorageService.h"
+#include "nsIPermissionManager.h"
 #include "nsITimer.h"
 #include "nsIXPConnect.h"
 #include "nsNetUtil.h"
+#include "nsString.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
 #include "nsURLHelper.h"
+
+#include <utility>
 
 namespace mozilla::dom {
 
@@ -78,8 +86,12 @@ void IdentityCredential::CopyValuesFrom(const IPCIdentityCredential& aOther) {
     userData.mIconURL = aOther.iconURL()->Data();
   }
   if (aOther.infoExpiresAt().isSome()) {
-    userData.mExpiresAfter.Construct(std::max<uint64_t>(
-        aOther.infoExpiresAt().value() - PR_Now() / PR_USEC_PER_MSEC, 0));
+    int64_t now = PR_Now() / PR_USEC_PER_MSEC;
+    uint64_t difference = 0;
+    if (static_cast<uint64_t>(now) < aOther.infoExpiresAt().value()) {
+      difference = aOther.infoExpiresAt().value() - static_cast<uint64_t>(now);
+    }
+    userData.mExpiresAfter.Construct(difference);
   }
   if (aOther.name().isSome() || aOther.iconURL().isSome() ||
       aOther.infoExpiresAt().isSome()) {
@@ -169,52 +181,172 @@ void IdentityCredential::GetOrigin(nsACString& aOrigin,
 }
 
 // static
-RefPtr<IdentityCredential::GetIdentityCredentialsPromise>
-IdentityCredential::CollectFromCredentialStore(
-    nsPIDOMWindowInner* aParent, const CredentialRequestOptions& aOptions,
-    bool aSameOriginWithAncestors) {
+void IdentityCredential::GetCredential(nsPIDOMWindowInner* aParent,
+                                       const CredentialRequestOptions& aOptions,
+                                       bool aSameOriginWithAncestors,
+                                       const RefPtr<Promise>& aPromise) {
   MOZ_ASSERT(XRE_IsContentProcess());
   MOZ_ASSERT(aParent);
+  MOZ_ASSERT(aPromise);
+  MOZ_ASSERT(aOptions.mIdentity.WasPassed());
   // Prevent origin confusion by requiring no cross domain iframes
   // in this one's ancestry
   if (!aSameOriginWithAncestors) {
-    return IdentityCredential::GetIdentityCredentialsPromise::CreateAndReject(
-        NS_ERROR_DOM_NOT_ALLOWED_ERR, __func__);
+    aPromise->MaybeRejectWithNotAllowedError("Same origin ancestors only.");
+    return;
   }
 
-  Document* parentDocument = aParent->GetExtantDoc();
-  if (!parentDocument) {
-    return IdentityCredential::GetIdentityCredentialsPromise::CreateAndReject(
-        NS_ERROR_FAILURE, __func__);
-  }
-
-  // Kick the request off to the main process and translate the result to the
-  // expected type when we get a result.
-  MOZ_ASSERT(aOptions.mIdentity.WasPassed());
   RefPtr<WindowGlobalChild> wgc = aParent->GetWindowGlobalChild();
   MOZ_ASSERT(wgc);
-  return wgc
-      ->SendCollectIdentityCredentialFromCredentialStore(
-          aOptions.mIdentity.Value())
+  RefPtr<nsPIDOMWindowInner> parent(aParent);
+  wgc->SendGetIdentityCredential(aOptions.mIdentity.Value(),
+                                 aOptions.mMediation)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [wgc](const WindowGlobalChild::
-                    CollectIdentityCredentialFromCredentialStorePromise::
-                        ResolveValueType& aResult) {
-            nsTArray<RefPtr<IdentityCredential>> resultDOMArray;
-            for (const IPCIdentityCredential& ipcResult : aResult) {
-              resultDOMArray.AppendElement(
-                  new IdentityCredential(wgc->GetWindowGlobal(), ipcResult));
+          [aPromise,
+           parent](const WindowGlobalChild::GetIdentityCredentialPromise::
+                       ResolveValueType& aResult) {
+            Maybe<IPCIdentityCredential> maybeResult;
+            nsresult rv;
+            std::tie(maybeResult, rv) = aResult;
+            if (NS_WARN_IF(NS_FAILED(rv))) {
+              aPromise->MaybeRejectWithAbortError(
+                  "Credential get aborted with internal error");
+              return;
             }
-            return IdentityCredential::GetIdentityCredentialsPromise::
-                CreateAndResolve(std::move(resultDOMArray), __func__);
+            if (maybeResult.isNothing()) {
+              aPromise->MaybeResolve(JS::NullValue());
+              return;
+            }
+            aPromise->MaybeResolve(
+                new IdentityCredential(parent, maybeResult.value()));
           },
-          [](const WindowGlobalChild::
-                 CollectIdentityCredentialFromCredentialStorePromise::
-                     RejectValueType& aResult) {
-            return IdentityCredential::GetIdentityCredentialsPromise::
-                CreateAndReject(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
+          [aPromise](const WindowGlobalChild::GetIdentityCredentialPromise::
+                         RejectValueType& aResult) {
+            aPromise->MaybeRejectWithAbortError(
+                "Credential get aborted with internal error");
           });
+}
+
+nsresult IdentityCredential::CanSilentlyCollect(nsIPrincipal* aPrincipal,
+                                                nsIPrincipal* aIDPPrincipal,
+                                                bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aPrincipal);
+  NS_ENSURE_ARG_POINTER(aIDPPrincipal);
+  nsCString origin;
+  nsresult rv = aIDPPrincipal->GetOrigin(origin);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  uint32_t permit = nsIPermissionManager::UNKNOWN_ACTION;
+  nsCOMPtr<nsIPermissionManager> permissionManager =
+      components::PermissionManager::Service();
+  if (!permissionManager) {
+    return NS_ERROR_SERVICE_NOT_AVAILABLE;
+  }
+
+  rv = permissionManager->TestPermissionFromPrincipal(
+      aPrincipal, "credential-allow-silent-access^"_ns + origin, &permit);
+  NS_ENSURE_SUCCESS(rv, rv);
+  *aResult = (permit == nsIPermissionManager::ALLOW_ACTION);
+  if (!*aResult) {
+    return NS_OK;
+  }
+  rv = permissionManager->TestPermissionFromPrincipal(
+      aPrincipal, "credential-allow-silent-access"_ns, &permit);
+  NS_ENSURE_SUCCESS(rv, rv);
+  *aResult = permit == nsIPermissionManager::ALLOW_ACTION;
+  return NS_OK;
+}
+
+// static
+RefPtr<IdentityCredential::GetIPCIdentityCredentialPromise>
+IdentityCredential::GetCredentialInMainProcess(
+    nsIPrincipal* aPrincipal, CanonicalBrowsingContext* aBrowsingContext,
+    const IdentityCredentialRequestOptions& aOptions,
+    const CredentialMediationRequirement& aMediationRequirement) {
+  RefPtr<nsIPrincipal> principal = aPrincipal;
+  RefPtr<CanonicalBrowsingContext> cbc = aBrowsingContext;
+  RefPtr<IdentityCredential::GetIPCIdentityCredentialPromise::Private> result =
+      new IdentityCredential::GetIPCIdentityCredentialPromise::Private(
+          __func__);
+  if (StaticPrefs::
+          dom_security_credentialmanagement_identity_lightweight_enabled()) {
+    // First try to collect credentials from local storage
+    CollectFromCredentialStoreInMainProcess(aPrincipal, aBrowsingContext,
+                                            aOptions)
+        ->Then(
+            GetCurrentSerialEventTarget(), __func__,
+            [aOptions, aMediationRequirement, cbc, principal,
+             result](const nsTArray<IPCIdentityCredential>& aResult) {
+              // If collected one credential and the request permit it,
+              // see if we can silently resolve
+              if (aResult.Length() == 1 &&
+                  (aMediationRequirement !=
+                       CredentialMediationRequirement::Required &&
+                   aMediationRequirement !=
+                       CredentialMediationRequirement::Conditional)) {
+                const IPCIdentityCredential& silentCandidate =
+                    aResult.ElementAt(0);
+                bool permitted;
+                nsresult rv = CanSilentlyCollect(
+                    principal, silentCandidate.identityProvider(), &permitted);
+                if (NS_SUCCEEDED(rv) && permitted) {
+                  result->Resolve(silentCandidate, __func__);
+                  return;
+                }
+              }
+
+              // The only way to get a credential from here is not silent,
+              // so we must bail out here.
+              if (aMediationRequirement ==
+                  CredentialMediationRequirement::Silent) {
+                result->Reject(NS_OK, __func__);
+                return;
+              }
+
+              // If we have no collectable credentials, discover a remote
+              // credential
+              if (aResult.Length() == 0) {
+                DiscoverFromExternalSourceInMainProcess(principal, cbc,
+                                                        aOptions)
+                    ->Then(
+                        GetCurrentSerialEventTarget(), __func__,
+                        [result](const IPCIdentityCredential& credential) {
+                          result->Resolve(credential, __func__);
+                        },
+                        [result](nsresult rv) {
+                          // This can be an NS_OK if discovery didn't fail,
+                          // but we didn't get a result.
+                          result->Reject(rv, __func__);
+                        });
+                return;
+              }
+
+              // Show the credential chooser, and when the callback fires,
+              // forward the result onto the `result` local variable that
+              // we are returning from this function.
+              RefPtr<CredentialChosenCallback> callback =
+                  new CredentialChosenCallback(aResult, result);
+              nsresult rv = ShowCredentialChooser(cbc, aResult, callback);
+              // If showing the chooser failed, we reject here since the
+              // callback won't fire.
+              if (NS_FAILED(rv)) {
+                result->Reject(rv, __func__);
+              }
+            },
+            [result](nsresult aErr) { result->Reject(aErr, __func__); });
+  } else {
+    // If we don't have lightweight credentials enabled, just fire discovery
+    // off.
+    DiscoverFromExternalSourceInMainProcess(principal, cbc, aOptions)
+        ->Then(
+            GetCurrentSerialEventTarget(), __func__,
+            [result](const IPCIdentityCredential& credential) {
+              result->Resolve(credential, __func__);
+            },
+            [result](nsresult rv) { result->Reject(rv, __func__); });
+  }
+  return result.forget();
 }
 
 // static
@@ -415,6 +547,56 @@ IdentityCredential::CollectFromCredentialStoreInMainProcess(
   return resultPromise;
 }
 
+// Helper function to call the CredentialChooserService,
+// fetching icons into a data URL. We could do this natively,
+// but it is much easier to do in Javascript and this isn't
+// performance critical.
+RefPtr<MozPromise<nsCString, nsresult, true>> fetchIconURLHelper(
+    nsPIDOMWindowInner* aParent, const nsCString& aSpec) {
+  RefPtr<MozPromise<nsCString, nsresult, true>::Private> result =
+      new MozPromise<nsCString, nsresult, true>::Private(__func__);
+  nsresult rv;
+  nsCOMPtr<nsICredentialChooserService> ccService =
+      mozilla::components::CredentialChooserService::Service(&rv);
+  if (NS_FAILED(rv) || !ccService) {
+    result->Reject(rv, __func__);
+    return result;
+  }
+
+  nsCOMPtr<nsIURI> iconURI;
+  rv = NS_NewURI(getter_AddRefs(iconURI), aSpec);
+  if (NS_FAILED(rv)) {
+    result->Reject(rv, __func__);
+    return result;
+  }
+
+  RefPtr<Promise> serviceResult;
+  rv = ccService->FetchImageToDataURI(aParent, iconURI,
+                                      getter_AddRefs(serviceResult));
+  if (NS_FAILED(rv)) {
+    result->Reject(rv, __func__);
+    return result;
+  }
+  serviceResult->AddCallbacksWithCycleCollectedArgs(
+      [result](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult&) {
+        if (!aValue.get().isString()) {
+          result->Reject(NS_ERROR_FAILURE, __func__);
+          return;
+        }
+        nsAutoCString value;
+        if (!AssignJSString(aCx, value, aValue.get().toString())) {
+          result->Reject(NS_ERROR_FAILURE, __func__);
+          return;
+        }
+        result->Resolve(value, __func__);
+      },
+      [result](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult&) {
+        result->Reject(Promise::TryExtractNSResultFromRejectionValue(aValue),
+                       __func__);
+      });
+  return result;
+}
+
 // static
 RefPtr<GenericPromise> IdentityCredential::Store(
     nsPIDOMWindowInner* aParent, const IdentityCredential* aCredential,
@@ -429,17 +611,37 @@ RefPtr<GenericPromise> IdentityCredential::Store(
                                            __func__);
   }
 
-  Document* parentDocument = aParent->GetExtantDoc();
-  if (!parentDocument) {
-    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  // Request the icon data while we are still in the content process so we can
+  // use our window's JS global
+  RefPtr<MozPromise<nsCString, nsresult, true>> iconFetch;
+  if (aCredential->mCreationOptions.isSome() &&
+      aCredential->mCreationOptions->mUiHint.WasPassed() &&
+      !aCredential->mCreationOptions->mUiHint.Value().mIconURL.IsEmpty()) {
+    iconFetch = fetchIconURLHelper(
+        aParent, aCredential->mCreationOptions->mUiHint.Value().mIconURL);
+  } else {
+    iconFetch = MozPromise<nsCString, nsresult, true>::CreateAndReject(
+        NS_ERROR_INVALID_ARG, __func__);
   }
-
-  // Kick the request off to the main process and translate the result to the
-  // expected type when we get a result.
+  // First fetch the icon, then send the data we have to the main process
+  IPCIdentityCredential sendCredential =
+      aCredential->MakeIPCIdentityCredential();
   RefPtr<WindowGlobalChild> wgc = aParent->GetWindowGlobalChild();
   MOZ_ASSERT(wgc);
-  return wgc
-      ->SendStoreIdentityCredential(aCredential->MakeIPCIdentityCredential())
+  return iconFetch
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [sendCredential,
+              wgc](MozPromise<nsCString, nsresult, true>::ResolveOrRejectValue&&
+                       aValue) mutable {
+               // If it was a resolution, then we can overwrite our icon data
+               if (aValue.IsResolve()) {
+                 sendCredential.iconURL() = Some(aValue.ResolveValue());
+               }
+
+               // Kick the request off to the main process and translate the
+               // result to the expected type when we get a result.
+               return wgc->SendStoreIdentityCredential(sendCredential);
+             })
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [](const WindowGlobalChild::StoreIdentityCredentialPromise::
@@ -472,6 +674,13 @@ RefPtr<GenericPromise> IdentityCredential::StoreInMainProcess(
     return GenericPromise::CreateAndReject(error, __func__);
   }
 
+  IdentityCredentialRequestManager* icrm =
+      IdentityCredentialRequestManager::GetInstance();
+  if (!icrm) {
+    return GenericPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE, __func__);
+  }
+  icrm->NotifyOfStoredCredential(aCredential.identityProvider(), aCredential);
+
   return GenericPromise::CreateAndReject(nsresult::NS_ERROR_FAILURE, __func__);
 }
 
@@ -494,54 +703,212 @@ IdentityCredential::Create(nsPIDOMWindowInner* aParent,
                                                         __func__);
 }
 
+// Helper function to navigate to the identity provider's login page, based
+// on the contents of the config for the identity provider provided in
+// navigator.credentials.get. Returns the result of a outer window Open.
+nsresult OpenIdentityProviderDialog(
+    const RefPtr<WindowGlobalChild>& aWgc,
+    const IdentityProviderConfig& aProviderConfig) {
+  MOZ_ASSERT(aProviderConfig.mLoginURL.WasPassed());
+  AutoJSAPI jsapi;
+  MOZ_ASSERT(aWgc);
+  if (!jsapi.Init(aWgc->GetWindowGlobal())) {
+    return NS_ERROR_FAILURE;
+  }
+  MOZ_ASSERT(aWgc->WindowContext()->TopWindowContext());
+  nsGlobalWindowOuter* outer = nsGlobalWindowOuter::GetOuterWindowWithId(
+      aWgc->WindowContext()->TopWindowContext()->OuterWindowId());
+  bool popup =
+      aProviderConfig.mLoginTarget.WasPassed() &&
+      aProviderConfig.mLoginTarget.Value() == IdentityLoginTargetType::Popup;
+  RefPtr<BrowsingContext> newBC;
+  if (popup) {
+    return outer->OpenJS(
+        NS_ConvertUTF8toUTF16(aProviderConfig.mLoginURL.Value()), u"_blank"_ns,
+        u"popup"_ns, getter_AddRefs(newBC));
+  }
+  return outer->OpenJS(NS_ConvertUTF8toUTF16(aProviderConfig.mLoginURL.Value()),
+                       u"_top"_ns, u""_ns, getter_AddRefs(newBC));
+}
+
 // static
-RefPtr<IdentityCredential::GetIdentityCredentialPromise>
-IdentityCredential::DiscoverFromExternalSource(
-    nsPIDOMWindowInner* aParent, const CredentialRequestOptions& aOptions,
-    bool aSameOriginWithAncestors) {
-  MOZ_ASSERT(XRE_IsContentProcess());
-  MOZ_ASSERT(aParent);
-  // Prevent origin confusion by requiring no cross domain iframes
-  // in this one's ancestry
-  if (!aSameOriginWithAncestors) {
-    return IdentityCredential::GetIdentityCredentialPromise::CreateAndReject(
-        NS_ERROR_DOM_NOT_ALLOWED_ERR, __func__);
+nsresult IdentityCredential::ShowCredentialChooser(
+    const RefPtr<CanonicalBrowsingContext>& aContext,
+    const nsTArray<IPCIdentityCredential>& aCredentials,
+    const RefPtr<nsICredentialChosenCallback>& aCallback) {
+  nsresult rv;
+  nsCOMPtr<nsICredentialChooserService> ccService =
+      mozilla::components::CredentialChooserService::Service(&rv);
+  if (NS_WARN_IF(!ccService)) {
+    return rv;
   }
 
-  Document* parentDocument = aParent->GetExtantDoc();
-  if (!parentDocument) {
-    return IdentityCredential::GetIdentityCredentialPromise::CreateAndReject(
-        NS_ERROR_FAILURE, __func__);
+  // Build an AutoJSAPI out of the service so we can pass arguments in.
+  nsCOMPtr<nsIXPConnectWrappedJS> wrapped = do_QueryInterface(ccService);
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(wrapped->GetJSObjectGlobal()))) {
+    return NS_ERROR_FAILURE;
   }
 
-  // Kick the request off to the main process and translate the result to the
-  // expected type when we get a result.
-  MOZ_ASSERT(aOptions.mIdentity.WasPassed());
-  RefPtr<WindowGlobalChild> wgc = aParent->GetWindowGlobalChild();
-  MOZ_ASSERT(wgc);
-  RefPtr<IdentityCredential> credential = new IdentityCredential(aParent);
-  return wgc
-      ->SendDiscoverIdentityCredentialFromExternalSource(
-          aOptions.mIdentity.Value())
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [credential](const WindowGlobalChild::
-                           DiscoverIdentityCredentialFromExternalSourcePromise::
-                               ResolveValueType& aResult) {
-            if (aResult.isSome()) {
-              credential->CopyValuesFrom(aResult.value());
-              return IdentityCredential::GetIdentityCredentialPromise::
-                  CreateAndResolve(credential, __func__);
-            }
-            return IdentityCredential::GetIdentityCredentialPromise::
-                CreateAndReject(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
-          },
-          [](const WindowGlobalChild::
-                 DiscoverIdentityCredentialFromExternalSourcePromise::
-                     RejectValueType& aResult) {
-            return IdentityCredential::GetIdentityCredentialPromise::
-                CreateAndReject(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
-          });
+  // Build the options for the credential chooser service
+  nsTArray<JS::Value> options;
+  for (uint32_t index = 0; index < aCredentials.Length(); index++) {
+    const IPCIdentityCredential& credential = aCredentials.ElementAt(index);
+    JS::Rooted<JSObject*> option(jsapi.cx(), JS_NewPlainObject(jsapi.cx()));
+    if (NS_WARN_IF(!option)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    JS::Rooted<JS::Value> idValue(jsapi.cx());
+    if (!xpc::NonVoidStringToJsval(jsapi.cx(), credential.id(), &idValue) ||
+        !JS_DefineProperty(jsapi.cx(), option, "id", idValue, 0)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    JS::Rooted<JS::Value> typeValue(jsapi.cx());
+    if (!xpc::NonVoidStringToJsval(jsapi.cx(), u"identity"_ns, &typeValue) ||
+        !JS_DefineProperty(jsapi.cx(), option, "type", typeValue, 0)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    JS::Rooted<JS::Value> originValue(jsapi.cx());
+    nsAutoCString origin;
+    credential.identityProvider()->GetWebExposedOriginSerialization(origin);
+    if (!xpc::NonVoidStringToJsval(jsapi.cx(), NS_ConvertUTF8toUTF16(origin),
+                                   &originValue) ||
+        !JS_DefineProperty(jsapi.cx(), option, "origin", originValue, 0)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    // We only put UI Hints on if we have a name and icon.
+    if (credential.name().isSome() && credential.iconURL().isSome()) {
+      JS::Rooted<JSObject*> uiHint(jsapi.cx(), JS_NewPlainObject(jsapi.cx()));
+      if (credential.name().isSome()) {
+        JS::Rooted<JS::Value> nameValue(jsapi.cx());
+        if (!xpc::NonVoidStringToJsval(
+                jsapi.cx(), NS_ConvertUTF8toUTF16(credential.name().value()),
+                &nameValue) ||
+            !JS_DefineProperty(jsapi.cx(), uiHint, "name", nameValue, 0)) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+      }
+
+      if (credential.iconURL().isSome()) {
+        JS::Rooted<JS::Value> iconValue(jsapi.cx());
+        if (!xpc::NonVoidStringToJsval(
+                jsapi.cx(), NS_ConvertUTF8toUTF16(credential.iconURL().value()),
+                &iconValue) ||
+            !JS_DefineProperty(jsapi.cx(), uiHint, "iconURL", iconValue, 0)) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+      }
+
+      if (credential.infoExpiresAt().isSome()) {
+        int64_t now = PR_Now() / PR_USEC_PER_MSEC;
+        // Guarantee "now" isn't before 1970 so we can static cast it.
+        if (now < 0) {
+          return NS_ERROR_FAILURE;
+        }
+        // difference of 0 stands for any negative values as well.
+        // The UI treats them the same, so no worries.
+        uint64_t difference = 0;
+        if (static_cast<uint64_t>(now) < credential.infoExpiresAt().value()) {
+          difference =
+              credential.infoExpiresAt().value() - static_cast<uint64_t>(now);
+        }
+        JS::Rooted<JS::Value> expireValue(jsapi.cx());
+        if (!ToJSValue(jsapi.cx(), difference, &expireValue) ||
+            !JS_DefineProperty(jsapi.cx(), uiHint, "expiresAfter", expireValue,
+                               0)) {
+          return NS_ERROR_OUT_OF_MEMORY;
+        }
+      }
+      if (!JS_DefineProperty(jsapi.cx(), option, "uiHints", uiHint, 0)) {
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
+    }
+
+    JS::Rooted<JS::Value> optionValue(jsapi.cx());
+    optionValue.setObject(*option);
+    options.AppendElement(optionValue);
+  }
+
+  return ccService->ShowCredentialChooser(aContext, options, aCallback);
+}
+
+// static
+RefPtr<IdentityCredential::GetIPCIdentityCredentialPromise>
+IdentityCredential::DiscoverLightweightFromExternalSourceInMainProcess(
+    nsIPrincipal* aPrincipal, CanonicalBrowsingContext* aBrowsingContext,
+    const IdentityCredentialRequestOptions& aOptions) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(aBrowsingContext);
+
+  RefPtr<IdentityCredential::GetIPCIdentityCredentialPromise::Private>
+      icrmResult =
+          new IdentityCredential::GetIPCIdentityCredentialPromise::Private(
+              __func__);
+
+  nsCOMPtr<nsIPrincipal> principal(aPrincipal);
+  RefPtr<CanonicalBrowsingContext> browsingContext(aBrowsingContext);
+
+  // Add request to manager with result,
+  IdentityCredentialRequestManager* icrm =
+      IdentityCredentialRequestManager::GetInstance();
+  if (!icrm) {
+    return IdentityCredential::GetIPCIdentityCredentialPromise::CreateAndReject(
+        NS_ERROR_NOT_AVAILABLE, __func__);
+  }
+  nsresult rv = icrm->StorePendingRequest(aPrincipal, aOptions, icrmResult,
+                                          aBrowsingContext);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return IdentityCredential::GetIPCIdentityCredentialPromise::CreateAndReject(
+        rv, __func__);
+  }
+
+  // If possible, tell the content process to perform the navigation that is
+  // appropriate. We may be able to do this from the main process, but it is
+  // safer to do it from the client process so that we know all appropriate
+  // protections are in place.
+  if (aBrowsingContext->GetCurrentWindowGlobal()) {
+    if (aOptions.mProviders.WasPassed()) {
+      IdentityProviderConfig provider(aOptions.mProviders.Value().ElementAt(0));
+      IdentityLoginTargetType type = IdentityLoginTargetType::Redirect;
+      if (provider.mLoginTarget.WasPassed()) {
+        type = provider.mLoginTarget.Value();
+      }
+      if (provider.mLoginURL.WasPassed()) {
+        Unused << aBrowsingContext->GetCurrentWindowGlobal()
+                      ->SendNavigateForIdentityCredentialDiscovery(
+                          NS_ConvertUTF8toUTF16(provider.mLoginURL.Value()),
+                          type);
+      }
+    }
+  }
+
+  RefPtr<IdentityCredential::GetIPCIdentityCredentialPromise::Private>
+      finalResult =
+          new IdentityCredential::GetIPCIdentityCredentialPromise::Private(
+              __func__);
+
+  // Once an effective credential is stored, this promise resolves.
+  icrmResult->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [browsingContext, finalResult](const IPCIdentityCredential& credential) {
+        // Now we show a credential chooser in the relying party window
+        // to get the user consent to use this account.
+        // This will resolve the promise that we return from this function.
+        nsTArray<IPCIdentityCredential> array;
+        array.AppendElement(credential);
+        RefPtr<CredentialChosenCallback> callback =
+            new CredentialChosenCallback(array, finalResult);
+        nsresult rv = ShowCredentialChooser(browsingContext, array, callback);
+        if (NS_FAILED(rv)) {
+          finalResult->Reject(rv, __func__);
+        }
+      },
+      [finalResult](nsresult rv) { finalResult->Reject(rv, __func__); });
+  return finalResult.forget();
 }
 
 // static
@@ -553,6 +920,23 @@ IdentityCredential::DiscoverFromExternalSourceInMainProcess(
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aBrowsingContext);
 
+  // Figure out what type of discovery we must do.
+  RequestType requestType = DetermineRequestDiscoveryType(aOptions);
+
+  // If it is lightweight and we have it enabled, perform that discovery.
+  if (StaticPrefs::
+          dom_security_credentialmanagement_identity_lightweight_enabled() &&
+      requestType == LIGHTWEIGHT) {
+    return DiscoverLightweightFromExternalSourceInMainProcess(
+        aPrincipal, aBrowsingContext, aOptions);
+  }
+
+  // If we are not meant to discover anything, bail out with NS_OK.
+  if (requestType == NONE) {
+    return IdentityCredential::GetIPCIdentityCredentialPromise::CreateAndReject(
+        NS_OK, __func__);
+  }
+
   // Make sure we have providers.
   if (!aOptions.mProviders.WasPassed() ||
       aOptions.mProviders.Value().Length() < 1) {
@@ -560,19 +944,16 @@ IdentityCredential::DiscoverFromExternalSourceInMainProcess(
         NS_ERROR_DOM_NOT_ALLOWED_ERR, __func__);
   }
 
-  // Make sure we support the set of features needed for this request
-  RequestType requestType = DetermineRequestType(aOptions);
-  if ((!StaticPrefs::
-           dom_security_credentialmanagement_identity_heavyweight_enabled() &&
-       requestType == HEAVYWEIGHT) ||
-      (!StaticPrefs::
-           dom_security_credentialmanagement_identity_lightweight_enabled() &&
-       requestType == LIGHTWEIGHT) ||
-      requestType == INVALID) {
+  // The only other type of discovery is heavyweight. Make sure we can do that
+  // before proceeding.
+  if (!(StaticPrefs::
+            dom_security_credentialmanagement_identity_heavyweight_enabled() &&
+        requestType == HEAVYWEIGHT)) {
     return IdentityCredential::GetIPCIdentityCredentialPromise::CreateAndReject(
-        NS_ERROR_DOM_NOT_ALLOWED_ERR, __func__);
+        NS_ERROR_NOT_AVAILABLE, __func__);
   }
 
+  // Now doing heavyweight fedcm discovery
   RefPtr<IdentityCredential::GetIPCIdentityCredentialPromise::Private> result =
       new IdentityCredential::GetIPCIdentityCredentialPromise::Private(
           __func__);
@@ -1493,20 +1874,27 @@ void IdentityCredential::CloseUserInterface(BrowsingContext* aBrowsingContext) {
 }
 
 // static
-IdentityCredential::RequestType IdentityCredential::DetermineRequestType(
+IdentityCredential::RequestType
+IdentityCredential::DetermineRequestDiscoveryType(
     const IdentityCredentialRequestOptions& aOptions) {
   if (!aOptions.mProviders.WasPassed()) {
-    return INVALID;
+    return NONE;
   }
-  for (const IdentityProviderConfig& provider : aOptions.mProviders.Value()) {
+  for (const auto& provider : aOptions.mProviders.Value()) {
+    if (provider.mConfigURL.WasPassed() && provider.mLoginURL.WasPassed()) {
+      return INVALID;
+    }
     if (provider.mConfigURL.WasPassed()) {
       return HEAVYWEIGHT;
     }
-    if (!provider.mOrigin.WasPassed() && !provider.mLoginURL.WasPassed()) {
-      return INVALID;
+    if (provider.mLoginURL.WasPassed()) {
+      if (aOptions.mProviders.Value().Length() > 1) {
+        return INVALID;
+      }
+      return LIGHTWEIGHT;
     }
   }
-  return LIGHTWEIGHT;
+  return NONE;
 }
 
 }  // namespace mozilla::dom

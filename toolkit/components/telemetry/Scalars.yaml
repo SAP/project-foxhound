@@ -1950,55 +1950,6 @@ extensions.apis.dnr:
     record_in_processes:
       - main
 
-extensions.quarantinedDomains:
-
-  listsize:
-    bug_numbers:
-      - 1840615
-      - 1866196
-    description: >
-      Number of domains listed in the quarantined domains list pref for the client during
-      this session.
-    kind: uint
-    expires: "130"
-    notification_emails:
-      - addons-dev-internal@mozilla.com
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
-
-  listhash:
-    bug_numbers:
-      - 1841683
-      - 1866196
-    description: >
-      SHA1 cryptographic hash of the quarantined domains string pref.
-    kind: string
-    expires: "130"
-    notification_emails:
-      - addons-dev-internal@mozilla.com
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
-
-  remotehash:
-    bug_numbers:
-      - 1840615
-      - 1866196
-    description: >
-      SHA1 cryptographic hash of the quarantined domains string pref as it was
-      set based on the value got synced from the RemoteSettings collection.
-    kind: string
-    expires: "130"
-    notification_emails:
-      - addons-dev-internal@mozilla.com
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
-
 extensions.startupCache:
   write_byteLength:
     bug_numbers:
@@ -4329,7 +4280,7 @@ gfx.omtp:
       - gfx-telemetry-alerts@mozilla.com
       - rhunt@mozilla.com
       - perf-telemetry-alerts@mozilla.com
-      - barret@mozilla.com
+      - beth@mozilla.com
     products:
       - 'firefox'
       - 'fennec'
@@ -4536,7 +4487,7 @@ formautofill.addresses:
     products:
       - 'firefox'
     record_in_processes:
-      - 'content'
+      - 'main'
   submitted_sections_count:
     bug_numbers:
       - 1656344
@@ -4551,7 +4502,7 @@ formautofill.addresses:
     products:
       - 'firefox'
     record_in_processes:
-      - 'content'
+      - 'main'
   autofill_profiles_count:
     bug_numbers:
       - 1801039
@@ -4599,7 +4550,7 @@ formautofill.creditCards:
     products:
       - 'firefox'
     record_in_processes:
-      - 'content'
+      - 'main'
   submitted_sections_count:
     bug_numbers:
       - 1656344
@@ -4615,7 +4566,7 @@ formautofill.creditCards:
     products:
       - 'firefox'
     record_in_processes:
-      - 'content'
+      - 'main'
 
 # This section is for notification bars testing
 notificationbar:
@@ -5420,27 +5371,6 @@ memoryreporter:
       - 'content'
 
 update:
-  binarytransparencyresult:
-    bug_numbers:
-      - 1501889
-    description: >
-      If the binary transparency information for an update does not verify
-      successfully, this probe will contain an error code from
-      toolkit/mozapps/update/common/updatererrors.h indicating why.
-    expires: "73"
-    kind: uint
-    keyed: true
-    notification_emails:
-      - application-update-telemetry-alerts@mozilla.com
-      - seceng-telemetry@mozilla.com
-      - dkeeler@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - main
-
   bitshresult:
     bug_numbers:
       - 1343669
@@ -6800,7 +6730,7 @@ networking:
     bug_numbers:
       - 1543005
     description: >
-      Hom many KB has been transfer over a captive portal during a subsession.
+      How many KB have been transferred over a captive portal during a subsession.
     expires: "73"
     keyed: false
     kind: uint
@@ -6941,42 +6871,6 @@ networking:
     record_in_processes:
       - 'main'
       - 'socket'
-
-  data_transferred_per_content_type:
-    bug_numbers:
-      - 1808695
-    description: >
-      Number of bytes we transferred keyed by "contentType"
-    expires: "130"
-    keyed: true
-    kind: uint
-    release_channel_collection: opt-out
-    notification_emails:
-      - necko@mozilla.com
-      - rtestard@mozilla.com
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - 'main'
-
-  data_transferred_pb_per_content_type:
-    bug_numbers:
-      - 1808695
-    description: >
-      Number of bytes we transferred in private browsing keyed by "contentType"
-    expires: "130"
-    keyed: true
-    kind: uint
-    release_channel_collection: opt-out
-    notification_emails:
-      - necko@mozilla.com
-      - rtestard@mozilla.com
-    products:
-      - 'firefox'
-      - 'fennec'
-    record_in_processes:
-      - 'main'
 
   speculative_connect_outcome:
     bug_numbers:

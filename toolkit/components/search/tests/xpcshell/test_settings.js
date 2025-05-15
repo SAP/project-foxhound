@@ -17,7 +17,6 @@ var settingsTemplate;
  */
 add_setup(async function () {
   await SearchTestUtils.useTestEngines("data1");
-  await AddonTestUtils.promiseStartupManager();
   await Services.search.init();
 });
 
@@ -557,7 +556,6 @@ var EXPECTED_ENGINE = {
     name: "Test search engine",
     alias: "",
     description: "A test search engine (based on Google search)",
-    searchForm: "http://www.google.com/",
     wrappedJSObject: {
       _extensionID: "test-addon-id@mozilla.org",
       _iconURL:

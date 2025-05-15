@@ -35,31 +35,48 @@ void MacroAssembler::clampDoubleToUint8(FloatRegister input, Register output) {
 
   bind(&positive);
 
-  // Add 0.5 and truncate.
-  loadConstantDouble(0.5, scratch);
-  addDouble(scratch, input);
+  if (HasRoundInstruction(RoundingMode::NearestTiesToEven)) {
+    // Round input to nearest integer.
+    nearbyIntDouble(RoundingMode::NearestTiesToEven, input, input);
 
-  Label outOfRange;
+    // Truncate to int32 and ensure the result <= 255. This relies on the
+    // processor setting output to a value > 255 for doubles outside the int32
+    // range (for instance 0x80000000).
+    vcvttsd2si(input, output);
+    branch32(Assembler::BelowOrEqual, output, Imm32(255), &done);
+    move32(Imm32(255), output);
+  } else {
+    Label outOfRange;
 
-  // Truncate to int32 and ensure the result <= 255. This relies on the
-  // processor setting output to a value > 255 for doubles outside the int32
-  // range (for instance 0x80000000).
-  vcvttsd2si(input, output);
-  branch32(Assembler::Above, output, Imm32(255), &outOfRange);
-  {
-    // Check if we had a tie.
-    convertInt32ToDouble(output, scratch);
-    branchDouble(DoubleNotEqual, input, scratch, &done);
+    // Truncate to int32 and ensure the result <= 255. This relies on the
+    // processor setting output to a value > 255 for doubles outside the int32
+    // range (for instance 0x80000000).
+    vcvttsd2si(input, output);
+    branch32(Assembler::AboveOrEqual, output, Imm32(255), &outOfRange);
+    {
+      // Check if we had a tie.
+      convertInt32ToDouble(output, scratch);
+      subDouble(scratch, input);
 
-    // It was a tie. Mask out the ones bit to get an even value.
-    // See also js_TypedArray_uint8_clamp_double.
-    and32(Imm32(~1), output);
-    jump(&done);
+      loadConstantDouble(0.5, scratch);
+
+      Label roundUp;
+      vucomisd(scratch, input);
+      j(Above, &roundUp);
+      j(NotEqual, &done);
+
+      // It was a tie. Round up if the output is odd.
+      branchTest32(Zero, output, Imm32(1), &done);
+
+      bind(&roundUp);
+      add32(Imm32(1), output);
+      jump(&done);
+    }
+
+    // > 255 --> 255
+    bind(&outOfRange);
+    move32(Imm32(255), output);
   }
-
-  // > 255 --> 255
-  bind(&outOfRange);
-  { move32(Imm32(255), output); }
 
   bind(&done);
 }
@@ -711,6 +728,10 @@ CodeOffset MacroAssembler::farJumpWithPatch() {
 
 void MacroAssembler::patchFarJump(CodeOffset farJump, uint32_t targetOffset) {
   Assembler::patchFarJump(farJump, targetOffset);
+}
+
+void MacroAssembler::patchFarJump(uint8_t* farJump, uint8_t* target) {
+  Assembler::patchFarJump(farJump, target);
 }
 
 CodeOffset MacroAssembler::nopPatchableToCall() {
@@ -1718,7 +1739,10 @@ void MacroAssembler::floorFloat32ToInt32(FloatRegister src, Register dest,
     {
       // Truncate and round toward zero.
       // This is off-by-one for everything but integer-valued inputs.
-      truncateFloat32ToInt32(src, dest, fail);
+      //
+      // Directly call vcvttss2si instead of truncateFloat32ToInt32 because we
+      // want to perform failure handling ourselves.
+      vcvttss2si(src, dest);
 
       // Test whether the input double was integer-valued.
       {
@@ -1729,8 +1753,9 @@ void MacroAssembler::floorFloat32ToInt32(FloatRegister src, Register dest,
 
       // Input is not integer-valued, so we rounded off-by-one in the
       // wrong direction. Correct by subtraction.
-      subl(Imm32(1), dest);
-      // Cannot overflow: output was already checked against INT_MIN.
+      //
+      // Overflows if vcvttss2si returned the failure return value INT_MIN.
+      branchSub32(Assembler::Overflow, Imm32(1), dest, fail);
     }
 
     bind(&end);
@@ -1773,7 +1798,10 @@ void MacroAssembler::floorDoubleToInt32(FloatRegister src, Register dest,
     {
       // Truncate and round toward zero.
       // This is off-by-one for everything but integer-valued inputs.
-      truncateDoubleToInt32(src, dest, fail);
+      //
+      // Directly call vcvttsd2si instead of truncateDoubleToInt32 because we
+      // want to perform failure handling ourselves.
+      vcvttsd2si(src, dest);
 
       // Test whether the input double was integer-valued.
       {
@@ -1784,8 +1812,9 @@ void MacroAssembler::floorDoubleToInt32(FloatRegister src, Register dest,
 
       // Input is not integer-valued, so we rounded off-by-one in the
       // wrong direction. Correct by subtraction.
-      subl(Imm32(1), dest);
-      // Cannot overflow: output was already checked against INT_MIN.
+      //
+      // Overflows if vcvttsd2si returned the failure return value INT_MIN.
+      branchSub32(Assembler::Overflow, Imm32(1), dest, fail);
     }
 
     bind(&end);
@@ -1983,7 +2012,10 @@ void MacroAssembler::roundFloat32ToInt32(FloatRegister src, Register dest,
 
       // Truncate and round toward zero.
       // This is off-by-one for everything but integer-valued inputs.
-      truncateFloat32ToInt32(temp, dest, fail);
+      //
+      // Directly call vcvttss2si instead of truncateFloat32ToInt32 because we
+      // want to perform failure handling ourselves.
+      vcvttss2si(temp, dest);
 
       // Test whether the truncated float was integer-valued.
       convertInt32ToFloat32(dest, scratch);
@@ -1991,8 +2023,9 @@ void MacroAssembler::roundFloat32ToInt32(FloatRegister src, Register dest,
 
       // Input is not integer-valued, so we rounded off-by-one in the
       // wrong direction. Correct by subtraction.
-      subl(Imm32(1), dest);
-      // Cannot overflow: output was already checked against INT_MIN.
+      //
+      // Overflows if vcvttss2si returned the failure return value INT_MIN.
+      branchSub32(Assembler::Overflow, Imm32(1), dest, fail);
     }
   }
 
@@ -2058,7 +2091,10 @@ void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
 
       // Truncate and round toward zero.
       // This is off-by-one for everything but integer-valued inputs.
-      truncateDoubleToInt32(temp, dest, fail);
+      //
+      // Directly call vcvttsd2si instead of truncateDoubleToInt32 because we
+      // want to perform failure handling ourselves.
+      vcvttsd2si(temp, dest);
 
       // Test whether the truncated double was integer-valued.
       convertInt32ToDouble(dest, scratch);
@@ -2066,8 +2102,9 @@ void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
 
       // Input is not integer-valued, so we rounded off-by-one in the
       // wrong direction. Correct by subtraction.
-      subl(Imm32(1), dest);
-      // Cannot overflow: output was already checked against INT_MIN.
+      //
+      // Overflows if vcvttsd2si returned the failure return value INT_MIN.
+      branchSub32(Assembler::Overflow, Imm32(1), dest, fail);
     }
   }
 

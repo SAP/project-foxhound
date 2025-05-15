@@ -31,56 +31,6 @@ const ALLOWLIST = [
   },
 ];
 
-const CONFIG_SIMPLE_LOCALE_DE = [
-  {
-    webExtension: {
-      id: "basic@search.mozilla.org",
-      name: "basic",
-      search_url:
-        "https://ar.wikipedia.org/wiki/%D8%AE%D8%A7%D8%B5:%D8%A8%D8%AD%D8%AB",
-      params: [
-        {
-          name: "search",
-          value: "{searchTerms}",
-        },
-        {
-          name: "sourceId",
-          value: "Mozilla-search",
-        },
-      ],
-    },
-    appliesTo: [
-      {
-        included: { everywhere: true },
-        default: "yes",
-      },
-    ],
-  },
-  {
-    webExtension: {
-      id: "simple@search.mozilla.org",
-      name: "Simple Engine",
-      search_url: "https://example.com",
-      params: [
-        {
-          name: "sourceId",
-          value: "Mozilla-search",
-        },
-        {
-          name: "search",
-          value: "{searchTerms}",
-        },
-      ],
-    },
-    appliesTo: [
-      {
-        included: { locales: { matches: ["de"] } },
-        default: "no",
-      },
-    ],
-  },
-];
-
 const CONFIG_SIMPLE_LOCALE_DE_V2 = [
   {
     recordType: "engine",
@@ -138,56 +88,6 @@ const CONFIG_SIMPLE_LOCALE_DE_V2 = [
   {
     recordType: "engineOrders",
     orders: [],
-  },
-];
-
-const CONFIG_SIMPLE_EVERYWHERE = [
-  {
-    webExtension: {
-      id: "basic@search.mozilla.org",
-      name: "basic",
-      search_url:
-        "https://ar.wikipedia.org/wiki/%D8%AE%D8%A7%D8%B5:%D8%A8%D8%AD%D8%AB",
-      params: [
-        {
-          name: "search",
-          value: "{searchTerms}",
-        },
-        {
-          name: "sourceId",
-          value: "Mozilla-search",
-        },
-      ],
-    },
-    appliesTo: [
-      {
-        included: { everywhere: true },
-        default: "yes",
-      },
-    ],
-  },
-  {
-    webExtension: {
-      id: "simple@search.mozilla.org",
-      name: "Simple Engine",
-      search_url: "https://example.com",
-      params: [
-        {
-          name: "sourceId",
-          value: "Mozilla-search",
-        },
-        {
-          name: "search",
-          value: "{searchTerms}",
-        },
-      ],
-    },
-    appliesTo: [
-      {
-        included: { everywhere: true },
-        default: "no",
-      },
-    ],
   },
 ];
 
@@ -253,14 +153,11 @@ const CONFIG_SIMPLE_EVERYWHERE_V2 = [
 
 let lastEngineId;
 let extension;
-let configStub;
 let notificationBoxStub;
 
 add_setup(async function () {
   let server = useHttpServer();
   server.registerContentType("sjs", "sjs");
-  SearchTestUtils.useMockIdleService();
-  configStub = await SearchTestUtils.useTestEngines("simple-engines");
   Services.locale.availableLocales = [
     ...Services.locale.availableLocales,
     "en",
@@ -268,7 +165,6 @@ add_setup(async function () {
   ];
   Services.locale.requestedLocales = ["en"];
 
-  await AddonTestUtils.promiseStartupManager();
   await Services.search.init();
 
   const settings = await RemoteSettings(SearchUtils.SETTINGS_ALLOWLIST_KEY);
@@ -292,14 +188,7 @@ add_task(async function test_app_provided_engine_deployment_extended() {
     info("Change configuration to include engine in user's environment");
 
     await SearchTestUtils.updateRemoteSettingsConfig(
-      SearchUtils.newSearchConfigEnabled
-        ? CONFIG_SIMPLE_EVERYWHERE_V2
-        : CONFIG_SIMPLE_EVERYWHERE
-    );
-    configStub.returns(
-      SearchUtils.newSearchConfigEnabled
-        ? CONFIG_SIMPLE_EVERYWHERE_V2
-        : CONFIG_SIMPLE_EVERYWHERE
+      CONFIG_SIMPLE_EVERYWHERE_V2
     );
   });
 
@@ -307,14 +196,7 @@ add_task(async function test_app_provided_engine_deployment_extended() {
     info("Change configuration to remove engine from user's environment");
 
     await SearchTestUtils.updateRemoteSettingsConfig(
-      SearchUtils.newSearchConfigEnabled
-        ? CONFIG_SIMPLE_LOCALE_DE_V2
-        : CONFIG_SIMPLE_LOCALE_DE
-    );
-    configStub.returns(
-      SearchUtils.newSearchConfigEnabled
-        ? CONFIG_SIMPLE_LOCALE_DE_V2
-        : CONFIG_SIMPLE_LOCALE_DE
+      CONFIG_SIMPLE_LOCALE_DE_V2
     );
   });
 });
@@ -330,14 +212,7 @@ add_task(
       info("Change configuration to include engine in user's environment");
 
       await SearchTestUtils.updateRemoteSettingsConfig(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_EVERYWHERE_V2
-          : CONFIG_SIMPLE_EVERYWHERE
-      );
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_EVERYWHERE_V2
-          : CONFIG_SIMPLE_EVERYWHERE
+        CONFIG_SIMPLE_EVERYWHERE_V2
       );
     }, true);
 
@@ -345,14 +220,7 @@ add_task(
       info("Change configuration to remove engine from user's environment");
 
       await SearchTestUtils.updateRemoteSettingsConfig(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_LOCALE_DE_V2
-          : CONFIG_SIMPLE_LOCALE_DE
-      );
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_LOCALE_DE_V2
-          : CONFIG_SIMPLE_LOCALE_DE
+        CONFIG_SIMPLE_LOCALE_DE_V2
       );
     }, true);
   }
@@ -365,11 +233,7 @@ add_task(
         "Change configuration with restart to include engine in user's environment"
       );
 
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_EVERYWHERE_V2
-          : CONFIG_SIMPLE_EVERYWHERE
-      );
+      SearchTestUtils.setRemoteSettingsConfig(CONFIG_SIMPLE_EVERYWHERE_V2);
       await promiseAfterSettings();
       Services.search.wrappedJSObject.reset();
       await Services.search.init();
@@ -379,12 +243,7 @@ add_task(
       info(
         "Change configuration with restart to remove engine from user's environment"
       );
-
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_LOCALE_DE_V2
-          : CONFIG_SIMPLE_LOCALE_DE
-      );
+      SearchTestUtils.setRemoteSettingsConfig(CONFIG_SIMPLE_LOCALE_DE_V2);
       await promiseAfterSettings();
       Services.search.wrappedJSObject.reset();
       await Services.search.init();
@@ -417,11 +276,7 @@ add_task(
         "Change configuration with restart to include engine in user's environment"
       );
 
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_EVERYWHERE_V2
-          : CONFIG_SIMPLE_EVERYWHERE
-      );
+      SearchTestUtils.setRemoteSettingsConfig(CONFIG_SIMPLE_EVERYWHERE_V2);
       await promiseAfterSettings();
       Services.search.wrappedJSObject.reset();
       await Services.search.init();
@@ -432,11 +287,7 @@ add_task(
         "Change configuration with restart to remove engine from user's environment"
       );
 
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_LOCALE_DE_V2
-          : CONFIG_SIMPLE_LOCALE_DE
-      );
+      SearchTestUtils.setRemoteSettingsConfig(CONFIG_SIMPLE_LOCALE_DE_V2);
       await promiseAfterSettings();
       Services.search.wrappedJSObject.reset();
       // Simulate the add-on manager starting up and telling the
@@ -468,11 +319,7 @@ add_task(
         "Change configuration with restart to include engine in user's environment"
       );
 
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_EVERYWHERE_V2
-          : CONFIG_SIMPLE_EVERYWHERE
-      );
+      SearchTestUtils.setRemoteSettingsConfig(CONFIG_SIMPLE_EVERYWHERE_V2);
       await promiseAfterSettings();
       Services.search.wrappedJSObject.reset();
       await Services.search.init();
@@ -483,11 +330,7 @@ add_task(
         "Change configuration with restart to remove engine from user's environment"
       );
 
-      configStub.returns(
-        SearchUtils.newSearchConfigEnabled
-          ? CONFIG_SIMPLE_LOCALE_DE_V2
-          : CONFIG_SIMPLE_LOCALE_DE
-      );
+      SearchTestUtils.setRemoteSettingsConfig(CONFIG_SIMPLE_LOCALE_DE_V2);
       await promiseAfterSettings();
       Services.search.wrappedJSObject.reset();
       await Services.search.init();
@@ -536,11 +379,7 @@ async function assertCorrectlySwitchedWhenExtended(
   changeFn,
   testOpenSearch = false
 ) {
-  await SearchTestUtils.updateRemoteSettingsConfig(
-    SearchUtils.newSearchConfigEnabled
-      ? CONFIG_SIMPLE_LOCALE_DE_V2
-      : CONFIG_SIMPLE_LOCALE_DE
-  );
+  await SearchTestUtils.updateRemoteSettingsConfig(CONFIG_SIMPLE_LOCALE_DE_V2);
   notificationBoxStub.resetHistory();
 
   info(

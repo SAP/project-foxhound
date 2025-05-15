@@ -40,10 +40,11 @@ Table::Table(JSContext* cx, const TableDesc& desc,
     : maybeObject_(maybeObject),
       observers_(cx->zone()),
       functions_(std::move(functions)),
+      indexType_(desc.indexType()),
       elemType_(desc.elemType),
       isAsmJS_(desc.isAsmJS),
-      length_(desc.initialLength),
-      maximum_(desc.maximumLength) {
+      length_(desc.initialLength()),
+      maximum_(desc.maximumLength()) {
   // Acquire a strong reference to the type definition this table may be
   // referencing.
   elemType_.AddRef();
@@ -55,10 +56,11 @@ Table::Table(JSContext* cx, const TableDesc& desc,
     : maybeObject_(maybeObject),
       observers_(cx->zone()),
       objects_(std::move(objects)),
+      indexType_(desc.indexType()),
       elemType_(desc.elemType),
       isAsmJS_(desc.isAsmJS),
-      length_(desc.initialLength),
-      maximum_(desc.maximumLength) {
+      length_(desc.initialLength()),
+      maximum_(desc.maximumLength()) {
   // Acquire a strong reference to the type definition this table may be
   // referencing.
   elemType_.AddRef();
@@ -79,7 +81,7 @@ SharedTable Table::create(JSContext* cx, const TableDesc& desc,
   switch (desc.elemType.tableRepr()) {
     case TableRepr::Func: {
       FuncRefVector functions;
-      if (!functions.resize(desc.initialLength)) {
+      if (!functions.resize(desc.initialLength())) {
         ReportOutOfMemory(cx);
         return nullptr;
       }
@@ -88,7 +90,7 @@ SharedTable Table::create(JSContext* cx, const TableDesc& desc,
     }
     case TableRepr::Ref: {
       TableAnyRefVector objects;
-      if (!objects.resize(desc.initialLength)) {
+      if (!objects.resize(desc.initialLength())) {
         ReportOutOfMemory(cx);
         return nullptr;
       }
@@ -188,10 +190,10 @@ void Table::setFuncRef(uint32_t index, JSFunction* fun) {
   // produce the same function object as was imported.
   WasmInstanceObject* instanceObj = ExportedFunctionToInstanceObject(fun);
   Instance& instance = instanceObj->instance();
-  Tier tier = instance.code().bestTier();
-  const CodeRange& calleeCodeRange =
-      instanceObj->getExportedFunctionCodeRange(fun, tier);
-  void* code = instance.codeBase(tier) + calleeCodeRange.funcCheckedCallEntry();
+  uint8_t* codeRangeBase;
+  const CodeRange* codeRange;
+  instanceObj->getExportedFunctionCodeRange(fun, &codeRange, &codeRangeBase);
+  void* code = codeRangeBase + codeRange->funcCheckedCallEntry();
   setFuncRef(index, code, &instance);
 }
 
@@ -239,11 +241,10 @@ void Table::fillFuncRef(uint32_t index, uint32_t fillCount, FuncRef ref,
 #endif
 
   Instance& instance = instanceObj->instance();
-  Tier tier = instance.code().bestTier();
-  const MetadataTier& metadata = instance.metadata(tier);
+  const CodeBlock& codeBlock = instance.code().funcCodeBlock(funcIndex);
   const CodeRange& codeRange =
-      metadata.codeRange(metadata.lookupFuncExport(funcIndex));
-  void* code = instance.codeBase(tier) + codeRange.funcCheckedCallEntry();
+      codeBlock.codeRange(codeBlock.lookupFuncExport(funcIndex));
+  void* code = codeBlock.segment->base() + codeRange.funcCheckedCallEntry();
   for (uint32_t i = index, end = index + fillCount; i != end; i++) {
     setFuncRef(i, code, &instance);
   }

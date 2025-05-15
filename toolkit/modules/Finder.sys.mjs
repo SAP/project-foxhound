@@ -527,7 +527,7 @@ Finder.prototype = {
         if (this._fastFind.foundLink) {
           let view = this._fastFind.foundLink.ownerGlobal;
           this._fastFind.foundLink.dispatchEvent(
-            new view.MouseEvent("click", {
+            new view.PointerEvent("click", {
               view,
               cancelable: true,
               bubbles: true,

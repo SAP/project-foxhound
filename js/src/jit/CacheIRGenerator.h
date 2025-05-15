@@ -62,6 +62,7 @@ class MOZ_RAII IRGenerator {
   JSContext* cx_;
   HandleScript script_;
   jsbytecode* pc_;
+  BaselineFrame* maybeFrame_;
   CacheKind cacheKind_;
   ICState::Mode mode_;
   bool isFirstStub_;
@@ -98,11 +99,14 @@ class MOZ_RAII IRGenerator {
   void emitOptimisticClassGuard(ObjOperandId objId, JSObject* obj,
                                 GuardClassKind kind);
 
+  gc::AllocSite* maybeCreateAllocSite();
+
   friend class CacheIRSpewer;
 
  public:
   explicit IRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
-                       CacheKind cacheKind, ICState state);
+                       CacheKind cacheKind, ICState state,
+                       BaselineFrame* maybeFrame = nullptr);
 
   const CacheIRWriter& writerRef() const { return writer; }
   CacheKind cacheKind() const { return cacheKind_; }
@@ -202,6 +206,8 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
   AttachDecision tryAttachProxyElement(HandleObject obj, ObjOperandId objId);
 
   void attachMegamorphicNativeSlot(ObjOperandId objId, jsid id);
+
+  void attachMegamorphicNativeSlotPermissive(ObjOperandId objId, jsid id);
 
   ValOperandId getElemKeyValueId() const {
     MOZ_ASSERT(cacheKind_ == CacheKind::GetElem ||
@@ -568,9 +574,9 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
 
  public:
   CallIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc, JSOp op,
-                  ICState state, uint32_t argc, HandleValue callee,
-                  HandleValue thisval, HandleValue newTarget,
-                  HandleValueArray args);
+                  ICState state, BaselineFrame* frame, uint32_t argc,
+                  HandleValue callee, HandleValue thisval,
+                  HandleValue newTarget, HandleValueArray args);
 
   AttachDecision tryAttachStub();
 };
@@ -703,6 +709,7 @@ class MOZ_RAII InlinableNativeIRGenerator {
   AttachDecision tryAttachMathRound();
   AttachDecision tryAttachMathSqrt();
   AttachDecision tryAttachMathFRound();
+  AttachDecision tryAttachMathF16Round();
   AttachDecision tryAttachMathHypot();
   AttachDecision tryAttachMathATan2();
   AttachDecision tryAttachMathFunction(UnaryMathFunction fun);
@@ -913,7 +920,6 @@ class MOZ_RAII NewArrayIRGenerator : public IRGenerator {
   JSOp op_;
 #endif
   HandleObject templateObject_;
-  BaselineFrame* frame_;
 
   void trackAttached(const char* name /* must be a C string literal */);
 
@@ -931,7 +937,6 @@ class MOZ_RAII NewObjectIRGenerator : public IRGenerator {
   JSOp op_;
 #endif
   HandleObject templateObject_;
-  BaselineFrame* frame_;
 
   void trackAttached(const char* name /* must be a C string literal */);
 
@@ -944,8 +949,16 @@ class MOZ_RAII NewObjectIRGenerator : public IRGenerator {
   AttachDecision tryAttachPlainObject();
 };
 
+// Returns true for bytecode ops that can use InlinableNativeIRGenerator.
+inline bool BytecodeCallOpCanHaveInlinableNative(JSOp op) {
+  return op == JSOp::Call || op == JSOp::CallContent || op == JSOp::New ||
+         op == JSOp::NewContent || op == JSOp::CallIgnoresRv ||
+         op == JSOp::SpreadCall;
+}
+
 inline bool BytecodeOpCanHaveAllocSite(JSOp op) {
-  return op == JSOp::NewArray || op == JSOp::NewObject || op == JSOp::NewInit;
+  return BytecodeCallOpCanHaveInlinableNative(op) || op == JSOp::NewArray ||
+         op == JSOp::NewObject || op == JSOp::NewInit;
 }
 
 class MOZ_RAII CloseIterIRGenerator : public IRGenerator {

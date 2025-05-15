@@ -16,6 +16,7 @@
 #include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/JSContext.h"
 #include "vm/StringType.h"
+#include "wasm/WasmStubs.h"
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -505,8 +506,9 @@ void MacroAssemblerX64::boxValue(JSValueType type, Register src,
   orq(src, dest);
 }
 
-void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail,
-                                                     Label* bailoutTail) {
+void MacroAssemblerX64::handleFailureWithHandlerTail(
+    Label* profilerExitTail, Label* bailoutTail,
+    uint32_t* returnValueCheckOffset) {
   // Reserve space for exception information.
   subq(Imm32(sizeof(ResumeFromException)), rsp);
   movq(rsp, rax);
@@ -518,13 +520,15 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail,
   asMasm().callWithABI<Fn, HandleException>(
       ABIType::General, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
+  *returnValueCheckOffset = asMasm().currentOffset();
+
   Label entryFrame;
   Label catch_;
   Label finally;
   Label returnBaseline;
   Label returnIon;
   Label bailout;
-  Label wasm;
+  Label wasmInterpEntry;
   Label wasmCatch;
 
   load32(Address(rsp, ResumeFromException::offsetOfKind()), rax);
@@ -541,8 +545,9 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail,
                     Imm32(ExceptionResumeKind::ForcedReturnIon), &returnIon);
   asMasm().branch32(Assembler::Equal, rax, Imm32(ExceptionResumeKind::Bailout),
                     &bailout);
-  asMasm().branch32(Assembler::Equal, rax, Imm32(ExceptionResumeKind::Wasm),
-                    &wasm);
+  asMasm().branch32(Assembler::Equal, rax,
+                    Imm32(ExceptionResumeKind::WasmInterpEntry),
+                    &wasmInterpEntry);
   asMasm().branch32(Assembler::Equal, rax,
                     Imm32(ExceptionResumeKind::WasmCatch), &wasmCatch);
 
@@ -627,21 +632,17 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail,
   move32(Imm32(1), ReturnReg);
   jump(bailoutTail);
 
-  // If we are throwing and the innermost frame was a wasm frame, reset SP and
-  // FP; SP is pointing to the unwound return address to the wasm entry, so
-  // we can just ret().
-  bind(&wasm);
+  // Reset SP and FP; SP is pointing to the unwound return address to the wasm
+  // interpreter entry, so we can just ret().
+  bind(&wasmInterpEntry);
   loadPtr(Address(rsp, ResumeFromException::offsetOfFramePointer()), rbp);
   loadPtr(Address(rsp, ResumeFromException::offsetOfStackPointer()), rsp);
-  movePtr(ImmPtr((const void*)wasm::FailInstanceReg), InstanceReg);
+  movePtr(ImmPtr((const void*)wasm::InterpFailInstanceReg), InstanceReg);
   masm.ret();
 
   // Found a wasm catch handler, restore state and jump to it.
   bind(&wasmCatch);
-  loadPtr(Address(rsp, ResumeFromException::offsetOfTarget()), rax);
-  loadPtr(Address(rsp, ResumeFromException::offsetOfFramePointer()), rbp);
-  loadPtr(Address(rsp, ResumeFromException::offsetOfStackPointer()), rsp);
-  jmp(Operand(rax));
+  wasm::GenerateJumpToCatchHandler(asMasm(), rsp, rax, rbx);
 }
 
 void MacroAssemblerX64::profilerEnterFrame(Register framePtr,

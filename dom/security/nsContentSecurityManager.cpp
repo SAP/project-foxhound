@@ -810,17 +810,13 @@ void nsContentSecurityManager::MeasureUnexpectedPrivilegedLoads(
   nsAutoCString uriString;
   if (aFinalURI) {
     aFinalURI->GetAsciiSpec(uriString);
-  } else {
-    uriString.AssignLiteral("");
   }
   FilenameTypeAndDetails fileNameTypeAndDetails =
-      nsContentSecurityUtils::FilenameToFilenameType(
-          NS_ConvertUTF8toUTF16(uriString), true);
+      nsContentSecurityUtils::FilenameToFilenameType(uriString, true);
 
   nsCString loggedFileDetails = "unknown"_ns;
   if (fileNameTypeAndDetails.second.isSome()) {
-    loggedFileDetails.Assign(
-        NS_ConvertUTF16toUTF8(fileNameTypeAndDetails.second.value()));
+    loggedFileDetails.Assign(fileNameTypeAndDetails.second.value());
   }
   // sanitize remoteType because it may contain sensitive
   // info, like URLs. e.g. `webIsolated=https://example.com`
@@ -1131,7 +1127,7 @@ nsresult nsContentSecurityManager::CheckChannelHasProtocolSecurityFlag(
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint32_t securityFlagsSet = 0;
-  if (flags & nsIProtocolHandler::WEBEXT_URI_WEB_ACCESSIBLE) {
+  if (flags & nsIProtocolHandler::URI_IS_WEBEXTENSION_RESOURCE) {
     securityFlagsSet += 1;
   }
   if (flags & nsIProtocolHandler::URI_LOADABLE_BY_ANYONE) {

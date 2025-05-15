@@ -149,7 +149,22 @@ void ColumnSetWrapperFrame::MarkIntrinsicISizesDirty() {
   }
 }
 
-nscoord ColumnSetWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
+nscoord ColumnSetWrapperFrame::IntrinsicISize(gfxContext* aContext,
+                                              IntrinsicISizeType aType) {
+  if (aType == IntrinsicISizeType::MinISize) {
+    if (mCachedMinISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
+      mCachedMinISize = MinISize(aContext);
+    }
+    return mCachedMinISize;
+  }
+
+  if (mCachedPrefISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
+    mCachedPrefISize = PrefISize(aContext);
+  }
+  return mCachedPrefISize;
+}
+
+nscoord ColumnSetWrapperFrame::MinISize(gfxContext* aContext) {
   nscoord iSize = 0;
 
   if (Maybe<nscoord> containISize =
@@ -162,7 +177,7 @@ nscoord ColumnSetWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
 
     // In the 'none' case, we determine our minimum intrinsic size purely from
     // our column styling, as if we had no descendants. This should match what
-    // happens in nsColumnSetFrame::GetMinISize in an actual no-descendants
+    // happens in nsColumnSetFrame::MinISize in an actual no-descendants
     // scenario.
     const nsStyleColumn* colStyle = StyleColumn();
     if (colStyle->mColumnWidth.IsLength()) {
@@ -184,14 +199,14 @@ nscoord ColumnSetWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
     }
   } else {
     for (nsIFrame* f : PrincipalChildList()) {
-      iSize = std::max(iSize, f->GetMinISize(aRenderingContext));
+      iSize = std::max(iSize, f->GetMinISize(aContext));
     }
   }
 
   return iSize;
 }
 
-nscoord ColumnSetWrapperFrame::GetPrefISize(gfxContext* aRenderingContext) {
+nscoord ColumnSetWrapperFrame::PrefISize(gfxContext* aContext) {
   nscoord iSize = 0;
 
   if (Maybe<nscoord> containISize =
@@ -220,7 +235,7 @@ nscoord ColumnSetWrapperFrame::GetPrefISize(gfxContext* aRenderingContext) {
     iSize = ColumnUtils::IntrinsicISize(numColumns, colGap, colISize);
   } else {
     for (nsIFrame* f : PrincipalChildList()) {
-      iSize = std::max(iSize, f->GetPrefISize(aRenderingContext));
+      iSize = std::max(iSize, f->GetPrefISize(aContext));
     }
   }
 

@@ -7,6 +7,13 @@
  * dynamically adding menubar menu items for the View -> Sidebar menu,
  * and provides APIs for sidebar extensions, etc.
  */
+const defaultTools = {
+  viewGenaiChatSidebar: "aichat",
+  viewTabsSidebar: "syncedtabs",
+  viewHistorySidebar: "history",
+  viewBookmarksSidebar: "bookmarks",
+};
+
 var SidebarController = {
   makeSidebar({ elementId, ...rest }) {
     return {
@@ -40,6 +47,8 @@ var SidebarController = {
       } else {
         switcherMenuitem?.remove();
       }
+
+      window.dispatchEvent(new CustomEvent("SidebarItemChanged"));
     };
 
     // Detect pref changes and handle initial state.
@@ -70,7 +79,7 @@ var SidebarController = {
           triggerButtonId: "appMenuViewHistorySidebar",
           keyId: "key_gotoHistory",
           menuL10nId: "menu-view-history-button",
-          revampL10nId: "sidebar-menu-history",
+          revampL10nId: "sidebar-menu-history-label",
           iconUrl: "chrome://browser/content/firefoxview/view-history.svg",
         }),
       ],
@@ -84,7 +93,7 @@ var SidebarController = {
           menuId: "menu_tabsSidebar",
           classAttribute: "sync-ui-item",
           menuL10nId: "menu-view-synced-tabs-sidebar",
-          revampL10nId: "sidebar-menu-synced-tabs",
+          revampL10nId: "sidebar-menu-synced-tabs-label",
           iconUrl: "chrome://browser/content/firefoxview/view-syncedtabs.svg",
         }),
       ],
@@ -96,12 +105,26 @@ var SidebarController = {
           menuId: "menu_bookmarksSidebar",
           keyId: "viewBookmarksSidebarKb",
           menuL10nId: "menu-view-bookmarks",
-          revampL10nId: "sidebar-menu-bookmarks",
+          revampL10nId: "sidebar-menu-bookmarks-label",
           iconUrl: "chrome://browser/skin/bookmark-hollow.svg",
           disabled: true,
         }),
       ],
     ]);
+
+    this.registerPrefSidebar(
+      "browser.ml.chat.enabled",
+      "viewGenaiChatSidebar",
+      {
+        elementId: "sidebar-switcher-genai-chat",
+        url: "chrome://browser/content/genai/chat.html",
+        menuId: "menu_genaiChatSidebar",
+        menuL10nId: "menu-view-genai-chat",
+        // Bug 1900915 to expose as conditional tool
+        revampL10nId: "sidebar-menu-genai-chat-label",
+        iconUrl: "chrome://mozapps/skin/extensions/category-discover.svg",
+      }
+    );
 
     if (!this.sidebarRevampEnabled) {
       this.registerPrefSidebar(
@@ -118,7 +141,7 @@ var SidebarController = {
     } else {
       this._sidebars.set("viewCustomizeSidebar", {
         url: "chrome://browser/content/sidebar/sidebar-customize.html",
-        revampL10nId: "sidebar-menu-customize",
+        revampL10nId: "sidebar-menu-customize-label",
         iconUrl: "chrome://browser/skin/preferences/category-general.svg",
       });
     }
@@ -154,6 +177,7 @@ var SidebarController = {
   },
   POSITION_START_PREF: "sidebar.position_start",
   DEFAULT_SIDEBAR_ID: "viewBookmarksSidebar",
+  TOOLS_PREF: "sidebar.main.tools",
 
   // lastOpenedId is set in show() but unlike currentID it's not cleared out on hide
   // and isn't persisted across windows
@@ -190,6 +214,29 @@ var SidebarController = {
     return this._inited;
   },
 
+  get sidebarContainer() {
+    if (!this._sidebarContainer) {
+      // This is the *parent* of the `sidebar-main` component.
+      // TODO: Rename this element in the markup in order to avoid confusion. (Bug 1904860)
+      this._sidebarContainer = document.getElementById("sidebar-main");
+    }
+    return this._sidebarContainer;
+  },
+
+  get sidebarMain() {
+    if (!this._sidebarMain) {
+      this._sidebarMain = document.querySelector("sidebar-main");
+    }
+    return this._sidebarMain;
+  },
+
+  get toolbarButton() {
+    if (!this._toolbarButton) {
+      this._toolbarButton = document.getElementById("sidebar-button");
+    }
+    return this._toolbarButton;
+  },
+
   async init() {
     this._box = document.getElementById("sidebar-box");
     this._splitter = document.getElementById("sidebar-splitter");
@@ -199,6 +246,19 @@ var SidebarController = {
     this._switcherPanel = document.getElementById("sidebarMenu-popup");
     this._switcherTarget = document.getElementById("sidebar-switcher-target");
     this._switcherArrow = document.getElementById("sidebar-switcher-arrow");
+    let newTabButton = document.getElementById("vertical-tabs-newtab-button");
+
+    newTabButton.addEventListener("command", event => {
+      BrowserCommands.openTab({ event });
+    });
+    if (
+      Services.prefs.getBoolPref(
+        "browser.tabs.allow_transparent_browser",
+        false
+      )
+    ) {
+      this.browser.setAttribute("transparent", "true");
+    }
 
     const menubar = document.getElementById("viewSidebarMenu");
     for (const [commandID, sidebar] of this.sidebars.entries()) {
@@ -212,12 +272,33 @@ var SidebarController = {
       }
     }
 
+    let mainResizeObserver = new ResizeObserver(async ([entry]) => {
+      let sidebarBox = document.getElementById("sidebar-box");
+      sidebarBox.style.maxWidth = `calc(75vw - ${entry.contentBoxSize[0].inlineSize}px)`;
+    });
+
     if (this.sidebarRevampEnabled) {
-      await import("chrome://browser/content/sidebar/sidebar-main.mjs");
-      document.getElementById("sidebar-main").hidden = false;
+      if (!customElements.get("sidebar-main")) {
+        ChromeUtils.importESModule(
+          "chrome://browser/content/sidebar/sidebar-main.mjs",
+          { global: "current" }
+        );
+      }
+      this.revampComponentsLoaded = true;
+      this.sidebarContainer.hidden =
+        !window.toolbar.visible ||
+        (this.sidebarRevampVisibility === "hide-sidebar" && !this.isOpen);
       document.getElementById("sidebar-header").hidden = true;
-      this._sidebarMain = document.querySelector("sidebar-main");
+      mainResizeObserver.observe(this.sidebarMain);
+
+      if (this.sidebarVerticalTabsEnabled) {
+        this.toggleTabstrip();
+      }
     } else {
+      this._switcherCloseButton = document.getElementById("sidebar-close");
+      this._switcherCloseButton.addEventListener("command", () => {
+        this.hide();
+      });
       this._switcherTarget.addEventListener("command", () => {
         this.toggleSwitcherPanel();
       });
@@ -249,6 +330,12 @@ var SidebarController = {
       this._observer.disconnect();
       this._observer = null;
     }
+
+    if (this.revampComponentsLoaded) {
+      // Explicitly disconnect the `sidebar-main` element so that listeners
+      // setup by reactive controllers will also be removed.
+      this.sidebarMain.remove();
+    }
   },
 
   /**
@@ -264,6 +351,9 @@ var SidebarController = {
           this.hide();
           this.showInitially(this.lastOpenedId);
           break;
+        }
+        if (this.revampComponentsLoaded) {
+          this.sidebarMain.requestUpdate();
         }
       }
     }
@@ -387,7 +477,8 @@ var SidebarController = {
     [...browser.children].forEach((node, i) => {
       node.style.order = i + 1;
     });
-    let sidebarMain = document.getElementById("sidebar-main");
+    let sidebarContainer = document.getElementById("sidebar-main");
+    let sidebarMain = document.querySelector("sidebar-main");
     if (!this._positionStart) {
       // DOM ordering is:     sidebar-main |  sidebar-box  | splitter |   appcontent  |
       // Want to display as:  |   appcontent  | splitter |  sidebar-box  | sidebar-main
@@ -398,13 +489,15 @@ var SidebarController = {
 
       appcontent.style.order = boxOrdinal;
       // the launcher should be on the right of the sidebar-box
-      sidebarMain.style.order = parseInt(this._box.style.order) + 1;
+      sidebarContainer.style.order = parseInt(this._box.style.order) + 1;
       // Indicate we've switched ordering to the box
       this._box.setAttribute("positionend", true);
       sidebarMain.setAttribute("positionend", true);
+      sidebarContainer.setAttribute("positionend", true);
     } else {
       this._box.removeAttribute("positionend");
       sidebarMain.removeAttribute("positionend");
+      sidebarContainer.removeAttribute("positionend");
     }
 
     this.hideSwitcherPanel();
@@ -432,11 +525,27 @@ var SidebarController = {
       return false;
     }
 
+    // If window is a popup, hide the sidebar
+    if (!window.toolbar.visible && this.sidebarRevampEnabled) {
+      document.getElementById("sidebar-main").hidden = true;
+      return false;
+    }
+
     // Set sidebar command even if hidden, so that we keep the same sidebar
     // even if it's currently closed.
     let commandID = sourceController._box.getAttribute("sidebarcommand");
     if (commandID) {
       this._box.setAttribute("sidebarcommand", commandID);
+    }
+
+    // Adopt `expanded` and `hidden` states only if the opener was also using
+    // revamped sidebar.
+    if (this.sidebarRevampEnabled && sourceController.revampComponentsLoaded) {
+      this.promiseInitialized.then(() => {
+        this.sidebarMain.expanded = sourceController.sidebarMain.expanded;
+        this.sidebarContainer.hidden = sourceController.sidebarContainer.hidden;
+        this.updateToolbarButton();
+      });
     }
 
     if (sourceController._box.hidden) {
@@ -450,8 +559,7 @@ var SidebarController = {
       return true;
     }
 
-    this._box.style.width =
-      sourceController._box.getBoundingClientRect().width + "px";
+    this._box.style.width = sourceController._box.style.width;
     this.showInitially(commandID);
 
     return true;
@@ -594,11 +702,45 @@ var SidebarController = {
     return this.show(commandID, triggerNode);
   },
 
+  handleToolbarButtonClick() {
+    switch (this.sidebarRevampVisibility) {
+      case "always-show":
+        this.sidebarMain.expanded = !this.sidebarMain.expanded;
+        break;
+      case "hide-sidebar": {
+        const isHidden = this.sidebarContainer.hidden;
+        if (!isHidden && this.isOpen) {
+          // Sidebar is currently visible, but now we want to hide it.
+          this.hide();
+        } else if (isHidden) {
+          // Sidebar is currently hidden, but now we want to show it.
+          this.sidebarMain.expanded = true;
+        }
+        this.sidebarContainer.hidden = !isHidden;
+        break;
+      }
+    }
+    this.updateToolbarButton();
+  },
+
   /**
-   * Toggle the expansion state of the sidebar.
+   * Update `checked` state of the toolbar button.
    */
-  toggleExpanded() {
-    this._sidebarMain.expanded = !this._sidebarMain.expanded;
+  updateToolbarButton() {
+    if (!this.sidebarRevampEnabled || !this.toolbarButton) {
+      // For the non-revamped sidebar, this is handled by CustomizableWidgets.
+      return;
+    }
+    switch (this.sidebarRevampVisibility) {
+      case "always-show":
+        // Toolbar button controls expanded state.
+        this.toolbarButton.checked = this.sidebarMain.expanded;
+        break;
+      case "hide-sidebar":
+        // Toolbar button controls hidden state.
+        this.toolbarButton.checked = !this.sidebarContainer.hidden;
+        break;
+    }
   },
 
   _loadSidebarExtension(commandID) {
@@ -620,6 +762,19 @@ var SidebarController = {
       // If re-enabling tool, remove from the map and add it to the end
       this.toolsAndExtensions.delete(commandID);
       this.toolsAndExtensions.set(commandID, toggledTool);
+    }
+    // Tools are persisted via a pref.
+    if (!Object.hasOwn(toggledTool, "extensionId")) {
+      const tools = new Set(this.sidebarRevampTools.split(","));
+      const updatedTools = tools.has(defaultTools[commandID])
+        ? Array.from(tools).filter(
+            tool => !!tool && tool != defaultTools[commandID]
+          )
+        : [
+            ...Array.from(tools).filter(tool => !!tool),
+            defaultTools[commandID],
+          ];
+      Services.prefs.setStringPref(this.TOOLS_PREF, updatedTools.join());
     }
     window.dispatchEvent(new CustomEvent("SidebarItemChanged"));
   },
@@ -702,7 +857,10 @@ var SidebarController = {
     const menuitem = document.createXULElement("menuitem");
     menuitem.setAttribute("id", sidebar.menuId);
     menuitem.setAttribute("type", "checkbox");
-    menuitem.addEventListener("command", () => this.toggle(commandID));
+    // Some menu items get checkbox type removed, so should show the sidebar
+    menuitem.addEventListener("command", () =>
+      this[menuitem.hasAttribute("type") ? "toggle" : "show"](commandID)
+    );
     if (sidebar.classAttribute) {
       menuitem.setAttribute("class", sidebar.classAttribute);
     }
@@ -711,6 +869,9 @@ var SidebarController = {
     }
     if (sidebar.menuL10nId) {
       menuitem.dataset.l10nId = sidebar.menuL10nId;
+    }
+    if (!window.toolbar.visible) {
+      menuitem.setAttribute("disabled", "true");
     }
     return menuitem;
   },
@@ -752,8 +913,7 @@ var SidebarController = {
       updateAttributes(switcherMenu, sidebar);
     }
     if (this.initialized && this.currentID === commandID) {
-      // Update the sidebar if this extension is the current sidebar.
-      updateAttributes(this._switcherTarget, sidebar);
+      // Update the sidebar title if this extension is the current sidebar.
       this.title = label;
       if (this.isOpen && needsRefresh) {
         this.show(commandID);
@@ -789,19 +949,21 @@ var SidebarController = {
    * @returns {Array}
    */
   getTools() {
-    const toolIds = [
-      "viewHistorySidebar",
-      "viewTabsSidebar",
-      "viewBookmarksSidebar",
-    ];
-    return toolIds.map(commandID => {
+    return Object.keys(defaultTools).map(commandID => {
       const sidebar = this.sidebars.get(commandID);
+      const disabled = !this.sidebarRevampTools
+        .split(",")
+        .includes(defaultTools[commandID]);
       return {
         commandID,
         view: commandID,
         iconUrl: sidebar.iconUrl,
         l10nId: sidebar.revampL10nId,
-        disabled: sidebar.disabled ?? false,
+        disabled,
+        // Reflect the current tool state defaulting to visible
+        get hidden() {
+          return !(sidebar.visible ?? true);
+        },
       };
     });
   },
@@ -851,6 +1013,7 @@ var SidebarController = {
       if (triggerNode) {
         updateToggleControlLabel(triggerNode);
       }
+      this.updateToolbarButton();
 
       this._fireFocusedEvent();
       return true;
@@ -893,6 +1056,13 @@ var SidebarController = {
         this._box.dispatchEvent(
           new CustomEvent("sidebar-show", { detail: { viewId: commandID } })
         );
+
+        // Whenever a panel is shown, the sidebar is collapsed. Upon hiding
+        // that panel afterwards, `expanded` reverts back to what it was prior
+        // to calling `show()`. Thus, we store the expanded state at this point.
+        this._previousExpandedState = this.sidebarMain.expanded;
+
+        this.sidebarMain.expanded = false;
       } else {
         this.hideSwitcherPanel();
       }
@@ -966,6 +1136,12 @@ var SidebarController = {
     this.hideSwitcherPanel();
     if (this.sidebarRevampEnabled) {
       this._box.dispatchEvent(new CustomEvent("sidebar-hide"));
+
+      // When visibility is set to "Hide Sidebar", we always want to revert
+      // back to an expanded state.
+      this.sidebarMain.expanded =
+        this.sidebarRevampVisibility === "hide-sidebar" ||
+        this._previousExpandedState;
     }
     this.selectMenuItem("");
 
@@ -985,6 +1161,7 @@ var SidebarController = {
     if (triggerNode) {
       updateToggleControlLabel(triggerNode);
     }
+    this.updateToolbarButton();
   },
 
   /**
@@ -1014,6 +1191,41 @@ var SidebarController = {
       }
     }
   },
+
+  toggleTabstrip() {
+    let tabStrip = document.getElementById("tabbrowser-tabs");
+    let arrowScrollbox = document.getElementById("tabbrowser-arrowscrollbox");
+    let verticalTabs = document.getElementById("vertical-tabs");
+
+    let tabsToolbarWidgets = CustomizableUI.getWidgetIdsInArea("TabsToolbar");
+    let tabstripPlacement = tabsToolbarWidgets.findIndex(
+      item => item == "tabbrowser-tabs"
+    );
+
+    if (this.sidebarVerticalTabsEnabled) {
+      arrowScrollbox.setAttribute("orient", "vertical");
+      tabStrip.setAttribute("orient", "vertical");
+      verticalTabs.append(tabStrip);
+    } else {
+      arrowScrollbox.setAttribute("orient", "horizontal");
+      tabStrip.setAttribute("orient", "horizontal");
+
+      // make sure we put the tabstrip back in its original position in the TabsToolbar
+      if (tabstripPlacement < tabsToolbarWidgets.length) {
+        document
+          .getElementById("TabsToolbar-customization-target")
+          .insertBefore(
+            tabStrip,
+            document.getElementById(tabsToolbarWidgets[tabstripPlacement + 1])
+          );
+      } else {
+        document
+          .getElementById("TabsToolbar-customization-target")
+          .append(tabStrip);
+      }
+    }
+    verticalTabs.toggleAttribute("visible", this.sidebarVerticalTabsEnabled);
+  },
 };
 
 // Add getters related to the position here, since we will want them
@@ -1030,4 +1242,23 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "sidebarRevampEnabled",
   "sidebar.revamp",
   false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  SidebarController,
+  "sidebarRevampTools",
+  "sidebar.main.tools",
+  "aichat,syncedtabs,history"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  SidebarController,
+  "sidebarRevampVisibility",
+  "sidebar.visibility",
+  "always-show"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  SidebarController,
+  "sidebarVerticalTabsEnabled",
+  "sidebar.verticalTabs",
+  false,
+  SidebarController.toggleTabstrip.bind(SidebarController)
 );

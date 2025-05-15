@@ -29,11 +29,11 @@ import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.feature.top.sites.TopSite
-import mozilla.components.service.glean.testing.GleanTestRule
 import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
+import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -462,6 +462,30 @@ class DefaultSessionControlControllerTest {
             )
         }
         verify { navController.navigate(R.id.browserFragment) }
+    }
+
+    @Test
+    fun `GIVEN homepage as a new tab is enabled WHEN Default TopSite is selected THEN open top site in existing tab`() {
+        val topSite = TopSite.Default(
+            id = 1L,
+            title = "Mozilla",
+            url = "mozilla.org",
+            createdAt = 0,
+        )
+        val controller = spyk(createController())
+
+        every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
+        every { settings.enableHomepageAsNewTab } returns true
+
+        controller.handleSelectTopSite(topSite, position = 0)
+
+        verify {
+            activity.openToBrowserAndLoad(
+                searchTermOrURL = topSite.url,
+                newTab = false,
+                from = BrowserDirection.FromHome,
+            )
+        }
     }
 
     @Test

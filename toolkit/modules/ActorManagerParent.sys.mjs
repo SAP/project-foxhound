@@ -43,6 +43,13 @@ let JSPROCESSACTORS = {
     includeParent: true,
   },
 
+  HPKEConfigManager: {
+    remoteTypes: ["privilegedabout"],
+    parent: {
+      esModuleURI: "resource://gre/modules/HPKEConfigManager.sys.mjs",
+    },
+  },
+
   ProcessConduits: {
     parent: {
       esModuleURI: "resource://gre/modules/ConduitsParent.sys.mjs",
@@ -372,7 +379,7 @@ let JSWINDOWACTORS = {
         "form-submission-detected": { createActor: false },
         "before-form-submission": { createActor: false },
         DOMFormHasPassword: {},
-        DOMFormHasPossibleUsername: {},
+        DOMPossibleUsernameInputAdded: {},
         DOMInputPasswordAdded: {},
       },
     },

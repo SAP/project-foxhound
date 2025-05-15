@@ -204,7 +204,7 @@ struct BaseCompiler final {
   // Read-only and write-once members.
 
   // Static compilation environment.
-  const ModuleEnvironment& moduleEnv_;
+  const CodeMetadata& codeMeta_;
   const CompilerEnvironment& compilerEnv_;
   const FuncCompileInput& func_;
   const ValTypeVector& locals_;
@@ -228,9 +228,9 @@ struct BaseCompiler final {
   // generation and only used by the caller.
   FuncOffsets offsets_;
 
-  // We call this address from the breakable point when the breakpoint handler
-  // is not null.
-  NonAssertingLabel debugTrapStub_;
+  // We call this address from the breakable point when the (per-module) debug
+  // stub pointer in the Instance is not null.
+  NonAssertingLabel perFunctionDebugStub_;
   uint32_t previousBreakablePoint_;
 
   // BaselineCompileFunctions() "lends" us the StkVector to use in this
@@ -331,7 +331,7 @@ struct BaseCompiler final {
   // A client will create a compiler object, and then call init(),
   // emitFunction(), and finish() in that order.
 
-  BaseCompiler(const ModuleEnvironment& moduleEnv,
+  BaseCompiler(const CodeMetadata& codeMetadata,
                const CompilerEnvironment& compilerEnv,
                const FuncCompileInput& func, const ValTypeVector& locals,
                const RegisterOffsets& trapExitLayout,
@@ -772,6 +772,14 @@ struct BaseCompiler final {
   // Pop an I32 or I64 as an I64. The value is zero extended out to 64-bits.
   inline RegI64 popIndexToInt64(IndexType indexType);
 
+  // Pop an I32 or I64 as an I32. The value is clamped to UINT32_MAX to ensure
+  // that it trips bounds checks.
+  inline RegI32 popTableIndexToClampedInt32(IndexType indexType);
+
+  // A combined push/pop that replaces an I32 or I64 on the stack with a clamped
+  // I32, which will trip bounds checks if out of I32 range.
+  inline void replaceTableIndexWithClampedInt32(IndexType indexType);
+
   // Pop the stack until it has the desired size, but do not move the physical
   // stack pointer.
   inline void popValueStackTo(uint32_t stackSize);
@@ -939,7 +947,7 @@ struct BaseCompiler final {
   void insertBreakablePoint(CallSiteDesc::Kind kind);
 
   // Insert code at the end of a function for breakpoint filtering.
-  void insertBreakpointStub();
+  void insertPerFunctionDebugStub();
 
   // Debugger API used at the return point: shuffle register return values off
   // to memory for the debugger to see; and get them back again.
@@ -1035,6 +1043,11 @@ struct BaseCompiler final {
   //////////////////////////////////////////////////////////////////////
   //
   // Sundry low-level code generators.
+
+  // Decrement the per-instance function hotness counter, and possibly request
+  // optimized compilation for this function if it crosses the hotness
+  // threshold.
+  [[nodiscard]] bool addHotnessCheck();
 
   // Check the interrupt flag, trap if it is set.
   [[nodiscard]] bool addInterruptCheck();

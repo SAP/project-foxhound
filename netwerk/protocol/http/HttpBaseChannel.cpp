@@ -552,8 +552,12 @@ HttpBaseChannel::SetDocshellUserAgentOverride() {
   }
 
   NS_ConvertUTF16toUTF8 utf8CustomUserAgent(customUserAgent);
-  nsresult rv = SetRequestHeader("User-Agent"_ns, utf8CustomUserAgent, false);
-  if (NS_FAILED(rv)) return rv;
+  nsresult rv = SetRequestHeaderInternal(
+      "User-Agent"_ns, utf8CustomUserAgent, false,
+      nsHttpHeaderArray::eVarietyRequestEnforceDefault);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   return NS_OK;
 }
@@ -1773,7 +1777,7 @@ HttpBaseChannel::IsThirdPartyTrackingResource(bool* aIsTrackingResource) {
       !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
   *aIsTrackingResource = UrlClassifierCommon::IsTrackingClassificationFlag(
       mThirdPartyClassificationFlags,
-      mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0);
+      mLoadInfo->GetOriginAttributes().IsPrivateBrowsing());
   return NS_OK;
 }
 
@@ -1973,6 +1977,13 @@ HttpBaseChannel::GetRequestHeader(const nsACString& aHeader,
 NS_IMETHODIMP
 HttpBaseChannel::SetRequestHeader(const nsACString& aHeader,
                                   const nsACString& aValue, bool aMerge) {
+  return SetRequestHeaderInternal(aHeader, aValue, aMerge,
+                                  nsHttpHeaderArray::eVarietyRequestOverride);
+}
+
+nsresult HttpBaseChannel::SetRequestHeaderInternal(
+    const nsACString& aHeader, const nsACString& aValue, bool aMerge,
+    nsHttpHeaderArray::HeaderVariety aVariety) {
   const nsCString& flatHeader = PromiseFlatCString(aHeader);
   const nsCString& flatValue = PromiseFlatCString(aValue);
 
@@ -2296,6 +2307,11 @@ HttpBaseChannel::UpgradeToSecure() {
   NS_ENSURE_TRUE(LoadUpgradableToSecure(), NS_ERROR_NOT_AVAILABLE);
 
   StoreUpgradeToSecure(true);
+  // todo: Currently UpgradeToSecure() is called only by web extensions, if
+  // that ever changes, we need to update the following telemetry collection
+  // to reflect any future changes.
+  mLoadInfo->SetHttpsUpgradeTelemetry(nsILoadInfo::WEB_EXTENSION_UPGRADE);
+
   return NS_OK;
 }
 
@@ -2507,7 +2523,7 @@ bool HttpBaseChannel::IsBrowsingContextDiscarded() const {
       return false;
     }
 
-    return mLoadInfo->GetOriginAttributes().mPrivateBrowsingId != 0 &&
+    return mLoadInfo->GetOriginAttributes().IsPrivateBrowsing() &&
            !dom::CanonicalBrowsingContext::IsPrivateBrowsingActive();
   }
 
@@ -3509,7 +3525,7 @@ void HttpBaseChannel::BlockOpaqueResponseAfterSniff(
     const OpaqueResponseBlockedTelemetryReason aTelemetryReason) {
   MOZ_DIAGNOSTIC_ASSERT(mORB);
   LogORBError(aReason, aTelemetryReason);
-  mORB->BlockResponse(this, NS_ERROR_FAILURE);
+  mORB->BlockResponse(this, NS_BINDING_ABORTED);
 }
 
 void HttpBaseChannel::AllowOpaqueResponseAfterSniff() {
@@ -3690,9 +3706,9 @@ nsresult HttpBaseChannel::AddSecurityMessage(
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIScriptError> error(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
-  error->InitWithSourceURI(
-      errorText, mURI, u""_ns, 0, 0, nsIScriptError::warningFlag,
-      NS_ConvertUTF16toUTF8(aMessageCategory), innerWindowID);
+  error->InitWithSourceURI(errorText, mURI, 0, 0, nsIScriptError::warningFlag,
+                           NS_ConvertUTF16toUTF8(aMessageCategory),
+                           innerWindowID);
 
   console->LogMessage(error);
 
@@ -3760,7 +3776,7 @@ HttpBaseChannel::GetOnlyConnect(bool* aOnlyConnect) {
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::SetConnectOnly() {
+HttpBaseChannel::SetConnectOnly(bool aTlsTunnel) {
   ENSURE_CALLED_BEFORE_CONNECT();
 
   if (!mUpgradeProtocolCallback) {
@@ -3768,6 +3784,9 @@ HttpBaseChannel::SetConnectOnly() {
   }
 
   mCaps |= NS_HTTP_CONNECT_ONLY;
+  if (aTlsTunnel) {
+    mCaps |= NS_HTTP_TLS_TUNNEL;
+  }
   mProxyResolveFlags = nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY |
                        nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL;
   return SetLoadFlags(nsIRequest::INHIBIT_CACHING | nsIChannel::LOAD_ANONYMOUS |
@@ -5268,7 +5287,7 @@ bool HttpBaseChannel::ShouldTaintReplacementChannelOrigin(
 // Redirect Tracking
 bool HttpBaseChannel::SameOriginWithOriginalUri(nsIURI* aURI) {
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  bool isPrivateWin = mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
+  bool isPrivateWin = mLoadInfo->GetOriginAttributes().IsPrivateBrowsing();
   nsresult rv =
       ssm->CheckSameOriginURI(aURI, mOriginalURI, false, isPrivateWin);
   return (NS_SUCCEEDED(rv));
@@ -5449,6 +5468,112 @@ HttpBaseChannel::GetAllRedirectsPassTimingAllowCheck(bool* aPassesCheck) {
 NS_IMETHODIMP
 HttpBaseChannel::SetAllRedirectsPassTimingAllowCheck(bool aPassesCheck) {
   StoreAllRedirectsPassTimingAllowCheck(aPassesCheck);
+  return NS_OK;
+}
+
+// https://fetch.spec.whatwg.org/#cors-check
+bool HttpBaseChannel::PerformCORSCheck() {
+  // Step 1
+  // Let origin be the result of getting `Access-Control-Allow-Origin`
+  // from response’s header list.
+  nsAutoCString origin;
+  nsresult rv = GetResponseHeader("Access-Control-Allow-Origin"_ns, origin);
+
+  // Step 2
+  // If origin is null, then return failure. (Note: null, not 'null').
+  if (NS_FAILED(rv) || origin.IsVoid()) {
+    return false;
+  }
+
+  // Step 3
+  // If request’s credentials mode is not "include"
+  // and origin is `*`, then return success.
+  uint32_t cookiePolicy = mLoadInfo->GetCookiePolicy();
+  if (cookiePolicy != nsILoadInfo::SEC_COOKIES_INCLUDE &&
+      origin.EqualsLiteral("*")) {
+    return true;
+  }
+
+  // Step 4
+  // If the result of byte-serializing a request origin
+  // with request is not origin, then return failure.
+  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+  nsCOMPtr<nsIPrincipal> resourcePrincipal;
+  rv = ssm->GetChannelURIPrincipal(this, getter_AddRefs(resourcePrincipal));
+  if (NS_FAILED(rv) || !resourcePrincipal) {
+    return false;
+  }
+  nsAutoCString serializedOrigin;
+  nsContentSecurityManager::GetSerializedOrigin(
+      mLoadInfo->TriggeringPrincipal(), resourcePrincipal, serializedOrigin,
+      mLoadInfo);
+  if (!serializedOrigin.Equals(origin)) {
+    return false;
+  }
+
+  // Step 5
+  // If request’s credentials mode is not "include", then return success.
+  if (cookiePolicy != nsILoadInfo::SEC_COOKIES_INCLUDE) {
+    return true;
+  }
+
+  // Step 6
+  // Let credentials be the result of getting
+  // `Access-Control-Allow-Credentials` from response’s header list.
+  nsAutoCString credentials;
+  rv = GetResponseHeader("Access-Control-Allow-Credentials"_ns, credentials);
+
+  // Step 7 and 8
+  // If credentials is `true`, then return success.
+  // (else) return failure.
+  return NS_SUCCEEDED(rv) && credentials.EqualsLiteral("true");
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::BodyInfoAccessAllowedCheck(nsIPrincipal* aOrigin,
+                                            BodyInfoAccess* _retval) {
+  // Per the Fetch spec, https://fetch.spec.whatwg.org/#response-body-info,
+  // the bodyInfo for Resource Timing and Navigation Timing info consists of
+  // encoded size, decoded size, and content type. It is however made opaque
+  // whenever the response is turned into a network error, which sets its
+  // bodyInfo to its default values (sizes=0, content-type="").
+
+  // Case 1:
+  // "no-cors" -> Upon success, fetch will return an opaque filtered response.
+  // An opaque(-redirect) filtered response is a filtered response
+  //   whose ... body info is a new response body info.
+  auto tainting = mLoadInfo->GetTainting();
+  if (tainting == mozilla::LoadTainting::Opaque) {
+    *_retval = BodyInfoAccess::DISALLOWED;
+    return NS_OK;
+  }
+
+  // Case 2:
+  // If request’s response tainting is "cors" and a CORS check for request
+  // and response returns failure, then return a network error.
+  if (tainting == mozilla::LoadTainting::CORS && !PerformCORSCheck()) {
+    *_retval = BodyInfoAccess::DISALLOWED;
+    return NS_OK;
+  }
+
+  // Otherwise:
+  // The fetch response handover, given a fetch params fetchParams
+  //    and a response response, run these steps:
+  // processResponseEndOfBody:
+  // - If fetchParams’s request’s mode is not "navigate" or response’s
+  //   has-cross-origin-redirects is false:
+  //   - Let mimeType be the result of extracting a MIME type from
+  //     response’s header list.
+  //   - If mimeType is not failure, then set bodyInfo’s content type to the
+  //     result of minimizing a supported MIME type given mimeType.
+  dom::RequestMode requestMode;
+  MOZ_ALWAYS_SUCCEEDS(GetRequestMode(&requestMode));
+  if (requestMode != RequestMode::Navigate || LoadAllRedirectsSameOrigin()) {
+    *_retval = BodyInfoAccess::ALLOW_ALL;
+    return NS_OK;
+  }
+
+  *_retval = BodyInfoAccess::ALLOW_SIZES;
   return NS_OK;
 }
 
@@ -6517,7 +6642,8 @@ void HttpBaseChannel::LogORBError(
   if (contentWindowId) {
     nsContentUtils::ReportToConsoleByWindowID(
         u"A resource is blocked by OpaqueResponseBlocking, please check browser console for details."_ns,
-        nsIScriptError::warningFlag, "ORB"_ns, contentWindowId, mURI);
+        nsIScriptError::warningFlag, "ORB"_ns, contentWindowId,
+        SourceLocation(mURI.get()));
   }
 
   AutoTArray<nsString, 2> params;

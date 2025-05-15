@@ -62,6 +62,7 @@ class Compositor;
 class CompositableParentManager;
 class ReadLockDescriptor;
 class CompositorBridgeParent;
+class DXGITextureHostD3D11;
 class SurfaceDescriptor;
 class HostIPCAllocator;
 class ISurfaceAllocator;
@@ -623,6 +624,8 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     return nullptr;
   }
 
+  virtual DXGITextureHostD3D11* AsDXGITextureHostD3D11() { return nullptr; }
+
   virtual bool IsWrappingSurfaceTextureHost() { return false; }
 
   // Create the corresponding RenderTextureHost type of this texture, and
@@ -667,6 +670,9 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     // Passed in the RenderCompositor supports BufferTextureHosts
     // being used directly as external compositor surfaces.
     SUPPORTS_EXTERNAL_BUFFER_TEXTURES,
+
+    // Passed if the caller wants to disable external compositing of TextureHost
+    EXTERNAL_COMPOSITING_DISABLED,
   };
   using PushDisplayItemFlagSet = EnumSet<PushDisplayItemFlag>;
 

@@ -228,6 +228,7 @@ tasks.withType(KotlinCompile).configureEach {
 // -------------------------------------------------------------------------------------------------
 // Generate Kotlin code for the Focus Glean metrics.
 // -------------------------------------------------------------------------------------------------
+ext.gleanNamespace = "mozilla.telemetry.glean"
 apply plugin: "org.mozilla.telemetry.glean-gradle-plugin"
 apply plugin: "org.mozilla.appservices.nimbus-gradle-plugin"
 
@@ -273,6 +274,7 @@ dependencies {
     implementation platform(ComponentsDependencies.androidx_compose_bom)
     androidTestImplementation platform(ComponentsDependencies.androidx_compose_bom)
 
+    implementation ComponentsDependencies.androidx_activity
     implementation ComponentsDependencies.androidx_appcompat
     implementation ComponentsDependencies.androidx_browser
     implementation ComponentsDependencies.androidx_cardview
@@ -293,7 +295,7 @@ dependencies {
     implementation ComponentsDependencies.androidx_recyclerview
     implementation ComponentsDependencies.androidx_savedstate
     implementation FocusDependencies.androidx_splashscreen
-    implementation FocusDependencies.androidx_transition
+    implementation ComponentsDependencies.androidx_transition
     implementation ComponentsDependencies.androidx_work_runtime
     implementation ComponentsDependencies.androidx_datastore_preferences
 
@@ -341,9 +343,6 @@ dependencies {
     implementation project(':lib-auth')
     implementation project(':lib-publicsuffixlist')
 
-    implementation project(':service-glean'), {
-        exclude group: 'org.mozilla.telemetry', module: 'glean-native'
-    }
     implementation project(':service-location')
     implementation project(':service-nimbus')
 
@@ -364,6 +363,11 @@ dependencies {
     implementation project(':support-locale')
     implementation project(':compose-cfr')
 
+    implementation project(":service-glean")
+    implementation ComponentsDependencies.mozilla_glean, {
+        exclude group: 'org.mozilla.telemetry', module: 'glean-native'
+    }
+
     implementation ComponentsDependencies.kotlin_coroutines
     debugImplementation ComponentsDependencies.leakcanary
 
@@ -382,15 +386,6 @@ dependencies {
     testImplementation ComponentsDependencies.androidx_arch_core_testing
     testImplementation project(':support-test')
     testImplementation project(':support-test-libstate')
-    androidTestImplementation ComponentsDependencies.androidx_espresso_core, {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    androidTestImplementation FocusDependencies.espresso_idling_resource
-    androidTestImplementation FocusDependencies.espresso_web, {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    }
-    androidTestImplementation FocusDependencies.espresso_intents
-
 
     androidTestImplementation ComponentsDependencies.testing_mockwebserver
     testImplementation ComponentsDependencies.testing_mockwebserver
@@ -399,23 +394,25 @@ dependencies {
     androidTestImplementation FocusDependencies.fastlane
     androidTestImplementation FocusDependencies.falcon // Required by fastlane
 
-    androidTestImplementation FocusDependencies.espresso_contrib, {
-        exclude module: 'appcompat-v7'
-        exclude module: 'support-v4'
-        exclude module: 'support-annotations'
-        exclude module: 'recyclerview-v7'
-        exclude module: 'design'
-        exclude module: 'espresso-core'
+    constraints {
+        implementation (ComponentsDependencies.androidx_tracing) {
+            because 'AndroidX Test gets force-downgraded to 1.0.0 and breaks otherwise'
+        }
     }
+
     testImplementation ComponentsDependencies.androidx_test_core
     testImplementation ComponentsDependencies.androidx_test_runner
     testImplementation ComponentsDependencies.androidx_test_rules
 
+    androidTestImplementation ComponentsDependencies.androidx_espresso_core
+    androidTestImplementation ComponentsDependencies.androidx_espresso_idling_resource
+    androidTestImplementation ComponentsDependencies.androidx_espresso_intents
+    androidTestImplementation ComponentsDependencies.androidx_espresso_web
     androidTestImplementation ComponentsDependencies.androidx_test_core
     androidTestImplementation ComponentsDependencies.androidx_test_junit
     androidTestImplementation ComponentsDependencies.androidx_test_uiautomator
     androidTestImplementation ComponentsDependencies.androidx_test_runner
-    androidTestUtil FocusDependencies.androidx_orchestrator
+    androidTestUtil ComponentsDependencies.androidx_test_orchestrator
 
     lintChecks project(':tooling-lint')
 }

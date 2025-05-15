@@ -11,7 +11,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ContextDescriptorType:
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
-  Marionette: "chrome://remote/content/components/Marionette.sys.mjs",
+  getWebDriverSessionById:
+    "chrome://remote/content/shared/webdriver/Session.sys.mjs",
+  pprint: "chrome://remote/content/shared/Format.sys.mjs",
   RootMessageHandler:
     "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
@@ -52,9 +54,12 @@ class SessionModule extends Module {
    * Session clean up will happen later in WebDriverBiDiConnection class.
    */
   async end() {
-    if (lazy.Marionette.running) {
+    const session = lazy.getWebDriverSessionById(this.messageHandler.sessionId);
+
+    if (session.http) {
       throw new lazy.error.UnsupportedOperationError(
-        "Ending session which was started with Webdriver classic is not supported, use Webdriver classic delete command instead."
+        "Ending a session started with WebDriver classic is not supported." +
+          ' Use the WebDriver classic "Delete Session" command instead.'
       );
     }
   }
@@ -130,16 +135,18 @@ class SessionModule extends Module {
   #assertNonEmptyArrayWithStrings(array, variableName) {
     lazy.assert.array(
       array,
-      `Expected "${variableName}" to be an array, got ${array}`
+      `Expected "${variableName}" to be an array, ` + lazy.pprint`got ${array}`
     );
     lazy.assert.that(
       array => !!array.length,
-      `Expected "${variableName}" array to have at least one item`
+      `Expected "${variableName}" array to have at least one item, ` +
+        lazy.pprint`got ${array}`
     )(array);
     array.forEach(item => {
       lazy.assert.string(
         item,
-        `Expected elements of "${variableName}" to be a string, got ${item}`
+        `Expected elements of "${variableName}" to be a string, ` +
+          lazy.pprint`got ${item}`
       );
     });
   }

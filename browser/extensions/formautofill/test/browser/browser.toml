@@ -33,12 +33,15 @@ skip-if = [
 
 ["browser_check_installed.js"]
 
+["browser_clearPopulatedForm.js"]
+
 ["browser_dropdown_layout.js"]
 
 ["browser_editAddressDialog.js"]
 skip-if = [
   "verify",
   "win11_2009", # Bug 1797751
+  "os == 'linux'" , # Bug 1788900
 ]
 
 ["browser_fathom_cc.js"]
@@ -46,6 +49,8 @@ skip-if = [
 ["browser_manageAddressesDialog.js"]
 
 ["browser_page_navigation_in_subtree.js"]
+
+["browser_previewFormFields.js"]
 
 ["browser_privacyPreferences.js"]
 skip-if = [

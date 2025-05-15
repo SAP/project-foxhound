@@ -45,17 +45,11 @@
     <!-- Content description on checkmark while tab is selected in multiselect mode in tab tray -->
     <string name="tab_tray_multiselect_selected_content_description">Nkaji</string>
 
-    <!-- Home - Recently saved bookmarks -->
-    <!-- Title for the home screen section with recently saved bookmarks. -->
-    <string name="recently_saved_title" moz:removedIn="127" tools:ignore="UnusedResources">Daa skuata nchuva\'a</string>
-    <!-- Content description for the button which navigates the user to show all of their saved bookmarks. -->
-    <string name="recently_saved_show_all_content_description_2" moz:removedIn="127" tools:ignore="UnusedResources">Xituvi kuaiyo a ta´a ini noo´o</string>
-    <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
-    <string name="recently_saved_menu_item_remove" moz:removedIn="127" tools:ignore="UnusedResources">Xita</string>
-
     <!-- Home - Bookmarks -->
     <!-- Title for the home screen section with bookmarks. -->
     <string name="home_bookmarks_title">A ta´a ini noo´o</string>
+    <!-- Content description for the button which navigates the user to show all of their bookmarks. -->
+    <string name="home_bookmarks_show_all_content_description">Xituvi kuaiyo a ta´a ini noo´o</string>
     <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
     <string name="home_bookmarks_menu_item_remove">Xita</string>
 
@@ -107,6 +101,10 @@
     <string name="erase_action_cfr_message">Kuaxin ya\'a sa kajie\'e sesión yu\'u. Xita da nnánukunu, cookies — todo.</string>
 
 
+    <!-- Toolbar "contextual feature recommendation" (CFR) -->
+    <!-- Text for the title displayed in the contextual feature recommendation popup promoting the navigation bar. -->
+    <string name="navbar_cfr_title">Kaka ñama jíí a jía</string>
+
     <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
     <string name="camera_permissions_needed_message">Jiniñu\'u kua\'anu kivɨ nu ka̱a̱ nátava. Kua\'a nu ke\'i Android, kauxin permisos jee kachi de kuvi.</string>
     <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -142,8 +140,6 @@
     <string name="home_screen_shortcut_open_new_private_tab_2">Pestaña yu´u jíía</string>
     <!-- Shortcut action to open Passwords screen -->
     <string name="home_screen_shortcut_passwords">Contraseñas</string>
-    <!-- Shortcut action to open Passwords screen -->
-    <string name="home_screen_shortcut_open_password_screen" moz:removedIn="126" tools:ignore="UnusedResources">Contraseñas</string>
 
     <!-- Recent Tabs -->
     <!-- Header text for jumping back into the recent tab in the home screen -->
@@ -185,16 +181,16 @@
     <string name="browser_menu_refresh">Naxi\'ña</string>
     <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
     <string name="browser_menu_stop">Siankuiñi</string>
-    <!-- Browser menu button that opens the addon manager -->
-    <string name="browser_menu_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Ka̱a̱ chunta´an</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">Extensiones</string>
+    <!-- Browser menu banner link text for learning more about extensions -->
+    <string name="browser_menu_extensions_banner_learn_more">Ka´vi kue´eka</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_manage_extensions">Tetiñu extensión</string>
+    <!-- Browser menu button that opens AMO in a tab -->
+    <string name="browser_menu_discover_more_extensions">Nánuku kue\'eka extensión</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">Información de la cuenta</string>
-    <!-- Text displayed when there are no add-ons to be shown -->
-    <string name="no_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Ya\'a ntu íyo ka̱a̱ chunta\'an</string>
     <!-- Browser menu button that sends a user to help articles -->
     <string name="browser_menu_help">Chinei</string>
     <!-- Browser menu button that sends a to a the what's new article -->
@@ -209,8 +205,8 @@
     <string name="browser_menu_open_in_regular_tab">Síne nuu iin pestaña</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen">Chisó ya´a nuu kajie´e</string>
-    <!-- Browser menu toggle that installs a Progressive Web App shortcut to the site on the device home screen. -->
-    <string name="browser_menu_install_on_homescreen" moz:removedIn="126" tools:ignore="UnusedResources">Chu´un</string>
+    <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
+    <string name="browser_menu_add_to_homescreen_2">Chisó ya´a nuu kajie´e…</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">Resincronizar</string>
     <!-- Browser menu button that opens the find in page menu -->
@@ -219,6 +215,8 @@
     <string name="browser_menu_find_in_page_2">Nánuku nuu página…</string>
     <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
     <string name="browser_menu_translations">Traducir página</string>
+    <!-- Browser menu button that saves the current tab to a collection -->
+    <string name="browser_menu_save_to_collection">Chuva\'a nuu colección…</string>
     <!-- Browser menu button that saves the current tab to a collection -->
     <string name="browser_menu_save_to_collection_2">Chuva\'a nuu colección</string>
     <!-- Browser menu button that open a share menu to share the current site -->
@@ -242,6 +240,8 @@
     <string name="browser_menu_open_app_link">Síne jii aplicación</string>
     <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
     <string name="browser_menu_customize_reader_view">Sá\'á vii jíí vista lectura</string>
+    <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
+    <string name="browser_menu_customize_reader_view_2">Sá\'á vii jíí vista lectura</string>
     <!-- Browser menu label for adding a bookmark -->
     <string name="browser_menu_add">Tee</string>
     <!-- Browser menu label for editing a bookmark -->
@@ -261,14 +261,34 @@
     <!-- Browser menu label that navigates to the SUMO page for the Firefox for Android release notes.
          The first parameter is the name of the app defined in app_name (for example: Fenix)-->
     <string name="browser_menu_new_in_firefox">A jíí kene %1$s</string>
+    <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
+    <string name="browser_menu_switch_to_desktop_site">Sama nuu escritorio</string>
+    <!-- Browser menu label that toggles the request for the mobile site of the currently visited page -->
+    <string name="browser_menu_switch_to_mobile_site">Sama nuu móvil</string>
     <!-- Browser menu label that navigates to the page tools sub-menu -->
     <string name="browser_menu_tools">Daa ka̱a̱</string>
     <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
          bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen -->
     <string name="browser_menu_save">Chuva´a</string>
 
+    <!-- Browser menu label that bookmarks the currently visited page -->
+    <string name="browser_menu_bookmark_this_page">Tee página ya´a nuu a ta´an ini noo´o</string>
+    <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
+    <string name="browser_menu_edit_bookmark">Tee a ta´an ini noo\'o</string>
+    <!-- Browser menu label that the saves the currently visited page as a PDF -->
+    <string name="browser_menu_save_as_pdf">Chuva´a kua PDF…</string>
+    <!-- Browser menu label for turning ON reader view of the current visited page -->
+    <string name="browser_menu_turn_on_reader_view">Tee vista ka\'vi</string>
+    <!-- Browser menu label for turning OFF reader view of the current visited page -->
+    <string name="browser_menu_turn_off_reader_view">Xita vista ka\'vi</string>
+    <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
+    <string name="browser_menu_translate_page">Traducir página…</string>
     <!-- Browser menu label for the print feature -->
     <string name="browser_menu_print">Nátava…</string>
+
+    <!-- Browser menu label for the Delete browsing data on quit feature.
+        The first parameter is the name of the app defined in app_name (for example: Fenix). -->
+    <string name="browser_menu_delete_browsing_data_on_quit">Kene %1$s</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -504,7 +524,7 @@
     <!-- Preference category for account information -->
     <string name="preferences_category_account">Cuenta</string>
     <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar">Barra daa ka̱a̱</string>
+    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">Barra daa ka̱a̱</string>
     <!-- Preference for changing default theme to dark or light mode -->
     <string name="preferences_theme">Tema</string>
     <!-- Preference for customizing the home screen -->
@@ -521,6 +541,8 @@
     <string name="preferences_account_sync_error">Nakivɨ tuku sa nakajie\'e sincronización</string>
     <!-- Preference for language -->
     <string name="preferences_language">Tu´un</string>
+    <!-- Preference for translations -->
+    <string name="preferences_translations">Traducciones</string>
     <!-- Preference for data choices -->
     <string name="preferences_data_choices">Nuu kaji daa datos</string>
     <!-- Preference for data collection -->
@@ -565,12 +587,8 @@
     <!-- Message to indicate users that we are quitting the application to apply the changes -->
     <string name="quit_application">Nakasɨ ka̱a̱ sa kutuvi a jíia…</string>
 
-    <!-- Preference for add_ons -->
-    <string name="preferences_addons" moz:removedIn="126" tools:ignore="UnusedResources">Ka̱a̱ chunta´an</string>
     <!-- Preference for extensions -->
     <string name="preferences_extensions">Extensiones</string>
-    <!-- Preference for installing a local add-on -->
-    <string name="preferences_install_local_addon" moz:removedIn="126" tools:ignore="UnusedResources">Chu\'un ka̱a̱ chunta´an jíí iin archivo</string>
     <!-- Preference for installing a local extension -->
     <string name="preferences_install_local_extension">Chu\'un extensión jíí iin archivo</string>
     <!-- Preference for notifications -->
@@ -580,12 +598,13 @@
     <!-- Summary for notification preference indicating notifications are not allowed -->
     <string name="notifications_not_allowed_summary">Nkua\'a</string>
 
+    <!-- Add-on Permissions -->
+    <!-- The title of the required permissions section from addon's permissions screen -->
+    <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">Jiniñu\'u</string>
     <!-- The title of the optional permissions section from addon's permissions screen -->
     <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">Kaji</string>
 
     <!-- Add-on Preferences -->
-    <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
-    <string name="preferences_customize_amo_collection" moz:removedIn="126" tools:ignore="UnusedResources">Colección daa ka̱a̱ chunta´an personalizada</string>
     <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
     <string name="preferences_customize_extension_collection">Colección personalizada de extensiones</string>
     <!-- Button caption to confirm the add-on collection configuration -->
@@ -598,17 +617,14 @@
     <!-- Hint displayed on input field for custom collection user ID-->
     <string name="customize_addon_collection_user_hint">Dueño de la colección (ID de usuario)</string>
 
-    <!-- Toast shown after confirming the custom add-on collection configuration -->
-    <string name="toast_customize_addon_collection_done" moz:removedIn="126" tools:ignore="UnusedResources">Colección daa ka̱a̱ chunta´an nsama. Nakasɨdani ka̱a̱ sa kuvi kene daa a nsama…</string>
-
     <!-- Toast shown after confirming the custom extension collection configuration -->
     <string name="toast_customize_extension_collection_done">Colección daa colección. Nakasɨdani ka̱a̱ sa kuvi kene daa a nsama…</string>
 
     <!-- Customize Home -->
     <!-- Header text for jumping back into the recent tab in customize the home screen -->
     <string name="customize_toggle_jump_back_in">Niko íchi yata</string>
-    <!-- Title for the customize home screen section with recently saved bookmarks. -->
-    <string name="customize_toggle_recent_bookmarks" moz:removedIn="127" tools:ignore="UnusedResources">A ta´a ini noo´o skuata nne\'yanu</string>
+    <!-- Title for the customize home screen section with bookmarks. -->
+    <string name="customize_toggle_bookmarks">A ta´a ini noo´o</string>
     <!-- Title for the customize home screen section with recently visited. Recently visited is
     a section where users see a list of tabs that they have visited in the past few days -->
     <string name="customize_toggle_recently_visited">Daa skuata nne\'yanu</string>
@@ -651,28 +667,17 @@
     <string name="wallpapers_onboarding_dialog_explore_more_button_text">Kune\'ya kue\'e daa fondos pantalla</string>
 
     <!-- Add-ons general availability nimbus message-->
-    <!-- Title of the Nimbus message for add-ons general availability-->
-    <string name="addon_ga_message_title" moz:removedIn="126" tools:ignore="UnusedResources">Iyo daa ka̱a̱ chunta\'an jíía</string>
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">Daa extensiones jíía íyo ntañu\'u</string>
-    <!-- Button text of the Nimbus message for add-ons general availability. -->
-    <string name="addon_ga_message_button" moz:removedIn="126" tools:ignore="UnusedResources">Kune\'ya daa ka̱a̱ chunta\'an</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">Kune\'ya daa extension</string>
 
     <!-- Extension process crash dialog to user -->
-    <!-- Title of a dialog shown to the user when enough errors have occurred with addons and they need to be temporarily disabled -->
-    <string name="addon_process_crash_dialog_title" moz:removedIn="126" tools:ignore="UnusedResources">Nna\'va daa ka̱a̱ chunta\'an</string>
-
     <!-- Title of the extension crash dialog shown to the user when enough errors have occurred with extensions and they need to be temporarily disabled -->
     <string name="extension_process_crash_dialog_title">Nna\'va iin nunu daa extensiones</string>
-    <!-- This will cause the add-ons to try restarting but the dialog will reappear if it is unsuccessful again -->
-    <string name="addon_process_crash_dialog_retry_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Nakajie\'e tuku ka̱a̱ chunta´an</string>
     <!-- Button text on the extension crash dialog to prompt the user to try restarting the extensions but the dialog will reappear if it is unsuccessful again -->
     <string name="extension_process_crash_dialog_retry_button_text" tools:ignore="UnusedResources">Nakajie\'e daa extension</string>
-    <!-- The user will continue with all add-ons disabled -->
-    <string name="addon_process_crash_dialog_disable_addons_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Kaka jíí ka̱a̱ chunta´an nna\'va</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to continue with all extensions disabled. -->
     <string name="extension_process_crash_dialog_disable_extensions_button_text">Kaka jíí extensión nna\'va</string>
@@ -728,6 +733,14 @@
     <string name="fxa_tab_received_notification_name">Pestaña recibida</string>
     <!-- %s is the device name -->
     <string name="fxa_tab_received_from_notification_name">Pestaña de %s</string>
+
+    <!-- Close Synced Tabs -->
+    <!-- The title for a notification shown when the user closes tabs that are currently
+    open on this device from another device that's signed in to the same Mozilla account.
+    %1$s is a placeholder for the app name; %2$d is the number of tabs closed.  -->
+    <string name="fxa_tabs_closed_notification_title">%1$s da pestañas nasɨ: %2$d</string>
+    <!-- The body for a "closed synced tabs" notification. -->
+    <string name="fxa_tabs_closed_text">Kune\'ya pestañas nnakasɨ ntañu´u</string>
 
     <!-- Advanced Preferences -->
     <!-- Preference for tracking protection exceptions -->
@@ -971,7 +984,7 @@
     <!-- Hint for adding name of a collection -->
     <string name="collection_name_hint">Sivɨ colección</string>
     <!-- Text for the menu button to rename a top site -->
-    <string name="rename_top_site">Natee</string>
+    <string name="rename_top_site" moz:removedIn="130" tools:ignore="UnusedResources">Natee</string>
     <!-- Text for the menu button to remove a top site -->
     <string name="remove_top_site">Xita</string>
     <!-- Text for the menu button to delete a top site from history -->
@@ -1098,6 +1111,15 @@
     <string name="bookmark_undo_deletion">DESHACER</string>
     <!-- Text for the button to search all bookmarks -->
     <string name="bookmark_search">Tee tu\'un nánukunu</string>
+
+    <!-- Content description for the bookmark navigation bar back button -->
+    <string name="bookmark_navigate_back_button_content_description">Niko yata</string>
+    <!-- Content description for the bookmark list new folder navigation bar button -->
+    <string name="bookmark_add_new_folder_button_content_description">Tee carpeta jíía</string>
+    <!-- Content description for the bookmark navigation bar close button -->
+    <string name="bookmark_close_button_content_description">Nakasɨ a ta´a ini noo´o</string>
+    <!-- Content description for bookmark search floating action button -->
+    <string name="bookmark_search_button_content_description">Nánuku a ta´a ini noo´o</string>
 
     <!-- Site Permissions -->
     <!-- Button label that take the user to the Android App setting -->
@@ -1287,6 +1309,9 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">Nakasɨ daa pestañas yu´u</string>
 
+    <!-- Text for option one, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources" moz:removedIn="130">Neutral</string>
+
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
     <string name="notification_erase_title_android_14">Nakasɨ daa pestañas yu´u?</string>
 
@@ -1361,14 +1386,10 @@
     <string name="qr_scanner_dialog_invalid_ok">Kuvi</string>
     <!-- Tab collection deletion prompt dialog message. Placeholder will be replaced with the collection name -->
     <string name="tab_collection_dialog_message">¿A mana kuvinu xitanu %1$s?</string>
-    <!-- Collection and tab deletion prompt dialog message. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_message">De xinanu pestaña ya\'a naa kuaiyo colección. Kuvi sá´ánu daa colección ntaka íchi.</string>
-    <!-- Collection and tab deletion prompt dialog title. Placeholder will be replaced with the collection name. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_title">¿Xita %1$s?</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">Xita</string>
     <!-- Text displayed in a notification when the user enters full screen mode -->
-    <string name="full_screen_notification">Kivunɨ nu pantalla ka´nu</string>
+    <string name="full_screen_notification" moz:removedIn="130" tools:ignore="UnusedResources">Kivunɨ nu pantalla ka´nu</string>
     <!-- Message for copying the URL via long press on the toolbar -->
     <string name="url_copied">URL ntɨɨn</string>
     <!-- Sample text for accessibility font size -->
@@ -1529,7 +1550,7 @@
     <!-- Preference for enhanced tracking protection for the custom protection settings -->
     <string name="preference_enhanced_tracking_protection_custom_cryptominers">Criptomineros</string>
     <!-- Preference for enhanced tracking protection for the custom protection settings -->
-    <string name="preference_enhanced_tracking_protection_custom_fingerprinters">Huellas dactilares</string>
+    <string name="preference_enhanced_tracking_protection_custom_fingerprinters" moz:RemovedIn="130" tools:ignore="UnusedResources">Huellas dactilares</string>
     <!-- Button label for navigating to the Enhanced Tracking Protection details -->
     <string name="enhanced_tracking_protection_details">Detalles</string>
     <!-- Header for categories that are being being blocked by current Enhanced Tracking Protection settings -->
@@ -1552,7 +1573,7 @@
     <!-- Description of cryptominers that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_cryptominers_description">Nkua\'anu a daa scripts kuvi sá´á xeen ni\'ida kivɨda nu ka̱a̱ noo\'o je tavadaja xu\'un digital.</string>
     <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
-    <string name="etp_fingerprinters_title">Detectores de huellas digitales</string>
+    <string name="etp_fingerprinters_title" moz:RemovedIn="130" tools:ignore="UnusedResources">Detectores de huellas digitales</string>
     <!-- Category of trackers (tracking content) that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_tracking_content_title">Contenido de rastreo</string>
     <!-- Enhanced Tracking Protection message that protection is currently on for this site -->
@@ -1656,6 +1677,8 @@
     <string name="preferences_passwords_saved_logins_description_empty_learn_more_link_2">Kuni kue´eka jiee Sync.</string>
     <!-- Preference to access list of login exceptions that we never save logins for -->
     <string name="preferences_passwords_exceptions">Excepciones</string>
+    <!-- Description of list of login exceptions that we never save passwords for. Parameter will be replaced by app name. -->
+    <string name="preferences_passwords_exceptions_description_2">%s nchuva\'a da contraseñas nu da nuu ya\'a.</string>
     <!-- Text on button to remove all saved login exceptions -->
     <string name="preferences_passwords_exceptions_remove_all">Xita kuaiyo da excepciones</string>
     <!-- Hint for search box in passwords list -->
@@ -1957,6 +1980,9 @@
     <!-- Content description for expanding a group of synced tabs. -->
     <string name="synced_tabs_expand_group">Sá´á ka\'nu sincronización pestañas.</string>
 
+    <!-- Content description for collapsing a group of synced tabs. -->
+    <string name="synced_tabs_collapse_group">Sá´á luli grupo pestañas sincronizadas.</string>
+
     <!-- Confirmation dialog button text when top sites limit is reached. -->
     <string name="top_sites_max_limit_confirmation_button">Kuvi, kuka\'nu inini</string>
     <!-- Label for the preference to show the shortcuts for the most visited top sites on the homepage -->
@@ -1965,8 +1991,10 @@
     <string name="top_sites_rename_dialog_title">Sivɨ</string>
     <!-- Hint for renaming title of a shortcut -->
     <string name="shortcut_name_hint">Sivɨ acceso ñama</string>
+    <!-- Hint for editing URL of a shortcut. -->
+    <string name="shortcut_url_hint">Da acceso ñama</string>
     <!-- Button caption to confirm the renaming of the top site. -->
-    <string name="top_sites_rename_dialog_ok">Kuvi</string>
+    <string name="top_sites_rename_dialog_ok" moz:removedIn="130" tools:ignore="UnusedResources">Kuvi</string>
     <!-- Dialog button text for canceling the rename top site prompt. -->
     <string name="top_sites_rename_dialog_cancel">Nkuvi-ka</string>
     <!-- Text for the menu button to open the homepage settings. -->
@@ -1975,6 +2003,15 @@
     <string name="top_sites_menu_sponsor_privacy">Patrocinadores da nuu\'u ji privacidad noo\'o</string>
     <!-- Label text displayed for a sponsored top site. -->
     <string name="top_sites_sponsored_label">Patrocinado</string>
+
+    <!-- Text for the menu item to edit a top site. -->
+    <string name="top_sites_edit_top_site">Natee</string>
+    <!-- Text for the dialog title to edit a top site. -->
+    <string name="top_sites_edit_dialog_title">Natee acceso ñama</string>
+    <!-- Button caption to confirm the edit of the top site. -->
+    <string name="top_sites_edit_dialog_save">Chuva´a</string>
+    <!-- Label for the URL edit field in the edit top site dialog. -->
+    <string name="top_sites_edit_dialog_url_title">URL</string>
 
     <!-- Inactive tabs in the tabs tray -->
     <!-- Title text displayed in the tabs tray when a tab has been unused for 14 days. -->
@@ -2004,6 +2041,10 @@
     <string name="google_search_engine_suggestion_header">Nnánuku Google</string>
     <!-- Title for search suggestions when the default search suggestion engine is anything other than Google. The first parameter is default search engine name. -->
     <string name="other_default_search_engine_suggestion_header">Nánuku jíí %s</string>
+
+    <!-- Default browser experiment -->
+    <!-- Default browser card title -->
+    <string name="default_browser_experiment_card_title">Sama ka̱a̱ a ni´inu ntaka íchi</string>
 
     <!-- Content description for close button in collection placeholder. -->
     <string name="remove_home_collection_placeholder_content_description">Xita</string>
@@ -2125,7 +2166,7 @@
     <!-- Text displayed in the second CFR presenting the review quality check feature that opens the review checker when clicked. -->
     <string name="review_quality_check_second_cfr_action" tools:ignore="UnusedResources">Síne verificador reseñas</string>
     <!-- Flag showing that the review quality check feature is work in progress. -->
-    <string name="review_quality_check_beta_flag">Beta</string>
+    <string name="review_quality_check_beta_flag" moz:removedIn="130" tools:ignore="UnusedResources">Beta</string>
     <!-- Content description (not visible, for screen readers etc.) for opening browser menu button to open review quality check bottom sheet. -->
     <string name="review_quality_check_open_handle_content_description">Síne verificador reseñas</string>
     <!-- Content description (not visible, for screen readers etc.) for closing browser menu button to open review quality check bottom sheet. -->
@@ -2189,12 +2230,12 @@
     <string name="translations_bottom_sheet_negative_button_restore">Kune\'ya original</string>
     <!-- Button text on the translations dialog when a translation error appears, used to dismiss the dialog and return to the browser. -->
     <string name="translations_bottom_sheet_negative_button_error">Nkuvi</string>
+    <!-- Button text on the translations dialog to begin a translation of the website. -->
+    <string name="translations_bottom_sheet_positive_button">Traducir</string>
     <!-- Button text on the translations dialog when a translation error appears. -->
     <string name="translations_bottom_sheet_positive_button_error">Nasá´á tuku</string>
     <!-- Default dropdown option when initially selecting a language from the translations dialog language selection dropdown. -->
     <string name="translations_bottom_sheet_default_dropdown_selection">Sama tu´un</string>
-    <!-- Button text on the warning card when a language is not supported. The link will take the user to a page to a support page about translations. -->
-    <string name="translation_error_language_not_supported_learn_more" moz:removedIn="126" tools:ignore="UnusedResources">Ka´vi kue´eka</string>
 
 
     <!-- Button text for the button that will take the user to the download languages dialog. On the download languages dialog, the user can manage which languages they would like to download for translations. -->
@@ -2213,7 +2254,9 @@
 
     <!-- Download languages preference screen -->
     <!-- Title of the download languages preference screen toolbar.-->
-    <string name="download_languages_toolbar_title_preference">Xinuu daa tu\'un</string>
+    <string name="download_languages_toolbar_title_preference" moz:removedIn="130" tools:ignore="UnusedResources">Xinuu daa tu\'un</string>
+    <!-- Title of the toolbar for the translation feature screen where users may download different languages for translation. -->
+    <string name="download_languages_translations_toolbar_title_preference">Xinuu daa tu\'un</string>
     <!-- Clickable text from the screen header that links to a website. -->
     <string name="download_languages_header_learn_more_preference">Ka´vi kue´eka</string>
     <!-- The subhead of the download language preference screen will appear above the pivot language. -->
@@ -2226,16 +2269,15 @@
     <string name="download_languages_language_item_preference">%1$s (%2$s)</string>
     <!-- The subhead of the download language preference screen will appear above the items that were not downloaded. -->
     <string name="download_language_header_preference">Xinuu daa tu\'un</string>
-    <!-- All languages list item. When the user presses this item, they can download or delete all languages. -->
+    <!-- All languages list item. When the user presses this item, they can download all languages. -->
     <string name="download_language_all_languages_item_preference">Kuaiyo daa tu\'un</string>
+    <!-- All languages list item. When the user presses this item, they can delete all languages that were downloaded. -->
+    <string name="download_language_all_languages_item_preference_to_delete">Xina da tu\'un</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">Xita</string>
 
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">Xinuu</string>
-
-    <!-- Content description (not visible, for screen readers etc.): For a language list item that is selected. -->
-    <string name="download_languages_item_content_description_selected_state">Nkaji</string>
 
     <!-- Title for the dialog used by the translations feature to confirm deleting a language.
     The dialog will be presented when the user requests deletion of a language.
@@ -2250,6 +2292,11 @@
     <!-- Button text on the dialog used by the translations feature to cancel deleting a language. -->
     <string name="delete_language_file_dialog_negative_button_text">Nkuvi-ka</string>
 
+    <!-- Button text on the dialog used by the translations feature confirms canceling a download in progress for a language file. -->
+    <string name="cancel_download_language_file_dialog_positive_button_text" moz:removedIn="130" tools:ignore="UnusedResources">Kuvi</string>
+    <!-- Button text on the dialog used by the translations feature to dismiss the dialog. -->
+    <string name="cancel_download_language_file_negative_button_text" moz:removedIn="130" tools:ignore="UnusedResources">Nkuvi</string>
+
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to confirm they wish to continue and download the language file. -->
     <string name="download_language_file_dialog_positive_button_text">Xinuu</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to cancel the action and not perform a download of the language file. -->
@@ -2258,8 +2305,9 @@
     <!-- Content description (not visible, for screen readers etc.): Navigate back within the debug drawer. -->
     <string name="debug_drawer_back_button_content_description">Niko yata</string>
 
-    <!-- The active tab count category in the tab count section in Tab Tools. -->
-    <string name="debug_drawer_tab_tools_tab_count_normal" moz:removedIn="127" tools:ignore="UnusedResources">Activar</string>
+    <!-- Content description (not visible, for screen readers etc.): Open debug drawer. -->
+    <string name="debug_drawer_fab_content_description">Síne panel depuración</string>
+
     <!-- The active tab count category in the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_active">Activar</string>
     <!-- The inactive tab count category in the tab count section in Tab Tools. -->
@@ -2280,17 +2328,36 @@
     <!-- The continue button label -->
     <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Kɨ´ɨ</string>
     <!-- The privacy notice link -->
-    <string name="micro_survey_privacy_notice">Tu´un xitu a nejika kumio</string>
-    <!-- The close button label text -->
-    <string name="micro_survey_close_button_label" tools:ignore="UnusedResources">Nakasɨ</string>
+    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">Tu´un xitu a nejika kumio</string>
 
+    <!-- The submit button label text -->
+    <string name="micro_survey_submit_button_label">Chu\'un íchi</string>
     <!-- Option for likert scale -->
     <string name="likert_scale_option_3" tools:ignore="UnusedResources">Neutral</string>
 
+    <!-- Accessibility -->
+    <!-- Content description for the survey application icon. Note: The word "Firefox" should NOT be translated.  -->
+    <string name="microsurvey_app_icon_content_description">Logo de Firefox</string>
+    <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
+    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources" moz:removedIn="130">Síne encuesta</string>
+    <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
+    <string name="microsurvey_close_handle_content_description">Nakasɨ encuesta</string>
     <!-- Content description for "X" button that is closing microsurvey. -->
-    <string name="microsurvey_close_button_content_description" tools:ignore="UnusedResources">Nakasɨ</string>
+    <string name="microsurvey_close_button_content_description">Nakasɨ</string>
 
     <!-- Debug drawer logins -->
     <!-- The title of the Logins feature in the Debug Drawer. -->
     <string name="debug_drawer_logins_title">Nuu kajie´e sesión</string>
-    </resources>
+    <!-- Content description for delete button where parameter will be the username of the login -->
+    <string name="debug_drawer_logins_delete_login_button_content_description">Xina nuu kaji\'e sesión jíí sivɨ ñɨvɨ %s</string>
+
+    <!-- Debug drawer "contextual feature recommendation" (CFR) tools -->
+    <!-- The title of the CFR Tools feature in the Debug Drawer -->
+    <string name="debug_drawer_cfr_tools_title">Herramientas CFR</string>
+    <!-- The title of the reset CFR section in CFR Tools -->
+    <string name="debug_drawer_cfr_tools_reset_cfr_title">Restablecer CFR</string>
+
+    <!-- Beta Label Component !-->
+    <!-- Text shown as a label or tag to indicate a feature or area is still undergoing active development. Note that here "Beta" should not be translated, as it is used as an icon styled element. -->
+    <string name="beta_feature">BETA</string>
+</resources>

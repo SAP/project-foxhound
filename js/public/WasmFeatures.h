@@ -115,7 +115,7 @@
     /* compiler predicate */ AnyCompilerAvailable(cx),                  \
     /* flag predicate     */ true,                                      \
     /* flag force enable  */ false,                                     \
-    /* flag fuzz enable   */ true,                                      \
+    /* flag fuzz enable   */ false,                                     \
     /* preference name    */ js_string_builtins)                        \
   FEATURE(                                                              \
     /* capitalized name   */ RelaxedSimd,                               \
@@ -189,6 +189,15 @@
     /* flag force enable  */ false,                                     \
     /* flag fuzz enable   */ false,                                     \
     /* preference name    */ test_serialization)                        \
+  FEATURE(                                                              \
+    /* capitalized name   */ ExperimentalCompilePipeline,               \
+    /* lower case name    */ experimentalCompilePipeline,               \
+    /* compile predicate  */ true,                                      \
+    /* compiler predicate */ true,                                      \
+    /* flag predicate     */ true,                                      \
+    /* flag force enable  */ false,                                     \
+    /* flag fuzz enable   */ false,                                     \
+    /* preference name    */ experimental_compile_pipeline)             \
   FEATURE(                                                              \
     /* capitalized name   */ BranchHinting,                             \
     /* lower case name    */ branchHinting,                             \

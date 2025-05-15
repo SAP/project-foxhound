@@ -920,7 +920,7 @@ fuzzy-if(winWidget,0-123,0-1600) fuzzy-if(swgl,0-1,0-39) == 409659-1a.html 40965
 fuzzy-if(winWidget,0-123,0-1900) fuzzy-if(swgl,0-1,0-39) == 409659-1d.html 409659-1-ref.html # Bug 1128229
 == 410621-1.html 410621-1-ref.html
 pref(layout.css.letter-spacing.model,0) == 411059-1.html 411059-1-ref.html
-fuzzy-if(winWidget,46-129,652-770) == 411334-1.xml 411334-1-ref.xml
+fuzzy-if(winWidget,46-144,652-770) == 411334-1.xml 411334-1-ref.xml
 == 411585-1.html 411585-1-ref.html
 == 411585-2.html 411585-2-ref.html
 fails == 411585-3.html 411585-3-ref.html # bug 426909
@@ -1277,7 +1277,7 @@ skip-if(Android) random-if(winWidget) == chrome://reftest/content/bugs/478377-1.
 == 481024-1e.html 481024-1-ref.html
 != 481948-1.html 481948-1-ref.html
 != 481948-2.html 481948-2-ref.html
-fails-if(Android||gtkWidget) random-if(winWidget||cocoaWidget) == 481948-3.html 481948-3-ref.html # questionable test, see bug 488364
+== 481948-3.html 481948-3-ref.html
 == 482398-1.html 482398-1-ref.html
 random-if(winWidget) == 482592-1a-shadow.xhtml 482592-1-ref.html # bug 586771
 random-if(winWidget) == 482592-1b-shadow.xhtml 482592-1-ref.html # bug 586771
@@ -1581,12 +1581,12 @@ fuzzy(0-64,0-45) == 614272-1.svg 614272-1-ref.svg
 != 618071.html 618071-notref.html
 == 619117-1.html 619117-1-ref.html
 == 619511-1.html 619511-1-ref.html
-fails-if(useDrawSnapshot) == 621253-1-externalFilter.html 621253-1-ref.html
-fails-if(useDrawSnapshot) == 621253-1-internalFilter.html 621253-1-ref.html
-fails-if(useDrawSnapshot) == 621253-2-externalFilter.html 621253-2-ref.html
-fails-if(useDrawSnapshot) == 621253-2-internalFilter.html 621253-2-ref.html
+fails-if(useDrawSnapshot) fuzzy-if(geckoview&&!emulator&&gfxSVGFEColorMatrix,0-4,0-39) == 621253-1-externalFilter.html 621253-1-ref.html
+fails-if(useDrawSnapshot) fuzzy-if(geckoview&&!emulator&&gfxSVGFEColorMatrix,0-4,0-39) == 621253-1-internalFilter.html 621253-1-ref.html
+fails-if(useDrawSnapshot) fuzzy-if(geckoview&&!emulator&&gfxSVGFEColorMatrix,0-4,0-210) == 621253-2-externalFilter.html 621253-2-ref.html
+fails-if(useDrawSnapshot) fuzzy-if(geckoview&&!emulator&&gfxSVGFEColorMatrix,0-4,0-210) == 621253-2-internalFilter.html 621253-2-ref.html
 random-if(winWidget) == 621918-1.svg 621918-1-ref.svg # 1-pixel diacritic positioning discrepancy in rotated text (may depend on platform fonts)
-random-if(winWidget) fuzzy-if(geckoview&&!emulator,0-255,0-22) == 621918-2.svg 621918-2-ref.svg # same 1px issue as above
+random-if(winWidget) fuzzy-if(geckoview&&!emulator,0-255,0-32) == 621918-2.svg 621918-2-ref.svg # same 1px issue as above
 fuzzy-if(winWidget,0-5,0-1) == 622585-1.html 622585-1-ref.html # bug 789402
 fuzzy(0-1,0-40000) == 625409-1.html 625409-1-ref.html
 == 627393-1.html about:blank
@@ -1818,7 +1818,7 @@ fuzzy(0-1,0-800000) == 1119117-1b.html 1119117-1-ref.html
 == 1120431-1.html 1120431-1-ref.html
 == 1120431-2.html 1120431-2-ref.html
 == 1121748-1.html 1121748-1-ref.html
-skip-if(verify) == 1121748-2.html 1121748-2-ref.html
+== 1121748-2.html 1121748-2-ref.html
 == 1127107-1a-nowrap.html 1127107-1-ref.html
 == 1127107-1b-pre.html 1127107-1-ref.html
 == 1127107-2-capitalize.html 1127107-2-capitalize-ref.html
@@ -2096,7 +2096,7 @@ skip-if(Android) == 1727172-1.xhtml 1727172-1-ref.html
 == 1726663-1.html 1726663-1-ref.html
 == 1727016-1.html 1727016-1-ref.html
 != 1730314-1.html 1730314-1-ref.html
-fuzzy(0-3,0-19) fuzzy-if(Android,0-11,0-1901) fuzzy-if(winWidget,0-154,0-340) fuzzy-if(cocoaWidget,0-23,0-230) == 1738700-1.html 1738700-1-ref.html
+fuzzy(0-3,0-19) fuzzy-if(Android,0-11,0-1901) fuzzy-if(winWidget,0-154,0-350) fuzzy-if(cocoaWidget,0-23,0-230) == 1738700-1.html 1738700-1-ref.html
 
 # Have to skip android because it doesn't set up example.org as a local host,
 # so the test crashes there.
@@ -2134,7 +2134,7 @@ pref(layout.css.prefers-color-scheme.content-override,2) == 1787127.html 1787127
 skip-if(!winWidget) == 1798297-1.html 1798297-1-ref.html
 skip-if(!winWidget) != 1798297-1.html 1798297-1-notref.html
 == 1799425-1.html 1799425-1-ref.html
-fuzzy-if(winWidget,114-114,572-572) == 1800437-1.html 1800437-1-ref.html
+fuzzy-if(winWidget,111-114,572-572) == 1800437-1.html 1800437-1-ref.html
 == 1803999-1.html 1803999-1-ref.html
 # testing the same bug but we can hit it via a few different code paths, 1 is raster image, 2 is vector image, 3 is vector image with an image restriction region
 pref(image.downscale-during-decode.enabled,true) == 1804872-1.html 1804872-1-ref.html

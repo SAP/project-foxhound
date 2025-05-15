@@ -549,9 +549,7 @@ size_t nsIContent::nsExtendedContentSlots::SizeOfExcludingThis(
   return 0;
 }
 
-FragmentOrElement::nsDOMSlots::nsDOMSlots() : mDataset(nullptr) {
-  MOZ_COUNT_CTOR(nsDOMSlots);
-}
+FragmentOrElement::nsDOMSlots::nsDOMSlots() { MOZ_COUNT_CTOR(nsDOMSlots); }
 
 FragmentOrElement::nsDOMSlots::~nsDOMSlots() {
   MOZ_COUNT_DTOR(nsDOMSlots);
@@ -576,9 +574,6 @@ void FragmentOrElement::nsDOMSlots::Traverse(
 
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mSlots->mClassList");
   aCb.NoteXPCOMChild(mClassList.get());
-
-  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mSlots->mPart");
-  aCb.NoteXPCOMChild(mPart.get());
 }
 
 void FragmentOrElement::nsDOMSlots::Unlink(nsINode& aNode) {
@@ -590,7 +585,6 @@ void FragmentOrElement::nsDOMSlots::Unlink(nsINode& aNode) {
   }
   mChildrenList = nullptr;
   mClassList = nullptr;
-  mPart = nullptr;
 }
 
 size_t FragmentOrElement::nsDOMSlots::SizeOfIncludingThis(
@@ -618,7 +612,6 @@ size_t FragmentOrElement::nsDOMSlots::SizeOfIncludingThis(
   // worthwhile:
   // - Superclass members (nsINode::nsSlots)
   // - mStyle
-  // - mDataSet
   // - mClassList
 
   // The following member are not measured:
@@ -650,6 +643,7 @@ void FragmentOrElement::nsExtendedDOMSlots::UnlinkExtendedSlots(
   }
   mExplicitlySetAttrElements.Clear();
   mRadioGroupContainer = nullptr;
+  mPart = nullptr;
 }
 
 void FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(
@@ -667,6 +661,9 @@ void FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(
 
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mExtendedSlots->mShadowRoot");
   aCb.NoteXPCOMChild(NS_ISUPPORTS_CAST(nsIContent*, mShadowRoot));
+
+  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mSlots->mPart");
+  aCb.NoteXPCOMChild(mPart.get());
 
   if (mCustomElementData) {
     mCustomElementData->Traverse(aCb);
@@ -1204,7 +1201,7 @@ void FragmentOrElement::FireNodeInserted(
     Document* aDoc, nsINode* aParent,
     const nsTArray<nsCOMPtr<nsIContent>>& aNodes) {
   for (const nsCOMPtr<nsIContent>& childContent : aNodes) {
-    if (nsContentUtils::HasMutationListeners(
+    if (nsContentUtils::WantMutationEvents(
             childContent, NS_EVENT_BITS_MUTATION_NODEINSERTED, aParent)) {
       InternalMutationEvent mutation(true, eLegacyNodeInserted);
       mutation.mRelatedNode = aParent;
@@ -1321,13 +1318,6 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(FragmentOrElement)
 // We purposefully don't UNLINK_BEGIN_INHERITED here.
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
   nsIContent::Unlink(tmp);
-
-  if (tmp->HasProperties()) {
-    if (tmp->IsElement()) {
-      Element* elem = tmp->AsElement();
-      elem->UnlinkIntersectionObservers();
-    }
-  }
 
   // Unlink child content (and unbind our subtree).
   if (tmp->UnoptimizableCCNode() || !nsCCUncollectableMarker::sGeneration) {
@@ -1783,20 +1773,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
 
   if (!nsIContent::Traverse(tmp, cb)) {
     return NS_SUCCESS_INTERRUPTED_TRAVERSE;
-  }
-
-  if (tmp->HasProperties()) {
-    if (tmp->IsElement()) {
-      Element* elem = tmp->AsElement();
-      IntersectionObserverList* observers =
-          static_cast<IntersectionObserverList*>(
-              elem->GetProperty(nsGkAtoms::intersectionobserverlist));
-      if (observers) {
-        for (DOMIntersectionObserver* observer : observers->Keys()) {
-          cb.NoteXPCOMChild(observer);
-        }
-      }
-    }
   }
   if (tmp->IsElement()) {
     Element* element = tmp->AsElement();

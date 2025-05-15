@@ -28,8 +28,6 @@ use crate::values::specified::{Number, NumberOrPercentage, Percentage};
 use crate::Atom;
 use cssparser::{Delimiter, Parser, Token};
 use selectors::parser::SelectorParseErrorKind;
-#[cfg(feature = "servo")]
-use servo_url::ServoUrl;
 use std::cmp::Ordering;
 use std::fmt::{self, Write};
 use style_traits::{CssType, CssWriter, KeywordsCollectFn, ParseError};
@@ -121,6 +119,7 @@ fn cross_fade_enabled() -> bool {
 fn cross_fade_enabled() -> bool {
     false
 }
+
 
 impl SpecifiedValueInfo for Gradient {
     const SUPPORTED_TYPES: u8 = CssType::GRADIENT;
@@ -256,7 +255,7 @@ impl Image {
     /// Creates an already specified image value from an already resolved URL
     /// for insertion in the cascade.
     #[cfg(feature = "servo")]
-    pub fn for_cascade(url: ServoUrl) -> Self {
+    pub fn for_cascade(url: ::servo_arc::Arc<::url::Url>) -> Self {
         use crate::values::CssUrl;
         generic::Image::Url(CssUrl::for_cascade(url))
     }
@@ -1308,6 +1307,7 @@ impl PaintWorklet {
 #[repr(u8)]
 pub enum ImageRendering {
     Auto,
+    #[cfg(feature = "gecko")]
     Smooth,
     #[parse(aliases = "-moz-crisp-edges")]
     CrispEdges,
@@ -1320,6 +1320,8 @@ pub enum ImageRendering {
     //     as crisp-edges and smooth respectively, and authors must not use
     //     them.
     //
+    #[cfg(feature = "gecko")]
     Optimizespeed,
+    #[cfg(feature = "gecko")]
     Optimizequality,
 }

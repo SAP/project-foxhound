@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material.Icon
@@ -43,6 +44,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -60,6 +69,7 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.HorizontalFadingEdgeBox
+import org.mozilla.fenix.compose.ext.thenConditional
 import org.mozilla.fenix.tabstray.browser.compose.DragItemContainer
 import org.mozilla.fenix.tabstray.browser.compose.createListReorderState
 import org.mozilla.fenix.tabstray.browser.compose.detectListPressAndDrag
@@ -187,11 +197,13 @@ private fun TabsList(
         )
 
         LazyRow(
-            modifier = Modifier.detectListPressAndDrag(
-                reorderState = reorderState,
-                listState = listState,
-                shouldLongPressToDrag = true,
-            ),
+            modifier = Modifier
+                .detectListPressAndDrag(
+                    reorderState = reorderState,
+                    listState = listState,
+                    shouldLongPressToDrag = true,
+                )
+                .selectableGroup(),
             state = listState,
             contentPadding = PaddingValues(start = tabStripStartPadding),
         ) {
@@ -216,6 +228,10 @@ private fun TabsList(
                                     minimumValue = minTabStripItemWidth,
                                     maximumValue = maxTabStripItemWidth,
                                 ),
+                            )
+                            .thenConditional(
+                                modifier = Modifier.semantics { traversalIndex = -1f },
+                                predicate = { itemState.isSelected },
                             ),
                     )
                 }
@@ -253,6 +269,7 @@ private fun LazyListState.isItemPartiallyVisible(itemInfo: LazyListItemInfo?) =
         (itemInfo.offset + itemInfo.size > layoutInfo.viewportEndOffset || itemInfo.offset < 0)
 
 @Composable
+@Suppress("LongMethod")
 private fun TabItem(
     state: TabStripItem,
     modifier: Modifier = Modifier,
@@ -272,6 +289,7 @@ private fun TabItem(
             FirefoxTheme.colors.layer3
         }
     }
+    val closeTabLabel = stringResource(R.string.close_tab)
 
     TabStripCard(
         modifier = modifier.fillMaxSize(),
@@ -285,7 +303,19 @@ private fun TabItem(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { onSelectedTabClick(state.id) },
+                .clickable { onSelectedTabClick(state.id) }
+                .semantics {
+                    role = Role.Tab
+                    selected = state.isSelected
+                    customActions = listOf(
+                        CustomAccessibilityAction(
+                            label = closeTabLabel,
+                        ) {
+                            onCloseTabClick(state.id, state.isPrivate)
+                            true
+                        },
+                    )
+                },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -326,11 +356,21 @@ private fun TabItem(
                 }
             }
 
-            IconButton(onClick = { onCloseTabClick(state.id, state.isPrivate) }) {
+            IconButton(
+                onClick = { onCloseTabClick(state.id, state.isPrivate) },
+                modifier = if (state.isSelected) {
+                    Modifier.semantics {}
+                } else {
+                    Modifier.clearAndSetSemantics {}
+                },
+            ) {
                 Icon(
                     painter = painterResource(R.drawable.mozac_ic_cross_20),
                     tint = FirefoxTheme.colors.iconPrimary,
-                    contentDescription = stringResource(R.string.close_tab),
+                    contentDescription = stringResource(
+                        id = R.string.close_tab_title,
+                        state.title,
+                    ),
                 )
             }
         }

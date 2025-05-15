@@ -11,8 +11,12 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import android.widget.TimePicker
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
@@ -20,10 +24,13 @@ import androidx.test.espresso.action.ViewActions.longClick
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.contrib.PickerActions
 import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.Visibility
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
+import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
 import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.By.text
 import androidx.test.uiautomator.UiObject
@@ -33,6 +40,7 @@ import androidx.test.uiautomator.Until
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.mediasession.MediaSession
+import org.hamcrest.CoreMatchers.allOf
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -61,6 +69,7 @@ import org.mozilla.fenix.helpers.TestHelper.appName
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.TestHelper.waitForObjects
+import org.mozilla.fenix.helpers.click
 import org.mozilla.fenix.helpers.ext.waitNotNull
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
@@ -70,7 +79,7 @@ import java.time.LocalDate
 class BrowserRobot {
     private lateinit var sessionLoadedIdlingResource: SessionLoadedIdlingResource
 
-    fun waitForPageToLoad() = assertUIObjectIsGone(progressBar())
+    fun waitForPageToLoad(pageLoadWaitingTime: Long = waitingTime) = assertUIObjectIsGone(progressBar(), waitingTime = pageLoadWaitingTime)
 
     fun verifyCurrentPrivateSession(context: Context) {
         val selectedTab = context.components.core.store.state.selectedTab
@@ -227,13 +236,14 @@ class BrowserRobot {
         }
     }
 
-    fun verifyTabCounter(expectedText: String) =
-        assertUIObjectExists(
-            itemWithResIdContainingText(
-                "$packageName:id/counter_text",
-                expectedText,
+    fun verifyTabCounter(numberOfOpenTabs: String) =
+        onView(
+            allOf(
+                withId(R.id.counter_text),
+                withText(numberOfOpenTabs),
+                withEffectiveVisibility(Visibility.VISIBLE),
             ),
-        )
+        ).check(matches(isDisplayed()))
 
     fun verifyContextMenuForLocalHostLinks(containsURL: Uri) {
         // If the link is directing to another local asset the "Download link" option is not available
@@ -450,6 +460,16 @@ class BrowserRobot {
         }
     }
 
+    @OptIn(ExperimentalTestApi::class)
+    fun clickSuggestedLogin(composeTestRule: ComposeTestRule, userName: String) {
+        Log.i(TAG, "clickSuggestedLogin: Waiting for the suggested user name: $userName to exist")
+        composeTestRule.waitUntilAtLeastOneExists(hasText(userName))
+        Log.i(TAG, "clickSuggestedLogin: Waited for the suggested user name: $userName to exist")
+        Log.i(TAG, "clickSuggestedLogin: Trying to click $userName login suggestion")
+        composeTestRule.onNodeWithText(userName).performClick()
+        Log.i(TAG, "clickSuggestedLogin: Clicked $userName login suggestion")
+    }
+
     fun setTextForApartmentTextBox(apartment: String) {
         Log.i(TAG, "setTextForApartmentTextBox: Trying to set the text for the apartment text box to: $apartment")
         itemWithResId("apartment").setText(apartment)
@@ -539,6 +559,8 @@ class BrowserRobot {
         Log.i(TAG, "fillAndSaveCreditCard: Waited for $waitingTime ms for $packageName window to be updated")
     }
 
+    fun clickNegativeSaveCreditCardPromptButton() = onView(withId(R.id.save_cancel)).inRoot(isDialog()).click()
+
     fun verifyUpdateOrSaveCreditCardPromptExists(exists: Boolean) =
         assertUIObjectExists(
             itemWithResId("$packageName:id/save_credit_card_header"),
@@ -559,14 +581,17 @@ class BrowserRobot {
         }
     }
 
-    fun verifySuggestedUserName(userName: String) {
-        Log.i(TAG, "verifySuggestedUserName: Waiting for $waitingTime ms for suggested logins fragment to exist")
-        itemWithResId("$packageName:id/mozac_feature_login_multiselect_expand").waitForExists(waitingTime)
-        Log.i(TAG, "verifySuggestedUserName: Waited for $waitingTime ms for suggested logins fragment to exist")
-        assertUIObjectExists(itemContainingText(userName))
+    @OptIn(ExperimentalTestApi::class)
+    fun verifySuggestedUserName(composeTestRule: ComposeTestRule, userName: String) {
+        Log.i(TAG, "verifySuggestedUserName: Waiting for the suggested user name: $userName to exist")
+        composeTestRule.waitUntilAtLeastOneExists(hasText(userName))
+        Log.i(TAG, "verifySuggestedUserName: Waited for the suggested user name: $userName to exist")
+        Log.i(TAG, "verifySuggestedUserName: Trying to assert that user name: $userName exists")
+        composeTestRule.onNodeWithText(userName).assertExists()
+        Log.i(TAG, "verifySuggestedUserName: Asserted that user name: $userName exists")
     }
 
-    fun verifyPrefilledLoginCredentials(userName: String, password: String, credentialsArePrefilled: Boolean) {
+    fun verifyPrefilledLoginCredentials(composeTestRule: ComposeTestRule, userName: String, password: String, credentialsArePrefilled: Boolean) {
         // Sometimes the assertion of the pre-filled logins fails so we are re-trying after refreshing the page
         for (i in 1..RETRY_COUNT) {
             try {
@@ -587,7 +612,7 @@ class BrowserRobot {
                     }.refreshPage {
                         clearTextFieldItem(itemWithResId("username"))
                         clickSuggestedLoginsButton()
-                        verifySuggestedUserName(userName)
+                        verifySuggestedUserName(composeTestRule, userName)
                         clickPageObject(itemWithResIdAndText("$packageName:id/username", userName))
                         clickPageObject(itemWithResId("togglePassword"))
                     }
@@ -872,7 +897,7 @@ class BrowserRobot {
                     browserScreen {
                     }.openThreeDotMenu {
                     }.refreshPage {
-                        waitForPageToLoad()
+                        waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
                         clickPageObject(pageObject)
                     }
                 }
@@ -932,7 +957,7 @@ class BrowserRobot {
                     browserScreen {
                     }.openThreeDotMenu {
                     }.refreshPage {
-                        waitForPageToLoad()
+                        waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
                     }
                 }
             }
@@ -1388,7 +1413,7 @@ fun clickPageObject(item: UiObject) {
                 browserScreen {
                 }.openThreeDotMenu {
                 }.refreshPage {
-                    waitForPageToLoad()
+                    waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
                 }
             }
         }
@@ -1457,7 +1482,7 @@ fun setPageObjectText(webPageItem: UiObject, text: String) {
                 browserScreen {
                 }.openThreeDotMenu {
                 }.refreshPage {
-                    waitForPageToLoad()
+                    waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
                 }
             }
         }

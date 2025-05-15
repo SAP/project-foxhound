@@ -6,12 +6,15 @@ prefs = [
   "layout.css.backdrop-filter.enabled=true",
   "layout.css.fit-content-function.enabled=true",
   "layout.css.scroll-driven-animations.enabled=true",
+  "layout.css.stretch-size-keyword.enabled=true",
+  "layout.css.webkit-fill-available.enabled=true",
   "layout.css.animation-composition.enabled=true",
   "layout.css.basic-shape-rect.enabled=true",
   "layout.css.basic-shape-shape.enabled=true",
   "layout.css.basic-shape-xywh.enabled=true",
   "layout.css.transform-box-content-stroke.enabled=true",
   "layout.css.transition-behavior.enabled=true",
+  "layout.css.field-sizing.enabled=true",
 ]
 support-files = [
   "animation_utils.js",
@@ -432,6 +435,8 @@ skip-if = ["verify"]
 
 ["test_font_face_cascade.html"]
 
+["test_font_face_gc.html"]
+
 ["test_font_face_parser.html"]
 
 ["test_font_family_parsing.html"]
@@ -695,7 +700,12 @@ fail-if = ["xorigin"]
 
 ["test_transitions_replacement_on_busy_frame.html"]
 
+["test_transitions_replacement_on_busy_frame_omta.html"]
+skip-if = ["os == 'linux' && tsan && verify"] # intermittent in chaos mode
+
 ["test_transitions_replacement_with_setKeyframes.html"]
+
+["test_transitions_reversing_omta.html"]
 
 ["test_transitions_step_functions.html"]
 

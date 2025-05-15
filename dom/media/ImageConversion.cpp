@@ -5,20 +5,29 @@
 
 #include "ImageConversion.h"
 
+#include "skia/include/core/SkBitmap.h"
+#include "skia/include/core/SkColorSpace.h"
+#include "skia/include/core/SkImage.h"
+#include "skia/include/core/SkImageInfo.h"
+
 #include "ImageContainer.h"
+#include "YCbCrUtils.h"
 #include "libyuv/convert.h"
 #include "libyuv/convert_from_argb.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/gfx/Point.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Result.h"
+#include "mozilla/gfx/Swizzle.h"
 #include "nsThreadUtils.h"
 
 using mozilla::ImageFormat;
 using mozilla::dom::ImageBitmapFormat;
 using mozilla::dom::ImageUtils;
 using mozilla::gfx::DataSourceSurface;
+using mozilla::gfx::IntSize;
 using mozilla::gfx::SourceSurface;
 using mozilla::gfx::SurfaceFormat;
 using mozilla::layers::Image;
@@ -36,7 +45,22 @@ static const PlanarYCbCrData* GetPlanarYCbCrData(Image* aImage) {
   }
 }
 
-static already_AddRefed<SourceSurface> GetSourceSurface(Image* aImage) {
+static nsresult MapRv(int aRv) {
+  // Docs for libyuv::ConvertToI420 say:
+  // Returns 0 for successful; -1 for invalid parameter. Non-zero for failure.
+  switch (aRv) {
+    case 0:
+      return NS_OK;
+    case -1:
+      return NS_ERROR_INVALID_ARG;
+    default:
+      return NS_ERROR_FAILURE;
+  }
+}
+
+namespace mozilla {
+
+already_AddRefed<SourceSurface> GetSourceSurface(Image* aImage) {
   if (!aImage->AsGLImage() || NS_IsMainThread()) {
     return aImage->GetAsSourceSurface();
   }
@@ -52,21 +76,6 @@ static already_AddRefed<SourceSurface> GetSourceSurface(Image* aImage) {
 
   return surf.forget();
 }
-
-static nsresult MapRv(int aRv) {
-  // Docs for libyuv::ConvertToI420 say:
-  // Returns 0 for successful; -1 for invalid parameter. Non-zero for failure.
-  switch (aRv) {
-    case 0:
-      return NS_OK;
-    case -1:
-      return NS_ERROR_INVALID_ARG;
-    default:
-      return NS_ERROR_FAILURE;
-  }
-}
-
-namespace mozilla {
 
 nsresult ConvertToI420(Image* aImage, uint8_t* aDestY, int aDestStrideY,
                        uint8_t* aDestU, int aDestStrideU, uint8_t* aDestV,
@@ -202,6 +211,204 @@ nsresult ConvertToNV12(layers::Image* aImage, uint8_t* aDestY, int aDestStrideY,
       libyuv::ARGBToNV12(static_cast<uint8_t*>(map.GetData()), map.GetStride(),
                          aDestY, aDestStrideY, aDestUV, aDestStrideUV,
                          aImage->GetSize().width, aImage->GetSize().height));
+}
+
+static bool IsRGBX(const SurfaceFormat& aFormat) {
+  return aFormat == SurfaceFormat::B8G8R8A8 ||
+         aFormat == SurfaceFormat::B8G8R8X8 ||
+         aFormat == SurfaceFormat::R8G8B8A8 ||
+         aFormat == SurfaceFormat::R8G8B8X8 ||
+         aFormat == SurfaceFormat::X8R8G8B8 ||
+         aFormat == SurfaceFormat::A8R8G8B8;
+}
+
+static bool HasAlpha(const SurfaceFormat& aFormat) {
+  return aFormat == SurfaceFormat::B8G8R8A8 ||
+         aFormat == SurfaceFormat::R8G8B8A8 ||
+         aFormat == SurfaceFormat::A8R8G8B8;
+}
+
+static nsresult SwapRGBA(DataSourceSurface* aSurface,
+                         const SurfaceFormat& aDestFormat) {
+  if (!aSurface || !IsRGBX(aSurface->GetFormat()) || !IsRGBX(aDestFormat)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (aSurface->GetFormat() == aDestFormat) {
+    return NS_OK;
+  }
+
+  DataSourceSurface::ScopedMap map(aSurface, DataSourceSurface::READ_WRITE);
+  if (!map.IsMapped()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  gfx::SwizzleData(map.GetData(), map.GetStride(), aSurface->GetFormat(),
+                   map.GetData(), map.GetStride(), aDestFormat,
+                   aSurface->GetSize());
+
+  return NS_OK;
+}
+
+nsresult ConvertToRGBA(Image* aImage, const SurfaceFormat& aDestFormat,
+                       uint8_t* aDestBuffer, int aDestStride) {
+  if (!aImage || !aImage->IsValid() || aImage->GetSize().IsEmpty() ||
+      !aDestBuffer || !IsRGBX(aDestFormat) || aDestStride <= 0) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  // Read YUV image to the given buffer in required RGBA format.
+  if (const PlanarYCbCrData* data = GetPlanarYCbCrData(aImage)) {
+    SurfaceFormat convertedFormat = aDestFormat;
+    gfx::PremultFunc premultOp = nullptr;
+    if (data->mAlpha && HasAlpha(aDestFormat)) {
+      if (aDestFormat == SurfaceFormat::A8R8G8B8) {
+        convertedFormat = SurfaceFormat::B8G8R8A8;
+      }
+      if (data->mAlpha->mPremultiplied) {
+        premultOp = libyuv::ARGBUnattenuate;
+      }
+    } else {
+      if (aDestFormat == SurfaceFormat::X8R8G8B8 ||
+          aDestFormat == SurfaceFormat::A8R8G8B8) {
+        convertedFormat = SurfaceFormat::B8G8R8X8;
+      }
+    }
+
+    nsresult result =
+        ConvertYCbCrToRGB32(*data, convertedFormat, aDestBuffer,
+                            AssertedCast<int32_t>(aDestStride), premultOp);
+    if (NS_FAILED(result)) {
+      return result;
+    }
+
+    if (convertedFormat == aDestFormat) {
+      return NS_OK;
+    }
+
+    // Since format of the converted data returned from ConvertYCbCrToRGB or
+    // ConvertYCbCrAToARGB is BRG* or RBG*, we need swap the RGBA channels to
+    // the required format if needed.
+
+    RefPtr<DataSourceSurface> surf =
+        gfx::Factory::CreateWrappingDataSourceSurface(
+            aDestBuffer, aDestStride, aImage->GetSize(), convertedFormat);
+
+    if (!surf) {
+      return NS_ERROR_FAILURE;
+    }
+
+    return SwapRGBA(surf.get(), aDestFormat);
+  }
+
+  // Read RGBA image to the given buffer in required RGBA format.
+
+  RefPtr<SourceSurface> surf = GetSourceSurface(aImage);
+  if (!surf) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!IsRGBX(surf->GetFormat())) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  RefPtr<DataSourceSurface> src = surf->GetDataSurface();
+  if (!src) {
+    return NS_ERROR_FAILURE;
+  }
+
+  DataSourceSurface::ScopedMap srcMap(src, DataSourceSurface::READ);
+  if (!srcMap.IsMapped()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  RefPtr<DataSourceSurface> dest =
+      gfx::Factory::CreateWrappingDataSourceSurface(
+          aDestBuffer, aDestStride, aImage->GetSize(), aDestFormat);
+
+  if (!dest) {
+    return NS_ERROR_FAILURE;
+  }
+
+  DataSourceSurface::ScopedMap destMap(dest, gfx::DataSourceSurface::WRITE);
+  if (!destMap.IsMapped()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  gfx::SwizzleData(srcMap.GetData(), srcMap.GetStride(), src->GetFormat(),
+                   destMap.GetData(), destMap.GetStride(), dest->GetFormat(),
+                   dest->GetSize());
+
+  return NS_OK;
+}
+
+static SkColorType ToSkColorType(const SurfaceFormat& aFormat) {
+  switch (aFormat) {
+    case SurfaceFormat::B8G8R8A8:
+    case SurfaceFormat::B8G8R8X8:
+      return kBGRA_8888_SkColorType;
+    case SurfaceFormat::R8G8B8A8:
+    case SurfaceFormat::R8G8B8X8:
+      return kRGBA_8888_SkColorType;
+    default:
+      break;
+  }
+  return kUnknown_SkColorType;
+}
+
+nsresult ConvertSRGBBufferToDisplayP3(uint8_t* aSrcBuffer,
+                                      const SurfaceFormat& aSrcFormat,
+                                      uint8_t* aDestBuffer, int aWidth,
+                                      int aHeight) {
+  if (!aSrcBuffer || !aDestBuffer || aWidth <= 0 || aHeight <= 0 ||
+      !IsRGBX(aSrcFormat)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  SkColorType srcColorType = ToSkColorType(aSrcFormat);
+  if (srcColorType == kUnknown_SkColorType) {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  // TODO: Provide source's color space info to customize SkColorSpace.
+  auto srcColorSpace = SkColorSpace::MakeSRGB();
+  SkImageInfo srcInfo = SkImageInfo::Make(aWidth, aHeight, srcColorType,
+                                          kUnpremul_SkAlphaType, srcColorSpace);
+
+  constexpr size_t bytesPerPixel = 4;
+  CheckedInt<size_t> rowBytes(bytesPerPixel);
+  rowBytes *= aWidth;
+  if (!rowBytes.isValid()) {
+    return NS_ERROR_DOM_MEDIA_OVERFLOW_ERR;
+  }
+
+  SkBitmap srcBitmap;
+  if (!srcBitmap.installPixels(srcInfo, aSrcBuffer, rowBytes.value())) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // TODO: Provide destination's color space info to customize SkColorSpace.
+  auto destColorSpace =
+      SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDisplayP3);
+
+  SkBitmap destBitmap;
+  if (!destBitmap.tryAllocPixels(srcInfo.makeColorSpace(destColorSpace))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!srcBitmap.readPixels(destBitmap.pixmap())) {
+    return NS_ERROR_FAILURE;
+  }
+
+  CheckedInt<size_t> size(rowBytes.value());
+  size *= aHeight;
+  if (!size.isValid()) {
+    return NS_ERROR_DOM_MEDIA_OVERFLOW_ERR;
+  }
+
+  PodCopy(aDestBuffer, reinterpret_cast<uint8_t*>(destBitmap.getPixels()),
+          size.value());
+  return NS_OK;
 }
 
 }  // namespace mozilla

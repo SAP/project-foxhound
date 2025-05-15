@@ -4,10 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "FFmpegRuntimeLinker.h"
 #include "FFmpegLibWrapper.h"
-#include "mozilla/ArrayUtils.h"
 #include "FFmpegLog.h"
+#include "FFmpegRuntimeLinker.h"
+#include "mozilla/ArrayUtils.h"
 #include "prlink.h"
 
 namespace mozilla {
@@ -134,7 +134,7 @@ bool FFmpegRuntimeLinker::Init() {
           break;
       }
       FFMPEGP_LOG("Failed to link %s: %s", lib,
-                  FFmpegLibWrapper::LinkResultToString(res));
+                  FFmpegLibWrapper::EnumValueToString(res));
     }
   }
 

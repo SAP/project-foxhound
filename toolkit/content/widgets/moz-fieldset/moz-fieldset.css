@@ -16,6 +16,7 @@ fieldset {
 
 legend {
   padding: 0;
+  font-weight: var(--font-weight-bold);
 }
 
 #description {
@@ -26,6 +27,6 @@ legend {
 #inputs {
   display: flex;
   flex-direction: column;
-  gap: var(--space-medium);
+  gap: var(--space-large);
   margin-top: var(--space-small);
 }

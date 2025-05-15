@@ -44,7 +44,7 @@ head = "head_addons.js head_cert_handling.js"
 skip-if = ["os == 'android'"]
 
 ["test_QuarantinedDomains_AMRemoteSettings.js"]
-head = "head_addons.js head_amremotesettings.js ../../../../components/extensions/test/xpcshell/head_telemetry.js"
+head = "head_addons.js head_amremotesettings.js"
 skip-if = ["os == 'android'"]
 
 ["test_QuarantinedDomains_AddonWrapper.js"]
@@ -169,10 +169,12 @@ skip-if = ["os == 'android'"]
 skip-if = ["os == 'android'"]
 
 ["test_installtrigger_deprecation.js"]
+prefs = ["dom.security.https_first=false"]
 head = "head_addons.js head_amremotesettings.js"
 skip-if = ["os == 'android'"]
 
 ["test_installtrigger_schemes.js"]
+prefs = ["dom.security.https_first=false"]
 skip-if = ["os == 'android'"]
 
 ["test_isDebuggable.js"]

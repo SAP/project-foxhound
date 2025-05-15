@@ -4,7 +4,10 @@ skip-if = [
   "os != 'win'",
   "headless",
 ]
-support-files = ["head.js"]
+support-files = [
+  "head.js",
+  "!/accessible/tests/mochitest/moz.png",
+]
 
 ["browser_controlType.js"]
 
@@ -23,5 +26,7 @@ support-files = ["head.js"]
 ["browser_selectionPatterns.js"]
 
 ["browser_simplePatterns.js"]
+
+["browser_textPatterns.js"]
 
 ["browser_tree.js"]

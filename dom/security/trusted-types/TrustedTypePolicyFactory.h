@@ -12,8 +12,8 @@
 #include "mozilla/dom/TrustedHTML.h"
 #include "mozilla/dom/TrustedScript.h"
 #include "mozilla/dom/TrustedScriptURL.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "nsIGlobalObject.h"
 #include "nsISupportsImpl.h"
 #include "nsStringFwd.h"
@@ -25,8 +25,10 @@ struct already_AddRefed;
 
 class DOMString;
 
-namespace mozilla::dom {
+namespace mozilla {
+class ErrorResult;
 
+namespace dom {
 class TrustedTypePolicy;
 
 // https://w3c.github.io/trusted-types/dist/spec/#trusted-type-policy-factory
@@ -47,8 +49,8 @@ class TrustedTypePolicyFactory : public nsWrapperCache {
 
   // https://w3c.github.io/trusted-types/dist/spec/#dom-trustedtypepolicyfactory-createpolicy
   already_AddRefed<TrustedTypePolicy> CreatePolicy(
-      const nsAString& aPolicyName,
-      const TrustedTypePolicyOptions& aPolicyOptions);
+      JSContext* aJSContext, const nsAString& aPolicyName,
+      const TrustedTypePolicyOptions& aPolicyOptions, ErrorResult& aRv);
 
   // https://w3c.github.io/trusted-types/dist/spec/#dom-trustedtypepolicyfactory-ishtml
   bool IsHTML(JSContext* aJSContext, const JS::Handle<JS::Value>& aValue) const;
@@ -62,10 +64,10 @@ class TrustedTypePolicyFactory : public nsWrapperCache {
                    const JS::Handle<JS::Value>& aValue) const;
 
   // https://w3c.github.io/trusted-types/dist/spec/#dom-trustedtypepolicyfactory-emptyhtml
-  UniquePtr<TrustedHTML> EmptyHTML();
+  already_AddRefed<TrustedHTML> EmptyHTML();
 
   // https://w3c.github.io/trusted-types/dist/spec/#dom-trustedtypepolicyfactory-emptyscript
-  UniquePtr<TrustedScript> EmptyScript();
+  already_AddRefed<TrustedScript> EmptyScript();
 
   // https://w3c.github.io/trusted-types/dist/spec/#dom-trustedtypepolicyfactory-getattributetype
   void GetAttributeType(const nsAString& aTagName, const nsAString& aAttribute,
@@ -90,11 +92,18 @@ class TrustedTypePolicyFactory : public nsWrapperCache {
   // Required because this class is ref-counted.
   virtual ~TrustedTypePolicyFactory() = default;
 
+  enum class PolicyCreation { Blocked, Allowed };
+
+  // https://w3c.github.io/trusted-types/dist/spec/#abstract-opdef-should-trusted-type-policy-creation-be-blocked-by-content-security-policy
+  PolicyCreation ShouldTrustedTypePolicyCreationBeBlockedByCSP(
+      JSContext* aJSContext, const nsAString& aPolicyName) const;
+
   RefPtr<nsIGlobalObject> mGlobalObject;
 
   nsTArray<nsString> mCreatedPolicyNames;
 };
 
-}  // namespace mozilla::dom
+}  // namespace dom
+}  // namespace mozilla
 
 #endif  // DOM_SECURITY_TRUSTED_TYPES_TRUSTEDTYPEPOLICYFACTORY_H_

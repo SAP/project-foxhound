@@ -207,11 +207,14 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   friend class WebGLExtensionCompressedTextureRGTC;
   friend class WebGLExtensionCompressedTextureS3TC;
   friend class WebGLExtensionCompressedTextureS3TC_SRGB;
+  friend class WebGLExtensionDepthClamp;
   friend class WebGLExtensionDepthTexture;
   friend class WebGLExtensionDisjointTimerQuery;
   friend class WebGLExtensionDrawBuffers;
+  friend class WebGLExtensionFragDepth;
   friend class WebGLExtensionLoseContext;
   friend class WebGLExtensionMOZDebug;
+  friend class WebGLExtensionShaderTextureLod;
   friend class WebGLExtensionVertexArray;
   friend class WebGLMemoryTracker;
   friend class webgl::AvailabilityRunnable;
@@ -301,6 +304,13 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   const uint32_t mMaxAcceptableFBStatusInvals =
       StaticPrefs::webgl_perf_max_acceptable_fb_status_invals();
   bool mWarnOnce_DepthTexCompareFilterable = true;
+  mutable bool mRemapImplReadType_HalfFloatOes = false;
+
+  mutable std::optional<bool> mIsSupportedCache_DrawBuffers;
+  mutable std::optional<bool> mIsSupportedCache_FragDepth;
+  mutable std::optional<bool> mIsSupportedCache_ShaderTextureLod;
+
+  // -
 
   uint64_t mNextFenceId = 1;
   uint64_t mCompletedFenceId = 0;
@@ -538,10 +548,11 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   Maybe<layers::SurfaceDescriptor> GetFrontBuffer(WebGLFramebuffer*,
                                                   const bool webvr);
 
+  std::optional<dom::PredefinedColorSpace> mDrawingBufferColorSpace;
   std::optional<color::ColorProfileDesc> mDisplayProfile;
 
   void SetDrawingBufferColorSpace(const dom::PredefinedColorSpace val) {
-    mOptions.colorSpace = val;
+    mDrawingBufferColorSpace = val;
   }
 
   void ClearVRSwapChain();
@@ -1227,6 +1238,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   std::bitset<webgl::kMaxDrawBuffers> mColorWriteMaskNonzero = -1;
   std::bitset<webgl::kMaxDrawBuffers> mBlendEnabled = 0;
+
+  std::unordered_set<GLenum> mIsEnabledMapKeys;
 
   GLint mViewportX = 0;
   GLint mViewportY = 0;

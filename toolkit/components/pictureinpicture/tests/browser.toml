@@ -50,6 +50,8 @@ prefs = [
 
 ["browser_audioScrubber.js"]
 
+["browser_autotoggle.js"]
+
 ["browser_backgroundTab.js"]
 
 ["browser_cannotTriggerFromContent.js"]
@@ -90,6 +92,9 @@ skip-if = [
 ]
 
 ["browser_fontSize_change.js"]
+skip-if = [
+   "os == 'linux' && os_version == '18.04'", # Bug 1775867
+]
 
 ["browser_fullscreen.js"]
 skip-if = [

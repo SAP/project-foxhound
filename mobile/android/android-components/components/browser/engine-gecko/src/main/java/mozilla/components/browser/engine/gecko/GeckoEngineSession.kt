@@ -256,7 +256,6 @@ class GeckoEngineSession(
                 // See https://github.com/mozilla-mobile/android-components/issues/12276
                 val fileName = DownloadUtils.guessFileName(
                     disposition,
-                    destinationDirectory = null,
                     url = url,
                     mimeType = contentType,
                 )
@@ -1140,6 +1139,8 @@ class GeckoEngineSession(
             }
             // Reset the status of current page being product or not when user navigates away.
             notifyObservers { onProductUrlChange(false) }
+            // Reset the status of the translation state for the page
+            notifyObservers { onTranslatePageChange() }
             notifyObservers { onLocationChange(url, hasUserGesture) }
         }
 
@@ -1511,7 +1512,6 @@ class GeckoEngineSession(
                 val url = uri
                 val fileName = DownloadUtils.guessFileName(
                     contentDisposition,
-                    destinationDirectory = null,
                     url = url,
                     mimeType = contentType,
                 )

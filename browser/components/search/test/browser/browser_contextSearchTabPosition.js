@@ -43,19 +43,20 @@ add_task(async function test() {
   container.addEventListener("TabOpen", tabAdded);
 
   BrowserTestUtils.addTab(gBrowser, "about:blank");
+
   BrowserSearch.loadSearchFromContext(
     "mozilla",
     false,
     Services.scriptSecurityManager.getSystemPrincipal(),
     Services.scriptSecurityManager.getSystemPrincipal().csp,
-    new MouseEvent("click")
+    new PointerEvent("click")
   );
   BrowserSearch.loadSearchFromContext(
     "firefox",
     false,
     Services.scriptSecurityManager.getSystemPrincipal(),
     Services.scriptSecurityManager.getSystemPrincipal().csp,
-    new MouseEvent("click")
+    new PointerEvent("click")
   );
 
   // Wait for all the tabs to open.

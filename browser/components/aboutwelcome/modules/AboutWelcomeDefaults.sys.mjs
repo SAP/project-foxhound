@@ -22,6 +22,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
 });
 
+const isMSIX =
+  AppConstants.platform === "win" &&
+  Services.sysinfo.getProperty("hasWinPackageId", false);
+
 // Message to be updated based on finalized MR designs
 const MR_ABOUT_WELCOME_DEFAULT = {
   id: "MR_WELCOME_DEFAULT",
@@ -110,10 +114,22 @@ const MR_ABOUT_WELCOME_DEFAULT = {
               id: "checkbox-1",
               defaultValue: true,
               label: {
-                string_id: "mr2022-onboarding-pin-primary-button-label",
+                string_id: isMSIX
+                  ? "mr2022-onboarding-pin-primary-button-label-msix"
+                  : "mr2022-onboarding-pin-primary-button-label",
               },
               action: {
-                type: "PIN_FIREFOX_TO_TASKBAR",
+                type: "MULTI_ACTION",
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "PIN_FIREFOX_TO_START_MENU",
+                    },
+                  ],
+                },
               },
             },
             {
@@ -342,10 +358,22 @@ const MR_ABOUT_WELCOME_DEFAULT = {
               id: "checkbox-1",
               defaultValue: true,
               label: {
-                string_id: "mr2022-onboarding-pin-primary-button-label",
+                string_id: isMSIX
+                  ? "mr2022-onboarding-pin-primary-button-label-msix"
+                  : "mr2022-onboarding-pin-primary-button-label",
               },
               action: {
-                type: "PIN_FIREFOX_TO_TASKBAR",
+                type: "MULTI_ACTION",
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "PIN_FIREFOX_TO_START_MENU",
+                    },
+                  ],
+                },
               },
             },
             {

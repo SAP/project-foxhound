@@ -1108,19 +1108,11 @@ bool SVGElement::UpdateDeclarationBlockFromPath(
   const SVGPathData& pathData =
       aValToUse == ValToUse::Anim ? aPath.GetAnimValue() : aPath.GetBaseValue();
 
-  // SVGPathData::mData is fallible but rust binding accepts nsTArray only, so
-  // we need to point to one or the other. Fortunately, fallible and infallible
-  // array types can be implicitly converted provided they are const.
-  //
-  // FIXME: here we just convert the data structure from cpp verion into rust
-  // version. We don't do any normalization for the path data from d attribute.
   // Based on the current discussion of https://github.com/w3c/svgwg/issues/321,
   // we may have to convert the relative commands into absolute commands.
-  // The normalization should be fixed in Bug 1489392. Besides, Bug 1714238
-  // will use the same data structure, so we may simplify this more.
-  const nsTArray<float>& asInFallibleArray = pathData.RawData();
+  // The normalization should be fixed in Bug 1489392.
   Servo_DeclarationBlock_SetPathValue(&aBlock, eCSSProperty_d,
-                                      &asInFallibleArray);
+                                      &pathData.RawData());
   return true;
 }
 
@@ -1366,7 +1358,7 @@ nsAttrValue SVGElement::WillChangeValue(
 
   // We only need to set the old value if we have listeners since otherwise it
   // isn't used.
-  if (attrValue && nsContentUtils::HasMutationListeners(
+  if (attrValue && nsContentUtils::WantMutationEvents(
                        this, NS_EVENT_BITS_MUTATION_ATTRMODIFIED, this)) {
     emptyOrOldAttrValue.SetToSerialized(*attrValue);
   }
@@ -1404,7 +1396,7 @@ void SVGElement::DidChangeValue(nsAtom* aName,
                                 const nsAttrValue& aEmptyOrOldValue,
                                 nsAttrValue& aNewValue,
                                 const mozAutoDocUpdate& aProofOfUpdate) {
-  bool hasListeners = nsContentUtils::HasMutationListeners(
+  bool hasListeners = nsContentUtils::WantMutationEvents(
       this, NS_EVENT_BITS_MUTATION_ATTRMODIFIED, this);
   uint8_t modType =
       HasAttr(aName) ? static_cast<uint8_t>(MutationEvent_Binding::MODIFICATION)
@@ -1421,7 +1413,7 @@ void SVGElement::DidChangeValue(nsAtom* aName,
 }
 
 void SVGElement::MaybeSerializeAttrBeforeRemoval(nsAtom* aName, bool aNotify) {
-  if (!aNotify || !nsContentUtils::HasMutationListeners(
+  if (!aNotify || !nsContentUtils::WantMutationEvents(
                       this, NS_EVENT_BITS_MUTATION_ATTRMODIFIED, this)) {
     return;
   }

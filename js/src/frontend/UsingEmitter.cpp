@@ -6,140 +6,98 @@
 
 #include "frontend/BytecodeEmitter.h"
 #include "frontend/EmitterScope.h"
-#include "frontend/IfEmitter.h"
-#include "vm/ThrowMsgKind.h"
+#include "frontend/TryEmitter.h"
+#include "vm/DisposeJumpKind.h"
 
 using namespace js;
 using namespace js::frontend;
 
 UsingEmitter::UsingEmitter(BytecodeEmitter* bce) : bce_(bce) {}
 
-bool UsingEmitter::emitCheckDisposeMethod(JS::SymbolCode hint) {
-  // [stack] VAL
-
-  // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-getdisposemethod
-  // Step 2. Else,
-  // Step 2.a. Let method be ? GetMethod(V, @@dispose).
-  if (!bce_->emit1(JSOp::Dup)) {
-    //        [stack] VAL VAL
-    return false;
-  }
-
-  if (!bce_->emit2(JSOp::Symbol, uint8_t(hint))) {
-    //        [stack] VAL VAL @@dispose
-    return false;
-  }
-
-  if (!bce_->emit1(JSOp::GetElem)) {
-    //          [stack] VAL VAL[@@dispose]
-    return false;
-  }
-
-  if (!bce_->emitCheckIsCallable()) {
-    //          [stack] VAL VAL[@@dispose] IS_CALLABLE_RESULT
-    return false;
-  }
-
-  InternalIfEmitter ifCallable(bce_);
-
-  if (!ifCallable.emitThenElse()) {
-    //          [stack] VAL VAL[@@dispose]
-    return false;
-  }
-
-  if (!bce_->emit1(JSOp::Pop)) {
-    //          [stack] VAL
-    return false;
-  }
-
-  if (!ifCallable.emitElse()) {
-    //          [stack] VAL VAL[@@dispose]
-    return false;
-  }
-
-  if (!bce_->emit1(JSOp::Pop)) {
-    //          [stack] VAL
-    return false;
-  }
-
-  if (!bce_->emit2(JSOp::ThrowMsg,
-                   uint8_t(ThrowMsgKind::UsingWithoutDispose))) {
-    //          [stack] VAL
-    return false;
-  }
-
-  if (!ifCallable.emitEnd()) {
-    //          [stack] VAL
-    return false;
-  }
-
-  return true;
+bool UsingEmitter::prepareForDisposableScopeBody() {
+  tryEmitter_.emplace(bce_, TryEmitter::Kind::TryFinally,
+                      TryEmitter::ControlKind::NonSyntactic);
+  return tryEmitter_->emitTry();
 }
 
-bool UsingEmitter::prepareForAssignment(Kind kind) {
-  JS::SymbolCode symdispose;
-  switch (kind) {
-    case Kind::Sync:
-      symdispose = JS::SymbolCode::dispose;
-      break;
-    case Kind::Async:
-      MOZ_CRASH("Async disposal not implemented");
-    default:
-      MOZ_CRASH("Invalid kind");
-  }
+bool UsingEmitter::prepareForAssignment(UsingHint hint) {
+  MOZ_ASSERT(hint == UsingHint::Sync);
 
-  bce_->innermostEmitterScope()->setHasDisposables();
+  MOZ_ASSERT(bce_->innermostEmitterScope()->hasDisposables());
 
-  // [stack] VAL
+  //        [stack] VAL
+  return bce_->emit2(JSOp::AddDisposable, uint8_t(hint));
+}
 
-  // Explicit Resource Management Proposal
-  // CreateDisposableResource ( V, hint [ , method ] )
-  // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-createdisposableresource
-  // Step 1. If method is not present, then
-  // (implicit)
-  // Step 1.a. If V is either null or undefined, then
-  if (!bce_->emit1(JSOp::IsNullOrUndefined)) {
-    //         [stack] VAL IS_NULL_OR_UNDEFINED_RESULT
+bool UsingEmitter::prepareForForOfLoopIteration() {
+  MOZ_ASSERT(bce_->innermostEmitterScopeNoCheck()->hasDisposables());
+  return bce_->emit2(JSOp::DisposeDisposables,
+                     uint8_t(DisposeJumpKind::JumpOnError));
+}
+
+bool UsingEmitter::prepareForForOfIteratorCloseOnThrow() {
+  MOZ_ASSERT(bce_->innermostEmitterScopeNoCheck()->hasDisposables());
+  return bce_->emit2(JSOp::DisposeDisposables,
+                     uint8_t(DisposeJumpKind::NoJumpOnError));
+}
+
+bool UsingEmitter::emitNonLocalJump(EmitterScope* present) {
+  MOZ_ASSERT(present->hasDisposables());
+  return bce_->emit2(JSOp::DisposeDisposables,
+                     uint8_t(DisposeJumpKind::JumpOnError));
+}
+
+bool UsingEmitter::emitEnd() {
+  MOZ_ASSERT(bce_->innermostEmitterScopeNoCheck()->hasDisposables());
+  MOZ_ASSERT(tryEmitter_.isSome());
+
+  // Given that we are using NonSyntactic TryEmitter we do
+  // not have fallthrough behaviour in the normal completion case
+  // see comment on controlInfo_ in TryEmitter.h
+  if (!bce_->emit2(JSOp::DisposeDisposables,
+                   uint8_t(DisposeJumpKind::JumpOnError))) {
     return false;
   }
 
-  InternalIfEmitter ifValueNullOrUndefined(bce_);
+#ifdef DEBUG
+  // We want to ensure that we have EXC and STACK on the stack
+  // and not RESUME_INDEX, non-existence of control info
+  // confirms the same.
+  MOZ_ASSERT(!tryEmitter_->hasControlInfo());
+#endif
 
-  // Step 1.b. Else,
-  if (!ifValueNullOrUndefined.emitThen(IfEmitter::ConditionKind::Negative)) {
-    //        [stack] VAL
+  if (!tryEmitter_->emitFinally()) {
+    //     [stack] EXC STACK THROWING
     return false;
   }
 
-  // Step 1.b.i. If V is not an Object, throw a TypeError exception.
-  if (!bce_->emitCheckIsObj(CheckIsObjectKind::Disposable)) {
-    //        [stack] VAL
+  if (!bce_->emitDupAt(2)) {
+    //     [stack] EXC STACK THROWING STACK
     return false;
   }
 
-  // Step 1.b.ii. Set method to ? GetDisposeMethod(V, hint).
-  // Step 1.b.iii. If method is undefined, throw a TypeError exception.
-  if (!emitCheckDisposeMethod(symdispose)) {
-    //        [stack] VAL
+  if (!bce_->emitDupAt(2)) {
+    //     [stack] EXC STACK THROWING EXC STACK
     return false;
   }
 
-  if (!ifValueNullOrUndefined.emitEnd()) {
-    //        [stack] VAL
+  if (!bce_->emit1(JSOp::ThrowWithStackWithoutJump)) {
+    //     [stack] EXC STACK THROWING
     return false;
   }
 
-  // Step 1.a.i. Set V to undefined.
-  // Step 3. Return the DisposableResource Record { [[ResourceValue]]: V,
-  //         [[Hint]]: hint, [[DisposeMethod]]: method }.
-  //
-  // AddDisposableResource ( disposeCapability, V, hint [ , method ] )
-  // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-adddisposableresource
-  // Step 3. Append resource to disposeCapability.[[DisposableResourceStack]].
-  // TODO: All the steps performed by the generated bytecode here would need to
-  // be unified into this AddDisposableResource opcode. (Bug 1899717)
-  if (!bce_->emit1(JSOp::AddDisposable)) {
-    //        [stack] VAL
+  if (!bce_->emit2(JSOp::DisposeDisposables,
+                   uint8_t(DisposeJumpKind::JumpOnError))) {
+    //     [stack] EXC STACK THROWING
+    return false;
+  }
+
+  // TODO: The additional code emitted by emitEnd is unreachable
+  // since we enter the finally only in the error case and
+  // DisposeDisposables always throws. Special case the
+  // TryEmitter to not emit in this case. (Bug 1908953)
+  if (!tryEmitter_->emitEnd()) {
+    //     [stack]
     return false;
   }
 

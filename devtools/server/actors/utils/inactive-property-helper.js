@@ -381,7 +381,32 @@ class InactivePropertyHelper {
             "table-caption",
           ]),
         fixId: "inactive-css-not-display-block-on-floated-fix",
-        msgId: "inactive-css-not-display-block-on-floated",
+        msgId: "inactive-css-not-display-block-on-floated-2",
+      },
+      // float property used on non-floating elements.
+      {
+        invalidProperties: ["float"],
+        when: () => this.gridItem || this.flexItem,
+        fixId: "inactive-css-only-non-grid-or-flex-item-fix",
+        msgId: "inactive-css-only-non-grid-or-flex-item",
+      },
+      // clear property used on non-floating elements.
+      {
+        invalidProperties: ["clear"],
+        when: () => !this.isBlockLevel(),
+        fixId: "inactive-css-not-block-fix",
+        msgId: "inactive-css-not-block",
+      },
+      // shape-image-threshold, shape-margin, shape-outside properties used on non-floated elements.
+      {
+        invalidProperties: [
+          "shape-image-threshold",
+          "shape-margin",
+          "shape-outside",
+        ],
+        when: () => !this.isFloated,
+        fixId: "inactive-css-not-floated-fix",
+        msgId: "inactive-css-not-floated",
       },
       // The property is impossible to override due to :visited restriction.
       {
@@ -470,13 +495,24 @@ class InactivePropertyHelper {
         msgId:
           "inactive-css-not-for-internal-table-elements-except-table-cells",
       },
-      // table-layout used on non-table elements.
+      // table-related properties used on non-table elements.
       {
-        invalidProperties: ["table-layout"],
+        invalidProperties: [
+          "border-collapse",
+          "border-spacing",
+          "table-layout",
+        ],
         when: () =>
           !this.checkComputedStyle("display", ["table", "inline-table"]),
         fixId: "inactive-css-not-table-fix",
         msgId: "inactive-css-not-table",
+      },
+      // border-spacing property used on collapsed table borders.
+      {
+        invalidProperties: ["border-spacing"],
+        when: () => this.checkComputedStyle("border-collapse", ["collapse"]),
+        fixId: "inactive-css-collapsed-table-borders-fix",
+        msgId: "inactive-css-collapsed-table-borders",
       },
       // empty-cells property used on non-table-cell elements.
       {
@@ -534,6 +570,13 @@ class InactivePropertyHelper {
         fixId: "inactive-css-ruby-element-fix",
         msgId: "inactive-css-ruby-element",
       },
+      // resize property used on non-overflowing elements or replaced elements other than textarea.
+      {
+        invalidProperties: ["resize"],
+        when: () => !this.isScrollContainer && !this.isResizableReplacedElement,
+        fixId: "inactive-css-resize-fix",
+        msgId: "inactive-css-resize",
+      },
       // text-wrap: balance; used on elements exceeding the threshold line number
       {
         invalidProperties: ["text-wrap"],
@@ -567,6 +610,13 @@ class InactivePropertyHelper {
         },
         fixId: "inactive-css-text-wrap-balance-fragmented-fix",
         msgId: "inactive-css-text-wrap-balance-fragmented",
+      },
+      // box-sizing used on element ignoring width and height.
+      {
+        invalidProperties: ["box-sizing"],
+        when: () => this.nonReplacedInlineBox,
+        fixId: "learn-more",
+        msgId: "inactive-css-no-width-height",
       },
     ];
   }
@@ -768,7 +818,10 @@ class InactivePropertyHelper {
       if (validator.invalidProperties) {
         isRuleConcerned = validator.invalidProperties.includes(property);
       } else if (validator.acceptedProperties) {
-        isRuleConcerned = !validator.acceptedProperties.has(property);
+        isRuleConcerned =
+          !validator.acceptedProperties.has(property) &&
+          // custom properties can always be set
+          !property.startsWith("--");
       }
 
       if (!isRuleConcerned) {
@@ -905,6 +958,19 @@ class InactivePropertyHelper {
     const { style } = this.cssRule;
 
     return values.some(value => style[propName] === value);
+  }
+
+  /**
+   *  Check if the current node is an block-level box.
+   */
+  isBlockLevel() {
+    return this.checkComputedStyle("display", [
+      "block",
+      "flow-root",
+      "flex",
+      "grid",
+      "table",
+    ]);
   }
 
   /**
@@ -1175,6 +1241,15 @@ class InactivePropertyHelper {
     return !(
       overflowValues.includes("visible") || overflowValues.includes("clip")
     );
+  }
+
+  /**
+   * Check if the current node is a replaced element that can be resized.
+   */
+  get isResizableReplacedElement() {
+    // There might be more replaced elements that can be resized in the future.
+    // (See bug 1280920 and its dependencies.)
+    return this.localName === "textarea";
   }
 
   /**

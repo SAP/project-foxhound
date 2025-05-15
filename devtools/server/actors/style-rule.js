@@ -293,8 +293,6 @@ class StyleRuleActor extends Actor {
         // Indicates whether StyleRuleActor implements and can use the setRuleText method.
         // It cannot use it if the stylesheet was programmatically mutated via the CSSOM.
         canSetRuleText: this.canSetRuleText,
-        // @backward-compat { version 128 } Can be removed when 128 hits release.
-        hasMatchedSelectorIndexes: true,
       },
     };
 
@@ -549,6 +547,10 @@ class StyleRuleActor extends Actor {
           type,
           start: rawRule.start,
           end: rawRule.end,
+        });
+      } else if (ruleClassName === "CSSStartingStyleRule") {
+        ancestorData.push({
+          type,
         });
       } else if (rawRule.selectorText) {
         // All the previous cases where about at-rules; this one is for regular rule

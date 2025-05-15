@@ -34,6 +34,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/SourceLocation.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/CallState.h"
 #include "mozilla/Maybe.h"
@@ -488,8 +489,21 @@ class nsContentUtils {
    * This method just sucks.
    */
   static nsresult GetInclusiveAncestorsAndOffsets(
-      nsINode* aNode, uint32_t aOffset, nsTArray<nsIContent*>* aAncestorNodes,
-      nsTArray<mozilla::Maybe<uint32_t>>* aAncestorOffsets);
+      nsINode* aNode, uint32_t aOffset, nsTArray<nsIContent*>& aAncestorNodes,
+      nsTArray<mozilla::Maybe<uint32_t>>& aAncestorOffsets);
+
+  /*
+   * https://dom.spec.whatwg.org/#concept-shadow-including-ancestor.
+   *
+   * Similar as the GetInclusiveAncestorsAndOffsets method, except this
+   * will use host elements as the parent for shadow roots.
+   *
+   * When the current content is a ShadowRoot, the offset of it from
+   * its ancestor (the host element) will be Nothing().
+   */
+  static nsresult GetShadowIncludingAncestorsAndOffsets(
+      nsINode* aNode, uint32_t aOffset, nsTArray<nsIContent*>& aAncestorNodes,
+      nsTArray<mozilla::Maybe<uint32_t>>& aAncestorOffsets);
 
   /**
    * Returns the closest common inclusive ancestor
@@ -1264,29 +1278,13 @@ class nsContentUtils {
    *   @param aErrorFlags See nsIScriptError.
    *   @param aCategory Name of module reporting error.
    *   @param aDocument Reference to the document which triggered the message.
-   *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
-              contains the error (may be empty).
-   *   @param [aLineNumber=0] (Optional) Line number within resource
-              containing error.
-   *   @param [aColumnNumber=0] (Optional) Column number within resource
-              containing error.
-              If aURI is null, then aDocument->GetDocumentURI() is used.
-   *   @param [aLocationMode] (Optional) Specifies the behavior if
-              error location information is omitted.
+   *   @param aLocation message location. Pass the empty location to omit it.
    */
-  enum MissingErrorLocationMode {
-    // Don't show location information in the error console.
-    eOMIT_LOCATION,
-    // Get location information from the currently executing script.
-    eUSE_CALLING_LOCATION
-  };
   static nsresult ReportToConsoleNonLocalized(
       const nsAString& aErrorText, uint32_t aErrorFlags,
       const nsACString& aCategory, const Document* aDocument,
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
-      uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0,
-      MissingErrorLocationMode aLocationMode = eUSE_CALLING_LOCATION);
+      const mozilla::SourceLocation& aLocation =
+          mozilla::JSCallingLocation::Get());
 
   /**
    * Report a non-localized error message to the error console base on the
@@ -1296,23 +1294,13 @@ class nsContentUtils {
    *   @param aCategory Name of module reporting error.
    *   @param [aInnerWindowID] Inner window ID for document which triggered the
    *          message.
-   *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
-              contains the error (may be empty).
-   *   @param [aLineNumber=0] (Optional) Line number within resource
-              containing error.
-   *   @param [aColumnNumber=1] (Optional) Column number within resource
-              containing error.
-              If aURI is null, then aDocument->GetDocumentURI() is used.
-   *   @param [aLocationMode] (Optional) Specifies the behavior if
-              error location information is omitted.
+   *   @param aLocation message location. Pass the empty location to omit it.
    */
   static nsresult ReportToConsoleByWindowID(
       const nsAString& aErrorText, uint32_t aErrorFlags,
       const nsACString& aCategory, uint64_t aInnerWindowID,
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
-      uint32_t aLineNumber = 0, uint32_t aColumnNumber = 1,
-      MissingErrorLocationMode aLocationMode = eUSE_CALLING_LOCATION);
+      const mozilla::SourceLocation& aLocation =
+          mozilla::JSCallingLocation::Get());
 
   /**
    * Report a localized error message to the error console.
@@ -1323,14 +1311,7 @@ class nsContentUtils {
    *   @param aMessageName Name of localized message.
    *   @param [aParams=empty-array] (Optional) Parameters to be substituted into
               localized message.
-   *   @param [aURI=nullptr] (Optional) URI of resource containing error.
-   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
-              contains the error (may be empty).
-   *   @param [aLineNumber=0] (Optional) Line number within resource
-              containing error.
-   *   @param [aColumnNumber=0] (Optional) Column number within resource
-              containing error.
-              If aURI is null, then aDocument->GetDocumentURI() is used.
+   *   @param aLocation message location. Pass the empty location to omit it.
    */
   enum PropertiesFile {
     eCSS_PROPERTIES,
@@ -1354,8 +1335,8 @@ class nsContentUtils {
       uint32_t aErrorFlags, const nsACString& aCategory,
       const Document* aDocument, PropertiesFile aFile, const char* aMessageName,
       const nsTArray<nsString>& aParams = nsTArray<nsString>(),
-      nsIURI* aURI = nullptr, const nsString& aSourceLine = u""_ns,
-      uint32_t aLineNumber = 0, uint32_t aColumnNumber = 0);
+      const mozilla::SourceLocation& aLocation =
+          mozilla::JSCallingLocation::Get());
 
   static void ReportEmptyGetElementByIdArg(const Document* aDoc);
 
@@ -1408,13 +1389,6 @@ class nsContentUtils {
 
   static bool PrefetchPreloadEnabled(nsIDocShell* aDocShell);
 
-  static void ExtractErrorValues(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                                 nsAString& aSourceSpecOut, uint32_t* aLineOut,
-                                 uint32_t* aColumnOut, nsString& aMessageOut);
-
-  // Variant on `ExtractErrorValues` with a `nsACString`. This
-  // method is provided for backwards compatibility. Prefer the
-  // faster method above for your code.
   static void ExtractErrorValues(JSContext* aCx, JS::Handle<JS::Value> aValue,
                                  nsACString& aSourceSpecOut, uint32_t* aLineOut,
                                  uint32_t* aColumnOut, nsString& aMessageOut);
@@ -1548,8 +1522,9 @@ class nsContentUtils {
   static bool IsPreloadType(nsContentPolicyType aType);
 
   /**
-   * Quick helper to determine whether there are any mutation listeners
-   * of a given type that apply to this content or any of its ancestors.
+   * Quick helper to determine whether mutation events are enabled and there are
+   * any mutation listeners of a given type that apply to this content or any of
+   * its ancestors.
    * The method has the side effect to call document's MayDispatchMutationEvent
    * using aTargetForSubtreeModified as the parameter.
    *
@@ -1560,8 +1535,8 @@ class nsContentUtils {
    *
    * @return true if there are mutation listeners of the specified type
    */
-  static bool HasMutationListeners(nsINode* aNode, uint32_t aType,
-                                   nsINode* aTargetForSubtreeModified);
+  static bool WantMutationEvents(nsINode* aNode, uint32_t aType,
+                                 nsINode* aTargetForSubtreeModified);
 
   /**
    * Quick helper to determine whether there are any mutation listeners
@@ -2214,7 +2189,9 @@ class nsContentUtils {
   /**
    * Retrieve the current drag session, or null if no drag is currently occuring
    */
-  static already_AddRefed<nsIDragSession> GetDragSession();
+  static already_AddRefed<nsIDragSession> GetDragSession(nsIWidget* aWidget);
+
+  static already_AddRefed<nsIDragSession> GetDragSession(nsPresContext* aPC);
 
   /*
    * Initialize and set the dataTransfer field of an WidgetDragEvent.
@@ -2535,14 +2512,6 @@ class nsContentUtils {
    */
   static mozilla::WindowRenderer* WindowRendererForContent(
       const nsIContent* aContent);
-
-  /**
-   * Determine whether a content node is focused or not,
-   *
-   * @param aContent the content node to check
-   * @return true if the content node is focused, false otherwise.
-   */
-  static bool IsFocusedContent(const nsIContent* aContent);
 
   /**
    * Returns true if calling execCommand with 'cut' or 'copy' arguments is
@@ -3485,6 +3454,12 @@ class nsContentUtils {
   static SubresourceCacheValidationInfo GetSubresourceCacheValidationInfo(
       nsIRequest*, nsIURI*);
 
+  /**
+   * Returns true if the request associated with the document should bypass the
+   * shared sub resource cache.
+   */
+  static bool ShouldBypassSubResourceCache(Document* aDoc);
+
   static uint32_t SecondsFromPRTime(PRTime aTime) {
     return uint32_t(int64_t(aTime) / int64_t(PR_USEC_PER_SEC));
   }
@@ -3723,7 +3698,8 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_TRACK:
       return ExtContentPolicy::TYPE_MEDIA;
 
-    case nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST:
+    case nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST_ASYNC:
+    case nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST_SYNC:
     case nsIContentPolicy::TYPE_INTERNAL_EVENTSOURCE:
       return ExtContentPolicy::TYPE_XMLHTTPREQUEST;
 

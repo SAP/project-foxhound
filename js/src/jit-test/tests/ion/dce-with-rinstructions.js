@@ -352,6 +352,15 @@ function rdiv_number(i) {
     return i;
 }
 
+var uceFault_div_double = eval(`(${uceFault})`.replace('uceFault', 'uceFault_div_double'));
+function rdiv_double(i) {
+    var x = 1 / i;
+    if (uceFault_div_double(i) || uceFault_div_double(i))
+        assertEq(x, 0.010101010101010102  /* = 1 / 99 */);
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
 var uceFault_div_float = eval(`(${uceFault})`.replace('uceFault', 'uceFault_div_float'));
 function rdiv_float(i) {
     var t = Math.fround(1/3);
@@ -1453,6 +1462,27 @@ function rtofloat32_object(i) {
     return i;
 }
 
+var uceFault_tofloat16_number = eval(`(${uceFault})`.replace('uceFault', 'uceFault_tofloat16_number'));
+function rtofloat16_number(i) {
+    var x = Math.f16round(i + 0.22);
+    if (uceFault_tofloat16_number(i) || uceFault_tofloat16_number(i))
+        assertEq(x, Math.f16round(99.22));
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
+var uceFault_tofloat16_object = eval(`(${uceFault})`.replace('uceFault', 'uceFault_tofloat16_object'));
+function rtofloat16_object(i) {
+    var t = i + 0.22;
+    var o = { valueOf: function () { return t; } };
+    var x = Math.f16round(o);
+    t = 1000.22;
+    if (uceFault_tofloat16_object(i) || uceFault_tofloat16_object(i))
+        assertEq(x, Math.f16round(99.22));
+    assertRecoveredOnBailout(x, false);
+    return i;
+}
+
 var uceFault_trunc_to_int32_number = eval(`(${uceFault})`.replace('uceFault', 'uceFault_trunc_to_int32_number'));
 function rtrunc_to_int32_number(i) {
     var x = (i + 0.12) | 0;
@@ -2038,6 +2068,7 @@ for (j = 100 - max; j < 100; j++) {
     rimul_overflow(i);
     rimul_object(i);
     rdiv_number(i);
+    rdiv_double(i);
     rdiv_float(i);
     rdiv_object(i);
     rmod_number(i);
@@ -2148,6 +2179,8 @@ for (j = 100 - max; j < 100; j++) {
     rtodouble_number(i);
     rtofloat32_number(i);
     rtofloat32_object(i);
+    rtofloat16_number(i);
+    rtofloat16_object(i);
     rtrunc_to_int32_number(i);
     rtrunc_to_int32_object(i);
     if (!warp) {

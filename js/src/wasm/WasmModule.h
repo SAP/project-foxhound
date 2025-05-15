@@ -75,20 +75,16 @@ struct ImportValues {
 // where the LinkData is also available, which is primarily (1) at the end of
 // module generation, (2) at the end of tier-2 compilation.
 //
-// Fully linked-and-instantiated code (represented by SharedCode and its owned
-// ModuleSegment) can be shared between instances.
+// Fully linked-and-instantiated code (represented by SharedCode) can be shared
+// between instances.
 
 class Module : public JS::WasmModule {
+  // This has the same lifetime end as Module itself -- it can be dropped when
+  // Module itself is dropped.
+  const SharedModuleMetadata moduleMeta_;
+
+  // This contains all compilation artifacts for the module.
   const SharedCode code_;
-  const ImportVector imports_;
-  const ExportVector exports_;
-  const DataSegmentVector dataSegments_;
-  const ModuleElemSegmentVector elemSegments_;
-  const CustomSectionVector customSections_;
-
-  // This field is only meaningful when code_->metadata().debugEnabled.
-
-  const SharedBytes debugBytecode_;
 
   // This field is set during tier-2 compilation and cleared on success or
   // failure. These happen on different threads and are serialized by the
@@ -133,19 +129,10 @@ class Module : public JS::WasmModule {
   class Tier2GeneratorTaskImpl;
 
  public:
-  Module(const Code& code, ImportVector&& imports, ExportVector&& exports,
-         DataSegmentVector&& dataSegments,
-         ModuleElemSegmentVector&& elemSegments,
-         CustomSectionVector&& customSections,
-         const ShareableBytes* debugBytecode = nullptr,
+  Module(const ModuleMetadata& moduleMeta, const Code& code,
          bool loggingDeserialized = false)
-      : code_(&code),
-        imports_(std::move(imports)),
-        exports_(std::move(exports)),
-        dataSegments_(std::move(dataSegments)),
-        elemSegments_(std::move(elemSegments)),
-        customSections_(std::move(customSections)),
-        debugBytecode_(debugBytecode),
+      : moduleMeta_(&moduleMeta),
+        code_(&code),
         loggingDeserialized_(loggingDeserialized),
         testingTier2Active_(false) {
     initGCMallocBytesExcludingCode();
@@ -153,14 +140,13 @@ class Module : public JS::WasmModule {
   ~Module() override;
 
   const Code& code() const { return *code_; }
-  const ModuleSegment& moduleSegment(Tier t) const { return code_->segment(t); }
-  const Metadata& metadata() const { return code_->metadata(); }
-  const MetadataTier& metadata(Tier t) const { return code_->metadata(t); }
-  const ImportVector& imports() const { return imports_; }
-  const ExportVector& exports() const { return exports_; }
-  const CustomSectionVector& customSections() const { return customSections_; }
-  const Bytes& debugBytecode() const { return debugBytecode_->bytes; }
-  uint32_t codeLength(Tier t) const { return code_->segment(t).length(); }
+  const ModuleMetadata& moduleMeta() const { return *moduleMeta_; }
+  const CodeMetadata& codeMeta() const { return code_->codeMeta(); }
+  const CodeMetadataForAsmJS* codeMetaForAsmJS() const {
+    return code_->codeMetaForAsmJS();
+  }
+  const Bytes& bytecode() const { return code().bytecode(); }
+  uint32_t tier1CodeMemoryUsed() const { return code_->tier1CodeMemoryUsed(); }
 
   // Instantiate this module with the given imports:
 
@@ -173,16 +159,17 @@ class Module : public JS::WasmModule {
   // finishTier2() from a helper thread, passing tier-variant data which will
   // be installed and made visible.
 
-  void startTier2(const CompileArgs& args, const ShareableBytes& bytecode,
+  void startTier2(const ShareableBytes& bytecode,
                   JS::OptimizedEncodingListener* listener);
-  bool finishTier2(const LinkData& linkData2, UniqueCodeTier code2) const;
+  bool finishTier2(UniqueCodeBlock tier2CodeBlock,
+                   UniqueLinkData tier2LinkData) const;
 
   void testingBlockOnTier2Complete() const;
   bool testingTier2Active() const { return testingTier2Active_; }
 
   // Code caching support.
 
-  [[nodiscard]] bool serialize(const LinkData& linkData, Bytes* bytes) const;
+  [[nodiscard]] bool serialize(Bytes* bytes) const;
   static RefPtr<Module> deserialize(const uint8_t* begin, size_t size);
   bool loggingDeserialized() const { return loggingDeserialized_; }
 
@@ -193,7 +180,9 @@ class Module : public JS::WasmModule {
 
   // about:memory reporting:
 
-  void addSizeOfMisc(MallocSizeOf mallocSizeOf, Metadata::SeenSet* seenMetadata,
+  void addSizeOfMisc(MallocSizeOf mallocSizeOf,
+                     CodeMetadata::SeenSet* seenCodeMeta,
+                     CodeMetadataForAsmJS::SeenSet* seenCodeMetaForAsmJS,
                      Code::SeenSet* seenCode, size_t* code, size_t* data) const;
 
   // GC malloc memory tracking:
@@ -207,7 +196,7 @@ class Module : public JS::WasmModule {
 
   bool extractCode(JSContext* cx, Tier tier, MutableHandleValue vp) const;
 
-  WASM_DECLARE_FRIEND_SERIALIZE_ARGS(Module, const wasm::LinkData& linkData);
+  WASM_DECLARE_FRIEND_SERIALIZE(Module);
 };
 
 using MutableModule = RefPtr<Module>;

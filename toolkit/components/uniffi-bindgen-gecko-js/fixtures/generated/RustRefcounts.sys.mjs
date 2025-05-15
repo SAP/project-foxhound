@@ -184,9 +184,8 @@ function handleRustResult(result, liftCallback, liftErrCallback) {
             throw liftErrCallback(result.data);
 
         case "internal-error":
-            let message = result.internalErrorMessage;
-            if (message) {
-                throw new UniFFIInternalError(message);
+            if (result.data) {
+                throw new UniFFIInternalError(FfiConverterString.lift(result.data));
             } else {
                 throw new UniFFIInternalError("Unknown error");
             }
@@ -321,7 +320,7 @@ export class SingletonObject {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                65, // refcounts:uniffi_uniffi_fixture_refcounts_fn_method_singletonobject_method
+                66, // refcounts:uniffi_uniffi_fixture_refcounts_fn_method_singletonobject_method
                 FfiConverterTypeSingletonObject.lower(this),
             )
         }
@@ -369,7 +368,7 @@ export function getJsRefcount() {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                66, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_js_refcount
+                67, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_js_refcount
             )
         }
         return handleRustResult(functionCall(), liftResult, liftError);
@@ -381,7 +380,7 @@ export function getSingleton() {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                67, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_singleton
+                68, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_singleton
             )
         }
         return handleRustResult(functionCall(), liftResult, liftError);

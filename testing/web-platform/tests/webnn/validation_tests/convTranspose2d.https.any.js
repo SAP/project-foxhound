@@ -48,16 +48,6 @@ multi_builder_test(async (t, builder, otherBuilder) => {
       TypeError, () => builder.convTranspose2d(input, filter, options));
 }, '[convTranspose2d] throw if bias option is from another builder');
 
-multi_builder_test(async (t, builder, otherBuilder) => {
-  const activationFromOtherBuilder = otherBuilder.clamp();
-  const options = {activation: activationFromOtherBuilder};
-
-  const input = builder.input('input', kExampleInputDescriptor);
-  const filter = builder.input('filter', kExampleFilterDescriptor);
-  assert_throws_js(
-      TypeError, () => builder.convTranspose2d(input, filter, options));
-}, '[convTranspose2d] throw if activation option is from another builder');
-
 const tests = [
   {
     name: '[convTranspose2d] Test with default options.',
@@ -456,6 +446,26 @@ const tests = [
     },
   },
   {
+    name:
+        '[convTranspose2d] Throw if outputSizes[0] is not greater than 0.',
+    input: {dataType: 'float32', dimensions: [1, 1, 3, 3]},
+    filter: {dataType: 'float32', dimensions: [1, 2, 3, 3]},
+    options: {
+      strides: [3, 2],
+      outputSizes: [0, 7],
+    },
+  },
+  {
+    name:
+        '[convTranspose2d] Throw if outputSizes[1] is not greater than 0.',
+    input: {dataType: 'float32', dimensions: [1, 1, 3, 3]},
+    filter: {dataType: 'float32', dimensions: [1, 2, 3, 3]},
+    options: {
+      strides: [3, 2],
+      outputSizes: [9, 0],
+    },
+  },
+  {
     name: '[convTranspose2d] Throw if the padding height is too large.',
     input: {dataType: 'float32', dimensions: [1, 1, 2, 2]},
     filter: {dataType: 'float32', dimensions: [1, 1, 3, 3]},
@@ -503,6 +513,7 @@ const tests = [
 
 tests.forEach(
     test => promise_test(async t => {
+      const builder = new MLGraphBuilder(context);
       const input = builder.input(
           'input',
           {dataType: test.input.dataType, dimensions: test.input.dimensions});

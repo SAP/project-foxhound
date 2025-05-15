@@ -35,6 +35,8 @@ std::u16string taintarg_full(JSContext* cx, JS::HandleString str);
 
 std::u16string taintarg_jsstring(JSContext* cx, JSString* const& str);
 
+std::u16string taintarg_jsstring(JSContext* cx, const JSLinearString* const& str);
+
 std::u16string taintarg_jsstring_full(JSContext* cx, JSString* const& str);
 
 // Stringifies a JS object for use as a taint argument.
@@ -57,6 +59,8 @@ std::vector<std::u16string> taintargs(JSContext* cx, HandleString str1, HandleSt
 
 std::vector<std::u16string> taintargs_jsstring(JSContext* cx, JSString* const& str1, JSString* const& str2);
 
+std::vector<std::u16string> taintargs_jsstring(JSContext* cx, const JSLinearString* const& str1, const JSLinearString* const& str2);
+
 std::string convertDigestToHexString(const TaintMd5& digest);
 
 // Extracts the current filename, linenumber and function from the JSContext
@@ -72,6 +76,9 @@ TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name
 
 TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native,
                                                  JSString* const& str1, JSString* const& str2);
+
+TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native,
+                                                 const JSLinearString* const& str1, const JSLinearString* const& str2);
 
 TaintOperation TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
                                          JS::HandleString str1, JS::HandleString str2);

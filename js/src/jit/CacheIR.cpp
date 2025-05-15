@@ -257,15 +257,39 @@ double CacheIRCloner::getDoubleField(uint32_t stubOffset) {
 }
 
 IRGenerator::IRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
-                         CacheKind cacheKind, ICState state)
+                         CacheKind cacheKind, ICState state,
+                         BaselineFrame* maybeFrame)
     : writer(cx),
       cx_(cx),
       script_(script),
       pc_(pc),
+      maybeFrame_(maybeFrame),
       cacheKind_(cacheKind),
       mode_(state.mode()),
       isFirstStub_(state.newStubIsFirstStub()),
       numOptimizedStubs_(state.numOptimizedStubs()) {}
+
+// Allocation sites are usually created during baseline compilation, but we also
+// need to created them when an IC stub is added to a baseline compiled script
+// and when trial inlining.
+gc::AllocSite* IRGenerator::maybeCreateAllocSite() {
+  MOZ_ASSERT(BytecodeOpCanHaveAllocSite(JSOp(*pc_)));
+
+  BaselineFrame* frame = maybeFrame_;
+  MOZ_ASSERT(frame);
+
+  JSScript* outerScript = frame->outerScript();
+  bool hasBaselineScript = outerScript->hasBaselineScript();
+  bool isInlined = frame->icScript()->isInlined();
+
+  if (!hasBaselineScript && !isInlined) {
+    MOZ_ASSERT(frame->runningInInterpreter());
+    return outerScript->zone()->unknownAllocSite(JS::TraceKind::Object);
+  }
+
+  uint32_t pcOffset = frame->script()->pcToOffset(pc_);
+  return frame->icScript()->getOrCreateAllocSite(outerScript, pcOffset);
+}
 
 GetPropIRGenerator::GetPropIRGenerator(JSContext* cx, HandleScript script,
                                        jsbytecode* pc, ICState state,
@@ -438,6 +462,12 @@ AttachDecision GetPropIRGenerator::tryAttachStub() {
       TRY_ATTACH(tryAttachArgumentsObjectIterator(obj, objId, id));
       TRY_ATTACH(tryAttachArgumentsObjectCallee(obj, objId, id));
       TRY_ATTACH(tryAttachProxy(obj, objId, id, receiverId));
+
+      if (!isSuper() && mode_ == ICState::Mode::Megamorphic &&
+          JSOp(*pc_) != JSOp::GetBoundName) {
+        attachMegamorphicNativeSlotPermissive(objId, id);
+        return AttachDecision::Attach;
+      }
 
       trackAttached(IRGenerator::NotAttached);
       return AttachDecision::NoAction;
@@ -1109,6 +1139,29 @@ void GetPropIRGenerator::attachMegamorphicNativeSlot(ObjOperandId objId,
   trackAttached("GetProp.MegamorphicNativeSlot");
 }
 
+void GetPropIRGenerator::attachMegamorphicNativeSlotPermissive(
+    ObjOperandId objId, jsid id) {
+  MOZ_ASSERT(mode_ == ICState::Mode::Megamorphic);
+
+  // We don't support GetBoundName because environment objects have
+  // lookupProperty hooks and GetBoundName is usually not megamorphic.
+  MOZ_ASSERT(JSOp(*pc_) != JSOp::GetBoundName);
+  // It is not worth the complexity to support super here because we'd have
+  // to plumb the receiver through everywhere, so we just skip it.
+  MOZ_ASSERT(!isSuper());
+
+  if (cacheKind_ == CacheKind::GetProp) {
+    writer.megamorphicLoadSlotPermissiveResult(objId, id);
+  } else {
+    MOZ_ASSERT(cacheKind_ == CacheKind::GetElem);
+    writer.megamorphicLoadSlotByValuePermissiveResult(objId,
+                                                      getElemKeyValueId());
+  }
+  writer.returnFromIC();
+
+  trackAttached("GetProp.MegamorphicNativeSlotPermissive");
+}
+
 AttachDecision GetPropIRGenerator::tryAttachNative(HandleObject obj,
                                                    ObjOperandId objId,
                                                    HandleId id,
@@ -1147,6 +1200,14 @@ AttachDecision GetPropIRGenerator::tryAttachNative(HandleObject obj,
     case NativeGetPropKind::NativeGetter: {
       auto* nobj = &obj->as<NativeObject>();
       MOZ_ASSERT(!IsWindow(nobj));
+
+      // If we're in megamorphic mode, we assume that a specialized
+      // getter call is just going to end up failing later, so we let this
+      // get handled further down the chain by
+      // attachMegamorphicNativeSlotPermissive
+      if (!isSuper() && mode_ == ICState::Mode::Megamorphic) {
+        return AttachDecision::NoAction;
+      }
 
       maybeEmitIdGuard(id);
 
@@ -3173,11 +3234,6 @@ AttachDecision GetPropIRGenerator::tryAttachTypedArrayElement(
 
   auto* tarr = &obj->as<TypedArrayObject>();
 
-  if (tarr->type() == Scalar::Float16) {
-    // TODO: See Bug 1835034 for JIT support for Float16Array.
-    return AttachDecision::NoAction;
-  }
-
   bool handleOOB = false;
   int64_t indexInt64;
   if (!ValueIsInt64Index(idVal_, &indexInt64) || indexInt64 < 0 ||
@@ -5070,11 +5126,6 @@ AttachDecision SetPropIRGenerator::tryAttachSetTypedArrayElement(
   auto* tarr = &obj->as<TypedArrayObject>();
   Scalar::Type elementType = tarr->type();
 
-  if (elementType == Scalar::Float16) {
-    // TODO: See Bug 1835034 for JIT support for Float16Array.
-    return AttachDecision::NoAction;
-  }
-
   // Don't attach if the input type doesn't match the guard added below.
   if (!ValueCanConvertToNumeric(elementType, rhsVal_)) {
     return AttachDecision::NoAction;
@@ -6221,10 +6272,10 @@ void OptimizeSpreadCallIRGenerator::trackAttached(const char* name) {
 
 CallIRGenerator::CallIRGenerator(JSContext* cx, HandleScript script,
                                  jsbytecode* pc, JSOp op, ICState state,
-                                 uint32_t argc, HandleValue callee,
-                                 HandleValue thisval, HandleValue newTarget,
-                                 HandleValueArray args)
-    : IRGenerator(cx, script, pc, CacheKind::Call, state),
+                                 BaselineFrame* frame, uint32_t argc,
+                                 HandleValue callee, HandleValue thisval,
+                                 HandleValue newTarget, HandleValueArray args)
+    : IRGenerator(cx, script, pc, CacheKind::Call, state, frame),
       op_(op),
       argc_(argc),
       callee_(callee),
@@ -8676,6 +8727,28 @@ AttachDecision InlinableNativeIRGenerator::tryAttachMathFRound() {
   return AttachDecision::Attach;
 }
 
+AttachDecision InlinableNativeIRGenerator::tryAttachMathF16Round() {
+  // Need one (number) argument.
+  if (argc_ != 1 || !args_[0].isNumber()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the 'f16round' native function.
+  emitNativeCalleeGuard();
+
+  ValOperandId argumentId =
+      writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+  NumberOperandId numberId = writer.guardIsNumber(argumentId);
+  writer.mathF16RoundNumberResult(numberId);
+  writer.returnFromIC();
+
+  trackAttached("MathF16Round");
+  return AttachDecision::Attach;
+}
+
 static bool CanAttachInt32Pow(const Value& baseVal, const Value& powerVal) {
   auto valToInt32 = [](const Value& v) {
     if (v.isInt32()) {
@@ -10820,10 +10893,16 @@ AttachDecision InlinableNativeIRGenerator::tryAttachObjectConstructor() {
     return AttachDecision::NoAction;
   }
 
+  gc::AllocSite* site = nullptr;
   PlainObject* templateObj = nullptr;
   if (argc_ == 0) {
     // Stub doesn't support metadata builder
     if (cx_->realm()->hasAllocationMetadataBuilder()) {
+      return AttachDecision::NoAction;
+    }
+
+    site = generator_.maybeCreateAllocSite();
+    if (!site) {
       return AttachDecision::NoAction;
     }
 
@@ -10843,11 +10922,6 @@ AttachDecision InlinableNativeIRGenerator::tryAttachObjectConstructor() {
   emitNativeCalleeGuard();
 
   if (argc_ == 0) {
-    // TODO: Support pre-tenuring.
-    gc::AllocSite* site =
-        script()->zone()->unknownAllocSite(JS::TraceKind::Object);
-    MOZ_ASSERT(site);
-
     uint32_t numFixedSlots = templateObj->numUsedFixedSlots();
     uint32_t numDynamicSlots = templateObj->numDynamicSlots();
     gc::AllocKind allocKind = templateObj->allocKindForTenure();
@@ -11400,12 +11474,11 @@ AttachDecision CallIRGenerator::tryAttachWasmCall(HandleFunction calleeFunc) {
   }
 
   wasm::Instance& inst = wasm::ExportedFunctionToInstance(calleeFunc);
-  uint32_t funcIndex = inst.code().getFuncIndex(calleeFunc);
-
-  auto bestTier = inst.code().bestTier();
-  const wasm::FuncExport& funcExport =
-      inst.metadata(bestTier).lookupFuncExport(funcIndex);
-  const wasm::FuncType& sig = inst.metadata().getFuncExportType(funcExport);
+  uint32_t funcIndex = wasm::ExportedFunctionToFuncIndex(calleeFunc);
+  const wasm::CodeBlock& codeBlock = inst.code().funcCodeBlock(funcIndex);
+  const wasm::FuncExport& funcExport = codeBlock.lookupFuncExport(funcIndex);
+  const wasm::FuncType& sig =
+      wasm::ExportedFunctionToTypeDef(calleeFunc).funcType();
 
   MOZ_ASSERT(!IsInsideNursery(inst.object()));
   MOZ_ASSERT(sig.canHaveJitEntry(), "Function should allow a Wasm JitEntry");
@@ -11515,9 +11588,7 @@ AttachDecision CallIRGenerator::tryAttachInlinableNative(HandleFunction callee,
              flags.getArgFormat() == CallFlags::Spread);
 
   // Special case functions are only optimized for normal calls.
-  if (op_ != JSOp::Call && op_ != JSOp::CallContent && op_ != JSOp::New &&
-      op_ != JSOp::NewContent && op_ != JSOp::CallIgnoresRv &&
-      op_ != JSOp::SpreadCall) {
+  if (!BytecodeCallOpCanHaveInlinableNative(op_)) {
     return AttachDecision::NoAction;
   }
 
@@ -11550,6 +11621,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachFuzzilliHash() {
 #endif
 
 AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
+  MOZ_ASSERT(BytecodeCallOpCanHaveInlinableNative(generator_.op_));
+
   if (!callee_->hasJitInfo() ||
       callee_->jitInfo()->type() != JSJitInfo::InlinableNative) {
     return AttachDecision::NoAction;
@@ -11633,6 +11706,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
       return tryAttachDataViewGet(Scalar::Int32);
     case InlinableNative::DataViewGetUint32:
       return tryAttachDataViewGet(Scalar::Uint32);
+    case InlinableNative::DataViewGetFloat16:
+      return tryAttachDataViewGet(Scalar::Float16);
     case InlinableNative::DataViewGetFloat32:
       return tryAttachDataViewGet(Scalar::Float32);
     case InlinableNative::DataViewGetFloat64:
@@ -11653,6 +11728,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
       return tryAttachDataViewSet(Scalar::Int32);
     case InlinableNative::DataViewSetUint32:
       return tryAttachDataViewSet(Scalar::Uint32);
+    case InlinableNative::DataViewSetFloat16:
+      return tryAttachDataViewSet(Scalar::Float16);
     case InlinableNative::DataViewSetFloat32:
       return tryAttachDataViewSet(Scalar::Float32);
     case InlinableNative::DataViewSetFloat64:
@@ -11824,6 +11901,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
       return tryAttachMathSqrt();
     case InlinableNative::MathFRound:
       return tryAttachMathFRound();
+    case InlinableNative::MathF16Round:
+      return tryAttachMathF16Round();
     case InlinableNative::MathHypot:
       return tryAttachMathHypot();
     case InlinableNative::MathATan2:
@@ -14117,12 +14196,11 @@ NewArrayIRGenerator::NewArrayIRGenerator(JSContext* cx, HandleScript script,
                                          jsbytecode* pc, ICState state, JSOp op,
                                          HandleObject templateObj,
                                          BaselineFrame* frame)
-    : IRGenerator(cx, script, pc, CacheKind::NewArray, state),
+    : IRGenerator(cx, script, pc, CacheKind::NewArray, state, frame),
 #ifdef JS_CACHEIR_SPEW
       op_(op),
 #endif
-      templateObject_(templateObj),
-      frame_(frame) {
+      templateObject_(templateObj) {
   MOZ_ASSERT(templateObject_);
 }
 
@@ -14133,26 +14211,6 @@ void NewArrayIRGenerator::trackAttached(const char* name) {
     sp.opcodeProperty("op", op_);
   }
 #endif
-}
-
-// Allocation sites are usually created during baseline compilation, but we also
-// need to create them when an IC stub is added to a baseline compiled script
-// and when trial inlining.
-static gc::AllocSite* MaybeCreateAllocSite(jsbytecode* pc,
-                                           BaselineFrame* frame) {
-  MOZ_ASSERT(BytecodeOpCanHaveAllocSite(JSOp(*pc)));
-
-  JSScript* outerScript = frame->outerScript();
-  bool hasBaselineScript = outerScript->hasBaselineScript();
-  bool isInlined = frame->icScript()->isInlined();
-
-  if (!hasBaselineScript && !isInlined) {
-    MOZ_ASSERT(frame->runningInInterpreter());
-    return outerScript->zone()->unknownAllocSite(JS::TraceKind::Object);
-  }
-
-  uint32_t pcOffset = frame->script()->pcToOffset(pc);
-  return frame->icScript()->getOrCreateAllocSite(outerScript, pcOffset);
 }
 
 AttachDecision NewArrayIRGenerator::tryAttachArrayObject() {
@@ -14175,7 +14233,7 @@ AttachDecision NewArrayIRGenerator::tryAttachArrayObject() {
   writer.guardNoAllocationMetadataBuilder(
       cx_->realm()->addressOfMetadataBuilder());
 
-  gc::AllocSite* site = MaybeCreateAllocSite(pc_, frame_);
+  gc::AllocSite* site = maybeCreateAllocSite();
   if (!site) {
     return AttachDecision::NoAction;
   }
@@ -14204,12 +14262,11 @@ NewObjectIRGenerator::NewObjectIRGenerator(JSContext* cx, HandleScript script,
                                            jsbytecode* pc, ICState state,
                                            JSOp op, HandleObject templateObj,
                                            BaselineFrame* frame)
-    : IRGenerator(cx, script, pc, CacheKind::NewObject, state),
+    : IRGenerator(cx, script, pc, CacheKind::NewObject, state, frame),
 #ifdef JS_CACHEIR_SPEW
       op_(op),
 #endif
-      templateObject_(templateObj),
-      frame_(frame) {
+      templateObject_(templateObj) {
   MOZ_ASSERT(templateObject_);
 }
 
@@ -14242,7 +14299,7 @@ AttachDecision NewObjectIRGenerator::tryAttachPlainObject() {
   MOZ_ASSERT(!nativeObj->hasDynamicElements());
   MOZ_ASSERT(!nativeObj->isSharedMemory());
 
-  gc::AllocSite* site = MaybeCreateAllocSite(pc_, frame_);
+  gc::AllocSite* site = maybeCreateAllocSite();
   if (!site) {
     return AttachDecision::NoAction;
   }

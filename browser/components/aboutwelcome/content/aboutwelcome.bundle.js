@@ -350,6 +350,13 @@ const MultiStageAboutWelcome = props => {
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
     setScreens(languageFilteredScreens);
   }, [languageFilteredScreens]);
+  const [installedAddons, setInstalledAddons] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    (async () => {
+      let addons = await window.AWGetInstalledAddons();
+      setInstalledAddons(addons);
+    })();
+  }, [index]);
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: `outer-wrapper onboardingContainer proton transition-${transition}`,
     style: props.backdrop ? {
@@ -395,7 +402,9 @@ const MultiStageAboutWelcome = props => {
       langPackInstallPhase: langPackInstallPhase,
       forceHideStepsIndicator: screen.force_hide_steps_indicator,
       ariaRole: props.ariaRole,
-      aboveButtonStepsIndicator: screen.above_button_steps_indicator
+      aboveButtonStepsIndicator: screen.above_button_steps_indicator,
+      installedAddons: installedAddons,
+      setInstalledAddons: setInstalledAddons
     }) : null;
   })));
 };
@@ -643,6 +652,7 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       order: this.props.order,
       previousOrder: this.props.previousOrder,
       activeTheme: this.props.activeTheme,
+      installedAddons: this.props.installedAddons,
       screenMultiSelects: this.props.screenMultiSelects,
       setScreenMultiSelects: this.props.setScreenMultiSelects,
       activeMultiSelect: this.props.activeMultiSelect,
@@ -847,6 +857,7 @@ const MultiStageProtonScreen = props => {
     id: props.id,
     order: props.order,
     activeTheme: props.activeTheme,
+    installedAddons: props.installedAddons,
     screenMultiSelects: props.screenMultiSelects,
     setScreenMultiSelects: props.setScreenMultiSelects,
     activeMultiSelect: props.activeMultiSelect,
@@ -1001,13 +1012,13 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
         marginBlock
       }
     }, darkModeReducedMotionImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
-      srcSet: darkModeReducedMotionImageURL,
+      srcset: darkModeReducedMotionImageURL,
       media: "(prefers-color-scheme: dark) and (prefers-reduced-motion: reduce)"
     }) : null, darkModeImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
-      srcSet: darkModeImageURL,
+      srcset: darkModeImageURL,
       media: "(prefers-color-scheme: dark)"
     }) : null, reducedMotionImageURL ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("source", {
-      srcSet: reducedMotionImageURL,
+      srcset: reducedMotionImageURL,
       media: "(prefers-reduced-motion: reduce)"
     }) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: alt
@@ -1031,6 +1042,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     } = this.props;
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, content.tiles && content.tiles.type === "addons-picker" && content.tiles.data ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_AddonsPicker__WEBPACK_IMPORTED_MODULE_13__.AddonsPicker, {
       content: content,
+      installedAddons: this.props.installedAddons,
       message_id: this.props.messageId,
       handleAction: this.props.handleAction
     }) : null, content.tiles && content.tiles.type === "theme" && content.tiles.data ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_Themes__WEBPACK_IMPORTED_MODULE_5__.Themes, {
@@ -1093,15 +1105,19 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     });
   }
   renderStepsIndicator() {
-    const currentStep = (this.props.order ?? 0) + 1;
-    const previousStep = (this.props.previousOrder ?? -1) + 1;
     const {
+      order,
+      previousOrder,
       content,
-      totalNumberOfScreens: total
+      totalNumberOfScreens: total,
+      aboveButtonStepsIndicator
     } = this.props;
+    const currentStep = (order ?? 0) + 1;
+    const previousStep = (previousOrder ?? -1) + 1;
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       id: "steps",
       className: `steps${content.progress_bar ? " progress-bar" : ""}`,
+      "above-button": aboveButtonStepsIndicator ? "" : null,
       "data-l10n-id": content.steps_indicator?.string_id || "onboarding-welcome-steps-indicator-label",
       "data-l10n-args": JSON.stringify({
         current: currentStep,
@@ -1117,7 +1133,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       previousStep: previousStep,
       totalNumberOfScreens: total
     }) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_6__.StepsIndicator, {
-      order: this.props.order,
+      order: order,
       totalNumberOfScreens: total
     }));
   }
@@ -1195,6 +1211,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       className: `screen ${this.props.id || ""}
           ${screenClassName} ${textColorClass}`,
       "reverse-split": content.reverse_split ? "" : null,
+      fullscreen: content.fullscreen ? "" : null,
       role: ariaRole ?? "alertdialog",
       layout: content.layout,
       pos: content.position || "center",
@@ -1220,7 +1237,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
         paddingBlock: content.split_content_padding_block ? content.split_content_padding_block : null,
         paddingInline: content.split_content_padding_inline ? content.split_content_padding_inline : null
       }
-    }, content.logo ? this.renderPicture(content.logo) : null, isRtamo ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    }, content.logo && !content.fullscreen ? this.renderPicture(content.logo) : null, isRtamo ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "rtamo-icon"
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("img", {
       className: `${isTheme ? "rtamo-theme-icon" : "brand-logo"}`,
@@ -1233,7 +1250,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       style: {
         justifyContent: content.split_content_justify_content
       }
-    }, content.title || content.subtitle ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    }, content.logo && content.fullscreen ? this.renderPicture(content.logo) : null, content.title || content.subtitle ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `welcome-text ${content.title_style || ""}`
     }, content.title ? this.renderTitle(content) : null, content.subtitle ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: content.subtitle
@@ -1423,6 +1440,7 @@ const MultiSelect = ({
   })) : null, items.map(({
     id,
     label,
+    description,
     icon,
     type = "checkbox",
     group,
@@ -1440,11 +1458,16 @@ const MultiSelect = ({
     checked: activeMultiSelect?.includes(id),
     style: getValidStyle(icon?.style, MULTI_SELECT_ICON_STYLES),
     onChange: handleChange,
-    ref: el => refs.current[id] = el
+    ref: el => refs.current[id] = el,
+    "aria-describedby": description ? `${id}-description` : null
   }), label ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: label
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
     htmlFor: id
+  })) : null, description ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: description
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
+    id: `${id}-description`
   })) : null)));
 };
 
@@ -2192,13 +2215,20 @@ const Loader = () => {
   })));
 };
 const InstallButton = props => {
+  // determine if the addon is already installed so the state is
+  // consistent on refresh or navigation
   const [installing, setInstalling] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
   const [installComplete, setInstallComplete] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
-  let buttonLabel = installComplete ? {
-    string_id: "amo-picker-install-complete-label"
-  } : {
+  const defaultInstallLabel = {
     string_id: "amo-picker-install-button-label"
   };
+  const defaultInstallCompleteLabel = {
+    string_id: "amo-picker-install-complete-label"
+  };
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    setInstallComplete(props.installedAddons?.includes(props.addonId));
+  }, [props.addonId, props.installedAddons]);
+  let buttonLabel = installComplete ? props.install_complete_label || defaultInstallCompleteLabel : props.install_label || defaultInstallLabel;
   function onClick(event) {
     props.handleAction(event);
     // Replace the label with the spinner
@@ -2217,7 +2247,7 @@ const InstallButton = props => {
   }, installing ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(Loader, null) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_2__.Localized, {
     text: buttonLabel
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    id: props.name,
+    id: `install-button-${props.addonId}`,
     value: props.index,
     onClick: onClick,
     disabled: installComplete,
@@ -2226,7 +2256,8 @@ const InstallButton = props => {
 };
 const AddonsPicker = props => {
   const {
-    content
+    content,
+    installedAddons
   } = props;
   if (!content) {
     return null;
@@ -2261,7 +2292,9 @@ const AddonsPicker = props => {
     name,
     type,
     description,
-    icon
+    icon,
+    install_label,
+    install_complete_label
   }, index) => name ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     key: id,
     className: "addon-container"
@@ -2285,9 +2318,11 @@ const AddonsPicker = props => {
   }))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(InstallButton, {
     key: id,
     addonId: id,
-    name: name,
     handleAction: handleAction,
-    index: index
+    index: index,
+    installedAddons: installedAddons,
+    install_label: install_label,
+    install_complete_label: install_complete_label
   })) : null));
 };
 

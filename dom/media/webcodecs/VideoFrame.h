@@ -46,10 +46,11 @@ class SVGImageElement;
 class StructuredCloneHolder;
 class VideoColorSpace;
 class VideoFrame;
+enum class PredefinedColorSpace : uint8_t;
 enum class VideoPixelFormat : uint8_t;
 struct VideoFrameBufferInit;
-struct VideoFrameInit;
 struct VideoFrameCopyToOptions;
+struct VideoFrameInit;
 
 }  // namespace dom
 }  // namespace mozilla
@@ -206,7 +207,7 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
     uint32_t SampleBytes(const Plane& aPlane) const;
     gfx::IntSize SampleSize(const Plane& aPlane) const;
     bool IsValidSize(const gfx::IntSize& aSize) const;
-    size_t SampleCount(const gfx::IntSize& aSize) const;
+    size_t ByteCount(const gfx::IntSize& aSize) const;
 
    private:
     bool IsYUV() const;
@@ -216,6 +217,9 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
  private:
   // VideoFrame can run on either main thread or worker thread.
   void AssertIsOnOwningThread() const { NS_ASSERT_OWNINGTHREAD(VideoFrame); }
+
+  already_AddRefed<VideoFrame> ConvertToRGBFrame(
+      const VideoPixelFormat& aFormat, const PredefinedColorSpace& aColorSpace);
 
   VideoFrameData GetVideoFrameData() const;
 

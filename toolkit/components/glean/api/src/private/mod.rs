@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 // That way a user only needs to depend on this crate, not on glean (and there can't be a
 // version mismatch).
 pub use glean::{
-    traits, CommonMetricData, DistributionData, ErrorType, Lifetime, MemoryUnit, RecordedEvent,
-    TimeUnit, TimerId,
+    traits, CommonMetricData, DistributionData, ErrorType, LabeledMetricData, Lifetime, MemoryUnit,
+    RecordedEvent, TimeUnit, TimerId,
 };
 
 mod boolean;
@@ -22,6 +22,9 @@ mod denominator;
 mod event;
 mod labeled;
 mod labeled_counter;
+mod labeled_custom_distribution;
+mod labeled_memory_distribution;
+mod labeled_timing_distribution;
 mod memory_distribution;
 mod numerator;
 mod object;
@@ -45,6 +48,9 @@ pub use self::denominator::DenominatorMetric;
 pub use self::event::{EventMetric, EventRecordingError, ExtraKeys, NoExtraKeys};
 pub use self::labeled::LabeledMetric;
 pub use self::labeled_counter::LabeledCounterMetric;
+pub use self::labeled_custom_distribution::LabeledCustomDistributionMetric;
+pub use self::labeled_memory_distribution::LabeledMemoryDistributionMetric;
+pub use self::labeled_timing_distribution::LabeledTimingDistributionMetric;
 pub use self::memory_distribution::MemoryDistributionMetric;
 pub use self::numerator::NumeratorMetric;
 pub use self::object::ObjectMetric;

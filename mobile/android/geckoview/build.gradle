@@ -83,11 +83,6 @@ android {
     project.configureProductFlavors.delegate = it
     project.configureProductFlavors()
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-
     lintOptions {
         abortOnError false
     }
@@ -189,7 +184,6 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile) {
 
     kotlinOptions {
         allWarningsAsErrors = true
-        jvmTarget = JavaVersion.VERSION_17
     }
 
     doFirst {
@@ -232,7 +226,7 @@ dependencies {
     implementation ComponentsDependencies.androidx_collection
     implementation ComponentsDependencies.androidx_core
 
-    implementation "com.google.android.gms:play-services-fido:21.1.0"
+    implementation ComponentsDependencies.play_services_fido
     implementation "org.yaml:snakeyaml:2.2"
 
     implementation ComponentsDependencies.androidx_lifecycle_common
@@ -511,14 +505,15 @@ task("generateSDKBindings", type: JavaExec) {
     ]
 
     mainClass = 'org.mozilla.gecko.annotationProcessors.SDKProcessor'
-    // We only want to generate bindings for the main framework JAR,
-    // but not any of the additional android.test libraries.
-    args android.bootClasspath.findAll { it.getName().startsWith('android.jar') }
-    args 29
-    args "${topobjdir}/widget/android/bindings"
 
     // Configure the arguments at evaluation-time, not at configuration-time.
     doFirst {
+        // We only want to generate bindings for the main framework JAR,
+        // but not any of the additional android.test libraries.
+        args android.bootClasspath.findAll { it.getName().startsWith('android.jar') }
+        args 29
+        args "${topobjdir}/widget/android/bindings"
+
         // From -Pgenerate_sdk_bindings_args=... on command line; missing in
         // `android-gradle-dependencies` toolchain task.
         if (project.hasProperty('generate_sdk_bindings_args')) {
@@ -537,6 +532,10 @@ apiLint {
     // TODO: Change this to `org` after hiding org.mozilla.gecko
     packageFilter = 'org.mozilla.geckoview'
     changelogFileName = 'src/main/java/org/mozilla/geckoview/doc-files/CHANGELOG.md'
+    // Put those files in ${buildDir}/intermediates/javac/<variant>
+    // instead of ${buildDir}/intermediates/javac/<variant>/compile<Variant>JavaWithJavac/classes
+    jsonResultFileName = '../../apilint-result.json'
+    apiOutputFileName = '../../api.txt'
     skipClassesRegex = [
         '^org.mozilla.geckoview.BuildConfig$',
         '^org.mozilla.geckoview.R$',

@@ -76,6 +76,39 @@ bool Accessible::IsBefore(const Accessible* aAcc) const {
   return otherPos > 0;
 }
 
+const Accessible* Accessible::GetClosestCommonInclusiveAncestor(
+    const Accessible* aAcc) const {
+  if (aAcc == this) {
+    return this;
+  }
+
+  // Build the chain of parents.
+  const Accessible* thisAnc = this;
+  const Accessible* otherAnc = aAcc;
+  AutoTArray<const Accessible*, 30> thisAncs, otherAncs;
+  do {
+    thisAncs.AppendElement(thisAnc);
+    thisAnc = thisAnc->Parent();
+  } while (thisAnc);
+  do {
+    otherAncs.AppendElement(otherAnc);
+    otherAnc = otherAnc->Parent();
+  } while (otherAnc);
+
+  // Find where the parent chain differs.
+  size_t thisPos = thisAncs.Length(), otherPos = otherAncs.Length();
+  const Accessible* common = nullptr;
+  for (size_t len = std::min(thisPos, otherPos); len > 0; --len) {
+    const Accessible* thisChild = thisAncs.ElementAt(--thisPos);
+    const Accessible* otherChild = otherAncs.ElementAt(--otherPos);
+    if (thisChild != otherChild) {
+      break;
+    }
+    common = thisChild;
+  }
+  return common;
+}
+
 Accessible* Accessible::FocusedChild() {
   Accessible* doc = nsAccUtils::DocumentFor(this);
   Accessible* child = doc->FocusedChild();

@@ -7,6 +7,7 @@
 #ifndef nsCSPContext_h___
 #define nsCSPContext_h___
 
+#include "mozilla/dom/CSPViolationData.h"
 #include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/SecurityPolicyViolationEvent.h"
 #include "mozilla/StaticPrefs_security.h"
@@ -32,8 +33,6 @@ class nsIEventTarget;
 struct ConsoleMsgQueueElem;
 
 namespace mozilla {
-template <typename... Ts>
-class Variant;
 namespace dom {
 class Element;
 }
@@ -75,52 +74,41 @@ class nsCSPContext : public nsIContentSecurityPolicy {
   void flushConsoleMessages();
 
   void logToConsole(const char* aName, const nsTArray<nsString>& aParams,
-                    const nsAString& aSourceName, const nsAString& aSourceLine,
+                    const nsACString& aSourceName, const nsAString& aSourceLine,
                     uint32_t aLineNumber, uint32_t aColumnNumber,
                     uint32_t aSeverityFlag);
-
-  enum BlockedContentSource {
-    eUnknown,
-    eInline,
-    eEval,
-    eSelf,
-    eWasmEval,
-  };
-
-  // Roughly implements a violation's resource
-  // (https://w3c.github.io/webappsec-csp/#framework-violation).
-  using Resource = mozilla::Variant<nsIURI*, BlockedContentSource>;
 
   /**
    * Construct SecurityPolicyViolationEventInit structure.
    *
-   * @param aResource
-   *        The source of the violation.
    * @param aOriginalUri
    *        The original URI if the blocked content is a redirect, else null
    * @param aViolatedDirective
    *        the directive that was violated (string).
-   * @param aSourceFile
-   *        name of the file containing the inline script violation
    * @param aScriptSample
    *        a sample of the violating inline script
-   * @param aLineNum
-   *        source line number of the violation (if available)
-   * @param aColumnNum
-   *        source column number of the violation (if available)
    * @param aViolationEventInit
    *        The output
    */
   nsresult GatherSecurityPolicyViolationEventData(
-      Resource& aResource, nsIURI* aOriginalURI,
-      const nsAString& aViolatedDirective, uint32_t aViolatedPolicyIndex,
-      const nsAString& aSourceFile, const nsAString& aScriptSample,
-      uint32_t aLineNum, uint32_t aColumnNum,
+      nsIURI* aOriginalURI, const nsAString& aEffectiveDirective,
+      const mozilla::dom::CSPViolationData& aCSPViolationData,
+      const nsAString& aScriptSample,
       mozilla::dom::SecurityPolicyViolationEventInit& aViolationEventInit);
 
   nsresult SendReports(
       const mozilla::dom::SecurityPolicyViolationEventInit& aViolationEventInit,
       uint32_t aViolatedPolicyIndex);
+
+  nsresult SendReportsToEndpoints(
+      nsAutoString& reportGroup,
+      const mozilla::dom::SecurityPolicyViolationEventInit&
+          aViolationEventInit);
+
+  nsresult SendReportsToURIs(
+      const nsTArray<nsString>& reportURIs,
+      const mozilla::dom::SecurityPolicyViolationEventInit&
+          aViolationEventInit);
 
   nsresult FireViolationEvent(
       mozilla::dom::Element* aTriggeringElement,
@@ -128,16 +116,29 @@ class nsCSPContext : public nsIContentSecurityPolicy {
       const mozilla::dom::SecurityPolicyViolationEventInit&
           aViolationEventInit);
 
+  /**
+   * Asynchronously notifies any nsIObservers listening to the CSP violation
+   * topic that a violation occurred.  Also triggers report sending and console
+   * logging.  All asynchronous on the main thread.
+   *
+   * @param aCSPEventListener Should be null when the violation stems from a
+   *                          Window. Is required when the violation stems from
+   *                          a Worker to be potentially notified about the
+   *                          violation event.
+   * @param aOriginalUri
+   *        The original URI if the blocked content is a redirect, else null
+   * @param aViolatedDirectiveName
+   *        the directive that was violated (string).
+   * @param aObserverSubject
+   *        optional, subject sent to the nsIObservers listening to the CSP
+   *        violation topic.
+   */
   nsresult AsyncReportViolation(
-      mozilla::dom::Element* aTriggeringElement,
-      nsICSPEventListener* aCSPEventListener, nsIURI* aBlockedURI,
-      BlockedContentSource aBlockedContentSource, nsIURI* aOriginalURI,
+      nsICSPEventListener* aCSPEventListener,
+      mozilla::dom::CSPViolationData&& aCSPViolationData, nsIURI* aOriginalURI,
       const nsAString& aViolatedDirectiveName,
       const nsAString& aViolatedDirectiveNameAndValue,
-      const CSPDirective aEffectiveDirective, uint32_t aViolatedPolicyIndex,
-      const nsAString& aObserverSubject, const nsAString& aSourceFile,
-      bool aReportSample, const nsAString& aScriptSample, uint32_t aLineNum,
-      uint32_t aColumnNum);
+      const nsAString& aObserverSubject, bool aReportSample);
 
   // Hands off! Don't call this method unless you know what you
   // are doing. It's only supposed to be called from within
@@ -157,6 +158,17 @@ class nsCSPContext : public nsIContentSecurityPolicy {
       nsTArray<mozilla::ipc::ContentSecurityPolicy>& aPolicies);
 
  private:
+  enum class ForceReportSample { Yes, No };
+
+  /**
+   * @param aCSPEventListener see `nsCSPContext::AsyncReportViolation`'s csp
+   *                          event listener argument.
+   */
+  void LogViolationDetailsUnchecked(
+      nsICSPEventListener* aCSPEventListener,
+      mozilla::dom::CSPViolationData&& aCSPViolationData,
+      const nsAString& aObserverSubject, ForceReportSample aForceReportSample);
+
   bool ShouldThrottleReport(
       const mozilla::dom::SecurityPolicyViolationEventInit&
           aViolationEventInit);
@@ -182,7 +194,7 @@ class nsCSPContext : public nsIContentSecurityPolicy {
                              uint32_t aLineNumber, uint32_t aColumnNumber);
 
   nsCString mReferrer;
-  uint64_t mInnerWindowID;          // used for web console logging
+  uint64_t mInnerWindowID;          // See `nsPIDOMWindowInner::mWindowID`.
   bool mSkipAllowInlineStyleCheck;  // used to allow Devtools to edit styles
   // When deserializing an nsCSPContext instance, we initially just keep the
   // policies unparsed. We will only reconstruct actual CSP policy instances

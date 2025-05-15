@@ -318,23 +318,24 @@ class WindowGlobalParent final : public WindowContext,
 
   mozilla::ipc::IPCResult RecvReloadWithHttpsOnlyException();
 
-  mozilla::ipc::IPCResult RecvDiscoverIdentityCredentialFromExternalSource(
+  mozilla::ipc::IPCResult RecvGetIdentityCredential(
       const IdentityCredentialRequestOptions& aOptions,
-      const DiscoverIdentityCredentialFromExternalSourceResolver& aResolver);
-
-  mozilla::ipc::IPCResult RecvCollectIdentityCredentialFromCredentialStore(
-      const IdentityCredentialRequestOptions& aOptions,
-      const CollectIdentityCredentialFromCredentialStoreResolver& aResolver);
+      const CredentialMediationRequirement& aMediationRequirement,
+      const GetIdentityCredentialResolver& aResolver);
   mozilla::ipc::IPCResult RecvStoreIdentityCredential(
       const IPCIdentityCredential& aCredential,
       const StoreIdentityCredentialResolver& aResolver);
+  mozilla::ipc::IPCResult RecvPreventSilentAccess(
+      const PreventSilentAccessResolver& aResolver);
 
   mozilla::ipc::IPCResult RecvGetStorageAccessPermission(
+      bool aIncludeIdentityCredential,
       GetStorageAccessPermissionResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvSetCookies(
       const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
-      nsIURI* aHost, bool aFromHttp, const nsTArray<CookieStruct>& aCookies);
+      nsIURI* aHost, bool aFromHttp, bool aIsThirdParty,
+      const nsTArray<CookieStruct>& aCookies);
 
   mozilla::ipc::IPCResult RecvOnInitialStorageAccess();
 

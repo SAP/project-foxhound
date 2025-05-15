@@ -7,6 +7,8 @@ support-files = ["head.js"]
 
 ["browser_confirm_unblock_download.js"]
 
+["browser_download_failed_msg.js"]
+
 ["browser_download_is_clickable.js"]
 
 ["browser_download_opens_on_click.js"]
@@ -29,6 +31,9 @@ support-files = ["test_spammy_page.html"]
 
 ["browser_download_starts_in_tmp.js"]
 
+["browser_download_succeeds_with_inaccessible_tmp.js"]
+skip-if = ["os == 'win'"] # Due to chmod the test only makes sense on Unix-like.
+
 ["browser_downloads_autohide.js"]
 
 ["browser_downloads_context_menu_always_open_similar_files.js"]
@@ -36,6 +41,9 @@ support-files = ["test_spammy_page.html"]
 ["browser_downloads_context_menu_delete_file.js"]
 
 ["browser_downloads_context_menu_selection.js"]
+
+["browser_downloads_jsonview.js"]
+support-files = ["cookies-json.sjs"]
 
 ["browser_downloads_keynav.js"]
 

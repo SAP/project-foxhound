@@ -47,14 +47,12 @@ export const WEBDRIVER_CLASSIC_CAPABILITIES = [
   "pageLoadStrategy",
   "strictFileInteractability",
   "timeouts",
-  "unhandledPromptBehavior",
   "webSocketUrl",
 
   // Gecko specific capabilities
   "moz:accessibilityChecks",
   "moz:debuggerAddress",
   "moz:firefoxOptions",
-  "moz:useNonSpecCompliantPointerOrigin",
   "moz:webdriverClick",
 
   // Extension capabilities
@@ -101,7 +99,8 @@ export class Timeouts {
         case "implicit":
           t.implicit = lazy.assert.positiveInteger(
             ms,
-            lazy.pprint`Expected ${type} to be a positive integer, got ${ms}`
+            `Expected "${type}" to be a positive integer, ` +
+              lazy.pprint`got ${ms}`
           );
           break;
 
@@ -109,7 +108,8 @@ export class Timeouts {
           if (ms !== null) {
             lazy.assert.positiveInteger(
               ms,
-              lazy.pprint`Expected ${type} to be a positive integer, got ${ms}`
+              `Expected "${type}" to be a positive integer, ` +
+                lazy.pprint`got ${ms}`
             );
           }
           t.script = ms;
@@ -118,7 +118,8 @@ export class Timeouts {
         case "pageLoad":
           t.pageLoad = lazy.assert.positiveInteger(
             ms,
-            lazy.pprint`Expected ${type} to be a positive integer, got ${ms}`
+            `Expected "${type}" to be a positive integer, ` +
+              lazy.pprint`got ${ms}`
           );
           break;
 
@@ -559,14 +560,14 @@ export class Capabilities extends Map {
         case "acceptInsecureCerts":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be a boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
         case "pageLoadStrategy":
           lazy.assert.string(
             v,
-            lazy.pprint`Expected ${k} to be a string, got ${v}`
+            `Expected "${k}" to be a string, ` + lazy.pprint`got ${v}`
           );
           if (!Object.values(PageLoadStrategy).includes(v)) {
             throw new lazy.error.InvalidArgumentError(
@@ -582,7 +583,7 @@ export class Capabilities extends Map {
         case "setWindowRect":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           if (!lazy.AppInfo.isAndroid && !v) {
             throw new lazy.error.InvalidArgumentError(
@@ -600,7 +601,10 @@ export class Capabilities extends Map {
           break;
 
         case "strictFileInteractability":
-          v = lazy.assert.boolean(v);
+          v = lazy.assert.boolean(
+            v,
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
+          );
           break;
 
         case "unhandledPromptBehavior":
@@ -610,12 +614,12 @@ export class Capabilities extends Map {
         case "webSocketUrl":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
 
           if (!v) {
             throw new lazy.error.InvalidArgumentError(
-              lazy.pprint`Expected ${k} to be true, got ${v}`
+              `Expected "${k}" to be true, ` + lazy.pprint`got ${v}`
             );
           }
           break;
@@ -623,42 +627,42 @@ export class Capabilities extends Map {
         case "webauthn:virtualAuthenticators":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be a boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
         case "webauthn:extension:uvm":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be a boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
         case "webauthn:extension:prf":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be a boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
         case "webauthn:extension:largeBlob":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be a boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
         case "webauthn:extension:credBlob":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be a boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
         case "moz:accessibilityChecks":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
@@ -667,25 +671,17 @@ export class Capabilities extends Map {
         case "moz:debuggerAddress":
           continue;
 
-        case "moz:useNonSpecCompliantPointerOrigin":
-          if (v !== undefined) {
-            throw new lazy.error.InvalidArgumentError(
-              `Since Firefox 116 the capability ${k} is no longer supported`
-            );
-          }
-          break;
-
         case "moz:webdriverClick":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
           break;
 
         case "moz:windowless":
           lazy.assert.boolean(
             v,
-            lazy.pprint`Expected ${k} to be boolean, got ${v}`
+            `Expected "${k}" to be a boolean, ` + lazy.pprint`got ${v}`
           );
 
           // Only supported on MacOS
@@ -725,7 +721,7 @@ export class Capabilities extends Map {
       case "acceptInsecureCerts":
         lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
         return value;
 
@@ -734,13 +730,13 @@ export class Capabilities extends Map {
       case "platformName":
         return lazy.assert.string(
           value,
-          lazy.pprint`Expected ${name} to be a string, got ${value}`
+          `Expected "${name}" to be a string, ` + lazy.pprint`got ${value}`
         );
 
       case "pageLoadStrategy":
         lazy.assert.string(
           value,
-          lazy.pprint`Expected ${name} to be a string, got ${value}`
+          `Expected "${name}" to be a string, ` + lazy.pprint`got ${value}`
         );
         if (!Object.values(PageLoadStrategy).includes(value)) {
           throw new lazy.error.InvalidArgumentError(
@@ -753,7 +749,10 @@ export class Capabilities extends Map {
         return Proxy.fromJSON(value);
 
       case "strictFileInteractability":
-        return lazy.assert.boolean(value);
+        return lazy.assert.boolean(
+          value,
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
+        );
 
       case "timeouts":
         return Timeouts.fromJSON(value);
@@ -764,12 +763,12 @@ export class Capabilities extends Map {
       case "webSocketUrl":
         lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
 
         if (!value) {
           throw new lazy.error.InvalidArgumentError(
-            lazy.pprint`Expected ${name} to be true, got ${value}`
+            `Expected "${name}" to be true, ` + lazy.pprint`got ${value}`
           );
         }
         return value;
@@ -777,46 +776,46 @@ export class Capabilities extends Map {
       case "webauthn:virtualAuthenticators":
         lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
         return value;
 
       case "webauthn:extension:uvm":
         lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
         return value;
 
       case "webauthn:extension:largeBlob":
         lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
         return value;
 
       case "moz:firefoxOptions":
         return lazy.assert.object(
           value,
-          lazy.pprint`Expected ${name} to be an object, got ${value}`
+          `Expected "${name}" to be an object, ` + lazy.pprint`got ${value}`
         );
 
       case "moz:accessibilityChecks":
         return lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
 
       case "moz:webdriverClick":
         return lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
 
       case "moz:windowless":
         lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
 
         // Only supported on MacOS
@@ -830,13 +829,14 @@ export class Capabilities extends Map {
       case "moz:debuggerAddress":
         return lazy.assert.boolean(
           value,
-          lazy.pprint`Expected ${name} to be a boolean, got ${value}`
+          `Expected "${name}" to be a boolean, ` + lazy.pprint`got ${value}`
         );
 
       default:
         lazy.assert.string(
           name,
-          lazy.pprint`Expected capability name to be a string, got ${name}`
+          `Expected capability "name" to be a string, ` +
+            lazy.pprint`got ${name}`
         );
         if (name.includes(":")) {
           const [prefix] = name.split(":");
@@ -994,7 +994,10 @@ export function mergeCapabilities(primary, secondary) {
  *     If <var>capabilities</var> is not an object.
  */
 export function validateCapabilities(capabilities) {
-  lazy.assert.object(capabilities);
+  lazy.assert.object(
+    capabilities,
+    lazy.pprint`Expected "capabilities" to be an object, got ${capabilities}`
+  );
 
   const result = {};
 
@@ -1041,10 +1044,13 @@ export function processCapabilities(params) {
 
   requiredCapabilities = validateCapabilities(requiredCapabilities);
 
-  lazy.assert.array(allFirstMatchCapabilities);
+  lazy.assert.array(
+    allFirstMatchCapabilities,
+    lazy.pprint`Expected "firstMatch" to be an array, got ${allFirstMatchCapabilities}`
+  );
   lazy.assert.that(
     firstMatch => firstMatch.length >= 1,
-    lazy.pprint`Expected firstMatch ${allFirstMatchCapabilities} to have at least 1 entry`
+    lazy.pprint`Expected "firstMatch" to be an array of length 1 or greater, got ${allFirstMatchCapabilities}`
   )(allFirstMatchCapabilities);
 
   const validatedFirstMatchCapabilities =

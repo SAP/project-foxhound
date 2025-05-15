@@ -63,10 +63,10 @@ enum FlipType {
   FlipType_Slide = 3  // allow the arrow to "slide" instead of resizing
 };
 
-enum MenuPopupAnchorType {
-  MenuPopupAnchorType_Node = 0,   // anchored to a node
-  MenuPopupAnchorType_Point = 1,  // unanchored and positioned at a screen point
-  MenuPopupAnchorType_Rect = 2,   // anchored at a screen rectangle
+enum class MenuPopupAnchorType : uint8_t {
+  Node = 0,   // anchored to a node
+  Point = 1,  // unanchored, and positioned at a screen point
+  Rect = 2,   // anchored at a screen rectangle
 };
 
 // values are selected so that the direction can be flipped just by
@@ -165,8 +165,9 @@ class nsMenuPopupFrame final : public nsBlockFrame {
 
   mozilla::dom::XULPopupElement& PopupElement() const;
 
-  nscoord GetPrefISize(gfxContext*) final;
-  nscoord GetMinISize(gfxContext*) final;
+  nscoord IntrinsicISize(gfxContext* aContext,
+                         mozilla::IntrinsicISizeType aType) override;
+
   void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
@@ -382,7 +383,7 @@ class nsMenuPopupFrame final : public nsBlockFrame {
   void PerformMove(const Rects&);
 
   // Return true if the popup is positioned relative to an anchor.
-  bool IsAnchored() const { return mAnchorType != MenuPopupAnchorType_Point; }
+  bool IsAnchored() const { return mAnchorType != MenuPopupAnchorType::Point; }
 
   // Return the anchor if there is one.
   nsIContent* GetAnchor() const { return mAnchorContent; }
@@ -429,7 +430,6 @@ class nsMenuPopupFrame final : public nsBlockFrame {
  protected:
   // returns the popup's level.
   PopupLevel GetPopupLevel(bool aIsNoAutoHide) const;
-  void TweakMinPrefISize(nscoord&);
 
   void InitPositionFromAnchorAlign(const nsAString& aAnchor,
                                    const nsAString& aAlign);
@@ -634,7 +634,7 @@ class nsMenuPopupFrame final : public nsBlockFrame {
   mutable nscoord mPositionedOffset = 0;
 
   // How the popup is anchored.
-  MenuPopupAnchorType mAnchorType = MenuPopupAnchorType_Node;
+  MenuPopupAnchorType mAnchorType = MenuPopupAnchorType::Node;
 
   nsRect mOverrideConstraintRect;
 

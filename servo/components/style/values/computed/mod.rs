@@ -36,16 +36,14 @@ use std::cmp;
 use std::f32;
 use std::ops::{Add, Sub};
 
-#[cfg(feature = "gecko")]
 pub use self::align::{
     AlignContent, AlignItems, JustifyContent, JustifyItems, SelfAlignment,
 };
-#[cfg(feature = "gecko")]
 pub use self::align::{AlignSelf, JustifySelf};
 pub use self::angle::Angle;
 pub use self::animation::{
     AnimationComposition, AnimationDirection, AnimationFillMode, AnimationIterationCount,
-    AnimationName, AnimationPlayState, AnimationTimeline, ScrollAxis, ScrollTimelineName,
+    AnimationName, AnimationPlayState, AnimationTimeline, ScrollAxis, TimelineName,
     TransitionBehavior, TransitionProperty, ViewTimelineInset,
 };
 pub use self::background::{BackgroundRepeat, BackgroundSize};
@@ -92,7 +90,7 @@ pub use self::position::AnchorScope;
 pub use self::position::AspectRatio;
 pub use self::position::DashedIdentAndOrTryTactic;
 pub use self::position::PositionAnchor;
-pub use self::position::PositionTryOptions;
+pub use self::position::PositionTryFallbacks;
 pub use self::position::PositionTryOrder;
 pub use self::position::PositionVisibility;
 pub use self::position::{
@@ -104,7 +102,7 @@ pub use self::rect::NonNegativeLengthOrNumberRect;
 pub use self::resolution::Resolution;
 pub use self::svg::{DProperty, MozContextProperties};
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint, SVGPaintKind};
-pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth};
+pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth, VectorEffect};
 pub use self::text::HyphenateCharacter;
 pub use self::text::TextUnderlinePosition;
 pub use self::text::{InitialLetter, LetterSpacing, LineBreak, TextIndent};
@@ -122,7 +120,6 @@ pub use super::specified::ViewportVariant;
 pub use super::specified::{BorderStyle, TextDecorationLine};
 pub use app_units::Au;
 
-#[cfg(feature = "gecko")]
 pub mod align;
 pub mod angle;
 pub mod animation;
@@ -805,7 +802,7 @@ impl ToAnimatedValue for NonNegativeNumber {
     type AnimatedValue = CSSFloat;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         self.0
     }
 
@@ -848,7 +845,7 @@ impl ToAnimatedValue for ZeroToOneNumber {
     type AnimatedValue = CSSFloat;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         self.0
     }
 
@@ -872,7 +869,7 @@ impl ToAnimatedValue for GreaterThanOrEqualToOneNumber {
     type AnimatedValue = CSSFloat;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         self.0
     }
 
@@ -970,7 +967,7 @@ impl ToAnimatedValue for NonNegativeNumberOrPercentage {
     type AnimatedValue = NumberOrPercentage;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         self.0
     }
 
@@ -993,7 +990,7 @@ impl ToAnimatedValue for PositiveInteger {
     type AnimatedValue = CSSInteger;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         self.0
     }
 

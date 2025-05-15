@@ -11,7 +11,6 @@
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsIFrame.h"
-#include "nsITextControlFrame.h"
 #include "nsIFormControl.h"
 #include "nsTextFragment.h"
 #include "nsString.h"
@@ -164,7 +163,7 @@ static bool ShouldFindAnonymousContent(const nsIContent& aContent) {
   MOZ_ASSERT(aContent.IsInNativeAnonymousSubtree());
 
   nsIContent& host = AnonymousSubtreeRootParentOrHost(aContent);
-  if (nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(&host)) {
+  if (const auto* formControl = nsIFormControl::FromNode(&host)) {
     if (formControl->IsTextControl(/* aExcludePassword = */ true)) {
       // Only editable NAC in textfields should be findable. That is, we want to
       // find "bar" in `<input value="bar">`, but not in `<input
@@ -480,13 +479,13 @@ NS_IMETHODIMP
 nsFind::GetEntireWord(bool* aEntireWord) {
   if (!aEntireWord) return NS_ERROR_NULL_POINTER;
 
-  *aEntireWord = mEntireWord;
+  *aEntireWord = mWordStartBounded && mWordEndBounded;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsFind::SetEntireWord(bool aEntireWord) {
-  mEntireWord = aEntireWord;
+  mWordStartBounded = mWordEndBounded = aEntireWord;
   return NS_OK;
 }
 
@@ -861,7 +860,7 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
     // Figure whether the previous char is a word-breaking one,
     // if we care about word boundaries.
     bool wordBreakPrev = true;
-    if (mEntireWord && prevChar) {
+    if (mWordStartBounded && prevChar) {
       if (prevChar == NBSP_CHARCODE) {
         prevChar = CHAR_TO_UNICHAR(' ');
       }
@@ -874,7 +873,8 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
     // b) a match has already been stored
     // c) the previous character is a different "class" than the current
     // character.
-    if ((c == patc && (!mEntireWord || matchAnchorNode || wordBreakPrev)) ||
+    if ((c == patc && (!(mWordStartBounded || mWordEndBounded) ||
+                       matchAnchorNode || wordBreakPrev)) ||
         (inWhitespace && IsSpace(c))) {
       prevCharInMatch = c;
       if (inWhitespace) {
@@ -901,7 +901,7 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
 
         // Make the range:
         // Check for word break (if necessary)
-        if (mEntireWord || inWhitespace) {
+        if (mWordEndBounded || inWhitespace) {
           int32_t nextfindex = findex + incr;
 
           char32_t nextChar;
@@ -922,7 +922,7 @@ nsFind::Find(const nsAString& aPatText, nsRange* aSearchRange,
           }
 
           // If a word break isn't there when it needs to be, reset search.
-          if (mEntireWord && nextChar && !BreakInBetween(c, nextChar)) {
+          if (mWordEndBounded && nextChar && !BreakInBetween(c, nextChar)) {
             matchAnchorNode = nullptr;
             continue;
           }

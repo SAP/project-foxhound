@@ -264,17 +264,7 @@ class WorkerThreadRunnable : public WorkerRunnable {
   // Cancel(). Only checked and modified on the target thread.
   bool mCallingCancelWithinRun;
 
-  // If dispatching a WorkerThreadRunnable before Worker initialization complete
-  // in worker thread, which are in WorkerPrivate::mPreStartRunnables, when
-  // GetCurrentThreadWorkerPrivate() might get an invalid WorkerPrivate for
-  // WorkerThreadRunnable::Run() because it is in Worker's shutdown.
-  //
-  // This is specific for cleanup these pre-start runnables if the shutdown
-  // starts before Worker executes its event loop.
-  // This member is only set when the runnable is dispatched to
-  // WorkerPrivate::mPreStartRunnables. Any other cases to use this
-  // WorkerPrivate is always wrong.
-  CheckedUnsafePtr<WorkerPrivate> mWorkerPrivateForPreStartCleaning;
+  bool mCleanPreStartDispatching{false};
 };
 
 // This runnable is used to send a message to a worker debugger.
@@ -446,12 +436,15 @@ class WorkerSameThreadRunnable : public WorkerThreadRunnable {
 // Note that the derived class must override MainThreadRun.
 class WorkerMainThreadRunnable : public Runnable {
  protected:
-  WorkerPrivate* mWorkerPrivate;
+  RefPtr<ThreadSafeWorkerRef> mWorkerRef;
   nsCOMPtr<nsISerialEventTarget> mSyncLoopTarget;
   const nsCString mTelemetryKey;
+  const char* mName;
 
-  explicit WorkerMainThreadRunnable(WorkerPrivate* aWorkerPrivate,
-                                    const nsACString& aTelemetryKey);
+  explicit WorkerMainThreadRunnable(
+      WorkerPrivate* aWorkerPrivate, const nsACString& aTelemetryKey,
+      const char* aName = "WorkerMainThreadRunnable");
+
   ~WorkerMainThreadRunnable();
 
   virtual bool MainThreadRun() = 0;
@@ -463,7 +456,8 @@ class WorkerMainThreadRunnable : public Runnable {
   // aFailStatus, except if you want an infallible runnable. In this case, use
   // 'Killing'.
   // In that case the error MUST be propagated out to script.
-  void Dispatch(WorkerStatus aFailStatus, ErrorResult& aRv);
+  void Dispatch(WorkerPrivate* aWorkerPrivate, WorkerStatus aFailStatus,
+                ErrorResult& aRv);
 
  private:
   NS_IMETHOD Run() override;

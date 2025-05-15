@@ -21,7 +21,6 @@ use crate::values::specified::font::{
 use crate::values::specified::length::{FontBaseSize, LineHeightBase, NoCalcLength};
 use crate::Atom;
 use cssparser::{serialize_identifier, CssStringWriter, Parser};
-#[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use num_traits::abs;
 use num_traits::cast::AsPrimitive;
@@ -62,12 +61,14 @@ pub use crate::values::specified::Number as SpecifiedNumber;
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Eq,
     Hash,
     MallocSizeOf,
     PartialEq,
     PartialOrd,
     ToResolvedValue,
 )]
+#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 pub struct FixedPoint<T, const FRACTION_BITS: u16> {
     /// The actual representation.
     pub value: T,
@@ -150,7 +151,7 @@ impl ToAnimatedValue for FontWeight {
     type AnimatedValue = Number;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         self.value()
     }
 
@@ -248,7 +249,6 @@ impl FontWeight {
     PartialEq,
     ToAnimatedZero,
     ToCss,
-    ToResolvedValue,
 )]
 #[cfg_attr(feature = "servo", derive(Serialize, Deserialize))]
 /// The computed value of font-size
@@ -303,8 +303,8 @@ impl ToAnimatedValue for FontSize {
     type AnimatedValue = Length;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
-        self.computed_size.0
+    fn to_animated_value(self, context: &crate::values::animated::Context) -> Self::AnimatedValue {
+        self.computed_size.0.to_animated_value(context)
     }
 
     #[inline]
@@ -317,8 +317,27 @@ impl ToAnimatedValue for FontSize {
     }
 }
 
+impl ToResolvedValue for FontSize {
+    type ResolvedValue = NonNegativeLength;
+
+    #[inline]
+    fn to_resolved_value(self, context: &ResolvedContext) -> Self::ResolvedValue {
+        self.computed_size.to_resolved_value(context)
+    }
+
+    #[inline]
+    fn from_resolved_value(resolved: Self::ResolvedValue) -> Self {
+        let computed_size = NonNegativeLength::from_resolved_value(resolved);
+        Self {
+            computed_size,
+            used_size: computed_size,
+            keyword_info: KeywordInfo::none(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, ToComputedValue, ToResolvedValue)]
-#[cfg_attr(feature = "servo", derive(Hash, MallocSizeOf, Serialize, Deserialize))]
+#[cfg_attr(feature = "servo", derive(Hash, Serialize, Deserialize))]
 /// Specifies a prioritized list of font family names or generic family names.
 #[repr(C)]
 pub struct FontFamily {
@@ -353,6 +372,7 @@ impl FontFamily {
     }
 
     /// Returns the font family for `-moz-bullet-font`.
+    #[cfg(feature = "gecko")]
     pub(crate) fn moz_bullet() -> &'static Self {
         static_font_family!(
             MOZ_BULLET,
@@ -366,6 +386,7 @@ impl FontFamily {
     }
 
     /// Returns a font family for a single system font.
+    #[cfg(feature = "gecko")]
     pub fn for_system_font(name: &str) -> Self {
         Self {
             families: FontFamilyList {
@@ -397,6 +418,7 @@ impl FontFamily {
         generic_font_family!(MONOSPACE, Monospace);
         generic_font_family!(CURSIVE, Cursive);
         generic_font_family!(FANTASY, Fantasy);
+        #[cfg(feature = "gecko")]
         generic_font_family!(MOZ_EMOJI, MozEmoji);
         generic_font_family!(SYSTEM_UI, SystemUi);
 
@@ -410,6 +432,7 @@ impl FontFamily {
             GenericFontFamily::Monospace => &*MONOSPACE,
             GenericFontFamily::Cursive => &*CURSIVE,
             GenericFontFamily::Fantasy => &*FANTASY,
+            #[cfg(feature = "gecko")]
             GenericFontFamily::MozEmoji => &*MOZ_EMOJI,
             GenericFontFamily::SystemUi => &*SYSTEM_UI,
         };
@@ -421,7 +444,6 @@ impl FontFamily {
     }
 }
 
-#[cfg(feature = "gecko")]
 impl MallocSizeOf for FontFamily {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         use malloc_size_of::MallocUnconditionalSizeOf;
@@ -468,10 +490,18 @@ pub struct FamilyName {
     pub syntax: FontFamilyNameSyntax,
 }
 
+#[cfg(feature = "gecko")]
 impl FamilyName {
     fn is_known_icon_font_family(&self) -> bool {
         use crate::gecko_bindings::bindings;
         unsafe { bindings::Gecko_IsKnownIconFontFamily(self.name.as_ptr()) }
+    }
+}
+
+#[cfg(feature = "servo")]
+impl FamilyName {
+    fn is_known_icon_font_family(&self) -> bool {
+        false
     }
 }
 
@@ -595,8 +625,9 @@ impl GenericFontFamily {
     /// the user. See bug 789788 and bug 1730098.
     pub(crate) fn valid_for_user_font_prioritization(self) -> bool {
         match self {
-            Self::None | Self::Fantasy | Self::Cursive | Self::SystemUi | Self::MozEmoji => false,
-
+            Self::None | Self::Fantasy | Self::Cursive | Self::SystemUi => false,
+            #[cfg(feature = "gecko")]
+            Self::MozEmoji => false,
             Self::Serif | Self::SansSerif | Self::Monospace => true,
         }
     }
@@ -664,39 +695,9 @@ impl Parse for SingleFontFamily {
     }
 }
 
-#[cfg(feature = "servo")]
-impl SingleFontFamily {
-    /// Get the corresponding font-family with Atom
-    pub fn from_atom(input: Atom) -> SingleFontFamily {
-        match input {
-            atom!("serif") => return SingleFontFamily::Generic(GenericFontFamily::Serif),
-            atom!("sans-serif") => return SingleFontFamily::Generic(GenericFontFamily::SansSerif),
-            atom!("cursive") => return SingleFontFamily::Generic(GenericFontFamily::Cursive),
-            atom!("fantasy") => return SingleFontFamily::Generic(GenericFontFamily::Fantasy),
-            atom!("monospace") => return SingleFontFamily::Generic(GenericFontFamily::Monospace),
-            _ => {},
-        }
-
-        match_ignore_ascii_case! { &input,
-            "serif" => return SingleFontFamily::Generic(GenericFontFamily::Serif),
-            "sans-serif" => return SingleFontFamily::Generic(GenericFontFamily::SansSerif),
-            "cursive" => return SingleFontFamily::Generic(GenericFontFamily::Cursive),
-            "fantasy" => return SingleFontFamily::Generic(GenericFontFamily::Fantasy),
-            "monospace" => return SingleFontFamily::Generic(GenericFontFamily::Monospace),
-            _ => {}
-        }
-
-        // We don't know if it's quoted or not. So we set it to
-        // quoted by default.
-        SingleFontFamily::FamilyName(FamilyName {
-            name: input,
-            syntax: FontFamilyNameSyntax::Quoted,
-        })
-    }
-}
-
 /// A list of font families.
 #[derive(Clone, Debug, ToComputedValue, ToResolvedValue, ToShmem, PartialEq, Eq)]
+#[cfg_attr(feature = "servo", derive(Deserialize, Serialize, Hash))]
 #[repr(C)]
 pub struct FontFamilyList {
     /// The actual list of font families specified.
@@ -715,6 +716,7 @@ impl FontFamilyList {
     /// generic instead of the site's specified font may cause substantial breakage.
     /// If no suitable generic is found in the list, insert the default generic ahead
     /// of all the listed families except for known ligature-based icon fonts.
+    #[cfg_attr(feature = "servo", allow(unused))]
     pub(crate) fn prioritize_first_generic_or_prepend(&mut self, generic: GenericFontFamily) {
         let mut index_of_first_generic = None;
         let mut target_index = None;
@@ -763,6 +765,7 @@ impl FontFamilyList {
     }
 
     /// Returns whether we need to prioritize user fonts.
+    #[cfg_attr(feature = "servo", allow(unused))]
     pub(crate) fn needs_user_font_prioritization(&self) -> bool {
         self.iter().next().map_or(true, |f| match f {
             SingleFontFamily::Generic(f) => !f.valid_for_user_font_prioritization(),
@@ -942,6 +945,7 @@ where
     ToShmem,
 )]
 #[repr(C)]
+#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[value_info(other_values = "normal")]
 pub struct FontLanguageOverride(pub u32);
 
@@ -1071,12 +1075,14 @@ pub type FontStyleFixedPoint = FixedPoint<i16, FONT_STYLE_FRACTION_BITS>;
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Eq,
     Hash,
     MallocSizeOf,
     PartialEq,
     PartialOrd,
     ToResolvedValue,
 )]
+#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
 pub struct FontStyle(FontStyleFixedPoint);
 
@@ -1147,7 +1153,7 @@ impl ToAnimatedValue for FontStyle {
     type AnimatedValue = generics::FontStyle<Angle>;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         if self == Self::NORMAL {
             // This allows us to animate between normal and oblique values. Per spec,
             // https://drafts.csswg.org/css-fonts-4/#font-style-prop:
@@ -1200,6 +1206,7 @@ pub type FontStretchFixedPoint = FixedPoint<u16, FONT_STRETCH_FRACTION_BITS>;
 #[derive(
     Clone, ComputeSquaredDistance, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToResolvedValue,
 )]
+#[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
 pub struct FontStretch(pub FontStretchFixedPoint);
 
@@ -1327,7 +1334,7 @@ impl ToAnimatedValue for FontStretch {
     type AnimatedValue = Percentage;
 
     #[inline]
-    fn to_animated_value(self) -> Self::AnimatedValue {
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
         self.to_percentage()
     }
 
@@ -1344,21 +1351,33 @@ impl ToResolvedValue for LineHeight {
     type ResolvedValue = Self;
 
     fn to_resolved_value(self, context: &ResolvedContext) -> Self::ResolvedValue {
-        // Resolve <number> to an absolute <length> based on font size.
-        if matches!(self, Self::Normal | Self::MozBlockHeight) {
-            return self;
+        #[cfg(feature = "gecko")]
+        {
+            // Resolve <number> to an absolute <length> based on font size.
+            if matches!(self, Self::Normal | Self::MozBlockHeight) {
+                return self;
+            }
+            let wm = context.style.writing_mode;
+            Self::Length(
+                context
+                    .device
+                    .calc_line_height(
+                        context.style.get_font(),
+                        wm,
+                        Some(context.element_info.element),
+                    )
+                    .to_resolved_value(context),
+            )
         }
-        let wm = context.style.writing_mode;
-        Self::Length(
-            context
-                .device
-                .calc_line_height(
-                    context.style.get_font(),
-                    wm,
-                    Some(context.element_info.element),
-                )
-                .to_resolved_value(context),
-        )
+        #[cfg(feature = "servo")]
+        {
+            if let LineHeight::Number(num) = &self {
+                let size = context.style.get_font().clone_font_size().computed_size();
+                LineHeight::Length(NonNegativeLength::new(size.px() * num.0))
+            } else {
+                self
+            }
+        }
     }
 
     #[inline]

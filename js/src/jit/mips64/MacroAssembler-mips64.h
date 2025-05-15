@@ -225,6 +225,22 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
   void convertInt32ToFloat32(Register src, FloatRegister dest);
   void convertInt32ToFloat32(const Address& src, FloatRegister dest);
 
+  void convertDoubleToFloat16(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertFloat16ToDouble(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertFloat32ToFloat16(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertFloat16ToFloat32(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertInt32ToFloat16(Register src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+
   void movq(Register rs, Register rd);
 
   void computeScaledAddress(const BaseIndex& address, Register dest);
@@ -517,14 +533,9 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
     return scratch;
   }
 
-  void boolValueToDouble(const ValueOperand& operand, FloatRegister dest);
-  void int32ValueToDouble(const ValueOperand& operand, FloatRegister dest);
   void loadInt32OrDouble(const Address& src, FloatRegister dest);
   void loadInt32OrDouble(const BaseIndex& addr, FloatRegister dest);
   void loadConstantDouble(double dp, FloatRegister dest);
-
-  void boolValueToFloat32(const ValueOperand& operand, FloatRegister dest);
-  void int32ValueToFloat32(const ValueOperand& operand, FloatRegister dest);
   void loadConstantFloat32(float f, FloatRegister dest);
 
   void testNullSet(Condition cond, const ValueOperand& value, Register dest);
@@ -653,8 +664,8 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
     pushValue(ValueOperand(scratch));
   }
 
-  void handleFailureWithHandlerTail(Label* profilerExitTail,
-                                    Label* bailoutTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail, Label* bailoutTail,
+                                    uint32_t* returnValueCheckOffset);
 
   /////////////////////////////////////////////////////////////////
   // Common interface.
@@ -802,11 +813,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
   void checkStackAlignment();
 
   static void calculateAlignedStackPointer(void** stackPointer);
-
-  // If source is a double, load it into dest. If source is int32,
-  // convert it to double. Else, branch to failure.
-  void ensureDouble(const ValueOperand& source, FloatRegister dest,
-                    Label* failure);
 
   void cmpPtrSet(Assembler::Condition cond, Address lhs, ImmPtr rhs,
                  Register dest);

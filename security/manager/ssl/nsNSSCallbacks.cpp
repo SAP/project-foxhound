@@ -10,7 +10,6 @@
 #include "PSMRunnable.h"
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
-#include "SharedSSLState.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
@@ -19,6 +18,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Span.h"
 #include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/intl/Localization.h"
@@ -989,8 +989,6 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
   PreliminaryHandshakeDone(fd);
 
   NSSSocketControl* infoObject = (NSSSocketControl*)fd->higher->secret;
-  nsSSLIOLayerHelpers& ioLayerHelpers =
-      infoObject->SharedState().IOLayerHelpers();
 
   SSLVersionRange versions(infoObject->GetTLSVersionRange());
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
@@ -998,10 +996,8 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
            "(0x%04x,0x%04x)\n",
            fd, static_cast<unsigned int>(versions.min),
            static_cast<unsigned int>(versions.max)));
-
   // If the handshake completed, then we know the site is TLS tolerant
-  ioLayerHelpers.rememberTolerantAtVersion(infoObject->GetHostName(),
-                                           infoObject->GetPort(), versions.max);
+  infoObject->RememberTLSTolerant();
 
   SSLChannelInfo channelInfo;
   SECStatus rv = SSL_GetChannelInfo(fd, &channelInfo, sizeof(channelInfo));
@@ -1086,8 +1082,9 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
     // TLS 1.3 dropped support for renegotiation.
     siteSupportsSafeRenego = true;
   }
-  bool renegotiationUnsafe = !siteSupportsSafeRenego &&
-                             ioLayerHelpers.treatUnsafeNegotiationAsBroken();
+  bool renegotiationUnsafe =
+      !siteSupportsSafeRenego &&
+      StaticPrefs::security_ssl_treat_unsafe_negotiation_as_broken();
 
   bool deprecatedTlsVer =
       (channelInfo.protocolVersion < SSL_LIBRARY_VERSION_TLS_1_2);
@@ -1101,8 +1098,7 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
     rv = SSL_VersionRangeGetDefault(ssl_variant_stream, &defVersion);
     if (rv == SECSuccess && versions.max >= defVersion.max) {
       // we know this site no longer requires a version fallback
-      ioLayerHelpers.removeInsecureFallbackSite(infoObject->GetHostName(),
-                                                infoObject->GetPort());
+      infoObject->RemoveInsecureTLSFallback();
     }
   }
 
@@ -1130,7 +1126,7 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
     msg.AppendLiteral(" : server does not support RFC 5746, see CVE-2009-3555");
 
     nsContentUtils::LogSimpleConsoleError(
-        msg, "SSL"_ns, !!infoObject->GetOriginAttributes().mPrivateBrowsingId,
+        msg, "SSL"_ns, infoObject->GetOriginAttributes().IsPrivateBrowsing(),
         true /* from chrome context */);
   }
 

@@ -1,3 +1,4 @@
+
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -802,14 +803,10 @@ Maybe<nsCString> CallingScriptLocationString() {
     return Nothing();
   }
 
-  nsAutoCString fileNameString;
-  uint32_t line = 0, col = 0;
-  if (!nsJSUtils::GetCallingLocation(cx, fileNameString, &line, &col)) {
-    return Nothing();
-  }
-
+  auto location = JSCallingLocation::Get(cx);
   nsCString logString = ""_ns;
-  logString.AppendPrintf("%s:%u:%u", fileNameString.get(), line, col);
+  logString.AppendPrintf("%s:%u:%u", location.FileName().get(), location.mLine,
+                         location.mColumn);
   return Some(logString);
 }
 
@@ -1162,6 +1159,23 @@ void DisallowHTTPSRR(uint32_t& aCaps) {
   // NS_HTTP_DISALLOW_HTTPS_RR should take precedence than
   // NS_HTTP_FORCE_WAIT_HTTP_RR.
   aCaps = (aCaps | NS_HTTP_DISALLOW_HTTPS_RR) & ~NS_HTTP_FORCE_WAIT_HTTP_RR;
+}
+
+// Convert HttpVersion enum to Telemetry label string
+nsLiteralCString HttpVersionToTelemetryLabel(HttpVersion version) {
+  switch (version) {
+    case HttpVersion::v0_9:
+    case HttpVersion::v1_0:
+    case HttpVersion::v1_1:
+      return "http_1"_ns;
+    case HttpVersion::v2_0:
+      return "http_2"_ns;
+    case HttpVersion::v3_0:
+      return "http_3"_ns;
+    default:
+      break;
+  }
+  return "unknown"_ns;
 }
 
 }  // namespace net

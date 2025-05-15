@@ -207,6 +207,7 @@ EXPORTS.js += [
     "../public/StreamConsumer.h",
     "../public/String.h",
     "../public/StructuredClone.h",
+    "../public/SweepingAPI.h",
     "../public/Symbol.h",
     "../public/TelemetryTimers.h",
     "../public/TraceKind.h",
@@ -475,6 +476,12 @@ if CONFIG["ENABLE_RECORD_TUPLE"]:
         "vm/TupleType.cpp",
     ]
 
+if CONFIG["ENABLE_EXPLICIT_RESOURCE_MANAGEMENT"]:
+    UNIFIED_SOURCES += [
+        "builtin/DisposableStackObject.cpp",
+        "vm/DisposableRecord.cpp",
+    ]
+
 if CONFIG["JS_HAS_INTL_API"]:
     UNIFIED_SOURCES += [
         "builtin/intl/Collator.cpp",
@@ -493,6 +500,7 @@ if CONFIG["JS_HAS_INTL_API"]:
     ]
 
 if CONFIG["MOZ_INSTRUMENTS"]:
+    OS_LIBS += ["-framework CoreFoundation"]
     SOURCES += [
         "devtools/Instruments.cpp",
     ]
@@ -519,7 +527,7 @@ else:
 
 if CONFIG["JS_HAS_INTL_API"] and CONFIG["MOZ_ICU4X"]:
     LOCAL_INCLUDES += [
-        "/intl/icu_capi/c/include",
+        "/intl/icu_capi/bindings/c",
     ]
 
 if CONFIG["JS_HAS_CTYPES"]:

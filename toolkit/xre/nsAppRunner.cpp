@@ -43,6 +43,7 @@
 #include "mozilla/glean/GleanPings.h"
 #include "mozilla/widget/TextRecognition.h"
 #include "BaseProfiler.h"
+#include "mozJSModuleLoader.h"
 
 #include "nsAppRunner.h"
 #include "mozilla/XREAppData.h"
@@ -502,7 +503,10 @@ static MOZ_FORMAT_PRINTF(2, 3) void Output(bool isError, const char* fmt, ...) {
     MultiByteToWideChar(CP_ACP, 0, msg.get(), -1, wide_msg,
                         sizeof(wide_msg) / sizeof(wchar_t));
 
-    MessageBoxW(nullptr, wide_msg, L"XULRunner", flags);
+    wchar_t wide_caption[128];
+    MultiByteToWideChar(CP_ACP, 0, gAppData ? gAppData->name : "XULRunner", -1,
+                        wide_caption, sizeof(wide_caption) / sizeof(wchar_t));
+    MessageBoxW(nullptr, wide_msg, wide_caption, flags);
   }
 #elif defined(MOZ_WIDGET_ANDROID)
   SmprintfPointer msg = mozilla::Vsmprintf(fmt, ap);
@@ -1509,15 +1513,6 @@ nsXULAppInfo::GetIsTextRecognitionSupported(bool* aResult) {
 }
 
 NS_IMETHODIMP
-nsXULAppInfo::EnsureContentProcess() {
-  if (!XRE_IsParentProcess()) return NS_ERROR_NOT_AVAILABLE;
-
-  RefPtr<ContentParent> unused =
-      ContentParent::GetNewOrUsedBrowserProcess(DEFAULT_REMOTE_TYPE);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsXULAppInfo::InvalidateCachesOnRestart() {
   nsCOMPtr<nsIFile> file;
   nsresult rv =
@@ -1808,38 +1803,26 @@ nsXULAppInfo::GetExtraFileForID(const nsAString& aId, nsIFile** aExtraFile) {
 NS_IMETHODIMP
 nsXULAppInfo::AnnotateCrashReport(const nsACString& key,
                                   const nsACString& data) {
-  CrashReporter::Annotation annotation;
-
-  if (!AnnotationFromString(annotation, PromiseFlatCString(key).get())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  CrashReporter::RecordAnnotationNSCString(annotation, data);
+  auto annotation = CrashReporter::AnnotationFromString(key);
+  NS_ENSURE_TRUE(annotation.isSome(), NS_ERROR_INVALID_ARG);
+  CrashReporter::RecordAnnotationNSCString(*annotation, data);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsXULAppInfo::RemoveCrashReportAnnotation(const nsACString& key) {
-  CrashReporter::Annotation annotation;
-
-  if (!AnnotationFromString(annotation, PromiseFlatCString(key).get())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  CrashReporter::UnrecordAnnotation(annotation);
+  auto annotation = CrashReporter::AnnotationFromString(key);
+  NS_ENSURE_TRUE(annotation.isSome(), NS_ERROR_INVALID_ARG);
+  CrashReporter::UnrecordAnnotation(*annotation);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsXULAppInfo::IsAnnotationAllowedForPing(const nsACString& aValue,
                                          bool* aIsAllowed) {
-  CrashReporter::Annotation annotation;
-
-  if (!AnnotationFromString(annotation, PromiseFlatCString(aValue).get())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  *aIsAllowed = CrashReporter::IsAnnotationAllowedForPing(annotation);
+  auto annotation = CrashReporter::AnnotationFromString(aValue);
+  NS_ENSURE_TRUE(annotation.isSome(), NS_ERROR_INVALID_ARG);
+  *aIsAllowed = CrashReporter::IsAnnotationAllowedForPing(*annotation);
 
   return NS_OK;
 }
@@ -3076,6 +3059,11 @@ static void SubmitDowngradeTelemetry(const nsCString& aLastVersion,
   rv = prefBranch->GetCharPref("toolkit.telemetry.cachedClientID", clientId);
   NS_ENSURE_SUCCESS_VOID(rv);
 
+  nsCString profileGroupId;
+  rv = prefBranch->GetCharPref("toolkit.telemetry.cachedProfileGroupID",
+                               profileGroupId);
+  NS_ENSURE_SUCCESS_VOID(rv);
+
   rv = prefSvc->GetDefaultBranch(nullptr, getter_AddRefs(prefBranch));
   NS_ENSURE_SUCCESS_VOID(rv);
 
@@ -3158,6 +3146,7 @@ static void SubmitDowngradeTelemetry(const nsCString& aLastVersion,
     w.StringProperty("creationDate", MakeStringSpan(date));
     w.IntProperty("version", TELEMETRY_PING_FORMAT_VERSION);
     w.StringProperty("clientId", clientId);
+    w.StringProperty("profileGroupId", profileGroupId);
     w.StartObjectProperty("application");
     {
       w.StringProperty("architecture", arch);
@@ -4016,9 +4005,11 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
     gKioskMonitor = atoi(kioskMonitorNumber);
   }
 
-  gAllowContentAnalysisArgPresent =
-      CheckArg("allow-content-analysis", nullptr, CheckArgFlag::RemoveArg) ==
-      ARG_FOUND;
+  if (XRE_IsParentProcess()) {
+    gAllowContentAnalysisArgPresent =
+        CheckArg("allow-content-analysis", nullptr, CheckArgFlag::None) ==
+        ARG_FOUND;
+  }
 
   nsresult rv;
   ArgResult ar;
@@ -4952,8 +4943,12 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
       // Try to remote the entire command line. If this fails, start up
       // normally.
 #  ifdef MOZ_WIDGET_GTK
-      const auto& startupToken =
+      auto& startupToken =
           GdkIsWaylandDisplay() ? mXDGActivationToken : mDesktopStartupID;
+#    ifdef MOZ_X11
+      if (GdkIsX11Display() && startupToken.IsEmpty())
+        startupToken = SynthesizeStartupToken();
+#    endif /* MOZ_X11 */
 #  else
       const nsCString startupToken;
 #  endif
@@ -5505,6 +5500,22 @@ nsresult XREMain::XRE_mainRun() {
     // files can't override JS engine start-up prefs.
     mDirProvider.FinishInitializingUserPrefs();
 
+    // Do a canary load of a JS based module here. This will help us detect
+    // missing resources during startup and make us react appropriate, that
+    // is inform the user before exiting with a crash.
+    {
+      mozilla::dom::AutoJSAPI jsapi;
+      MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
+      JS::Rooted<JSObject*> mod(jsapi.cx());
+      // AppConstants.sys.mjs is small, widely used and most likely will
+      // never go away.
+      rv = mozJSModuleLoader::Get()->ImportESModule(
+          jsapi.cx(), "resource://gre/modules/AppConstants.sys.mjs"_ns, &mod);
+      if (NS_FAILED(rv)) {
+        return NS_ERROR_OMNIJAR_OR_DIR_MISSING;
+      }
+    }
+
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
     // Now that we have preferences and the directory provider, we can
     // finish initializing SandboxBroker. This must happen before the GFX
@@ -5995,10 +6006,41 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   mScopedXPCOM = MakeUnique<ScopedXPCOMStartup>();
 
   rv = mScopedXPCOM->Initialize(/* aInitJSContext = */ false);
+  if (rv == NS_ERROR_OMNIJAR_CORRUPT) {
+    if (XRE_IsParentProcess()
+#ifdef MOZ_BACKGROUNDTASKS
+        && !mozilla::BackgroundTasks::IsBackgroundTaskMode()
+#endif
+    ) {
+      Output(
+          true,
+          "The installation seems to be corrupt.\nPlease check your hardware "
+          "and disk setup\nand/or re-install.\n");
+    }
+    MOZ_CRASH("NS_ERROR_OMNIJAR_CORRUPT");
+  }
   NS_ENSURE_SUCCESS(rv, 1);
 
   // run!
   rv = XRE_mainRun();
+  if (rv == NS_ERROR_OMNIJAR_OR_DIR_MISSING) {
+    if (XRE_IsParentProcess()
+#ifdef MOZ_BACKGROUNDTASKS
+        && !mozilla::BackgroundTasks::IsBackgroundTaskMode()
+#endif
+    ) {
+      Output(true,
+             "The installation seems to be incomplete.\nPlease check your "
+             "hardware and disk setup\nand/or re-install.\n");
+    }
+    if (mozilla::IsPackagedBuild()) {
+      // IsPackagedBuild just looks for omni.ja on disk. If we were able to
+      // find and open it before but not to load the expected JS module from
+      // it now, signal corruption.
+      MOZ_CRASH("NS_ERROR_OMNIJAR_CORRUPT");
+    }
+    MOZ_CRASH("NS_ERROR_OMNIJAR_OR_DIR_MISSING");
+  }
 
 #ifdef MOZ_X11
   XRE_CleanupX11ErrorHandler();

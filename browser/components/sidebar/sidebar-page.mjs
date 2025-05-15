@@ -4,6 +4,12 @@
 
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/sidebar/sidebar-panel-header.mjs";
+
+const { LightweightThemeConsumer } = ChromeUtils.importESModule(
+  "resource://gre/modules/LightweightThemeConsumer.sys.mjs"
+);
 
 export class SidebarPage extends MozLitElement {
   constructor() {
@@ -14,11 +20,15 @@ export class SidebarPage extends MozLitElement {
   connectedCallback() {
     super.connectedCallback();
     this.ownerGlobal.addEventListener("beforeunload", this.clearDocument);
+    this.ownerGlobal.addEventListener("unload", this.clearDocument);
+
+    new LightweightThemeConsumer(document);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this.ownerGlobal.removeEventListener("beforeunload", this.clearDocument);
+    this.ownerGlobal.removeEventListener("unload", this.clearDocument);
   }
 
   /**

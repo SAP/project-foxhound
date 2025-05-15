@@ -11,8 +11,8 @@
 #include "VideoUtils.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/Telemetry.h"
 #include "mozilla/glean/GleanMetrics.h"
 #include "nsThreadUtils.h"
 
@@ -22,33 +22,6 @@ LazyLogModule gTelemetryProbesReporterLog("TelemetryProbesReporter");
 #define LOG(msg, ...)                                   \
   MOZ_LOG(gTelemetryProbesReporterLog, LogLevel::Debug, \
           ("TelemetryProbesReporter=%p, " msg, this, ##__VA_ARGS__))
-
-static const char* ToVisibilityStr(
-    TelemetryProbesReporter::Visibility aVisibility) {
-  switch (aVisibility) {
-    case TelemetryProbesReporter::Visibility::eVisible:
-      return "visible";
-    case TelemetryProbesReporter::Visibility::eInvisible:
-      return "invisible";
-    case TelemetryProbesReporter::Visibility::eInitial:
-      return "initial";
-    default:
-      MOZ_ASSERT_UNREACHABLE("invalid visibility");
-      return "unknown";
-  }
-}
-static const char* ToAudibilityStr(
-    TelemetryProbesReporter::AudibleState aAudibleState) {
-  switch (aAudibleState) {
-    case TelemetryProbesReporter::AudibleState::eAudible:
-      return "audible";
-    case TelemetryProbesReporter::AudibleState::eNotAudible:
-      return "inaudible";
-    default:
-      MOZ_ASSERT_UNREACHABLE("invalid audibility");
-      return "unknown";
-  }
-}
 
 static const char* ToMutedStr(bool aMuted) {
   return aMuted ? "muted" : "unmuted";
@@ -157,7 +130,8 @@ void TelemetryProbesReporter::OnPause(Visibility aVisibility) {
 void TelemetryProbesReporter::OnVisibilityChanged(Visibility aVisibility) {
   AssertOnMainThreadAndNotShutdown();
   LOG("Corresponding media element visibility change=%s -> %s",
-      ToVisibilityStr(mMediaElementVisibility), ToVisibilityStr(aVisibility));
+      EnumValueToString(mMediaElementVisibility),
+      EnumValueToString(aVisibility));
   if (aVisibility == Visibility::eInvisible) {
     StartInvisibleVideoTimeAccumulator();
   } else {
@@ -172,7 +146,8 @@ void TelemetryProbesReporter::OnVisibilityChanged(Visibility aVisibility) {
 
 void TelemetryProbesReporter::OnAudibleChanged(AudibleState aAudibleState) {
   AssertOnMainThreadAndNotShutdown();
-  LOG("Audibility changed, now %s", ToAudibilityStr(aAudibleState));
+  LOG("Audibility changed, now %s",
+      dom::AudioChannelService::EnumValueToString(aAudibleState));
   if (aAudibleState == AudibleState::eNotAudible) {
     if (!mInaudibleAudioPlayTime.IsStarted()) {
       StartInaudibleAudioTimeAccumulator();
