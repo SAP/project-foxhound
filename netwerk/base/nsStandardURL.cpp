@@ -891,33 +891,12 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
   // However, perform Unicode normalization on it, as IDN does.
   // Note that we don't disallow URLs without a host - file:, etc
   if (mHost.mLen > 0) {
-<<<<<<< HEAD
-    nsAutoCString tempHost;
+    nsDependentCSubstring tempHost(spec + mHost.mPos, mHost.mLen);
     SafeStringTaint mHostTaint;
     if (taint.hasTaint()) {
       mHostTaint = taint.safeSubTaint(mHost.mPos, mHost.mPos + mHost.mLen);
+      tempHost.AssignTaint(mHostTaint);
     }
-    NS_UnescapeURL(spec + mHost.mPos, mHost.mLen, mHostTaint, esc_AlwaysCopy | esc_Host,
-                   tempHost);
-    if (tempHost.Contains('\0')) {
-      return NS_ERROR_MALFORMED_URI;  // null embedded in hostname
-    }
-    if (tempHost.Contains(' ')) {
-      return NS_ERROR_MALFORMED_URI;  // don't allow spaces in the hostname
-    }
-    nsresult rv = NormalizeIDN(tempHost, encHost);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-    if (!SegmentIs(spec, mScheme, "resource") &&
-        !SegmentIs(spec, mScheme, "chrome")) {
-      nsAutoCString ipString;
-      if (encHost.Length() > 0 && encHost.First() == '[' &&
-          encHost.Last() == ']' &&
-          ValidIPv6orHostname(encHost.get(), encHost.Length())) {
-        rv = (nsresult)rusturl_parse_ipv6addr(&encHost, &ipString);
-=======
-    nsDependentCSubstring tempHost(spec + mHost.mPos, mHost.mLen);
     nsresult rv;
     bool allowIp = !SegmentIs(spec, mScheme, "resource") &&
                    !SegmentIs(spec, mScheme, "chrome");
@@ -935,7 +914,6 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
       if (EndsInANumber(encHost) && allowIp) {
         nsAutoCString ipString;
         rv = NormalizeIPv4(encHost, ipString);
->>>>>>> bc78b98043438d8ee2727a483b6e10dedfda883f
         if (NS_FAILED(rv)) {
           return rv;
         }
@@ -2210,18 +2188,8 @@ nsresult nsStandardURL::SetHost(const nsACString& input) {
 
   FindHostLimit(start, end);
 
-<<<<<<< HEAD
-  // Do percent decoding on the the input.
-  nsAutoCString flat;
-  NS_UnescapeURL(hostname.BeginReading(), end - start,
-                 hostname.Taint(),
-                 esc_AlwaysCopy | esc_Host, flat);
-  const char* host = flat.get();
-
-  LOG(("nsStandardURL::SetHost [host=%s]\n", host));
-=======
   nsDependentCSubstring flat(start, end);
->>>>>>> bc78b98043438d8ee2727a483b6e10dedfda883f
+  flat.AssignTaint(hostname.Taint());
 
   if (mURLType == URLTYPE_NO_AUTHORITY) {
     if (flat.IsEmpty()) {
@@ -2294,11 +2262,7 @@ nsresult nsStandardURL::SetHost(const nsACString& input) {
     }
   }
 
-<<<<<<< HEAD
-  int32_t shift = ReplaceSegment(mHost.mPos, mHost.mLen, host, len, hostBuf.Taint());
-=======
-  int32_t shift = ReplaceSegment(mHost.mPos, mHost.mLen, hostBuf.get(), len);
->>>>>>> bc78b98043438d8ee2727a483b6e10dedfda883f
+  int32_t shift = ReplaceSegment(mHost.mPos, mHost.mLen, hostBuf.get(), len, hostBuf.Taint());
 
   if (shift) {
     mHost.mLen = len;

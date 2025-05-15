@@ -254,7 +254,6 @@ class XPCStringConvert {
   // Convert the given stringbuffer/length pair to a jsval
   static MOZ_ALWAYS_INLINE bool UCStringBufferToJSVal(
       JSContext* cx, mozilla::StringBuffer* buf, uint32_t length,
-      const StringTaint& taint,
       JS::MutableHandle<JS::Value> rval) {
     JSString* str = JS::NewStringFromKnownLiveTwoByteBuffer(cx, buf, length);
     if (!str) {
@@ -262,9 +261,7 @@ class XPCStringConvert {
     }
 
     // TaintFox: Transfer taint information to newly created JS string.
-    if (taint.hasTaint()) {
-      JS_SetStringTaint(cx, str, taint);
-    }
+    JS_SetStringTaint(cx, str, buf->Taint());
 
     rval.setString(str);
     return true;
@@ -519,7 +516,7 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
   if (str.HasStringBuffer()) {
     uint32_t length = str.StringBufferLength();
     mozilla::StringBuffer* buf = str.StringBuffer();
-    return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, str.Taint(), rval);
+    return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, rval);
   }
 
   if (str.HasLiteral()) {
