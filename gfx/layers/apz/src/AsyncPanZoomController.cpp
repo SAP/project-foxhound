@@ -876,7 +876,7 @@ AsyncPanZoomController::GetPinchLockMode() {
 }
 
 PointerEventsConsumableFlags AsyncPanZoomController::ArePointerEventsConsumable(
-    TouchBlockState* aBlock, const MultiTouchInput& aInput) const {
+    const TouchBlockState* aBlock, const MultiTouchInput& aInput) const {
   uint32_t touchPoints = aInput.mTouches.Length();
   if (touchPoints == 0) {
     // Cant' do anything with zero touch points
@@ -2306,7 +2306,8 @@ bool AsyncPanZoomController::CanScroll(const InputData& aEvent) const {
   return CanScroll(delta);
 }
 
-ScrollDirections AsyncPanZoomController::GetAllowedHandoffDirections() const {
+ScrollDirections AsyncPanZoomController::GetAllowedHandoffDirections(
+    HandoffConsumer aConsumer) const {
   ScrollDirections result;
   RecursiveMutexAutoLock lock(mRecursiveMutex);
 
@@ -2320,7 +2321,14 @@ ScrollDirections AsyncPanZoomController::GetAllowedHandoffDirections() const {
     result += ScrollDirection::eHorizontal;
   }
   if ((!isScrollable && !isRoot) || mY.OverscrollBehaviorAllowsHandoff()) {
-    result += ScrollDirection::eVertical;
+    // Bug 1902313: Block pull-to-refresh on pages with overflow-y:hidden
+    // to match Chrome behaviour.
+    bool blockPullToRefreshForOverflowHidden =
+        isRoot && aConsumer == HandoffConsumer::PullToRefresh &&
+        GetScrollMetadata().GetOverflow().mOverflowY == StyleOverflow::Hidden;
+    if (!blockPullToRefreshForOverflowHidden) {
+      result += ScrollDirection::eVertical;
+    }
   }
   return result;
 }
@@ -2787,6 +2795,13 @@ AsyncPanZoomController::GetDisplacementsForPanGesture(
   }
 
   return {logicalPanDisplacement, physicalPanDisplacement};
+}
+
+CSSCoord AsyncPanZoomController::ToCSSPixels(ParentLayerCoord value) const {
+  if (this->Metrics().GetZoom() == CSSToParentLayerScale(0)) {
+    return CSSCoord{0};
+  }
+  return (value / this->Metrics().GetZoom());
 }
 
 nsEventStatus AsyncPanZoomController::OnPan(
@@ -5643,6 +5658,7 @@ void AsyncPanZoomController::NotifyLayersUpdated(
         aScrollMetadata.GetDisregardedDirection());
     mScrollMetadata.SetOverscrollBehavior(
         aScrollMetadata.GetOverscrollBehavior());
+    mScrollMetadata.SetOverflow(aScrollMetadata.GetOverflow());
   }
 
   bool instantScrollMayTriggerTransform = false;
@@ -6088,8 +6104,34 @@ void AsyncPanZoomController::ZoomToRect(const ZoomTarget& aZoomTarget,
 
   SetState(ANIMATING_ZOOM);
 
+  bool hideDynamicToolbar{false};
+
   {
     RecursiveMutexAutoLock lock(mRecursiveMutex);
+
+    // If we are zooming to focus an input element near the bottom of the
+    // scrollable rect, it may be covered up by the dynamic toolbar and we may
+    // not have room to scroll it into view. In such cases, trigger hiding of
+    // the dynamic toolbar to ensure the input element is visible.
+    if (aFlags & ZOOM_TO_FOCUSED_INPUT) {
+      // Long and short viewport heights, corresponding to CSS length values of
+      // 100lvh and 100svh.
+      const CSSCoord lvh = ToCSSPixels(Metrics().GetCompositionBounds().height);
+      const CSSCoord svh = ToCSSPixels(
+          Metrics().GetCompositionSizeWithoutDynamicToolbar().height);
+      const CSSCoord scrollableRectHeight =
+          Metrics().GetScrollableRect().height;
+
+      if (scrollableRectHeight > svh && scrollableRectHeight < lvh) {
+        const CSSCoord targetDistanceFromBottom =
+            (Metrics().GetScrollableRect().YMost() -
+             aZoomTarget.targetRect.YMost());
+        const CSSCoord dynamicToolbarHeight = (lvh - svh);
+        if (targetDistanceFromBottom < dynamicToolbarHeight) {
+          hideDynamicToolbar = true;
+        }
+      }
+    }
 
     MOZ_ASSERT(Metrics().IsRootContent());
 
@@ -6301,6 +6343,11 @@ void AsyncPanZoomController::ZoomToRect(const ZoomTarget& aZoomTarget,
         endZoomToMetrics.GetVisualScrollOffset(), endZoomToMetrics.GetZoom())));
 
     RequestContentRepaint(RepaintUpdateType::eUserAction);
+  }
+
+  if (hideDynamicToolbar) {
+    RefPtr<GeckoContentController> controller = GetGeckoContentController();
+    controller->HideDynamicToolbar(GetGuid());
   }
 }
 

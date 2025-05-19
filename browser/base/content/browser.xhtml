@@ -41,7 +41,6 @@
       both "content" and "skin" packages, which bug 1385444 will unify later. -->
   <link rel="stylesheet" href="chrome://global/skin/global.css" />
 
-  <link rel="stylesheet" href="chrome://browser/content/browser.css" />
   <link
     rel="stylesheet"
     href="chrome://browser/content/downloads/downloads.css"
@@ -70,6 +69,7 @@
   <link rel="localization" href="browser/browserContext.ftl"/>
   <link rel="localization" href="browser/browserSets.ftl"/>
   <link rel="localization" href="browser/firefoxView.ftl"/>
+  <link rel="localization" href="browser/genai.ftl"/>
   <link rel="localization" href="browser/identityCredentialNotification.ftl" />
   <link rel="localization" href="browser/menubar.ftl"/>
   <link rel="localization" href="browser/originControls.ftl"/>
@@ -90,11 +90,12 @@
   <link rel="localization" href="toolkit/global/textActions.ftl"/>
   <link rel="localization" href="toolkit/printing/printUI.ftl"/>
   <!-- Untranslated FTL files -->
+  <link rel="localization" href="preview/credentialChooser.ftl" />
   <link rel="localization" href="preview/enUS-searchFeatures.ftl" />
   <link rel="localization" href="preview/interventions.ftl" />
   <link rel="localization" href="browser/shopping.ftl"/>
   <link rel="localization" href="preview/shopping.ftl"/>
-  <link rel="localization" href="preview/sidebar.ftl"/>
+  <link rel="localization" href="browser/sidebar.ftl"/>
   <link rel="localization" href="preview/profiles.ftl"/>
   <link rel="localization" href="preview/onboarding.ftl"/>
 
@@ -122,6 +123,7 @@
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-unified-extensions.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tab.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabbrowser.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabgroup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabs.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/places/places-menupopup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/search/autocomplete-popup.js", this);

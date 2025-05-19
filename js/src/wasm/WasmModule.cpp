@@ -20,8 +20,7 @@
 
 #include <chrono>
 
-#include "jit/FlushICache.h"  // for FlushExecutionContextForAllThreads
-#include "js/BuildId.h"       // JS::BuildIdCharVector
+#include "js/BuildId.h"                 // JS::BuildIdCharVector
 #include "js/experimental/TypedData.h"  // JS_NewUint8Array
 #include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "js/Printf.h"                  // JS_smprintf
@@ -86,18 +85,13 @@ static void ReportTier2ResultsOffThread(bool success,
 }
 
 class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
-  SharedCompileArgs compileArgs_;
   SharedBytes bytecode_;
   SharedModule module_;
   Atomic<bool> cancelled_;
 
  public:
-  Tier2GeneratorTaskImpl(const CompileArgs& compileArgs,
-                         const ShareableBytes& bytecode, Module& module)
-      : compileArgs_(&compileArgs),
-        bytecode_(&bytecode),
-        module_(&module),
-        cancelled_(false) {}
+  Tier2GeneratorTaskImpl(const ShareableBytes& bytecode, Module& module)
+      : bytecode_(&bytecode), module_(&module), cancelled_(false) {}
 
   ~Tier2GeneratorTaskImpl() override {
     module_->tier2Listener_ = nullptr;
@@ -117,14 +111,14 @@ class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
       // okay.
       UniqueChars error;
       UniqueCharsVector warnings;
-      bool success = CompileTier2(*compileArgs_, bytecode_->bytes, *module_,
-                                  &error, &warnings, &cancelled_);
+      bool success = CompileCompleteTier2(bytecode_->bytes, *module_, &error,
+                                          &warnings, &cancelled_);
       if (!cancelled_) {
         // We could try to dispatch a runnable to the thread that started this
         // compilation, so as to report the warning/error using a JSContext*.
         // For now we just report to stderr.
-        ReportTier2ResultsOffThread(success, compileArgs_->scriptedCaller,
-                                    error, warnings);
+        ReportTier2ResultsOffThread(
+            success, module_->codeMeta().scriptedCaller(), error, warnings);
       }
     }
 
@@ -149,11 +143,11 @@ Module::~Module() {
   MOZ_ASSERT(!testingTier2Active_);
 }
 
-void Module::startTier2(const CompileArgs& args, const ShareableBytes& bytecode,
+void Module::startTier2(const ShareableBytes& bytecode,
                         JS::OptimizedEncodingListener* listener) {
   MOZ_ASSERT(!testingTier2Active_);
 
-  auto task = MakeUnique<Tier2GeneratorTaskImpl>(args, bytecode, *this);
+  auto task = MakeUnique<Tier2GeneratorTaskImpl>(bytecode, *this);
   if (!task) {
     return;
   }
@@ -166,97 +160,20 @@ void Module::startTier2(const CompileArgs& args, const ShareableBytes& bytecode,
   StartOffThreadWasmTier2Generator(std::move(task));
 }
 
-bool Module::finishTier2(const LinkData& linkData2,
-                         UniqueCodeTier code2) const {
-  MOZ_ASSERT(code().bestTier() == Tier::Baseline &&
-             code2->tier() == Tier::Optimized);
-
-  // Install the data in the data structures. They will not be visible
-  // until commitTier2().
-
-  const CodeTier* borrowedTier2;
-  if (!code().setAndBorrowTier2(std::move(code2), linkData2, &borrowedTier2)) {
+bool Module::finishTier2(UniqueCodeBlock tier2CodeBlock,
+                         UniqueLinkData tier2LinkData) const {
+  if (!code_->finishTier2(std::move(tier2CodeBlock),
+                          std::move(tier2LinkData))) {
     return false;
-  }
-
-  // Before we can make tier-2 live, we need to compile tier2 versions of any
-  // extant tier1 lazy stubs (otherwise, tiering would break the assumption
-  // that any extant exported wasm function has had a lazy entry stub already
-  // compiled for it).
-  //
-  // Also see doc block for stubs in WasmJS.cpp.
-  {
-    // We need to prevent new tier1 stubs generation until we've committed
-    // the newer tier2 stubs, otherwise we might not generate one tier2
-    // stub that has been generated for tier1 before we committed.
-
-    const MetadataTier& metadataTier1 = metadata(Tier::Baseline);
-
-    auto stubs1 = code().codeTier(Tier::Baseline).lazyStubs().readLock();
-    auto stubs2 = borrowedTier2->lazyStubs().writeLock();
-
-    MOZ_ASSERT(stubs2->entryStubsEmpty());
-
-    Uint32Vector funcExportIndices;
-    for (size_t i = 0; i < metadataTier1.funcExports.length(); i++) {
-      const FuncExport& fe = metadataTier1.funcExports[i];
-      if (fe.hasEagerStubs()) {
-        continue;
-      }
-      if (!stubs1->hasEntryStub(fe.funcIndex())) {
-        continue;
-      }
-      if (!funcExportIndices.emplaceBack(i)) {
-        return false;
-      }
-    }
-
-    Maybe<size_t> stub2Index;
-    if (!stubs2->createTier2(funcExportIndices, metadata(), *borrowedTier2,
-                             &stub2Index)) {
-      return false;
-    }
-
-    // Initializing the code above will have flushed the icache for all cores.
-    // However, there could still be stale data in the execution pipeline of
-    // other cores on some platforms. Force an execution context flush on all
-    // threads to fix this before we commit the code.
-    //
-    // This is safe due to the check in `PlatformCanTier` in WasmCompile.cpp
-    jit::FlushExecutionContextForAllThreads();
-
-    // Now that we can't fail or otherwise abort tier2, make it live.
-
-    MOZ_ASSERT(!code().hasTier2());
-    code().commitTier2();
-
-    stubs2->setJitEntries(stub2Index, code());
-  }
-
-  // And we update the jump vectors with pointers to tier-2 functions and eager
-  // stubs.  Callers will continue to invoke tier-1 code until, suddenly, they
-  // will invoke tier-2 code.  This is benign.
-
-  uint8_t* base = code().segment(Tier::Optimized).base();
-  for (const CodeRange& cr : metadata(Tier::Optimized).codeRanges) {
-    // These are racy writes that we just want to be visible, atomically,
-    // eventually.  All hardware we care about will do this right.  But
-    // we depend on the compiler not splitting the stores hidden inside the
-    // set*Entry functions.
-    if (cr.isFunction()) {
-      code().setTieringEntry(cr.funcIndex(), base + cr.funcTierEntry());
-    } else if (cr.isJitEntry()) {
-      code().setJitEntry(cr.funcIndex(), base + cr.begin());
-    }
   }
 
   // Tier-2 is done; let everyone know. Mark tier-2 active for testing
   // purposes so that wasmHasTier2CompilationCompleted() only returns true
   // after tier-2 has been fully cached.
 
-  if (tier2Listener_) {
+  if (tier2Listener_ && code_->codeMeta().features().builtinModules.hasNone()) {
     Bytes bytes;
-    if (serialize(linkData2, &bytes)) {
+    if (serialize(&bytes)) {
       tier2Listener_->storeOptimizedEncoding(bytes.begin(), bytes.length());
     }
     tier2Listener_ = nullptr;
@@ -329,17 +246,13 @@ bool wasm::GetOptimizedEncodingBuildId(JS::BuildIdCharVector* buildId) {
 
 /* virtual */
 void Module::addSizeOfMisc(MallocSizeOf mallocSizeOf,
-                           Metadata::SeenSet* seenMetadata,
+                           CodeMetadata::SeenSet* seenCodeMeta,
+                           CodeMetadataForAsmJS::SeenSet* seenCodeMetaForAsmJS,
                            Code::SeenSet* seenCode, size_t* code,
                            size_t* data) const {
-  code_->addSizeOfMiscIfNotSeen(mallocSizeOf, seenMetadata, seenCode, code,
-                                data);
-  *data += mallocSizeOf(this) +
-           SizeOfVectorExcludingThis(imports_, mallocSizeOf) +
-           SizeOfVectorExcludingThis(exports_, mallocSizeOf) +
-           SizeOfVectorExcludingThis(dataSegments_, mallocSizeOf) +
-           SizeOfVectorExcludingThis(elemSegments_, mallocSizeOf) +
-           SizeOfVectorExcludingThis(customSections_, mallocSizeOf);
+  code_->addSizeOfMiscIfNotSeen(mallocSizeOf, seenCodeMeta,
+                                seenCodeMetaForAsmJS, seenCode, code, data);
+  *data += mallocSizeOf(this);
 }
 
 // Extracting machine code as JS object. The result has the "code" property, as
@@ -357,21 +270,22 @@ bool Module::extractCode(JSContext* cx, Tier tier,
   // block on tiered compilation to complete.
   testingBlockOnTier2Complete();
 
-  if (!code_->hasTier(tier)) {
+  if (!code_->hasCompleteTier(tier)) {
     vp.setNull();
     return true;
   }
 
-  const ModuleSegment& moduleSegment = code_->segment(tier);
-  RootedObject code(cx, JS_NewUint8Array(cx, moduleSegment.length()));
-  if (!code) {
+  const CodeBlock& codeBlock = code_->completeTierCodeBlock(tier);
+  const CodeSegment& codeSegment = *codeBlock.segment;
+  RootedObject codeObj(cx, JS_NewUint8Array(cx, codeSegment.lengthBytes()));
+  if (!codeObj) {
     return false;
   }
 
-  memcpy(code->as<TypedArrayObject>().dataPointerUnshared(),
-         moduleSegment.base(), moduleSegment.length());
+  memcpy(codeObj->as<TypedArrayObject>().dataPointerUnshared(),
+         codeSegment.base(), codeSegment.lengthBytes());
 
-  RootedValue value(cx, ObjectValue(*code));
+  RootedValue value(cx, ObjectValue(*codeObj));
   if (!JS_DefineProperty(cx, result, "code", value, JSPROP_ENUMERATE)) {
     return false;
   }
@@ -381,7 +295,7 @@ bool Module::extractCode(JSContext* cx, Tier tier,
     return false;
   }
 
-  for (const CodeRange& p : metadata(tier).codeRanges) {
+  for (const CodeRange& p : codeBlock.codeRanges) {
     RootedObject segment(cx, NewPlainObjectWithProto(cx, nullptr));
     if (!segment) {
       return false;
@@ -453,18 +367,14 @@ static const Import& FindImportFunction(const ImportVector& imports,
 bool Module::instantiateFunctions(JSContext* cx,
                                   const JSObjectVector& funcImports) const {
 #ifdef DEBUG
-  for (auto t : code().tiers()) {
-    MOZ_ASSERT(funcImports.length() == metadata(t).funcImports.length());
-  }
+  MOZ_ASSERT(funcImports.length() == code().funcImports().length());
 #endif
 
-  if (metadata().isAsmJS()) {
+  if (codeMeta().isAsmJS()) {
     return true;
   }
 
-  Tier tier = code().stableTier();
-
-  for (size_t i = 0; i < metadata(tier).funcImports.length(); i++) {
+  for (size_t i = 0; i < code().funcImports().length(); i++) {
     if (!funcImports[i]->is<JSFunction>()) {
       continue;
     }
@@ -476,15 +386,13 @@ bool Module::instantiateFunctions(JSContext* cx,
 
     uint32_t funcIndex = ExportedFunctionToFuncIndex(f);
     Instance& instance = ExportedFunctionToInstance(f);
-    Tier otherTier = instance.code().stableTier();
 
-    const TypeDef& exportFuncType = instance.metadata().getFuncExportTypeDef(
-        instance.metadata(otherTier).lookupFuncExport(funcIndex));
-    const TypeDef& importFuncType =
-        metadata().getFuncImportTypeDef(metadata(tier).funcImports[i]);
+    const TypeDef& exportFuncType =
+        instance.code().codeMeta().getFuncTypeDef(funcIndex);
+    const TypeDef& importFuncType = code().codeMeta().getFuncTypeDef(i);
 
     if (!TypeDef::isSubTypeOf(&exportFuncType, &importFuncType)) {
-      const Import& import = FindImportFunction(imports_, i);
+      const Import& import = FindImportFunction(moduleMeta().imports, i);
       UniqueChars importModuleName = import.module.toQuotedString(cx);
       UniqueChars importFieldName = import.field.toQuotedString(cx);
       if (!importFieldName || !importModuleName) {
@@ -559,16 +467,16 @@ static bool CheckSharing(JSContext* cx, bool declaredShared, bool isShared) {
 bool Module::instantiateMemories(
     JSContext* cx, const WasmMemoryObjectVector& memoryImports,
     MutableHandle<WasmMemoryObjectVector> memoryObjs) const {
-  for (uint32_t memoryIndex = 0; memoryIndex < metadata().memories.length();
+  for (uint32_t memoryIndex = 0; memoryIndex < codeMeta().memories.length();
        memoryIndex++) {
-    const MemoryDesc& desc = metadata().memories[memoryIndex];
+    const MemoryDesc& desc = codeMeta().memories[memoryIndex];
 
     Rooted<WasmMemoryObject*> memory(cx);
     if (memoryIndex < memoryImports.length()) {
       memory = memoryImports[memoryIndex];
-      MOZ_ASSERT_IF(metadata().isAsmJS(),
+      MOZ_ASSERT_IF(codeMeta().isAsmJS(),
                     memory->buffer().isPreparedForAsmJS());
-      MOZ_ASSERT_IF(!metadata().isAsmJS(), memory->buffer().isWasm());
+      MOZ_ASSERT_IF(!codeMeta().isAsmJS(), memory->buffer().isWasm());
 
       if (memory->indexType() != desc.indexType()) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
@@ -581,7 +489,7 @@ bool Module::instantiateMemories(
                        /* defaultMax */ MaxMemoryPages(desc.indexType()),
                        /* actualLength */
                        memory->volatilePages(), memory->sourceMaxPages(),
-                       metadata().isAsmJS(), "Memory")) {
+                       codeMeta().isAsmJS(), "Memory")) {
         return false;
       }
 
@@ -589,7 +497,7 @@ bool Module::instantiateMemories(
         return false;
       }
     } else {
-      MOZ_ASSERT(!metadata().isAsmJS());
+      MOZ_ASSERT(!codeMeta().isAsmJS());
 
       if (desc.initialPages() > MaxMemoryPages(desc.indexType())) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
@@ -611,7 +519,7 @@ bool Module::instantiateMemories(
       }
     }
 
-    MOZ_RELEASE_ASSERT(metadata().isAsmJS() ||
+    MOZ_RELEASE_ASSERT(codeMeta().isAsmJS() ||
                        memory->isHuge() ==
                            IsHugeMemoryEnabled(desc.indexType()));
 
@@ -624,7 +532,7 @@ bool Module::instantiateMemories(
 
 bool Module::instantiateTags(JSContext* cx,
                              WasmTagObjectVector& tagObjs) const {
-  size_t tagLength = metadata().tags.length();
+  size_t tagLength = codeMeta().tags.length();
   if (tagLength == 0) {
     return true;
   }
@@ -636,7 +544,7 @@ bool Module::instantiateTags(JSContext* cx,
 
   uint32_t tagIndex = 0;
   RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmTag));
-  for (const TagDesc& desc : metadata().tags) {
+  for (const TagDesc& desc : codeMeta().tags) {
     if (tagIndex >= importedTagsLength) {
       Rooted<WasmTagObject*> tagObj(
           cx, WasmTagObject::create(cx, desc.type, proto));
@@ -655,13 +563,19 @@ bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
                                       WasmTableObjectVector* tableObjs,
                                       SharedTableVector* tables) const {
   MOZ_ASSERT(tableObj);
-  MOZ_ASSERT(!metadata().isAsmJS());
+  MOZ_ASSERT(!codeMeta().isAsmJS());
 
   Table& table = tableObj->table();
-  if (!CheckLimits(cx, td.initialLength, td.maximumLength,
+  if (table.indexType() != td.indexType()) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_WASM_BAD_IMP_INDEX,
+                             ToString(tableObj->table().indexType()));
+    return false;
+  }
+  if (!CheckLimits(cx, td.initialLength(), td.maximumLength(),
                    /* declaredMin */ MaxTableLimitField,
                    /* actualLength */ table.length(), table.maximum(),
-                   metadata().isAsmJS(), "Table")) {
+                   codeMeta().isAsmJS(), "Table")) {
     return false;
   }
 
@@ -681,7 +595,7 @@ bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
 bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
                                    WasmTableObjectVector* tableObjs,
                                    SharedTableVector* tables) const {
-  if (td.initialLength > MaxTableLength) {
+  if (td.initialLength() > MaxTableLength) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_WASM_TABLE_IMP_LIMIT);
     return false;
@@ -691,8 +605,7 @@ bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
   Rooted<WasmTableObject*> tableObj(cx);
   if (td.isExported) {
     RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmTable));
-    tableObj.set(WasmTableObject::create(cx, td.initialLength, td.maximumLength,
-                                         td.elemType, proto));
+    tableObj.set(WasmTableObject::create(cx, td.limits, td.elemType, proto));
     if (!tableObj) {
       return false;
     }
@@ -723,9 +636,10 @@ bool Module::instantiateTables(JSContext* cx,
                                MutableHandle<WasmTableObjectVector> tableObjs,
                                SharedTableVector* tables) const {
   uint32_t tableIndex = 0;
-  for (const TableDesc& td : metadata().tables) {
+  for (const TableDesc& td : codeMeta().tables) {
     if (tableIndex < tableImports.length()) {
       Rooted<WasmTableObject*> tableObj(cx, tableImports[tableIndex]);
+
       if (!instantiateImportedTable(cx, td, tableObj, &tableObjs.get(),
                                     tables)) {
         return false;
@@ -789,9 +703,9 @@ bool Module::instantiateGlobals(JSContext* cx,
   // them here, as WasmInstanceObject::create() and CreateExportObject() will
   // need the cells to exist.
 
-  const GlobalDescVector& globals = metadata().globals;
+  const GlobalDescVector& globals = codeMeta().globals;
 
-  for (const Export& exp : exports_) {
+  for (const Export& exp : moduleMeta().exports) {
     if (exp.kind() != DefinitionKind::Global) {
       continue;
     }
@@ -809,7 +723,7 @@ bool Module::instantiateGlobals(JSContext* cx,
 
 #ifdef DEBUG
   size_t numGlobalImports = 0;
-  for (const Import& import : imports_) {
+  for (const Import& import : moduleMeta().imports) {
     if (import.kind != DefinitionKind::Global) {
       continue;
     }
@@ -819,7 +733,7 @@ bool Module::instantiateGlobals(JSContext* cx,
     MOZ_ASSERT_IF(global.isIndirect(),
                   globalIndex < globalObjs.length() || globalObjs[globalIndex]);
   }
-  MOZ_ASSERT_IF(!metadata().isAsmJS(),
+  MOZ_ASSERT_IF(!codeMeta().isAsmJS(),
                 numGlobalImports == globals.length() ||
                     !globals[numGlobalImports].isImport());
 #endif
@@ -883,10 +797,10 @@ static bool CreateExportObject(
     const WasmTagObjectVector& tagObjs, const ValVector& globalImportValues,
     const WasmGlobalObjectVector& globalObjs, const ExportVector& exports) {
   const Instance& instance = instanceObj->instance();
-  const Metadata& metadata = instance.metadata();
-  const GlobalDescVector& globals = metadata.globals;
+  const CodeMetadata& codeMeta = instance.codeMeta();
+  const GlobalDescVector& globals = codeMeta.globals;
 
-  if (metadata.isAsmJS() && exports.length() == 1 &&
+  if (codeMeta.isAsmJS() && exports.length() == 1 &&
       exports[0].fieldName().isEmpty()) {
     RootedFunction func(cx);
     if (!GetFunctionExport(cx, instanceObj, funcImports, exports[0].funcIndex(),
@@ -900,7 +814,7 @@ static bool CreateExportObject(
   RootedObject exportObj(cx);
   uint8_t propertyAttr = JSPROP_ENUMERATE;
 
-  if (metadata.isAsmJS()) {
+  if (codeMeta.isAsmJS()) {
     exportObj = NewPlainObject(cx);
   } else {
     exportObj = NewPlainObjectWithProto(cx, nullptr);
@@ -956,7 +870,7 @@ static bool CreateExportObject(
     }
   }
 
-  if (!metadata.isAsmJS()) {
+  if (!codeMeta.isAsmJS()) {
     if (!PreventExtensions(cx, exportObj)) {
       return false;
     }
@@ -1005,7 +919,7 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   }
 
   UniqueDebugState maybeDebug;
-  if (metadata().debugEnabled) {
+  if (codeMeta().debugEnabled) {
     maybeDebug = cx->make_unique<DebugState>(*code_, *this);
     if (!maybeDebug) {
       ReportOutOfMemory(cx);
@@ -1014,17 +928,17 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   }
 
   instance.set(WasmInstanceObject::create(
-      cx, code_, dataSegments_, elemSegments_, metadata().instanceDataLength,
-      memories, std::move(tables), imports.funcs, metadata().globals,
-      imports.globalValues, imports.globalObjs, imports.tagObjs, instanceProto,
-      std::move(maybeDebug)));
+      cx, code_, moduleMeta().dataSegments, moduleMeta().elemSegments,
+      codeMeta().instanceDataLength, memories, std::move(tables), imports.funcs,
+      codeMeta().globals, imports.globalValues, imports.globalObjs,
+      imports.tagObjs, instanceProto, std::move(maybeDebug)));
   if (!instance) {
     return false;
   }
 
   if (!CreateExportObject(cx, instance, imports.funcs, tableObjs.get(),
                           memories.get(), imports.tagObjs, imports.globalValues,
-                          imports.globalObjs, exports_)) {
+                          imports.globalObjs, moduleMeta().exports)) {
     return false;
   }
 
@@ -1042,7 +956,8 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   // constructed since this can make the instance live to content (even if the
   // start function fails).
 
-  if (!instance->instance().initSegments(cx, dataSegments_, elemSegments_)) {
+  if (!instance->instance().initSegments(cx, moduleMeta().dataSegments,
+                                         moduleMeta().elemSegments)) {
     return false;
   }
 
@@ -1050,20 +965,21 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   // Note that failure may cause instantiation to throw, but the instance may
   // still be live via edges created by initSegments or the start function.
 
-  if (metadata().startFuncIndex) {
+  if (codeMeta().startFuncIndex) {
     FixedInvokeArgs<0> args(cx);
-    if (!instance->instance().callExport(cx, *metadata().startFuncIndex,
+    if (!instance->instance().callExport(cx, *codeMeta().startFuncIndex,
                                          args)) {
       return false;
     }
   }
 
   JSUseCounter useCounter =
-      metadata().isAsmJS() ? JSUseCounter::ASMJS : JSUseCounter::WASM;
+      codeMeta().isAsmJS() ? JSUseCounter::ASMJS : JSUseCounter::WASM;
   cx->runtime()->setUseCounter(instance, useCounter);
-  SetUseCountersForFeatureUsage(cx, instance, metadata().featureUsage);
+  SetUseCountersForFeatureUsage(cx, instance, moduleMeta().featureUsage);
 
-  if (cx->options().testWasmAwaitTier2()) {
+  if (cx->options().testWasmAwaitTier2() &&
+      code().mode() != CompileMode::LazyTiering) {
     testingBlockOnTier2Complete();
   }
 

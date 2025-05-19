@@ -14,6 +14,7 @@
 #include "jit/CodeGenerator.h"
 #include "jit/InlineScriptTree.h"
 #include "jit/JitRuntime.h"
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "js/Conversions.h"
@@ -1578,45 +1579,10 @@ void CodeGenerator::visitAsmJSLoadHeap(LAsmJSLoadHeap* ins) {
   const LDefinition* out = ins->output();
   const LAllocation* boundsCheckLimit = ins->boundsCheckLimit();
 
-  bool isSigned;
-  int size;
-  bool isFloat = false;
-  switch (mir->access().type()) {
-    case Scalar::Int8:
-      isSigned = true;
-      size = 8;
-      break;
-    case Scalar::Uint8:
-      isSigned = false;
-      size = 8;
-      break;
-    case Scalar::Int16:
-      isSigned = true;
-      size = 16;
-      break;
-    case Scalar::Uint16:
-      isSigned = false;
-      size = 16;
-      break;
-    case Scalar::Int32:
-      isSigned = true;
-      size = 32;
-      break;
-    case Scalar::Uint32:
-      isSigned = false;
-      size = 32;
-      break;
-    case Scalar::Float64:
-      isFloat = true;
-      size = 64;
-      break;
-    case Scalar::Float32:
-      isFloat = true;
-      size = 32;
-      break;
-    default:
-      MOZ_CRASH("unexpected array type");
-  }
+  Scalar::Type accessType = mir->access().type();
+  bool isSigned = Scalar::isSignedIntType(accessType);
+  int size = Scalar::byteSize(accessType) * 8;
+  bool isFloat = Scalar::isFloatingType(accessType);
 
   if (ptr->isConstant()) {
     MOZ_ASSERT(!mir->needsBoundsCheck());
@@ -1693,45 +1659,10 @@ void CodeGenerator::visitAsmJSStoreHeap(LAsmJSStoreHeap* ins) {
   const LAllocation* ptr = ins->ptr();
   const LAllocation* boundsCheckLimit = ins->boundsCheckLimit();
 
-  bool isSigned;
-  int size;
-  bool isFloat = false;
-  switch (mir->access().type()) {
-    case Scalar::Int8:
-      isSigned = true;
-      size = 8;
-      break;
-    case Scalar::Uint8:
-      isSigned = false;
-      size = 8;
-      break;
-    case Scalar::Int16:
-      isSigned = true;
-      size = 16;
-      break;
-    case Scalar::Uint16:
-      isSigned = false;
-      size = 16;
-      break;
-    case Scalar::Int32:
-      isSigned = true;
-      size = 32;
-      break;
-    case Scalar::Uint32:
-      isSigned = false;
-      size = 32;
-      break;
-    case Scalar::Float64:
-      isFloat = true;
-      size = 64;
-      break;
-    case Scalar::Float32:
-      isFloat = true;
-      size = 32;
-      break;
-    default:
-      MOZ_CRASH("unexpected array type");
-  }
+  Scalar::Type accessType = mir->access().type();
+  bool isSigned = Scalar::isSignedIntType(accessType);
+  int size = Scalar::byteSize(accessType) * 8;
+  bool isFloat = Scalar::isFloatingType(accessType);
 
   if (ptr->isConstant()) {
     MOZ_ASSERT(!mir->needsBoundsCheck());

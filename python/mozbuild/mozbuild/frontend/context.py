@@ -349,22 +349,22 @@ class HostCompileFlags(BaseCompileFlags):
             (
                 "HOST_CXXFLAGS",
                 context.config.substs.get("HOST_CXXFLAGS"),
-                ("HOST_CXXFLAGS", "HOST_CXX_LDFLAGS"),
+                ("HOST_CXXFLAGS",),
             ),
             (
                 "HOST_CFLAGS",
                 context.config.substs.get("HOST_CFLAGS"),
-                ("HOST_CFLAGS", "HOST_C_LDFLAGS"),
+                ("HOST_CFLAGS",),
             ),
             (
                 "HOST_OPTIMIZE",
                 self._optimize_flags(),
-                ("HOST_CFLAGS", "HOST_CXXFLAGS", "HOST_C_LDFLAGS", "HOST_CXX_LDFLAGS"),
+                ("HOST_CFLAGS", "HOST_CXXFLAGS"),
             ),
-            ("RTL", None, ("HOST_CFLAGS", "HOST_C_LDFLAGS")),
+            ("RTL", None, ("HOST_CFLAGS",)),
             ("HOST_DEFINES", None, ("HOST_CFLAGS", "HOST_CXXFLAGS")),
-            ("MOZBUILD_HOST_CFLAGS", [], ("HOST_CFLAGS", "HOST_C_LDFLAGS")),
-            ("MOZBUILD_HOST_CXXFLAGS", [], ("HOST_CXXFLAGS", "HOST_CXX_LDFLAGS")),
+            ("MOZBUILD_HOST_CFLAGS", [], ("HOST_CFLAGS",)),
+            ("MOZBUILD_HOST_CXXFLAGS", [], ("HOST_CXXFLAGS",)),
             (
                 "BASE_INCLUDES",
                 ["-I%s" % main_src_dir, "-I%s" % context.objdir],
@@ -514,14 +514,7 @@ class TargetCompileFlags(BaseCompileFlags):
     def _optimize_flags(self):
         if not self._context.config.substs.get("MOZ_OPTIMIZE"):
             return []
-        optimize_flags = None
-        if self._context.config.substs.get("MOZ_PGO"):
-            optimize_flags = self._context.config.substs.get("MOZ_PGO_OPTIMIZE_FLAGS")
-        if not optimize_flags:
-            # If MOZ_PGO_OPTIMIZE_FLAGS is empty we fall back to
-            # MOZ_OPTIMIZE_FLAGS. Presently this occurs on Windows.
-            optimize_flags = self._context.config.substs.get("MOZ_OPTIMIZE_FLAGS")
-        return optimize_flags
+        return self._context.config.substs.get("MOZ_OPTIMIZE_FLAGS")
 
     def __setitem__(self, key, value):
         if key not in self._known_keys:
@@ -710,25 +703,6 @@ class WasmFlags(TargetCompileFlags):
             (
                 "EXTRA_INCLUDES",
                 ["-I%s/dist/include" % context.config.topobjdir],
-                ("WASM_CXXFLAGS", "WASM_CFLAGS"),
-            ),
-            (
-                "OS_INCLUDES",
-                list(
-                    itertools.chain(
-                        *(
-                            context.config.substs.get(v, [])
-                            for v in (
-                                "NSPR_CFLAGS",
-                                "NSS_CFLAGS",
-                                "MOZ_JPEG_CFLAGS",
-                                "MOZ_PNG_CFLAGS",
-                                "MOZ_ZLIB_CFLAGS",
-                                "MOZ_PIXMAN_CFLAGS",
-                            )
-                        )
-                    )
-                ),
                 ("WASM_CXXFLAGS", "WASM_CFLAGS"),
             ),
             ("DEBUG", self._debug_flags(), ("WASM_CFLAGS", "WASM_CXXFLAGS")),

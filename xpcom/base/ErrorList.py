@@ -178,6 +178,9 @@ with modules["XPCOM"]:
     # with this exception.
     errors["NS_ERROR_ILLEGAL_DURING_SHUTDOWN"] = FAILURE(30)
     errors["NS_ERROR_SERVICE_NOT_AVAILABLE"] = FAILURE(22)
+    # nsAppRunner fatal errors
+    errors["NS_ERROR_OMNIJAR_CORRUPT"] = FAILURE(40)
+    errors["NS_ERROR_OMNIJAR_OR_DIR_MISSING"] = FAILURE(41)
 
     errors["NS_SUCCESS_LOSS_OF_INSIGNIFICANT_DATA"] = SUCCESS(1)
     # Used by nsCycleCollectionParticipant
@@ -1184,6 +1187,8 @@ with modules["DOM_MEDIA"]:
     errors["NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR"] = FAILURE(102)
     errors["NS_ERROR_DOM_MEDIA_CDM_PROXY_NOT_SUPPORTED_ERR"] = FAILURE(103)
     errors["NS_ERROR_DOM_MEDIA_DENIED_IN_NON_UTILITY"] = FAILURE(104)
+    errors["NS_ERROR_DOM_MEDIA_RANGE_ERR"] = FAILURE(105)
+    errors["NS_ERROR_DOM_MEDIA_TYPE_ERR"] = FAILURE(106)
 
 # =======================================================================
 # 42: NS_ERROR_MODULE_URL_CLASSIFIER

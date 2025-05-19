@@ -5,18 +5,7 @@
 
 #include "lib/jxl/blending.h"
 
-#include <jxl/memory_manager.h>
-
-#include <cstddef>
-#include <cstring>
-#include <vector>
-
 #include "lib/jxl/alpha.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/dec_patch_dictionary.h"
-#include "lib/jxl/frame_header.h"
-#include "lib/jxl/image.h"
-#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 
@@ -40,9 +29,9 @@ bool NeedsBlending(const FrameHeader& frame_header) {
 }
 
 Status PerformBlending(
-    JxlMemoryManager* memory_manager, const float* const* bg,
-    const float* const* fg, float* const* out, size_t x0, size_t xsize,
-    const PatchBlending& color_blending, const PatchBlending* ec_blending,
+    const float* const* bg, const float* const* fg, float* const* out,
+    size_t x0, size_t xsize, const PatchBlending& color_blending,
+    const PatchBlending* ec_blending,
     const std::vector<ExtraChannelInfo>& extra_channel_info) {
   bool has_alpha = false;
   size_t num_ec = extra_channel_info.size();
@@ -52,8 +41,7 @@ Status PerformBlending(
       break;
     }
   }
-  JXL_ASSIGN_OR_RETURN(ImageF tmp,
-                       ImageF::Create(memory_manager, xsize, 3 + num_ec));
+  JXL_ASSIGN_OR_RETURN(ImageF tmp, ImageF::Create(xsize, 3 + num_ec));
   // Blend extra channels first so that we use the pre-blending alpha.
   for (size_t i = 0; i < num_ec; i++) {
     if (ec_blending[i].mode == PatchBlendMode::kAdd) {

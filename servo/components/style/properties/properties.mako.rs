@@ -93,11 +93,12 @@ pub mod longhands {
 }
 
 
-#[cfg(feature = "gecko")]
+% if engine == "gecko":
 #[allow(unsafe_code, missing_docs)]
 pub mod gecko {
     <%include file="/gecko.mako.rs" />
 }
+% endif
 
 
 macro_rules! unwrap_or_initial {
@@ -819,7 +820,7 @@ impl LonghandIdSet {
 
     #[inline]
     pub(super) fn discrete_animatable() -> &'static Self {
-        ${static_longhand_id_set("DISCRETE_ANIMATABLE", lambda p: p.animation_value_type == "discrete")}
+        ${static_longhand_id_set("DISCRETE_ANIMATABLE", lambda p: p.animation_type == "discrete")}
         &DISCRETE_ANIMATABLE
     }
 
@@ -1615,12 +1616,14 @@ pub mod style_structs {
 
             /// Returns whether there is any named progress timeline specified with
             /// scroll-timeline-name other than `none`.
+            #[cfg(feature = "gecko")]
             pub fn specifies_scroll_timelines(&self) -> bool {
                 self.scroll_timeline_name_iter().any(|name| !name.is_none())
             }
 
             /// Returns whether there is any named progress timeline specified with
             /// view-timeline-name other than `none`.
+            #[cfg(feature = "gecko")]
             pub fn specifies_view_timelines(&self) -> bool {
                 self.view_timeline_name_iter().any(|name| !name.is_none())
             }

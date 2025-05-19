@@ -4,7 +4,9 @@
 
 <hbox flex="1" id="browser">
   <box context="sidebar-context-menu" id="sidebar-main" hidden="true">
-    <html:sidebar-main flex="1"></html:sidebar-main>
+    <html:sidebar-main flex="1">
+    <html:div id="vertical-tabs" slot="tabstrip" customizable="true"></html:div>
+  </html:sidebar-main>
   </box>
   <vbox id="sidebar-box" hidden="true" class="chromeclass-extrachrome">
     <box id="sidebar-header" align="center">
@@ -15,7 +17,7 @@
       </toolbarbutton>
       <image id="sidebar-throbber"/>
       <spacer id="sidebar-spacer"/>
-      <toolbarbutton id="sidebar-close" class="close-icon tabbable" data-l10n-id="sidebar-close-button" oncommand="SidebarController.hide();"/>
+      <toolbarbutton id="sidebar-close" class="close-icon tabbable" data-l10n-id="sidebar-close-button"/>
     </box>
     <!-- Taint: allow unlimited maximum sidebar width -->
     <browser id="sidebar" autoscroll="false" disablehistory="true" disablefullscreen="true"

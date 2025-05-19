@@ -55,7 +55,7 @@ const ERR_OLDER_VERSION_OR_SAME_BUILD = 90;
 const ERR_UPDATE_STATE_NONE = 91;
 const ERR_CHANNEL_CHANGE = 92;
 
-const WRITE_ERROR_BACKGROUND_TASK_SHARING_VIOLATION = 106;
+const BACKGROUND_TASK_SHARING_VIOLATION = 106;
 
 const STATE_FAILED_DELIMETER = ": ";
 
@@ -101,10 +101,8 @@ const STATE_FAILED_INVALID_CALLBACK_PATH_ERROR =
   STATE_FAILED + STATE_FAILED_DELIMETER + INVALID_CALLBACK_PATH_ERROR;
 const STATE_FAILED_INVALID_CALLBACK_DIR_ERROR =
   STATE_FAILED + STATE_FAILED_DELIMETER + INVALID_CALLBACK_DIR_ERROR;
-const STATE_FAILED_WRITE_ERROR_BACKGROUND_TASK_SHARING_VIOLATION =
-  STATE_FAILED +
-  STATE_FAILED_DELIMETER +
-  WRITE_ERROR_BACKGROUND_TASK_SHARING_VIOLATION;
+const STATE_FAILED_BACKGROUND_TASK_SHARING_VIOLATION =
+  STATE_FAILED + STATE_FAILED_DELIMETER + BACKGROUND_TASK_SHARING_VIOLATION;
 
 const DEFAULT_UPDATE_VERSION = "999999.0";
 
@@ -138,6 +136,7 @@ function getRemoteUpdateString(aUpdateProps, aPatches) {
     custom2: null,
     detailsURL: URL_HTTP_UPDATE_SJS + "?uiURL=DETAILS",
     displayVersion: null,
+    platformVersion: null,
     name: "App Update Test",
     promptWaitTime: null,
     type: "major",
@@ -239,6 +238,7 @@ function getLocalUpdateString(aUpdateProps, aPatches) {
     custom2: null,
     detailsURL: URL_HTTP_UPDATE_SJS + "?uiURL=DETAILS",
     displayVersion: null,
+    platformVersion: null,
     foregroundDownload: "true",
     installDate: "1238441400314",
     isCompleteUpdate: "true",
@@ -333,6 +333,8 @@ function getUpdateString(aUpdateProps) {
     ? 'displayVersion="' + aUpdateProps.displayVersion + '" '
     : "";
   let appVersion = 'appVersion="' + aUpdateProps.appVersion + '" ';
+  let platformVersion =
+    'platformVersion="' + aUpdateProps.platformVersion + '" ';
   // Not specifying a detailsURL will cause a leak due to bug 470244
   let detailsURL = 'detailsURL="' + aUpdateProps.detailsURL + '" ';
   let promptWaitTime = aUpdateProps.promptWaitTime
@@ -356,6 +358,7 @@ function getUpdateString(aUpdateProps) {
     name +
     displayVersion +
     appVersion +
+    platformVersion +
     detailsURL +
     promptWaitTime +
     disableBITS +

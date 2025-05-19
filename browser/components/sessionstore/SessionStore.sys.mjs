@@ -80,8 +80,6 @@ const CHROME_FLAGS_MAP = [
   // Do not inherit remoteness and fissionness from the previous session.
   //[Ci.nsIWebBrowserChrome.CHROME_REMOTE_WINDOW, "remote", "non-remote"],
   //[Ci.nsIWebBrowserChrome.CHROME_FISSION_WINDOW, "fission", "non-fission"],
-  [Ci.nsIWebBrowserChrome.CHROME_WINDOW_LOWERED, "alwayslowered"],
-  [Ci.nsIWebBrowserChrome.CHROME_WINDOW_RAISED, "alwaysraised"],
   // "chrome" and "suppressanimation" are always set.
   //[Ci.nsIWebBrowserChrome.CHROME_SUPPRESS_ANIMATION, "suppressanimation"],
   [Ci.nsIWebBrowserChrome.CHROME_ALWAYS_ON_TOP, "alwaysontop"],
@@ -4549,11 +4547,17 @@ var SessionStoreInternal = {
     if (command && sidebarBox.getAttribute("checked") == "true") {
       winData.sidebar = {
         command,
-        positionEnd: sidebarBox.getAttribute("positionend"),
         style: sidebarBox.style.cssText,
       };
     } else if (winData.sidebar?.command) {
       delete winData.sidebar.command;
+    }
+
+    if (aWindow.SidebarController.revampComponentsLoaded) {
+      winData.sidebar = Object.assign(winData.sidebar || {}, {
+        expanded: aWindow.SidebarController.sidebarMain.expanded,
+        hidden: aWindow.SidebarController.sidebarContainer.hidden,
+      });
     }
 
     let workspaceID = aWindow.getWorkspaceID();
@@ -4824,7 +4828,7 @@ var SessionStoreInternal = {
     let overwriteTabs = aOptions && aOptions.overwriteTabs;
     let firstWindow = aOptions && aOptions.firstWindow;
 
-    this.restoreSidebar(aWindow, winData.sidebar);
+    this.restoreSidebar(aWindow, winData.sidebar, winData.isPopup);
 
     // initialize window if necessary
     if (aWindow && (!aWindow.__SSi || !this._windows[aWindow.__SSi])) {
@@ -5590,7 +5594,7 @@ var SessionStoreInternal = {
         aWinData.sizemode || "",
         aWinData.sizemodeBeforeMinimized || ""
       );
-      this.restoreSidebar(aWindow, aWinData.sidebar);
+      this.restoreSidebar(aWindow, aWinData.sidebar, aWinData.isPopup);
     }, 0);
   },
 
@@ -5598,19 +5602,27 @@ var SessionStoreInternal = {
    * @param aWindow
    *        Window reference
    * @param aSidebar
-   *        Object containing command (sidebarcommand/category),styles and
-   *        positionEnd (reflecting the sidebar.position_start pref)
+   *        Object containing command (sidebarcommand/category) and styles
    */
-  restoreSidebar(aWindow, aSidebar) {
-    let sidebarBox = aWindow.document.getElementById("sidebar-box");
-    if (
-      aSidebar?.command &&
-      (sidebarBox.getAttribute("sidebarcommand") != aSidebar.command ||
-        !sidebarBox.getAttribute("checked"))
-    ) {
-      aWindow.SidebarController.showInitially(aSidebar.command);
-      sidebarBox.setAttribute("style", aSidebar.style);
-      sidebarBox.setAttribute("positionend", !!aSidebar?.positionEnd);
+  restoreSidebar(aWindow, aSidebar, isPopup) {
+    if (!isPopup) {
+      let sidebarBox = aWindow.document.getElementById("sidebar-box");
+      if (
+        aSidebar?.command &&
+        (sidebarBox.getAttribute("sidebarcommand") != aSidebar.command ||
+          !sidebarBox.getAttribute("checked"))
+      ) {
+        aWindow.SidebarController.showInitially(aSidebar.command);
+        sidebarBox.setAttribute("style", aSidebar.style);
+      }
+    }
+    if (aSidebar && aWindow.SidebarController.sidebarRevampEnabled) {
+      const { SidebarController } = aWindow;
+      SidebarController.promiseInitialized.then(() => {
+        SidebarController.sidebarMain.expanded = aSidebar.expanded;
+        SidebarController.sidebarContainer.hidden = aSidebar.hidden;
+        SidebarController.updateToolbarButton();
+      });
     }
   },
 
@@ -6306,12 +6318,8 @@ var SessionStoreInternal = {
       }
 
       // We want to preserve the sidebar if previously open in the window
-      if (window.sidebar?.command) {
-        newWindowState.sidebar = {
-          command: window.sidebar.command,
-          positionEnd: !!window.sidebar.positionEnd,
-          style: window.sidebar.style,
-        };
+      if (window.sidebar) {
+        newWindowState.sidebar = window.sidebar;
       }
 
       for (let tIndex = 0; tIndex < window.tabs.length; ) {

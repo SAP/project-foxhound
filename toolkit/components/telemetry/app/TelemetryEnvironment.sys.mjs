@@ -12,6 +12,7 @@ import { UpdateUtils } from "resource://gre/modules/UpdateUtils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const Utils = TelemetryUtils;
+const PREF_TELEMETRY_ENABLED = "toolkit.telemetry.enabled";
 
 import {
   AddonManager,
@@ -241,7 +242,6 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.shell.checkDefaultBrowser", { what: RECORD_PREF_VALUE }],
   ["browser.search.region", { what: RECORD_PREF_VALUE }],
   ["browser.search.suggest.enabled", { what: RECORD_PREF_VALUE }],
-  ["browser.search.widget.inNavBar", { what: RECORD_DEFAULTPREF_VALUE }],
   ["browser.startup.homepage", { what: RECORD_PREF_STATE }],
   ["browser.startup.page", { what: RECORD_PREF_VALUE }],
   ["browser.urlbar.autoFill", { what: RECORD_DEFAULTPREF_VALUE }],
@@ -1623,7 +1623,8 @@ EnvironmentCache.prototype = {
       e10sEnabled: Services.appinfo.browserTabsRemoteAutostart,
       e10sMultiProcesses: Services.appinfo.maxWebProcessCount,
       fissionEnabled: Services.appinfo.fissionAutostart,
-      telemetryEnabled: Utils.isTelemetryEnabled,
+      telemetryEnabled:
+        Services.prefs.getBoolPref(PREF_TELEMETRY_ENABLED, false) === true,
       locale: getBrowserLocale(),
       // We need to wait for browser-delayed-startup-finished to ensure that the locales
       // have settled, once that's happened we can get the intl data directly.
@@ -2033,6 +2034,8 @@ EnvironmentCache.prototype = {
       Headless: getGfxField("isHeadless", null),
       EmbeddedInFirefoxReality: getGfxField("EmbeddedInFirefoxReality", null),
       TargetFrameRate: getGfxField("TargetFrameRate", null),
+      textScaleFactor: getGfxField("textScaleFactor", null),
+
       // The following line is disabled due to main thread jank and will be enabled
       // again as part of bug 1154500.
       // DWriteVersion: getGfxField("DWriteVersion", null),

@@ -569,10 +569,7 @@ class ConsoleWorkerRunnable : public WorkerProxyToMainThreadRunnable,
     AssertIsOnMainThread();
 
     // Walk up to our containing page
-    WorkerPrivate* wp = aWorkerPrivate;
-    while (wp->GetParent()) {
-      wp = wp->GetParent();
-    }
+    WorkerPrivate* wp = aWorkerPrivate->GetTopLevelWorker();
 
     nsCOMPtr<nsPIDOMWindowInner> window = wp->GetWindow();
     if (!window) {
@@ -608,10 +605,7 @@ class ConsoleWorkerRunnable : public WorkerProxyToMainThreadRunnable,
     MOZ_ASSERT(aWorkerPrivate);
     AssertIsOnMainThread();
 
-    WorkerPrivate* wp = aWorkerPrivate;
-    while (wp->GetParent()) {
-      wp = wp->GetParent();
-    }
+    WorkerPrivate* wp = aWorkerPrivate->GetTopLevelWorker();
 
     MOZ_ASSERT(!wp->GetWindow());
 
@@ -688,7 +682,7 @@ class ConsoleCallDataWorkerRunnable final : public ConsoleWorkerRunnable {
         frame = *mCallData->mTopStackFrame;
       }
 
-      nsString id = frame.mFilename;
+      nsCString id = frame.mFilename;
       nsString innerID;
       if (aWorkerPrivate->IsSharedWorker()) {
         innerID = u"SharedWorker"_ns;
@@ -696,12 +690,12 @@ class ConsoleCallDataWorkerRunnable final : public ConsoleWorkerRunnable {
         innerID = u"ServiceWorker"_ns;
         // Use scope as ID so the webconsole can decide if the message should
         // show up per tab
-        CopyASCIItoUTF16(aWorkerPrivate->ServiceWorkerScope(), id);
+        id = aWorkerPrivate->ServiceWorkerScope();
       } else {
         innerID = u"Worker"_ns;
       }
 
-      mCallData->SetIDs(id, innerID);
+      mCallData->SetIDs(NS_ConvertUTF8toUTF16(id), innerID);
     }
 
     mClonedData.mGlobal = aGlobal;
@@ -1230,7 +1224,6 @@ void StackFrameToStackEntry(JSContext* aCx, nsIStackFrame* aStackFrame,
   MOZ_ASSERT(aStackFrame);
 
   aStackFrame->GetFilename(aCx, aStackEntry.mFilename);
-
   aStackEntry.mSourceId = aStackFrame->GetSourceId(aCx);
   aStackEntry.mLineNumber = aStackFrame->GetLineNumber(aCx);
   aStackEntry.mColumnNumber = aStackFrame->GetColumnNumber(aCx);
@@ -1321,7 +1314,7 @@ void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
 
           bool pb;
           if (NS_SUCCEEDED(loadContext->GetUsePrivateBrowsing(&pb))) {
-            MOZ_ASSERT(pb == !!oa.mPrivateBrowsingId);
+            MOZ_ASSERT(pb == oa.IsPrivateBrowsing());
           }
         }
       }
@@ -1418,12 +1411,12 @@ void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
     } else if (!mPassedInnerID.IsEmpty()) {
       callData->SetIDs(u"jsm"_ns, mPassedInnerID);
     } else {
-      nsAutoString filename;
+      nsAutoCString filename;
       if (callData->mTopStackFrame.isSome()) {
         filename = callData->mTopStackFrame->mFilename;
       }
 
-      callData->SetIDs(u"jsm"_ns, filename);
+      callData->SetIDs(u"jsm"_ns, NS_ConvertUTF8toUTF16(filename));
     }
 
     GetOrCreateMainThreadData()->ProcessCallData(aCx, callData, aData);
@@ -1610,7 +1603,7 @@ bool Console::PopulateConsoleNotificationInTheTargetScope(
         do_QueryInterface(filenameURI);
     nsAutoCString spec;
     if (safeURI && NS_SUCCEEDED(safeURI->GetSensitiveInfoHiddenSpec(spec))) {
-      CopyUTF8toUTF16(spec, event.mFilename);
+      event.mFilename = spec;
     }
   }
 
@@ -1620,7 +1613,7 @@ bool Console::PopulateConsoleNotificationInTheTargetScope(
   event.mFunctionName = frame.mFunctionName;
   event.mTimeStamp = aData->mMicroSecondTimeStamp / PR_USEC_PER_MSEC;
   event.mMicroSecondTimeStamp = aData->mMicroSecondTimeStamp;
-  event.mPrivate = !!aData->mOriginAttributes.mPrivateBrowsingId;
+  event.mPrivate = aData->mOriginAttributes.IsPrivateBrowsing();
 
   switch (aData->mMethodName) {
     case MethodLog:
@@ -2751,10 +2744,10 @@ void Console::MaybeExecuteDumpFunction(JSContext* aCx,
   nsCOMPtr<nsIStackFrame> stack(aStack);
 
   while (stack) {
-    nsAutoString filename;
+    nsAutoCString filename;
     stack->GetFilename(aCx, filename);
 
-    message.Append(filename);
+    AppendUTF8toUTF16(filename, message);
     message.AppendLiteral(" ");
 
     message.AppendInt(stack->GetLineNumber(aCx));

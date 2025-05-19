@@ -611,6 +611,7 @@ package org.mozilla.geckoview {
     field public static final int BLOCKED_EMAILTRACKING_CONTENT = 4194304;
     field public static final int BLOCKED_FINGERPRINTING_CONTENT = 64;
     field public static final int BLOCKED_SOCIALTRACKING_CONTENT = 65536;
+    field public static final int BLOCKED_SUSPICIOUS_FINGERPRINTING = 4;
     field public static final int BLOCKED_TRACKING_CONTENT = 4096;
     field public static final int BLOCKED_UNSAFE_CONTENT = 16384;
     field public static final int COOKIES_BLOCKED_ALL = 1073741824;
@@ -629,6 +630,7 @@ package org.mozilla.geckoview {
     field public static final int LOADED_LEVEL_1_TRACKING_CONTENT = 8192;
     field public static final int LOADED_LEVEL_2_TRACKING_CONTENT = 1048576;
     field public static final int LOADED_SOCIALTRACKING_CONTENT = 131072;
+    field public static final int PURGED_BOUNCETRACKER = 7;
     field public static final int REPLACED_TRACKING_CONTENT = 16;
   }
 
@@ -869,6 +871,10 @@ package org.mozilla.geckoview {
     method @Nullable public Boolean getExtensionsProcessEnabled();
     method public boolean getExtensionsWebAPIEnabled();
     method @NonNull public Bundle getExtras();
+    method public boolean getFdlibmMathEnabled();
+    method public boolean getFingerprintingProtection();
+    method @NonNull public String getFingerprintingProtectionOverrides();
+    method public boolean getFingerprintingProtectionPrivateBrowsing();
     method public boolean getFontInflationEnabled();
     method public float getFontSizeFactor();
     method public boolean getForceEnableAccessibility();
@@ -902,6 +908,10 @@ package org.mozilla.geckoview {
     method @NonNull public GeckoRuntimeSettings setExtensionsProcessCrashTimeframe(@NonNull Long);
     method @NonNull public GeckoRuntimeSettings setExtensionsProcessEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setExtensionsWebAPIEnabled(boolean);
+    method @NonNull public GeckoRuntimeSettings setFdlibmMathEnabled(boolean);
+    method @NonNull public GeckoRuntimeSettings setFingerprintingProtection(boolean);
+    method @NonNull public GeckoRuntimeSettings setFingerprintingProtectionOverrides(@NonNull String);
+    method @NonNull public GeckoRuntimeSettings setFingerprintingProtectionPrivateBrowsing(boolean);
     method @NonNull public GeckoRuntimeSettings setFontInflationEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setFontSizeFactor(float);
     method @NonNull public GeckoRuntimeSettings setForceEnableAccessibility(boolean);
@@ -1126,6 +1136,7 @@ package org.mozilla.geckoview {
     method @UiThread default public void onFirstContentfulPaint(@NonNull GeckoSession);
     method @UiThread default public void onFocusRequest(@NonNull GeckoSession);
     method @UiThread default public void onFullScreen(@NonNull GeckoSession, boolean);
+    method @UiThread default public void onHideDynamicToolbar(@NonNull GeckoSession);
     method @UiThread default public void onKill(@NonNull GeckoSession);
     method @UiThread default public void onMetaViewportFitChange(@NonNull GeckoSession, @NonNull String);
     method @UiThread default public void onPaintStatusReset(@NonNull GeckoSession);
@@ -2372,7 +2383,6 @@ package org.mozilla.geckoview {
   }
 
   public static class TranslationsController.SessionTranslation.TranslationState {
-    ctor @Deprecated @DeprecationSchedule(version=130,id="translation-state-deprecated-constructor") public TranslationState(@Nullable TranslationsController.SessionTranslation.TranslationPair, @Nullable String, @Nullable TranslationsController.SessionTranslation.DetectedLanguages, @NonNull Boolean);
     ctor public TranslationState(@Nullable TranslationsController.SessionTranslation.TranslationPair, @Nullable String, @Nullable TranslationsController.SessionTranslation.DetectedLanguages, @NonNull Boolean, @NonNull Boolean);
     field @Nullable public final TranslationsController.SessionTranslation.DetectedLanguages detectedLanguages;
     field @Nullable public final String error;
@@ -2606,6 +2616,7 @@ package org.mozilla.geckoview {
 
   public static class WebExtension.InstallException.ErrorCodes {
     ctor protected ErrorCodes();
+    field public static final int ERROR_ADMIN_INSTALL_ONLY = -13;
     field public static final int ERROR_BLOCKLISTED = -10;
     field public static final int ERROR_CORRUPT_FILE = -3;
     field public static final int ERROR_FILE_ACCESS = -4;

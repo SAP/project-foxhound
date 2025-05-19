@@ -63,6 +63,7 @@ class SnapTestsBase:
         assert self._dir is not None
 
         self._update_channel = None
+        self._version_major = None
 
         self._wait = WebDriverWait(self._driver, self.get_timeout())
         self._longwait = WebDriverWait(self._driver, 60)
@@ -74,6 +75,8 @@ class SnapTestsBase:
         try:
             first_tab = self._driver.window_handles[0]
             channel = self.update_channel()
+            if self.is_esr_115():
+                channel = "esr-115"
             for m in object_methods:
                 tabs_before = set(self._driver.window_handles)
                 self._driver.switch_to.window(first_tab)
@@ -162,8 +165,18 @@ class SnapTestsBase:
             self._driver.set_context("content")
         return self._update_channel
 
-    def is_esr(self):
-        return self.update_channel() == "esr"
+    def version_major(self):
+        if self._version_major is None:
+            self._driver.set_context("chrome")
+            self._version_major = self._driver.execute_script(
+                "return AppConstants.MOZ_APP_VERSION.split('.')[0];"
+            )
+            self._logger.info("Version major: {}".format(self._version_major))
+            self._driver.set_context("content")
+        return self._version_major
+
+    def is_esr_115(self):
+        return self.update_channel() == "esr" and self.version_major() == "115"
 
     def assert_rendering(self, exp, element_or_driver):
         # wait a bit for things to settle down
@@ -241,6 +254,17 @@ class SnapTestsBase:
                 self.get_screenshot_destination("reference_rendering.png"), "wb"
             ) as current_screenshot:
                 svg_ref.save(current_screenshot)
+
+            (left, upper, right, lower) = bbox
+            assert right >= left, "Inconsistent boundaries right={} left={}".format(
+                right, left
+            )
+            assert lower >= upper, "Inconsistent boundaries lower={} upper={}".format(
+                lower, upper
+            )
+            if ((right - left) <= 2) or ((lower - upper) <= 2):
+                self._logger.info("Difference is a <= 2 pixels band, ignoring")
+                return
 
             # Assume a difference is mismatching if the minimum pixel value in
             # image difference is NOT black or if the maximum pixel value is
@@ -357,10 +381,7 @@ class SnapTests(SnapTestsBase):
             "Services.prefs.setBoolPref('media.gmp-manager.updateEnabled', true);"
         )
 
-        channel = self._driver.execute_script(
-            "return Services.prefs.getCharPref('app.update.channel');"
-        )
-        if channel == "esr":
+        if self.is_esr_115():
             rv = False
         else:
             enable_drm_button = self._wait.until(

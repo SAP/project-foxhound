@@ -13,9 +13,6 @@
   font: message-box;
   font-size: var(--theme-body-font-size);
 
-  /* TODO(bug 1022557): Perhaps we want to allow forced colors in devtools */
-  forced-color-adjust: none;
-
   --tab-line-hover-color: rgba(0,0,0,.2);
   --tab-line-selected-color: var(--blue-50);
   --toggle-thumb-color: white;
@@ -23,6 +20,11 @@
 
   --searchbox-no-match-background-color: #ffe5e5;
   --searchbox-no-match-stroke-color: var(--red-60);
+
+  /* Don't allow forced colors in DevTools if they're not supported */
+  &:not([forced-colors-active]) {
+    forced-color-adjust: none;
+  }
 }
 
 :root.theme-light {
@@ -475,6 +477,8 @@ iframe {
 .devtools-searchbox {
   display: inline-flex;
   flex-grow: 1;
+  gap: 4px;
+  padding-inline-end: 4px;
   position: relative;
   border: 1px solid transparent;
   height: 100%;
@@ -515,7 +519,7 @@ iframe {
 .devtools-searchinput-clear {
   flex: 0 0 auto;
   align-self: center;
-  margin: 0 4px;
+  margin: 0;
   padding: 0;
   border: 0;
   width: 16px;

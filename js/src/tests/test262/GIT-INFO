@@ -1,5 +1,5 @@
-commit 79e9b39f3a576154b1bc39f9dbd95d25addc4ebf
-Author: Emmanuel Ferdman <emmanuelferdman@gmail.com>
-Date:   Sun Apr 14 01:49:16 2024 +0300
+commit 616dcadff406451eb249c6170253c5ff7486a3ea
+Author: Sosuke Suzuki <aosukeke@gmail.com>
+Date:   Tue Jul 30 14:24:39 2024 +0900
 
-    Update the location of `2nd-param-non-object.js`
+    Fix escaped `a`

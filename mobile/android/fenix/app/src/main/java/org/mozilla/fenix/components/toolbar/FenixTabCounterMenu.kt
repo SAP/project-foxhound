@@ -10,12 +10,16 @@ import mozilla.components.concept.menu.candidate.DividerMenuCandidate
 import mozilla.components.concept.menu.candidate.MenuCandidate
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.ext.settings
 
 class FenixTabCounterMenu(
-    context: Context,
+    private val context: Context,
     onItemTapped: (Item) -> Unit,
     iconColor: Int? = null,
 ) : TabCounterMenu(context, onItemTapped, iconColor) {
+
+    @VisibleForTesting
+    internal fun menuItems(): List<MenuCandidate> = listOf(newTabItem, newPrivateTabItem)
 
     @VisibleForTesting
     internal fun menuItems(showOnly: BrowsingMode): List<MenuCandidate> {
@@ -26,13 +30,20 @@ class FenixTabCounterMenu(
     }
 
     @VisibleForTesting
-    internal fun menuItems(toolbarPosition: ToolbarPosition): List<MenuCandidate> {
+    internal fun menuItems(
+        toolbarPosition: ToolbarPosition,
+        isNavBarEnabled: Boolean = context.settings().navigationToolbarEnabled,
+    ): List<MenuCandidate> {
         val items = listOf(
             newTabItem,
             newPrivateTabItem,
             DividerMenuCandidate(),
             closeTabItem,
         )
+
+        if (isNavBarEnabled) {
+            return items
+        }
 
         return when (toolbarPosition) {
             ToolbarPosition.BOTTOM -> items.reversed()
@@ -41,17 +52,25 @@ class FenixTabCounterMenu(
     }
 
     /**
+     * Update the displayed menu items with the new tab and new private tab menu items.
+     */
+    fun updateMenu() {
+        menuController.submitList(menuItems())
+    }
+
+    /**
      * Update the displayed menu items.
+     *
      * @param showOnly Show only the new tab item corresponding to the given [BrowsingMode].
      */
     fun updateMenu(showOnly: BrowsingMode) {
         val items = menuItems(showOnly)
-
         menuController.submitList(items)
     }
 
     /**
      * Update the displayed menu items.
+     *
      * @param toolbarPosition Return a list that is ordered based on the given [ToolbarPosition].
      */
     fun updateMenu(toolbarPosition: ToolbarPosition) {

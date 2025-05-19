@@ -103,15 +103,20 @@ class nsDOMWindowUtils final : public nsIDOMWindowUtils,
       const nsTArray<float>& aRotationAngles, const nsTArray<float>& aForces,
       const nsTArray<int32_t>& aTiltXs, const nsTArray<int32_t>& aTiltYs,
       const nsTArray<int32_t>& aTwists, int32_t aModifiers,
-      bool aIgnoreRootScrollFrame, bool aToWindow, bool* aPreventDefault);
+      bool aIgnoreRootScrollFrame, bool aIsPen, bool aToWindow,
+      bool* aPreventDefault);
 
   void ReportErrorMessageForWindow(const nsAString& aErrorMessage,
                                    const char* aClassification,
                                    bool aFromChrome);
 
  private:
-  mozilla::Result<mozilla::ScreenRect, nsresult> ConvertToScreenRect(
-      float aX, float aY, float aWidth, float aHeight);
+  enum class CoordsType {
+    Screen,
+    TopLevelWidget,
+  };
+  mozilla::Result<mozilla::LayoutDeviceRect, nsresult> ConvertTo(
+      float aX, float aY, float aWidth, float aHeight, CoordsType);
 };
 
 #endif

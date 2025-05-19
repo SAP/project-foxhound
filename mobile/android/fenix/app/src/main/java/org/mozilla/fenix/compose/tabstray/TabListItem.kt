@@ -34,8 +34,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import mozilla.components.browser.state.state.TabSessionState
@@ -144,7 +144,10 @@ fun TabListItem(
                 .background(contentBackgroundColor)
                 .then(clickableModifier)
                 .padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
-                .testTag(TabsTrayTestTag.tabItemRoot),
+                .testTag(TabsTrayTestTag.tabItemRoot)
+                .semantics {
+                    selected = isSelected
+                },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Thumbnail(
@@ -189,7 +192,7 @@ fun TabListItem(
                         painter = painterResource(id = R.drawable.mozac_ic_cross_24),
                         contentDescription = stringResource(
                             id = R.string.close_tab_title,
-                            tab.content.title,
+                            tab.toDisplayTitle(),
                         ),
                         tint = FirefoxTheme.colors.iconPrimary,
                     )
@@ -222,9 +225,7 @@ private fun Thumbnail(
             size = size,
             modifier = Modifier
                 .size(width = 92.dp, height = 72.dp)
-                .semantics(mergeDescendants = true) {
-                    testTag = TabsTrayTestTag.tabItemThumbnail
-                },
+                .testTag(TabsTrayTestTag.tabItemThumbnail),
             contentDescription = stringResource(id = R.string.mozac_browser_tabstray_open_tab),
         )
 

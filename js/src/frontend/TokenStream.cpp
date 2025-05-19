@@ -3609,7 +3609,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
           unit = char16_t(val);
           break;
         }  // default
-      }    // switch (AssertedCast<uint8_t>(CodeUnitValue(toUnit(unit))))
+      }  // switch (AssertedCast<uint8_t>(CodeUnitValue(toUnit(unit))))
 
       if (!this->charBuffer.append(unit)) {
         return false;

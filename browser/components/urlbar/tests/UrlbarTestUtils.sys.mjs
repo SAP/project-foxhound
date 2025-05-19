@@ -11,7 +11,6 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
   BrowserTestUtils: "resource://testing-common/BrowserTestUtils.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
@@ -881,7 +880,13 @@ export var UrlbarTestUtils = {
     // names that are not usually included in actual search mode objects.  For
     // convenience, ignore those properties if they aren't also present in the
     // urlbar's actual search mode object.
-    let ignoreProperties = ["icon", "pref", "restrict", "telemetryLabel"];
+    let ignoreProperties = [
+      "icon",
+      "pref",
+      "restrict",
+      "telemetryLabel",
+      "uiLabel",
+    ];
     for (let prop of ignoreProperties) {
       if (prop in expectedSearchMode && !(prop in window.gURLBar.searchMode)) {
         this.info(
@@ -1063,7 +1068,7 @@ export var UrlbarTestUtils = {
     }
 
     // Also remove emphasis markers if present.
-    if (lazy.UrlbarPrefs.get("trimHttps")) {
+    if (lazy.UrlbarPrefs.getScotchBonnetPref("trimHttps")) {
       sanitizedURL = sanitizedURL.replace(/^<?https:\/\/>?/, "");
     } else {
       sanitizedURL = sanitizedURL.replace(/^<?http:\/\/>?/, "");
@@ -1080,7 +1085,7 @@ export var UrlbarTestUtils = {
    */
   getTrimmedProtocolWithSlashes() {
     if (Services.prefs.getBoolPref("browser.urlbar.trimURLs")) {
-      return Services.prefs.getBoolPref("browser.urlbar.trimHttps")
+      return lazy.UrlbarPrefs.getScotchBonnetPref("trimHttps")
         ? "https://"
         : "http://"; // eslint-disable-this-line @microsoft/sdl/no-insecure-url
     }
@@ -1235,16 +1240,6 @@ export var UrlbarTestUtils = {
     Cc["@mozilla.org/satchel/form-history-startup;1"]
       .getService(Ci.nsIObserver)
       .observe(null, "profile-after-change", null);
-
-    // This is necessary because UrlbarMuxerUnifiedComplete.sort calls
-    // Services.search.parseSubmissionURL, so we need engines.
-    try {
-      await lazy.AddonTestUtils.promiseStartupManager();
-    } catch (error) {
-      if (!error.message.includes("already started")) {
-        throw error;
-      }
-    }
   },
 
   /**
@@ -1345,7 +1340,7 @@ export var UrlbarTestUtils = {
    * @param {int} [options.selectionType]
    *   The selectionType for which the input should be checked.
    */
-  checkFormatting(
+  async checkFormatting(
     win,
     urlFormatString,
     {
@@ -1354,6 +1349,7 @@ export var UrlbarTestUtils = {
       selectionType = Ci.nsISelectionController.SELECTION_URLSECONDARY,
     } = {}
   ) {
+    await new Promise(resolve => win.requestAnimationFrame(resolve));
     let selectionController = win.gURLBar.editor.selectionController;
     let selection = selectionController.getSelection(selectionType);
     let value = win.gURLBar.editor.rootElement.textContent;
@@ -1370,6 +1366,31 @@ export var UrlbarTestUtils = {
       clobberedURLString || urlFormatString,
       "Correct part of the URL is de-emphasized" +
         (additionalMsg ? ` (${additionalMsg})` : "")
+    );
+  },
+
+  searchModeSwitcherPopup(win) {
+    return win.document.getElementById("searchmode-switcher-popup");
+  },
+
+  async openSearchModeSwitcher(win) {
+    let popup = this.searchModeSwitcherPopup(win);
+    let promiseMenuOpen = lazy.BrowserTestUtils.waitForEvent(
+      popup,
+      "popupshown"
+    );
+    let button = win.document.getElementById("urlbar-searchmode-switcher");
+    this.Assert.ok(lazy.BrowserTestUtils.isVisible(button));
+    await this.EventUtils.promiseElementReadyForUserInput(button, win);
+    this.EventUtils.synthesizeMouseAtCenter(button, {}, win);
+    await promiseMenuOpen;
+    return popup;
+  },
+
+  searchModeSwitcherPopupClosed(win) {
+    return lazy.BrowserTestUtils.waitForEvent(
+      this.searchModeSwitcherPopup(win),
+      "popuphidden"
     );
   },
 };

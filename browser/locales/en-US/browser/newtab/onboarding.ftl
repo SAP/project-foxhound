@@ -201,6 +201,9 @@ mr2022-onboarding-pin-primary-button-label = { PLATFORM() ->
    *[other] Pin { -brand-short-name } to taskbar
 }
 
+# Primary button string used on welcome page for when Firefox is not pinned on MSIX
+mr2022-onboarding-pin-primary-button-label-msix = Pin { -brand-short-name } to taskbar and start menu
+
 ## MR2022 Existing User Pin Firefox Screen Strings
 
 # Title used on multistage onboarding page for existing users when Firefox is not pinned
@@ -293,6 +296,14 @@ onboarding-device-migration-image-alt =
 onboarding-device-migration-title = Welcome back!
 onboarding-device-migration-subtitle2 = Sign in to your account to bring your bookmarks, passwords, and history with you on your new device.
 onboarding-device-migration-primary-button-label = Sign in
+
+## Add-ons Picker screen
+
+amo-picker-title = Customize your { -brand-short-name }
+amo-picker-subtitle = Extensions are like apps for your browser, and they let you protect passwords, download videos, find deals, block annoying ads, change how your browser looks, and much more.
+amo-picker-install-button-label = Add to { -brand-short-name }
+amo-picker-install-complete-label = Installed
+amo-picker-collection-link = Explore more add-ons
 
 ## The following screens have been updated to use security and privacy focused strings:
 

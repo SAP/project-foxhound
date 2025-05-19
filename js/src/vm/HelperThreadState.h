@@ -47,7 +47,7 @@
 #include "vm/JSScript.h"                     // ScriptSource
 #include "vm/Runtime.h"                      // JSRuntime
 #include "vm/SharedImmutableStringsCache.h"  // SharedImmutableString
-#include "wasm/WasmConstants.h"              // wasm::CompileMode
+#include "wasm/WasmConstants.h"              // wasm::CompileState
 
 class JSTracer;
 
@@ -66,7 +66,7 @@ class IonFreeTask;
 namespace wasm {
 
 struct CompileTask;
-typedef Fifo<CompileTask*, 0, SystemAllocPolicy> CompileTaskPtrFifo;
+using CompileTaskPtrFifo = Fifo<CompileTask*, 0, SystemAllocPolicy>;
 
 struct Tier2GeneratorTask : public HelperThreadTask {
   virtual ~Tier2GeneratorTask() = default;
@@ -74,8 +74,8 @@ struct Tier2GeneratorTask : public HelperThreadTask {
 };
 
 using UniqueTier2GeneratorTask = UniquePtr<Tier2GeneratorTask>;
-typedef Vector<Tier2GeneratorTask*, 0, SystemAllocPolicy>
-    Tier2GeneratorTaskPtrVector;
+using Tier2GeneratorTaskPtrVector =
+    Vector<Tier2GeneratorTask*, 0, SystemAllocPolicy>;
 
 }  // namespace wasm
 
@@ -98,17 +98,17 @@ class GlobalHelperThreadState {
 
   bool terminating_ = false;
 
-  typedef Vector<jit::IonCompileTask*, 0, SystemAllocPolicy>
-      IonCompileTaskVector;
+  using IonCompileTaskVector =
+      Vector<jit::IonCompileTask*, 0, SystemAllocPolicy>;
   using IonFreeTaskVector =
       Vector<js::UniquePtr<jit::IonFreeTask>, 0, SystemAllocPolicy>;
   using DelazifyTaskList = mozilla::LinkedList<DelazifyTask>;
   using FreeDelazifyTaskVector =
       Vector<js::UniquePtr<FreeDelazifyTask>, 1, SystemAllocPolicy>;
-  typedef Vector<UniquePtr<SourceCompressionTask>, 0, SystemAllocPolicy>
-      SourceCompressionTaskVector;
-  typedef Vector<PromiseHelperTask*, 0, SystemAllocPolicy>
-      PromiseHelperTaskVector;
+  using SourceCompressionTaskVector =
+      Vector<UniquePtr<SourceCompressionTask>, 0, SystemAllocPolicy>;
+  using PromiseHelperTaskVector =
+      Vector<PromiseHelperTask*, 0, SystemAllocPolicy>;
 
   // Count of running task by each threadType.
   mozilla::EnumeratedArray<ThreadType, size_t,
@@ -271,12 +271,14 @@ class GlobalHelperThreadState {
   }
 
   wasm::CompileTaskPtrFifo& wasmWorklist(const AutoLockHelperThreadState&,
-                                         wasm::CompileMode m) {
-    switch (m) {
-      case wasm::CompileMode::Once:
-      case wasm::CompileMode::Tier1:
+                                         wasm::CompileState state) {
+    switch (state) {
+      case wasm::CompileState::Once:
+      case wasm::CompileState::EagerTier1:
+      case wasm::CompileState::LazyTier1:
         return wasmWorklist_tier1_;
-      case wasm::CompileMode::Tier2:
+      case wasm::CompileState::EagerTier2:
+      case wasm::CompileState::LazyTier2:
         return wasmWorklist_tier2_;
       default:
         MOZ_CRASH();
@@ -333,7 +335,7 @@ class GlobalHelperThreadState {
   }
 
   bool canStartWasmCompile(const AutoLockHelperThreadState& lock,
-                           wasm::CompileMode mode);
+                           wasm::CompileState state);
 
   bool canStartWasmTier1CompileTask(const AutoLockHelperThreadState& lock);
   bool canStartWasmTier2CompileTask(const AutoLockHelperThreadState& lock);
@@ -347,7 +349,7 @@ class GlobalHelperThreadState {
   bool canStartGCParallelTask(const AutoLockHelperThreadState& lock);
 
   HelperThreadTask* maybeGetWasmCompile(const AutoLockHelperThreadState& lock,
-                                        wasm::CompileMode mode);
+                                        wasm::CompileState state);
 
   HelperThreadTask* maybeGetWasmTier1CompileTask(
       const AutoLockHelperThreadState& lock);
@@ -420,7 +422,7 @@ class GlobalHelperThreadState {
   void triggerFreeUnusedMemory();
 
   bool submitTask(wasm::UniqueTier2GeneratorTask task);
-  bool submitTask(wasm::CompileTask* task, wasm::CompileMode mode);
+  bool submitTask(wasm::CompileTask* task, wasm::CompileState state);
   bool submitTask(UniquePtr<jit::IonFreeTask>&& task,
                   const AutoLockHelperThreadState& lock);
   bool submitTask(jit::IonCompileTask* task,

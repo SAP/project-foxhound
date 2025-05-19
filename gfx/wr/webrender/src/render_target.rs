@@ -3,16 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-use api::{units::*, PremultipliedColorF, ClipMode};
+use api::units::*;
 use api::{ColorF, LineOrientation, BorderStyle};
 use crate::batch::{AlphaBatchBuilder, AlphaBatchContainer, BatchTextures};
 use crate::batch::{ClipBatcher, BatchBuilder, INVALID_SEGMENT_INDEX, ClipMaskInstanceList};
 use crate::command_buffer::{CommandBufferList, QuadFlags};
-use crate::pattern::{PatternKind, PatternShaderInput};
+use crate::pattern::{Pattern, PatternKind, PatternShaderInput};
 use crate::segment::EdgeAaSegmentMask;
 use crate::spatial_tree::SpatialTree;
 use crate::clip::{ClipStore, ClipItemKind};
-use crate::frame_builder::{FrameGlobalResources};
+use crate::frame_builder::FrameGlobalResources;
 use crate::gpu_cache::{GpuCache, GpuCacheAddress};
 use crate::gpu_types::{BorderInstance, SvgFilterInstance, SVGFEFilterInstance, BlurDirection, BlurInstance, PrimitiveHeaders, ScalingInstance};
 use crate::gpu_types::{TransformPalette, ZBufferIdGenerator, MaskInstance, ClipSpace};
@@ -31,7 +31,7 @@ use crate::render_task::{RenderTaskKind, RenderTaskAddress, SubPass};
 use crate::render_task::{RenderTask, ScalingTask, SvgFilterInfo, MaskSubPass, SVGFEFilterTask};
 use crate::render_task_graph::{RenderTaskGraph, RenderTaskId};
 use crate::resource_cache::ResourceCache;
-use crate::spatial_tree::{SpatialNodeIndex};
+use crate::spatial_tree::SpatialNodeIndex;
 use crate::util::ScaleOffset;
 
 
@@ -229,8 +229,8 @@ pub struct ColorRenderTarget {
     pub resolve_ops: Vec<ResolveOp>,
     pub clear_color: Option<ColorF>,
 
-    pub prim_instances: [Vec<PrimitiveInstanceData>; NUM_PATTERNS],
-    pub prim_instances_with_scissor: FastHashMap<(DeviceIntRect, PatternKind), Vec<PrimitiveInstanceData>>,
+    pub prim_instances: [FastHashMap<TextureSource, Vec<PrimitiveInstanceData>>; NUM_PATTERNS],
+    pub prim_instances_with_scissor: FastHashMap<(DeviceIntRect, PatternKind), FastHashMap<TextureSource, Vec<PrimitiveInstanceData>>>,
     
     pub clip_masks: ClipMaskInstanceList,
 }
@@ -256,7 +256,7 @@ impl RenderTarget for ColorRenderTarget {
             used_rect,
             resolve_ops: Vec::new(),
             clear_color: Some(ColorF::TRANSPARENT),
-            prim_instances: [Vec::new(), Vec::new(), Vec::new(), Vec::new()],
+            prim_instances: [FastHashMap::default(), FastHashMap::default(), FastHashMap::default(), FastHashMap::default()],
             prim_instances_with_scissor: FastHashMap::default(),
             clip_masks: ClipMaskInstanceList::new(),
         }
@@ -380,35 +380,44 @@ impl RenderTarget for ColorRenderTarget {
                     info.quad_flags,
                     info.edge_flags,
                     INVALID_SEGMENT_INDEX as u8,
-                    RenderTaskId::INVALID,
+                    info.texture_input,
                     ZBufferId(0),
                     render_tasks,
                     gpu_buffer_builder,
-                    |_, instance| {
+                    |key, instance| {
                         if info.prim_needs_scissor_rect {
                             self.prim_instances_with_scissor
                                 .entry((target_rect, info.pattern))
+                                .or_insert(FastHashMap::default())
+                                .entry(key.textures.input.colors[0])
                                 .or_insert(Vec::new())
                                 .push(instance);
                         } else {
-                            self.prim_instances[info.pattern as usize].push(instance);
+                            self.prim_instances[info.pattern as usize]
+                                .entry(key.textures.input.colors[0])
+                                .or_insert(Vec::new())
+                                .push(instance);
                         }
                     }
                 );
             }
-            RenderTaskKind::VerticalBlur(..) => {
+            RenderTaskKind::VerticalBlur(ref info) => {
                 add_blur_instances(
                     &mut self.vertical_blurs,
                     BlurDirection::Vertical,
+                    info.blur_std_deviation,
+                    info.blur_region,
                     task_id.into(),
                     task.children[0],
                     render_tasks,
                 );
             }
-            RenderTaskKind::HorizontalBlur(..) => {
+            RenderTaskKind::HorizontalBlur(ref info) => {
                 add_blur_instances(
                     &mut self.horizontal_blurs,
                     BlurDirection::Horizontal,
+                    info.blur_std_deviation,
+                    info.blur_region,
                     task_id.into(),
                     task.children[0],
                     render_tasks,
@@ -469,6 +478,7 @@ impl RenderTarget for ColorRenderTarget {
                 let target_rect = task.get_target_rect();
                 self.blits.push(BlitJob {
                     source: task_info.source,
+                    source_rect: task_info.source_rect,
                     target_rect,
                 });
             }
@@ -573,21 +583,25 @@ impl RenderTarget for AlphaRenderTarget {
                 //           prim region with blend disabled.
                 self.one_clears.push(task_id);
             }
-            RenderTaskKind::VerticalBlur(..) => {
+            RenderTaskKind::VerticalBlur(ref info) => {
                 self.zero_clears.push(task_id);
                 add_blur_instances(
                     &mut self.vertical_blurs,
                     BlurDirection::Vertical,
+                    info.blur_std_deviation,
+                    info.blur_region,
                     task_id.into(),
                     task.children[0],
                     render_tasks,
                 );
             }
-            RenderTaskKind::HorizontalBlur(..) => {
+            RenderTaskKind::HorizontalBlur(ref info) => {
                 self.zero_clears.push(task_id);
                 add_blur_instances(
                     &mut self.horizontal_blurs,
                     BlurDirection::Horizontal,
+                    info.blur_std_deviation,
+                    info.blur_region,
                     task_id.into(),
                     task.children[0],
                     render_tasks,
@@ -744,10 +758,12 @@ impl TextureCacheRenderTarget {
                     wavy_line_thickness: info.wavy_line_thickness,
                 });
             }
-            RenderTaskKind::HorizontalBlur(..) => {
+            RenderTaskKind::HorizontalBlur(ref info) => {
                 add_blur_instances(
                     &mut self.horizontal_blurs,
                     BlurDirection::Horizontal,
+                    info.blur_std_deviation,
+                    info.blur_region,
                     task_address,
                     task.children[0],
                     render_tasks,
@@ -758,6 +774,7 @@ impl TextureCacheRenderTarget {
                 // task to this target.
                 self.blits.push(BlitJob {
                     source: task_info.source,
+                    source_rect: task_info.source_rect,
                     target_rect,
                 });
             }
@@ -817,6 +834,8 @@ impl TextureCacheRenderTarget {
 fn add_blur_instances(
     instances: &mut FastHashMap<TextureSource, Vec<BlurInstance>>,
     blur_direction: BlurDirection,
+    blur_std_deviation: f32,
+    blur_region: DeviceIntSize,
     task_address: RenderTaskAddress,
     src_task_id: RenderTaskId,
     render_tasks: &RenderTaskGraph,
@@ -827,6 +846,8 @@ fn add_blur_instances(
         task_address,
         src_task_address: src_task_id.into(),
         blur_direction: blur_direction.as_int(),
+        blur_std_deviation,
+        blur_region: blur_region.to_f32(),
     };
 
     instances
@@ -1125,6 +1146,8 @@ fn add_svg_filter_node_instances(
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct BlitJob {
     pub source: RenderTaskId,
+    // Normalized region within the source task to blit from
+    pub source_rect: DeviceIntRect,
     pub target_rect: DeviceIntRect,
 }
 
@@ -1194,8 +1217,6 @@ fn build_mask_tasks(
                 (clip_address, fast_path)
             }
             ClipItemKind::Rectangle { rect, mode, .. } => {
-                assert_eq!(mode, ClipMode::Clip);
-
                 let mut writer = gpu_buffer_builder.f32.write_blocks(3);
                 writer.push_one(rect);
                 writer.push_one([0.0, 0.0, 0.0, 0.0]);
@@ -1219,6 +1240,7 @@ fn build_mask_tasks(
                     raster_spatial_node_index,
                 );
 
+                let pattern = Pattern::color(ColorF::WHITE);
                 let clip_needs_scissor_rect = !is_same_coord_system;
                 let mut quad_flags = QuadFlags::IS_MASK;
 
@@ -1231,7 +1253,7 @@ fn build_mask_tasks(
                         &mut gpu_buffer_builder.f32,
                         rect,
                         rect,
-                        PremultipliedColorF::WHITE,
+                        &pattern,
                         &[QuadSegment {
                             rect: tile.tile_rect,
                             task_id: tile.task_id,
@@ -1288,6 +1310,7 @@ fn build_mask_tasks(
 
         let (clip_space, clip_transform_id, main_prim_address, prim_transform_id, is_same_coord_system) = if raster_clip {
             let prim_transform_id = TransformPaletteId::IDENTITY;
+            let pattern = Pattern::color(ColorF::WHITE);
 
             let clip_transform_id = transforms.get_id(
                 raster_spatial_node_index,
@@ -1299,7 +1322,7 @@ fn build_mask_tasks(
                 &mut gpu_buffer_builder.f32,
                 task_world_rect.cast_unit(),
                 task_world_rect.cast_unit(),
-                PremultipliedColorF::WHITE,
+                &pattern,
                 &[],
                 ScaleOffset::identity(),
             );

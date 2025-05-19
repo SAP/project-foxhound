@@ -523,3 +523,107 @@ add_task(function test_gifft_url_cropped() {
     scalarValue("telemetry.test.mirror_for_url")
   );
 });
+
+add_task(function test_gifft_labeled_custom_dist() {
+  Glean.testOnly.mabelsCustomLabelLengths.rubbermaid.accumulateSamples([
+    7, 268435458,
+  ]);
+
+  let data = Glean.testOnly.mabelsCustomLabelLengths.rubbermaid.testGetValue();
+  Assert.equal(7 + 268435458, data.sum, "Sum's correct");
+  for (let [bucket, count] of Object.entries(data.values)) {
+    Assert.ok(
+      count == 0 || (count == 1 && (bucket == 1 || bucket == 268435456)),
+      `Only two buckets have a sample ${bucket} ${count}`
+    );
+  }
+
+  data = Telemetry.getKeyedHistogramById(
+    "TELEMETRY_TEST_KEYED_LINEAR"
+  ).snapshot();
+  Telemetry.getKeyedHistogramById("TELEMETRY_TEST_KEYED_LINEAR").clear();
+  Assert.ok("rubbermaid" in data, "Mirror has key");
+  Assert.equal(
+    7 + 268435458,
+    data.rubbermaid.sum,
+    "Sum in histogram is correct"
+  );
+  Assert.equal(1, data.rubbermaid.values["1"], "One sample in the low bucket");
+  Assert.equal(
+    1,
+    data.rubbermaid.values["250000"],
+    "One sample in the high bucket"
+  );
+});
+
+add_task(function test_gifft_labeled_memory_dist() {
+  Glean.testOnly.whatDoYouRemember.childhood.accumulate(7);
+  Glean.testOnly.whatDoYouRemember.childhood.accumulate(17);
+
+  let data = Glean.testOnly.whatDoYouRemember.childhood.testGetValue();
+  // `data.sum` is in bytes, but the metric is in MB.
+  Assert.equal(24 * 1024 * 1024, data.sum, "Sum's correct");
+  for (let [bucket, count] of Object.entries(data.values)) {
+    Assert.ok(
+      count == 0 || (count == 1 && (bucket == 7053950 || bucket == 17520006)),
+      `Only two buckets have a sample ${bucket} ${count}`
+    );
+  }
+
+  data = Telemetry.getKeyedHistogramById(
+    "TELEMETRY_TEST_MIRROR_FOR_LABELED_MEMORY"
+  ).snapshot();
+  Telemetry.getKeyedHistogramById(
+    "TELEMETRY_TEST_MIRROR_FOR_LABELED_MEMORY"
+  ).clear();
+  Assert.ok("childhood" in data, "Key's present");
+  Assert.equal(24, data.childhood.sum, "Histogram's in `memory_unit` units");
+  Assert.equal(2, data.childhood.values["1"], "Both samples in a low bucket");
+});
+
+add_task(async function test_gifft_labeled_timing_dist() {
+  let t1 = Glean.testOnly.whereHasTheTimeGone["down the drain"].start();
+  let t2 = Glean.testOnly.whereHasTheTimeGone["down the drain"].start();
+
+  await sleep(5);
+
+  let t3 = Glean.testOnly.whereHasTheTimeGone["down the drain"].start();
+  Glean.testOnly.whereHasTheTimeGone["down the drain"].cancel(t1);
+
+  await sleep(5);
+
+  Glean.testOnly.whereHasTheTimeGone["down the drain"].stopAndAccumulate(t2); // 10ms
+  Glean.testOnly.whereHasTheTimeGone["down the drain"].stopAndAccumulate(t3); // 5ms
+
+  let data =
+    Glean.testOnly.whereHasTheTimeGone["down the drain"].testGetValue();
+  const NANOS_IN_MILLIS = 1e6;
+  // bug 1701949 - Sleep gets close, but sometimes doesn't wait long enough.
+  const EPSILON = 40000;
+
+  // Variance in timing makes getting the sum impossible to know.
+  // 10 and 5 input value can be trunacted to 4. + 9. >= 13. from cast
+  Assert.greater(data.sum, 13 * NANOS_IN_MILLIS - EPSILON);
+
+  // No guarantees from timers means no guarantees on buckets.
+  // But we can guarantee it's only two samples.
+  Assert.equal(
+    2,
+    Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
+    "Only two buckets with samples"
+  );
+
+  data = Telemetry.getKeyedHistogramById(
+    "TELEMETRY_TEST_MIRROR_FOR_LABELED_TIMING"
+  ).snapshot();
+  info(JSON.stringify(data));
+  Assert.ok("down the drain" in data, "Has the key");
+  data = data["down the drain"];
+  // Suffers from same cast truncation issue of 9.... and 4.... values
+  Assert.greaterOrEqual(data.sum, 13, "Histogram's in milliseconds");
+  Assert.equal(
+    2,
+    Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
+    "Only two samples"
+  );
+});

@@ -17,7 +17,7 @@ import androidx.core.content.ContextCompat.getColor
 import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.compose.cfr.CFRPopup
 import mozilla.components.compose.cfr.CFRPopupProperties
-import mozilla.components.service.glean.private.NoExtras
+import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Onboarding
 import org.mozilla.fenix.GleanMetrics.RecentTabs
 import org.mozilla.fenix.R
@@ -154,6 +154,10 @@ class HomeCFRPresenter(
     private fun getCFRToShow(): Result {
         var result: Result = Result.None
         val count = recyclerView.adapter?.itemCount ?: return result
+
+        if (context.settings().navigationToolbarEnabled && context.settings().shouldShowNavigationBarCFR) {
+            return result
+        }
 
         for (index in count downTo 0) {
             val viewHolder = recyclerView.findViewHolderForAdapterPosition(index)

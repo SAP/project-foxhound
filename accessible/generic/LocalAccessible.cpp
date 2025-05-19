@@ -2107,7 +2107,7 @@ void LocalAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
   }
 
   if (ActionAncestor()) {
-    aName.AssignLiteral("click ancestor");
+    aName.AssignLiteral("clickAncestor");
     return;
   }
 }
@@ -2390,8 +2390,7 @@ Relation LocalAccessible::RelationByType(RelationType aType) const {
     case RelationType::DEFAULT_BUTTON: {
       if (mContent->IsHTMLElement()) {
         // HTML form controls implements nsIFormControl interface.
-        nsCOMPtr<nsIFormControl> control(do_QueryInterface(mContent));
-        if (control) {
+        if (auto* control = nsIFormControl::FromNode(mContent)) {
           if (dom::HTMLFormElement* form = control->GetForm()) {
             return Relation(mDoc, form->GetDefaultSubmitElement());
           }
@@ -3669,14 +3668,15 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
     }
   }
 
-  // If text changes, we must also update spelling errors.
-  if (aCacheDomain & (CacheDomain::Spelling | CacheDomain::Text) &&
+  // If text changes, we must also update text offset attributes.
+  if (aCacheDomain & (CacheDomain::TextOffsetAttributes | CacheDomain::Text) &&
       IsTextLeaf()) {
-    auto spellingErrors = TextLeafPoint::GetSpellingErrorOffsets(this);
-    if (!spellingErrors.IsEmpty()) {
-      fields->SetAttribute(CacheKey::SpellingErrors, std::move(spellingErrors));
+    auto offsetAttrs = TextLeafPoint::GetTextOffsetAttributes(this);
+    if (!offsetAttrs.IsEmpty()) {
+      fields->SetAttribute(CacheKey::TextOffsetAttributes,
+                           std::move(offsetAttrs));
     } else if (aUpdateType == CacheUpdateType::Update) {
-      fields->SetAttribute(CacheKey::SpellingErrors, DeleteEntry());
+      fields->SetAttribute(CacheKey::TextOffsetAttributes, DeleteEntry());
     }
   }
 

@@ -375,8 +375,8 @@ class ReadableStreamFromAlgorithms final
     }
 
     JS::Rooted<JS::Value> returnResult(aCx);
-    if (!JS::Call(aCx, iterator, returnMethod,
-                  JS::HandleValueArray(reason), &returnResult)) {
+    if (!JS::Call(aCx, iterator, returnMethod, JS::HandleValueArray(reason),
+                  &returnResult)) {
       // Step 6. If returnResult is an abrupt completion, return a promise
       // rejected with returnResult.[[Value]].
       aRv.StealExceptionFromJSContext(aCx);

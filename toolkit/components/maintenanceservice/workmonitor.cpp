@@ -394,11 +394,7 @@ static bool UpdaterIsValid(LPWSTR updater, LPWSTR installDir,
     return false;
   }
 
-#ifndef DISABLE_UPDATER_AUTHENTICODE_CHECK
   return DoesBinaryMatchAllowedCertificates(installDir, updater);
-#else
-  return true;
-#endif
 }
 
 /**
@@ -447,7 +443,10 @@ BOOL ProcessSoftwareUpdateCommand(DWORD argc, LPWSTR* argv) {
       if (!IsUpdateBeingStaged(argc, argv)) {
         // We might not execute code after StartServiceUpdate because
         // the service installer will stop the service if it is running.
+        LOG(("Starting service update"));
         StartServiceUpdate(installDir);
+      } else {
+        LOG(("Skipping update of the service because we are staging"));
       }
     } else {
       result = FALSE;

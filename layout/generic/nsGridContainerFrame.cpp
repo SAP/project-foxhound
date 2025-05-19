@@ -816,7 +816,9 @@ struct nsGridContainerFrame::GridItemInfo {
   // container it is in.
   bool IsBSizeDependentOnContainerSize(WritingMode aContainerWM) const {
     const auto IsDependentOnContainerSize = [](const auto& size) -> bool {
-      return size.HasPercent() || size.IsMozAvailable();
+      // XXXdholbert The BehavesLikeStretchOnInlineAxis usage seems like
+      // maybe it should be considering block-axis instead?
+      return size.HasPercent() || size.BehavesLikeStretchOnInlineAxis();
     };
 
     const nsStylePosition* stylePos = mFrame->StylePosition();
@@ -9444,12 +9446,16 @@ void nsGridContainerFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
   UpdateSubgridFrameState();
 }
 
-nscoord nsGridContainerFrame::IntrinsicISize(gfxContext* aRenderingContext,
-                                             IntrinsicISizeType aType) {
+nscoord nsGridContainerFrame::ComputeIntrinsicISize(gfxContext* aContext,
+                                                    IntrinsicISizeType aType) {
+  if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
+    return *containISize;
+  }
+
   // Calculate the sum of column sizes under intrinsic sizing.
   // http://dev.w3.org/csswg/css-grid/#intrinsic-sizes
   NormalizeChildLists();
-  GridReflowInput state(this, *aRenderingContext);
+  GridReflowInput state(this, *aContext);
   InitImplicitNamedAreas(state.mGridStyle);  // XXX optimize
 
   // The min/sz/max sizes are the input to the "repeat-to-fill" algorithm:
@@ -9510,34 +9516,20 @@ nscoord nsGridContainerFrame::IntrinsicISize(gfxContext* aRenderingContext,
   return last.mPosition + last.mBase;
 }
 
-nscoord nsGridContainerFrame::GetMinISize(gfxContext* aRC) {
-  auto* f = static_cast<nsGridContainerFrame*>(FirstContinuation());
-  if (f != this) {
-    return f->GetMinISize(aRC);
+nscoord nsGridContainerFrame::IntrinsicISize(gfxContext* aContext,
+                                             IntrinsicISizeType aType) {
+  auto* firstCont = static_cast<nsGridContainerFrame*>(FirstContinuation());
+  if (firstCont != this) {
+    return firstCont->IntrinsicISize(aContext, aType);
   }
 
-  if (mCachedMinISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
-    Maybe<nscoord> containISize = ContainIntrinsicISize();
-    mCachedMinISize = containISize
-                          ? *containISize
-                          : IntrinsicISize(aRC, IntrinsicISizeType::MinISize);
+  nscoord& cachedISize = aType == IntrinsicISizeType::MinISize
+                             ? mCachedMinISize
+                             : mCachedPrefISize;
+  if (cachedISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
+    cachedISize = ComputeIntrinsicISize(aContext, aType);
   }
-  return mCachedMinISize;
-}
-
-nscoord nsGridContainerFrame::GetPrefISize(gfxContext* aRC) {
-  auto* f = static_cast<nsGridContainerFrame*>(FirstContinuation());
-  if (f != this) {
-    return f->GetPrefISize(aRC);
-  }
-
-  if (mCachedPrefISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
-    Maybe<nscoord> containISize = ContainIntrinsicISize();
-    mCachedPrefISize = containISize
-                           ? *containISize
-                           : IntrinsicISize(aRC, IntrinsicISizeType::PrefISize);
-  }
-  return mCachedPrefISize;
+  return cachedISize;
 }
 
 void nsGridContainerFrame::MarkIntrinsicISizesDirty() {

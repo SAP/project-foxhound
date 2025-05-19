@@ -11,6 +11,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,8 +25,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
-import androidx.core.os.bundleOf
-import androidx.fragment.app.setFragmentResult
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -39,8 +39,11 @@ import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.requireComponents
+import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.settings.SupportUtils
@@ -64,25 +67,32 @@ enum class TranslationsDialogAccessPoint {
  */
 class TranslationsDialogFragment : BottomSheetDialogFragment() {
 
-    private var behavior: BottomSheetBehavior<View>? = null
     private val args by navArgs<TranslationsDialogFragmentArgs>()
+
+    private val appStore: AppStore by lazy { requireComponents.appStore }
     private val browserStore: BrowserStore by lazy { requireComponents.core.store }
+
     private val translationDialogBinding = ViewBoundFeatureWrapper<TranslationsDialogBinding>()
     private val downloadLanguagesFeature =
         ViewBoundFeatureWrapper<DownloadLanguagesFeature>()
+
     private lateinit var translationsDialogStore: TranslationsDialogStore
+
+    private var behavior: BottomSheetBehavior<View>? = null
     private var isTranslationInProgress: Boolean? = null
     private var isDataSaverEnabledAndWifiDisabled = false
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
         super.onCreateDialog(savedInstanceState).apply {
             setOnShowListener {
-                val bottomSheet = findViewById<View?>(R.id.design_bottom_sheet)
-                bottomSheet?.setBackgroundResource(android.R.color.transparent)
-                behavior = BottomSheetBehavior.from(bottomSheet)
-                behavior?.peekHeight = resources.displayMetrics.heightPixels
-                behavior?.state = BottomSheetBehavior.STATE_EXPANDED
-                behavior?.hideFriction = DIALOG_FRICTION
+                runIfFragmentIsAttached {
+                    val bottomSheet = findViewById<View?>(R.id.design_bottom_sheet)
+                    bottomSheet?.setBackgroundResource(android.R.color.transparent)
+                    behavior = BottomSheetBehavior.from(bottomSheet)
+                    behavior?.peekHeight = resources.displayMetrics.heightPixels
+                    behavior?.state = BottomSheetBehavior.STATE_EXPANDED
+                    behavior?.hideFriction = DIALOG_FRICTION
+                }
             }
         }
 
@@ -145,16 +155,13 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
                 var revertAlwaysTranslateLanguageCheckBox by remember {
                     mutableStateOf(false)
                 }
-
                 TranslationDialogBottomSheet(
                     onRequestDismiss = { behavior?.state = BottomSheetBehavior.STATE_HIDDEN },
                 ) {
                     TranslationsAnimation(
-                        translationsVisibility = translationsVisibility,
-                        density = density,
-                        translationsOptionsHeightDp = translationsOptionsHeightDp,
-                    ) {
-                        if (translationsVisibility) {
+                        showMainSheet = translationsVisibility,
+                    ) { showMainPage ->
+                        if (showMainPage) {
                             Column(
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
                                     translationsHeightDp = with(density) {
@@ -171,7 +178,11 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
                                         showPageSettings = FxNimbus.features.translations.value().pageSettingsEnabled,
                                         translationsDialogState = it,
                                         onSettingClicked = {
-                                            Translations.action.record(Translations.ActionExtra("page_settings"))
+                                            Translations.action.record(
+                                                Translations.ActionExtra(
+                                                    "page_settings",
+                                                ),
+                                            )
                                             translationsVisibility = false
                                         },
                                         onShowDownloadLanguageFileDialog = {
@@ -180,16 +191,7 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
                                     )
                                 }
                             }
-                        }
-                    }
-
-                    TranslationsOptionsAnimation(
-                        translationsVisibility = !translationsVisibility,
-                        density = density,
-                        translationsHeightDp = translationsHeightDp,
-                        translationsWidthDp = translationsWidthDp,
-                    ) {
-                        if (!translationsVisibility) {
+                        } else {
                             Column(
                                 modifier = Modifier.onGloballyPositioned { coordinates ->
                                     translationsOptionsHeightDp = with(density) {
@@ -445,12 +447,10 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
 
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
+
         if (isTranslationInProgress == true) {
-            setFragmentResult(
-                TRANSLATION_IN_PROGRESS,
-                bundleOf(
-                    SESSION_ID to browserStore.state.selectedTab?.id,
-                ),
+            appStore.dispatch(
+                AppAction.TranslationsAction.TranslationStarted(sessionId = browserStore.state.selectedTab?.id),
             )
         }
     }
@@ -468,10 +468,5 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
             requireContext().settings().showFirstTimeTranslation = false
         }
         dismiss()
-    }
-
-    companion object {
-        const val TRANSLATION_IN_PROGRESS = "translationInProgress"
-        const val SESSION_ID = "sessionId"
     }
 }

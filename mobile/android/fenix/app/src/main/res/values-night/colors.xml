@@ -22,7 +22,7 @@
     <!-- Tooltip -->
     <color name="fx_mobile_layer_color_gradient_start">@color/photonViolet70</color>
     <!-- Tooltip -->
-    <color name="fx_mobile_layer_color_gradient_end">@color/photonViolet40</color>
+    <color name="fx_mobile_layer_color_gradient_end">@color/photonViolet60</color>
     <!-- Warning background -->
     <color name="fx_mobile_layer_color_warning" tools:ignore="UnusedResources">@color/photonYellow70A77</color>
     <!-- Confirmation background -->
@@ -155,7 +155,7 @@
 
     <!-- Normal theme colors for dark mode -->
     <color name="accent_normal_theme">@color/photonViolet50</color>
-    <color name="accent_high_contrast_normal_theme">@color/photonViolet20</color>
+    <color name="accent_high_contrast_normal_theme">@color/photonViolet40</color>
     <color name="neutral_normal_theme">@color/photonGrey20</color>
     <color name="neutral_faded_normal_theme">#1FFBFBFE</color>
     <color name="toggle_off_knob_normal_theme">@color/toggle_off_knob_dark_theme</color>
@@ -167,6 +167,9 @@
     <color name="prompt_login_edit_text_cursor_color_normal_theme">@color/photonViolet50</color>
     <color name="search_suggestion_indicator_icon_color_normal_theme">@color/photonGreen60</color>
     <color name="search_suggestion_indicator_icon_bookmark_color_normal_theme">@color/photonBlue40</color>
+
+    <!-- Prompt colors -->
+    <color name="mozac_feat_prompt_cancel_save_dialog_text_color" tools:ignore="UnusedResources">@color/photonViolet50</color>
 
     <!-- Reader View colors -->
     <color name="mozac_feature_readerview_text_color">@color/fx_mobile_text_color_primary</color>

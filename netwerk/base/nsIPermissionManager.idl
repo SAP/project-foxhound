@@ -42,11 +42,14 @@ interface nsIPermissionManager : nsISupports
    * NOTE: UNKNOWN_ACTION (0) is reserved to represent the
    * default permission when no entry is found for a host, and
    * should not be used by consumers to indicate otherwise.
+   *
+   * MAX_VALID_ACTION is the highest value (used to validate prefs)
    */
   const uint32_t UNKNOWN_ACTION = 0;
   const uint32_t ALLOW_ACTION = 1;
   const uint32_t DENY_ACTION = 2;
   const uint32_t PROMPT_ACTION = 3;
+  const uint32_t MAX_VALID_ACTION = 3;
 
   /**
    * Predefined expiration types for permissions.  Permissions can be permanent
@@ -172,12 +175,26 @@ interface nsIPermissionManager : nsISupports
   void removeByType(in ACString type);
 
   /**
+   * Clear all permissions not of the passed types.
+   */
+  void removeAllExceptTypes(in Array<ACString> typeExceptions);
+
+  /**
    * Clear all permissions of the passed type added since the specified time.
    * @param type    a case-sensitive ASCII string, identifying the permission.
    * @param since   a unix timestamp representing the number of milliseconds from
    *                Jan 1, 1970 00:00:00 UTC.
    */
   void removeByTypeSince(in ACString type, in int64_t since);
+
+  /**
+   * Clear all permissions of the passed types added since the specified time.
+   * @param since   a unix timestamp representing the number of milliseconds from
+   *                Jan 1, 1970 00:00:00 UTC.
+   * @param typeExceptions    a array of case-sensitive ASCII strings, identifying
+   *                          the types to not remove.
+   */
+  void removeAllSinceWithTypeExceptions(in int64_t since, in Array<ACString> typeExceptions);
 
   /**
    * Test whether the principal has the permission to perform a given action.
@@ -239,8 +256,11 @@ interface nsIPermissionManager : nsISupports
 
   /**
    * Remove all permissions that will match the origin pattern.
+   * @param patternAsJSON    Origin pattern to match.
+   * @param typeInclusions   Types to include in search. If empty, includes all types.
+   * @param typeExceptions   Types to skip in search.
    */
-  void removePermissionsWithAttributes(in AString patternAsJSON);
+  void removePermissionsWithAttributes(in AString patternAsJSON, in Array<ACString> typeInclusions, in Array<ACString> typeExceptions);
 };
 
 %{ C++

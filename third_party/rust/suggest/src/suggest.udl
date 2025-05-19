@@ -34,6 +34,7 @@ enum SuggestionProvider {
     "Mdn",
     "Weather",
     "AmpMobile",
+    "Fakespot",
 };
 
 [Enum]
@@ -95,6 +96,17 @@ interface Suggestion {
     Weather(
         f64 score
     );
+    Fakespot(
+        string fakespot_grade,
+        string product_id,
+        f64 rating,
+        string title,
+        i64 total_reviews,
+        string url,
+        sequence<u8>? icon,
+        string? icon_mimetype,
+        f64 score
+    );
 };
 
 dictionary SuggestionQuery {
@@ -104,7 +116,6 @@ dictionary SuggestionQuery {
 };
 
 dictionary SuggestIngestionConstraints {
-    u64? max_suggestions = null;
     sequence<SuggestionProvider>? providers = null;
     // Only ingest if the table `suggestions` is empty.
     //
@@ -178,9 +189,16 @@ interface SuggestStoreBuilder {
     [Self=ByArc]
     SuggestStoreBuilder remote_settings_server(RemoteSettingsServer server);
 
-    // Deprecated: Use `remote_settings_server()` instead.
     [Self=ByArc]
-    SuggestStoreBuilder remote_settings_config(RemoteSettingsConfig config);
+    SuggestStoreBuilder remote_settings_bucket_name(string bucket_name);
+
+    // Add an sqlite3 extension to load
+    //
+    // library_name should be the name of the library without any extension, for example `libmozsqlite3`.
+    // entrypoint should be the entry point, for example `sqlite3_fts5_init`.  If `null` (the default)
+    // entry point will be used (see https://sqlite.org/loadext.html for details).
+    [Self=ByArc]
+    SuggestStoreBuilder load_extension(string library_name, string? entrypoint);
 
     [Throws=SuggestApiError]
     SuggestStore build();

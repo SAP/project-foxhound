@@ -13,12 +13,11 @@
 #include "nsDirection.h"
 #include "nsIAccessibleText.h"
 
-class nsRange;
-
 namespace mozilla {
 namespace dom {
+class AbstractRange;
 class Document;
-}
+}  // namespace dom
 
 namespace a11y {
 class Accessible;
@@ -45,16 +44,23 @@ class TextLeafPoint final {
 
   /**
    * Construct a TextLeafPoint representing the caret.
-   * The actual offset used for the caret differs depending on whether the
-   * caret is at the end of a line and the query being made. Thus, mOffset on
-   * the returned TextLeafPoint is not a valid offset.
    */
-  static TextLeafPoint GetCaret(Accessible* aAcc) {
-    return TextLeafPoint(aAcc, nsIAccessibleText::TEXT_OFFSET_CARET);
-  }
+  static TextLeafPoint GetCaret(Accessible* aAcc);
 
   Accessible* mAcc;
   int32_t mOffset;
+
+  /**
+   * True if this point is the insertion point at the end of a line. This is the
+   * point where the caret is positioned when pressing the end key, for example.
+   * On the very last line, mOffset will be equal to the length of the text.
+   * However, where text wraps across lines, this line end insertion point
+   * doesn't have its own offset, so mOffset will be the offset for the first
+   * character on the next line. This is where this flag becomes important.
+   * Otherwise, for example, commanding a screen reader to read the current line
+   * would read the next line instead of the current line in this case.
+   */
+  bool mIsEndOfLineInsertionPoint = false;
 
   bool operator==(const TextLeafPoint& aPoint) const {
     return mAcc == aPoint.mAcc && mOffset == aPoint.mOffset;
@@ -73,21 +79,6 @@ class TextLeafPoint final {
    * evaluates to false.
    */
   explicit operator bool() const { return !!mAcc; }
-
-  bool IsCaret() const {
-    return mOffset == nsIAccessibleText::TEXT_OFFSET_CARET;
-  }
-
-  bool IsCaretAtEndOfLine() const;
-
-  /**
-   * Get a TextLeafPoint at the actual caret offset.
-   * This should only be called on a TextLeafPoint created with GetCaret.
-   * If aAdjustAtEndOfLine is true, the point will be adjusted if the caret is
-   * at the end of a line so that word and line boundaries can be calculated
-   * correctly.
-   */
-  TextLeafPoint ActualizeCaret(bool aAdjustAtEndOfLine = true) const;
 
   enum class BoundaryFlags : uint32_t {
     eDefaultBoundaryFlags = 0,
@@ -146,17 +137,18 @@ class TextLeafPoint final {
       bool aIncludeDefaults = true) const;
 
   /**
-   * Get the offsets of all spelling errors in a given LocalAccessible. This
-   * should only be used when pushing the cache. Most callers will want
-   * FindTextAttrsStart instead.
+   * Get all the attributes that apply to offset ranges in a given text leaf
+   * LocalAccessible. This should only be used when pushing the cache. Most
+   * callers will want FindTextAttrsStart instead.
    */
-  static nsTArray<int32_t> GetSpellingErrorOffsets(LocalAccessible* aAcc);
+  static nsTArray<TextOffsetAttribute> GetTextOffsetAttributes(
+      LocalAccessible* aAcc);
 
   /**
-   * Queue a cache update for a spelling error in a given DOM range.
+   * Queue a cache update for text offset attributes in a given DOM range.
    */
-  static void UpdateCachedSpellingError(dom::Document* aDocument,
-                                        const nsRange& aRange);
+  static void UpdateCachedTextOffsetAttributes(
+      dom::Document* aDocument, const dom::AbstractRange& aRange);
 
   /**
    * Find the start of a run of text attributes in a specific direction.
@@ -202,6 +194,12 @@ class TextLeafPoint final {
       bool aIncludeGenerated = true) const;
 
  private:
+  /**
+   * If this is the insertion point at the end of a line, return an adjusted
+   * point such that word and line boundaries can be calculated correctly.
+   */
+  TextLeafPoint AdjustEndOfLine() const;
+
   bool IsEmptyLastLine() const;
 
   bool IsDocEdge(nsDirection aDirection) const;
@@ -231,15 +229,17 @@ class TextLeafPoint final {
   TextLeafPoint FindClusterSameAcc(nsDirection aDirection,
                                    bool aIncludeOrigin) const;
 
-  bool IsInSpellingError() const;
+  void AddTextOffsetAttributes(AccAttributes* aAttrs) const;
 
   /**
-   * Find a spelling error boundary in the same Accessible. This function
+   * Find a text offset attribute boundary in the same Accessible. This function
    * searches for either start or end points, since either means a change in
-   * text attributes.
+   * text attributes. This only considers attributes such as spelling errors
+   * which are mapped to DOM selections. Most callers will want
+   * FindTextAttrsStart instead.
    */
-  TextLeafPoint FindSpellingErrorSameAcc(nsDirection aDirection,
-                                         bool aIncludeOrigin) const;
+  TextLeafPoint FindTextOffsetAttributeSameAcc(nsDirection aDirection,
+                                               bool aIncludeOrigin) const;
 
   // Return the point immediately succeeding or preceding this leaf depending
   // on given direction.
@@ -297,6 +297,12 @@ class TextLeafRange final {
    * works on remote accessibles, and assumes caching is enabled.
    */
   LayoutDeviceIntRect Bounds() const;
+
+  /**
+   * Get the ranges of text that are selected within this Accessible. The caret
+   * is not included as a collapsed range.
+   */
+  static void GetSelection(Accessible* aAcc, nsTArray<TextLeafRange>& aRanges);
 
   /**
    * Set range as DOM selection.

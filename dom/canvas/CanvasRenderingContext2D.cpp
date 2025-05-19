@@ -2397,7 +2397,7 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     HTMLCanvasElement* canvas = &aSource.GetAsHTMLCanvasElement();
     element = canvas;
 
-    nsIntSize size = canvas->GetSize();
+    CSSIntSize size = canvas->GetSize();
     if (size.width == 0) {
       aError.ThrowInvalidStateError("Passed-in canvas has width 0");
       return nullptr;
@@ -2440,7 +2440,7 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
   } else if (aSource.IsOffscreenCanvas()) {
     offscreenCanvas = &aSource.GetAsOffscreenCanvas();
 
-    nsIntSize size = offscreenCanvas->GetWidthHeight();
+    CSSIntSize size = offscreenCanvas->GetWidthHeight();
     if (size.width == 0) {
       aError.ThrowInvalidStateError("Passed-in canvas has width 0");
       return nullptr;
@@ -5429,18 +5429,34 @@ MaybeGetSurfaceDescriptorForRemoteCanvas(
     return Nothing();
   }
 
-  const auto& sdv = sd.ref().get_SurfaceDescriptorGPUVideo();
+  auto& sdv = sd.ref().get_SurfaceDescriptorGPUVideo();
   const auto& sdvType = sdv.type();
   if (sdvType ==
       layers::SurfaceDescriptorGPUVideo::TSurfaceDescriptorRemoteDecoder) {
-    const auto& sdrd = sdv.get_SurfaceDescriptorRemoteDecoder();
-    const auto& subdesc = sdrd.subdesc();
+    auto& sdrd = sdv.get_SurfaceDescriptorRemoteDecoder();
+    auto& subdesc = sdrd.subdesc();
     const auto& subdescType = subdesc.type();
     if (subdescType == layers::RemoteDecoderVideoSubDescriptor::Tnull_t) {
       return sd;
     }
     if (subdescType == layers::RemoteDecoderVideoSubDescriptor::
                            TSurfaceDescriptorMacIOSurface) {
+      return sd;
+    }
+    if (subdescType ==
+            layers::RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorD3D10 &&
+        StaticPrefs::gfx_canvas_remote_use_draw_image_fast_path_d3d()) {
+      auto& descD3D10 = subdesc.get_SurfaceDescriptorD3D10();
+      if (descD3D10.gpuProcessQueryId().isSome() &&
+          descD3D10.gpuProcessQueryId().ref().mOnlyForOverlay) {
+        return Nothing();
+      }
+      // Clear FileHandleWrapper, since FileHandleWrapper::mHandle could not be
+      // cross process delivered by using Shmem. Cross-process delivery of
+      // FileHandleWrapper::mHandle is not possible simply by using shmen. When
+      // it is tried, parent side process just causes crash during destroying
+      // FileHandleWrapper.
+      descD3D10.handle() = nullptr;
       return sd;
     }
   }
@@ -5497,7 +5513,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
   if (aImage.IsHTMLCanvasElement()) {
     HTMLCanvasElement* canvas = &aImage.GetAsHTMLCanvasElement();
     element = canvas;
-    nsIntSize size = canvas->GetSize();
+    CSSIntSize size = canvas->GetSize();
     if (size.width == 0 || size.height == 0) {
       return aError.ThrowInvalidStateError("Passed-in canvas is empty");
     }
@@ -5507,7 +5523,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     }
   } else if (aImage.IsOffscreenCanvas()) {
     offscreenCanvas = &aImage.GetAsOffscreenCanvas();
-    nsIntSize size = offscreenCanvas->GetWidthHeight();
+    CSSIntSize size = offscreenCanvas->GetWidthHeight();
     if (size.IsEmpty()) {
       return aError.ThrowInvalidStateError("Passed-in canvas is empty");
     }
@@ -5732,6 +5748,10 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       // We avoid copying the whole canvas by manually copying just the part
       // that we need.
       srcSurf = ExtractSubrect(srcSurf, &sourceRect, mTarget);
+      // The SFE result may inadvertently keep the snapshot alive, forcing a
+      // copy when MarkChanged is called. Clear out possibly the last reference
+      // to the original snapshot to avoid this.
+      res.mSourceSurface = nullptr;
     }
 
     AdjustedTarget tempTarget(this, bounds.IsEmpty() ? nullptr : &bounds, true);
@@ -6703,7 +6723,7 @@ already_AddRefed<CanvasPath> CanvasPath::Constructor(
 }
 
 already_AddRefed<CanvasPath> CanvasPath::Constructor(
-    const GlobalObject& aGlobal, const nsAString& aPathString) {
+    const GlobalObject& aGlobal, const nsACString& aPathString) {
   RefPtr<gfx::Path> tempPath = SVGContentUtils::GetPath(aPathString);
   if (!tempPath) {
     return Constructor(aGlobal);

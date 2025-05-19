@@ -1,6 +1,7 @@
 [DEFAULT]
 prefs = [
   "apz.zoom-to-focused-input.enabled=false",
+  "test.ime_content_observer.assert_invalid_cache=true",
   "ui.dragThresholdX=4", # Bug 1873142
   "ui.dragThresholdY=4", # Bug 1873142
 ]
@@ -441,6 +442,8 @@ skip-if = ["os == 'android'"] # Needs interaction with the scrollbar
 
 ["test_dragdrop.html"]
 
+["test_dragend_target.html"]
+
 ["test_execCommandPaste_noTarget.html"]
 
 ["test_focus_caret_navigation_between_nested_editors.html"]
@@ -587,6 +590,8 @@ skip-if = ["headless"] # The test calls `synthesizeKey`, see bug 1669923.
 
 ["test_pasting_text_longer_than_maxlength.html"]
 
+["test_replace_text.html"]
+
 ["test_resizers_appearance.html"]
 
 ["test_resizers_resizing_elements.html"]
@@ -626,3 +631,7 @@ skip-if = ["os == 'android'"]
 ["test_undo_redo_stack_after_setting_value.html"]
 
 ["test_undo_with_editingui.html"]
+
+["test_updating_input_value_during_composition_from_async_input.html"]
+
+["test_updating_input_value_during_composition_from_input.html"]

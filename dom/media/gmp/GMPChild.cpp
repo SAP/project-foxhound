@@ -12,7 +12,10 @@
 #include "GeckoProfiler.h"
 #ifdef XP_LINUX
 #  include "dlfcn.h"
-#endif
+#  if defined(MOZ_SANDBOX)
+#    include "mozilla/Sandbox.h"
+#  endif  // defined(MOZ_SANDBOX)
+#endif    // defined (XP_LINUX)
 #include "gmp-video-decode.h"
 #include "gmp-video-encode.h"
 #include "GMPContentChild.h"
@@ -173,6 +176,7 @@ mozilla::ipc::IPCResult GMPChild::RecvPreloadLibs(const nsCString& aLibs) {
       u"ole32.dll",        // required for OPM
       u"oleaut32.dll",     // For _bstr_t use in libwebrtc, see bug 1788592
       u"psapi.dll",        // For GetMappedFileNameW, see bug 1383611
+      u"shell32.dll",      // Dependency for widevine
       u"softokn3.dll",     // NSS for clearkey CDM
       u"winmm.dll",        // Dependency for widevine
   };
@@ -566,6 +570,10 @@ MessageLoop* GMPChild::GMPMessageLoop() { return mGMPMessageLoop; }
 
 void GMPChild::ActorDestroy(ActorDestroyReason aWhy) {
   GMP_CHILD_LOG_DEBUG("%s reason=%d", __FUNCTION__, aWhy);
+
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  DestroySandboxProfiler();
+#endif
 
   for (uint32_t i = mGMPContentChildren.Length(); i > 0; i--) {
     MOZ_ASSERT_IF(aWhy == NormalShutdown,

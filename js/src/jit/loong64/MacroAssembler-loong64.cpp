@@ -18,6 +18,7 @@
 #include "util/Memory.h"
 #include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/JSContext.h"
+#include "wasm/WasmStubs.h"
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -2114,18 +2115,6 @@ FaultingCodeOffset MacroAssemblerLOONG64::loadDouble(const BaseIndex& src,
   return asMasm().ma_fld_d(dest, src);
 }
 
-void MacroAssemblerLOONG64::loadFloatAsDouble(const Address& address,
-                                              FloatRegister dest) {
-  asMasm().ma_fld_s(dest, address);
-  as_fcvt_d_s(dest, dest);
-}
-
-void MacroAssemblerLOONG64::loadFloatAsDouble(const BaseIndex& src,
-                                              FloatRegister dest) {
-  asMasm().loadFloat32(src, dest);
-  as_fcvt_d_s(dest, dest);
-}
-
 FaultingCodeOffset MacroAssemblerLOONG64::loadFloat32(const Address& address,
                                                       FloatRegister dest) {
   return asMasm().ma_fld_s(dest, address);
@@ -2702,6 +2691,13 @@ void MacroAssembler::patchFarJump(CodeOffset farJump, uint32_t targetOffset) {
       reinterpret_cast<uint32_t*>(editSrc(BufferOffset(farJump.offset())));
   MOZ_ASSERT(*u32 == UINT32_MAX);
   *u32 = targetOffset - farJump.offset();
+}
+
+void MacroAssembler::patchFarJump(uint8_t* farJump, uint8_t* target) {
+  uint32_t* u32 = reinterpret_cast<uint32_t*>(farJump);
+  MOZ_ASSERT(*u32 == UINT32_MAX);
+
+  *u32 = (int64_t)target - (int64_t)farJump;
 }
 
 CodeOffset MacroAssembler::call(wasm::SymbolicAddress target) {
@@ -5151,30 +5147,6 @@ void MacroAssemblerLOONG64Compat::boxNonDouble(JSValueType type, Register src,
   boxValue(type, src, dest.valueReg());
 }
 
-void MacroAssemblerLOONG64Compat::boolValueToDouble(const ValueOperand& operand,
-                                                    FloatRegister dest) {
-  ScratchRegisterScope scratch(asMasm());
-  convertBoolToInt32(operand.valueReg(), scratch);
-  convertInt32ToDouble(scratch, dest);
-}
-
-void MacroAssemblerLOONG64Compat::int32ValueToDouble(
-    const ValueOperand& operand, FloatRegister dest) {
-  convertInt32ToDouble(operand.valueReg(), dest);
-}
-
-void MacroAssemblerLOONG64Compat::boolValueToFloat32(
-    const ValueOperand& operand, FloatRegister dest) {
-  ScratchRegisterScope scratch(asMasm());
-  convertBoolToInt32(operand.valueReg(), scratch);
-  convertInt32ToFloat32(scratch, dest);
-}
-
-void MacroAssemblerLOONG64Compat::int32ValueToFloat32(
-    const ValueOperand& operand, FloatRegister dest) {
-  convertInt32ToFloat32(operand.valueReg(), dest);
-}
-
 void MacroAssemblerLOONG64Compat::loadConstantFloat32(float f,
                                                       FloatRegister dest) {
   ma_lis(dest, f);
@@ -5335,7 +5307,8 @@ void MacroAssemblerLOONG64Compat::breakpoint(uint32_t value) {
 }
 
 void MacroAssemblerLOONG64Compat::handleFailureWithHandlerTail(
-    Label* profilerExitTail, Label* bailoutTail) {
+    Label* profilerExitTail, Label* bailoutTail,
+    uint32_t* returnValueCheckOffset) {
   // Reserve space for exception information.
   int size = (sizeof(ResumeFromException) + ABIStackAlignment) &
              ~(ABIStackAlignment - 1);
@@ -5349,13 +5322,15 @@ void MacroAssemblerLOONG64Compat::handleFailureWithHandlerTail(
   asMasm().callWithABI<Fn, HandleException>(
       ABIType::General, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
+  *returnValueCheckOffset = asMasm().currentOffset();
+
   Label entryFrame;
   Label catch_;
   Label finally;
   Label returnBaseline;
   Label returnIon;
   Label bailout;
-  Label wasm;
+  Label wasmInterpEntry;
   Label wasmCatch;
 
   // Already clobbered a0, so use it...
@@ -5373,8 +5348,9 @@ void MacroAssemblerLOONG64Compat::handleFailureWithHandlerTail(
                     Imm32(ExceptionResumeKind::ForcedReturnIon), &returnIon);
   asMasm().branch32(Assembler::Equal, a0, Imm32(ExceptionResumeKind::Bailout),
                     &bailout);
-  asMasm().branch32(Assembler::Equal, a0, Imm32(ExceptionResumeKind::Wasm),
-                    &wasm);
+  asMasm().branch32(Assembler::Equal, a0,
+                    Imm32(ExceptionResumeKind::WasmInterpEntry),
+                    &wasmInterpEntry);
   asMasm().branch32(Assembler::Equal, a0, Imm32(ExceptionResumeKind::WasmCatch),
                     &wasmCatch);
 
@@ -5473,25 +5449,19 @@ void MacroAssemblerLOONG64Compat::handleFailureWithHandlerTail(
   ma_li(ReturnReg, Imm32(1));
   jump(bailoutTail);
 
-  // If we are throwing and the innermost frame was a wasm frame, reset SP and
-  // FP; SP is pointing to the unwound return address to the wasm entry, so
-  // we can just ret().
-  bind(&wasm);
+  // Reset SP and FP; SP is pointing to the unwound return address to the wasm
+  // interpreter entry, so we can just ret().
+  bind(&wasmInterpEntry);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
           FramePointer);
   loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
           StackPointer);
-  ma_li(InstanceReg, ImmWord(wasm::FailInstanceReg));
+  ma_li(InstanceReg, ImmWord(wasm::InterpFailInstanceReg));
   ret();
 
   // Found a wasm catch handler, restore state and jump to it.
   bind(&wasmCatch);
-  loadPtr(Address(sp, ResumeFromException::offsetOfTarget()), a1);
-  loadPtr(Address(StackPointer, ResumeFromException::offsetOfFramePointer()),
-          FramePointer);
-  loadPtr(Address(StackPointer, ResumeFromException::offsetOfStackPointer()),
-          StackPointer);
-  jump(a1);
+  wasm::GenerateJumpToCatchHandler(asMasm(), sp, a1, a2);
 }
 
 CodeOffset MacroAssemblerLOONG64Compat::toggledJump(Label* label) {

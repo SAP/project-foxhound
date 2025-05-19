@@ -9,8 +9,8 @@ origin:
   description: "Cross platform audio library"
   url: https://github.com/mozilla/cubeb
   license: ISC
-  release: dabff209ddc97c5d1c304e64107d0c8c1dbe6897 (2024-05-24T13:53:45Z).
-  revision: dabff209ddc97c5d1c304e64107d0c8c1dbe6897
+  release: bbbe5bb0b29ed64cc7dd191d7a72fe24bba0d284 (2024-07-10T09:10:17Z).
+  revision: bbbe5bb0b29ed64cc7dd191d7a72fe24bba0d284
 
 vendoring:
   url: https://github.com/mozilla/cubeb

@@ -14,7 +14,9 @@ import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import org.mozilla.fenix.browser.StandardSnackbarError
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.components.appstate.readerview.ReaderViewState
 import org.mozilla.fenix.components.appstate.shopping.ShoppingState
+import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
@@ -35,6 +37,7 @@ import org.mozilla.fenix.wallpapers.WallpaperState
  * should be expanded when the tray is opened.
  * @property firstFrameDrawn Flag indicating whether the first frame of the homescreen has been drawn.
  * @property isSearchDialogVisible Flag indicating whether the user is interacting with the [SearchDialogFragment].
+ * @property openInFirefoxRequested Flag indicating whether a custom tab should be opened in the browser.
  * @property nonFatalCrashes List of non-fatal crashes that allow the app to continue being used.
  * @property collections The list of [TabCollection] to display in the [HomeFragment].
  * @property expandedCollections A set containing the ids of the [TabCollection] that are expanded
@@ -57,7 +60,10 @@ import org.mozilla.fenix.wallpapers.WallpaperState
  * Also serves as an in memory cache of all stories mapped by category allowing for quick stories filtering.
  * @property wallpaperState The [WallpaperState] to display in the [HomeFragment].
  * @property standardSnackbarError A snackbar error message to display.
+ * @property readerViewState The [ReaderViewState] to display.
  * @property shoppingState Holds state for shopping feature that's required to live the lifetime of a session.
+ * @property snackbarState The [SnackbarState] to display.
+ * @property showFindInPage Whether or not to show the find in page feature.
  * @property wasLastTabClosedPrivate Whether the last remaining tab that was closed in private mode. This is used to
  * display an undo snackbar message relevant to the browsing mode. If null, no snackbar is shown.
  */
@@ -66,6 +72,7 @@ data class AppState(
     val inactiveTabsExpanded: Boolean = false,
     val firstFrameDrawn: Boolean = false,
     val isSearchDialogVisible: Boolean = false,
+    val openInFirefoxRequested: Boolean = false,
     val nonFatalCrashes: List<NativeCodeCrash> = emptyList(),
     val collections: List<TabCollection> = emptyList(),
     val expandedCollections: Set<Long> = emptySet(),
@@ -85,6 +92,9 @@ data class AppState(
     val pendingDeletionHistoryItems: Set<PendingDeletionHistory> = emptySet(),
     val wallpaperState: WallpaperState = WallpaperState.default,
     val standardSnackbarError: StandardSnackbarError? = null,
+    val readerViewState: ReaderViewState = ReaderViewState.None,
     val shoppingState: ShoppingState = ShoppingState(),
+    val snackbarState: SnackbarState = SnackbarState.None,
+    val showFindInPage: Boolean = false,
     val wasLastTabClosedPrivate: Boolean? = null,
 ) : State

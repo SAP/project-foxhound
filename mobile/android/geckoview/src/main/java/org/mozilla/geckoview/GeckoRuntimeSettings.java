@@ -634,6 +634,14 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<Boolean>("privacy.globalprivacycontrol.pbmode.enabled", true);
   /* package */ final Pref<Boolean> mGlobalPrivacyControlFunctionalityEnabled =
       new Pref<Boolean>("privacy.globalprivacycontrol.functionality.enabled", true);
+  /* package */ final Pref<Boolean> mFingerprintingProtection =
+      new Pref<Boolean>("privacy.fingerprintingProtection", false);
+  /* package */ final Pref<Boolean> mFingerprintingProtectionPrivateMode =
+      new Pref<Boolean>("privacy.fingerprintingProtection.pbmode", true);
+  /* package */ final Pref<String> mFingerprintingProtectionOverrides =
+      new Pref<>("privacy.fingerprintingProtection.overrides", "");
+  /* package */ final Pref<Boolean> mFdlibmMathEnabled =
+      new Pref<Boolean>("javascript.options.use_fdlibm_for_sin_cos_tan", false);
 
   /* package */ int mPreferredColorScheme = COLOR_SCHEME_SYSTEM;
 
@@ -771,6 +779,89 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     mGlobalPrivacyControlEnabledPrivateMode.commit(true);
     mGlobalPrivacyControlFunctionalityEnabled.commit(true);
     return this;
+  }
+
+  /**
+   * Set the Fingerprint protection in all tabs.
+   *
+   * @param enabled Whether we set the pref to true or false
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setFingerprintingProtection(final boolean enabled) {
+    mFingerprintingProtection.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Set the Fingerprint protection in private tabs.
+   *
+   * @param enabled Whether we set the pref to true or false
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setFingerprintingProtectionPrivateBrowsing(
+      final boolean enabled) {
+    mFingerprintingProtectionPrivateMode.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Set the Fingerprint protection overrides
+   *
+   * @param overrides The overrides value to add or remove fingerprinting protection targets. Please
+   *     check RFPTargets.inc for all supported targets.
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setFingerprintingProtectionOverrides(
+      @NonNull final String overrides) {
+    mFingerprintingProtectionOverrides.commit(overrides);
+    return this;
+  }
+
+  /**
+   * Set the pref to control whether to use fdlibm for Math.sin, Math.cos, and Math.tan.
+   *
+   * @param enabled Whether we set the pref to true or false
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setFdlibmMathEnabled(final boolean enabled) {
+    mFdlibmMathEnabled.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Get whether Fingerprint protection is enabled in all tabs.
+   *
+   * @return Whether Fingerprint protection is enabled in all tabs.
+   */
+  public boolean getFingerprintingProtection() {
+    return mFingerprintingProtection.get();
+  }
+
+  /**
+   * Get whether Fingerprint protection is enabled private browsing mode.
+   *
+   * @return Whether Fingerprint protection is enabled private browsing mode.
+   */
+  public boolean getFingerprintingProtectionPrivateBrowsing() {
+    return mFingerprintingProtectionPrivateMode.get();
+  }
+
+  /**
+   * Get Fingerprint protection overrides.
+   *
+   * @return The string of the fingerprinting protection overrides.
+   */
+  public @NonNull String getFingerprintingProtectionOverrides() {
+    return mFingerprintingProtectionOverrides.get();
+  }
+
+  /**
+   * Get whether to use fdlibm for Math.sin, Math.cos, and Math.tan.
+   *
+   * @return Whether the fdlibm is used
+   */
+  public boolean getFdlibmMathEnabled() {
+    return mFdlibmMathEnabled.get();
   }
 
   /**

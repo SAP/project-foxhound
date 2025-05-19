@@ -189,13 +189,20 @@ function needHomepageOverride(updateMilestones = true) {
  *         The default override page
  * @param  nimbusOverridePage
  *         Nimbus provided URL
+ * @param  disableWnp
+ *         Boolean, disables all WNPs if true
  * @return The override page.
  */
 function getPostUpdateOverridePage(
   update,
   defaultOverridePage,
-  nimbusOverridePage
+  nimbusOverridePage,
+  disableWnp
 ) {
+  if (disableWnp) {
+    return "";
+  }
+
   update = update.QueryInterface(Ci.nsIWritablePropertyBag);
   let actions = update.getProperty("actions");
   // When the update doesn't specify actions fallback to the original behavior
@@ -745,7 +752,21 @@ nsBrowserContentHandler.prototype = {
             overridePage = Services.urlFormatter.formatURLPref(
               "startup.homepage_override_url"
             );
-            let update = lazy.UpdateManager.updateInstalledAtStartup;
+            let update = lazy.UpdateManager.lastUpdateInstalled;
+
+            // Make sure the update is newer than the last WNP version
+            // and the update is not newer than the current Firefox version.
+            if (
+              update &&
+              (Services.vc.compare(update.platformVersion, old_mstone) <= 0 ||
+                Services.vc.compare(
+                  update.appVersion,
+                  Services.appinfo.version
+                ) > 0)
+            ) {
+              update = null;
+              overridePage = null;
+            }
 
             /** If the override URL is provided by an experiment, is a valid
              * Firefox What's New Page URL, and the update version is less than
@@ -770,15 +791,22 @@ nsBrowserContentHandler.prototype = {
               "startup.homepage_override_nimbus_minVersion",
               ""
             );
+            // Pref used to disable all WNPs
+            const disableWNP = Services.prefs.getBoolPref(
+              "startup.homepage_override_nimbus_disable_wnp",
+              false
+            );
             let nimbusWNP;
+            // minVersion and maxVersion optional variables
+            const versionMatch =
+              (!maxVersion ||
+                Services.vc.compare(update.appVersion, maxVersion) <= 0) &&
+              (!minVersion ||
+                Services.vc.compare(update.appVersion, minVersion) >= 0);
 
             // The update version should be less than or equal to maxVersion and
             // greater or equal to minVersion set by the experiment.
-            if (
-              nimbusOverrideUrl &&
-              Services.vc.compare(update.appVersion, maxVersion) <= 0 &&
-              Services.vc.compare(update.appVersion, minVersion) >= 0
-            ) {
+            if (nimbusOverrideUrl && versionMatch) {
               try {
                 let uri = Services.io.newURI(nimbusOverrideUrl);
                 // Only allow https://www.mozilla.org and https://www.mozilla.com
@@ -802,28 +830,34 @@ nsBrowserContentHandler.prototype = {
               overridePage = getPostUpdateOverridePage(
                 update,
                 overridePage,
-                nimbusWNP
+                nimbusWNP,
+                disableWNP
               );
               // Record a Nimbus exposure event for the whatsNewPage feature.
-              // The override page could be set in 3 ways: 1. set by Nimbus 2.
-              // set by the update file(openURL) 3. The default evergreen page(Set by the
-              // startup.homepage_override_url pref, could be different
-              // depending on the Fx channel). This is done to record that the
-              // control cohort could have seen the experimental What's New Page
-              // (and will instead see the default What's New Page).
-              // recordExposureEvent only records an event if the user is
-              // enrolled in an experiment or rollout on the whatsNewPage
-              // feature, so it's safe to call it unconditionally.
-              if (overridePage) {
+              // The override page could be set in 3 ways: 1. set by Nimbus; 2.
+              // set by the update file (openURL); 3. defaulting to the
+              // evergreen page (set by the startup.homepage_override_url pref,
+              // value depends on the Fx channel). This is done to record that
+              // the control cohort could have seen the experimental What's New
+              // Page (and will instead see the default What's New Page, or
+              // won't see a WNP if the experiment disabled it by setting
+              // disable_wnp). `recordExposureEvent` only records an event if
+              // the user is enrolled in an experiment or rollout on the
+              // whatsNewPage feature, so it's safe to call it unconditionally.
+              if (overridePage || (versionMatch && disableWNP)) {
                 let nimbusWNPFeature = lazy.NimbusFeatures.whatsNewPage;
                 nimbusWNPFeature
                   .ready()
                   .then(() => nimbusWNPFeature.recordExposureEvent());
               }
 
-              // Send the update ping to signal that the update was successful.
-              lazy.UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
               lazy.LaterRun.enable(lazy.LaterRun.ENABLE_REASON_UPDATE_APPLIED);
+            }
+
+            // Send the update ping to signal that the update was successful.
+            // Only do this if the update is installed right now.
+            if (lazy.UpdateManager.updateInstalledAtStartup) {
+              lazy.UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
             }
 
             overridePage = overridePage.replace("%OLD_VERSION%", old_mstone);

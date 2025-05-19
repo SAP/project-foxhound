@@ -6,27 +6,39 @@
 #define frontend_UsingEmitter_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
+
+#include "frontend/TryEmitter.h"
+#include "vm/UsingHint.h"
 
 namespace js::frontend {
 
 struct BytecodeEmitter;
+class EmitterScope;
 
 class MOZ_STACK_CLASS UsingEmitter {
  private:
   BytecodeEmitter* bce_;
 
+  mozilla::Maybe<TryEmitter> tryEmitter_;
+
   // TODO: add state transition graph and state
-  // management for this emitter.
+  // management for this emitter. (Bug 1904346)
 
  public:
-  enum Kind { Sync, Async };
-
   explicit UsingEmitter(BytecodeEmitter* bce);
 
-  [[nodiscard]] bool prepareForAssignment(Kind kind);
+  [[nodiscard]] bool prepareForDisposableScopeBody();
 
- private:
-  bool emitCheckDisposeMethod(JS::SymbolCode hint);
+  [[nodiscard]] bool prepareForAssignment(UsingHint hint);
+
+  [[nodiscard]] bool prepareForForOfLoopIteration();
+
+  [[nodiscard]] bool prepareForForOfIteratorCloseOnThrow();
+
+  [[nodiscard]] bool emitNonLocalJump(EmitterScope* present);
+
+  [[nodiscard]] bool emitEnd();
 };
 
 }  // namespace js::frontend

@@ -16,10 +16,11 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.tabs.TabsUseCases
-import mozilla.components.service.glean.private.NoExtras
 import mozilla.components.support.ktx.kotlin.isUrl
 import mozilla.components.ui.tabcounter.TabCounterMenu
+import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
+import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.HomeActivity
@@ -30,6 +31,8 @@ import org.mozilla.fenix.browser.BrowserAnimator.Companion.getToolbarNavOptions
 import org.mozilla.fenix.browser.BrowserFragmentDirections
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.readermode.ReaderModeController
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.nav
@@ -37,6 +40,7 @@ import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.home.HomeScreenViewModel
+import org.mozilla.fenix.utils.Settings
 
 /**
  * An interface that handles the view manipulation of the BrowserToolbar, triggered by the Interactor
@@ -79,6 +83,16 @@ interface BrowserToolbarController {
      * @see [BrowserToolbarInteractor.onShareActionClicked]
      */
     fun onShareActionClicked()
+
+    /**
+     * @see [BrowserToolbarInteractor.onNewTabButtonClicked]
+     */
+    fun handleNewTabButtonClick()
+
+    /**
+     * @see [BrowserToolbarInteractor.onNewTabButtonLongClicked]
+     */
+    fun handleNewTabButtonLongClick()
 }
 
 private const val MAX_DISPLAY_NUMBER_SHOPPING_CFR = 3
@@ -86,8 +100,10 @@ private const val MAX_DISPLAY_NUMBER_SHOPPING_CFR = 3
 @Suppress("LongParameterList")
 class DefaultBrowserToolbarController(
     private val store: BrowserStore,
+    private val appStore: AppStore,
     private val tabsUseCases: TabsUseCases,
     private val activity: HomeActivity,
+    private val settings: Settings,
     private val navController: NavController,
     private val readerModeController: ReaderModeController,
     private val engineView: EngineView,
@@ -233,6 +249,9 @@ class DefaultBrowserToolbarController(
 
     override fun handleTranslationsButtonClick() {
         Translations.action.record(Translations.ActionExtra("main_flow_toolbar"))
+
+        appStore.dispatch(SnackbarAction.SnackbarDismissed)
+
         val directions =
             BrowserFragmentDirections.actionBrowserFragmentToTranslationsDialogFragment()
         navController.navigateSafe(R.id.browserFragment, directions)
@@ -254,6 +273,27 @@ class DefaultBrowserToolbarController(
             showPage = true,
         )
         navController.navigate(directions)
+    }
+
+    override fun handleNewTabButtonClick() {
+        if (settings.enableHomepageAsNewTab) {
+            tabsUseCases.addTab.invoke(
+                startLoading = false,
+                private = currentSession?.content?.private ?: false,
+            )
+        }
+
+        NavigationBar.browserNewTabTapped.record(NoExtras())
+
+        browserAnimator.captureEngineViewAndDrawStatically {
+            navController.navigate(
+                BrowserFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
+            )
+        }
+    }
+
+    override fun handleNewTabButtonLongClick() {
+        NavigationBar.browserNewTabLongTapped.record(NoExtras())
     }
 
     companion object {

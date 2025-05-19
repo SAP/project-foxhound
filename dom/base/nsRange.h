@@ -223,12 +223,15 @@ class nsRange final : public mozilla::dom::AbstractRange,
   void DeleteContents(ErrorResult& aRv);
   already_AddRefed<mozilla::dom::DocumentFragment> ExtractContents(
       ErrorResult& aErr);
-  nsINode* GetCommonAncestorContainer(ErrorResult& aRv) const {
+  nsINode* GetCommonAncestorContainer(
+      ErrorResult& aRv,
+      AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary =
+          AllowRangeCrossShadowBoundary::No) const {
     if (!mIsPositioned) {
       aRv.Throw(NS_ERROR_NOT_INITIALIZED);
       return nullptr;
     }
-    return GetClosestCommonInclusiveAncestor();
+    return GetClosestCommonInclusiveAncestor(aAllowCrossShadowBoundary);
   }
   void InsertNode(nsINode& aNode, ErrorResult& aErr);
   bool IntersectsNode(nsINode& aNode, ErrorResult& aRv);
@@ -296,6 +299,11 @@ class nsRange final : public mozilla::dom::AbstractRange,
   virtual JSObject* WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> aGivenProto) final;
   DocGroup* GetDocGroup() const;
+
+  // Given a CharacterDataChangeInfo and an RangeBoundary of where the
+  // character changes occurred at, compute the new boundary.
+  static RawRangeBoundary ComputeNewBoundaryWhenBoundaryInsideChangedText(
+      const CharacterDataChangeInfo& aInfo, const RawRangeBoundary& aBoundary);
 
  private:
   // no copy's or assigns

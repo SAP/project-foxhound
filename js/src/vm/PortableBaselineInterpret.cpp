@@ -1831,10 +1831,6 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
       }
       Value* args = reinterpret_cast<Value*>(sp);
 
-      TRACE_PRINTF("pushing callee: %p\n", callee);
-      PUSHNATIVE(
-          StackValNative(CalleeToToken(callee, /* isConstructing = */ false)));
-
       if (isNative) {
         PUSHNATIVE(StackValNative(argc));
         PUSHNATIVE(StackValNative(
@@ -1864,6 +1860,10 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
         }
         icregs.icResult = args[0].asRawBits();
       } else {
+        TRACE_PRINTF("pushing callee: %p\n", callee);
+        PUSHNATIVE(StackValNative(
+            CalleeToToken(callee, /* isConstructing = */ false)));
+
         PUSHNATIVE(StackValNative(
             MakeFrameDescriptorForJitCall(FrameType::BaselineStub, argc)));
 
@@ -2597,6 +2597,7 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
   CACHEOP_CASE_UNIMPL(MathImulResult)
   CACHEOP_CASE_UNIMPL(MathSqrtNumberResult)
   CACHEOP_CASE_UNIMPL(MathFRoundNumberResult)
+  CACHEOP_CASE_UNIMPL(MathF16RoundNumberResult)
   CACHEOP_CASE_UNIMPL(MathRandomResult)
   CACHEOP_CASE_UNIMPL(MathHypot2NumberResult)
   CACHEOP_CASE_UNIMPL(MathHypot3NumberResult)
@@ -2609,6 +2610,8 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
   CACHEOP_CASE_UNIMPL(MathCeilToInt32Result)
   CACHEOP_CASE_UNIMPL(MathTruncToInt32Result)
   CACHEOP_CASE_UNIMPL(MathRoundToInt32Result)
+  CACHEOP_CASE_UNIMPL(MegamorphicLoadSlotByValuePermissiveResult)
+  CACHEOP_CASE_UNIMPL(MegamorphicLoadSlotPermissiveResult)
   CACHEOP_CASE_UNIMPL(NumberMinMax)
   CACHEOP_CASE_UNIMPL(Int32MinMaxArrayResult)
   CACHEOP_CASE_UNIMPL(NumberMinMaxArrayResult)
@@ -6125,8 +6128,10 @@ error:
       case ExceptionResumeKind::Bailout:
         MOZ_CRASH(
             "Unexpected Bailout exception-resume kind in Portable Baseline");
-      case ExceptionResumeKind::Wasm:
-        MOZ_CRASH("Unexpected Wasm exception-resume kind in Portable Baseline");
+      case ExceptionResumeKind::WasmInterpEntry:
+        MOZ_CRASH(
+            "Unexpected WasmInterpEntry exception-resume kind in Portable "
+            "Baseline");
       case ExceptionResumeKind::WasmCatch:
         MOZ_CRASH(
             "Unexpected WasmCatch exception-resume kind in Portable "

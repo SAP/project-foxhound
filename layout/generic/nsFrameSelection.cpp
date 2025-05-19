@@ -70,6 +70,7 @@
 
 #include "nsError.h"
 #include "mozilla/AutoCopyListener.h"
+#include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Highlight.h"
 #include "mozilla/dom/Selection.h"
@@ -139,17 +140,18 @@ static void printRange(nsRange* aDomRange);
 
 namespace mozilla {
 
-PeekOffsetStruct::PeekOffsetStruct(nsSelectionAmount aAmount,
-                                   nsDirection aDirection, int32_t aStartOffset,
-                                   nsPoint aDesiredCaretPos,
-                                   const PeekOffsetOptions aOptions,
-                                   EWordMovementType aWordMovementType)
+PeekOffsetStruct::PeekOffsetStruct(
+    nsSelectionAmount aAmount, nsDirection aDirection, int32_t aStartOffset,
+    nsPoint aDesiredCaretPos, const PeekOffsetOptions aOptions,
+    EWordMovementType aWordMovementType /* = eDefaultBehavior */,
+    const Element* aAncestorLimiter /* = nullptr */)
     : mAmount(aAmount),
       mDirection(aDirection),
       mStartOffset(aStartOffset),
       mDesiredCaretPos(aDesiredCaretPos),
       mWordMovementType(aWordMovementType),
       mOptions(aOptions),
+      mAncestorLimiter(aAncestorLimiter),
       mResultFrame(nullptr),
       mContentOffset(0),
       mAttach(CaretAssociationHint::Before) {}
@@ -354,20 +356,7 @@ nsFrameSelection::nsFrameSelection(PresShell* aPresShell, nsIContent* aLimiter,
     mDomSelections[i] = new Selection(kPresentSelectionTypes[i], this);
   }
 
-#ifdef XP_MACOSX
-  // On macOS, cache the current selection to send to service menu of macOS.
-  bool enableAutoCopy = true;
-  AutoCopyListener::Init(nsIClipboard::kSelectionCache);
-#else   // #ifdef XP_MACOSX
-  // Check to see if the auto-copy pref is enabled and make the normal
-  // Selection notifies auto-copy listener of its changes.
-  bool enableAutoCopy = AutoCopyListener::IsPrefEnabled();
-  if (enableAutoCopy) {
-    AutoCopyListener::Init(nsIClipboard::kSelectionClipboard);
-  }
-#endif  // #ifdef XP_MACOSX #else
-
-  if (enableAutoCopy) {
+  if (AutoCopyListener::IsEnabled()) {
     int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
     if (mDomSelections[index]) {
       mDomSelections[index]->NotifyAutoCopy();
@@ -945,13 +934,53 @@ Result<PeekOffsetStruct, nsresult> nsFrameSelection::PeekOffsetForCaretMove(
   if (aContinueSelection) {
     options += PeekOffsetOption::Extend;
   }
+  const Element* ancestorLimiter =
+      Element::FromNodeOrNull(GetAncestorLimiter());
   if (selection->IsEditorSelection()) {
     options += PeekOffsetOption::ForceEditableRegion;
+    // If the editor has not receive `focus` event, it may have not set ancestor
+    // limiter.  Then, we need to compute it here for the caret move.
+    if (!ancestorLimiter) {
+      // Editing hosts can be nested.  Therefore, computing selection root from
+      // selection range may be different from the focused editing host.
+      // Therefore, we may need to use a non-closest inclusive ancestor editing
+      // host of selection range container.  On the other hand, selection ranges
+      // may be outside of focused editing host.  In such case, we should use
+      // the closest editing host as the ancestor limiter instead.
+      PresShell* const presShell = selection->GetPresShell();
+      const Document* const doc =
+          presShell ? presShell->GetDocument() : nullptr;
+      if (const nsPIDOMWindowInner* const win =
+              doc ? doc->GetInnerWindow() : nullptr) {
+        const Element* const focusedElement = win->GetFocusedElement();
+        const Element* closestEditingHost = nullptr;
+        for (const Element* element :
+             content->InclusiveAncestorsOfType<Element>()) {
+          if (element->IsEditingHost()) {
+            if (!closestEditingHost) {
+              closestEditingHost = element;
+            }
+            if (focusedElement == element) {
+              ancestorLimiter = focusedElement;
+              break;
+            }
+          }
+        }
+        if (!ancestorLimiter) {
+          ancestorLimiter = closestEditingHost;
+        }
+      }
+      // If it's the root element, we don't need to limit the new caret
+      // position.
+      if (ancestorLimiter && !ancestorLimiter->GetParent()) {
+        ancestorLimiter = nullptr;
+      }
+    }
   }
 
   return SelectionMovementUtils::PeekOffsetForCaretMove(
       content, selection->FocusOffset(), aDirection, GetHint(),
-      GetCaretBidiLevel(), aAmount, aDesiredCaretPos, options);
+      GetCaretBidiLevel(), aAmount, aDesiredCaretPos, options, ancestorLimiter);
 }
 
 nsPrevNextBidiLevels nsFrameSelection::GetPrevNextBidiLevels(
@@ -1590,7 +1619,18 @@ nsresult nsFrameSelection::ScrollSelectionIntoView(SelectionType aSelectionType,
 
   if (!mDomSelections[index]) return NS_ERROR_NULL_POINTER;
 
-  ScrollAxis verticalScroll = ScrollAxis();
+  const auto vScroll = [&]() -> WhereToScroll {
+    if (aFlags & nsISelectionController::SCROLL_VERTICAL_START) {
+      return WhereToScroll::Start;
+    }
+    if (aFlags & nsISelectionController::SCROLL_VERTICAL_END) {
+      return WhereToScroll::End;
+    }
+    if (aFlags & nsISelectionController::SCROLL_VERTICAL_CENTER) {
+      return WhereToScroll::Center;
+    }
+    return WhereToScroll::Nearest;
+  }();
   int32_t flags = Selection::SCROLL_DO_FLUSH;
   if (aFlags & nsISelectionController::SCROLL_SYNCHRONOUS) {
     flags |= Selection::SCROLL_SYNCHRONOUS;
@@ -1600,10 +1640,6 @@ nsresult nsFrameSelection::ScrollSelectionIntoView(SelectionType aSelectionType,
   if (aFlags & nsISelectionController::SCROLL_OVERFLOW_HIDDEN) {
     flags |= Selection::SCROLL_OVERFLOW_HIDDEN;
   }
-  if (aFlags & nsISelectionController::SCROLL_CENTER_VERTICALLY) {
-    verticalScroll =
-        ScrollAxis(WhereToScroll::Center, WhenToScroll::IfNotFullyVisible);
-  }
   if (aFlags & nsISelectionController::SCROLL_FOR_CARET_MOVE) {
     flags |= Selection::SCROLL_FOR_CARET_MOVE;
   }
@@ -1611,7 +1647,7 @@ nsresult nsFrameSelection::ScrollSelectionIntoView(SelectionType aSelectionType,
   // After ScrollSelectionIntoView(), the pending notifications might be
   // flushed and PresShell/PresContext/Frames may be dead. See bug 418470.
   RefPtr<Selection> sel = mDomSelections[index];
-  return sel->ScrollIntoView(aRegion, verticalScroll, ScrollAxis(), flags);
+  return sel->ScrollIntoView(aRegion, ScrollAxis(vScroll), ScrollAxis(), flags);
 }
 
 nsresult nsFrameSelection::RepaintSelection(SelectionType aSelectionType) {
@@ -3037,8 +3073,6 @@ static nsresult UpdateSelectionCacheOnRepaintSelection(Selection* aSel) {
 
 // mozilla::AutoCopyListener
 
-int16_t AutoCopyListener::sClipboardID = -1;
-
 /*
  * What we do now:
  * On every selection change, we copy to the clipboard anew, creating a
@@ -3076,7 +3110,7 @@ int16_t AutoCopyListener::sClipboardID = -1;
 void AutoCopyListener::OnSelectionChange(Document* aDocument,
                                          Selection& aSelection,
                                          int16_t aReason) {
-  MOZ_ASSERT(IsValidClipboardID(sClipboardID));
+  MOZ_ASSERT(IsEnabled());
 
   // For now, we should prevent any updates caused by a call of Selection API.
   // We should allow this in some cases later, though. See the valid usage in
@@ -3101,7 +3135,8 @@ void AutoCopyListener::OnSelectionChange(Document* aDocument,
     return;  // Don't care if we are still dragging.
   }
 
-  if (!aDocument || aSelection.IsCollapsed()) {
+  if (!aDocument ||
+      aSelection.AreNormalAndCrossShadowBoundaryRangesCollapsed()) {
 #ifdef DEBUG_CLIPBOARD
     fprintf(stderr, "CLIPBOARD: no selection/collapsed selection\n");
 #endif

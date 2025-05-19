@@ -762,3 +762,101 @@ add_task(async function test_jog_text_works() {
 
   Assert.equal(kValue, Glean.testOnlyJog.aText.testGetValue());
 });
+
+add_task(async function test_jog_custom_distribution_works() {
+  Services.fog.testRegisterRuntimeMetric(
+    "labeled_custom_distribution",
+    "jog_cat",
+    "jog_labeled_custom_dist",
+    ["test-only"],
+    `"ping"`,
+    false,
+    JSON.stringify({
+      range_min: 1,
+      range_max: 2147483646,
+      bucket_count: 10,
+      histogram_type: "linear",
+    })
+  );
+  Glean.jogCat.jogLabeledCustomDist.label_1.accumulateSamples([7, 268435458]);
+
+  let data = Glean.jogCat.jogLabeledCustomDist.label_1.testGetValue();
+  Assert.equal(7 + 268435458, data.sum, "Sum's correct");
+  for (let [bucket, count] of Object.entries(data.values)) {
+    Assert.ok(
+      count == 0 || (count == 1 && (bucket == 1 || bucket == 268435456)),
+      `Only two buckets have a sample ${bucket} ${count}`
+    );
+  }
+
+  // Negative values will not be recorded, instead an error is recorded.
+  Glean.jogCat.jogLabeledCustomDist.label_1.accumulateSamples([-7]);
+  Assert.throws(
+    () => Glean.jogCat.jogLabeledCustomDist.label_1.testGetValue(),
+    /DataError/
+  );
+});
+
+add_task(async function test_jog_labeled_memory_distribution_works() {
+  Services.fog.testRegisterRuntimeMetric(
+    "labeled_memory_distribution",
+    "jog_cat",
+    "jog_labeled_memory_dist",
+    ["test-only"],
+    `"ping"`,
+    false,
+    JSON.stringify({ memory_unit: "megabyte" })
+  );
+  Glean.jogCat.jogLabeledMemoryDist.short_term.accumulate(7);
+  Glean.jogCat.jogLabeledMemoryDist.short_term.accumulate(17);
+
+  let data = Glean.jogCat.jogLabeledMemoryDist.short_term.testGetValue();
+  // `data.sum` is in bytes, but the metric is in MB.
+  Assert.equal(24 * 1024 * 1024, data.sum, "Sum's correct");
+  for (let [bucket, count] of Object.entries(data.values)) {
+    Assert.ok(
+      count == 0 || (count == 1 && (bucket == 17520006 || bucket == 7053950)),
+      "Only two buckets have a sample"
+    );
+  }
+});
+
+add_task(async function test_jog_labeled_timing_distribution_works() {
+  Services.fog.testRegisterRuntimeMetric(
+    "labeled_timing_distribution",
+    "jog_cat",
+    "jog_labeled_timing_dist",
+    ["test-only"],
+    `"ping"`,
+    false,
+    JSON.stringify({ time_unit: "microsecond" })
+  );
+  let t1 = Glean.jogCat.jogLabeledTimingDist.label1.start();
+  let t2 = Glean.jogCat.jogLabeledTimingDist.label1.start();
+
+  await sleep(5);
+
+  let t3 = Glean.jogCat.jogLabeledTimingDist.label1.start();
+  Glean.jogCat.jogLabeledTimingDist.label1.cancel(t1);
+
+  await sleep(5);
+
+  Glean.jogCat.jogLabeledTimingDist.label1.stopAndAccumulate(t2); // 10ms
+  Glean.jogCat.jogLabeledTimingDist.label1.stopAndAccumulate(t3); // 5ms
+
+  let data = Glean.jogCat.jogLabeledTimingDist.label1.testGetValue();
+  const NANOS_IN_MILLIS = 1e6;
+  // bug 1701949 - Sleep gets close, but sometimes doesn't wait long enough.
+  const EPSILON = 40000;
+
+  // Variance in timing makes getting the sum impossible to know.
+  Assert.greater(data.sum, 15 * NANOS_IN_MILLIS - EPSILON);
+
+  // No guarantees from timers means no guarantees on buckets.
+  // But we can guarantee it's only two samples.
+  Assert.equal(
+    2,
+    Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
+    "Only two buckets with samples"
+  );
+});

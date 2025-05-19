@@ -224,9 +224,8 @@ function handleRustResult(result, liftCallback, liftErrCallback) {
             throw liftErrCallback(result.data);
 
         case "internal-error":
-            let message = result.internalErrorMessage;
-            if (message) {
-                throw new UniFFIInternalError(message);
+            if (result.data) {
+                throw new UniFFIInternalError(FfiConverterString.lift(result.data));
             } else {
                 throw new UniFFIInternalError("Unknown error");
             }
@@ -397,7 +396,7 @@ export class RemoteCommandStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                31, // tabs:uniffi_tabs_fn_method_remotecommandstore_add_remote_command
+                32, // tabs:uniffi_tabs_fn_method_remotecommandstore_add_remote_command
                 FfiConverterTypeRemoteCommandStore.lower(this),
                 FfiConverterString.lower(deviceId),
                 FfiConverterTypeRemoteCommand.lower(command),
@@ -439,7 +438,7 @@ export class RemoteCommandStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                32, // tabs:uniffi_tabs_fn_method_remotecommandstore_add_remote_command_at
+                33, // tabs:uniffi_tabs_fn_method_remotecommandstore_add_remote_command_at
                 FfiConverterTypeRemoteCommandStore.lower(this),
                 FfiConverterString.lower(deviceId),
                 FfiConverterTypeRemoteCommand.lower(command),
@@ -458,7 +457,7 @@ export class RemoteCommandStore {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                33, // tabs:uniffi_tabs_fn_method_remotecommandstore_get_unsent_commands
+                34, // tabs:uniffi_tabs_fn_method_remotecommandstore_get_unsent_commands
                 FfiConverterTypeRemoteCommandStore.lower(this),
             )
         }
@@ -490,7 +489,7 @@ export class RemoteCommandStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                34, // tabs:uniffi_tabs_fn_method_remotecommandstore_remove_remote_command
+                35, // tabs:uniffi_tabs_fn_method_remotecommandstore_remove_remote_command
                 FfiConverterTypeRemoteCommandStore.lower(this),
                 FfiConverterString.lower(deviceId),
                 FfiConverterTypeRemoteCommand.lower(command),
@@ -516,7 +515,7 @@ export class RemoteCommandStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                35, // tabs:uniffi_tabs_fn_method_remotecommandstore_set_pending_command_sent
+                36, // tabs:uniffi_tabs_fn_method_remotecommandstore_set_pending_command_sent
                 FfiConverterTypeRemoteCommandStore.lower(this),
                 FfiConverterTypePendingCommand.lower(command),
             )
@@ -578,7 +577,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                37, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_apply
+                38, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_apply
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -602,7 +601,7 @@ export class TabsBridgedEngine {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                38, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_ensure_current_sync_id
+                39, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_ensure_current_sync_id
                 FfiConverterTypeTabsBridgedEngine.lower(this),
                 FfiConverterString.lower(newSyncId),
             )
@@ -619,7 +618,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                39, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_last_sync
+                40, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_last_sync
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -643,7 +642,7 @@ export class TabsBridgedEngine {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                40, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_prepare_for_sync
+                41, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_prepare_for_sync
                 FfiConverterTypeTabsBridgedEngine.lower(this),
                 FfiConverterString.lower(clientData),
             )
@@ -660,7 +659,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                41, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_reset
+                42, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_reset
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -676,7 +675,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                42, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_reset_sync_id
+                43, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_reset_sync_id
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -700,7 +699,7 @@ export class TabsBridgedEngine {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                43, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_set_last_sync
+                44, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_set_last_sync
                 FfiConverterTypeTabsBridgedEngine.lower(this),
                 FfiConverterI64.lower(lastSync),
             )
@@ -733,7 +732,7 @@ export class TabsBridgedEngine {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                44, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_set_uploaded
+                45, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_set_uploaded
                 FfiConverterTypeTabsBridgedEngine.lower(this),
                 FfiConverterI64.lower(newTimestamp),
                 FfiConverterSequenceTypeTabsGuid.lower(uploadedIds),
@@ -759,7 +758,7 @@ export class TabsBridgedEngine {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                45, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_store_incoming
+                46, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_store_incoming
                 FfiConverterTypeTabsBridgedEngine.lower(this),
                 FfiConverterSequencestring.lower(incomingEnvelopesAsJson),
             )
@@ -776,7 +775,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                46, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_sync_finished
+                47, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_sync_finished
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -792,7 +791,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                47, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_sync_id
+                48, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_sync_id
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -808,7 +807,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                48, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_sync_started
+                49, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_sync_started
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -824,7 +823,7 @@ export class TabsBridgedEngine {
         const liftError = (data) => FfiConverterTypeTabsApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                49, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_wipe
+                50, // tabs:uniffi_tabs_fn_method_tabsbridgedengine_wipe
                 FfiConverterTypeTabsBridgedEngine.lower(this),
             )
         }
@@ -898,7 +897,7 @@ export class TabsStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                51, // tabs:uniffi_tabs_fn_constructor_tabsstore_new
+                52, // tabs:uniffi_tabs_fn_constructor_tabsstore_new
                 FfiConverterString.lower(path),
             )
         }
@@ -913,7 +912,7 @@ export class TabsStore {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                52, // tabs:uniffi_tabs_fn_method_tabsstore_bridged_engine
+                53, // tabs:uniffi_tabs_fn_method_tabsstore_bridged_engine
                 FfiConverterTypeTabsStore.lower(this),
             )
         }
@@ -929,7 +928,7 @@ export class TabsStore {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                53, // tabs:uniffi_tabs_fn_method_tabsstore_get_all
+                54, // tabs:uniffi_tabs_fn_method_tabsstore_get_all
                 FfiConverterTypeTabsStore.lower(this),
             )
         }
@@ -945,7 +944,7 @@ export class TabsStore {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                54, // tabs:uniffi_tabs_fn_method_tabsstore_new_remote_command_store
+                55, // tabs:uniffi_tabs_fn_method_tabsstore_new_remote_command_store
                 FfiConverterTypeTabsStore.lower(this),
             )
         }
@@ -961,7 +960,7 @@ export class TabsStore {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                55, // tabs:uniffi_tabs_fn_method_tabsstore_register_with_sync_manager
+                56, // tabs:uniffi_tabs_fn_method_tabsstore_register_with_sync_manager
                 FfiConverterTypeTabsStore.lower(this),
             )
         }
@@ -985,7 +984,7 @@ export class TabsStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                56, // tabs:uniffi_tabs_fn_method_tabsstore_set_local_tabs
+                57, // tabs:uniffi_tabs_fn_method_tabsstore_set_local_tabs
                 FfiConverterTypeTabsStore.lower(this),
                 FfiConverterSequenceTypeRemoteTabRecord.lower(remoteTabs),
             )
@@ -1478,7 +1477,8 @@ export class SyncError extends TabsApiError {
         reason,
         ...params
     ) {
-        super(...params);
+        const message = `reason: ${ reason }`;
+        super(message, ...params);
         this.reason = reason;
     }
     toString() {
@@ -1492,7 +1492,8 @@ export class SqlError extends TabsApiError {
         reason,
         ...params
     ) {
-        super(...params);
+        const message = `reason: ${ reason }`;
+        super(message, ...params);
         this.reason = reason;
     }
     toString() {
@@ -1506,7 +1507,8 @@ export class UnexpectedTabsError extends TabsApiError {
         reason,
         ...params
     ) {
-        super(...params);
+        const message = `reason: ${ reason }`;
+        super(message, ...params);
         this.reason = reason;
     }
     toString() {

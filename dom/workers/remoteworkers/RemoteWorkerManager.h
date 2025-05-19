@@ -22,11 +22,9 @@ class RemoteWorkerServiceParent;
 
 /**
  * PBackground instance that keeps tracks of RemoteWorkerServiceParent actors
- * (1 per process, including the main process) and pending
- * RemoteWorkerController requests to spawn remote workers if the spawn request
- * can't be immediately fulfilled. Decides which RemoteWorkerServerParent to use
- * internally via SelectTargetActor in order to select a BackgroundParent
- * manager on which to create a RemoteWorkerParent.
+ * (1 per process, including the main process). Decides which
+ * RemoteWorkerServerParent to use internally via SelectTargetActor in order to
+ * select a BackgroundParent manager on which to create a RemoteWorkerParent.
  */
 class RemoteWorkerManager final {
  public:
@@ -63,18 +61,26 @@ class RemoteWorkerManager final {
   RemoteWorkerManager();
   ~RemoteWorkerManager();
 
-  RemoteWorkerServiceParent* SelectTargetActor(const RemoteWorkerData& aData,
-                                               base::ProcessId aProcessId);
+  struct TargetActorAndKeepAlive {
+    RefPtr<RemoteWorkerServiceParent> mActor;
+    UniqueThreadsafeContentParentKeepAlive mKeepAlive;
+  };
 
-  RemoteWorkerServiceParent* SelectTargetActorInternal(
+  TargetActorAndKeepAlive SelectTargetActor(const RemoteWorkerData& aData,
+                                            base::ProcessId aProcessId);
+
+  TargetActorAndKeepAlive SelectTargetActorInternal(
       const RemoteWorkerData& aData, base::ProcessId aProcessId) const;
 
   void LaunchInternal(RemoteWorkerController* aController,
                       RemoteWorkerServiceParent* aTargetActor,
-                      const RemoteWorkerData& aData,
-                      bool aRemoteWorkerAlreadyRegistered = false);
+                      UniqueThreadsafeContentParentKeepAlive aKeepAlive,
+                      const RemoteWorkerData& aData);
 
-  void LaunchNewContentProcess(const RemoteWorkerData& aData);
+  using LaunchProcessPromise =
+      MozPromise<TargetActorAndKeepAlive, nsresult, true>;
+  RefPtr<LaunchProcessPromise> LaunchNewContentProcess(
+      const RemoteWorkerData& aData);
 
   void AsyncCreationFailed(RemoteWorkerController* aController);
 
@@ -104,13 +110,6 @@ class RemoteWorkerManager final {
   // in order, sorted by PID, to avoid linear lookup times?
   nsTArray<RemoteWorkerServiceParent*> mChildActors;
   RemoteWorkerServiceParent* mParentActor;
-
-  struct Pending {
-    RefPtr<RemoteWorkerController> mController;
-    RemoteWorkerData mData;
-  };
-
-  nsTArray<Pending> mPendings;
 };
 
 }  // namespace mozilla::dom

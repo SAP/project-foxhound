@@ -173,6 +173,9 @@ impl Config {
         }
 
         // Set the data dir if not already set.
+        // TODO bug 1910736: if we don't need to support VENDOR_KEY and PRODUCT_KEY in the extra
+        // file, it'd simplify the data_dir logic and things like glean initialization (which
+        // relies on the data dir).
         if self.data_dir.is_none() {
             let vendor = extra[VENDOR_KEY].as_str().unwrap_or(DEFAULT_VENDOR);
             let product = extra[PRODUCT_KEY].as_str().unwrap_or(DEFAULT_PRODUCT);
@@ -237,12 +240,22 @@ impl Config {
 
         let move_file = |from: &Path| -> anyhow::Result<PathBuf> {
             let to = pending_crashes_dir.join(from.file_name().unwrap());
-            std::fs::rename(from, &to).with_context(|| {
-                self.build_string("crashreporter-error-moving-path")
-                    .arg("from", from.display().to_string())
-                    .arg("to", to.display().to_string())
-                    .get()
-            })?;
+            // Try to rename, but copy and remove if it fails. `rename` won't work across
+            // mount points. (bug 506009)
+            if let Err(e) = std::fs::rename(from, &to) {
+                log::warn!("failed to move {} to {}: {e}", from.display(), to.display());
+                log::info!("trying to copy and remove instead");
+
+                std::fs::copy(from, &to).with_context(|| {
+                    self.build_string("crashreporter-error-moving-path")
+                        .arg("from", from.display().to_string())
+                        .arg("to", to.display().to_string())
+                        .get()
+                })?;
+                if let Err(e) = std::fs::remove_file(from) {
+                    log::warn!("failed to remove {}: {e}", from.display());
+                }
+            }
             Ok(to)
         };
 

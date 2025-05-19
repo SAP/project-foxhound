@@ -187,182 +187,223 @@ static nsresult UnescapeFragment(const nsACString& aFragment, nsIURI* aURI,
   return rv;
 }
 
-/**
- * Obtains the directory to use.  This tends to vary per platform, and
- * needs to be consistent throughout our codepaths. For platforms where
- * helper apps use the downloads directory, this should be kept in
- * sync with DownloadIntegration.sys.mjs.
- *
- * Optionally skip availability of the directory and storage.
- */
-static nsresult GetDownloadDirectory(nsIFile** _directory,
-                                     bool aSkipChecks = false) {
-#if defined(ANDROID)
-  return NS_ERROR_FAILURE;
-#endif
-
-  bool usePrefDir = !StaticPrefs::browser_download_start_downloads_in_tmp_dir();
-
+static Result<nsCOMPtr<nsIFile>, nsresult> GetOsTmpDownloadDirectory() {
   nsCOMPtr<nsIFile> dir;
-  nsresult rv;
-  if (usePrefDir) {
-    // Try to get the users download location, if it's set.
-    switch (Preferences::GetInt(NS_PREF_DOWNLOAD_FOLDERLIST, -1)) {
-      case NS_FOLDER_VALUE_DESKTOP:
-        (void)NS_GetSpecialDirectory(NS_OS_DESKTOP_DIR, getter_AddRefs(dir));
-        break;
-      case NS_FOLDER_VALUE_CUSTOM: {
-        Preferences::GetComplex(NS_PREF_DOWNLOAD_DIR, NS_GET_IID(nsIFile),
-                                getter_AddRefs(dir));
-        if (!dir) break;
-
-        // If we're not checking for availability we're done.
-        if (aSkipChecks) {
-          dir.forget(_directory);
-          return NS_OK;
-        }
-
-        // We have the directory, and now we need to make sure it exists
-        nsresult rv = dir->Create(nsIFile::DIRECTORY_TYPE, 0755);
-        // If we can't create this and it's not because the file already
-        // exists, clear out `dir` so we don't return it.
-        if (rv != NS_ERROR_FILE_ALREADY_EXISTS && NS_FAILED(rv)) {
-          dir = nullptr;
-        }
-      } break;
-      case NS_FOLDER_VALUE_DOWNLOADS:
-        // This is just the OS default location, so fall out
-        break;
-    }
-    if (!dir) {
-      rv = NS_GetSpecialDirectory(NS_OS_DEFAULT_DOWNLOAD_DIR,
-                                  getter_AddRefs(dir));
-      if (NS_FAILED(rv)) {
-        // On some OSes, there is no guarantee this directory exists.
-        // Fall back to $HOME + Downloads.
-        if (sFallbackDownloadDir) {
-          sFallbackDownloadDir->Clone(getter_AddRefs(dir));
-        } else {
-          rv = NS_GetSpecialDirectory(NS_OS_HOME_DIR, getter_AddRefs(dir));
-          NS_ENSURE_SUCCESS(rv, rv);
-
-          nsCOMPtr<nsIStringBundleService> bundleService =
-              do_GetService(NS_STRINGBUNDLE_CONTRACTID, &rv);
-          NS_ENSURE_SUCCESS(rv, rv);
-          nsAutoString downloadLocalized;
-          nsCOMPtr<nsIStringBundle> downloadBundle;
-          rv = bundleService->CreateBundle(
-              "chrome://mozapps/locale/downloads/downloads.properties",
-              getter_AddRefs(downloadBundle));
-          if (NS_SUCCEEDED(rv)) {
-            rv = downloadBundle->GetStringFromName("downloadsFolder",
-                                                   downloadLocalized);
-          }
-          if (NS_FAILED(rv)) {
-            downloadLocalized.AssignLiteral("Downloads");
-          }
-          rv = dir->Append(downloadLocalized);
-          NS_ENSURE_SUCCESS(rv, rv);
-          // Can't getter_AddRefs on StaticRefPtr, so do some copying.
-          nsCOMPtr<nsIFile> copy;
-          dir->Clone(getter_AddRefs(copy));
-          sFallbackDownloadDir = copy.forget();
-          ClearOnShutdown(&sFallbackDownloadDir);
-        }
-        if (aSkipChecks) {
-          dir.forget(_directory);
-          return NS_OK;
-        }
-
-        // We have the directory, and now we need to make sure it exists
-        rv = dir->Create(nsIFile::DIRECTORY_TYPE, 0755);
-        if (rv == NS_ERROR_FILE_ALREADY_EXISTS || NS_SUCCEEDED(rv)) {
-          dir.forget(_directory);
-          rv = NS_OK;
-        }
-        return rv;
-      }
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-  } else {
-    rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(dir));
-    NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(dir)));
 
 #if !defined(XP_MACOSX) && defined(XP_UNIX)
-    // Ensuring that only the current user can read the file names we end up
-    // creating. Note that creating directories with a specified permission is
-    // only supported on Unix platform right now. That's why the above check
-    // exists.
+  // Ensuring that only the current user can read the file names we end up
+  // creating. Note that creating directories with a specified permission is
+  // only supported on Unix platform right now. That's why the above check
+  // exists.
 
-    uint32_t permissions;
-    rv = dir->GetPermissions(&permissions);
-    NS_ENSURE_SUCCESS(rv, rv);
+  uint32_t permissions;
+  MOZ_TRY(dir->GetPermissions(&permissions));
 
-    if (permissions != PR_IRWXU) {
-      const char* userName = PR_GetEnv("USERNAME");
-      if (!userName || !*userName) {
-        userName = PR_GetEnv("USER");
-      }
-      if (!userName || !*userName) {
-        userName = PR_GetEnv("LOGNAME");
-      }
-      if (!userName || !*userName) {
-        userName = "mozillaUser";
-      }
+  if (permissions != PR_IRWXU) {
+    const char* userName = PR_GetEnv("USERNAME");
+    if (!userName || !*userName) {
+      userName = PR_GetEnv("USER");
+    }
+    if (!userName || !*userName) {
+      userName = PR_GetEnv("LOGNAME");
+    }
+    if (!userName || !*userName) {
+      userName = "mozillaUser";
+    }
 
-      nsAutoString userDir;
-      userDir.AssignLiteral("mozilla_");
-      userDir.AppendASCII(userName);
-      userDir.ReplaceChar(u"" FILE_PATH_SEPARATOR FILE_ILLEGAL_CHARACTERS, '_');
+    nsAutoString userDir;
+    userDir.AssignLiteral("mozilla_");
+    userDir.AppendASCII(userName);
+    userDir.ReplaceChar(u"" FILE_PATH_SEPARATOR FILE_ILLEGAL_CHARACTERS, '_');
 
-      int counter = 0;
-      bool pathExists;
-      nsCOMPtr<nsIFile> finalPath;
+    int counter = 0;
+    bool pathExists;
+    nsCOMPtr<nsIFile> finalPath;
 
-      while (true) {
-        nsAutoString countedUserDir(userDir);
-        countedUserDir.AppendInt(counter, 10);
-        dir->Clone(getter_AddRefs(finalPath));
-        finalPath->Append(countedUserDir);
+    while (true) {
+      nsAutoString countedUserDir(userDir);
+      countedUserDir.AppendInt(counter, 10);
+      dir->Clone(getter_AddRefs(finalPath));
+      finalPath->Append(countedUserDir);
 
-        rv = finalPath->Exists(&pathExists);
-        NS_ENSURE_SUCCESS(rv, rv);
+      MOZ_TRY(finalPath->Exists(&pathExists));
 
-        if (pathExists) {
-          // If this path has the right permissions, use it.
-          rv = finalPath->GetPermissions(&permissions);
-          NS_ENSURE_SUCCESS(rv, rv);
+      if (pathExists) {
+        // If this path has the right permissions, use it.
+        MOZ_TRY(finalPath->GetPermissions(&permissions));
 
-          // Ensuring the path is writable by the current user.
-          bool isWritable;
-          rv = finalPath->IsWritable(&isWritable);
-          NS_ENSURE_SUCCESS(rv, rv);
+        // Ensuring the path is writable by the current user.
+        bool isWritable;
+        MOZ_TRY(finalPath->IsWritable(&isWritable));
 
-          if (permissions == PR_IRWXU && isWritable) {
-            dir = finalPath;
-            break;
-          }
-        }
-
-        rv = finalPath->Create(nsIFile::DIRECTORY_TYPE, PR_IRWXU);
-        if (NS_SUCCEEDED(rv)) {
+        if (permissions == PR_IRWXU && isWritable) {
           dir = finalPath;
           break;
         }
-        if (rv != NS_ERROR_FILE_ALREADY_EXISTS) {
-          // Unexpected error.
-          return rv;
-        }
-        counter++;
       }
-    }
 
-#endif
+      nsresult const rv = finalPath->Create(nsIFile::DIRECTORY_TYPE, PR_IRWXU);
+      if (NS_SUCCEEDED(rv)) {
+        dir = finalPath;
+        break;
+      }
+      if (rv != NS_ERROR_FILE_ALREADY_EXISTS) {
+        // Unexpected error.
+        return Err(rv);
+      }
+      counter++;
+    }
   }
 
+#endif
   NS_ASSERTION(dir, "Somehow we didn't get a download directory!");
-  dir.forget(_directory);
+  return dir;
+}
+
+/**
+ * Given an alleged download directory, either create it, or confirm that it
+ * already exists and is usable.
+ */
+static nsresult EnsureDirectoryExists(nsIFile* aDir) {
+  nsresult const rv = aDir->Create(nsIFile::DIRECTORY_TYPE, 0755);
+  if (rv == NS_ERROR_FILE_ALREADY_EXISTS || NS_SUCCEEDED(rv)) {
+    return NS_OK;
+  }
+  return rv;
+};
+
+/**
+ * Obtains the final directory to save downloads to. This tends to vary per
+ * platform, and needs to be consistent throughout our codepaths. For platforms
+ * where helper apps use the downloads directory, this should be kept in sync
+ * with the function of the same name in DownloadIntegration.sys.mjs.
+ *
+ * Optionally skip availability of the directory and storage.
+ */
+static Result<nsCOMPtr<nsIFile>, nsresult> GetPreferredDownloadsDirectory(
+    bool aSkipChecks = false) {
+#if defined(ANDROID)
+  return Err(NS_ERROR_FAILURE);
+#endif
+
+  nsresult rv;
+  // Try to get the users download location, if it's set.
+  switch (Preferences::GetInt(NS_PREF_DOWNLOAD_FOLDERLIST, -1)) {
+    case NS_FOLDER_VALUE_DESKTOP: {
+      nsCOMPtr<nsIFile> dir;
+      if (NS_SUCCEEDED(
+              NS_GetSpecialDirectory(NS_OS_DESKTOP_DIR, getter_AddRefs(dir)))) {
+        return dir;
+      }
+    } break;
+
+    case NS_FOLDER_VALUE_CUSTOM: {
+      nsCOMPtr<nsIFile> dir;
+      Preferences::GetComplex(NS_PREF_DOWNLOAD_DIR, NS_GET_IID(nsIFile),
+                              getter_AddRefs(dir));
+      if (!dir) break;
+
+      // Check for availability if requested.
+      if (!aSkipChecks && NS_FAILED(EnsureDirectoryExists(dir))) {
+        break;
+      }
+
+      return dir;
+    } break;
+
+    default:
+    case NS_FOLDER_VALUE_DOWNLOADS:
+      // This is just the OS default location, so fall out
+      break;
+  }
+
+  // Fallthrough: get OS default directory
+
+  nsCOMPtr<nsIFile> dir;
+  rv = NS_GetSpecialDirectory(NS_OS_DEFAULT_DOWNLOAD_DIR, getter_AddRefs(dir));
+  if (NS_SUCCEEDED(rv)) {
+    return dir;
+  }
+
+  // On some OSes, there is no guarantee that `NS_OS_DEFAULT_DOWNLOAD_DIR`
+  // exists. Fall back to $HOME + Downloads.
+
+  // If we've done this before, use the cached value:
+  if (sFallbackDownloadDir) {
+    MOZ_TRY(sFallbackDownloadDir->Clone(getter_AddRefs(dir)));
+    return dir;
+  }
+
+  MOZ_TRY(NS_GetSpecialDirectory(NS_OS_HOME_DIR, getter_AddRefs(dir)));
+
+  // Get the appropriate translation of "Downloads"...
+  nsAutoString downloadLocalized;
+  rv = [&downloadLocalized]() {
+    nsresult rv;
+
+    nsCOMPtr<nsIStringBundleService> bundleService =
+        do_GetService(NS_STRINGBUNDLE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIStringBundle> downloadBundle;
+    rv = bundleService->CreateBundle(
+        "chrome://mozapps/locale/downloads/downloads.properties",
+        getter_AddRefs(downloadBundle));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    return downloadBundle->GetStringFromName("downloadsFolder",
+                                             downloadLocalized);
+  }();
+  // ... or, failing that, just use "Downloads".
+  if (NS_FAILED(rv)) {
+    downloadLocalized.AssignLiteral("Downloads");
+  }
+  MOZ_TRY(dir->Append(downloadLocalized));
+
+  // Cache the result for next time.
+  {
+    // Can't getter_AddRefs on StaticRefPtr, so do some copying.
+    nsCOMPtr<nsIFile> copy;
+    dir->Clone(getter_AddRefs(copy));
+    sFallbackDownloadDir = copy.forget();
+    ClearOnShutdown(&sFallbackDownloadDir);
+  }
+
+  // Check for availability if requested.
+  if (!aSkipChecks) {
+    MOZ_TRY(EnsureDirectoryExists(dir));
+  }
+
+  return dir;
+}
+
+NS_IMETHODIMP nsExternalHelperAppService::GetPreferredDownloadsDirectory(
+    nsIFile** aOutFile) {
+  auto res = ::GetPreferredDownloadsDirectory();
+  if (res.isErr()) return res.unwrapErr();
+  res.unwrap().forget(aOutFile);
   return NS_OK;
+}
+
+/**
+ * Obtains the initial directory to save downloads to. (This may differ from the
+ * actual download directory if "browser.download.start_downloads_in_tmp_dir" is
+ * set.)
+ *
+ * Optionally, skip availability of the directory and storage.
+ */
+static Result<nsCOMPtr<nsIFile>, nsresult> GetInitialDownloadDirectory(
+    bool aSkipChecks = false) {
+#if defined(ANDROID)
+  return Err(NS_ERROR_FAILURE);
+#endif
+
+  if (StaticPrefs::browser_download_start_downloads_in_tmp_dir()) {
+    return GetOsTmpDownloadDirectory();
+  }
+
+  return GetPreferredDownloadsDirectory(aSkipChecks);
 }
 
 /**
@@ -976,13 +1017,14 @@ nsExternalHelperAppService::LoadURI(nsIURI* aURI,
                                     nsIPrincipal* aRedirectPrincipal,
                                     BrowsingContext* aBrowsingContext,
                                     bool aTriggeredExternally,
-                                    bool aHasValidUserGestureActivation) {
+                                    bool aHasValidUserGestureActivation,
+                                    bool aNewWindowTarget) {
   NS_ENSURE_ARG_POINTER(aURI);
 
   if (XRE_IsContentProcess()) {
     mozilla::dom::ContentChild::GetSingleton()->SendLoadURIExternal(
         aURI, aTriggeringPrincipal, aRedirectPrincipal, aBrowsingContext,
-        aTriggeredExternally, aHasValidUserGestureActivation);
+        aTriggeredExternally, aHasValidUserGestureActivation, aNewWindowTarget);
     return NS_OK;
   }
 
@@ -1016,7 +1058,7 @@ nsExternalHelperAppService::LoadURI(nsIURI* aURI,
     nsContentUtils::ReportToConsoleByWindowID(
         localizedMsg, nsIScriptError::errorFlag, "Security"_ns,
         windowContext->InnerWindowId(),
-        windowContext->Canonical()->GetDocumentURI());
+        SourceLocation(windowContext->Canonical()->GetDocumentURI()));
 
     return NS_OK;
   }
@@ -1059,12 +1101,22 @@ nsExternalHelperAppService::LoadURI(nsIURI* aURI,
     WindowGlobalParent* wgp = bc->Canonical()->GetCurrentWindowGlobal();
     bool foundAccessibleFrame = false;
 
-    // Also allow this load if the target is a toplevel BC and contains a
-    // non-web-controlled about:blank document
-    if (bc->IsTop() && !bc->GetTopLevelCreatedByWebContent() && wgp) {
-      RefPtr<nsIURI> uri = wgp->GetDocumentURI();
-      foundAccessibleFrame =
-          uri && uri->GetSpecOrDefault().EqualsLiteral("about:blank");
+    // Don't block the load if it is the first load in a new window (e.g. due to
+    // a call to window.open, or a target=_blank link click).
+    if (aNewWindowTarget) {
+      MOZ_ASSERT(bc->IsTop());
+      foundAccessibleFrame = true;
+    }
+
+    // Also allow this load if the target is a toplevel BC which contains a
+    // non-web-controlled about:blank document.
+    // NOTE: This catches cases like shift-clicking a link which do not set
+    // `newWindowTarget`, but do open a link in a new window on behalf of web
+    // content.
+    if (!foundAccessibleFrame && bc->IsTop() &&
+        !bc->GetTopLevelCreatedByWebContent() && wgp) {
+      nsIURI* uri = wgp->GetDocumentURI();
+      foundAccessibleFrame = uri && NS_IsAboutBlank(uri);
     }
 
     while (!foundAccessibleFrame) {
@@ -1379,14 +1431,15 @@ void nsExternalAppHandler::RetargetLoadNotifications(nsIRequest* request) {
 nsresult nsExternalAppHandler::SetUpTempFile(nsIChannel* aChannel) {
   // First we need to try to get the destination directory for the temporary
   // file.
-  nsresult rv = GetDownloadDirectory(getter_AddRefs(mTempFile));
-  NS_ENSURE_SUCCESS(rv, rv);
+  auto res = GetInitialDownloadDirectory();
+  if (res.isErr()) return res.unwrapErr();
+  mTempFile = res.unwrap();
 
   // At this point, we do not have a filename for the temp file.  For security
   // purposes, this cannot be predictable, so we must use a cryptographic
   // quality PRNG to generate one.
   nsAutoCString tempLeafName;
-  rv = GenerateRandomName(tempLeafName);
+  nsresult rv = GenerateRandomName(tempLeafName);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // now append our extension.
@@ -1402,7 +1455,7 @@ nsresult nsExternalAppHandler::SetUpTempFile(nsIChannel* aChannel) {
   // file extension to determine the executable-ness, so do this before adding
   // the extra .part extension.
   nsCOMPtr<nsIFile> dummyFile;
-  rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(dummyFile));
+  rv = mTempFile->Clone(getter_AddRefs(dummyFile));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Set the file name without .part
@@ -1549,7 +1602,7 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
     // the download is in progress we set that flag so that timeout counter
     // measures do not kick in.
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-    bool isPrivateWin = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
+    bool isPrivateWin = loadInfo->GetOriginAttributes().IsPrivateBrowsing();
     if (nsHTTPSOnlyUtils::IsHttpsOnlyModeEnabled(isPrivateWin) ||
         nsHTTPSOnlyUtils::IsHttpsFirstModeEnabled(isPrivateWin)) {
       uint32_t httpsOnlyStatus = loadInfo->GetHttpsOnlyStatus();
@@ -1643,9 +1696,18 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
     mCanceled = true;
     request->Cancel(transferError);
 
-    nsAutoString path;
-    if (mTempFile) mTempFile->GetPath(path);
+    auto res = GetInitialDownloadDirectory(true);
+    if (res.isErr()) {
+      // Just send the file name as we can't get a download path.
+      // TODO: evaluate adding a more specific error here.
+      SendStatusChange(kWriteError, transferError, request, mSuggestedFileName);
+      return res.unwrapErr();
+    }
 
+    nsCOMPtr<nsIFile> pseudoFile = res.unwrap();
+    MOZ_ALWAYS_SUCCEEDS(pseudoFile->Append(mSuggestedFileName));
+    nsAutoString path;
+    MOZ_ALWAYS_SUCCEEDS(pseudoFile->GetPath(path));
     SendStatusChange(kWriteError, transferError, request, path);
 
     return NS_OK;
@@ -2361,9 +2423,9 @@ nsresult nsExternalAppHandler::CreateFailedTransfer() {
   if (!mFinalFileDestination) {
     // If we don't have a download directory we're kinda screwed but it's OK
     // we'll still report the error via the prompter.
-    nsCOMPtr<nsIFile> pseudoFile;
-    rv = GetDownloadDirectory(getter_AddRefs(pseudoFile), true);
-    NS_ENSURE_SUCCESS(rv, rv);
+    auto res = GetInitialDownloadDirectory(true);
+    if (res.isErr()) return res.unwrapErr();
+    nsCOMPtr<nsIFile> pseudoFile = res.unwrap();
 
     // Append the default suggested filename. If the user restarts the transfer
     // we will re-trigger a filename check anyway to ensure that it is unique.
@@ -2588,7 +2650,9 @@ NS_IMETHODIMP nsExternalAppHandler::SetDownloadToLaunch(
   if (aNewFileLocation) {
     fileToUse = aNewFileLocation;
   } else {
-    (void)GetDownloadDirectory(getter_AddRefs(fileToUse));
+    auto res = GetInitialDownloadDirectory();
+    if (res.isErr()) return res.unwrapErr();
+    fileToUse = res.unwrap();
 
     if (mSuggestedFileName.IsEmpty()) {
       // Keep using the leafname of the temp file, since we're just starting a
@@ -3668,12 +3732,14 @@ void nsExternalHelperAppService::SanitizeFileName(nsAString& aFileName,
     outFileName.Truncate(lastNonTrimmable);
   }
 
-  nsAutoString extension;
-  int32_t dotidx = outFileName.RFind(u".");
-  if (dotidx != -1) {
-    extension = Substring(outFileName, dotidx + 1);
-    extension.StripWhitespace();
-    outFileName = Substring(outFileName, 0, dotidx + 1) + extension;
+  if (!(aFlags & VALIDATE_ALLOW_DIRECTORY_NAMES)) {
+    nsAutoString extension;
+    int32_t dotidx = outFileName.RFind(u".");
+    if (dotidx != -1) {
+      extension = Substring(outFileName, dotidx + 1);
+      extension.StripWhitespace();
+      outFileName = Substring(outFileName, 0, dotidx + 1) + extension;
+    }
   }
 
 #ifdef XP_WIN

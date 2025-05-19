@@ -15,6 +15,9 @@
 #include "builtin/AtomicsObject.h"
 #include "builtin/BigInt.h"
 #include "builtin/DataViewObject.h"
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+#  include "builtin/DisposableStackObject.h"
+#endif
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/Collator.h"
 #  include "builtin/intl/DateTimeFormat.h"
@@ -142,6 +145,10 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_Error:
     case JSProto_InternalError:
     case JSProto_AggregateError:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case JSProto_SuppressedError:
+    case JSProto_DisposableStack:
+#endif
     case JSProto_EvalError:
     case JSProto_RangeError:
     case JSProto_ReferenceError:
@@ -257,10 +264,8 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_ShadowRealm:
       return !JS::Prefs::experimental_shadow_realms();
 
-#ifdef NIGHTLY_BUILD
     case JSProto_Float16Array:
       return !JS::Prefs::experimental_float16array();
-#endif
 
     default:
       MOZ_CRASH("unexpected JSProtoKey");

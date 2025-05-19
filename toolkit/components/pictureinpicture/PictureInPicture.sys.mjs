@@ -64,6 +64,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "media.videocontrols.picture-in-picture.respect-disablePictureInPicture",
   true
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "PIP_WHEN_SWITCHING_TABS",
+  "media.videocontrols.picture-in-picture.enable-when-switching-tabs.enabled",
+  true
+);
 
 /**
  * Tracks the number of currently open player windows for Telemetry tracking
@@ -115,6 +121,36 @@ export class PictureInPictureToggleParent extends JSWindowActorParent {
       case "PictureInPicture:SetHasUsed": {
         let { hasUsed } = aMessage.data;
         PictureInPicture.setHasUsed(hasUsed);
+        break;
+      }
+      case "PictureInPicture:VideoTabHidden": {
+        if (!lazy.PIP_ENABLED || !lazy.PIP_WHEN_SWITCHING_TABS) {
+          break;
+        }
+        // If the tab is still selected, then we can ignore this event
+        if (browser.ownerGlobal.gBrowser.selectedBrowser == browser) {
+          break;
+        }
+        let actor = browsingContext.currentWindowGlobal.getActor(
+          "PictureInPictureLauncher"
+        );
+        actor.sendAsyncMessage("PictureInPicture:AutoToggle");
+        break;
+      }
+      case "PictureInPicture:VideoTabShown": {
+        if (!lazy.PIP_ENABLED || !lazy.PIP_WHEN_SWITCHING_TABS) {
+          break;
+        }
+        if (browser.ownerGlobal.gBrowser.selectedBrowser != browser) {
+          break;
+        }
+        for (let win of Services.wm.getEnumerator(WINDOW_TYPE)) {
+          let originatingBrowser = PictureInPicture.weakWinToBrowser.get(win);
+          if (browser == originatingBrowser) {
+            win.closeFromForeground();
+            break;
+          }
+        }
         break;
       }
     }
@@ -847,7 +883,7 @@ export var PictureInPicture = {
     tab.addEventListener("TabSwapPictureInPicture", this);
 
     let pipId = gNextWindowID.toString();
-    win.setupPlayer(pipId, wgp, videoData.videoRef);
+    win.setupPlayer(pipId, wgp, videoData.videoRef, videoData.autoFocus);
     gNextWindowID++;
 
     this.weakWinToBrowser.set(win, browser);
@@ -1428,28 +1464,30 @@ export var PictureInPicture = {
 
     // We synthesize a new MouseEvent to propagate the inputSource to the
     // subsequently triggered popupshowing event.
-    let newEvent = document.createEvent("MouseEvent");
-    let screenX = data.screenXDevPx / window.devicePixelRatio;
-    let screenY = data.screenYDevPx / window.devicePixelRatio;
-    newEvent.initNSMouseEvent(
-      "contextmenu",
-      true,
-      true,
-      null,
-      0,
-      screenX,
-      screenY,
-      0,
-      0,
-      false,
-      false,
-      false,
-      false,
-      0,
-      null,
-      0,
-      data.inputSource
-    );
+    let newEvent = new PointerEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      screenX: data.screenXDevPx / window.devicePixelRatio,
+      screenY: data.screenYDevPx / window.devicePixelRatio,
+      pointerType: (() => {
+        switch (data.inputSource) {
+          case MouseEvent.MOZ_SOURCE_MOUSE:
+            return "mouse";
+          case MouseEvent.MOZ_SOURCE_PEN:
+            return "pen";
+          case MouseEvent.MOZ_SOURCE_ERASER:
+            return "eraser";
+          case MouseEvent.MOZ_SOURCE_CURSOR:
+            return "cursor";
+          case MouseEvent.MOZ_SOURCE_TOUCH:
+            return "touch";
+          case MouseEvent.MOZ_SOURCE_KEYBOARD:
+            return "keyboard";
+          default:
+            return "";
+        }
+      })(),
+    });
     popup.openPopupAtScreen(newEvent.screenX, newEvent.screenY, true, newEvent);
   },
 

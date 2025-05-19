@@ -147,8 +147,6 @@ template <typename T>
 class Optional;
 enum class CallerType : uint32_t;
 enum class ReferrerPolicy : uint8_t;
-typedef nsTHashMap<nsRefPtrHashKey<DOMIntersectionObserver>, int32_t>
-    IntersectionObserverList;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -198,8 +196,12 @@ enum : uint32_t {
   // algorithm https://w3c.github.io/webappsec-csp/#is-element-nonceable.
   ELEMENT_PARSER_HAD_DUPLICATE_ATTR_ERROR = ELEMENT_FLAG_BIT(6),
 
+  // If this flag is set, this element is in
+  // Document::mContentIdentifiersForLCP.
+  ELEMENT_IN_CONTENT_IDENTIFIER_FOR_LCP = ELEMENT_FLAG_BIT(7),
+
   // Remaining bits are for subclasses
-  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 7
+  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 8
 };
 
 #undef ELEMENT_FLAG_BIT
@@ -1843,12 +1845,6 @@ class Element : public FragmentOrElement {
   // Callback for destructor of dataset to ensure to null out our weak pointer
   // to it.
   void ClearDataset();
-
-  void RegisterIntersectionObserver(DOMIntersectionObserver* aObserver);
-  void UnregisterIntersectionObserver(DOMIntersectionObserver* aObserver);
-  void UnlinkIntersectionObservers();
-  bool UpdateIntersectionObservation(DOMIntersectionObserver* aObserver,
-                                     int32_t threshold);
 
   // A number of methods to cast to various XUL interfaces. They return a
   // pointer only if the element implements that interface.

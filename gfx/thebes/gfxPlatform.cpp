@@ -574,8 +574,15 @@ static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
   GFX_WEBRENDER_DEBUG(".window-visibility",
                       wr::DebugFlags::WINDOW_VISIBILITY_DBG)
   GFX_WEBRENDER_DEBUG(".restrict-blob-size", wr::DebugFlags::RESTRICT_BLOB_SIZE)
+  GFX_WEBRENDER_DEBUG(".surface-promotion-logging",
+                      wr::DebugFlags::SURFACE_PROMOTION_LOGGING)
 #undef GFX_WEBRENDER_DEBUG
   gfx::gfxVars::SetWebRenderDebugFlags(flags._0);
+
+  uint32_t threshold = Preferences::GetFloat(
+      StaticPrefs::GetPrefName_gfx_webrender_debug_slow_cpu_frame_threshold(),
+      10.0);
+  gfx::gfxVars::SetWebRenderSlowCpuFrameThreshold(threshold);
 }
 
 static void WebRenderQualityPrefChangeCallback(const char* aPref, void*) {
@@ -745,8 +752,8 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
         helper.Report(aReport.swgl, "swgl");
         helper.Report(aReport.upload_staging_memory, "upload-stagin-memory");
 
-        WEBRENDER_FOR_EACH_INTERNER(REPORT_INTERNER);
-        WEBRENDER_FOR_EACH_INTERNER(REPORT_DATA_STORE);
+        WEBRENDER_FOR_EACH_INTERNER(REPORT_INTERNER, );
+        WEBRENDER_FOR_EACH_INTERNER(REPORT_DATA_STORE, );
 
         // GPU Memory.
         helper.ReportTexture(aReport.gpu_cache_textures, "gpu-cache");
@@ -2510,6 +2517,17 @@ void gfxPlatform::InitAcceleration() {
                       "FEATURE_REMOTE_CANVAS_NO_GPU_PROCESS"_ns);
     }
 
+#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
+    // If D2D is explicitly disabled on Windows, then don't use remote canvas.
+    // This prevents it from interfering with Accelerated Canvas2D.
+    if (StaticPrefs::gfx_direct2d_disabled_AtStartup() &&
+        !StaticPrefs::gfx_direct2d_force_enabled_AtStartup()) {
+      gfxConfig::ForceDisable(Feature::REMOTE_CANVAS, FeatureStatus::Blocked,
+                              "Disabled without Direct2D",
+                              "FEATURE_REMOTE_CANVAS_NO_DIRECT2D"_ns);
+    }
+#endif
+
 #ifndef XP_WIN
     gfxConfig::ForceDisable(Feature::REMOTE_CANVAS, FeatureStatus::Blocked,
                             "Platform not supported",
@@ -3318,10 +3336,9 @@ static void AcceleratedCanvas2DPrefChangeCallback(const char*, void*) {
     feature.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
   }
 
-  if (StaticPrefs::gfx_canvas_remote_worker_threads_AtStartup() != 0) {
-    feature.ForceDisable(FeatureStatus::Failed,
-                         "Disabled with non-zero canvas worker threads",
-                         "FEATURE_FAILURE_DISABLE_BY_CANVAS_WORKER_THREADS"_ns);
+  if (gfxVars::RemoteCanvasEnabled()) {
+    feature.ForceDisable(FeatureStatus::Failed, "Disabled by Remote Canvas",
+                         "FEATURE_FAILURE_DISABLED_BY_REMOTE_CANVAS"_ns);
   }
 
   gfxVars::SetUseAcceleratedCanvas2D(feature.IsEnabled());
@@ -3662,11 +3679,21 @@ void gfxPlatform::GetOverlayInfo(mozilla::widget::InfoObject& aObj) {
     MOZ_CRASH("Incomplete switch");
   };
 
-  nsPrintfCString value("NV12=%s YUV2=%s BGRA8=%s RGB10A2=%s",
-                        toString(mOverlayInfo.ref().mNv12Overlay),
-                        toString(mOverlayInfo.ref().mYuy2Overlay),
-                        toString(mOverlayInfo.ref().mBgra8Overlay),
-                        toString(mOverlayInfo.ref().mRgb10a2Overlay));
+  auto toStringBool = [](bool aSupported) -> const char* {
+    if (aSupported) {
+      return "Supported";
+    }
+    return "Not Supported";
+  };
+
+  nsPrintfCString value(
+      "NV12=%s YUV2=%s BGRA8=%s RGB10A2=%s VpSR=%s VpAutoHDR=%s",
+      toString(mOverlayInfo.ref().mNv12Overlay),
+      toString(mOverlayInfo.ref().mYuy2Overlay),
+      toString(mOverlayInfo.ref().mBgra8Overlay),
+      toString(mOverlayInfo.ref().mRgb10a2Overlay),
+      toStringBool(mOverlayInfo.ref().mSupportsVpSuperResolution),
+      toStringBool(mOverlayInfo.ref().mSupportsVpAutoHDR));
 
   aObj.DefineProperty("OverlaySupport", NS_ConvertUTF8toUTF16(value));
 }

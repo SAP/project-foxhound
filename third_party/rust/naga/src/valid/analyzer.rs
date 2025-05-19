@@ -1,10 +1,9 @@
-/*! Module analyzer.
-
-Figures out the following properties:
-  - control flow uniformity
-  - texture/sampler pairs
-  - expression reference counts
-!*/
+//! Module analyzer.
+//!
+//! Figures out the following properties:
+//! - control flow uniformity
+//! - texture/sampler pairs
+//! - expression reference counts
 
 use super::{ExpressionError, FunctionError, ModuleInfo, ShaderStages, ValidationFlags};
 use crate::span::{AddSpan as _, WithSpan};
@@ -70,8 +69,10 @@ bitflags::bitflags! {
         /// subsequent statements within the current function (only!)
         /// to be executed in a non-uniform control flow.
         const MAY_RETURN = 0x1;
-        /// Control flow may be killed. Anything after `Statement::Kill` is
+        /// Control flow may be killed. Anything after [`Statement::Kill`] is
         /// considered inside non-uniform context.
+        ///
+        /// [`Statement::Kill`]: crate::Statement::Kill
         const MAY_KILL = 0x2;
     }
 }

@@ -52,14 +52,14 @@ import mozilla.components.concept.engine.translate.TranslationError
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.BetaLabel
 import org.mozilla.fenix.compose.ContextualMenu
+import org.mozilla.fenix.compose.InfoCard
+import org.mozilla.fenix.compose.InfoType
 import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.compose.MenuItem
 import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.button.PrimaryButton
 import org.mozilla.fenix.compose.button.TextButton
-import org.mozilla.fenix.shopping.ui.ReviewQualityCheckInfoCard
-import org.mozilla.fenix.shopping.ui.ReviewQualityCheckInfoType
 import org.mozilla.fenix.theme.FirefoxTheme
 import java.util.Locale
 
@@ -93,16 +93,7 @@ fun TranslationsDialogBottomSheet(
     onFromDropdownSelected: (Language) -> Unit,
     onToDropdownSelected: (Language) -> Unit,
 ) {
-    Column(
-        modifier = Modifier.padding(16.dp),
-    ) {
-        if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT) {
-            BetaLabel(
-                modifier = Modifier
-                    .padding(bottom = 8.dp),
-            )
-        }
-
+    Column(modifier = Modifier.padding(16.dp)) {
         TranslationsDialogHeader(
             title = if (translationsDialogState.isTranslated && translationsDialogState.translatedPageTitle != null) {
                 translationsDialogState.translatedPageTitle
@@ -117,7 +108,6 @@ fun TranslationsDialogBottomSheet(
 
         if (showFirstTimeFlow) {
             Spacer(modifier = Modifier.height(8.dp))
-
             TranslationsDialogInfoMessage(
                 learnMoreUrl = learnMoreUrl,
                 onLearnMoreClicked = onLearnMoreClicked,
@@ -294,6 +284,8 @@ private fun DialogContentAnErrorOccurred(
                 translationsDialogState.positiveButtonType
             }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
         TranslationsDialogActionButtons(
             positiveButtonText = positiveButtonTitle,
             negativeButtonText = negativeButtonTitle,
@@ -467,7 +459,32 @@ private fun TranslationsDialogHeader(
     onSettingClicked: () -> Unit,
 ) {
     Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column {
+            BetaLabel()
+        }
+        Column {
+            if (showPageSettings) {
+                IconButton(
+                    onClick = { onSettingClicked() },
+                    modifier = Modifier.size(24.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.mozac_ic_settings_24),
+                        contentDescription = stringResource(
+                            id = R.string.translation_option_bottom_sheet_title_heading,
+                        ),
+                        tint = FirefoxTheme.colors.iconPrimary,
+                    )
+                }
+            }
+        }
+    }
+    Row(
         verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(top = 12.dp),
     ) {
         Text(
             text = title,
@@ -477,25 +494,6 @@ private fun TranslationsDialogHeader(
             color = FirefoxTheme.colors.textPrimary,
             style = FirefoxTheme.typography.headline7,
         )
-
-        if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            BetaLabel()
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        if (showPageSettings) {
-            IconButton(
-                onClick = { onSettingClicked() },
-                modifier = Modifier.size(24.dp),
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.mozac_ic_settings_24),
-                    contentDescription = stringResource(id = R.string.translation_option_bottom_sheet_title_heading),
-                    tint = FirefoxTheme.colors.iconPrimary,
-                )
-            }
-        }
     }
 }
 
@@ -505,23 +503,23 @@ private fun TranslationErrorWarning(
     documentLangDisplayName: String? = null,
 ) {
     val modifier = Modifier
-        .padding(top = 8.dp)
+        .padding(top = 12.dp)
         .fillMaxWidth()
 
     when (translationError) {
         is TranslationError.CouldNotTranslateError -> {
-            ReviewQualityCheckInfoCard(
+            InfoCard(
                 description = stringResource(id = R.string.translation_error_could_not_translate_warning_text),
-                type = ReviewQualityCheckInfoType.Error,
+                type = InfoType.Error,
                 verticalRowAlignment = Alignment.CenterVertically,
                 modifier = modifier,
             )
         }
 
         is TranslationError.CouldNotLoadLanguagesError -> {
-            ReviewQualityCheckInfoCard(
+            InfoCard(
                 description = stringResource(id = R.string.translation_error_could_not_load_languages_warning_text),
-                type = ReviewQualityCheckInfoType.Error,
+                type = InfoType.Error,
                 verticalRowAlignment = Alignment.CenterVertically,
                 modifier = modifier,
             )
@@ -529,12 +527,12 @@ private fun TranslationErrorWarning(
 
         is TranslationError.LanguageNotSupportedError -> {
             documentLangDisplayName?.let {
-                ReviewQualityCheckInfoCard(
+                InfoCard(
                     description = stringResource(
                         id = R.string.translation_error_language_not_supported_warning_text,
                         it,
                     ),
-                    type = ReviewQualityCheckInfoType.Info,
+                    type = InfoType.Info,
                     verticalRowAlignment = Alignment.CenterVertically,
                     modifier = modifier,
                 )

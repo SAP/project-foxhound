@@ -203,7 +203,8 @@ class DefinitionServer {
       id: "test-feature",
       // These l10n IDs are just random so we have some text to display
       title: "experimental-features-media-jxl",
-      description: "pane-experimental-description2",
+      group: "experimental-features-group-browsing",
+      description: "pane-experimental-description3",
       restartRequired: false,
       type: "boolean",
       preference: "test.feature",

@@ -8,7 +8,7 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2024-05-16T14:45:06.160796+00:00'
+updated_at: '2024-08-02T14:33:27.873770+00:00'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -23,6 +23,10 @@ people:
     bmo_id: 334927
     name: Drew Willcoxon
     nick: adw
+  - &afranchuk
+    bmo_id: 719881
+    name: Alex Franchuk
+    nick: afranchuk
   - &agashlin
     bmo_id: 583776
     name: Adam Gashlin
@@ -39,6 +43,10 @@ people:
     bmo_id: 382067
     name: Andrew Halberstadt
     nick: ahal
+  - &ahochheiden
+    bmo_id: 693303
+    name: Alex Hochheiden
+    nick: ahochheiden
   - &allstarschh
     bmo_id: 434670
     name: Yoshi Cheng-Hao Huang
@@ -91,10 +99,6 @@ people:
     bmo_id: 446257
     name: Andrea Marchesini
     nick: baku
-  - &barret
-    bmo_id: 529428
-    name: Barret Rennie
-    nick: barret
   - &basschouten
     bmo_id: 272464
     name: Bas Schouten
@@ -111,6 +115,10 @@ people:
     bmo_id: 424312
     name: Ben Bangert
     nick: benbangert
+  - &beth
+    bmo_id: 529428
+    name: Beth Rennie
+    nick: beth
   - &beurdouche
     bmo_id: 622637
     name: Benjamin Beurdouche
@@ -476,6 +484,10 @@ people:
     bmo_id: 559949
     name: Julian Descottes
     nick: jdescottes
+  - &jeddai
+    bmo_id: 710471
+    name: Charlie Humphreys
+    nick: jeddai
   - &jesup
     bmo_id: 11539
     name: Randell Jesup
@@ -819,6 +831,10 @@ people:
     bmo_id: 404637
     name: Paul Adenot
     nick: padenot
+  - &pbone
+    bmo_id: 595166
+    name: Paul Bone
+    nick: pbone
   - &pbz
     bmo_id: 636491
     name: Paul Zühlcke
@@ -1260,6 +1276,7 @@ modules:
       - *glandium
     peers:
       - *andi
+      - *ahochheiden
     submodules:
 
       - name: 'Core: Build Config - Fennec'
@@ -1388,6 +1405,7 @@ modules:
     meta:
       peers_emeritus:
         - Aria Beingessner
+        - Kris Wright
       group: dev-platform
       url: :ref:`Crash Reporter`
       components:
@@ -1395,8 +1413,8 @@ modules:
     owners:
       - *gsvelto
     peers:
-      - *KrisWright
       - *calixte
+      - *afranchuk
     machine_name: core_crash_reporting
 
   - machine_name: core_credentials
@@ -1473,12 +1491,14 @@ modules:
       owners_emeritus:
         - Aaron Klotz
         - *toshi
+      peers_emeritus:
+        - *molly
       components:
         - Core::DLL Services
     owners:
       - *handyman
     peers:
-      - *molly
+      - *gstoll
     machine_name: core_dll_services
 
   - name: 'Core: docshell'
@@ -1632,6 +1652,7 @@ modules:
       - *ahal
     peers:
       - *Sylvestre
+      - *marco
     meta:
       components:
         - Developer Infrastructure::Source Documentation
@@ -1651,7 +1672,7 @@ modules:
         - Nicholas Nethercote
         - Gerald Squelart
         - Kannan Vijayan
-        - Barret Rennie
+        - Beth Rennie
         - Greg Tatum
       group: dev-platform
       url: https://firefox-source-docs.mozilla.org/tools/profiler/
@@ -2100,7 +2121,6 @@ modules:
       - media/libnestegg/**/*
       - media/libogg/**/*
       - media/libopus/**/*
-      - media/libtheora/**/*
       - media/libtremor/**/*
       - media/libvorbis/**/*
       - media/libvpx/**/*
@@ -2155,7 +2175,8 @@ modules:
         - Core::jemalloc
     owners:
       - *glandium
-    peers: []
+    peers:
+      - *pbone
     machine_name: core_memory_allocator
 
   - name: 'Core: mfbt'
@@ -2425,6 +2446,7 @@ modules:
     meta:
       owners_emeritus:
         - Nicholas Nethercote
+        - *KrisWright
       peers_emeritus:
         - Felipe Gomes
         - Eric Rahm
@@ -2432,10 +2454,8 @@ modules:
       components:
         - 'Core::Preferences: Backend'
     owners:
-      - *KrisWright
     peers:
       - *glandium
-      - *KrisWright
     machine_name: core_preferences
 
   - name: 'Core: Private Browsing'
@@ -2646,7 +2666,7 @@ modules:
     machine_name: core_static_analysis_rewriting_for_c
 
   - name: 'Core: storage'
-    description: Storage APIs with a SQLite backend
+    description: Storage APIs, SQLite backend
     includes:
       - third_party/sqlite3/**/*
       - storage/**/*
@@ -2662,6 +2682,7 @@ modules:
     peers:
       - *asuth
       - *janv
+      - *lina
     machine_name: core_storage
 
   - name: 'Core: String'
@@ -3143,6 +3164,7 @@ modules:
         - Doug Turner
         - Eric Rahm
         - Simon Giesecke
+        - *KrisWright
       group: dev-platform
       url: :ref:`XPCOM`
       components:
@@ -3152,9 +3174,8 @@ modules:
       - *nika
     peers:
       - *kmag
-      - *barret
+      - *beth
       - *jstutte
-      - *KrisWright
       - *mccr8
       - *emilio
     machine_name: core_xpcom
@@ -3303,6 +3324,25 @@ modules:
           - *willdurand
         machine_name: addons_manager_ui
 
+      - machine_name: address_bar
+        name: Address Bar
+        description: The address bar and address bar autocomplete.
+        includes:
+          - browser/components/urlbar/**/*
+          - browser/themes/shared/urlbar*
+        owners:
+          - *adw
+        peers:
+          - *daisuke
+          - *dao
+          - *mak
+          - *standard8
+          - *jteow
+        meta:
+          components:
+            - Firefox::Address Bar
+          review_group: urlbar-reviewers
+
       - name: Application Update
         description: The application update services.
         includes:
@@ -3424,10 +3464,11 @@ modules:
             - Firefox::Nimbus Desktop Client
           url: https://experimenter.info/
         owners:
-          - *barret
+          - *beth
         peers:
           - *Gijs
           - *emcminn
+          - *jeddai
         machine_name: normandy
 
       - machine_name: firefox_view
@@ -3607,28 +3648,24 @@ modules:
           - *jhirsch
         machine_name: screenshots
 
-      - name: Search and Address Bar
-        description: The search service, address bar and address bar autocomplete.
+      - name: Search
+        description: The search service and search bar.
         includes:
           - browser/components/search/**/*
-          - browser/components/urlbar/**/*
           - toolkit/components/search/**/*
         meta:
           components:
-            - Firefox::Address Bar
             - Firefox::Search
           peers_emeritus:
             - Michael de Boer
+          review_group: search-reviewers
         owners:
           - *standard8
-          - *adw
         peers:
           - *daleharvey
-          - *mak
-          - *dao
           - *mcheang
           - *jteow
-        machine_name: search_and_address_bar
+        machine_name: search
 
       - name: Security and Privacy UI
         description: The front-end to our security and privacy features, including
@@ -3820,9 +3857,10 @@ modules:
       such as lint configurations, formatting and naming style.
     includes:
       - .eslintrc-test-paths.js
-      - '**/.eslintignore'
-      - '**/.eslintrc.js'
+      - '**/.eslintrc*.js'
       - tools/lint/eslint/**/*
+      - .prettier*
+      - .stylelint*
     excludes: []
     owners:
       - *mossop
@@ -4334,5 +4372,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: 611fc859adea1938ca1f58fff06f810b74b4c3cf
-  export: dd8ae72f677a4e255fbcf78f91d04482956d8c12
+  config: 6410cc12ee3bad1c67d4d797975e16bb4339cab7
+  export: c3de175b04f17bbfeff4fd79b44521be63f74b51

@@ -134,6 +134,19 @@ class VRefCounted : public RefCounted<VRefCounted> {
 
 // -
 
+template <class T>
+bool IsEnumCase(T);
+
+template <class E>
+inline constexpr std::optional<E> AsEnumCase(
+    const std::underlying_type_t<E> raw) {
+  const auto ret = static_cast<E>(raw);
+  if (!IsEnumCase(ret)) return {};
+  return ret;
+}
+
+// -
+
 /*
  * Implementing WebGL (or OpenGL ES 2.0) on top of desktop OpenGL requires
  * emulating the vertex attrib 0 array when it's not enabled. Indeed,
@@ -215,6 +228,7 @@ enum class WebGLExtensionID : uint8_t {
   EXT_blend_minmax,
   EXT_color_buffer_float,
   EXT_color_buffer_half_float,
+  EXT_depth_clamp,
   EXT_disjoint_timer_query,
   EXT_float_blend,
   EXT_frag_depth,
@@ -311,6 +325,20 @@ enum class AttribBaseType : uint8_t {
   Int,
   Uint,
 };
+}  // namespace webgl
+template <>
+inline constexpr bool IsEnumCase<webgl::AttribBaseType>(
+    const webgl::AttribBaseType v) {
+  switch (v) {
+    case webgl::AttribBaseType::Boolean:
+    case webgl::AttribBaseType::Float:
+    case webgl::AttribBaseType::Int:
+    case webgl::AttribBaseType::Uint:
+      return true;
+  }
+  return false;
+}
+namespace webgl {
 webgl::AttribBaseType ToAttribBaseType(GLenum);
 const char* ToString(AttribBaseType);
 
@@ -362,9 +390,7 @@ struct WebGLContextOptions final {
 
   dom::WebGLPowerPreference powerPreference =
       dom::WebGLPowerPreference::Default;
-  std::optional<dom::PredefinedColorSpace> colorSpace;
   bool shouldResistFingerprinting = true;
-
   bool enableDebugRendererInfo = false;
 
   auto MutTiedFields() {
@@ -381,9 +407,7 @@ struct WebGLContextOptions final {
       xrCompatible,
 
       powerPreference,
-      colorSpace,
       shouldResistFingerprinting,
-
       enableDebugRendererInfo);
     // clang-format on
   }
@@ -631,7 +655,7 @@ struct InitContextDesc final {
   uint32_t principalKey = 0;
   uvec2 size = {};
   WebGLContextOptions options;
-  std::array<uint8_t, 3> _padding2;
+  std::array<uint8_t, 5> _padding2;
 
   auto MutTiedFields() {
     return std::tie(isWebgl2, resistFingerprinting, _padding, principalKey,
@@ -709,14 +733,18 @@ enum class OptionalRenderableFormatBits : uint8_t {
   SRGB8 = (1 << 1),
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(OptionalRenderableFormatBits)
-inline constexpr bool IsEnumCase(const OptionalRenderableFormatBits raw) {
+
+}  // namespace webgl
+template <>
+inline constexpr bool IsEnumCase<webgl::OptionalRenderableFormatBits>(
+    const webgl::OptionalRenderableFormatBits raw) {
   auto rawWithoutValidBits = UnderlyingValue(raw);
   auto bit = decltype(rawWithoutValidBits){1};
   while (bit) {
-    switch (OptionalRenderableFormatBits{bit}) {
+    switch (webgl::OptionalRenderableFormatBits{bit}) {
       // -Werror=switch ensures exhaustive.
-      case OptionalRenderableFormatBits::RGB8:
-      case OptionalRenderableFormatBits::SRGB8:
+      case webgl::OptionalRenderableFormatBits::RGB8:
+      case webgl::OptionalRenderableFormatBits::SRGB8:
         rawWithoutValidBits &= ~bit;
         break;
     }
@@ -724,6 +752,7 @@ inline constexpr bool IsEnumCase(const OptionalRenderableFormatBits raw) {
   }
   return rawWithoutValidBits == 0;
 }
+namespace webgl {
 
 // -
 
@@ -732,7 +761,7 @@ struct InitContextResult final {
   WebGLContextOptions options;
   gl::GLVendor vendor;
   OptionalRenderableFormatBits optionalRenderableFormatBits;
-  uint8_t _padding = {};
+  std::array<uint8_t, 3> _padding = {};
   Limits limits;
   EnumMask<layers::SurfaceDescriptor::Type> uploadableSdTypes;
 
@@ -1222,15 +1251,6 @@ inline bool StartsWith(const std::string_view str,
 
 // -
 
-template <class T>
-Maybe<T> AsValidEnum(const std::underlying_type_t<T> raw_val) {
-  const auto raw_enum = T{raw_val};  // This is the risk we prevent!
-  if (!IsEnumCase(raw_enum)) return {};
-  return Some(raw_enum);
-}
-
-// -
-
 namespace webgl {
 
 // In theory, this number can be unbounded based on the driver. However, no
@@ -1249,22 +1269,21 @@ enum class ProvokingVertex : GLenum {
   FirstVertex = LOCAL_GL_FIRST_VERTEX_CONVENTION,
   LastVertex = LOCAL_GL_LAST_VERTEX_CONVENTION,
 };
-inline constexpr bool IsEnumCase(const ProvokingVertex raw) {
+
+}  // namespace webgl
+
+template <>
+inline constexpr bool IsEnumCase<webgl::ProvokingVertex>(
+    const webgl::ProvokingVertex raw) {
   switch (raw) {
-    case ProvokingVertex::FirstVertex:
-    case ProvokingVertex::LastVertex:
+    case webgl::ProvokingVertex::FirstVertex:
+    case webgl::ProvokingVertex::LastVertex:
       return true;
   }
   return false;
 }
 
-template <class E>
-inline constexpr std::optional<E> AsEnumCase(
-    const std::underlying_type_t<E> raw) {
-  const auto ret = static_cast<E>(raw);
-  if (!IsEnumCase(ret)) return {};
-  return ret;
-}
+namespace webgl {
 
 // -
 

@@ -51,6 +51,10 @@
 #include "nsComputedDOMStyle.h"
 #include "mozilla/dom/InspectorFontFace.h"
 
+#ifdef ACCESSIBILITY
+#  include "nsAccessibilityService.h"
+#endif
+
 namespace mozilla {
 extern LazyLogModule sSelectionAPILog;
 extern void LogStackForSelectionAPI();
@@ -511,22 +515,8 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
             ->SetDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
       }
     } else {
-      // If boundary is inside changed text, position it before change
-      // else adjust start offset for the change in length.
-      CheckedUint32 newStartOffset{0};
-      if (*mStart.Offset(RangeBoundary::OffsetFilter::kValidOrInvalidOffsets) <=
-          aInfo.mChangeEnd) {
-        newStartOffset = aInfo.mChangeStart;
-      } else {
-        newStartOffset =
-            *mStart.Offset(RangeBoundary::OffsetFilter::kValidOrInvalidOffsets);
-        newStartOffset -= aInfo.LengthOfRemovedText();
-        newStartOffset += aInfo.mReplaceLength;
-      }
-
-      // newStartOffset.isValid() isn't checked explicitly here, because
-      // newStartOffset.value() contains an assertion.
-      newStart = {mStart.Container(), newStartOffset.value()};
+      newStart = ComputeNewBoundaryWhenBoundaryInsideChangedText(
+          aInfo, mStart.AsRaw());
     }
   }
 
@@ -567,20 +557,8 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
             ->SetDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
       }
     } else {
-      CheckedUint32 newEndOffset{0};
-      if (*mEnd.Offset(RangeBoundary::OffsetFilter::kValidOrInvalidOffsets) <=
-          aInfo.mChangeEnd) {
-        newEndOffset = aInfo.mChangeStart;
-      } else {
-        newEndOffset =
-            *mEnd.Offset(RangeBoundary::OffsetFilter::kValidOrInvalidOffsets);
-        newEndOffset -= aInfo.LengthOfRemovedText();
-        newEndOffset += aInfo.mReplaceLength;
-      }
-
-      // newEndOffset.isValid() isn't checked explicitly here, because
-      // newEndOffset.value() contains an assertion.
-      newEnd = {mEnd.Container(), newEndOffset.value()};
+      newEnd =
+          ComputeNewBoundaryWhenBoundaryInsideChangedText(aInfo, mEnd.AsRaw());
     }
   }
 
@@ -756,8 +734,12 @@ void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
   bool newStartIsSet = newStart.IsSet();
   bool newEndIsSet = newEnd.IsSet();
   if (newStartIsSet || newEndIsSet) {
-    DoSetRange(newStartIsSet ? newStart : mStart.AsRaw(),
-               newEndIsSet ? newEnd : mEnd.AsRaw(), mRoot);
+    DoSetRange(
+        newStartIsSet ? newStart : mStart.AsRaw(),
+        newEndIsSet ? newEnd : mEnd.AsRaw(), mRoot, false,
+        // CrossShadowBoundaryRange mutates content
+        // removal fot itself, so no need for nsRange to do anything with it.
+        RangeBehaviour::KeepDefaultRangeAndCrossShadowBoundaryRanges);
   } else {
     nsRange::AssertIfMismatchRootAndRangeBoundaries(mStart, mEnd, mRoot);
   }
@@ -983,12 +965,19 @@ void nsRange::NotifySelectionListenersAfterRangeSet() {
   // one Selection present  (which will barely ever be the case).
   if (IsPartOfOneSelectionOnly()) {
     RefPtr<Selection> selection = mSelections[0].get();
+#ifdef ACCESSIBILITY
+    a11y::SelectionManager::SelectionRangeChanged(selection->GetType(), *this);
+#endif
     selection->NotifySelectionListeners(calledByJSRestorer.SavedValue());
   } else {
     nsTArray<WeakPtr<Selection>> copiedSelections = mSelections.Clone();
     for (const auto& weakSelection : copiedSelections) {
       RefPtr<Selection> selection = weakSelection.get();
       if (MOZ_LIKELY(selection)) {
+#ifdef ACCESSIBILITY
+        a11y::SelectionManager::SelectionRangeChanged(selection->GetType(),
+                                                      *this);
+#endif
         selection->NotifySelectionListeners(calledByJSRestorer.SavedValue());
       }
     }
@@ -1489,7 +1478,8 @@ class MOZ_STACK_CLASS RangeSubtreeIterator {
   RangeSubtreeIterator() : mIterState(eDone) {}
   ~RangeSubtreeIterator() = default;
 
-  nsresult Init(nsRange* aRange);
+  nsresult Init(nsRange* aRange, AllowRangeCrossShadowBoundary =
+                                     AllowRangeCrossShadowBoundary::No);
   already_AddRefed<nsINode> GetCurrentNode();
   void First();
   void Last();
@@ -1499,9 +1489,10 @@ class MOZ_STACK_CLASS RangeSubtreeIterator {
   bool IsDone() { return mIterState == eDone; }
 };
 
-nsresult RangeSubtreeIterator::Init(nsRange* aRange) {
+nsresult RangeSubtreeIterator::Init(
+    nsRange* aRange, AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary) {
   mIterState = eDone;
-  if (aRange->Collapsed()) {
+  if (aRange->AreNormalRangeAndCrossShadowBoundaryRangeCollapsed()) {
     return NS_OK;
   }
 
@@ -1513,14 +1504,14 @@ nsresult RangeSubtreeIterator::Init(nsRange* aRange) {
     return NS_ERROR_FAILURE;
   }
 
-  nsINode* node = aRange->GetStartContainer();
+  nsINode* node = aRange->GetMayCrossShadowBoundaryStartContainer();
   if (NS_WARN_IF(!node)) {
     return NS_ERROR_FAILURE;
   }
 
   if (node->IsCharacterData() ||
-      (node->IsElement() &&
-       node->AsElement()->GetChildCount() == aRange->StartOffset())) {
+      (node->IsElement() && node->AsElement()->GetChildCount() ==
+                                aRange->MayCrossShadowBoundaryStartOffset())) {
     mStart = node;
   }
 
@@ -1528,13 +1519,13 @@ nsresult RangeSubtreeIterator::Init(nsRange* aRange) {
   // a CharacterData pointer. If it is CharacterData store
   // a pointer to the node.
 
-  node = aRange->GetEndContainer();
+  node = aRange->GetMayCrossShadowBoundaryEndContainer();
   if (NS_WARN_IF(!node)) {
     return NS_ERROR_FAILURE;
   }
 
   if (node->IsCharacterData() ||
-      (node->IsElement() && aRange->EndOffset() == 0)) {
+      (node->IsElement() && aRange->MayCrossShadowBoundaryEndOffset() == 0)) {
     mEnd = node;
   }
 
@@ -1550,7 +1541,10 @@ nsresult RangeSubtreeIterator::Init(nsRange* aRange) {
 
     mSubtreeIter.emplace();
 
-    nsresult res = mSubtreeIter->Init(aRange);
+    nsresult res =
+        aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes
+            ? mSubtreeIter->InitWithAllowCrossShadowBoundary(aRange)
+            : mSubtreeIter->Init(aRange);
     if (NS_FAILED(res)) return res;
 
     if (mSubtreeIter->IsDone()) {
@@ -1783,14 +1777,18 @@ void nsRange::CutContents(DocumentFragment** aFragment, ErrorResult& aRv) {
     *aFragment = nullptr;
   }
 
-  if (!CanAccess(*mStart.Container()) || !CanAccess(*mEnd.Container())) {
+  if (!CanAccess(*GetMayCrossShadowBoundaryStartContainer()) ||
+      !CanAccess(*GetMayCrossShadowBoundaryEndContainer())) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
 
   nsCOMPtr<Document> doc = mStart.Container()->OwnerDoc();
 
-  nsCOMPtr<nsINode> commonAncestor = GetCommonAncestorContainer(aRv);
+  nsCOMPtr<nsINode> commonAncestor = GetCommonAncestorContainer(
+      aRv, StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()
+               ? AllowRangeCrossShadowBoundary::Yes
+               : AllowRangeCrossShadowBoundary::No);
   if (aRv.Failed()) {
     return;
   }
@@ -1809,13 +1807,16 @@ void nsRange::CutContents(DocumentFragment** aFragment, ErrorResult& aRv) {
   // Save the range end points locally to avoid interference
   // of Range gravity during our edits!
 
-  nsCOMPtr<nsINode> startContainer = mStart.Container();
+  nsCOMPtr<nsINode> startContainer = GetMayCrossShadowBoundaryStartContainer();
   // `GetCommonAncestorContainer()` above ensures the range is positioned, hence
   // there have to be valid offsets.
-  uint32_t startOffset =
-      *mStart.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
-  nsCOMPtr<nsINode> endContainer = mEnd.Container();
-  uint32_t endOffset = *mEnd.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
+
+  const uint32_t startOffset = *MayCrossShadowBoundaryStartRef().Offset(
+      RangeBoundary::OffsetFilter::kValidOffsets);
+
+  nsCOMPtr<nsINode> endContainer = GetMayCrossShadowBoundaryEndContainer();
+  const uint32_t endOffset = *MayCrossShadowBoundaryEndRef().Offset(
+      RangeBoundary::OffsetFilter::kValidOffsets);
 
   if (retval) {
     // For extractContents(), abort early if there's a doctype (bug 719533).
@@ -1846,7 +1847,10 @@ void nsRange::CutContents(DocumentFragment** aFragment, ErrorResult& aRv) {
 
   RangeSubtreeIterator iter;
 
-  aRv = iter.Init(this);
+  aRv = iter.Init(this,
+                  StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()
+                      ? AllowRangeCrossShadowBoundary::Yes
+                      : AllowRangeCrossShadowBoundary::No);
   if (aRv.Failed()) {
     return;
   }
@@ -3519,6 +3523,12 @@ void nsRange::CreateOrUpdateCrossShadowBoundaryRangeIfNeeded(
     return;
   }
 
+  // Nodes at least needs to be in the same document.
+  if (startNode && endNode &&
+      startNode->GetComposedDoc() != endNode->GetComposedDoc()) {
+    return;
+  }
+
   auto CanBecomeCrossShadowBoundaryPoint = [](nsINode* aContainer) -> bool {
     if (!aContainer) {
       return true;
@@ -3548,4 +3558,28 @@ void nsRange::CreateOrUpdateCrossShadowBoundaryRangeIfNeeded(
   }
 
   mCrossShadowBoundaryRange->SetStartAndEnd(aStartBoundary, aEndBoundary);
+}
+
+RawRangeBoundary nsRange::ComputeNewBoundaryWhenBoundaryInsideChangedText(
+    const CharacterDataChangeInfo& aInfo, const RawRangeBoundary& aBoundary) {
+  MOZ_ASSERT(aInfo.mChangeStart <
+             *aBoundary.Offset(
+                 RawRangeBoundary::OffsetFilter::kValidOrInvalidOffsets));
+  // If boundary is inside changed text, position it before change
+  // else adjust start offset for the change in length.
+  CheckedUint32 newOffset{0};
+  if (*aBoundary.Offset(
+          RawRangeBoundary::OffsetFilter::kValidOrInvalidOffsets) <=
+      aInfo.mChangeEnd) {
+    newOffset = aInfo.mChangeStart;
+  } else {
+    newOffset = *aBoundary.Offset(
+        RawRangeBoundary::OffsetFilter::kValidOrInvalidOffsets);
+    newOffset -= aInfo.LengthOfRemovedText();
+    newOffset += aInfo.mReplaceLength;
+  }
+
+  // newOffset.isValid() isn't checked explicitly here, because
+  // newOffset.value() contains an assertion.
+  return {aBoundary.Container(), newOffset.value()};
 }

@@ -274,7 +274,7 @@ StorageAccess StorageAllowedForWindow(nsPIDOMWindowInner* aWindow,
   // No document? Try checking Private Browsing Mode without document
   if (const nsCOMPtr<nsIGlobalObject> global = aWindow->AsGlobal()) {
     if (const nsCOMPtr<nsIPrincipal> principal = global->PrincipalOrNull()) {
-      if (principal->GetPrivateBrowsingId() > 0) {
+      if (principal->GetIsInPrivateBrowsing()) {
         return StorageAccess::ePrivateBrowsing;
       }
     }
@@ -801,8 +801,7 @@ bool ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
   bool isDocument = false;
   aChannel->GetIsDocument(&isDocument);
 
-  if (isDocument) {
-    MOZ_ASSERT(targetBC);
+  if (targetBC && isDocument) {
     nsCOMPtr<nsPIDOMWindowInner> inner =
         AntiTrackingUtils::GetInnerWindow(targetBC);
     if (inner && inner->UsingStorageAccess()) {

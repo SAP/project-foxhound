@@ -59,9 +59,9 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
-        requirePreference<SwitchPreference>(R.string.pref_key_toolbar_use_redesign_incomplete).apply {
+        requirePreference<SwitchPreference>(R.string.pref_key_toolbar_show_navigation_toolbar).apply {
             isVisible = Config.channel.isNightlyOrDebug
-            isChecked = context.settings().enableIncompleteToolbarRedesign
+            isChecked = context.settings().navigationToolbarEnabled
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
@@ -77,9 +77,21 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
+        requirePreference<SwitchPreference>(R.string.pref_key_enable_compose_homepage).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().enableComposeHomepage
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
         requirePreference<SwitchPreference>(R.string.pref_key_enable_menu_redesign).apply {
             isVisible = Config.channel.isNightlyOrDebug
             isChecked = context.settings().enableMenuRedesign
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_enable_homepage_as_new_tab).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().enableHomepageAsNewTab
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
@@ -135,6 +147,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
         requirePreference<SwitchPreference>(R.string.pref_key_remote_server_prod).apply {
             isVisible = true
             isChecked = context.settings().useProductionRemoteSettingsServer
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_microsurvey_feature_enabled).apply {
+            isVisible = true
+            isChecked = context.settings().microsurveyFeatureEnabled
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
     }

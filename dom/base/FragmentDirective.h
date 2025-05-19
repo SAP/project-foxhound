@@ -75,6 +75,11 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
   /** Clears all uninvoked directives. */
   void ClearUninvokedDirectives() { mUninvokedTextDirectives.Clear(); }
 
+  /** Inserts all text directive ranges into a `eTargetText` `Selection`. */
+  MOZ_CAN_RUN_SCRIPT
+  void HighlightTextDirectives(
+      const nsTArray<RefPtr<nsRange>>& aTextDirectiveRanges);
+
   /** Searches for the current uninvoked text directives and creates a range for
    * each one that is found.
    *
@@ -104,9 +109,21 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
    * `ParseAndRemoveFragmentDirectiveFromFragment()`.
    *
    * This function returns true if it modified `aFragment`.
+   *
+   * Note: the parameter `aURI` is only used for logging purposes.
    */
   static bool ParseAndRemoveFragmentDirectiveFromFragmentString(
-      nsCString& aFragment, nsTArray<TextDirective>* aTextDirectives = nullptr);
+      nsCString& aFragment, nsTArray<TextDirective>* aTextDirectives = nullptr,
+      nsIURI* aURI = nullptr);
+
+  /** Performs various checks to determine if a text directive is allowed to be
+   * scrolled to.
+   *
+   * This follows the algorithm "check if a text directive can be scrolled" in
+   * section 3.5.4 of the text fragment spec
+   * (https://wicg.github.io/scroll-to-text-fragment/#restricting-the-text-fragment).
+   */
+  bool IsTextDirectiveAllowedToBeScrolledTo();
 
  private:
   RefPtr<nsRange> FindRangeForTextDirective(

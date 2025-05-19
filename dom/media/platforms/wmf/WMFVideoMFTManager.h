@@ -55,6 +55,8 @@ class WMFVideoMFTManager : public MFTManager {
                : MediaDataDecoder::ConversionRequired::kNeedNone;
   }
 
+  bool UseZeroCopyVideoFrame() const override;
+
  private:
   MediaResult ValidateVideoInfo();
 
@@ -123,9 +125,13 @@ class WMFVideoMFTManager : public MFTManager {
   bool mIMFUsable = false;
   const float mFramerate;
   const bool mLowLatency;
+  const bool mKeepOriginalPts;
 
   PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
   const Maybe<TrackingId> mTrackingId;
+  // Sorted array of pts of input frames, from the encoded input packets, for
+  // error recovery.
+  nsTArray<int64_t> mPTSQueue;
 };
 
 }  // namespace mozilla

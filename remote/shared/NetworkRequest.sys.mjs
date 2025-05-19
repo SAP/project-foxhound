@@ -23,6 +23,8 @@ export class NetworkRequest {
   #alreadyCompleted;
   #channel;
   #contextId;
+  #eventRecord;
+  #isDataURL;
   #navigationId;
   #navigationManager;
   #rawHeaders;
@@ -36,6 +38,8 @@ export class NetworkRequest {
    * @param {nsIChannel} channel
    *     The channel for the request.
    * @param {object} params
+   * @param {NetworkEventRecord} params.networkEventRecord
+   *     The NetworkEventRecord owning this NetworkRequest.
    * @param {NavigationManager} params.navigationManager
    *     The NavigationManager where navigations for the current session are
    *     monitored.
@@ -43,13 +47,32 @@ export class NetworkRequest {
    *     The request's raw (ie potentially compressed) headers
    */
   constructor(channel, params) {
-    const { navigationManager, rawHeaders = "" } = params;
+    const { eventRecord, navigationManager, rawHeaders = "" } = params;
 
     this.#channel = channel;
+    this.#eventRecord = eventRecord;
+    this.#isDataURL = this.#channel instanceof Ci.nsIDataChannel;
     this.#navigationManager = navigationManager;
     this.#rawHeaders = rawHeaders;
 
-    this.#timedChannel = this.#channel.QueryInterface(Ci.nsITimedChannel);
+    const currentTime = Date.now();
+    this.#timedChannel =
+      this.#channel instanceof Ci.nsITimedChannel
+        ? this.#channel.QueryInterface(Ci.nsITimedChannel)
+        : {
+            redirectCount: 0,
+            channelCreationTime: currentTime,
+            redirectStartTime: 0,
+            redirectEndTime: 0,
+            domainLookupStartTime: currentTime,
+            domainLookupEndTime: currentTime,
+            connectStartTime: currentTime,
+            connectEndTime: currentTime,
+            secureConnectionStartTime: currentTime,
+            requestStartTime: currentTime,
+            responseStartTime: currentTime,
+            responseEndTime: currentTime,
+          };
     this.#wrappedChannel = ChannelWrapper.get(channel);
 
     this.#redirectCount = this.#timedChannel.redirectCount;
@@ -63,6 +86,10 @@ export class NetworkRequest {
 
   get alreadyCompleted() {
     return this.#alreadyCompleted;
+  }
+
+  get channel() {
+    return this.#channel;
   }
 
   get contextId() {
@@ -81,8 +108,12 @@ export class NetworkRequest {
     return this.#rawHeaders.length;
   }
 
+  get isHttpChannel() {
+    return this.#channel instanceof Ci.nsIHttpChannel;
+  }
+
   get method() {
-    return this.#channel.requestMethod;
+    return this.#isDataURL ? "GET" : this.#channel.requestMethod;
   }
 
   get navigationId() {
@@ -126,6 +157,20 @@ export class NetworkRequest {
    */
   addRawHeaders(rawHeaders) {
     this.#rawHeaders = rawHeaders || "";
+  }
+
+  /**
+   * Clear a request header from the request's headers list.
+   *
+   * @param {string} name
+   *     The header's name.
+   */
+  clearRequestHeader(name) {
+    this.#channel.setRequestHeader(
+      name, // aName
+      "", // aValue="" as an empty value
+      false // aMerge=false to force clearing the header
+    );
   }
 
   /**
@@ -192,17 +237,29 @@ export class NetworkRequest {
   getHeadersList() {
     const headers = [];
 
-    this.#channel.visitRequestHeaders({
-      visitHeader(name, value) {
-        // The `Proxy-Authorization` header even though it appears on the channel is not
-        // actually sent to the server for non CONNECT requests after the HTTP/HTTPS tunnel
-        // is setup by the proxy.
-        if (name == "Proxy-Authorization") {
-          return;
-        }
-        headers.push([name, value]);
-      },
-    });
+    if (this.#channel instanceof Ci.nsIHttpChannel) {
+      this.#channel.visitRequestHeaders({
+        visitHeader(name, value) {
+          // The `Proxy-Authorization` header even though it appears on the channel is not
+          // actually sent to the server for non CONNECT requests after the HTTP/HTTPS tunnel
+          // is setup by the proxy.
+          if (name == "Proxy-Authorization") {
+            return;
+          }
+          headers.push([name, value]);
+        },
+      });
+    }
+
+    if (this.#channel instanceof Ci.nsIDataChannel) {
+      // Data channels have no request headers.
+      return [];
+    }
+
+    if (this.#channel instanceof Ci.nsIFileChannel) {
+      // File channels have no request headers.
+      return [];
+    }
 
     return headers;
   }
@@ -244,9 +301,14 @@ export class NetworkRequest {
    *     The header's name.
    * @param {string} value
    *     The header's value.
+   * @param {object} options
+   * @param {boolean} options.merge
+   *     True if the value should be merged with the existing value, false if it
+   *     should override it. Defaults to false.
    */
-  setRequestHeader(name, value) {
-    this.#channel.setRequestHeader(name, value, false);
+  setRequestHeader(name, value, options) {
+    const { merge = false } = options;
+    this.#channel.setRequestHeader(name, value, merge);
   }
 
   /**
@@ -266,6 +328,37 @@ export class NetworkRequest {
       // Make sure to reset the flag once the modification was attempted.
       this.#channel.requestObserversCalled = true;
     }
+  }
+
+  /**
+   * Allows to bypass the actual network request and immediately respond with
+   * the provided nsIReplacedHttpResponse.
+   *
+   * @param {nsIReplacedHttpResponse} replacedHttpResponse
+   *     The replaced response to use.
+   */
+  setResponseOverride(replacedHttpResponse) {
+    this.wrappedChannel.channel
+      .QueryInterface(Ci.nsIHttpChannelInternal)
+      .setResponseOverride(replacedHttpResponse);
+
+    const rawHeaders = [];
+    replacedHttpResponse.visitResponseHeaders({
+      visitHeader(name, value) {
+        rawHeaders.push(`${name}: ${value}`);
+      },
+    });
+
+    // Setting an override bypasses the usual codepath for network responses.
+    // There will be no notification about receiving a response.
+    // However, there will be a notification about the end of the response.
+    // Therefore, simulate a addResponseStart here to make sure we handle
+    // addResponseContent properly.
+    this.#eventRecord.prepareResponseStart({
+      channel: this.#channel,
+      fromCache: false,
+      rawHeaders: rawHeaders.join("\n"),
+    });
   }
 
   /**
@@ -299,7 +392,7 @@ export class NetworkRequest {
   }
 
   #getNavigationId() {
-    if (!this.#channel.isMainDocumentChannel) {
+    if (!this.#channel.isDocument) {
       return null;
     }
 

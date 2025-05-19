@@ -45,15 +45,6 @@
     <!-- Content description on checkmark while tab is selected in multiselect mode in tab tray -->
     <string name="tab_tray_multiselect_selected_content_description">Вибрано</string>
 
-    <!-- Home - Recently saved bookmarks -->
-    <!-- Title for the home screen section with recently saved bookmarks. -->
-    <string name="recently_saved_title" moz:removedIn="127" tools:ignore="UnusedResources">Недавно збережені</string>
-    <!-- Content description for the button which navigates the user to show all of their saved bookmarks. -->
-    <string name="recently_saved_show_all_content_description_2" moz:removedIn="127" tools:ignore="UnusedResources">Показати всі збережені закладки</string>
-
-    <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
-    <string name="recently_saved_menu_item_remove" moz:removedIn="127" tools:ignore="UnusedResources">Вилучити</string>
-
     <!-- Home - Bookmarks -->
     <!-- Title for the home screen section with bookmarks. -->
     <string name="home_bookmarks_title">Закладки</string>
@@ -113,6 +104,18 @@
     <string name="erase_action_cfr_message">Торкніться тут, щоб розпочати новий приватний сеанс. Видаліть історію, файли cookie – усе.</string>
 
 
+    <!-- Toolbar "contextual feature recommendation" (CFR) -->
+    <!-- Text for the title displayed in the contextual feature recommendation popup promoting the navigation bar. -->
+    <string name="navbar_cfr_title">Переглядайте швидше з новою навігацією</string>
+    <!-- Text for the message displayed for the popup promoting the long press of navigation in the navigation bar. -->
+    <string name="navbar_navigation_buttons_cfr_message">Натисніть і утримуйте на стрілці, щоб переходити між сторінками в історії цієї вкладки.</string>
+
+    <!-- Tablet navigation bar "contextual feature recommendation" (CFR) -->
+    <!-- Text for the title displayed in the contextual feature recommendation popup promoting the tablet navigation bar. -->
+    <string name="tablet_nav_bar_cfr_title">Нове: стрілки назад і вперед одним дотиком</string>
+    <!-- Text for the message displayed in the contextual feature recommendation popup promoting the tablet navigation bar. -->
+    <string name="tablet_nav_bar_cfr_message">Насолоджуйтесь швидшою навігацією, яка завжди у вас під рукою.</string>
+
     <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
     <string name="camera_permissions_needed_message">Необхідний доступ до камери. Перейдіть до налаштувань Android, торкніться дозволів та торкніться дозволити.</string>
     <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -152,8 +155,6 @@
 
     <!-- Shortcut action to open Passwords screen -->
     <string name="home_screen_shortcut_passwords">Паролі</string>
-    <!-- Shortcut action to open Passwords screen -->
-    <string name="home_screen_shortcut_open_password_screen" moz:removedIn="126" tools:ignore="UnusedResources">Ярлик паролів</string>
 
     <!-- Recent Tabs -->
     <!-- Header text for jumping back into the recent tab in the home screen -->
@@ -194,18 +195,17 @@
     <string name="browser_menu_refresh">Оновити</string>
     <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
     <string name="browser_menu_stop">Зупинити</string>
-    <!-- Browser menu button that opens the addon manager -->
-    <string name="browser_menu_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Додатки</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">Розширення</string>
+    <!-- Browser menu banner header text for extensions onboarding.
+        The first parameter is the name of the app defined in app_name (for example: Fenix). -->
+    <string name="browser_menu_extensions_banner_onboarding_header">Зробіть %s своїм</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_manage_extensions">Керувати розширеннями</string>
     <!-- Browser menu button that opens AMO in a tab -->
     <string name="browser_menu_discover_more_extensions">Знайти більше розширень</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">Ваш обліковий запис</string>
-    <!-- Text displayed when there are no add-ons to be shown -->
-    <string name="no_add_ons" moz:removedIn="126" tools:ignore="UnusedResources">Немає додатків</string>
     <!-- Browser menu button that sends a user to help articles -->
     <string name="browser_menu_help">Довідка</string>
     <!-- Browser menu button that sends a to a the what's new article -->
@@ -223,8 +223,6 @@
     <string name="browser_menu_add_to_homescreen">Додати на головний екран</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen_2">Додати на головний екран…</string>
-    <!-- Browser menu toggle that installs a Progressive Web App shortcut to the site on the device home screen. -->
-    <string name="browser_menu_install_on_homescreen" moz:removedIn="126" tools:ignore="UnusedResources">Встановити</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">Синхронізувати повторно</string>
     <!-- Browser menu button that opens the find in page menu -->
@@ -261,6 +259,8 @@
     <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
     <string name="browser_menu_customize_reader_view">Налаштувати режим читача</string>
 
+    <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
+    <string name="browser_menu_customize_reader_view_2">Налаштувати режим читання</string>
     <!-- Browser menu label for adding a bookmark -->
     <string name="browser_menu_add">Додати</string>
     <!-- Browser menu label for editing a bookmark -->
@@ -288,6 +288,8 @@
     <string name="browser_menu_new_in_firefox">Що нового у %1$s</string>
     <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
     <string name="browser_menu_switch_to_desktop_site">Перейти на повний сайт</string>
+    <!-- Browser menu label that toggles the request for the mobile site of the currently visited page -->
+    <string name="browser_menu_switch_to_mobile_site">Перейти на мобільний сайт</string>
     <!-- Browser menu label that navigates to the page tools sub-menu -->
     <string name="browser_menu_tools">Інструменти</string>
     <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
@@ -311,6 +313,10 @@
     <string name="browser_menu_translated_to">Перекладено на %1$s</string>
     <!-- Browser menu label for the print feature -->
     <string name="browser_menu_print">Друкувати…</string>
+
+    <!-- Browser menu label for the Delete browsing data on quit feature.
+        The first parameter is the name of the app defined in app_name (for example: Fenix). -->
+    <string name="browser_menu_delete_browsing_data_on_quit">Вийти з %1$s</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -435,7 +441,10 @@
     <string name="juno_onboarding_sign_in_title_2">Ваші дані надійно шифруються на різних пристроях</string>
     <!-- Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
      Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_sign_in_description_2">Ви можете безпечно входити в систему та синхронізувати дані. Firefox шифрує ваші паролі, закладки та іншу інформацію.</string>
+    <string name="juno_onboarding_sign_in_description_2" moz:RemovedIn="130" tools:ignore="UnusedResources">Ви можете безпечно входити в систему та синхронізувати дані. Firefox шифрує ваші паролі, закладки та іншу інформацію.</string>
+    <!-- Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
+     Note: The word "Firefox" should NOT be translated -->
+    <string name="juno_onboarding_sign_in_description_3">Firefox шифрує ваші паролі, закладки та інші дані під час синхронізації.</string>
     <!-- Text for the button to sign in to sync on the device -->
     <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Увійти</string>
     <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -601,7 +610,7 @@
     <!-- Preference category for account information -->
     <string name="preferences_category_account">Обліковий запис</string>
     <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar">Панель інструментів</string>
+    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">Панель інструментів</string>
     <!-- Preference for changing default theme to dark or light mode -->
     <string name="preferences_theme">Тема</string>
     <!-- Preference for customizing the home screen -->
@@ -618,8 +627,6 @@
     <string name="preferences_account_sync_error">Повторно підключіться, щоб відновити синхронізацію</string>
     <!-- Preference for language -->
     <string name="preferences_language">Мова</string>
-    <!-- Preference for translation -->
-    <string name="preferences_translation" moz:removedIn="127" tools:ignore="UnusedResources">Переклад</string>
     <!-- Preference for translations -->
     <string name="preferences_translations">Переклади</string>
     <!-- Preference for data choices -->
@@ -674,13 +681,8 @@
     <!-- Message to indicate users that we are quitting the application to apply the changes -->
     <string name="quit_application">Закриття програми для застосування змін…</string>
 
-    <!-- Preference for add_ons -->
-    <string name="preferences_addons" moz:removedIn="126" tools:ignore="UnusedResources">Додатки</string>
-
     <!-- Preference for extensions -->
     <string name="preferences_extensions">Розширення</string>
-    <!-- Preference for installing a local add-on -->
-    <string name="preferences_install_local_addon" moz:removedIn="126" tools:ignore="UnusedResources">Встановити додаток з файлу</string>
     <!-- Preference for installing a local extension -->
     <string name="preferences_install_local_extension">Встановити розширення з файлу</string>
     <!-- Preference for notifications -->
@@ -702,9 +704,10 @@
     <!-- The subtitle for the allow for all sites preference toggle -->
     <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">Якщо ви довіряєте цьому розширенню, можете надати йому дозвіл для всіх вебсайтів.</string>
 
+    <!-- The text shown when an extension does not require permissions -->
+    <string name="addons_does_not_require_permissions">Це розширення не вимагає жодних дозволів.</string>
+
     <!-- Add-on Preferences -->
-    <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
-    <string name="preferences_customize_amo_collection" moz:removedIn="126" tools:ignore="UnusedResources">Власна збірка додатків</string>
     <!-- Preference to customize the configured AMO (addons.mozilla.org) collection -->
     <string name="preferences_customize_extension_collection">Збірка користувацьких розширень</string>
     <!-- Button caption to confirm the add-on collection configuration -->
@@ -715,8 +718,6 @@
     <string name="customize_addon_collection_hint">Назва збірки</string>
     <!-- Hint displayed on input field for custom collection user ID-->
     <string name="customize_addon_collection_user_hint">Власник збірки (ID користувача)</string>
-    <!-- Toast shown after confirming the custom add-on collection configuration -->
-    <string name="toast_customize_addon_collection_done" moz:removedIn="126" tools:ignore="UnusedResources">Збірку додатків змінено. Вихід з програми для застосування змін…</string>
 
     <!-- Toast shown after confirming the custom extension collection configuration -->
     <string name="toast_customize_extension_collection_done">Збірку розширень змінено. Вихід з програми для застосування змін…</string>
@@ -724,8 +725,6 @@
     <!-- Customize Home -->
     <!-- Header text for jumping back into the recent tab in customize the home screen -->
     <string name="customize_toggle_jump_back_in">Повернутися до</string>
-    <!-- Title for the customize home screen section with recently saved bookmarks. -->
-    <string name="customize_toggle_recent_bookmarks" moz:removedIn="127" tools:ignore="UnusedResources">Останні закладки</string>
     <!-- Title for the customize home screen section with bookmarks. -->
     <string name="customize_toggle_bookmarks">Закладки</string>
     <!-- Title for the customize home screen section with recently visited. Recently visited is
@@ -776,35 +775,23 @@
     <string name="wallpapers_onboarding_dialog_explore_more_button_text">Перегляньте інші шпалери</string>
 
     <!-- Add-ons general availability nimbus message-->
-    <!-- Title of the Nimbus message for add-ons general availability-->
-    <string name="addon_ga_message_title" moz:removedIn="126" tools:ignore="UnusedResources">Тепер доступні нові додатки</string>
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">Доступні нові розширення</string>
     <!-- Body of the Nimbus message for add-ons general availability. 'Firefox' intentionally hardcoded here-->
     <string name="addon_ga_message_body" tools:ignore="UnusedResources">Ознайомтеся з понад 100 новими розширеннями, за допомогою яких ви можете вдосконалити Firefox.</string>
-    <!-- Button text of the Nimbus message for add-ons general availability. -->
-    <string name="addon_ga_message_button" moz:removedIn="126" tools:ignore="UnusedResources">Ознайомитися з додатками</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">Ознайомтеся з розширеннями</string>
 
     <!-- Extension process crash dialog to user -->
-    <!-- Title of a dialog shown to the user when enough errors have occurred with addons and they need to be temporarily disabled -->
-    <string name="addon_process_crash_dialog_title" moz:removedIn="126" tools:ignore="UnusedResources">Додаток тимчасово вимкнено</string>
     <!-- Title of the extension crash dialog shown to the user when enough errors have occurred with extensions and they need to be temporarily disabled -->
     <string name="extension_process_crash_dialog_title">Розширення тимчасово вимкнено</string>
-    <!-- The first parameter is the application name. This is a message shown to the user when too many errors have occurred with the addons process and they have been disabled. The user can decide if they would like to continue trying to start add-ons or if they'd rather continue without them. -->
-    <string name="addon_process_crash_dialog_message" moz:removedIn="126" tools:ignore="UnusedResources">Один або кілька додатків припинили роботу, внаслідок цього ваша система працює нестабільно. %1$s безуспішно намагався перезапустити додатки.\n\nДодатки не буде перезапущено під час вашого поточного сеансу.\n\nЦю проблему може усунути вилучення або вимкнення додатків.</string>
     <!-- This is a message shown to the user when too many errors have occurred with the extensions process and they have been disabled.
     The user can decide if they would like to continue trying to start extensions or if they'd rather continue without them.
     The first parameter is the application name. -->
     <string name="extension_process_crash_dialog_message">Одне або кілька розширень припинили працювати, через що ваша система стала нестабільною. %1$s невдало намагався перезапустити розширення.\n\nРозширення не будуть перезапущені під час поточного сеансу.\n\nЦю проблему можна вирішити, видаливши або вимкнувши розширення.</string>
-    <!-- This will cause the add-ons to try restarting but the dialog will reappear if it is unsuccessful again -->
-    <string name="addon_process_crash_dialog_retry_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Спробувати перезапустити додатки</string>
     <!-- Button text on the extension crash dialog to prompt the user to try restarting the extensions but the dialog will reappear if it is unsuccessful again -->
     <string name="extension_process_crash_dialog_retry_button_text" tools:ignore="UnusedResources">Спробуйте перезапустити розширення</string>
-    <!-- The user will continue with all add-ons disabled -->
-    <string name="addon_process_crash_dialog_disable_addons_button_text" moz:removedIn="126" tools:ignore="UnusedResources">Продовжити з вимкненими додатками</string>
 
     <!-- Button text on the extension crash dialog to prompt the user to continue with all extensions disabled. -->
     <string name="extension_process_crash_dialog_disable_extensions_button_text">Продовжити з вимкненими розширеннями</string>
@@ -931,7 +918,7 @@
     <!-- Preference for using the dynamic toolbar -->
     <string name="preference_gestures_dynamic_toolbar">Прокрутити, щоб сховати панель інструментів</string>
     <!-- Preference for switching tabs by swiping horizontally on the toolbar -->
-    <string name="preference_gestures_swipe_toolbar_switch_tabs">Посунути вбік панель інструментів, щоб перемкнути вкладки</string>
+    <string name="preference_gestures_swipe_toolbar_switch_tabs" moz:removedIn="129" tools:ignore="UnusedResources">Посунути вбік панель інструментів, щоб перемкнути вкладки</string>
     <!-- Preference for showing the opened tabs by swiping up on the toolbar-->
     <string name="preference_gestures_swipe_toolbar_show_tabs">Провести вгору на панелі інструментів вгору для відкриття вкладок</string>
 
@@ -1120,7 +1107,7 @@
     <!-- Hint for adding name of a collection -->
     <string name="collection_name_hint">Назва збірки</string>
     <!-- Text for the menu button to rename a top site -->
-    <string name="rename_top_site">Перейменувати</string>
+    <string name="rename_top_site" moz:removedIn="130" tools:ignore="UnusedResources">Перейменувати</string>
     <!-- Text for the menu button to remove a top site -->
     <string name="remove_top_site">Вилучити</string>
 
@@ -1252,6 +1239,16 @@
 
     <!-- Text for the button to search all bookmarks -->
     <string name="bookmark_search">Введіть пошукові терміни</string>
+
+    <!-- Content description for the bookmark navigation bar back button -->
+    <string name="bookmark_navigate_back_button_content_description">Перейти назад</string>
+    <!-- Content description for the bookmark list new folder navigation bar button -->
+    <string name="bookmark_add_new_folder_button_content_description">Додати нову теку</string>
+    <!-- Content description for the bookmark navigation bar close button -->
+    <string name="bookmark_close_button_content_description">Закрити закладки</string>
+
+    <!-- Content description for bookmark search floating action button -->
+    <string name="bookmark_search_button_content_description">Шукати закладки</string>
 
     <!-- Site Permissions -->
     <!-- Button label that take the user to the Android App setting -->
@@ -1444,6 +1441,17 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">Закрити приватні вкладки</string>
 
+    <!-- Text for option one, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources" moz:removedIn="130">Нейтрально</string>
+    <!-- Text for option two, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_1" tools:ignore="UnusedResources" moz:removedIn="130">Дуже незадоволені</string>
+    <!-- Text for option three, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_2" tools:ignore="UnusedResources" moz:removedIn="130">Незадоволені</string>
+    <!-- Text for option four, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_3" tools:ignore="UnusedResources" moz:removedIn="130">Задоволені</string>
+    <!-- Text for option five, shown in microsurvey.-->
+    <string name="microsurvey_survey_5_point_option_4" tools:ignore="UnusedResources" moz:removedIn="130">Дуже задоволені</string>
+
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
     <string name="notification_erase_title_android_14">Закрити приватні вкладки?</string>
     <string name="notification_erase_text_android_14">Торкніться або посуньте це сповіщення, щоб закрити приватні вкладки.</string>
@@ -1518,14 +1526,10 @@
     <string name="qr_scanner_dialog_invalid_ok">OK</string>
     <!-- Tab collection deletion prompt dialog message. Placeholder will be replaced with the collection name -->
     <string name="tab_collection_dialog_message">Ви дійсно хочете видалити %1$s?</string>
-    <!-- Collection and tab deletion prompt dialog message. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_message">Видалення цієї вкладки видалить всю збірку. Ви можете створити нові збірки будь-коли.</string>
-    <!-- Collection and tab deletion prompt dialog title. Placeholder will be replaced with the collection name. This will show when the last tab from a collection is deleted -->
-    <string name="delete_tab_and_collection_dialog_title">Видалити %1$s?</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">Видалити</string>
     <!-- Text displayed in a notification when the user enters full screen mode -->
-    <string name="full_screen_notification">Вхід у повноекранний режим</string>
+    <string name="full_screen_notification" moz:removedIn="130" tools:ignore="UnusedResources">Вхід у повноекранний режим</string>
     <!-- Message for copying the URL via long press on the toolbar -->
     <string name="url_copied">URL скопійовано</string>
     <!-- Sample text for accessibility font size -->
@@ -1695,7 +1699,9 @@
     <!-- Preference for enhanced tracking protection for the custom protection settings -->
     <string name="preference_enhanced_tracking_protection_custom_cryptominers">Криптомайнери</string>
     <!-- Preference for enhanced tracking protection for the custom protection settings -->
-    <string name="preference_enhanced_tracking_protection_custom_fingerprinters">Зчитування цифрового відбитка</string>
+    <string name="preference_enhanced_tracking_protection_custom_fingerprinters" moz:RemovedIn="130" tools:ignore="UnusedResources">Зчитування цифрового відбитка</string>
+    <!-- Preference for enhanced tracking protection for the custom protection settings -->
+    <string name="preference_enhanced_tracking_protection_custom_known_fingerprinters">Відомі засоби зчитування цифрового відбитка</string>
     <!-- Button label for navigating to the Enhanced Tracking Protection details -->
     <string name="enhanced_tracking_protection_details">Подробиці</string>
     <!-- Header for categories that are being being blocked by current Enhanced Tracking Protection settings -->
@@ -1719,10 +1725,12 @@
     <!-- Description of cryptominers that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_cryptominers_description">Перешкоджає доступу зловмисних скриптів до вашого пристрою для добування криптовалют.</string>
     <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
-    <string name="etp_fingerprinters_title">Зчитування цифрового відбитка</string>
+    <string name="etp_fingerprinters_title" moz:RemovedIn="130" tools:ignore="UnusedResources">Зчитування цифрового відбитка</string>
 
     <!-- Description of fingerprinters that can be blocked by Enhanced Tracking Protection -->
-    <string name="etp_fingerprinters_description">Зупиняє збір унікальних даних про ваш пристрій, які можна використовувати для відстеження.</string>
+    <string name="etp_fingerprinters_description" moz:RemovedIn="130" tools:ignore="UnusedResources">Зупиняє збір унікальних даних про ваш пристрій, які можна використовувати для відстеження.</string>
+    <!-- Description of fingerprinters that can be blocked by Enhanced Tracking Protection -->
+    <string name="etp_known_fingerprinters_description">Зупиняє збір унікальних даних про ваш пристрій, які можна використовувати для відстеження.</string>
     <!-- Category of trackers (tracking content) that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_tracking_content_title">Вміст стеження</string>
     <!-- Description of tracking content that can be blocked by Enhanced Tracking Protection -->
@@ -1747,6 +1755,12 @@
     <!-- Description of redirect tracker cookies that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_redirect_trackers_description">Очищує файли cookie, встановлені засобами переспрямування на відомі вебсайти стеження.</string>
 
+    <!-- Preference for fingerprinting protection for the custom protection settings -->
+    <string name="etp_suspected_fingerprinters_title">Підозрювані засоби зчитування цифрового відбитка</string>
+    <!-- Description of fingerprinters that can be blocked by fingerprinting protection -->
+    <string name="etp_suspected_fingerprinters_description">Вмикає захист цифрового відбитка, щоб зупинити підозрілі зчитування.</string>
+    <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
+    <string name="etp_known_fingerprinters_title">Відомі засоби зчитування цифрового відбитка</string>
     <!-- Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
          as we use it on the UI to indicate which trackers have been partially unblocked.  -->
     <string name="preference_etp_smartblock_description">Деякі елементи стеження, зазначені нижче, були частково розблоковані на цій сторінці, тому що ви взаємодіяли з ними *.</string>
@@ -2183,8 +2197,10 @@
     <string name="top_sites_rename_dialog_title">Назва</string>
     <!-- Hint for renaming title of a shortcut -->
     <string name="shortcut_name_hint">Назва ярлика</string>
+    <!-- Hint for editing URL of a shortcut. -->
+    <string name="shortcut_url_hint">URL-адреса ярлика</string>
     <!-- Button caption to confirm the renaming of the top site. -->
-    <string name="top_sites_rename_dialog_ok">OK</string>
+    <string name="top_sites_rename_dialog_ok" moz:removedIn="130" tools:ignore="UnusedResources">OK</string>
     <!-- Dialog button text for canceling the rename top site prompt. -->
     <string name="top_sites_rename_dialog_cancel">Скасувати</string>
 
@@ -2194,6 +2210,17 @@
     <string name="top_sites_menu_sponsor_privacy">Наші спонсори і ваша приватність</string>
     <!-- Label text displayed for a sponsored top site. -->
     <string name="top_sites_sponsored_label">Спонсоровано</string>
+
+    <!-- Text for the menu item to edit a top site. -->
+    <string name="top_sites_edit_top_site">Редагувати</string>
+    <!-- Text for the dialog title to edit a top site. -->
+    <string name="top_sites_edit_dialog_title">Редагувати ярлик</string>
+    <!-- Button caption to confirm the edit of the top site. -->
+    <string name="top_sites_edit_dialog_save">Зберегти</string>
+    <!-- Error message when the user entered an invalid URL -->
+    <string name="top_sites_edit_dialog_url_error">Введіть дійсну URL-адресу</string>
+    <!-- Label for the URL edit field in the edit top site dialog. -->
+    <string name="top_sites_edit_dialog_url_title">URL</string>
 
     <!-- Inactive tabs in the tabs tray -->
     <!-- Title text displayed in the tabs tray when a tab has been unused for 14 days. -->
@@ -2401,7 +2428,7 @@
     <!-- Text displayed in the second CFR presenting the review quality check feature that opens the review checker when clicked. -->
     <string name="review_quality_check_second_cfr_action" tools:ignore="UnusedResources">Відкрити засіб перевірки відгуків</string>
     <!-- Flag showing that the review quality check feature is work in progress. -->
-    <string name="review_quality_check_beta_flag">Бета</string>
+    <string name="review_quality_check_beta_flag" moz:removedIn="130" tools:ignore="UnusedResources">Beta</string>
     <!-- Content description (not visible, for screen readers etc.) for opening browser menu button to open review quality check bottom sheet. -->
     <string name="review_quality_check_open_handle_content_description">Відкрити засіб перевірки відгуків</string>
     <!-- Content description (not visible, for screen readers etc.) for closing browser menu button to open review quality check bottom sheet. -->
@@ -2495,8 +2522,6 @@
     <string name="translation_error_could_not_load_languages_warning_text">Не вдалося завантажити мови. Перевірте інтернет-з’єднання і повторіть спробу.</string>
     <!-- The title of the warning card informs the user that a language is not supported. The first parameter is the name of the language that is not supported. -->
     <string name="translation_error_language_not_supported_warning_text">На жаль, %1$s ще не підтримується.</string>
-    <!-- Button text on the warning card when a language is not supported. The link will take the user to a page to a support page about translations. -->
-    <string name="translation_error_language_not_supported_learn_more" moz:removedIn="126" tools:ignore="UnusedResources">Докладніше</string>
 
     <!-- Snackbar title shown if the user closes the Translation Request dialogue and a translation is in progress. -->
     <string name="translation_in_progress_snackbar">Переклад…</string>
@@ -2509,8 +2534,6 @@
 
 
     <!-- Translations options dialog -->
-    <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
-    <string name="translation_option_bottom_sheet_title" moz:removedIn="126" tools:ignore="UnusedResources">Параметри перекладу</string>
     <!-- Title of the translation options dialog that allows a user to set their translation options for the site the user is currently on. -->
     <string name="translation_option_bottom_sheet_title_heading">Параметри перекладу</string>
     <!-- Toggle switch label that allows a user to set the setting if they would like the browser to always offer or suggest translations when available. -->
@@ -2599,7 +2622,9 @@
 
     <!-- Download languages preference screen -->
     <!-- Title of the download languages preference screen toolbar.-->
-    <string name="download_languages_toolbar_title_preference">Завантажити мови</string>
+    <string name="download_languages_toolbar_title_preference" moz:removedIn="130" tools:ignore="UnusedResources">Завантажити мови</string>
+    <!-- Title of the toolbar for the translation feature screen where users may download different languages for translation. -->
+    <string name="download_languages_translations_toolbar_title_preference">Завантажити мови</string>
     <!-- Screen header presenting the download language preference feature. It will appear under the toolbar.The first parameter is "Learn More," a clickable text with a link. Talkback will append this to say "Double tap to open link to learn more". -->
     <string name="download_languages_header_preference">Завантажте мови для швидшого перекладу офлайн. %1$s</string>
     <!-- Clickable text from the screen header that links to a website. -->
@@ -2614,16 +2639,16 @@
     <string name="download_languages_language_item_preference">%1$s (%2$s)</string>
     <!-- The subhead of the download language preference screen will appear above the items that were not downloaded. -->
     <string name="download_language_header_preference">Завантажити мови</string>
-    <!-- All languages list item. When the user presses this item, they can download or delete all languages. -->
+    <!-- All languages list item. When the user presses this item, they can download all languages. -->
     <string name="download_language_all_languages_item_preference">Усі мови</string>
+    <!-- All languages list item. When the user presses this item, they can delete all languages that were downloaded. -->
+    <string name="download_language_all_languages_item_preference_to_delete">Видалити всі мови</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">Видалити</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress. -->
-    <string name="download_languages_item_content_description_in_progress_state">Виконується</string>
+    <string name="download_languages_item_content_description_in_progress_state" moz:removedIn="129" tools:ignore="UnusedResources">Виконується</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">Завантажити</string>
-    <!-- Content description (not visible, for screen readers etc.): For a language list item that is selected. -->
-    <string name="download_languages_item_content_description_selected_state">Вибрано</string>
 
     <!-- Title for the dialog used by the translations feature to confirm deleting a language.
     The dialog will be presented when the user requests deletion of a language.
@@ -2642,6 +2667,14 @@
     <!-- Button text on the dialog used by the translations feature to cancel deleting a language. -->
     <string name="delete_language_file_dialog_negative_button_text">Скасувати</string>
 
+    <!-- Title for the dialog used by the translations feature to confirm canceling a download in progress for a language file.
+    The first parameter is the name of the language, for example, "Spanish". -->
+    <string name="cancel_download_language_file_dialog_title" moz:removedIn="130" tools:ignore="UnusedResources">Скасувати завантаження %1$s?</string>
+    <!-- Button text on the dialog used by the translations feature confirms canceling a download in progress for a language file. -->
+    <string name="cancel_download_language_file_dialog_positive_button_text" moz:removedIn="130" tools:ignore="UnusedResources">Так</string>
+    <!-- Button text on the dialog used by the translations feature to dismiss the dialog. -->
+    <string name="cancel_download_language_file_negative_button_text" moz:removedIn="130" tools:ignore="UnusedResources">Ні</string>
+
     <!-- Title for the data saving mode warning dialog used by the translations feature.
     This dialog will be presented when the user attempts to download a language or perform
     a translation without the necessary language files downloaded first when Android's data saver mode is enabled and the user is not using WiFi.
@@ -2650,7 +2683,7 @@
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation. -->
     <string name="download_language_file_dialog_message_all_languages">Ми завантажуємо частину словників у ваш кеш, щоб зберегти приватність перекладів.</string>
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation without mentioning the cache. -->
-    <string name="download_language_file_dialog_message_all_languages_no_cache">Ми завантажуємо мови частково, щоб забезпечити конфіденційність перекладів.</string>
+    <string name="download_language_file_dialog_message_all_languages_no_cache" moz:removedIn="129" tools:ignore="UnusedResources">Ми завантажуємо мови частково, щоб забезпечити конфіденційність перекладів.</string>
     <!-- Checkbox label text on the data saving mode warning dialog used by the translations feature. This checkbox allows users to ignore the data usage warnings. -->
     <string name="download_language_file_dialog_checkbox_text">Завжди завантажувати в режимі заощадження даних</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to confirm they wish to continue and download the language file. -->
@@ -2674,8 +2707,6 @@
     <string name="debug_drawer_tab_tools_title">Інструменти вкладки</string>
     <!-- The title of the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_title">Кількість вкладок</string>
-    <!-- The active tab count category in the tab count section in Tab Tools. -->
-    <string name="debug_drawer_tab_tools_tab_count_normal" moz:removedIn="127" tools:ignore="UnusedResources">Активні</string>
     <!-- The active tab count category in the tab count section in Tab Tools. -->
     <string name="debug_drawer_tab_tools_tab_count_active">Активні</string>
     <!-- The inactive tab count category in the tab count section in Tab Tools. -->
@@ -2707,16 +2738,21 @@
 
     <!-- Micro survey -->
 
+    <!-- Microsurvey -->
+    <!-- Prompt view -->
+    <!-- The microsurvey prompt title. Note: The word "Firefox" should NOT be translated -->
+    <string name="micro_survey_prompt_title" tools:ignore="UnusedResources">Допоможіть нам зробити Firefox кращим. Це займе всього хвилину.</string>
     <!-- The continue button label -->
     <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Продовжити</string>
+    <!-- Survey view -->
     <!-- The survey header -->
-    <string name="micro_survey_survey_header">Пройти це опитування</string>
+    <string name="micro_survey_survey_header" moz:removedIn="129" tools:ignore="UnusedResources">Пройти це опитування</string>
     <!-- The privacy notice link -->
-    <string name="micro_survey_privacy_notice">Повідомлення про приватність</string>
+    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">Повідомлення про приватність</string>
     <!-- The submit button label text -->
     <string name="micro_survey_submit_button_label">Надіслати</string>
-    <!-- The close button label text -->
-    <string name="micro_survey_close_button_label" tools:ignore="UnusedResources">Закрити</string>
+    <!-- The survey completion header -->
+    <string name="micro_survey_survey_header_confirmation" tools:ignore="UnusedResources">Опитування завершено</string>
     <!-- The survey completion confirmation text -->
     <string name="micro_survey_feedback_confirmation">Дякуємо за ваш відгук!</string>
     <!-- Option for likert scale -->
@@ -2730,13 +2766,23 @@
     <!-- Option for likert scale -->
     <string name="likert_scale_option_5" tools:ignore="UnusedResources">Дуже незадоволені</string>
 
-    <!-- Microsurvey accessibility -->
+    <!-- Text shown in prompt for homepage microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_prompt_homepage_title" tools:ignore="UnusedResources" moz:removedIn="130">Наскільки ви задоволені своєю домашньою сторінкою Firefox?</string>
+    <!-- Text shown in prompt for printing microsurvey. "sec" It's an abbreviation for "second". Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_prompt_printing_title" tools:ignore="UnusedResources">Допоможіть покращити друк у Firefox. Це займе лише секунду</string>
+    <!-- Text shown in prompt for printing microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_survey_printing_title" tools:ignore="UnusedResources">Наскільки ви задоволені друком у Firefox?</string>
+    <!-- Text shown in prompt for homepage microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_homepage_title" tools:ignore="UnusedResources">Наскільки ви задоволені своєю домашньою сторінкою Firefox?</string>
+    <!-- Accessibility -->
+    <!-- Content description for the survey application icon. Note: The word "Firefox" should NOT be translated.  -->
+    <string name="microsurvey_app_icon_content_description">Логотип Firefox</string>
     <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
-    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources">Відкрити опитування</string>
+    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources" moz:removedIn="130">Відкрити опитування</string>
     <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
-    <string name="microsurvey_close_handle_content_description" tools:ignore="UnusedResources">Закрити опитування</string>
+    <string name="microsurvey_close_handle_content_description">Закрити опитування</string>
     <!-- Content description for "X" button that is closing microsurvey. -->
-    <string name="microsurvey_close_button_content_description" tools:ignore="UnusedResources">Закрити</string>
+    <string name="microsurvey_close_button_content_description">Закрити</string>
 
     <!-- Debug drawer logins -->
     <!-- The title of the Logins feature in the Debug Drawer. -->
@@ -2747,4 +2793,14 @@
     <string name="debug_drawer_logins_add_login_button">Додати підставне ім\'я користувача для цього домену</string>
     <!-- Content description for delete button where parameter will be the username of the login -->
     <string name="debug_drawer_logins_delete_login_button_content_description">Видалити запис із іменем користувача %s</string>
+
+    <!-- Debug drawer "contextual feature recommendation" (CFR) tools -->
+    <!-- The title of the CFR Tools feature in the Debug Drawer -->
+    <string name="debug_drawer_cfr_tools_title">Інструменти CFR</string>
+    <!-- The title of the reset CFR section in CFR Tools -->
+    <string name="debug_drawer_cfr_tools_reset_cfr_title">Скинути CFR</string>
+
+    <!-- Beta Label Component !-->
+    <!-- Text shown as a label or tag to indicate a feature or area is still undergoing active development. Note that here "Beta" should not be translated, as it is used as an icon styled element. -->
+    <string name="beta_feature">BETA</string>
 </resources>

@@ -112,6 +112,8 @@ inline AsyncTransformMatrix CompleteAsyncTransform(
       aMatrix, PixelCastJustification::MultipleAsyncTransforms);
 }
 
+enum class DispatchToContent : bool { No, Yes };
+
 struct TargetConfirmationFlags final {
   explicit TargetConfirmationFlags(bool aTargetConfirmed)
       : mTargetConfirmed(aTargetConfirmed),
@@ -134,6 +136,10 @@ struct TargetConfirmationFlags final {
         mDispatchToContent(
             !(aHitTestInfo & gfx::CompositorHitTestDispatchToContent)
                  .isEmpty()) {}
+
+  DispatchToContent NeedDispatchToContent() const {
+    return mDispatchToContent ? DispatchToContent::Yes : DispatchToContent::No;
+  }
 
   bool mTargetConfirmed : 1;
   bool mRequiresTargetConfirmation : 1;
@@ -169,6 +175,13 @@ enum class AsyncTransformConsumer {
   eForEventHandling,
   eForCompositing,
 };
+
+/**
+ * A flag type for use by functions which return information about
+ * handoff, in case they need to differentiate between handoff for
+ * the purpose of scrolling and handoff for the purpose of pull-to-refresh.
+ */
+enum class HandoffConsumer { Scrolling, PullToRefresh };
 
 /**
  * Metrics that GeckoView wants to know at every composite.

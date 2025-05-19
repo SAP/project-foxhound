@@ -61,6 +61,8 @@ skip-if = ["os == 'android'"]
 
 ["test_idle_maintenance.js"]
 
+["test_idle_maintenance_and_databases.js"]
+
 ["test_invalidate.js"]
 # disabled for the moment.
 skip-if = ["true"]
@@ -98,6 +100,9 @@ skip-if = ["true"]
 ["test_temporary_storage.js"]
 # bug 951017: intermittent failure on Android x86 emulator
 skip-if = ["os == 'android' && processor == 'x86'"]
+
+["test_transaction_durability.js"]
+run-sequentially = "very high failure rate in parallel"
 
 ["test_unexpectedDirectory.js"]
 

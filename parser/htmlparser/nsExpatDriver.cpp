@@ -522,9 +522,11 @@ void nsExpatDriver::HandleStartElementForSystemPrincipal(
     error.AppendLiteral("> created from entity value.");
 
     nsContentUtils::ReportToConsoleNonLocalized(
-        error, nsIScriptError::warningFlag, "XML Document"_ns, doc, nullptr,
-        u""_ns, lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
-        colNumber.unverified_safe_because(RLBOX_SAFE_PRINT));
+        error, nsIScriptError::warningFlag, "XML Document"_ns, doc,
+        mozilla::SourceLocation(
+            doc->GetDocumentURI(),
+            lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
+            colNumber.unverified_safe_because(RLBOX_SAFE_PRINT)));
   }
 }
 
@@ -735,7 +737,7 @@ class RLBoxExpatClosure {
  public:
   RLBoxExpatClosure(RLBoxExpatSandboxData* aSbxData,
                     tainted_expat<XML_Parser> aExpatParser)
-      : mSbxData(aSbxData), mExpatParser(aExpatParser){};
+      : mSbxData(aSbxData), mExpatParser(aExpatParser) {};
   inline rlbox_sandbox_expat* Sandbox() const { return mSbxData->Sandbox(); };
   inline tainted_expat<XML_Parser> Parser() const { return mExpatParser; };
 
@@ -1138,7 +1140,7 @@ nsresult nsExpatDriver::HandleError() {
   nsresult rv = NS_ERROR_FAILURE;
   if (serr) {
     rv = serr->InitWithSourceURI(
-        errorText, mURIs.SafeElementAt(0), mLastLine,
+        errorText, mURIs.SafeElementAt(0),
         lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
         colNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
         nsIScriptError::errorFlag, "malformed-xml", mInnerWindowID);

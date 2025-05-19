@@ -29,6 +29,7 @@
 #include "nsCOMPtr.h"  // for already_AddRefed, nsCOMPtr
 #include "nsCycleCollectionParticipant.h"
 #include "nsGkAtoms.h"
+#include "nsIClipboard.h"            // for nsIClipboard::ClipboardType
 #include "nsIContentInlines.h"       // for nsINode::IsEditable()
 #include "nsIEditor.h"               // for nsIEditor, etc.
 #include "nsISelectionController.h"  // for nsISelectionController constants
@@ -38,7 +39,7 @@
 #include "nsLiteralString.h"         // for NS_LITERAL_STRING
 #include "nsPIDOMWindow.h"           // for nsPIDOMWindowInner, etc.
 #include "nsString.h"                // for nsCString
-#include "nsTArray.h"                // for nsTArray and nsAutoTArray
+#include "nsTArray.h"                // for nsTArray and AutoTArray
 #include "nsWeakReference.h"         // for nsSupportsWeakReference
 #include "nscore.h"                  // for nsresult, nsAString, etc.
 
@@ -626,7 +627,7 @@ class EditorBase : public nsIEditor,
   /**
    * CanPaste() returns true if user can paste something at current selection.
    */
-  virtual bool CanPaste(int32_t aClipboardType) const = 0;
+  virtual bool CanPaste(nsIClipboard::ClipboardType aClipboardType) const = 0;
 
   /**
    * Do "undo" or "redo".
@@ -703,6 +704,11 @@ class EditorBase : public nsIEditor,
     Yes,
   };
 
+  enum class PreventSetSelection {
+    No,
+    Yes,
+  };
+
   /**
    * Replace text in aReplaceRange or all text in this editor with aString and
    * treat the change as inserting the string.
@@ -715,6 +721,10 @@ class EditorBase : public nsIEditor,
    * @param aAllowBeforeInputEventCancelable
    *                            Whether `beforeinput` event which will be
    *                            dispatched for this can be cancelable or not.
+   * @param aPreventSetSelection
+   *                            Whether setting selection after replacing text.
+   *                            If No, selection is the tail of replaced text.
+   *                            If Yes, selection isn't changed.
    * @param aPrincipal          Set subject principal if it may be called by
    *                            JS.  If set to nullptr, will be treated as
    *                            called by system.
@@ -722,6 +732,7 @@ class EditorBase : public nsIEditor,
   MOZ_CAN_RUN_SCRIPT nsresult ReplaceTextAsAction(
       const nsAString& aString, nsRange* aReplaceRange,
       AllowBeforeInputEventCancelable aAllowBeforeInputEventCancelable,
+      PreventSetSelection aPreventSetSelection = PreventSetSelection::No,
       nsIPrincipal* aPrincipal = nullptr);
 
   /**
@@ -747,7 +758,8 @@ class EditorBase : public nsIEditor,
    */
   enum class DispatchPasteEvent { No, Yes };
   MOZ_CAN_RUN_SCRIPT nsresult
-  PasteAsAction(int32_t aClipboardType, DispatchPasteEvent aDispatchPasteEvent,
+  PasteAsAction(nsIClipboard::ClipboardType aClipboardType,
+                DispatchPasteEvent aDispatchPasteEvent,
                 nsIPrincipal* aPrincipal = nullptr);
 
   /**
@@ -779,9 +791,17 @@ class EditorBase : public nsIEditor,
    *                            JS.  If set to nullptr, will be treated as
    *                            called by system.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult PasteAsQuotationAsAction(
-      int32_t aClipboardType, DispatchPasteEvent aDispatchPasteEvent,
-      nsIPrincipal* aPrincipal = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  PasteAsQuotationAsAction(nsIClipboard::ClipboardType aClipboardType,
+                           DispatchPasteEvent aDispatchPasteEvent,
+                           nsIPrincipal* aPrincipal = nullptr);
+
+  /**
+   * Return true if `beforeinput` or `input` event is being dispatched.
+   */
+  [[nodiscard]] bool IsDispatchingInputEvent() const {
+    return mEditActionData && mEditActionData->IsDispatchingInputEvent();
+  }
 
  protected:  // May be used by friends.
   class AutoEditActionDataSetter;
@@ -1148,7 +1168,8 @@ class EditorBase : public nsIEditor,
      * initializes it with clipboard and sets mDataTransfer to it.
      */
     void InitializeDataTransferWithClipboard(
-        SettingDataTransfer aSettingDataTransfer, int32_t aClipboardType);
+        SettingDataTransfer aSettingDataTransfer,
+        nsIClipboard::ClipboardType aClipboardType);
     dom::DataTransfer* GetDataTransfer() const { return mDataTransfer; }
 
     /**
@@ -1295,6 +1316,19 @@ class EditorBase : public nsIEditor,
 
     void UpdateSelectionCache(Selection& aSelection);
 
+    bool IsDispatchingInputEvent() const {
+      return mDispatchingInputEvent ||
+             (mParentData && mParentData->IsDispatchingInputEvent());
+    }
+    void WillDispatchInputEvent() {
+      MOZ_ASSERT(!mDispatchingInputEvent);
+      mDispatchingInputEvent = true;
+    }
+    void DidDispatchInputEvent() {
+      MOZ_ASSERT(mDispatchingInputEvent);
+      mDispatchingInputEvent = false;
+    }
+
    private:
     bool IsBeforeInputEventEnabled() const;
 
@@ -1376,7 +1410,7 @@ class EditorBase : public nsIEditor,
     // the DOM tree.  In such case, we need to handle edit action separately.
     AutoEditActionDataSetter* mParentData;
 
-    // Cached selection for HTMLEditor::AutoSelectionRestorer.
+    // Cached selection for AutoSelectionRestorer.
     SelectionState mSavedSelection;
 
     // Utility class object for maintaining preserved ranges.
@@ -1440,6 +1474,8 @@ class EditorBase : public nsIEditor,
     // This is set before dispatching `input` event and notifying editor
     // observers.
     bool mHandled;
+    // Whether the editor is dispatching a `beforeinput` or `input` event.
+    bool mDispatchingInputEvent = false;
 
 #ifdef DEBUG
     mutable bool mHasCanHandleChecked = false;
@@ -1578,15 +1614,13 @@ class EditorBase : public nsIEditor,
 
   /**
    * SavedSelection() returns reference to saved selection which are
-   * stored by HTMLEditor::AutoSelectionRestorer.
+   * stored by AutoSelectionRestorer.
    */
   SelectionState& SavedSelectionRef() {
-    MOZ_ASSERT(IsHTMLEditor());
     MOZ_ASSERT(IsEditActionDataAvailable());
     return mEditActionData->SavedSelectionRef();
   }
   const SelectionState& SavedSelectionRef() const {
-    MOZ_ASSERT(IsHTMLEditor());
     MOZ_ASSERT(IsEditActionDataAvailable());
     return mEditActionData->SavedSelectionRef();
   }
@@ -2146,6 +2180,15 @@ class EditorBase : public nsIEditor,
   enum class SafeToInsertData : bool { No, Yes };
   SafeToInsertData IsSafeToInsertData(nsIPrincipal* aSourcePrincipal) const;
 
+  /**
+   * Routines for managing the preservation of selection across
+   * various editor actions.
+   */
+  bool ArePreservingSelection() const;
+  void PreserveSelectionAcrossActions();
+  MOZ_CAN_RUN_SCRIPT nsresult RestorePreservedSelection();
+  void StopPreservingSelection();
+
  protected:  // Called by helper classes.
   /**
    * OnStartToHandleTopLevelEditSubAction() is called when
@@ -2673,22 +2716,25 @@ class EditorBase : public nsIEditor,
     DoDefault,
   };
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<ClipboardEventResult, nsresult>
-  DispatchClipboardEventAndUpdateClipboard(EventMessage aEventMessage,
-                                           int32_t aClipboardType);
+  DispatchClipboardEventAndUpdateClipboard(
+      EventMessage aEventMessage,
+      mozilla::Maybe<nsIClipboard::ClipboardType> aClipboardType);
 
   /**
    * Called after PasteAsAction() dispatches "paste" event and it's not
    * canceled.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT virtual nsresult HandlePaste(
-      AutoEditActionDataSetter& aEditActionData, int32_t aClipboardType) = 0;
+      AutoEditActionDataSetter& aEditActionData,
+      nsIClipboard::ClipboardType aClipboardType) = 0;
 
   /**
    * Called after PasteAsQuotationAsAction() dispatches "paste" event and it's
    * not canceled.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT virtual nsresult HandlePasteAsQuotation(
-      AutoEditActionDataSetter& aEditActionData, int32_t aClipboardType) = 0;
+      AutoEditActionDataSetter& aEditActionData,
+      nsIClipboard::ClipboardType aClipboardType) = 0;
 
   /**
    * Called after PasteTransferableAsAction() dispatches "paste" event and it's
@@ -2932,8 +2978,9 @@ class EditorBase : public nsIEditor,
   friend class AlignStateAtSelection;  // AutoEditActionDataSetter,
                                        // ToGenericNSResult
   friend class AutoRangeArray;  // IsSEditActionDataAvailable, SelectionRef
-  friend class CaretPoint;      // AllowsTransactionsToChangeSelection,
-                                // CollapseSelectionTo
+  friend class AutoSelectionRestorer;   // RangeUpdaterRef, SavedSelectionRef
+  friend class CaretPoint;              // AllowsTransactionsToChangeSelection,
+                                        // CollapseSelectionTo
   friend class CompositionTransaction;  // CollapseSelectionTo, DoDeleteText,
                                         // DoInsertText, DoReplaceText,
                                         // HideCaret, RangeupdaterRef

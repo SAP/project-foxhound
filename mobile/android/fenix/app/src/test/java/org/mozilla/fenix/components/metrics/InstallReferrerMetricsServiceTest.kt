@@ -6,8 +6,8 @@ package org.mozilla.fenix.components.metrics
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import mozilla.components.service.glean.testing.GleanTestRule
 import mozilla.components.support.test.robolectric.testContext
+import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -114,9 +114,9 @@ internal class InstallReferrerMetricsServiceTest {
     }
 
     @Test
-    fun `WHEN Install referrer metrics service starts THEN then the service type should be marketing`() {
+    fun `WHEN Install referrer metrics service starts THEN then the service type should be data`() {
         val service = InstallReferrerMetricsService(context)
-        assertEquals(MetricServiceType.Marketing, service.type)
+        assertEquals(MetricServiceType.Data, service.type)
     }
 
     @Test

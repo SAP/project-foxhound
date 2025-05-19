@@ -386,6 +386,10 @@ function wrapWithIFrame(doc, options = {}) {
     src = `data:${mimeType};charset=utf-8,${encodeURIComponent(doc)}`;
   }
 
+  if (options.urlSuffix) {
+    src += options.urlSuffix;
+  }
+
   iframeAttrs = {
     id: DEFAULT_IFRAME_ID,
     src,
@@ -427,33 +431,37 @@ function snippetToURL(doc, options = {}) {
     </html>`
   );
 
-  return `data:text/html;charset=utf-8,${encodedDoc}`;
+  let url = `data:text/html;charset=utf-8,${encodedDoc}`;
+  if (!gIsIframe && options.urlSuffix) {
+    url += options.urlSuffix;
+  }
+  return url;
 }
 
 function accessibleTask(doc, task, options = {}) {
   return async function () {
     gIsRemoteIframe = options.remoteIframe;
     gIsIframe = options.iframe || gIsRemoteIframe;
+    const urlSuffix = options.urlSuffix || "";
     let url;
     if (options.chrome && doc.endsWith("html")) {
       // Load with a chrome:// URL so this loads as a chrome document in the
       // parent process.
-      url = `${CURRENT_DIR}${doc}`;
+      url = `${CURRENT_DIR}${doc}${urlSuffix}`;
     } else if (doc.endsWith("html") && !gIsIframe) {
-      url = `${CURRENT_CONTENT_DIR}${doc}`;
+      url = `${CURRENT_CONTENT_DIR}${doc}${urlSuffix}`;
     } else {
       url = snippetToURL(doc, options);
     }
 
     registerCleanupFunction(() => {
+      // XXX Bug 1906779: This will run once for each call to addAccessibleTask,
+      // but only after the entire test file has completed. This doesn't make
+      // sense and almost certainly wasn't the intent.
       for (let observer of Services.obs.enumerateObservers(
         "accessible-event"
       )) {
         Services.obs.removeObserver(observer, "accessible-event");
-      }
-      if (gPythonSocket) {
-        // Remove any globals set by Python code run in this test.
-        runPython(`__reset__`);
       }
     });
 
@@ -561,6 +569,14 @@ function accessibleTask(doc, task, options = {}) {
         );
       }
     );
+
+    if (gPythonSocket) {
+      // Remove any globals set by Python code run in this test. We do this here
+      // rather than using registerCleanupFunction because
+      // registerCleanupFunction runs after all tests in the file, whereas we
+      // need this to run after each task.
+      await runPython(`__reset__`);
+    }
   };
 }
 
@@ -600,6 +616,9 @@ function accessibleTask(doc, task, options = {}) {
  *           body
  *         - {Object} iframeDocBodyAttrs
  *           a set of attributes to be applied to a iframe content document body
+ *         - {String} urlSuffix
+ *           String to append to the document URL. For example, this could be
+ *           "#test" to scroll to the "test" id in the document.
  */
 function addAccessibleTask(doc, task, options = {}) {
   const {

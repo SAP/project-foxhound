@@ -47,7 +47,7 @@ class ScratchTagScope;
 
 class MacroAssemblerCompat : public vixl::MacroAssembler {
  public:
-  typedef vixl::Condition Condition;
+  using Condition = vixl::Condition;
 
  private:
   // Perform a downcast. Should be removed by Bug 996602.
@@ -487,9 +487,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     return scratch;
   }
 
-  inline void ensureDouble(const ValueOperand& source, FloatRegister dest,
-                           Label* failure);
-
   void emitSet(Condition cond, Register dest) {
     Cset(ARMRegister(dest, 64), cond);
   }
@@ -573,6 +570,25 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
   void convertDoubleToFloat32(FloatRegister src, FloatRegister dest) {
     Fcvt(ARMFPRegister(dest, 32), ARMFPRegister(src, 64));
+  }
+
+  void convertDoubleToFloat16(FloatRegister src, FloatRegister dest) {
+    Fcvt(ARMFPRegister(dest, 16), ARMFPRegister(src, 64));
+  }
+  void convertFloat16ToDouble(FloatRegister src, FloatRegister dest) {
+    Fcvt(ARMFPRegister(dest, 64), ARMFPRegister(src, 16));
+  }
+  void convertFloat32ToFloat16(FloatRegister src, FloatRegister dest) {
+    Fcvt(ARMFPRegister(dest, 16), ARMFPRegister(src, 32));
+  }
+  void convertFloat16ToFloat32(FloatRegister src, FloatRegister dest) {
+    Fcvt(ARMFPRegister(dest, 32), ARMFPRegister(src, 16));
+  }
+  void convertInt32ToFloat16(Register src, FloatRegister dest) {
+    // Direct "32-bit to half-precision" move requires (FEAT_FP16), so we
+    // instead use a "32-bit to single-precision" move.
+    convertInt32ToFloat32(src, dest);
+    convertFloat32ToFloat16(dest, dest);
   }
 
   using vixl::MacroAssembler::B;
@@ -1098,27 +1114,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Add(scratch64, base, Operand(index, vixl::LSL, unsigned(src.scale)));
     return Ldr(ARMFPRegister(dest, 64), MemOperand(scratch64, src.offset));
   }
-  void loadFloatAsDouble(const Address& addr, FloatRegister dest) {
-    Ldr(ARMFPRegister(dest, 32), toMemOperand(addr));
-    fcvt(ARMFPRegister(dest, 64), ARMFPRegister(dest, 32));
-  }
-  void loadFloatAsDouble(const BaseIndex& src, FloatRegister dest) {
-    ARMRegister base = toARMRegister(src.base, 64);
-    ARMRegister index(src.index, 64);
-    if (src.offset == 0) {
-      Ldr(ARMFPRegister(dest, 32),
-          MemOperand(base, index, vixl::LSL, unsigned(src.scale)));
-    } else {
-      vixl::UseScratchRegisterScope temps(this);
-      const ARMRegister scratch64 = temps.AcquireX();
-      MOZ_ASSERT(scratch64.asUnsized() != src.base);
-      MOZ_ASSERT(scratch64.asUnsized() != src.index);
-
-      Add(scratch64, base, Operand(index, vixl::LSL, unsigned(src.scale)));
-      Ldr(ARMFPRegister(dest, 32), MemOperand(scratch64, src.offset));
-    }
-    fcvt(ARMFPRegister(dest, 64), ARMFPRegister(dest, 32));
-  }
 
   FaultingCodeOffset loadFloat32(const Address& addr, FloatRegister dest) {
     return Ldr(ARMFPRegister(dest, 32), toMemOperand(addr));
@@ -1140,6 +1135,29 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     }
   }
 
+  FaultingCodeOffset loadFloat16(const Address& addr, FloatRegister dest,
+                                 Register) {
+    return Ldr(ARMFPRegister(dest, 16), toMemOperand(addr));
+  }
+
+  FaultingCodeOffset loadFloat16(const BaseIndex& src, FloatRegister dest,
+                                 Register) {
+    ARMRegister base = toARMRegister(src.base, 64);
+    ARMRegister index(src.index, 64);
+    if (src.offset == 0) {
+      return Ldr(ARMFPRegister(dest, 16),
+                 MemOperand(base, index, vixl::LSL, unsigned(src.scale)));
+    } else {
+      vixl::UseScratchRegisterScope temps(this);
+      const ARMRegister scratch64 = temps.AcquireX();
+      MOZ_ASSERT(scratch64.asUnsized() != src.base);
+      MOZ_ASSERT(scratch64.asUnsized() != src.index);
+
+      Add(scratch64, base, Operand(index, vixl::LSL, unsigned(src.scale)));
+      return Ldr(ARMFPRegister(dest, 16), MemOperand(scratch64, src.offset));
+    }
+  }
+
   void moveDouble(FloatRegister src, FloatRegister dest) {
     fmov(ARMFPRegister(dest, 64), ARMFPRegister(src, 64));
   }
@@ -1152,9 +1170,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   void moveFloat32(FloatRegister src, FloatRegister dest) {
     fmov(ARMFPRegister(dest, 32), ARMFPRegister(src, 32));
-  }
-  void moveFloatAsDouble(Register src, FloatRegister dest) {
-    MOZ_CRASH("moveFloatAsDouble");
   }
 
   void moveSimd128(FloatRegister src, FloatRegister dest) {
@@ -1343,14 +1358,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void rightShiftInt64x2(FloatRegister lhs, Register rhs, FloatRegister dest,
                          bool isUnsigned);
 
-  void branchNegativeZero(FloatRegister reg, Register scratch, Label* label) {
-    MOZ_CRASH("branchNegativeZero");
-  }
-  void branchNegativeZeroFloat32(FloatRegister reg, Register scratch,
-                                 Label* label) {
-    MOZ_CRASH("branchNegativeZeroFloat32");
-  }
-
   void boxDouble(FloatRegister src, const ValueOperand& dest, FloatRegister) {
     Fmov(ARMRegister(dest.valueReg(), 64), ARMFPRegister(src, 64));
   }
@@ -1499,20 +1506,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
   void unboxBigInt(const Address& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_BIGINT);
-  }
-  // These two functions use the low 32-bits of the full value register.
-  void boolValueToDouble(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToDouble(operand.valueReg(), dest);
-  }
-  void int32ValueToDouble(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToDouble(operand.valueReg(), dest);
-  }
-
-  void boolValueToFloat32(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToFloat32(operand.valueReg(), dest);
-  }
-  void int32ValueToFloat32(const ValueOperand& operand, FloatRegister dest) {
-    convertInt32ToFloat32(operand.valueReg(), dest);
   }
 
   void loadConstantDouble(double d, FloatRegister dest) {
@@ -2026,8 +2019,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
 
  public:
-  void handleFailureWithHandlerTail(Label* profilerExitTail,
-                                    Label* bailoutTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail, Label* bailoutTail,
+                                    uint32_t* returnValueCheckOffset);
 
   void profilerEnterFrame(Register framePtr, Register scratch);
   void profilerExitFrame();
@@ -2217,7 +2210,7 @@ inline void MacroAssemblerCompat::splitTagForTest(const ValueOperand& value,
   splitSignExtTag(value, tag);
 }
 
-typedef MacroAssemblerCompat MacroAssemblerSpecific;
+using MacroAssemblerSpecific = MacroAssemblerCompat;
 
 }  // namespace jit
 }  // namespace js

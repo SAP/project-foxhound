@@ -352,12 +352,17 @@ class MacroAssemblerLOONG64 : public Assembler {
   FaultingCodeOffset loadDouble(const Address& addr, FloatRegister dest);
   FaultingCodeOffset loadDouble(const BaseIndex& src, FloatRegister dest);
 
-  // Load a float value into a register, then expand it to a double.
-  void loadFloatAsDouble(const Address& addr, FloatRegister dest);
-  void loadFloatAsDouble(const BaseIndex& src, FloatRegister dest);
-
   FaultingCodeOffset loadFloat32(const Address& addr, FloatRegister dest);
   FaultingCodeOffset loadFloat32(const BaseIndex& src, FloatRegister dest);
+
+  FaultingCodeOffset loadFloat16(const Address& addr, FloatRegister dest,
+                                 Register) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  FaultingCodeOffset loadFloat16(const BaseIndex& src, FloatRegister dest,
+                                 Register) {
+    MOZ_CRASH("Not supported for this target");
+  }
 
   void outOfLineWasmTruncateToInt32Check(FloatRegister input, Register output,
                                          MIRType fromType, TruncFlags flags,
@@ -416,6 +421,22 @@ class MacroAssemblerLOONG64Compat : public MacroAssemblerLOONG64 {
   void convertFloat32ToDouble(FloatRegister src, FloatRegister dest);
   void convertInt32ToFloat32(Register src, FloatRegister dest);
   void convertInt32ToFloat32(const Address& src, FloatRegister dest);
+
+  void convertDoubleToFloat16(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertFloat16ToDouble(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertFloat32ToFloat16(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertFloat16ToFloat32(FloatRegister src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
+  void convertInt32ToFloat16(Register src, FloatRegister dest) {
+    MOZ_CRASH("Not supported for this target");
+  }
 
   void movq(Register rj, Register rd);
 
@@ -712,17 +733,9 @@ class MacroAssemblerLOONG64Compat : public MacroAssemblerLOONG64 {
     return scratch;
   }
 
-  inline void ensureDouble(const ValueOperand& source, FloatRegister dest,
-                           Label* failure);
-
-  void boolValueToDouble(const ValueOperand& operand, FloatRegister dest);
-  void int32ValueToDouble(const ValueOperand& operand, FloatRegister dest);
   void loadInt32OrDouble(const Address& src, FloatRegister dest);
   void loadInt32OrDouble(const BaseIndex& addr, FloatRegister dest);
   void loadConstantDouble(double dp, FloatRegister dest);
-
-  void boolValueToFloat32(const ValueOperand& operand, FloatRegister dest);
-  void int32ValueToFloat32(const ValueOperand& operand, FloatRegister dest);
   void loadConstantFloat32(float f, FloatRegister dest);
 
   void testNullSet(Condition cond, const ValueOperand& value, Register dest);
@@ -864,8 +877,8 @@ class MacroAssemblerLOONG64Compat : public MacroAssemblerLOONG64 {
     pushValue(ValueOperand(scratch));
   }
 
-  void handleFailureWithHandlerTail(Label* profilerExitTail,
-                                    Label* bailoutTail);
+  void handleFailureWithHandlerTail(Label* profilerExitTail, Label* bailoutTail,
+                                    uint32_t* returnValueCheckOffset);
 
   /////////////////////////////////////////////////////////////////
   // Common interface.

@@ -71,7 +71,10 @@
     <!-- Browser Toolbar -->
     <dimen name="browser_toolbar_height">56dp</dimen>
     <dimen name="browser_navbar_height">48dp</dimen>
-    <dimen name="tab_strip_height">0dp</dimen>
+    <dimen name="tab_strip_height">48dp</dimen>
+    <dimen name="browser_microsurvey_height">131dp</dimen>
+    <dimen name="toolbar_horizontal_margin">16dp</dimen>
+    <dimen name="toolbar_horizontal_margin_end">8dp</dimen>
 
     <!-- Bookmark Edit Fragment  -->
     <dimen name="bookmark_edit_text_height">48dp</dimen>
@@ -80,6 +83,7 @@
     <!-- Home Fragment -->
     <dimen name="home_fragment_top_toolbar_header_margin">60dp</dimen>
     <dimen name="home_item_horizontal_margin">16dp</dimen>
+    <dimen name="home_item_horizontal_short_margin">8dp</dimen>
     <dimen name="home_item_vertical_margin">8dp</dimen>
     <dimen name="wordmark_text_height">18dp</dimen>
     <dimen name="wordmark_text_margin_top">10dp</dimen>
@@ -91,7 +95,7 @@
     <!-- The download dialogs are shown above the toolbar so they need a bigger elevation. -->
     <dimen name="browser_fragment_download_dialog_elevation">17dp</dimen>
     <!-- The size of padding for the display toolbar. -->
-    <dimen name="browser_fragment_display_toolbar_padding">8dp</dimen>
+    <dimen name="browser_fragment_display_toolbar_padding">16dp</dimen>
 
     <!-- Search Fragment -->
     <dimen name="search_fragment_clipboard_item_height">56dp</dimen>

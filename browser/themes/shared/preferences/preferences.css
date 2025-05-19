@@ -65,6 +65,7 @@
   padding: 0;
 }
 
+html|div[data-category],
 groupbox[data-category] {
   margin: 0 0 32px;
 }
@@ -923,15 +924,12 @@ dialog > .sync-engines-list + hbox {
 }
 
 .update-throbber {
-  width: 16px;
-  min-height: 16px;
-  margin-block: 7px;
+  width: 1.3em;
+  min-height: 1.3em;
   margin-inline-end: 8px;
-  vertical-align: middle;
-}
-
-.update-throbber {
-  content: image-set(url("chrome://global/skin/icons/loading.png"), url("chrome://global/skin/icons/loading@2x.png") 2x);
+  content: url("chrome://global/skin/icons/loading.svg");
+  -moz-context-properties: fill;
+  fill: var(--in-content-accent-color);
 }
 
 .navigation {
@@ -1084,7 +1082,7 @@ dialog > .sync-engines-list + hbox {
 }
 
 .visually-hidden {
-  visibility: collapse;
+  display: none !important;
 }
 
 menulist[indicator=true] > menupopup menuitem:not([image]) > .menu-iconic-left {
@@ -1208,46 +1206,27 @@ richlistitem .text-link:hover {
   height: 20px;
 }
 
-#pane-experimental-search-results-header,
-#pane-experimental-subtitle {
-  background-image: url("chrome://global/skin/icons/warning.svg");
-  background-repeat: no-repeat;
-  background-position: 0 center;
-  background-size: contain;
-  min-height: 30px;
-  padding-inline-start: 38px;
-  display: flex;
-  align-items: center;
-  -moz-context-properties: fill;
-  fill: #FFBF00;
+#pane-experimental-featureGates > .featureGate:not(.visually-hidden) ~ .featureGate:not(.visually-hidden) {
+  margin-top: var(--space-xlarge);
 }
 
-#pane-experimental-search-results-header:-moz-locale-dir(rtl),
-#pane-experimental-subtitle:-moz-locale-dir(rtl) {
-  background-position-x: right;
-}
-
-#pane-experimental-featureGates {
-  margin-top: var(--space-large);
-}
-
-.featureGate {
-  margin-bottom: var(--space-large);
-}
-
-.featureGateCheckbox {
-  font-size: 1.14em;
-  align-items: center;
-}
-
-.featureGateCheckbox > .checkbox-label-box {
-  align-items: center;
+#pane-experimental-featureGates moz-fieldset::part(label) {
+  font-size: var(--font-size-large);
 }
 
 .featureGateDescription {
-  margin-block: var(--space-small);
-  margin-inline-start: calc(var(--checkbox-size) + var(--checkbox-margin-inline));
   white-space: pre-wrap;
+}
+
+#genai-chat-label,
+#genai-chat-provider,
+#genai-chat-links {
+  margin-block: 0 var(--input-space-block);
+}
+
+#genai-chat-provider {
+  width: min-content;
+  min-width: 20em;
 }
 
 .checkbox-row {
@@ -1538,4 +1517,17 @@ richlistitem .text-link:hover {
     /* override the Linux only toolkit rule */
     appearance: none;
   }
+}
+
+.section-heading,
+.section-description {
+  margin: 0 0 var(--space-small);
+}
+
+.section-header-last {
+  margin: 0 0 var(--space-large);
+}
+
+.search-header:has(.section-heading) {
+  margin: 0;
 }

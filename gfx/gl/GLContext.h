@@ -83,6 +83,7 @@ enum class GLFeature {
   blend_minmax,
   clear_buffers,
   copy_buffer,
+  depth_clamp,
   depth_texture,
   draw_buffers,
   draw_buffers_indexed,
@@ -380,6 +381,7 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     ARB_color_buffer_float,
     ARB_compatibility,
     ARB_copy_buffer,
+    ARB_depth_clamp,
     ARB_depth_texture,
     ARB_draw_buffers,
     ARB_draw_instanced,
@@ -420,6 +422,7 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
     EXT_color_buffer_float,
     EXT_color_buffer_half_float,
     EXT_copy_texture,
+    EXT_depth_clamp,
     EXT_disjoint_timer_query,
     EXT_draw_buffers,
     EXT_draw_buffers2,
@@ -3575,9 +3578,11 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
 #ifdef MOZ_WIDGET_GTK
     return LOCAL_GL_TEXTURE_2D;
 #else
-    return IsExtensionSupported(OES_EGL_image_external)
-               ? LOCAL_GL_TEXTURE_EXTERNAL
-               : LOCAL_GL_TEXTURE_2D;
+    if (IsExtensionSupported(OES_EGL_image_external) &&
+        mRenderer != GLRenderer::AndroidEmulator) {
+      return LOCAL_GL_TEXTURE_EXTERNAL;
+    }
+    return LOCAL_GL_TEXTURE_2D;
 #endif
   }
 

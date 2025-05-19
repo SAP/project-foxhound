@@ -52,14 +52,20 @@ function getBaseUrl(origin) {
  * the bounce.
  * @param {string} [options.bounceOrigin] - The origin of the bounce URL.
  * @param {string} [options.targetURL] - URL to redirect to after the bounce.
- * @param {('cookie-server'|'cookie-client'|'localStorage')} [options.setState]
- * Type of state to set during the redirect. Defaults to non stateful redirect.
+ * @param {('cookie-server'|'cookie-client'|'localStorage'|'indexedDB')}
+ * [options.setState] Type of state to set during the redirect. Defaults to non
+ * stateful redirect.
  * @param {boolean} [options.setStateSameSiteFrame=false] - Whether to set the
  * state in a sub frame that is same site to the top window.
+ * @param {boolean} [options.setStateCrossSiteFrame=false] - Whether to set the
+ * state in a sub frame that is cross-site to the top window.
  * @param {boolean} [options.setStateInWebWorker=false] - Whether to set the
  * state in a web worker. This only supports setState == "indexedDB".
  * @param {boolean} [options.setStateInWebWorker=false] - Whether to set the
  * state in a nested web worker. Otherwise the same as setStateInWebWorker.
+ * @param {('same-site'|'cross-site')} [options.setCookieViaImage] - Whether to
+ * set the state via an image request. Only applies to setState ==
+ * "cookie-server".
  * @param {number} [options.statusCode] - HTTP status code to use for server
  * side redirect. Only applies to bounceType == "server".
  * @param {number} [options.redirectDelayMS] - How long to wait before
@@ -73,8 +79,10 @@ function getBounceURL({
   targetURL = new URL(getBaseUrl(ORIGIN_B) + "file_start.html"),
   setState = null,
   setStateSameSiteFrame = false,
+  setStateCrossSiteFrame = false,
   setStateInWebWorker = false,
   setStateInNestedWebWorker = false,
+  setCookieViaImage = null,
   statusCode = 302,
   redirectDelayMS = 50,
 }) {
@@ -92,9 +100,7 @@ function getBounceURL({
   if (setState) {
     searchParams.set("setState", setState);
   }
-  if (setStateSameSiteFrame) {
-    searchParams.set("setStateSameSiteFrame", setStateSameSiteFrame);
-  }
+
   if (setStateInWebWorker) {
     if (setState != "indexedDB") {
       throw new Error(
@@ -116,6 +122,43 @@ function getBounceURL({
     searchParams.set("statusCode", statusCode);
   } else if (bounceType == "client") {
     searchParams.set("redirectDelay", redirectDelayMS);
+  }
+
+  // For bounces in iframes the helper needs the URI of the iframe which sets
+  // the state. Since this reuses bounceUrl it needs to be last in this
+  // function.
+  if (setStateSameSiteFrame || setStateCrossSiteFrame) {
+    // Construct the URI for the iframe.
+    let bounceUrlIframe = new URL(bounceUrl.href);
+
+    // Let the frame know it's a third party iframe.
+    bounceUrlIframe.searchParams.set("isThirdParty", true);
+
+    // If a server side cookie needs to be set we have to use the server script
+    // in the iframe.
+    if (setState == "cookie-server") {
+      bounceUrlIframe.pathname = bounceUrlIframe.pathname.replace(
+        "file_bounce.html",
+        "file_bounce.sjs"
+      );
+    }
+    if (setStateSameSiteFrame) {
+      searchParams.set("setStateInFrameWithURI", bounceUrlIframe.href);
+    } else {
+      bounceUrlIframe.host = SITE_C;
+      searchParams.set("setStateInFrameWithURI", bounceUrlIframe.href);
+    }
+  } else if (setCookieViaImage) {
+    let imageOrigin =
+      setCookieViaImage == "same-site" ? bounceOrigin : ORIGIN_C;
+    let imageURL = new URL(getBaseUrl(imageOrigin) + "file_image.png");
+
+    if (setState != "cookie-server") {
+      throw new Error(
+        "setCookieViaImage only supports setState == 'cookie-server'"
+      );
+    }
+    searchParams.set("setCookieViaImageWithURI", imageURL.href);
   }
 
   return bounceUrl;
@@ -206,14 +249,20 @@ async function waitForRecordBounces(browser) {
  * @param {object} options - Test Options.
  * @param {('server'|'client')} options.bounceType - Whether to perform a client
  * or server side redirect.
- * @param {('cookie-server'|'cookie-client'|'localStorage')} [options.setState]
- * Type of state to set during the redirect. Defaults to non stateful redirect.
+ * @param {('cookie-server'|'cookie-client'|'localStorage'|'indexedDB')}
+ * [options.setState] Type of state to set during the redirect. Defaults to non
+ * stateful redirect.
  * @param {boolean} [options.setStateSameSiteFrame=false] - Whether to set the
  * state in a sub frame that is same site to the top window.
+ * @param {boolean} [options.setStateCrossSiteFrame=false] - Whether to set the
+ * state in a sub frame that is cross-site to the top window.
  * @param {boolean} [options.setStateInWebWorker=false] - Whether to set the
  * state in a web worker. This only supports setState == "indexedDB".
  * @param {boolean} [options.setStateInWebWorker=false] - Whether to set the
  * state in a nested web worker. Otherwise the same as setStateInWebWorker.
+ * @param {('same-site'|'cross-site')} [options.setCookieViaImage] - Whether to
+ * set the state via an image request. Only applies to setState ==
+ * "cookie-server".
  * @param {boolean} [options.expectCandidate=true] - Expect the redirecting site
  * to be identified as a bounce tracker (candidate).
  * @param {boolean} [options.expectPurge=true] - Expect the redirecting site to
@@ -233,8 +282,10 @@ async function runTestBounce(options = {}) {
     bounceType,
     setState = null,
     setStateSameSiteFrame = false,
+    setStateCrossSiteFrame = false,
     setStateInWebWorker = false,
     setStateInNestedWebWorker = false,
+    setCookieViaImage = null,
     expectCandidate = true,
     expectPurge = true,
     originAttributes = {},
@@ -301,8 +352,10 @@ async function runTestBounce(options = {}) {
       targetURL,
       setState,
       setStateSameSiteFrame,
+      setStateCrossSiteFrame,
       setStateInWebWorker,
       setStateInNestedWebWorker,
+      setCookieViaImage,
     })
   );
 

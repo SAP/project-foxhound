@@ -89,6 +89,13 @@ firefox-suggest-dismissal-acknowledgment-one-yelp = Thanks for your feedback. Yo
 # A message that replaces a result when the user dismisses all Yelp suggestions.
 firefox-suggest-dismissal-acknowledgment-all-yelp = Thanks for your feedback. You won’t see { -yelp-brand-name } suggestions anymore.
 
+# A message that replaces a result when the user dismisses a single Fakespot
+# suggestion.
+firefox-suggest-dismissal-acknowledgment-one-fakespot = Thanks for your feedback. You won’t see this { -fakespot-brand-name } suggestion again.
+
+# A message that replaces a result when the user dismisses all Fakespot suggestions.
+firefox-suggest-dismissal-acknowledgment-all-fakespot = Thanks for your feedback. You won’t see { -fakespot-brand-name } suggestions anymore.
+
 ## These strings are used for weather suggestions in the urlbar.
 
 # This string is displayed above the current temperature
@@ -137,6 +144,12 @@ firefox-suggest-command-not-interested =
   .label = Not interested
 firefox-suggest-weather-command-inaccurate-location =
   .label = Report inaccurate location
+firefox-suggest-command-manage-fakespot =
+  .label = Manage { -fakespot-brand-name } suggestions
+firefox-suggest-command-dont-show-this-suggestion =
+  .label = Don’t show this suggestion
+firefox-suggest-command-dont-show-any-suggestions =
+  .label = Don’t show any suggestions
 
 ## These strings are used for add-on suggestions in the urlbar.
 
@@ -164,6 +177,33 @@ firefox-suggest-pocket-bottom-text = { -pocket-brand-name } · Related to <stron
 # This string is shown in Yelp suggestions and indicates the suggestion is for
 # Yelp.
 firefox-suggest-yelp-bottom-text = Yelp · Sponsored
+
+## These strings are used for Fakespot suggestions in the urlbar.
+
+# This string displays inside of the badge in Fakespot suggestion.
+firefox-suggest-fakespot-badge = RELIABLE REVIEWS
+
+## This string displays rating and total reviews as a label.
+## Variables:
+##  $rating (number) - The number of rating for the suggestion.
+##  $totalReviews (number) - The number of total reviews for the suggestion.
+
+# Show the exact number of reviews.
+firefox-suggest-fakespot-rating-and-total-reviews =
+  { $totalReviews ->
+     [one] { $rating } · ({ $totalReviews } review)
+    *[other] { $rating } · ({ $totalReviews } reviews)
+  }
+# Show an approximate number of reviews (e.g. 100,000+ reviews).
+firefox-suggest-fakespot-rating-and-total-reviews-overflow =
+  { $totalReviews ->
+     [one] { $rating } · ({ $totalReviews }+ review)
+    *[other] { $rating } · ({ $totalReviews }+ reviews)
+  }
+
+# This string is shown in Fakespot suggestion and indicates the suggestion is
+# sponsored.
+firefox-suggest-fakespot-sponsored = { -fakespot-brand-name } · Sponsored
 
 ## These strings are used in the preferences UI (about:preferences). Their names
 ## follow the naming conventions of other strings used in the preferences UI.
@@ -343,32 +383,6 @@ firefox-suggest-onboarding-main-reject-option-description-3 = Leave the default 
 firefox-suggest-onboarding-main-submit-button = Save preferences
 firefox-suggest-onboarding-main-skip-link = Not now
 
-## Strings for trending suggestions that are currently only used in
-## en-US based experiments.
-
-# Shown in preferences to enabled and disable trending suggestions.
-search-show-trending-suggestions =
-    .label = Show trending search suggestions
-    .accesskey = t
-
-# The header shown above trending results.
-# Variables:
-#  $engine (String): the name of the search engine providing the trending suggestions
-urlbar-group-trending =
-  .label = Trending on { $engine }
-
-# The result menu labels shown next to trending results.
-urlbar-result-menu-trending-dont-show =
-    .label = Don’t show trending searches
-    .accesskey = D
-urlbar-result-menu-trending-why =
-    .label = Why am I seeing this?
-    .accesskey = W
-
-# A message that replaces a result when the user dismisses all suggestions of a
-# particular type.
-urlbar-trending-dismissal-acknowledgment = Thanks for your feedback. You won’t see trending searches anymore.
-
 urlbar-firefox-suggest-contextual-opt-in-title-1 =
   Find the best of the web, faster
 urlbar-firefox-suggest-contextual-opt-in-title-2 =
@@ -381,3 +395,26 @@ urlbar-firefox-suggest-contextual-opt-in-description-2 =
   <a data-l10n-name="learn-more-link">Learn more</a>
 urlbar-firefox-suggest-contextual-opt-in-allow = Allow suggestions
 urlbar-firefox-suggest-contextual-opt-in-dismiss = Not now
+
+## Searchmode Switcher button
+
+urlbar-searchmode-button =
+    .label = Pick a Search Engine
+    .tooltiptext = Pick a Search Engine
+urlbar-searchmode-dropmarker =
+    .tooltiptext = Pick a Search Engine
+# Variables:
+#   $restrict (Character): the character used to filter results of type.
+urlbar-searchmode-bookmarks =
+    .label = Bookmarks ({ $restrict })
+# Variables:
+#   $restrict (Character): the character used to filter results of type.
+urlbar-searchmode-tabs =
+    .label = Tabs ({ $restrict })
+# Variables:
+#   $restrict (Character): the character used to filter results of type.
+urlbar-searchmode-history =
+    .label = History ({ $restrict })
+
+urlbar-searchmode-popup-description = This time search with:
+urlbar-searchmode-popup-search-settings = Search Settings

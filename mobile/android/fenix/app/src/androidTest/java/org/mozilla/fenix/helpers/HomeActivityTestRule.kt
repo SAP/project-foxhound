@@ -50,6 +50,7 @@ class HomeActivityTestRule(
             FenixOnboarding(appContext).userHasBeenOnboarded(),
         isPocketEnabled: Boolean = settings.showPocketRecommendationsFeature,
         isJumpBackInCFREnabled: Boolean = settings.shouldShowJumpBackInCFR,
+        isNavigationBarCFREnabled: Boolean = settings.shouldShowNavigationBarCFR,
         isRecentTabsFeatureEnabled: Boolean = settings.showRecentTabsFeature,
         isRecentlyVisitedFeatureEnabled: Boolean = settings.historyMetadataUIFeature,
         isPWAsPromptEnabled: Boolean = !settings.userKnowsAboutPwas,
@@ -60,10 +61,13 @@ class HomeActivityTestRule(
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         composeTopSitesEnabled: Boolean = false,
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
+        isNavigationToolbarEnabled: Boolean = false,
+        isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomeOnboardingDialogEnabled = isHomeOnboardingDialogEnabled
         this.isPocketEnabled = isPocketEnabled
         this.isJumpBackInCFREnabled = isJumpBackInCFREnabled
+        this.isNavigationBarCFREnabled = isNavigationBarCFREnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
         this.isRecentlyVisitedFeatureEnabled = isRecentlyVisitedFeatureEnabled
         this.isPWAsPromptEnabled = isPWAsPromptEnabled
@@ -74,6 +78,8 @@ class HomeActivityTestRule(
         this.etpPolicy = etpPolicy
         this.composeTopSitesEnabled = composeTopSitesEnabled
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
+        this.isNavigationToolbarEnabled = isNavigationToolbarEnabled
+        this.isMicrosurveyEnabled = isMicrosurveyEnabled
     }
 
     /**
@@ -134,6 +140,7 @@ class HomeActivityTestRule(
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             composeTopSitesEnabled = composeTopSitesEnabled,
+            isMicrosurveyEnabled = false,
         )
     }
 }
@@ -163,6 +170,7 @@ class HomeActivityIntentTestRule internal constructor(
             FenixOnboarding(appContext).userHasBeenOnboarded(),
         isPocketEnabled: Boolean = settings.showPocketRecommendationsFeature,
         isJumpBackInCFREnabled: Boolean = settings.shouldShowJumpBackInCFR,
+        isNavigationBarCFREnabled: Boolean = settings.shouldShowNavigationBarCFR,
         isRecentTabsFeatureEnabled: Boolean = settings.showRecentTabsFeature,
         isRecentlyVisitedFeatureEnabled: Boolean = settings.historyMetadataUIFeature,
         isPWAsPromptEnabled: Boolean = !settings.userKnowsAboutPwas,
@@ -173,10 +181,13 @@ class HomeActivityIntentTestRule internal constructor(
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         composeTopSitesEnabled: Boolean = false,
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
+        isNavigationToolbarEnabled: Boolean = false,
+        isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomeOnboardingDialogEnabled = isHomeOnboardingDialogEnabled
         this.isPocketEnabled = isPocketEnabled
         this.isJumpBackInCFREnabled = isJumpBackInCFREnabled
+        this.isNavigationBarCFREnabled = isNavigationBarCFREnabled
         this.isRecentTabsFeatureEnabled = isRecentTabsFeatureEnabled
         this.isRecentlyVisitedFeatureEnabled = isRecentlyVisitedFeatureEnabled
         this.isPWAsPromptEnabled = isPWAsPromptEnabled
@@ -187,6 +198,8 @@ class HomeActivityIntentTestRule internal constructor(
         this.etpPolicy = etpPolicy
         this.composeTopSitesEnabled = composeTopSitesEnabled
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
+        this.isNavigationToolbarEnabled = isNavigationToolbarEnabled
+        this.isMicrosurveyEnabled = isMicrosurveyEnabled
     }
 
     private val longTapUserPreference = getLongPressTimeout()
@@ -247,6 +260,7 @@ class HomeActivityIntentTestRule internal constructor(
             settings.showHomeOnboardingDialog && FenixOnboarding(appContext).userHasBeenOnboarded()
         isPocketEnabled = settings.showPocketRecommendationsFeature
         isJumpBackInCFREnabled = settings.shouldShowJumpBackInCFR
+        isNavigationBarCFREnabled = settings.shouldShowNavigationBarCFR
         isRecentTabsFeatureEnabled = settings.showRecentTabsFeature
         isRecentlyVisitedFeatureEnabled = settings.historyMetadataUIFeature
         isPWAsPromptEnabled = !settings.userKnowsAboutPwas
@@ -256,6 +270,8 @@ class HomeActivityIntentTestRule internal constructor(
         isOpenInAppBannerEnabled = settings.shouldShowOpenInAppBanner
         etpPolicy = getETPPolicy(settings)
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings)
+        isNavigationToolbarEnabled = settings.navigationToolbarEnabled
+        isMicrosurveyEnabled = settings.microsurveyFeatureEnabled
     }
 
     companion object {
@@ -284,6 +300,7 @@ class HomeActivityIntentTestRule internal constructor(
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             composeTopSitesEnabled = composeTopSitesEnabled,
+            isMicrosurveyEnabled = false,
         )
     }
 }

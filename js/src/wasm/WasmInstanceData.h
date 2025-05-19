@@ -104,6 +104,16 @@ struct TypeDefInstanceData {
   }
 };
 
+// FuncDefInstanceData maintains the per-instance hotness state for a locally
+// defined wasm function.  This is a signed-int32 value that counts downwards
+// from an initially non-negative value.  At the point where the value
+// transitions below zero (not *to* zero), we deem the owning function to
+// have become hot.  Transitions from one negative value to any other (even
+// more) negative value are meaningless and should not happen.
+struct FuncDefInstanceData {
+  int32_t hotnessCounter;
+};
+
 // FuncImportInstanceData describes the region of wasm global memory allocated
 // in the instance's thread-local storage for a function import. This is
 // accessed directly from JIT code and mutated by Instance as exits become

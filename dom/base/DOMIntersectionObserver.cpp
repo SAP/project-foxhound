@@ -206,13 +206,24 @@ void DOMIntersectionObserver::GetThresholds(nsTArray<double>& aRetVal) {
 }
 
 void DOMIntersectionObserver::Observe(Element& aTarget) {
-  if (!mObservationTargetSet.EnsureInserted(&aTarget)) {
+  bool wasPresent =
+      mObservationTargetMap.WithEntryHandle(&aTarget, [](auto handle) {
+        if (handle.HasEntry()) {
+          return true;
+        }
+        handle.Insert(Uninitialized);
+        return false;
+      });
+  if (wasPresent) {
     return;
   }
-  aTarget.RegisterIntersectionObserver(this);
+  aTarget.BindObject(this, [](nsISupports* aObserver, nsINode* aTarget) {
+    static_cast<DOMIntersectionObserver*>(aObserver)->UnlinkTarget(
+        *aTarget->AsElement());
+  });
   mObservationTargets.AppendElement(&aTarget);
 
-  MOZ_ASSERT(mObservationTargets.Length() == mObservationTargetSet.Count());
+  MOZ_ASSERT(mObservationTargets.Length() == mObservationTargetMap.Count());
 
   Connect();
   if (mDocument) {
@@ -223,14 +234,14 @@ void DOMIntersectionObserver::Observe(Element& aTarget) {
 }
 
 void DOMIntersectionObserver::Unobserve(Element& aTarget) {
-  if (!mObservationTargetSet.EnsureRemoved(&aTarget)) {
+  if (!mObservationTargetMap.Remove(&aTarget)) {
     return;
   }
 
   mObservationTargets.RemoveElement(&aTarget);
-  aTarget.UnregisterIntersectionObserver(this);
+  aTarget.UnbindObject(this);
 
-  MOZ_ASSERT(mObservationTargets.Length() == mObservationTargetSet.Count());
+  MOZ_ASSERT(mObservationTargets.Length() == mObservationTargetMap.Count());
 
   if (mObservationTargets.IsEmpty()) {
     Disconnect();
@@ -239,7 +250,7 @@ void DOMIntersectionObserver::Unobserve(Element& aTarget) {
 
 void DOMIntersectionObserver::UnlinkTarget(Element& aTarget) {
   mObservationTargets.RemoveElement(&aTarget);
-  mObservationTargetSet.Remove(&aTarget);
+  mObservationTargetMap.Remove(&aTarget);
   if (mObservationTargets.IsEmpty()) {
     Disconnect();
   }
@@ -252,7 +263,7 @@ void DOMIntersectionObserver::Connect() {
 
   mConnected = true;
   if (mDocument) {
-    mDocument->AddIntersectionObserver(this);
+    mDocument->AddIntersectionObserver(*this);
   }
 }
 
@@ -263,12 +274,12 @@ void DOMIntersectionObserver::Disconnect() {
 
   mConnected = false;
   for (Element* target : mObservationTargets) {
-    target->UnregisterIntersectionObserver(this);
+    target->UnbindObject(this);
   }
   mObservationTargets.Clear();
-  mObservationTargetSet.Clear();
+  mObservationTargetMap.Clear();
   if (mDocument) {
-    mDocument->RemoveIntersectionObserver(this);
+    mDocument->RemoveIntersectionObserver(*this);
   }
 }
 
@@ -362,7 +373,8 @@ static Maybe<nsRect> ComputeTheIntersection(
         // root margin, which is already in aRootBounds).
         break;
       }
-      nsRect subFrameRect = scrollContainerFrame->GetScrollPortRect();
+      nsRect subFrameRect =
+          scrollContainerFrame->GetScrollPortRectAccountingForDynamicToolbar();
 
       // 3.1 Map intersectionRect to the coordinate space of container.
       nsRect intersectionRectRelativeToContainer =
@@ -507,7 +519,8 @@ static Maybe<OopIframeMetrics> GetOopIframeMetrics(
   nsRect inProcessRootRect;
   if (ScrollContainerFrame* rootScrollContainerFrame =
           rootPresShell->GetRootScrollContainerFrame()) {
-    inProcessRootRect = rootScrollContainerFrame->GetScrollPortRect();
+    inProcessRootRect = rootScrollContainerFrame
+                            ->GetScrollPortRectAccountingForDynamicToolbar();
   }
 
   Maybe<LayoutDeviceRect> remoteDocumentVisibleRect =
@@ -548,7 +561,9 @@ IntersectionInput DOMIntersectionObserver::ComputeInput(
               do_QueryFrame(rootFrame)) {
         // rootRectRelativeToRootFrame should be the content rect of rootFrame,
         // not including the scrollbars.
-        rootRectRelativeToRootFrame = scrollContainerFrame->GetScrollPortRect();
+        rootRectRelativeToRootFrame =
+            scrollContainerFrame
+                ->GetScrollPortRectAccountingForDynamicToolbar();
       } else {
         // rootRectRelativeToRootFrame should be the border rect of rootFrame.
         rootRectRelativeToRootFrame = rootFrame->GetRectRelativeToSelf();
@@ -582,7 +597,8 @@ IntersectionInput DOMIntersectionObserver::ComputeInput(
         // scrollbars in rootRect, if needed.
         if (ScrollContainerFrame* rootScrollContainerFrame =
                 presShell->GetRootScrollContainerFrame()) {
-          rootRect = rootScrollContainerFrame->GetScrollPortRect();
+          rootRect = rootScrollContainerFrame
+                         ->GetScrollPortRectAccountingForDynamicToolbar();
         } else if (rootFrame) {
           rootRect = rootFrame->GetRectRelativeToSelf();
         }
@@ -765,7 +781,15 @@ void DOMIntersectionObserver::Update(Document& aDocument,
     }
 
     // Steps 2.10 - 2.15.
-    if (target->UpdateIntersectionObservation(this, thresholdIndex)) {
+    bool updated = false;
+    if (auto entry = mObservationTargetMap.Lookup(target)) {
+      updated = entry.Data() != thresholdIndex;
+      entry.Data() = thresholdIndex;
+    } else {
+      MOZ_ASSERT_UNREACHABLE("Target not properly registered?");
+    }
+
+    if (updated) {
       // See https://github.com/w3c/IntersectionObserver/issues/432 about
       // why we use thresholdIndex > 0 rather than isIntersecting for the
       // entry's isIntersecting value.

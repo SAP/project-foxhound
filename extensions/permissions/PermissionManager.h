@@ -114,7 +114,7 @@ class PermissionManager final : public nsIPermissionManager,
     PermissionKey() = delete;
 
     // Dtor shouldn't be used outside of the class.
-    ~PermissionKey(){};
+    ~PermissionKey() {};
   };
 
   class PermissionHashKey : public nsRefPtrHashKey<PermissionKey> {
@@ -193,11 +193,10 @@ class PermissionManager final : public nsIPermissionManager,
                                                       const nsACString& aType,
                                                       uint32_t* aPermission);
 
-  nsresult LegacyTestPermissionFromURI(
-      nsIURI* aURI, const OriginAttributes* aOriginAttributes,
-      const nsACString& aType, uint32_t* aPermission);
-
-  nsresult RemovePermissionsWithAttributes(OriginAttributesPattern& aAttrs);
+  nsresult RemovePermissionsWithAttributes(
+      OriginAttributesPattern& aPattern,
+      const nsTArray<nsCString>& aTypeInclusions = {},
+      const nsTArray<nsCString>& aTypeExceptions = {});
 
   /**
    * See `nsIPermissionManager::GetPermissionsWithKey` for more info on

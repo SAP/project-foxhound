@@ -11,6 +11,7 @@
 #include "ByteWriter.h"
 #include "MediaInfo.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Try.h"
 #include <limits>
@@ -381,6 +382,38 @@ class SPSNALIterator {
   bool mEOS = false;
   uint8_t mNumSPS = 0;
 };
+
+/* static */ Result<int, nsresult> H264::ExtractSVCTemporalId(
+    const uint8_t* aData, size_t aLength) {
+  nsTArray<AnnexB::NALEntry> paramSets;
+  AnnexB::ParseNALEntries(Span<const uint8_t>(aData, aLength), paramSets);
+
+  BufferReader reader(aData, aLength);
+
+  // Discard what's needed to find the correct NAL.
+  int i = 0;
+  while (paramSets[i].mSize < 4) {
+    i++;
+  }
+  reader.Read(paramSets[i].mOffset);
+
+  uint8_t byte;
+  MOZ_TRY_VAR(byte, reader.ReadU8());
+  uint8_t nalUnitType = byte & 0x1f;
+  if (nalUnitType == H264_NAL_PREFIX || nalUnitType == H264_NAL_SLICE_EXT) {
+    bool svcExtensionFlag = false;
+    MOZ_TRY_VAR(byte, reader.ReadU8());
+    svcExtensionFlag = byte & 0x80;
+    if (svcExtensionFlag) {
+      // Discard the first byte, and find the temporal id in the second byte
+      MOZ_TRY(reader.ReadU8());
+      MOZ_TRY_VAR(byte, reader.ReadU8());
+      int temporalId = (byte & 0xE0) >> 5;
+      return temporalId;
+    }
+  }
+  return 0;
+}
 
 /* static */ already_AddRefed<mozilla::MediaByteBuffer> H264::DecodeNALUnit(
     const uint8_t* aNAL, size_t aLength) {
@@ -1188,7 +1221,7 @@ bool H264::DecodeRecoverySEI(const mozilla::MediaByteBuffer* aSEI,
 }
 
 /*static */ already_AddRefed<mozilla::MediaByteBuffer> H264::CreateExtraData(
-    uint8_t aProfile, uint8_t aConstraints, uint8_t aLevel,
+    uint8_t aProfile, uint8_t aConstraints, H264_LEVEL aLevel,
     const gfx::IntSize& aSize) {
   // SPS of a 144p video.
   const uint8_t originSPS[] = {0x4d, 0x40, 0x0c, 0xe8, 0x80, 0x80, 0x9d,
@@ -1210,7 +1243,7 @@ bool H264::DecodeRecoverySEI(const mozilla::MediaByteBuffer* aSEI,
       aConstraints & ~0x3;  // Ensure reserved_zero_2bits are set to 0
   bw.WriteBits(aConstraints, 8);
   br.ReadBits(8);  // Skip original level_idc
-  bw.WriteU8(aLevel);
+  bw.WriteU8(static_cast<uint8_t>(aLevel));
   bw.WriteUE(br.ReadUE());  // seq_parameter_set_id (0 stored on 1 bit)
 
   if (aProfile == 100 || aProfile == 110 || aProfile == 122 ||
@@ -1263,7 +1296,7 @@ bool H264::DecodeRecoverySEI(const mozilla::MediaByteBuffer* aSEI,
   const uint8_t PPS[] = {0xeb, 0xef, 0x20};
 
   WriteExtraData(
-      extraData, aProfile, aConstraints, aLevel,
+      extraData, aProfile, aConstraints, static_cast<uint8_t>(aLevel),
       Span<const uint8_t>(encodedSPS->Elements(), encodedSPS->Length()),
       Span<const uint8_t>(PPS, sizeof(PPS)));
 

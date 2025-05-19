@@ -4,13 +4,15 @@
 
 package org.mozilla.fenix.components.menu
 
+import mozilla.components.browser.state.state.ReaderState
+import mozilla.components.browser.state.state.createTab
 import mozilla.components.service.fxa.manager.AccountState
-import mozilla.components.service.glean.private.EventMetricType
-import mozilla.components.service.glean.private.NoExtras
-import mozilla.components.service.glean.testing.GleanTestRule
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.internal.CounterMetric
+import mozilla.telemetry.glean.private.EventMetricType
+import mozilla.telemetry.glean.private.NoExtras
+import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -21,8 +23,10 @@ import org.mozilla.fenix.GleanMetrics.AppMenu
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeMenu
 import org.mozilla.fenix.GleanMetrics.HomeScreen
+import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.components.menu.middleware.MenuTelemetryMiddleware
+import org.mozilla.fenix.components.menu.store.BrowserMenuState
 import org.mozilla.fenix.components.menu.store.MenuAction
 import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
@@ -61,6 +65,35 @@ class MenuTelemetryMiddlewareTest {
         store.dispatch(MenuAction.Navigate.Bookmarks).joinBlocking()
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "bookmarks")
+    }
+
+    @Test
+    fun `WHEN adding a shortcut THEN record the add to top sites browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.AddShortcut).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "add_to_top_sites")
+    }
+
+    @Test
+    fun `WHEN removing a shortcut from top sites THEN record the remove from top sites browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.RemoveShortcut).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "remove_from_top_sites")
+    }
+
+    fun `WHEN navigating to add site to home screen THEN record the add_to_homescreen browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.Navigate.AddToHomeScreen).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "add_to_homescreen")
     }
 
     @Test
@@ -139,6 +172,16 @@ class MenuTelemetryMiddlewareTest {
         store.dispatch(MenuAction.Navigate.NewTab).joinBlocking()
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "new_tab")
+    }
+
+    @Test
+    fun `WHEN opening a site in app THEN record the open in app menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.OpenInApp).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "open_in_app")
     }
 
     @Test
@@ -228,6 +271,102 @@ class MenuTelemetryMiddlewareTest {
         store.dispatch(MenuAction.DeleteBrowsingDataAndQuit).joinBlocking()
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "quit")
+    }
+
+    @Test
+    fun `WHEN find in page feature is started THEN record the find in page browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.FindInPage).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "find_in_page")
+    }
+
+    @Test
+    fun `WHEN customize reader view action is dispatched THEN record the reader mode appearance telemetry`() {
+        val store = createStore()
+        assertNull(ReaderMode.appearance.testGetValue())
+
+        store.dispatch(MenuAction.CustomizeReaderView).joinBlocking()
+
+        assertTelemetryRecorded(ReaderMode.appearance)
+    }
+
+    @Test
+    fun `GIVEN reader view is not active WHEN toggle reader view action is dispatched THEN record the reader mode opened telemetry`() {
+        val url = "https://www.mozilla.org"
+        val title = "Mozilla"
+        val readerState = ReaderState(
+            readerable = true,
+            active = false,
+        )
+        val browserMenuState = BrowserMenuState(
+            selectedTab = createTab(
+                url = url,
+                title = title,
+                readerState = readerState,
+            ),
+        )
+        val store = createStore(
+            menuState = MenuState(
+                browserMenuState = browserMenuState,
+            ),
+        )
+
+        assertNull(ReaderMode.opened.testGetValue())
+
+        store.dispatch(MenuAction.ToggleReaderView).joinBlocking()
+
+        assertTelemetryRecorded(ReaderMode.opened)
+    }
+
+    @Test
+    fun `GIVEN reader view is active WHEN toggle reader view action is dispatched THEN record the reader mode closed telemetry`() {
+        val url = "https://www.mozilla.org"
+        val title = "Mozilla"
+        val readerState = ReaderState(
+            readerable = true,
+            active = true,
+        )
+        val browserMenuState = BrowserMenuState(
+            selectedTab = createTab(
+                url = url,
+                title = title,
+                readerState = readerState,
+            ),
+        )
+        val store = createStore(
+            menuState = MenuState(
+                browserMenuState = browserMenuState,
+            ),
+        )
+
+        assertNull(ReaderMode.closed.testGetValue())
+
+        store.dispatch(MenuAction.ToggleReaderView).joinBlocking()
+
+        assertTelemetryRecorded(ReaderMode.closed)
+    }
+
+    @Test
+    fun `WHEN requesting desktop site THEN record the desktop view ON telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.RequestDesktopSite).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "desktop_view_on")
+    }
+
+    @Test
+    fun `WHEN requesting mobile site THEN record the desktop view OFF telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.RequestMobileSite).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "desktop_view_off")
     }
 
     private fun assertTelemetryRecorded(

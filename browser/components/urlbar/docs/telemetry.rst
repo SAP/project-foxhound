@@ -216,10 +216,6 @@ urlbar.tips
     Incremented when the user picks the onboarding search tip.
   - ``searchTip_onboard-shown``
     Incremented when the onboarding search tip is shown.
-  - ``searchTip_persist-picked``
-    Incremented when the user picks the urlbar persisted search tip.
-  - ``searchTip_persist-shown``
-    Incremented when the url persisted search tip is shown.
   - ``searchTip_redirect-picked``
     Incremented when the user picks the redirect search tip.
   - ``searchTip_redirect-shown``
@@ -520,9 +516,13 @@ following documents for the details.
 .. _Abandonment: https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/urlbar_abandonment
 
 Changelog
+  Firefox 128
+    The "actions" key was added to the engagement event. [Bug `1893067`_]
+
   Firefox 125
     The "impression" engagement event has been removed. [Bug `1878983`_]
 
+.. _1893067: https://bugzilla.mozilla.org/show_bug.cgi?id=1893067
 .. _1878983: https://bugzilla.mozilla.org/show_bug.cgi?id=1878983
 
 

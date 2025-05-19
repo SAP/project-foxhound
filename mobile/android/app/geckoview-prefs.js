@@ -57,9 +57,6 @@ pref("apz.fling_stopped_threshold", "0.0");
 // feel a lot better (bug 1095727)
 pref("apz.max_velocity_inches_per_ms", "0.07");
 
-// Enable overscroll on Android (bug 1230674)
-pref("apz.overscroll.enabled", true);
-
 // Don't allow a faraway second tap to start a one-touch pinch gesture (bug 1391770)
 pref("apz.second_tap_tolerance", "0.3");
 
@@ -376,12 +373,6 @@ pref("network.protocol-handler.warn-external.vnd.youtube", false);
 // network reads and on wifi to mitigate 802.11 Power Save Polling delays
 // (bug 888268)
 pref("network.tickle-wifi.enabled", true);
-
-// Editing PDFs is not supported on mobile
-pref("pdfjs.annotationEditorMode", -1);
-
-// Enable the floating PDF.js toolbar on GeckoView (bug 1829366)
-pref("pdfjs.enableFloatingToolbar", true);
 
 // Try to convert PDFs sent as octet-stream (bug 1754499)
 pref("pdfjs.handleOctetStream", true);

@@ -26,6 +26,12 @@ UNSUPPORTED_FEATURES = set(
         "set-methods",  # Bug 1805038
         "explicit-resource-management",  # Bug 1569081
         "regexp-modifiers",
+        "promise-try",
+        "source-phase-imports",
+        "source-phase-imports-module-source",
+        "Math.sumPrecise",
+        "Atomics.pause",
+        "RegExp.escape",
     ]
 )
 FEATURE_CHECK_NEEDED = {
@@ -41,7 +47,6 @@ FEATURE_CHECK_NEEDED = {
     "uint8array-base64": "!Uint8Array.fromBase64",  # Bug 1862220
     "json-parse-with-source": "!JSON.hasOwnProperty('isRawJSON')",  # Bug 1658310
     "Float16Array": "!this.hasOwnProperty('Float16Array')",
-    "regexp-duplicate-named-groups": "!(this.hasOwnProperty('getBuildConfiguration')&&!getBuildConfiguration('release_or_beta'))",
 }
 RELEASE_OR_BETA = set(
     [

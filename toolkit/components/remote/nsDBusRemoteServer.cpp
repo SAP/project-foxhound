@@ -47,11 +47,7 @@ bool nsDBusRemoteServer::HandleOpenURL(const gchar* aInterfaceName,
     return false;
   }
 
-  guint32 timestamp = gtk_get_current_event_time();
-  if (timestamp == GDK_CURRENT_TIME) {
-    timestamp = guint32(g_get_monotonic_time() / 1000);
-  }
-  HandleCommandLine(aParam, timestamp);
+  HandleCommandLine(aParam, gtk_get_current_event_time());
   return true;
 }
 
@@ -75,9 +71,15 @@ static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
     return;
   }
 
-  gsize len;
-  const auto* commandLine = (const char*)g_variant_get_fixed_array(
-      g_variant_get_child_value(aParameters, 0), &len, sizeof(char));
+  gsize len = 0;
+  const char* commandLine = nullptr;
+
+  RefPtr<GVariant> variant =
+      dont_AddRef(g_variant_get_child_value(aParameters, 0));
+  if (variant) {
+    commandLine =
+        (const char*)g_variant_get_fixed_array(variant, &len, sizeof(char));
+  }
   if (!commandLine || !len) {
     g_warning(
         "nsDBusRemoteServer: HandleMethodCall: failed to get url string!");

@@ -14,12 +14,24 @@
   background-color: var(--sidebar-background-color);
   color: var(--sidebar-text-color);
   text-shadow: none;
+  max-width: 75vw;
+  min-width: 14em;
+  width: 18em;
 
   :root[lwt-sidebar="light"] & {
     color-scheme: light;
   }
   :root[lwt-sidebar="dark"] & {
     color-scheme: dark;
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.revamp") {
+    min-width: 200px;
+  }
+
+  &[sidebarcommand="viewGenaiChatSidebar"] {
+    min-width: 400px;
   }
 }
 
@@ -39,10 +51,10 @@
   flex: 1;
 }
 
-@media not (-moz-platform: linux) {
-  /* We don't let the splitter overlap the sidebar on Linux since the sidebar's
-  scrollbar is too narrow on Linux. */
-  .sidebar-splitter {
+.sidebar-splitter {
+  @media not (-moz-platform: linux) {
+    /* We don't let the splitter overlap the sidebar on Linux since the sidebar's
+    scrollbar is too narrow on Linux. */
     appearance: none;
     border: 0 solid;
     border-inline-end-width: 1px;
@@ -53,16 +65,27 @@
     background-color: transparent;
     margin-inline-start: -4px;
     position: relative;
+
+    #sidebar-box[positionend] + & {
+      border-inline-width: 1px 0;
+      margin-inline: 0 -4px;
+    }
   }
 
-  #sidebar-box[positionend] + .sidebar-splitter {
-    border-inline-width: 1px 0;
-    margin-inline: 0 -4px;
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.revamp") {
+    transition: background-color .5s ease-in-out;
+
+    &:hover {
+      background-color: var(--focus-outline-color);
+    }
   }
 }
 
 #sidebar-throbber[loading="true"] {
-  list-style-image: image-set(url("chrome://global/skin/icons/loading.png"), url("chrome://global/skin/icons/loading@2x.png") 2x);
+  list-style-image: url("chrome://global/skin/icons/loading.svg");
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 #sidebar-title {
@@ -136,4 +159,17 @@ menuseparator + #sidebar-extensions-separator {
   -moz-context-properties: fill;
   fill: currentColor;
   opacity: 0.8;
+}
+
+/* WebExtension Sidebars */
+#sidebar-box[sidebarcommand$="-sidebar-action"] > #sidebar-header > #sidebar-switcher-target > #sidebar-icon {
+  list-style-image: var(--webextension-menuitem-image, inherit);
+  -moz-context-properties: fill;
+  fill: currentColor;
+  width: 16px;
+  height: 16px;
+}
+
+.webextension-menuitem {
+  list-style-image: var(--webextension-menuitem-image, inherit) !important;
 }

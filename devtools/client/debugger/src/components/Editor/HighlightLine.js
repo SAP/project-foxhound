@@ -15,7 +15,6 @@ import { Component } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import {
   toEditorLine,
-  fromEditorLine,
   endOperation,
   startOperation,
 } from "../../utils/editor/index";
@@ -31,6 +30,7 @@ import {
   getShouldHighlightSelectedLocation,
 } from "../../selectors/index";
 import { features } from "../../utils/prefs";
+import { markerTypes } from "../../constants";
 
 function isDebugLine(selectedFrame, selectedLocation) {
   if (!selectedFrame) {
@@ -137,12 +137,9 @@ export class HighlightLine extends Component {
 
     if (features.codemirrorNext) {
       editor.setLineContentMarker({
-        id: "highlight-line-marker",
+        id: markerTypes.HIGHLIGHT_LINE_MARKER,
         lineClassName: "highlight-line",
-        condition(line) {
-          const lineNumber = fromEditorLine(sourceId, line);
-          return selectedLocation.line == lineNumber;
-        },
+        lines: [{ line: selectedLocation.line }],
       });
     } else {
       const doc = getDocument(sourceId);
@@ -198,9 +195,8 @@ export class HighlightLine extends Component {
 
 export default connect(state => {
   const selectedLocation = getSelectedLocation(state);
-
   if (!selectedLocation) {
-    throw new Error("must have selected location");
+    return {};
   }
   return {
     pauseCommand: getPauseCommand(state, getCurrentThread(state)),

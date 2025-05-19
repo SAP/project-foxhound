@@ -211,10 +211,6 @@ class TouchSimulator {
         this.startX = evt.pageX;
         this.startY = evt.pageY;
 
-        // Capture events so if a different window show up the events
-        // won't be dispatched to something else.
-        evt.target.setCapture(false);
-
         type = "touchstart";
         break;
 
@@ -260,8 +256,7 @@ class TouchSimulator {
 
   sendContextMenu({ target, clientX, clientY, screenX, screenY }) {
     const view = target.ownerGlobal;
-    const { MouseEvent } = view;
-    const evt = new MouseEvent("contextmenu", {
+    const evt = new view.PointerEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
       view,

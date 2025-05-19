@@ -17,6 +17,7 @@ from webdriver.bidi.error import (
     UnableToSetCookieException,
     UnderspecifiedStoragePartitionException
 )
+from webdriver.bidi.modules.input import Actions
 from webdriver.bidi.modules.script import ContextTarget
 from webdriver.error import TimeoutException
 
@@ -43,6 +44,16 @@ async def add_preload_script(bidi_session):
             await bidi_session.script.remove_preload_script(script=script)
         except (InvalidArgumentException, NoSuchScriptException):
             pass
+
+
+@pytest_asyncio.fixture
+async def execute_as_async(bidi_session):
+    async def execute_as_async(sync_func, **kwargs):
+        # Ideally we should use asyncio.to_thread() but it's not available in
+        # Python 3.8 which wpt tests have to support.
+        return await bidi_session.event_loop.run_in_executor(None, sync_func, **kwargs)
+
+    return execute_as_async
 
 
 @pytest_asyncio.fixture
@@ -149,7 +160,7 @@ def wait_for_future_safe(configuration):
                 asyncio.shield(future),
                 timeout=timeout * configuration["timeout_multiplier"],
             )
-        except asyncio.exceptions.TimeoutError:
+        except asyncio.TimeoutError:
             raise TimeoutException("Future did not resolve within the given timeout")
 
     return wait_for_future_safe
@@ -547,7 +558,7 @@ def fetch(bidi_session, top_context, configuration):
 
         body_arg = ""
         if post_data is not None:
-            body_arg = f"body: {post_data},"
+            body_arg = f"body: {json.dumps(post_data)},"
 
         timeout_in_seconds = timeout_in_seconds * configuration["timeout_multiplier"]
         # Wait for fetch() to resolve a response and for response.text() to
@@ -573,6 +584,37 @@ def fetch(bidi_session, top_context, configuration):
 
 
 @pytest_asyncio.fixture
+async def setup_beforeunload_page(bidi_session, url):
+    async def setup_beforeunload_page(context):
+        page_url = url("/webdriver/tests/support/html/beforeunload.html")
+        await bidi_session.browsing_context.navigate(
+            context=context["context"],
+            url=page_url,
+            wait="complete"
+        )
+
+        # Focus the input
+        await bidi_session.script.evaluate(
+            expression="""
+                const input = document.querySelector("input");
+                input.focus();
+            """,
+            target=ContextTarget(context["context"]),
+            await_promise=False,
+        )
+
+        actions = Actions()
+        actions.add_key().send_keys("foo")
+        await bidi_session.input.perform_actions(
+            actions=actions, context=context["context"]
+        )
+
+        return page_url
+
+    return setup_beforeunload_page
+
+
+@pytest_asyncio.fixture
 async def setup_network_test(
     bidi_session,
     subscribe_events,
@@ -581,8 +623,11 @@ async def setup_network_test(
     top_context,
     url,
 ):
-    """Navigate the current top level context to the provided url and subscribe
-    to network.beforeRequestSent.
+    """Navigate the provided top level context to the provided url and subscribe
+    to network events for the provided set of contexts.
+
+    By default, the test context is top_context["context"], test_url is
+    empty.html and contexts is None (meaning we will subscribe to all contexts).
 
     Returns an `events` dictionary in which the captured network events will be added.
     The keys of the dictionary are network event names (eg. "network.beforeRequestSent"),
@@ -590,24 +635,29 @@ async def setup_network_test(
     """
     listeners = []
 
-    async def _setup_network_test(events, test_url=url("/webdriver/tests/bidi/network/support/empty.html"), contexts=None):
+    async def _setup_network_test(
+        events,
+        test_url=url("/webdriver/tests/bidi/network/support/empty.html"),
+        context=top_context["context"],
+        contexts=None,
+    ):
         nonlocal listeners
 
         # Listen for network.responseCompleted for the initial navigation to
         # make sure this event will not be captured unexpectedly by the tests.
         await bidi_session.session.subscribe(
-            events=["network.responseCompleted"], contexts=[top_context["context"]]
+            events=["network.responseCompleted"], contexts=[context]
         )
         on_response_completed = wait_for_event("network.responseCompleted")
 
         await bidi_session.browsing_context.navigate(
-            context=top_context["context"],
+            context=context,
             url=test_url,
             wait="complete",
         )
         await wait_for_future_safe(on_response_completed)
         await bidi_session.session.unsubscribe(
-            events=["network.responseCompleted"], contexts=[top_context["context"]]
+            events=["network.responseCompleted"], contexts=[context]
         )
 
         await subscribe_events(events, contexts)

@@ -395,20 +395,20 @@ def setup_browsertime(config, tasks):
 
         cd_fetches = {
             "android.*": [
-                "linux64-chromedriver-125",
                 "linux64-chromedriver-126",
+                "linux64-chromedriver-127",
             ],
             "linux.*": [
-                "linux64-chromedriver-125",
                 "linux64-chromedriver-126",
+                "linux64-chromedriver-127",
             ],
             "macosx1015.*": [
-                "mac64-chromedriver-125",
                 "mac64-chromedriver-126",
+                "mac64-chromedriver-127",
             ],
             "macosx1400.*": [
-                "mac-arm-chromedriver-125",
                 "mac-arm-chromedriver-126",
+                "mac-arm-chromedriver-127",
             ],
             "windows.*aarch64.*": [
                 "win32-chromedriver-121",
@@ -416,8 +416,8 @@ def setup_browsertime(config, tasks):
                 "win32-chromedriver-123",
             ],
             "windows.*-64.*": [
-                "win64-chromedriver-125",
                 "win64-chromedriver-126",
+                "win64-chromedriver-127",
             ],
         }
 
@@ -681,6 +681,9 @@ def handle_tier(config, tasks):
                 "linux1804-64-shippable-qr/opt",
                 "linux1804-64-asan-qr/opt",
                 "linux1804-64-tsan-qr/opt",
+                "linux2204-64-wayland/debug",
+                "linux2204-64-wayland/opt",
+                "linux2204-64-wayland-shippable/opt",
                 "windows10-32-qr/debug",
                 "windows10-32-qr/opt",
                 "windows10-32-shippable-qr/opt",

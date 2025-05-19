@@ -37,6 +37,7 @@
 #include "mozilla/dom/DataTransferBinding.h"
 #include "mozilla/dom/DataTransferItemList.h"
 #include "mozilla/dom/Directory.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FileList.h"
@@ -49,6 +50,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
+#include "nsPresContext.h"
 
 namespace mozilla::dom {
 
@@ -109,8 +111,9 @@ static DataTransfer::Mode ModeForEvent(EventMessage aEventMessage) {
   }
 }
 
-DataTransfer::DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
-                           bool aIsExternal, int32_t aClipboardType)
+DataTransfer::DataTransfer(
+    nsISupports* aParent, EventMessage aEventMessage, bool aIsExternal,
+    mozilla::Maybe<nsIClipboard::ClipboardType> aClipboardType)
     : mParent(aParent),
       mDropEffect(nsIDragService::DRAGDROP_ACTION_NONE),
       mEffectAllowed(nsIDragService::DRAGDROP_ACTION_UNINITIALIZED),
@@ -151,7 +154,6 @@ DataTransfer::DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
       mIsExternal(true),
       mUserCancelled(false),
       mIsCrossDomainSubFrameDrop(false),
-      mClipboardType(-1),
       mDragImageX(0),
       mDragImageY(0) {
   mItems = new DataTransferItemList(this);
@@ -185,7 +187,6 @@ DataTransfer::DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
       mIsExternal(false),
       mUserCancelled(false),
       mIsCrossDomainSubFrameDrop(false),
-      mClipboardType(-1),
       mDragImageX(0),
       mDragImageY(0) {
   mItems = new DataTransferItemList(this);
@@ -200,13 +201,13 @@ DataTransfer::DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
                        "Failed to set given string to the DataTransfer object");
 }
 
-DataTransfer::DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
-                           const uint32_t aEffectAllowed, bool aCursorState,
-                           bool aIsExternal, bool aUserCancelled,
-                           bool aIsCrossDomainSubFrameDrop,
-                           int32_t aClipboardType, DataTransferItemList* aItems,
-                           Element* aDragImage, uint32_t aDragImageX,
-                           uint32_t aDragImageY, bool aShowFailAnimation)
+DataTransfer::DataTransfer(
+    nsISupports* aParent, EventMessage aEventMessage,
+    const uint32_t aEffectAllowed, bool aCursorState, bool aIsExternal,
+    bool aUserCancelled, bool aIsCrossDomainSubFrameDrop,
+    mozilla::Maybe<nsIClipboard::ClipboardType> aClipboardType,
+    DataTransferItemList* aItems, Element* aDragImage, uint32_t aDragImageX,
+    uint32_t aDragImageY, bool aShowFailAnimation)
     : mParent(aParent),
       mDropEffect(nsIDragService::DRAGDROP_ACTION_NONE),
       mEffectAllowed(aEffectAllowed),
@@ -243,7 +244,7 @@ already_AddRefed<DataTransfer> DataTransfer::Constructor(
     const GlobalObject& aGlobal) {
   RefPtr<DataTransfer> transfer =
       new DataTransfer(aGlobal.GetAsSupports(), eCopy, /* is external */ false,
-                       /* clipboard type */ -1);
+                       /* clipboard type */ Nothing());
   transfer->mEffectAllowed = nsIDragService::DRAGDROP_ACTION_NONE;
   return transfer.forget();
 }
@@ -292,7 +293,7 @@ void DataTransfer::SetEffectAllowed(const nsAString& aEffectAllowed) {
 
 void DataTransfer::GetMozTriggeringPrincipalURISpec(
     nsAString& aPrincipalURISpec) {
-  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  auto* dragSession = GetOwnerDragSession();
   if (!dragSession) {
     aPrincipalURISpec.Truncate(0);
     return;
@@ -311,7 +312,7 @@ void DataTransfer::GetMozTriggeringPrincipalURISpec(
 }
 
 nsIContentSecurityPolicy* DataTransfer::GetMozCSP() {
-  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  auto* dragSession = GetOwnerDragSession();
   if (!dragSession) {
     return nullptr;
   }
@@ -426,7 +427,7 @@ void DataTransfer::SetMozCursor(const nsAString& aCursorState) {
 }
 
 already_AddRefed<nsINode> DataTransfer::GetMozSourceNode() {
-  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  auto* dragSession = GetOwnerDragSession();
   if (!dragSession) {
     return nullptr;
   }
@@ -442,7 +443,7 @@ already_AddRefed<nsINode> DataTransfer::GetMozSourceNode() {
 }
 
 already_AddRefed<WindowContext> DataTransfer::GetSourceTopWindowContext() {
-  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  auto* dragSession = GetOwnerDragSession();
   if (!dragSession) {
     return nullptr;
   }
@@ -637,7 +638,11 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
   //       GetExternalTransferableFormats() too since those methods should
   //       work similarly.
 
-  MOZ_ASSERT(!mAsyncGetClipboardData);
+  MOZ_ASSERT(!mClipboardDataSnapshot);
+
+  if (mClipboardType.isNothing()) {
+    return;
+  }
 
   RefPtr<WindowContext> wc = GetWindowContext();
   if (NS_WARN_IF(!wc)) {
@@ -648,38 +653,38 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
 
   nsCOMPtr<nsIClipboard> clipboard =
       do_GetService("@mozilla.org/widget/clipboard;1");
-  if (!clipboard || mClipboardType < 0) {
+  if (!clipboard) {
     return;
   }
 
   nsresult rv = NS_ERROR_FAILURE;
-  nsCOMPtr<nsIAsyncGetClipboardData> asyncGetClipboardData;
+  nsCOMPtr<nsIClipboardDataSnapshot> clipboardDataSnapshot;
   if (aPlainTextOnly) {
     rv = clipboard->GetDataSnapshotSync(
-        AutoTArray<nsCString, 1>{nsLiteralCString(kTextMime)}, mClipboardType,
-        wc, getter_AddRefs(asyncGetClipboardData));
+        AutoTArray<nsCString, 1>{nsLiteralCString(kTextMime)}, *mClipboardType,
+        wc, getter_AddRefs(clipboardDataSnapshot));
   } else {
     AutoTArray<nsCString, ArrayLength(kNonPlainTextExternalFormats)> formats;
     formats.AppendElements(Span<const nsCString>(kNonPlainTextExternalFormats));
-    rv = clipboard->GetDataSnapshotSync(formats, mClipboardType, wc,
-                                        getter_AddRefs(asyncGetClipboardData));
+    rv = clipboard->GetDataSnapshotSync(formats, *mClipboardType, wc,
+                                        getter_AddRefs(clipboardDataSnapshot));
   }
 
-  if (NS_FAILED(rv) || !asyncGetClipboardData) {
+  if (NS_FAILED(rv) || !clipboardDataSnapshot) {
     return;
   }
 
   // Order is important for DataTransfer; ensure the returned list items follow
   // the sequence specified in kNonPlainTextExternalFormats.
   AutoTArray<nsCString, ArrayLength(kNonPlainTextExternalFormats)> flavors;
-  asyncGetClipboardData->GetFlavorList(flavors);
+  clipboardDataSnapshot->GetFlavorList(flavors);
   for (const auto& format : kNonPlainTextExternalFormats) {
     if (flavors.Contains(format)) {
       aResult.AppendElement(format);
     }
   }
 
-  mAsyncGetClipboardData = asyncGetClipboardData;
+  mClipboardDataSnapshot = clipboardDataSnapshot;
 }
 
 /* static */
@@ -825,7 +830,7 @@ void DataTransfer::UpdateDragImage(Element& aImage, int32_t aX, int32_t aY) {
     return;
   }
 
-  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  auto* dragSession = GetOwnerDragSession();
   if (dragSession) {
     dragSession->UpdateDragImage(&aImage, aX, aY);
   }
@@ -1206,7 +1211,7 @@ void DataTransfer::Disconnect() {
 
 void DataTransfer::ClearAll() {
   mItems->ClearAllItems();
-  mAsyncGetClipboardData = nullptr;
+  mClipboardDataSnapshot = nullptr;
 }
 
 uint32_t DataTransfer::MozItemCount() const { return mItems->MozItemCount(); }
@@ -1289,8 +1294,8 @@ already_AddRefed<WindowContext> DataTransfer::GetWindowContext() const {
   return do_AddRef(innerWindow->GetWindowContext());
 }
 
-nsIAsyncGetClipboardData* DataTransfer::GetAsyncGetClipboardData() const {
-  return mAsyncGetClipboardData;
+nsIClipboardDataSnapshot* DataTransfer::GetClipboardDataSnapshot() const {
+  return mClipboardDataSnapshot;
 }
 
 nsresult DataTransfer::CacheExternalData(const char* aFormat, uint32_t aIndex,
@@ -1333,8 +1338,7 @@ void DataTransfer::CacheExternalDragFormats() {
   // This data will instead only be retrieved in FillInExternalDragData when
   // asked for, as it may be time consuming for the source application to
   // generate it.
-
-  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  auto* dragSession = GetOwnerDragSession();
   if (!dragSession) {
     return;
   }
@@ -1533,6 +1537,22 @@ void DataTransfer::SetMode(DataTransfer::Mode aMode) {
   } else {
     mMode = aMode;
   }
+}
+
+nsIWidget* DataTransfer::GetOwnerWidget() {
+  RefPtr<WindowContext> wc = GetWindowContext();
+  NS_ENSURE_TRUE(wc, nullptr);
+  auto* doc = wc->GetDocument();
+  NS_ENSURE_TRUE(doc, nullptr);
+  auto* pc = doc->GetPresContext();
+  NS_ENSURE_TRUE(pc, nullptr);
+  return pc->GetRootWidget();
+}
+
+nsIDragSession* DataTransfer::GetOwnerDragSession() {
+  auto* widget = GetOwnerWidget();
+  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession(widget);
+  return dragSession;
 }
 
 }  // namespace mozilla::dom

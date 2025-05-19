@@ -667,7 +667,7 @@ again:
 static JitFrameLayout* GetLastProfilingFrame(ResumeFromException* rfe) {
   switch (rfe->kind) {
     case ExceptionResumeKind::EntryFrame:
-    case ExceptionResumeKind::Wasm:
+    case ExceptionResumeKind::WasmInterpEntry:
     case ExceptionResumeKind::WasmCatch:
       return nullptr;
 
@@ -686,13 +686,6 @@ static JitFrameLayout* GetLastProfilingFrame(ResumeFromException* rfe) {
 
   MOZ_CRASH("Invalid ResumeFromException type!");
   return nullptr;
-}
-
-void HandleExceptionWasm(JSContext* cx, wasm::WasmFrameIter* iter,
-                         ResumeFromException* rfe) {
-  MOZ_ASSERT(cx->activation()->asJit()->hasWasmExitFP());
-  wasm::HandleThrow(cx, *iter, rfe);
-  MOZ_ASSERT(iter->done());
 }
 
 void HandleException(ResumeFromException* rfe) {
@@ -738,19 +731,33 @@ void HandleException(ResumeFromException* rfe) {
 
   JitFrameIter iter(cx->activation()->asJit(),
                     /* mustUnwindActivation = */ true);
+
+  // Live wasm code on the stack is kept alive (in TraceJitActivation) by
+  // marking the instance of every wasm::Frame found by WasmFrameIter.
+  // However, we're going to pop frames while iterating which means that a GC
+  // during this loop could collect the code of frames whose code is still on
+  // the stack.
+  //
+  // This is actually mostly fine: after we return to the Wasm throw stub, we'll
+  // jump to the JIT's exception handling trampoline. However, we must keep the
+  // throw stub alive itself which is owned by the innermost instance.
+  Rooted<WasmInstanceObject*> keepAlive(cx);
+  if (iter.isWasm()) {
+    keepAlive = iter.asWasm().instance()->object();
+  }
+
   CommonFrameLayout* prevJitFrame = nullptr;
   while (!iter.done()) {
     if (iter.isWasm()) {
       prevJitFrame = nullptr;
-      HandleExceptionWasm(cx, &iter.asWasm(), rfe);
-      // If a wasm try-catch handler is found, we can immediately jump to it
-      // and quit iterating through the stack.
+      wasm::HandleExceptionWasm(cx, iter, rfe);
       if (rfe->kind == ExceptionResumeKind::WasmCatch) {
+        // Jump to a Wasm try-catch handler.
         return;
       }
-      if (!iter.done()) {
-        ++iter;
-      }
+      // We either reached a JS JIT frame or we stopped at the activation's Wasm
+      // interpreter entry frame.
+      MOZ_ASSERT(iter.isJSJit() || (iter.isWasm() && iter.done()));
       continue;
     }
 
@@ -836,12 +843,22 @@ void HandleException(ResumeFromException* rfe) {
     ++iter;
   }
 
-  // Wasm sets its own value of SP in HandleExceptionWasm.
+  // Return to C++ code by returning to the activation's JS or Wasm entry frame.
   if (iter.isJSJit()) {
     MOZ_ASSERT(rfe->kind == ExceptionResumeKind::EntryFrame);
     rfe->framePointer = iter.asJSJit().current()->callerFramePtr();
     rfe->stackPointer =
         iter.asJSJit().fp() + CommonFrameLayout::offsetOfReturnAddress();
+  } else {
+    MOZ_ASSERT(iter.isWasm());
+    // In case of no handler, exit wasm via ret(). The exception handling
+    // trampoline will return InterpFailInstanceReg in InstanceReg to signal
+    // to the interpreter entry stub to do a failure return.
+    rfe->kind = ExceptionResumeKind::WasmInterpEntry;
+    rfe->framePointer = (uint8_t*)iter.asWasm().unwoundCallerFP();
+    rfe->stackPointer = (uint8_t*)iter.asWasm().unwoundAddressOfReturnAddress();
+    rfe->instance = nullptr;
+    rfe->target = nullptr;
   }
 }
 
@@ -1412,14 +1429,6 @@ static void TraceRectifierFrame(JSTracer* trc, const JSJitFrameIter& frame) {
   TraceRoot(trc, &layout->thisv(), "rectifier-thisv");
 }
 
-static void TraceJSJitToWasmFrame(JSTracer* trc, const JSJitFrameIter& frame) {
-  // This is doing a subset of TraceIonJSFrame, since the callee doesn't
-  // have a script.
-  JitFrameLayout* layout = (JitFrameLayout*)frame.fp();
-  layout->replaceCalleeToken(TraceCalleeToken(trc, layout->calleeToken()));
-  TraceThisAndArguments(trc, frame, layout);
-}
-
 static void TraceTrampolineNativeFrame(JSTracer* trc,
                                        const JSJitFrameIter& frame) {
   auto* layout = (TrampolineNativeFrameLayout*)frame.fp();
@@ -1489,9 +1498,6 @@ static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
           // Ignore: this is a special marker used to let the
           // JitFrameIter know the frame above is a wasm frame, handled
           // in the next iteration.
-          break;
-        case FrameType::JSJitToWasm:
-          TraceJSJitToWasmFrame(trc, jitFrame);
           break;
         default:
           MOZ_CRASH("unexpected frame type");

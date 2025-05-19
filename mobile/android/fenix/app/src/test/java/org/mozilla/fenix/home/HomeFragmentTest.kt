@@ -5,19 +5,10 @@
 package org.mozilla.fenix.home
 
 import android.content.Context
-import android.view.ViewGroup
-import androidx.lifecycle.LifecycleCoroutineScope
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
-import io.mockk.Runs
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkStatic
 import io.mockk.spyk
-import io.mockk.unmockkStatic
 import io.mockk.verify
-import kotlinx.coroutines.CoroutineScope
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SearchState
@@ -26,21 +17,18 @@ import mozilla.components.feature.top.sites.TopSite
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.FenixApplication
 import org.mozilla.fenix.HomeActivity
-import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Core
-import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.home.HomeFragment.Companion.AMAZON_SPONSORED_TITLE
 import org.mozilla.fenix.home.HomeFragment.Companion.EBAY_SPONSORED_TITLE
-import org.mozilla.fenix.home.HomeFragment.Companion.TOAST_ELEVATION
 import org.mozilla.fenix.utils.Settings
-import org.mozilla.fenix.utils.allowUndo
 
 class HomeFragmentTest {
 
@@ -63,6 +51,8 @@ class HomeFragmentTest {
         every { homeFragment.context } answers { context }
         every { context.components.settings } answers { settings }
         every { context.components.core } answers { core }
+        every { homeFragment.binding } returns mockk(relaxed = true)
+        every { homeFragment.viewLifecycleOwner } returns mockk(relaxed = true)
     }
 
     @Test
@@ -115,7 +105,9 @@ class HomeFragmentTest {
     @Test
     fun `WHEN configuration changed THEN menu is dismissed`() {
         val homeMenuView: HomeMenuView = mockk(relaxed = true)
-        homeFragment.homeMenuView = homeMenuView
+        val toolbarView = ToolbarView(mockk(), mockk(), homeFragment, mockk(), {}, {})
+        toolbarView.homeMenuView = homeMenuView
+        homeFragment.toolbarView = toolbarView
 
         homeFragment.onConfigurationChanged(mockk(relaxed = true))
 
@@ -142,53 +134,20 @@ class HomeFragmentTest {
     }
 
     @Test
-    fun `WHEN a pinned top is removed THEN show the undo snackbar`() {
-        try {
-            val topSite = TopSite.Default(
-                id = 1L,
-                title = "Mozilla",
-                url = "https://mozilla.org",
-                null,
-            )
-            mockkStatic("org.mozilla.fenix.utils.UndoKt")
-            mockkStatic("androidx.lifecycle.LifecycleOwnerKt")
-            val view: ViewGroup = mockk(relaxed = true)
-            val lifecycleScope: LifecycleCoroutineScope = mockk(relaxed = true)
-            every { any<LifecycleOwner>().lifecycleScope } returns lifecycleScope
-            every { homeFragment.getString(R.string.snackbar_top_site_removed) } returns "Mocked Removed Top Site"
-            every { homeFragment.getString(R.string.snackbar_deleted_undo) } returns "Mocked Undo Removal"
-            every { settings.toolbarPosition } returns ToolbarPosition.TOP
-            every {
-                any<CoroutineScope>().allowUndo(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                )
-            } just Runs
-            every { homeFragment.requireView() } returns view
+    fun `WHEN isMicrosurveyEnabled is true GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is initialized`() {
+        assertNull(homeFragment.messagingFeatureMicrosurvey.get())
 
-            homeFragment.showUndoSnackbarForTopSite(topSite)
+        homeFragment.initializeMicrosurveyFeature(isMicrosurveyEnabled = true)
 
-            verify {
-                lifecycleScope.allowUndo(
-                    view,
-                    "Mocked Removed Top Site",
-                    "Mocked Undo Removal",
-                    any(),
-                    any(),
-                    any(),
-                    TOAST_ELEVATION,
-                    true,
-                )
-            }
-        } finally {
-            unmockkStatic("org.mozilla.fenix.utils.UndoKt")
-            unmockkStatic("androidx.lifecycle.LifecycleOwnerKt")
-        }
+        assertNotNull(homeFragment.messagingFeatureMicrosurvey.get())
+    }
+
+    @Test
+    fun `WHEN isMicrosurveyEnabled is false GIVEN a call to initializeMicrosurveyFeature THEN messagingFeature is not initialized`() {
+        assertNull(homeFragment.messagingFeatureMicrosurvey.get())
+
+        homeFragment.initializeMicrosurveyFeature(isMicrosurveyEnabled = false)
+
+        assertNull(homeFragment.messagingFeatureMicrosurvey.get())
     }
 }

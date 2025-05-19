@@ -232,6 +232,7 @@ include("build/moz.configure/headers.configure", when="--enable-compile-environm
 include("build/moz.configure/libraries.configure", when="--enable-compile-environment")
 include("build/moz.configure/warnings.configure", when="--enable-compile-environment")
 include("build/moz.configure/flags.configure", when="--enable-compile-environment")
+include("build/moz.configure/default-flags.configure", when=~compile_environment)
 include("build/moz.configure/lto-pgo.configure", when="--enable-compile-environment")
 # rust.configure is included by js/moz.configure.
 
@@ -347,30 +348,14 @@ set_config("WASM_OBJ_SUFFIX", "wasm")
 
 
 @template
-def llvm_tool(name):
-    @depends(host_c_compiler, c_compiler, bindgen_config_paths)
-    def llvm_tool(host_c_compiler, c_compiler, bindgen_config_paths):
-        clang = None
-        for compiler in (host_c_compiler, c_compiler):
-            if compiler and compiler.type == "clang":
-                clang = compiler.compiler
-                break
-            elif compiler and compiler.type == "clang-cl":
-                clang = os.path.join(os.path.dirname(compiler.compiler), "clang")
-                break
+def bin_suffix(host_or_target):
+    return depends(host_or_target)(
+        lambda host_or_target: ".exe" if host_or_target.os == "WINNT" else ""
+    )
 
-        if not clang and bindgen_config_paths:
-            clang = bindgen_config_paths.clang_path
-        tool = name
-        if clang:
-            out = check_cmd_output(
-                clang, "--print-prog-name=%s" % tool, onerror=lambda: None
-            )
-            if out:
-                tool = out.rstrip()
-        return (tool,)
 
-    return llvm_tool
+set_config("BIN_SUFFIX", bin_suffix(target))
+set_config("HOST_BIN_SUFFIX", bin_suffix(host))
 
 
 @template
@@ -388,17 +373,6 @@ def plain_llvm_or_prefixed(name, llvm_name=None):
         return tuple(commands)
 
     return plain_llvm_or_prefixed
-
-
-llvm_objdump = check_prog(
-    "LLVM_OBJDUMP",
-    llvm_tool("llvm-objdump"),
-    what="llvm-objdump",
-    when="--enable-compile-environment",
-    paths=clang_search_path,
-)
-
-add_old_configure_assignment("LLVM_OBJDUMP", llvm_objdump)
 
 
 def validate_readelf(path):
@@ -452,14 +426,25 @@ check_prog(
 profiling = dependable(False)
 # Same for js_standalone
 js_standalone = dependable(False)
-js_shared = dependable(False)
-moz_linker = dependable(False)
 # Same for fold_libs
 fold_libs = dependable(False)
 # And dmd
 dmd = dependable(False)
 
+# Only available when toolkit/moz.configure is included
+pack_relative_relocs_flags = dependable(False)
+
 include(include_project_configure)
+
+
+# Final flags validation and gathering
+# -------------------------------------------------
+
+include(
+    "build/moz.configure/finalize-flags.configure", when="--enable-compile-environment"
+)
+
+# -------------------------------------------------
 
 
 @depends("--help")
@@ -573,36 +558,11 @@ option(
 
 set_config("MOZ_UI_LOCALE", depends("--enable-ui-locale")(lambda x: x))
 
-option(
-    "--disable-icu4x",
-    help="Disable using ICU4X",
-)
-
-set_config("MOZ_ICU4X", True, when="--enable-icu4x")
-set_define("MOZ_ICU4X", True, when="--enable-icu4x")
-
 # clang-plugin location
 # ==============================================================
-
-
-@depends(host_library_name_info, build_environment, when="--enable-clang-plugin")
-def clang_plugin_path(library_name_info, build_env):
-    topobjdir = build_env.topobjdir
-    if topobjdir.endswith("/js/src"):
-        topobjdir = topobjdir[:-7]
-    return os.path.abspath(
-        os.path.join(
-            topobjdir,
-            "build",
-            "clang-plugin",
-            "%sclang-plugin%s"
-            % (library_name_info.dll.prefix, library_name_info.dll.suffix),
-        )
-    )
-
-
-set_config("CLANG_PLUGIN", clang_plugin_path)
-add_old_configure_assignment("CLANG_PLUGIN", clang_plugin_path)
+include(
+    "build/moz.configure/clang_plugin.configure", when="--enable-compile-environment"
+)
 
 
 # Awk detection
@@ -809,13 +769,6 @@ check_prog(
     paths=clang_search_path,
 )
 
-option("--disable-icf", help="Disable Identical Code Folding")
-
-add_old_configure_assignment(
-    "MOZ_DISABLE_ICF", "1", when=depends("--enable-icf")(lambda x: not x)
-)
-
-
 option(
     "--enable-strip",
     when=compile_environment,
@@ -943,15 +896,13 @@ pkg_check_modules("MOZ_ZLIB", "zlib >= 1.2.3", when="--with-system-zlib")
 set_config("MOZ_SYSTEM_ZLIB", True, when="--with-system-zlib")
 
 
-@depends(with_system_zlib_option, js_shared, moz_linker, target.os)
-def zlib_in_mozglue(system_zlib, js_shared, linker, os):
-    if not system_zlib and (js_shared or linker or os == "Android"):
-        return True
-
-
-set_config("ZLIB_IN_MOZGLUE", zlib_in_mozglue)
-set_define("ZLIB_IN_MOZGLUE", zlib_in_mozglue)
-
+with only_when(cross_compiling):
+    option(
+        env="JS_BINARY",
+        nargs=1,
+        help="Host JavaScript runtime, if any, to use during cross compiles",
+    )
+    set_config("JS_BINARY", depends_if("JS_BINARY")(lambda value: value[0]))
 
 # Please do not add configure checks from here on.
 

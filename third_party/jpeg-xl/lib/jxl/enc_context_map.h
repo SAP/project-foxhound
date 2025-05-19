@@ -6,8 +6,9 @@
 #ifndef LIB_JXL_ENC_CONTEXT_MAP_H_
 #define LIB_JXL_ENC_CONTEXT_MAP_H_
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
+
 #include <vector>
 
 #include "lib/jxl/ac_context.h"

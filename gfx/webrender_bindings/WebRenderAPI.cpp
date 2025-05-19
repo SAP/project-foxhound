@@ -138,7 +138,8 @@ class NewRenderer : public RendererEvent {
             gfx::gfxVars::UseWebRenderScissoredCacheClears(), swgl, gl,
             compositor->SurfaceOriginIsTopLeft(), progCache, shaders,
             aRenderThread.ThreadPool().Raw(),
-            aRenderThread.ThreadPoolLP().Raw(), &WebRenderMallocSizeOf,
+            aRenderThread.ThreadPoolLP().Raw(),
+            aRenderThread.GlyphRasterThread().Raw(), &WebRenderMallocSizeOf,
             &WebRenderMallocEnclosingSizeOf, 0, compositor.get(),
             compositor->ShouldUseNativeCompositor(),
             compositor->UsePartialPresent(),
@@ -694,10 +695,11 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
     MOZ_COUNTED_DTOR_OVERRIDE(Readback)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
+      RendererStats stats = {0};
       aRenderThread.UpdateAndRender(aWindowId, VsyncId(), mStartTime,
                                     /* aRender */ true, Some(mSize),
                                     wr::SurfaceFormatToImageFormat(mFormat),
-                                    Some(mBuffer), mNeedsYFlip);
+                                    Some(mBuffer), &stats, mNeedsYFlip);
       layers::AutoCompleteTask complete(mTask);
     }
 
@@ -742,6 +744,10 @@ void WebRenderAPI::SetBool(wr::BoolParameter aKey, bool aValue) {
 
 void WebRenderAPI::SetInt(wr::IntParameter aKey, int32_t aValue) {
   wr_api_set_int(mDocHandle, aKey, aValue);
+}
+
+void WebRenderAPI::SetFloat(wr::FloatParameter aKey, float aValue) {
+  wr_api_set_float(mDocHandle, aKey, aValue);
 }
 
 void WebRenderAPI::SetClearColor(const gfx::DeviceColor& aColor) {

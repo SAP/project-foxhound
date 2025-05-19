@@ -261,6 +261,9 @@ var FullPageTranslationsPanel = new (class {
       const panel = wrapper.content.firstElementChild;
       wrapper.replaceWith(wrapper.content);
 
+      panel.addEventListener("command", this);
+      panel.addEventListener("click", this);
+
       const settingsButton = document.getElementById(
         "translations-panel-settings"
       );
@@ -292,8 +295,9 @@ var FullPageTranslationsPanel = new (class {
         errorMessage: "full-page-translations-panel-error-message",
         errorMessageHint: "full-page-translations-panel-error-message-hint",
         errorHintAction: "full-page-translations-panel-translate-hint-action",
-        fromMenuList: "full-page-translations-panel-from",
         fromLabel: "full-page-translations-panel-from-label",
+        fromMenuList: "full-page-translations-panel-from",
+        fromMenuPopup: "full-page-translations-panel-from-menupopup",
         header: "full-page-translations-panel-header",
         intro: "full-page-translations-panel-intro",
         introLearnMoreLink:
@@ -306,6 +310,7 @@ var FullPageTranslationsPanel = new (class {
         restoreButton: "full-page-translations-panel-restore-button",
         toLabel: "full-page-translations-panel-to-label",
         toMenuList: "full-page-translations-panel-to",
+        toMenuPopup: "full-page-translations-panel-to-menupopup",
         translateButton: "full-page-translations-panel-translate",
         unsupportedHeader:
           "full-page-translations-panel-unsupported-language-header",
@@ -680,7 +685,8 @@ var FullPageTranslationsPanel = new (class {
     const shouldDisable =
       !docLangTag ||
       !isDocLangTagSupported ||
-      docLangTag === new Intl.Locale(Services.locale.appLocaleAsBCP47).language;
+      docLangTag ===
+        (await TranslationsParent.getTopPreferredSupportedToLang());
 
     for (const menuitem of alwaysOfferTranslationsMenuItems) {
       menuitem.setAttribute(
@@ -1386,7 +1392,54 @@ var FullPageTranslationsPanel = new (class {
    * @param {CustomEvent} event
    */
   handleEvent = event => {
+    const target = event.target;
+    let { id } = target;
+
+    // If a menuitem within a menulist is the target, it will not have an id,
+    // so we want to grab the closest relevant id.
+    if (!id) {
+      id = target.closest("[id]")?.id;
+    }
+
     switch (event.type) {
+      case "command": {
+        switch (id) {
+          case "translations-panel-settings":
+            this.openSettingsPopup(target);
+            break;
+          case "full-page-translations-panel-from-menupopup":
+            this.onChangeFromLanguage(event);
+            break;
+          case "full-page-translations-panel-to-menupopup":
+            this.onChangeToLanguage(event);
+            break;
+          case "full-page-translations-panel-restore-button":
+            this.onRestore(event);
+            break;
+          case "full-page-translations-panel-cancel":
+          case "full-page-translations-panel-dismiss-error":
+            this.onCancel(event);
+            break;
+          case "full-page-translations-panel-translate":
+            this.onTranslate(event);
+            break;
+          case "full-page-translations-panel-change-source-language":
+            this.onChangeSourceLanguage(event);
+            break;
+        }
+        break;
+      }
+      case "click": {
+        switch (id) {
+          case "full-page-translations-panel-intro-learn-more-link":
+          case "full-page-translations-panel-unsupported-learn-more-link":
+            FullPageTranslationsPanel.onLearnMoreLink();
+            break;
+          default:
+            this.handlePanelButtonEvent(event);
+        }
+        break;
+      }
       case "TranslationsParent:OfferTranslation": {
         if (Services.wm.getMostRecentBrowserWindow()?.gBrowser === gBrowser) {
           this.open(event, /* reportAsAutoShow */ true);

@@ -35,6 +35,7 @@ class nsPIDOMWindowInner;
 
 namespace mozilla {
 class DOMEventTargetHelper;
+class GlobalFreezeObserver;
 class GlobalTeardownObserver;
 template <typename V, typename E>
 class Result;
@@ -72,6 +73,8 @@ class nsIGlobalObject : public nsISupports {
   // Raw pointers to bound DETH objects.  These are added by
   // AddGlobalTeardownObserver().
   mozilla::LinkedList<mozilla::GlobalTeardownObserver> mGlobalTeardownObservers;
+  // And by AddGlobalFreezeObserver()
+  mozilla::LinkedList<mozilla::GlobalFreezeObserver> mGlobalFreezeObservers;
 
   bool mIsDying;
   bool mIsScriptForbidden;
@@ -166,6 +169,17 @@ class nsIGlobalObject : public nsISupports {
   void ForEachGlobalTeardownObserver(
       const std::function<void(mozilla::GlobalTeardownObserver*,
                                bool* aDoneOut)>& aFunc) const;
+
+  // GlobalFreezeObservers must register themselves on the global too for
+  // FreezeCallback and optionally ThawCallback.
+  void AddGlobalFreezeObserver(mozilla::GlobalFreezeObserver* aObserver);
+  void RemoveGlobalFreezeObserver(mozilla::GlobalFreezeObserver* aObserver);
+
+  // Iterate the registered GlobalFreezeObservers and call the given function
+  // for each one.
+  void ForEachGlobalFreezeObserver(
+      const std::function<void(mozilla::GlobalFreezeObserver*, bool* aDoneOut)>&
+          aFunc) const;
 
   virtual bool IsInSyncOperation() { return false; }
 
@@ -283,6 +297,9 @@ class nsIGlobalObject : public nsISupports {
    *   is not a suspendable worker.
    */
   virtual bool IsEligibleForMessaging() { return false; };
+  virtual bool IsBackgroundInternal() const { return false; }
+  virtual mozilla::dom::TimeoutManager* GetTimeoutManager() { return nullptr; }
+  virtual bool IsRunningTimeout() { return false; }
 
  protected:
   virtual ~nsIGlobalObject();
@@ -293,6 +310,9 @@ class nsIGlobalObject : public nsISupports {
   void StopForbiddingScript() { mIsScriptForbidden = false; }
 
   void DisconnectGlobalTeardownObservers();
+  void DisconnectGlobalFreezeObservers();
+  void NotifyGlobalFrozen();
+  void NotifyGlobalThawed();
 
   size_t ShallowSizeOfExcludingThis(mozilla::MallocSizeOf aSizeOf) const;
 

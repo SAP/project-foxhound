@@ -5,17 +5,23 @@
 package org.mozilla.fenix.compose.list
 
 import android.content.res.Configuration
+import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
@@ -27,26 +33,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.R
+import org.mozilla.fenix.compose.Divider
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.button.RadioButton
-import org.mozilla.fenix.compose.button.TextButton
 import org.mozilla.fenix.compose.ext.thenConditional
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val LIST_ITEM_HEIGHT = 56.dp
-
 private val ICON_SIZE = 24.dp
+private val DIVIDER_VERTICAL_PADDING = 6.dp
+
+private const val TOAST_LENGTH = Toast.LENGTH_SHORT
 
 /**
  * List item used to display a label with an optional description text and an optional
@@ -57,6 +68,7 @@ private val ICON_SIZE = 24.dp
  * @param maxLabelLines An optional maximum number of lines for the label text to span.
  * @param description An optional description text below the label.
  * @param maxDescriptionLines An optional maximum number of lines for the description text to span.
+ * @param minHeight An optional minimum height for the list item.
  * @param onClick Called when the user clicks on the item.
  * @param iconPainter [Painter] used to display an icon after the list item.
  * @param iconDescription Content description of the icon.
@@ -71,6 +83,7 @@ fun TextListItem(
     maxLabelLines: Int = 1,
     description: String? = null,
     maxDescriptionLines: Int = 1,
+    minHeight: Dp = LIST_ITEM_HEIGHT,
     onClick: (() -> Unit)? = null,
     iconPainter: Painter? = null,
     iconDescription: String? = null,
@@ -83,13 +96,25 @@ fun TextListItem(
         modifier = modifier,
         description = description,
         maxDescriptionLines = maxDescriptionLines,
+        minHeight = minHeight,
         onClick = onClick,
     ) {
-        if (iconPainter != null && onIconClick != null) {
+        if (iconPainter == null) {
+            return@ListItem
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        if (onIconClick == null) {
+            Icon(
+                painter = iconPainter,
+                contentDescription = iconDescription,
+                tint = iconTint,
+            )
+        } else {
             IconButton(
                 onClick = onIconClick,
                 modifier = Modifier
-                    .padding(end = 16.dp)
                     .size(ICON_SIZE)
                     .clearAndSetSemantics {},
             ) {
@@ -99,13 +124,6 @@ fun TextListItem(
                     tint = iconTint,
                 )
             }
-        } else if (iconPainter != null) {
-            Icon(
-                painter = iconPainter,
-                contentDescription = iconDescription,
-                modifier = Modifier.padding(end = 16.dp),
-                tint = iconTint,
-            )
         }
     }
 }
@@ -115,11 +133,13 @@ fun TextListItem(
  * an optional [IconButton] at the end.
  *
  * @param label The label in the list item.
+ * @param url Website [url] for which the favicon will be shown.
  * @param modifier [Modifier] to be applied to the layout.
  * @param description An optional description text below the label.
  * @param faviconPainter Optional painter to use when fetching a new favicon is unnecessary.
  * @param onClick Called when the user clicks on the item.
- * @param url Website [url] for which the favicon will be shown.
+ * @param showDivider Whether or not to display a vertical divider line before the [IconButton]
+ * at the end.
  * @param iconPainter [Painter] used to display an [IconButton] after the list item.
  * @param iconDescription Content description of the icon.
  * @param onIconClick Called when the user clicks on the icon.
@@ -127,11 +147,12 @@ fun TextListItem(
 @Composable
 fun FaviconListItem(
     label: String,
+    url: String,
     modifier: Modifier = Modifier,
     description: String? = null,
     faviconPainter: Painter? = null,
     onClick: (() -> Unit)? = null,
-    url: String,
+    showDivider: Boolean = false,
     iconPainter: Painter? = null,
     iconDescription: String? = null,
     onIconClick: (() -> Unit)? = null,
@@ -146,32 +167,45 @@ fun FaviconListItem(
                 Image(
                     painter = faviconPainter,
                     contentDescription = null,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .size(ICON_SIZE),
+                    modifier = Modifier.size(ICON_SIZE),
                 )
             } else {
                 Favicon(
                     url = url,
                     size = ICON_SIZE,
-                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
+
+            Spacer(modifier = Modifier.width(16.dp))
         },
         afterListAction = {
-            if (iconPainter != null && onIconClick != null) {
-                IconButton(
-                    onClick = onIconClick,
+            if (iconPainter == null || onIconClick == null) {
+                return@ListItem
+            }
+
+            if (showDivider) {
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Divider(
                     modifier = Modifier
-                        .padding(end = 16.dp)
-                        .size(ICON_SIZE),
-                ) {
-                    Icon(
-                        painter = iconPainter,
-                        contentDescription = iconDescription,
-                        tint = FirefoxTheme.colors.iconPrimary,
-                    )
-                }
+                        .padding(vertical = DIVIDER_VERTICAL_PADDING)
+                        .fillMaxHeight()
+                        .width(1.dp),
+                    color = FirefoxTheme.colors.borderSecondary,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            IconButton(
+                onClick = onIconClick,
+                modifier = Modifier.size(ICON_SIZE),
+            ) {
+                Icon(
+                    painter = iconPainter,
+                    contentDescription = iconDescription,
+                    tint = FirefoxTheme.colors.iconPrimary,
+                )
             }
         },
     )
@@ -184,13 +218,18 @@ fun FaviconListItem(
  * @param label The label in the list item.
  * @param modifier [Modifier] to be applied to the layout.
  * @param labelTextColor [Color] to be applied to the label.
+ * @param descriptionTextColor [Color] to be applied to the description.
+ * @param maxLabelLines An optional maximum number of lines for the label text to span.
  * @param description An optional description text below the label.
  * @param enabled Controls the enabled state of the list item. When `false`, the list item will not
  * be clickable.
+ * @param minHeight An optional minimum height for the list item.
  * @param onClick Called when the user clicks on the item.
  * @param beforeIconPainter [Painter] used to display an [Icon] before the list item.
  * @param beforeIconDescription Content description of the icon.
  * @param beforeIconTint Tint applied to [beforeIconPainter].
+ * @param showDivider Whether or not to display a vertical divider line before the [IconButton]
+ * at the end.
  * @param afterIconPainter [Painter] used to display an icon after the list item.
  * @param afterIconDescription Content description of the icon.
  * @param afterIconTint Tint applied to [afterIconPainter].
@@ -202,12 +241,16 @@ fun IconListItem(
     label: String,
     modifier: Modifier = Modifier,
     labelTextColor: Color = FirefoxTheme.colors.textPrimary,
+    descriptionTextColor: Color = FirefoxTheme.colors.textSecondary,
+    maxLabelLines: Int = 1,
     description: String? = null,
     enabled: Boolean = true,
+    minHeight: Dp = LIST_ITEM_HEIGHT,
     onClick: (() -> Unit)? = null,
     beforeIconPainter: Painter,
     beforeIconDescription: String? = null,
     beforeIconTint: Color = FirefoxTheme.colors.iconPrimary,
+    showDivider: Boolean = false,
     afterIconPainter: Painter? = null,
     afterIconDescription: String? = null,
     afterIconTint: Color = FirefoxTheme.colors.iconPrimary,
@@ -217,26 +260,52 @@ fun IconListItem(
         label = label,
         modifier = modifier,
         labelTextColor = labelTextColor,
+        descriptionTextColor = descriptionTextColor,
+        maxLabelLines = maxLabelLines,
         description = description,
         enabled = enabled,
+        minHeight = minHeight,
         onClick = onClick,
         beforeListAction = {
             Icon(
                 painter = beforeIconPainter,
                 contentDescription = beforeIconDescription,
-                modifier = Modifier.padding(horizontal = 16.dp),
                 tint = if (enabled) beforeIconTint else FirefoxTheme.colors.iconDisabled,
             )
+
+            Spacer(modifier = Modifier.width(16.dp))
         },
         afterListAction = {
+            if (afterIconPainter == null) {
+                return@ListItem
+            }
+
             val tint = if (enabled) afterIconTint else FirefoxTheme.colors.iconDisabled
 
-            if (afterIconPainter != null && onAfterIconClick != null) {
+            if (showDivider) {
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Divider(
+                    modifier = Modifier
+                        .padding(vertical = DIVIDER_VERTICAL_PADDING)
+                        .fillMaxHeight()
+                        .width(1.dp),
+                    color = FirefoxTheme.colors.borderSecondary,
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            if (onAfterIconClick == null) {
+                Icon(
+                    painter = afterIconPainter,
+                    contentDescription = afterIconDescription,
+                    tint = tint,
+                )
+            } else {
                 IconButton(
                     onClick = onAfterIconClick,
-                    modifier = Modifier
-                        .padding(end = 16.dp)
-                        .size(ICON_SIZE),
+                    modifier = Modifier.size(ICON_SIZE),
                     enabled = enabled,
                 ) {
                     Icon(
@@ -245,75 +314,6 @@ fun IconListItem(
                         tint = tint,
                     )
                 }
-            } else if (afterIconPainter != null) {
-                Icon(
-                    painter = afterIconPainter,
-                    contentDescription = afterIconDescription,
-                    modifier = Modifier.padding(end = 16.dp),
-                    tint = tint,
-                )
-            }
-        },
-    )
-}
-
-/**
- * List item used to display a label and an icon at the beginning with an optional description
- * text and an optional [TextButton] at the end.
- *
- * @param label The label in the list item.
- * @param modifier [Modifier] to be applied to the layout.
- * @param labelTextColor [Color] to be applied to the label.
- * @param description An optional description text below the label.
- * @param enabled Controls the enabled state of the list item. When `false`, the list item will not
- * be clickable.
- * @param onClick Called when the user clicks on the item.
- * @param beforeIconPainter [Painter] used to display an [Icon] before the list item.
- * @param beforeIconDescription Content description of the icon.
- * @param beforeIconTint Tint applied to [beforeIconPainter].
- * @param afterButtonText The button text to be displayed after the list item.
- * @param afterButtonTextColor [Color] to apply to [afterButtonText].
- * @param onAfterButtonClick Called when the user clicks on the text button.
- */
-@Composable
-fun IconListItem(
-    label: String,
-    modifier: Modifier = Modifier,
-    labelTextColor: Color = FirefoxTheme.colors.textPrimary,
-    description: String? = null,
-    enabled: Boolean = true,
-    onClick: (() -> Unit)? = null,
-    beforeIconPainter: Painter,
-    beforeIconDescription: String? = null,
-    beforeIconTint: Color = FirefoxTheme.colors.iconPrimary,
-    afterButtonText: String? = null,
-    afterButtonTextColor: Color = FirefoxTheme.colors.actionPrimary,
-    onAfterButtonClick: (() -> Unit)? = null,
-) {
-    ListItem(
-        label = label,
-        modifier = modifier,
-        labelTextColor = labelTextColor,
-        description = description,
-        enabled = enabled,
-        onClick = onClick,
-        beforeListAction = {
-            Icon(
-                painter = beforeIconPainter,
-                contentDescription = beforeIconDescription,
-                modifier = Modifier.padding(horizontal = 16.dp),
-                tint = if (enabled) beforeIconTint else FirefoxTheme.colors.iconDisabled,
-            )
-        },
-        afterListAction = {
-            if (afterButtonText != null && onAfterButtonClick != null) {
-                TextButton(
-                    text = afterButtonText,
-                    onClick = onAfterButtonClick,
-                    enabled = enabled,
-                    textColor = afterButtonTextColor,
-                    upperCaseText = false,
-                )
             }
         },
     )
@@ -344,14 +344,9 @@ fun RadioButtonListItem(
     ListItem(
         label = label,
         modifier = modifier
-            .clearAndSetSemantics {
+            .semantics(mergeDescendants = true) {
                 this.selected = selected
                 role = Role.RadioButton
-                contentDescription = if (description != null) {
-                    "$label.$description"
-                } else {
-                    label
-                }
             },
         maxLabelLines = maxLabelLines,
         description = description,
@@ -361,11 +356,12 @@ fun RadioButtonListItem(
             RadioButton(
                 selected = selected,
                 modifier = Modifier
-                    .padding(horizontal = 16.dp)
                     .size(ICON_SIZE)
                     .clearAndSetSemantics {},
                 onClick = onClick,
             )
+
+            Spacer(modifier = Modifier.width(32.dp))
         },
     )
 }
@@ -393,13 +389,14 @@ fun SelectableListItem(
     ListItem(
         label = label,
         description = description,
-        modifier = modifier.padding(vertical = 4.dp),
+        modifier = modifier,
         beforeListAction = {
             SelectableItemIcon(
                 icon = icon,
                 isSelected = isSelected,
-                modifier = Modifier.padding(start = 8.dp),
             )
+
+            Spacer(modifier = Modifier.width(16.dp))
         },
         afterListAction = afterListAction,
     )
@@ -410,42 +407,35 @@ fun SelectableListItem(
  *
  * @param icon The icon to be displayed.
  * @param isSelected The selected state of the item.
- * @param modifier [Modifier] to be applied to the composable.
  */
 @Composable
 private fun SelectableItemIcon(
     @DrawableRes icon: Int,
     isSelected: Boolean,
-    modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier.size(48.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .background(
-                        color = FirefoxTheme.colors.layerAccent,
-                        shape = CircleShape,
-                    )
-                    .size(40.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.mozac_ic_checkmark_24),
-                    contentDescription = null,
-                    tint = PhotonColors.White,
+    if (isSelected) {
+        Box(
+            modifier = Modifier
+                .background(
+                    color = FirefoxTheme.colors.layerAccent,
+                    shape = CircleShape,
                 )
-            }
-        } else {
+                .size(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             Icon(
-                painter = painterResource(id = icon),
+                painter = painterResource(id = R.drawable.mozac_ic_checkmark_24),
                 contentDescription = null,
-                tint = FirefoxTheme.colors.iconPrimary,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(12.dp),
+                tint = PhotonColors.White,
             )
         }
+    } else {
+        Icon(
+            painter = painterResource(id = icon),
+            contentDescription = null,
+            tint = FirefoxTheme.colors.iconPrimary,
+        )
     }
 }
 
@@ -456,11 +446,13 @@ private fun SelectableItemIcon(
  * @param label The label in the list item.
  * @param modifier [Modifier] to be applied to the layout.
  * @param labelTextColor [Color] to be applied to the label.
+ * @param descriptionTextColor [Color] to be applied to the description.
  * @param maxLabelLines An optional maximum number of lines for the label text to span.
  * @param description An optional description text below the label.
  * @param maxDescriptionLines An optional maximum number of lines for the description text to span.
  * @param enabled Controls the enabled state of the list item. When `false`, the list item will not
  * be clickable.
+ * @param minHeight An optional minimum height for the list item.
  * @param onClick Called when the user clicks on the item.
  * @param beforeListAction Optional Composable for adding UI before the list item.
  * @param afterListAction Optional Composable for adding UI to the end of the list item.
@@ -470,33 +462,36 @@ private fun ListItem(
     label: String,
     modifier: Modifier = Modifier,
     labelTextColor: Color = FirefoxTheme.colors.textPrimary,
+    descriptionTextColor: Color = FirefoxTheme.colors.textSecondary,
     maxLabelLines: Int = 1,
     description: String? = null,
     maxDescriptionLines: Int = 1,
     enabled: Boolean = true,
+    minHeight: Dp = LIST_ITEM_HEIGHT,
     onClick: (() -> Unit)? = null,
     beforeListAction: @Composable RowScope.() -> Unit = {},
     afterListAction: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
         modifier = modifier
-            .defaultMinSize(minHeight = LIST_ITEM_HEIGHT)
+            .height(IntrinsicSize.Min)
+            .defaultMinSize(minHeight = minHeight)
             .thenConditional(
                 modifier = Modifier.clickable { onClick?.invoke() },
-                predicate = { onClick != null },
-            ),
+                predicate = { onClick != null && enabled },
+            )
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         beforeListAction()
 
         Column(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 6.dp)
-                .weight(1f),
+            modifier = Modifier.weight(1f),
         ) {
             Text(
                 text = label,
                 color = if (enabled) labelTextColor else FirefoxTheme.colors.textDisabled,
+                overflow = TextOverflow.Ellipsis,
                 style = FirefoxTheme.typography.subtitle1,
                 maxLines = maxLabelLines,
             )
@@ -504,9 +499,10 @@ private fun ListItem(
             description?.let {
                 Text(
                     text = description,
-                    color = if (enabled) FirefoxTheme.colors.textSecondary else FirefoxTheme.colors.textDisabled,
-                    style = FirefoxTheme.typography.body2,
+                    color = if (enabled) descriptionTextColor else FirefoxTheme.colors.textDisabled,
+                    overflow = TextOverflow.Ellipsis,
                     maxLines = maxDescriptionLines,
+                    style = FirefoxTheme.typography.body2,
                 )
             }
         }
@@ -543,12 +539,13 @@ private fun TextListItemWithDescriptionPreview() {
 private fun TextListItemWithIconPreview() {
     FirefoxTheme {
         Column(Modifier.background(FirefoxTheme.colors.layer1)) {
+            val context = LocalContext.current
             TextListItem(
                 label = "Label + right icon button",
                 onClick = {},
                 iconPainter = painterResource(R.drawable.mozac_ic_folder_24),
                 iconDescription = "click me",
-                onIconClick = { println("icon click") },
+                onIconClick = { Toast.makeText(context, "icon click", TOAST_LENGTH).show() },
             )
 
             TextListItem(
@@ -612,22 +609,24 @@ private fun IconListItemPreview() {
 private fun IconListItemWithAfterListActionPreview() {
     FirefoxTheme {
         Column(Modifier.background(FirefoxTheme.colors.layer1)) {
+            val context = LocalContext.current
             IconListItem(
                 label = "IconListItem + right icon + clicks",
                 beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
                 beforeIconDescription = null,
                 afterIconPainter = painterResource(R.drawable.mozac_ic_ellipsis_vertical_24),
                 afterIconDescription = "click me",
-                onAfterIconClick = { println("icon click") },
+                onAfterIconClick = { Toast.makeText(context, "icon click", TOAST_LENGTH).show() },
             )
 
             IconListItem(
-                label = "IconListItem + text button",
-                onClick = { println("list item click") },
+                label = "IconListItem + right icon + divider + clicks",
                 beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
-                beforeIconDescription = "click me",
-                afterButtonText = "Edit",
-                onAfterButtonClick = { println("text button click") },
+                beforeIconDescription = null,
+                showDivider = true,
+                afterIconPainter = painterResource(R.drawable.mozac_ic_ellipsis_vertical_24),
+                afterIconDescription = "click me",
+                onAfterIconClick = { Toast.makeText(context, "icon click", TOAST_LENGTH).show() },
             )
         }
     }
@@ -641,21 +640,32 @@ private fun IconListItemWithAfterListActionPreview() {
 private fun FaviconListItemPreview() {
     FirefoxTheme {
         Column(Modifier.background(FirefoxTheme.colors.layer1)) {
+            val context = LocalContext.current
             FaviconListItem(
                 label = "Favicon + right icon + clicks",
-                description = "Description text",
-                onClick = { println("list item click") },
                 url = "",
+                description = "Description text",
+                onClick = { Toast.makeText(context, "list item click", TOAST_LENGTH).show() },
                 iconPainter = painterResource(R.drawable.mozac_ic_ellipsis_vertical_24),
-                onIconClick = { println("icon click") },
+                onIconClick = { Toast.makeText(context, "icon click", TOAST_LENGTH).show() },
+            )
+
+            FaviconListItem(
+                label = "Favicon + right icon + show divider + clicks",
+                url = "",
+                description = "Description text",
+                onClick = { Toast.makeText(context, "list item click", TOAST_LENGTH).show() },
+                showDivider = true,
+                iconPainter = painterResource(R.drawable.mozac_ic_ellipsis_vertical_24),
+                onIconClick = { Toast.makeText(context, "icon click", TOAST_LENGTH).show() },
             )
 
             FaviconListItem(
                 label = "Favicon + painter",
+                url = "",
                 description = "Description text",
                 faviconPainter = painterResource(id = R.drawable.mozac_ic_collection_24),
-                onClick = { println("list item click") },
-                url = "",
+                onClick = { Toast.makeText(context, "list item click", TOAST_LENGTH).show() },
             )
         }
     }
@@ -708,7 +718,10 @@ private fun SelectableListItemPreview() {
                 icon = R.drawable.mozac_ic_folder_24,
                 isSelected = false,
                 afterListAction = {
-                    IconButton(onClick = {}) {
+                    IconButton(
+                        onClick = {},
+                        modifier = Modifier.size(ICON_SIZE),
+                    ) {
                         Icon(
                             painter = painterResource(R.drawable.mozac_ic_ellipsis_vertical_24),
                             tint = FirefoxTheme.colors.iconPrimary,

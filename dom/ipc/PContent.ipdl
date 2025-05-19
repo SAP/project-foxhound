@@ -6,6 +6,7 @@
 
 include protocol PBackgroundStarter;
 include protocol PBrowser;
+include protocol PClipboardContentAnalysis;
 include protocol PClipboardReadRequest;
 include protocol PClipboardWriteRequest;
 include protocol PCompositorManager;
@@ -40,6 +41,7 @@ include protocol PURLClassifier;
 include protocol PURLClassifierLocal;
 include protocol PVRManager;
 include protocol PRemoteDecoderManager;
+include protocol PRemoteWorkerService;
 include protocol PProfiler;
 include protocol PScriptCache;
 include protocol PSessionStorageObserver;
@@ -82,6 +84,7 @@ include "mozilla/ipc/ByteBufUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
+include "mozilla/widget/WidgetMessageUtils.h";
 include "mozilla/PermissionDelegateIPCUtils.h";
 
 [RefCounted] using class nsIDOMGeoPosition from "nsGeoPositionIPCSerialiser.h";
@@ -161,6 +164,7 @@ using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
 using nsIDNSService::ResolverMode from "nsIDNSService.h";
 using mozilla::dom::UserActivation::Modifiers from "mozilla/dom/UserActivation.h";
 using mozilla::dom::PrivateAttributionImpressionType from "mozilla/dom/PrivateAttributionIPCUtils.h";
+using nsIClipboard::ClipboardType from "nsIClipboard.h";
 
 union ChromeRegistryItem
 {
@@ -663,6 +667,9 @@ child:
     async ClearStyleSheetCache(nullable nsIPrincipal? aForPrincipal,
                                nsCString? aBaseDomain);
 
+    async ClearScriptCache(nullable nsIPrincipal? aForPrincipal,
+                           nsCString? aBaseDomain);
+
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
     async SetCaptivePortalState(int32_t aState);
@@ -772,6 +779,11 @@ child:
     async RemoteType(nsCString aRemoteType, nsCString aProfile);
 
     /**
+     * Initialize the RemoteWorkerService thread in the content process.
+     */
+    async InitRemoteWorkerService(Endpoint<PRemoteWorkerServiceChild> aEndpoint);
+
+    /**
      * Send BlobURLRegistrationData to child process.
      */
     async InitBlobURLs(BlobURLRegistrationData[] registrations);
@@ -817,17 +829,6 @@ child:
      * Notify idle observers in the child
      */
     async NotifyIdleObserver(uint64_t observerId, nsCString topic, nsString str);
-
-    async InvokeDragSession(MaybeDiscardedWindowContext aSourceWindowContext,
-                            MaybeDiscardedWindowContext aSourceTopWindowContext,
-                            IPCTransferableData[] transfers, uint32_t action);
-
-    async UpdateDragSession(IPCTransferableData[] transfers, EventMessage message);
-
-    async EndDragSession(bool aDoneDrag, bool aUserCancelled,
-                         LayoutDeviceIntPoint aDragEndPoint,
-                         uint32_t aKeyModifiers,
-                         uint32_t aDropEffect);
 
     async DomainSetChanged(uint32_t aSetType, uint32_t aChangeType, nullable nsIURI aDomain);
 
@@ -1082,6 +1083,8 @@ parent:
 
     async CreateGMPService();
 
+    async CreateClipboardContentAnalysis(Endpoint<PClipboardContentAnalysisParent> aParentEndpoint);
+
     async InitStreamFilter(uint64_t channelId, nsString addonId)
         returns (Endpoint<PStreamFilterChild> aEndpoint);
 
@@ -1132,7 +1135,8 @@ parent:
                           nullable nsIPrincipal redirectPrincipal,
                           MaybeDiscardedBrowsingContext browsingContext,
                           bool wasExternallyTriggered,
-                          bool hasValidUserGestureActivation);
+                          bool hasValidUserGestureActivation,
+                          bool newWindowTarget);
     async ExtProtocolChannelConnectParent(uint64_t registrarId);
 
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
@@ -1202,39 +1206,39 @@ parent:
     async SetGeolocationHigherAccuracy(bool enable);
 
     async ConsoleMessage(nsString message);
-    async ScriptErrorWithStack(nsString message, nsString sourceName, nsString sourceLine,
+    async ScriptErrorWithStack(nsString message, nsCString sourceName,
                                uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
                                nsCString category, bool isFromPrivateWindow,
                                bool isFromChromeContext, ClonedMessageData stack);
 
     // Places the items within dataTransfer on the clipboard.
     async SetClipboard(IPCTransferable aTransferable,
-                       int32_t aWhichClipboard, MaybeDiscardedWindowContext aRequestingWindowContext);
+                       ClipboardType aWhichClipboard, MaybeDiscardedWindowContext aRequestingWindowContext);
 
     // Given a list of supported types, returns the clipboard data for the
     // first type that matches.
     // aRequestingWindowContext is the window that is requesting the clipboard,
     // which is used for content analysis.
-    sync GetClipboard(nsCString[] aTypes, int32_t aWhichClipboard,
+    sync GetClipboard(nsCString[] aTypes, ClipboardType aWhichClipboard,
                       MaybeDiscardedWindowContext aRequestingWindowContext)
         returns (IPCTransferableDataOrError transferableDataOrError);
 
     // Requests getting data from clipboard.
-    async GetClipboardAsync(nsCString[] aTypes, int32_t aWhichClipboard,
-                            MaybeDiscardedWindowContext aRequestingWindowContext,
-                            nsIPrincipal aRequestingPrincipal)
+    async GetClipboardDataSnapshot(nsCString[] aTypes, ClipboardType aWhichClipboard,
+                                   MaybeDiscardedWindowContext aRequestingWindowContext,
+                                   nsIPrincipal aRequestingPrincipal)
         returns (ClipboardReadRequestOrError aClipboardReadRequestOrError);
 
     // Requests getting data from clipboard.
-    sync GetClipboardDataSnapshotSync(nsCString[] aTypes, int32_t aWhichClipboard,
+    sync GetClipboardDataSnapshotSync(nsCString[] aTypes, ClipboardType aWhichClipboard,
                                       MaybeDiscardedWindowContext aRequestingWindowContext)
         returns (ClipboardReadRequestOrError aClipboardReadRequestOrError);
 
     // Clears the clipboard.
-    async EmptyClipboard(int32_t aWhichClipboard);
+    async EmptyClipboard(ClipboardType aWhichClipboard);
 
     // Returns true if data of one of the specified types is on the clipboard.
-    sync ClipboardHasType(nsCString[] aTypes, int32_t aWhichClipboard)
+    sync ClipboardHasType(nsCString[] aTypes, ClipboardType aWhichClipboard)
         returns (bool hasType);
 
     /**
@@ -1247,7 +1251,7 @@ parent:
      *         to possibly bypass Content Analysis if a set clipboard and get clipboard
      *         operation are done on the same page.
      */
-    async PClipboardWriteRequest(int32_t aClipboardType, MaybeDiscardedWindowContext aSettingWindowContext);
+    async PClipboardWriteRequest(ClipboardType aClipboardType, MaybeDiscardedWindowContext aSettingWindowContext);
 
     sync GetIconForExtension(nsCString aFileExt, uint32_t aIconSize)
         returns (uint8_t[] bits);
@@ -1295,8 +1299,6 @@ parent:
      * its shutdown tasks.
      */
     async FinishShutdown();
-
-    async UpdateDropEffect(uint32_t aDragAction, uint32_t aDropEffect);
 
     /**
      * Initiates an asynchronous request for permission for the
@@ -1541,7 +1543,9 @@ parent:
                        nullable nsIPrincipal aTriggeringPrincipal,
                        nullable nsIContentSecurityPolicy aCsp,
                        nullable nsIReferrerInfo aReferrerInfo,
-                       OriginAttributes aOriginAttributes)
+                       OriginAttributes aOriginAttributes,
+                       bool aUserActivation,
+                       bool aTextDirectiveUserActivation)
         returns (CreatedWindowInfo window);
 
     async CreateWindowInDifferentProcess(
@@ -1557,7 +1561,9 @@ parent:
       nullable nsIPrincipal aTriggeringPrincipal,
       nullable nsIContentSecurityPolicy aCsp,
       nullable nsIReferrerInfo aReferrerInfo,
-      OriginAttributes aOriginAttributes);
+      OriginAttributes aOriginAttributes,
+      bool aUserActivation,
+      bool aTextDirectiveUserActivation);
 
     /**
      * Tell the parent that a decoder's' benchmark has been completed.
@@ -1796,7 +1802,7 @@ parent:
                     bool aUserActivation) returns(int32_t? requestedIndex);
 
     async BlobURLDataRequest(nsCString aBlobURL,
-                             nullable nsIPrincipal aTriggeringPrincipal,
+                             nsIPrincipal aTriggeringPrincipal,
                              nullable nsIPrincipal aLoadingPrincipal,
                              OriginAttributes aOriginAttributes,
                              uint64_t aInnerWindowId,
@@ -1822,7 +1828,7 @@ parent:
     [LazySend] async CleanupPendingLoadState(uint64_t aLoadIdentifier);
 
 both:
-    async ScriptError(nsString message, nsString sourceName, nsString sourceLine,
+    async ScriptError(nsString message, nsCString sourceName,
                       uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
                       nsCString category, bool isFromPrivateWindow, uint64_t innerWindowId,
                       bool isFromChromeContext);
@@ -1976,9 +1982,9 @@ parent:
                          PrivateAttributionImpressionType aType,
                          uint32_t aIndex, nsString aAd, nsCString aTargetHost);
 
-  async AttributionConversion(nsCString aSourceHost, nsString aTask,
+  async AttributionConversion(nsCString aTargetHost, nsString aTask,
                               uint32_t aHistogramSize,
-                              uint32_t? aLoopbackDays,
+                              uint32_t? aLookbackDays,
                               PrivateAttributionImpressionType? aImpressionType,
                               nsString[] aAds,
                               nsCString[] aImpressionSourceHosts);

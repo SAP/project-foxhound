@@ -11,9 +11,10 @@
 
  */
 
+use crate::gpu_types::UvRectKind;
 use crate::renderer::MAX_VERTEX_TEXTURE_WIDTH;
 use crate::util::ScaleOffset;
-use api::units::{DeviceIntRect, DeviceIntSize, LayoutRect, PictureRect, DeviceRect};
+use api::units::{DeviceIntPoint, DeviceIntRect, DeviceIntSize, DeviceRect, LayoutRect, PictureRect};
 use api::{PremultipliedColorF, ImageFormat};
 use crate::device::Texel;
 use crate::render_task_graph::{RenderTaskGraph, RenderTaskId};
@@ -237,11 +238,18 @@ impl<'a, T> GpuBufferWriter<'a, T> where T: Texel {
     /// Push a reference to a render task in to the writer. Once the render
     /// task graph is resolved, this will be patched with the UV rect of the task
     pub fn push_render_task(&mut self, task_id: RenderTaskId) {
-        self.deferred.push(DeferredBlock {
-            task_id,
-            index: self.buffer.len(),
-        });
-        self.buffer.push(T::default());
+        match task_id {
+            RenderTaskId::INVALID => {
+                self.buffer.push(T::default());
+            }
+            task_id => {
+                self.deferred.push(DeferredBlock {
+                    task_id,
+                    index: self.buffer.len(),
+                });
+                self.buffer.push(T::default());
+            }
+        }
     }
 
     /// Close this writer, returning the GPU address of this set of block(s).
@@ -340,7 +348,28 @@ impl<T> GpuBufferBuilderImpl<T> where T: Texel + std::convert::From<DeviceIntRec
         for block in self.deferred.drain(..) {
             let render_task = &render_tasks[block.task_id];
             let target_rect = render_task.get_target_rect();
-            self.data[block.index] = target_rect.into();
+
+            let uv_rect = match render_task.uv_rect_kind() {
+                UvRectKind::Rect => {
+                    target_rect
+                }
+                UvRectKind::Quad { top_left, bottom_right, .. } => {
+                    let size = target_rect.size();
+
+                    DeviceIntRect::new(
+                        DeviceIntPoint::new(
+                            target_rect.min.x + (top_left.x * size.width as f32).round() as i32,
+                            target_rect.min.y + (top_left.y * size.width as f32).round() as i32,
+                        ),
+                        DeviceIntPoint::new(
+                            target_rect.min.x + (bottom_right.x * size.width as f32).round() as i32,
+                            target_rect.min.y + (bottom_right.x * size.width as f32).round() as i32,
+                        ),
+                    )
+                }
+            };
+
+            self.data[block.index] = uv_rect.into();
         }
 
         GpuBuffer {

@@ -17,7 +17,6 @@
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/matrix_ops.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
@@ -139,7 +138,7 @@ struct OpsinInverseMatrix : public Fields {
 
   mutable bool all_default;
 
-  Matrix3x3 inverse_matrix;
+  float inverse_matrix[9];
   float opsin_biases[3];
   float quant_biases[4];
 };

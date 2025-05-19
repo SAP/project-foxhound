@@ -24,6 +24,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
+  SyncedTabsManagement: "resource://services-sync/SyncedTabs.sys.mjs",
   Weave: "resource://services-sync/main.sys.mjs",
 });
 
@@ -275,12 +276,19 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
 
   _createSyncedTabElement(tabInfo, index, device, canCloseTabs) {
     let tabContainer = document.createXULElement("hbox");
-    tabContainer.setAttribute("class", "PanelUI-tabitem-container");
+    tabContainer.setAttribute(
+      "class",
+      "PanelUI-tabitem-container all-tabs-item"
+    );
 
     let item = document.createXULElement("toolbarbutton");
     let tooltipText = (tabInfo.title ? tabInfo.title + "\n" : "") + tabInfo.url;
     item.setAttribute("itemtype", "tab");
-    item.setAttribute("class", "subviewbutton");
+    item.classList.add(
+      "all-tabs-button",
+      "subviewbutton",
+      "subviewbutton-iconic"
+    );
     item.setAttribute("targetURI", tabInfo.url);
     item.setAttribute(
       "label",
@@ -314,9 +322,12 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
     // We should only add an X button next to tabs if the device
     // is broadcasting that it can remotely close tabs
     if (canCloseTabs) {
-      tabContainer.appendChild(
-        this._createCloseTabElement(tabInfo.url, device)
-      );
+      let closeBtn = this._createCloseTabElement(tabInfo.url, device);
+      closeBtn.tab = item;
+      tabContainer.appendChild(closeBtn);
+      let undoBtn = this._createUndoCloseTabElement(tabInfo.url, device);
+      undoBtn.tab = item;
+      tabContainer.appendChild(undoBtn);
     }
     return tabContainer;
   }
@@ -339,6 +350,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
 
   _createShowInactiveTabsElement(client, device) {
     let showItem = document.createXULElement("toolbarbutton");
+    showItem.setAttribute("itemtype", "showinactivebutton");
     showItem.setAttribute("closemenu", "none");
     showItem.classList.add("subviewbutton", "subviewbutton-nav");
     document.l10n.setAttributes(
@@ -374,17 +386,73 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
   }
 
   _createCloseTabElement(url, device) {
-    let closeBtn = document.createXULElement("image");
-    closeBtn.setAttribute("class", "close-icon remotetabs-close");
-
-    closeBtn.addEventListener("click", function (e) {
+    let closeBtn = document.createXULElement("toolbarbutton");
+    closeBtn.classList.add(
+      "remote-tabs-close-button",
+      "all-tabs-close-button",
+      "subviewbutton"
+    );
+    closeBtn.setAttribute("closemenu", "none");
+    closeBtn.setAttribute(
+      "tooltiptext",
+      gSync.fluentStrings.formatValueSync("synced-tabs-context-close-tab", {
+        deviceName: device.name,
+      })
+    );
+    closeBtn.addEventListener("click", e => {
       e.stopPropagation();
+
+      let tabContainer = closeBtn.parentNode;
+      let tabList = tabContainer.parentNode;
+
+      let undoBtn = tabContainer.querySelector(".remote-tabs-undo-button");
+
+      let prevClose = tabList.querySelector(
+        ".remote-tabs-undo-button:not([hidden])"
+      );
+      if (prevClose) {
+        let prevCloseContainer = prevClose.parentNode;
+        prevCloseContainer.classList.add("tabitem-removed");
+        prevCloseContainer.addEventListener("transitionend", () => {
+          prevCloseContainer.remove();
+        });
+      }
+      closeBtn.hidden = true;
+      undoBtn.hidden = false;
+      // This tab has been closed so we prevent the user from
+      // interacting with it
+      if (closeBtn.tab) {
+        closeBtn.tab.disabled = true;
+      }
       // The user could be hitting multiple tabs across multiple devices, with a few
       // seconds in-between -- we should not immediately fire off pushes, so we
       // add it to a queue and send in bulk at a later time
-      fxAccounts.commands.closeTab.enqueueTabToClose(device, url);
+      SyncedTabsManagement.enqueueTabToClose(device.id, url);
     });
     return closeBtn;
+  }
+
+  _createUndoCloseTabElement(url, device) {
+    let undoBtn = document.createXULElement("toolbarbutton");
+    undoBtn.classList.add("remote-tabs-undo-button", "subviewbutton");
+    undoBtn.setAttribute("closemenu", "none");
+    undoBtn.setAttribute("data-l10n-id", "text-action-undo");
+    undoBtn.hidden = true;
+
+    undoBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+
+      undoBtn.hidden = true;
+      let closeBtn = undoBtn.parentNode.querySelector(".all-tabs-close-button");
+      closeBtn.hidden = false;
+      if (undoBtn.tab) {
+        undoBtn.tab.disabled = false;
+      }
+
+      // remove this tab from being remotely closed
+      SyncedTabsManagement.removePendingTabToClose(device.id, url);
+    });
+    return undoBtn;
   }
 
   destroy() {
@@ -1365,7 +1433,10 @@ var gSync = {
 
   async openFxAEmailFirstPageFromFxaMenu(sourceElement, extraParams = {}) {
     this.emitFxaToolbarTelemetry("login", sourceElement);
-    this.openFxAEmailFirstPage("fxa_toolbar_button", extraParams);
+    this.openFxAEmailFirstPage(
+      this._getEntryPointForElement(sourceElement),
+      extraParams
+    );
   },
 
   async openFxAManagePage(entryPoint) {

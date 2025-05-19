@@ -4,7 +4,59 @@ title: Changelog
 permalink: /changelog/
 ---
 
-# 128.0 (In Development)
+# 130.0 (In Development)
+
+* **ui-widgets**
+  * ⚠️ **Breaking change**: `SnackbarDelegate` now supports passing whether the snackbar should be shown/styled for an error. [Bug 1906657](https://bugzilla.mozilla.org/show_bug.cgi?id=1906657)
+  * ⚠️ **Breaking change**: `SnackbarDelegate` has a new method that allows passing in Strings for the snackbar text and action, not just string resource ids. [Bug 1892762](https://bugzilla.mozilla.org/show_bug.cgi?id=1892762).
+  * `DefaultSnackbarDelegate` will allow passing in Strings for the snackbar text and action beside string resource ids. [Bug 1892762](https://bugzilla.mozilla.org/show_bug.cgi?id=1892762).
+
+* **feature-prompts**:
+  * ⚠️ **Breaking change**: `FullScreenNotification` interface is now implemented using a `FullScreenNotificationToast`. `FullScreenNotificationDialog` has been removed, see [Bug 1902996](https://bugzilla.mozilla.org/show_bug.cgi?id=1902996).
+
+* **feature-customtabs**
+  * ⚠️ **Breaking change**: `CustomTabsToolbarFeature.updateTheme` was replaced with `CustomTabsToolbarFeature.customTabsColorsConfig` to allow more control over which UI elements should be themed or not. [Bug 1904325](https://bugzilla.mozilla.org/show_bug.cgi?id=1904325)
+  * 🆕 New `CustomTabConfig.getConfiguredColorSchemeParams` and `ColorSchemeParams?.getToolbarContrastColor` to help get the colors specified in custom tabs configurations. [Bug 1904325](https://bugzilla.mozilla.org/show_bug.cgi?id=1904325)
+  * 🆕 New `BrowserMenuBuilder?.addCustomMenuItems` method for populating the current menu builder with custom tabs items specified in the custom tabs configuration. [Bug 1904325](https://bugzilla.mozilla.org/show_bug.cgi?id=1904325)
+
+* **browser-engine-gecko**
+  * Added `fingerprintingProtection` and `fingerprintingProtectionPrivateBrowsing` to settings. This allows user to toggle `privacy.fingerprintingProtection` and `privacy.fingerprintingProtection.pbmode` pref. [bug #1878911](https://bugzilla.mozilla.org/show_bug.cgi?id=1878911)
+
+* **concept-engine**
+  * Added `fingerprintingProtection` and `fingerprintingProtectionPrivateBrowsing` to settings. This allows user to toggle `privacy.fingerprintingProtection` and `privacy.fingerprintingProtection.pbmode` pref. [bug #1878911](https://bugzilla.mozilla.org/show_bug.cgi?id=1878911)
+
+* **feature-accounts**
+  * Added support for logout and account deletion web channel messages that update the `FxaAccountManager` and also dismiss any UI affordance in applications.
+
+* **support-test**
+  * ⚠️ **Breaking change**: `expectException` now takes the expected exception class as a type parameter, instead of an argument, and returns the caught exception ([Bug 1908065](https://bugzilla.mozilla.org/show_bug.cgi?id=1908065)).
+
+* **browser-storage-sync**
+  * ⚠️ **Breaking change**: The type parameters of `RemoteTabsCommandQueue.CommandSender` are now `<T, U>`, where `T : DeviceCommandOutgoing`, and `U` is the result of sending the command ([Bug 1908065](https://bugzilla.mozilla.org/show_bug.cgi?id=1908065)).
+  * ⚠️ **Breaking change**: `RemoteTabsCommandQueue.SendResult` has been renamed to `SendCloseTabsResult`, and has a new `RetryFor` variant ([Bug 1908065](https://bugzilla.mozilla.org/show_bug.cgi?id=1908065)).
+
+* **service-firefox-accounts**
+  * 🆕 `SendCommandException` is now a sealed class, with `TabsNotClosed` and `Other` variants ([Bug 1908065](https://bugzilla.mozilla.org/show_bug.cgi?id=1908065)).
+  * ⚠️ **Breaking change**: `FxaDeviceConstellation.sendCommandToDevice()` now throws an instance of `SendCommandException.TabsNotClosed` if some URLs in a `DeviceCommandOutgoing.CloseTab` couldn't be sent in the command ([Bug 1908065](https://bugzilla.mozilla.org/show_bug.cgi?id=1908065)).
+
+# 129.0
+
+* **browser-engine-gecko**
+    * Added `WebExtensionInstallException.AdminInstallOnly` to handle the `ERROR_ADMIN_INSTALL_ONLY` error returned by Gecko when the add-on can only be installed via Enterprise Policies.
+
+* **browser-icons**
+  * Increased size of single-letter fallback-favicon, see [Bug 1905393](https://bugzilla.mozilla.org/show_bug.cgi?id=1905393).
+
+* **feature-accounts-push**
+  * `CloseTabsUseCases.close()` now returns an `UndoableOperation`.
+  * 🆕 New `CloseTabsCommandReceiver` class for processing "close synced tabs" commands received from other devices.
+  * ⚠️ **Breaking change**: `CloseTabsFeature()` now takes a `CloseTabsCommandReceiver` instead of an `onTabsClosed` callback.
+
+* **lib-state**
+  * Introduce a `UiStore` that is similar to a regular `Store` but all the actions are dispatched and processed _immediately_ on the Main thread.
+    * ⚠️ **Note:** Using a `UiStore` means that long running work will block the main thread like any other long running UI work would. Ensure you are dispatching async work to an appropriate background dispatcher.
+
+# 128.0
 
 * **browser-toolbar**
   * Added new data classes `CustomTabsToolbarButtonConfig` and `CustomTabsToolbarListeners` to `CustomTabsToolbarFeature`, see [Bug 1897811](https://bugzilla.mozilla.org/show_bug.cgi?id=1897811).

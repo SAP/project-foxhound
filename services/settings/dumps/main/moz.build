@@ -9,6 +9,7 @@ if CONFIG["MOZ_BUILD_APP"] == "browser":
         "search-telemetry-v2.json",
         "sites-classification.json",
         "top-sites.json",
+        "urlbar-persisted-search-terms.json",
    ]
 
 # These collections are referenced in toolkit/ or other core code, however
@@ -24,9 +25,7 @@ if not CONFIG["MOZ_BUILD_APP"].startswith("mobile/"):
         "password-rules.json",
         "search-config-icons.json",
         "search-config-overrides-v2.json",
-        "search-config-overrides.json",
         "search-config-v2.json",
-        "search-config.json",
         "search-default-override-allowlist.json",
         "translations-models.json",
         "translations-wasm.json",

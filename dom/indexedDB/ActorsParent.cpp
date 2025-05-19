@@ -125,8 +125,10 @@
 #include "mozilla/dom/quota/ClientImpl.h"
 #include "mozilla/dom/quota/DebugOnlyMacro.h"
 #include "mozilla/dom/quota/DirectoryLock.h"
+#include "mozilla/dom/quota/DirectoryLockInlines.h"
 #include "mozilla/dom/quota/DecryptingInputStream_impl.h"
 #include "mozilla/dom/quota/EncryptingOutputStream_impl.h"
+#include "mozilla/dom/quota/ErrorHandling.h"
 #include "mozilla/dom/quota/FileStreams.h"
 #include "mozilla/dom/quota/OriginScope.h"
 #include "mozilla/dom/quota/PersistenceType.h"
@@ -394,6 +396,21 @@ const uint32_t kDeleteTimeoutMs = 1000;
 const int32_t kDEBUGThreadPriority = nsISupportsPriority::PRIORITY_NORMAL;
 const uint32_t kDEBUGThreadSleepMS = 0;
 
+// Set to a non-zero number to enable debugging of transaction event targets.
+// It will cause sleeping after every transaction runnable!
+//
+// This can be useful for discovering race conditions related to switching to
+// another thread. Such races are usually avoided by using MozPromise or
+// RunAfterProcessingCurrentEvent. Chaos mode doesn't always help with
+// uncovering these issues, and only a precisely targeted sleep call can
+// simulate the problem.
+const uint32_t kDEBUGTransactionThreadSleepMS = 0;
+
+// Make sure that we notice if we ever accidentally check in a non-zero value.
+#  ifdef MOZILLA_OFFICIAL
+static_assert(kDEBUGTransactionThreadSleepMS == 0);
+#  endif
+
 #endif
 
 /*******************************************************************************
@@ -616,6 +633,10 @@ Result<nsCOMPtr<nsIFileURL>, nsresult> GetDatabaseFileURL(
   return result;
 }
 
+nsLiteralCString GetDefaultSynchronousMode() {
+  return IndexedDatabaseManager::FullSynchronous() ? "FULL"_ns : "NORMAL"_ns;
+}
+
 nsresult SetDefaultPragmas(mozIStorageConnection& aConnection) {
   MOZ_ASSERT(!NS_IsMainThread());
 
@@ -644,9 +665,7 @@ nsresult SetDefaultPragmas(mozIStorageConnection& aConnection) {
   QM_TRY(MOZ_TO_RESULT(aConnection.ExecuteSimpleSQL(kBuiltInPragmas)));
 
   QM_TRY(MOZ_TO_RESULT(aConnection.ExecuteSimpleSQL(nsAutoCString{
-      "PRAGMA synchronous = "_ns +
-      (IndexedDatabaseManager::FullSynchronous() ? "FULL"_ns : "NORMAL"_ns) +
-      ";"_ns})));
+      "PRAGMA synchronous = "_ns + GetDefaultSynchronousMode() + ";"_ns})));
 
 #ifndef IDB_MOBILE
   if (kSQLiteGrowthIncrement) {
@@ -1133,6 +1152,7 @@ class DatabaseConnection final : public CachingDatabaseConnection {
   RefPtr<UpdateRefcountFunction> mUpdateRefcountFunction;
   RefPtr<QuotaObject> mQuotaObject;
   RefPtr<QuotaObject> mJournalQuotaObject;
+  IDBTransaction::Durability mLastDurability;
   bool mInReadTransaction;
   bool mInWriteTransaction;
 
@@ -1149,7 +1169,7 @@ class DatabaseConnection final : public CachingDatabaseConnection {
     return mUpdateRefcountFunction;
   }
 
-  nsresult BeginWriteTransaction();
+  nsresult BeginWriteTransaction(const IDBTransaction::Durability aDurability);
 
   nsresult CommitWriteTransaction();
 
@@ -1320,6 +1340,9 @@ class ConnectionPool final {
   class FinishCallbackWrapper;
   class IdleConnectionRunnable;
 
+#ifdef DEBUG
+  class TransactionRunnable;
+#endif
   class TransactionInfo;
   struct TransactionInfoPair;
 
@@ -1567,6 +1590,8 @@ struct ConnectionPool::DatabaseInfo final {
     return mReadTransactionCount + mWriteTransactionCount;
   }
 
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable);
+
  private:
   ~DatabaseInfo();
 
@@ -1621,6 +1646,20 @@ class ConnectionPool::FinishCallbackWrapper final : public Runnable {
 
   NS_DECL_NSIRUNNABLE
 };
+
+#ifdef DEBUG
+
+class ConnectionPool::TransactionRunnable final : public Runnable {
+ public:
+  explicit TransactionRunnable(nsCOMPtr<nsIRunnable> aRunnable);
+
+ private:
+  NS_DECL_NSIRUNNABLE
+
+  nsCOMPtr<nsIRunnable> mRunnable;
+};
+
+#endif
 
 class ConnectionPool::TransactionInfo final {
   friend class mozilla::DefaultDelete<TransactionInfo>;
@@ -2508,7 +2547,7 @@ class TransactionBase : public AtomicSafeRefCounted<TransactionBase> {
   uint64_t mActiveRequestCount;
   Atomic<bool> mInvalidatedOnAnyThread;
   const Mode mMode;
-  const Durability mDurability;  // TODO: See bug 1883045
+  const Durability mDurability;
   FlippedOnce<false> mInitialized;
   FlippedOnce<false> mHasBeenActiveOnConnectionThread;
   FlippedOnce<false> mActorDestroyed;
@@ -4642,6 +4681,9 @@ class Utils final : public PBackgroundIndexedDBUtilsParent {
       const PersistenceType& aPersistenceType, const nsACString& aOrigin,
       const nsAString& aDatabaseName, const int64_t& aFileId, int32_t* aRefCnt,
       int32_t* aDBRefCnt, bool* aResult) override;
+
+  mozilla::ipc::IPCResult RecvDoMaintenance(
+      DoMaintenanceResolver&& aResolver) override;
 };
 
 /*******************************************************************************
@@ -4751,6 +4793,8 @@ class QuotaClient final : public mozilla::dom::quota::Client {
   nsresult AsyncDeleteFile(DatabaseFileManager* aFileManager, int64_t aFileId);
 
   nsresult FlushPendingFileDeletions();
+
+  RefPtr<BoolPromise> DoMaintenance();
 
   RefPtr<Maintenance> GetCurrentMaintenance() const {
     return mCurrentMaintenance;
@@ -4993,8 +5037,11 @@ class Maintenance final : public Runnable {
   };
 
   RefPtr<QuotaClient> mQuotaClient;
+  MozPromiseHolder<BoolPromise> mPromiseHolder;
   PRTime mStartTime;
   RefPtr<UniversalDirectoryLock> mPendingDirectoryLock;
+  // The directory lock is normally dropped by BeginDatabaseMaintenance, but if
+  // something fails (in any method), the Finish method will do the cleanup.
   RefPtr<UniversalDirectoryLock> mDirectoryLock;
   nsTArray<nsCOMPtr<nsIRunnable>> mCompleteCallbacks;
   nsTArray<DirectoryInfo> mDirectoryInfos;
@@ -5030,6 +5077,12 @@ class Maintenance final : public Runnable {
     MOZ_ASSERT(mState == State::Initial);
 
     Unused << this->Run();
+  }
+
+  RefPtr<BoolPromise> OnResults() {
+    AssertIsOnBackgroundThread();
+
+    return mPromiseHolder.Ensure(__func__);
   }
 
   void Abort();
@@ -5141,6 +5194,8 @@ class DatabaseMaintenance final : public Runnable {
   enum class MaintenanceAction { Nothing = 0, IncrementalVacuum, FullVacuum };
 
   RefPtr<Maintenance> mMaintenance;
+  // The directory lock is dropped in RunOnOwningThread which serves as a
+  // cleanup method and is always called.
   RefPtr<DirectoryLock> mDirectoryLock;
   const OriginMetadata mOriginMetadata;
   const nsString mDatabasePath;
@@ -5152,21 +5207,22 @@ class DatabaseMaintenance final : public Runnable {
   DataMutex<nsCOMPtr<mozIStorageConnection>> mSharedStorageConnection;
 
  public:
-  DatabaseMaintenance(Maintenance* aMaintenance, DirectoryLock* aDirectoryLock,
+  DatabaseMaintenance(Maintenance* aMaintenance,
+                      RefPtr<DirectoryLock> aDirectoryLock,
                       PersistenceType aPersistenceType,
                       const OriginMetadata& aOriginMetadata,
                       const nsAString& aDatabasePath,
                       const Maybe<CipherKey>& aMaybeKey)
       : Runnable("dom::indexedDB::DatabaseMaintenance"),
         mMaintenance(aMaintenance),
-        mDirectoryLock(aDirectoryLock),
+        mDirectoryLock(std::move(aDirectoryLock)),
         mOriginMetadata(aOriginMetadata),
         mDatabasePath(aDatabasePath),
         mPersistenceType(aPersistenceType),
         mMaybeKey{aMaybeKey},
         mAborted(false),
         mSharedStorageConnection("sharedStorageConnection") {
-    MOZ_ASSERT(aDirectoryLock);
+    MOZ_ASSERT(mDirectoryLock);
 
     MOZ_ASSERT(mDirectoryLock->Id() >= 0);
     mDirectoryLockId = mDirectoryLock->Id();
@@ -6687,6 +6743,7 @@ DatabaseConnection::DatabaseConnection(
     MovingNotNull<SafeRefPtr<DatabaseFileManager>> aFileManager)
     : CachingDatabaseConnection(std::move(aStorageConnection)),
       mFileManager(std::move(aFileManager)),
+      mLastDurability(IDBTransaction::Durability::Default),
       mInReadTransaction(false),
       mInWriteTransaction(false)
 #ifdef DEBUG
@@ -6717,7 +6774,8 @@ nsresult DatabaseConnection::Init() {
   return NS_OK;
 }
 
-nsresult DatabaseConnection::BeginWriteTransaction() {
+nsresult DatabaseConnection::BeginWriteTransaction(
+    const IDBTransaction::Durability aDurability) {
   AssertIsOnConnectionThread();
   MOZ_ASSERT(HasStorageConnection());
   MOZ_ASSERT(mInReadTransaction);
@@ -6729,6 +6787,29 @@ nsresult DatabaseConnection::BeginWriteTransaction() {
   QM_TRY(MOZ_TO_RESULT(ExecuteCachedStatement("ROLLBACK;"_ns)));
 
   mInReadTransaction = false;
+
+  if (mLastDurability != aDurability) {
+    auto synchronousMode = [aDurability]() -> nsLiteralCString {
+      switch (aDurability) {
+        case IDBTransaction::Durability::Default:
+          return GetDefaultSynchronousMode();
+
+        case IDBTransaction::Durability::Strict:
+          return "EXTRA"_ns;
+
+        case IDBTransaction::Durability::Relaxed:
+          return "OFF"_ns;
+
+        default:
+          MOZ_CRASH("Unknown CheckpointMode!");
+      }
+    }();
+
+    QM_TRY(MOZ_TO_RESULT(ExecuteCachedStatement("PRAGMA synchronous = "_ns +
+                                                synchronousMode + ";"_ns)));
+
+    mLastDurability = aDurability;
+  }
 
   if (!mUpdateRefcountFunction) {
     MOZ_ASSERT(mFileManager);
@@ -7842,8 +7923,7 @@ void ConnectionPool::Dispatch(uint64_t aTransactionId, nsIRunnable* aRunnable) {
         dbInfo.mRunningWriteTransaction &&
             dbInfo.mRunningWriteTransaction.refEquals(*transactionInfo));
 
-    MOZ_ALWAYS_SUCCEEDS(
-        dbInfo.mEventTarget->Dispatch(aRunnable, NS_DISPATCH_NORMAL));
+    MOZ_ALWAYS_SUCCEEDS(dbInfo.Dispatch(do_AddRef(aRunnable)));
   } else {
     transactionInfo->mQueuedRunnables.AppendElement(aRunnable);
   }
@@ -8106,8 +8186,7 @@ bool ConnectionPool::ScheduleTransaction(TransactionInfo& aTransactionInfo,
 
   if (!queuedRunnables.IsEmpty()) {
     for (auto& queuedRunnable : queuedRunnables) {
-      MOZ_ALWAYS_SUCCEEDS(
-          dbInfo.mEventTarget->Dispatch(queuedRunnable.forget()));
+      MOZ_ALWAYS_SUCCEEDS(dbInfo.Dispatch(queuedRunnable.forget()));
     }
 
     queuedRunnables.Clear();
@@ -8345,9 +8424,8 @@ void ConnectionPool::CloseDatabase(DatabaseInfo& aDatabaseInfo) const {
   aDatabaseInfo.mNeedsCheckpoint = false;
   aDatabaseInfo.mClosing = true;
 
-  MOZ_ALWAYS_SUCCEEDS(aDatabaseInfo.mEventTarget->Dispatch(
-      MakeAndAddRef<CloseConnectionRunnable>(aDatabaseInfo),
-      NS_DISPATCH_NORMAL));
+  MOZ_ALWAYS_SUCCEEDS(aDatabaseInfo.Dispatch(
+      MakeAndAddRef<CloseConnectionRunnable>(aDatabaseInfo)));
 }
 
 bool ConnectionPool::CloseDatabaseWhenIdleInternal(
@@ -8491,6 +8569,19 @@ ConnectionPool::DatabaseInfo::~DatabaseInfo() {
   MOZ_COUNT_DTOR(ConnectionPool::DatabaseInfo);
 }
 
+nsresult ConnectionPool::DatabaseInfo::Dispatch(
+    already_AddRefed<nsIRunnable> aRunnable) {
+  nsCOMPtr<nsIRunnable> runnable = aRunnable;
+
+#ifdef DEBUG
+  if (kDEBUGTransactionThreadSleepMS) {
+    runnable = MakeRefPtr<TransactionRunnable>(std::move(runnable));
+  }
+#endif
+
+  return mEventTarget->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
+}
+
 ConnectionPool::DatabaseCompleteCallback::DatabaseCompleteCallback(
     const nsCString& aDatabaseId, nsIRunnable* aCallback)
     : mDatabaseId(aDatabaseId), mCallback(aCallback) {
@@ -8562,6 +8653,29 @@ nsresult ConnectionPool::FinishCallbackWrapper::Run() {
 }
 
 uint32_t ConnectionPool::sSerialNumber = 0u;
+
+#ifdef DEBUG
+
+ConnectionPool::TransactionRunnable::TransactionRunnable(
+    nsCOMPtr<nsIRunnable> aRunnable)
+    : Runnable("dom::indexedDB::ConnectionPool::TransactionRunnable"),
+      mRunnable(std::move(aRunnable)) {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(kDEBUGTransactionThreadSleepMS);
+}
+
+nsresult ConnectionPool::TransactionRunnable::Run() {
+  MOZ_ASSERT(!IsOnBackgroundThread());
+
+  QM_TRY(MOZ_TO_RESULT(mRunnable->Run()));
+
+  MOZ_ALWAYS_TRUE(PR_Sleep(PR_MillisecondsToInterval(
+                      kDEBUGTransactionThreadSleepMS)) == PR_SUCCESS);
+
+  return NS_OK;
+}
+
+#endif
 
 ConnectionPool::IdleResource::IdleResource(const TimeStamp& aIdleTime)
     : mIdleTime(aIdleTime) {
@@ -9382,7 +9496,7 @@ void Database::ConnectionClosedCallback() {
   MOZ_ASSERT(mClosed);
   MOZ_ASSERT(!mTransactions.Count());
 
-  mDirectoryLock = nullptr;
+  DropDirectoryLock(mDirectoryLock);
 
   CleanupMetadata();
 
@@ -9543,7 +9657,7 @@ Database::AllocPBackgroundIDBTransactionParent(
 mozilla::ipc::IPCResult Database::RecvPBackgroundIDBTransactionConstructor(
     PBackgroundIDBTransactionParent* aActor,
     nsTArray<nsString>&& aObjectStoreNames, const Mode& aMode,
-    const Durability& aDurability) {  // TODO: See bug 1883045
+    const Durability& aDurability) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aActor);
   MOZ_ASSERT(!aObjectStoreNames.IsEmpty());
@@ -9655,7 +9769,8 @@ nsresult Database::StartTransactionOp::DoDatabaseWork(
   }
 
   if (Transaction().GetMode() != IDBTransaction::Mode::ReadOnly) {
-    QM_TRY(MOZ_TO_RESULT(aConnection->BeginWriteTransaction()));
+    QM_TRY(MOZ_TO_RESULT(
+        aConnection->BeginWriteTransaction(Transaction().GetDurability())));
   }
 
   return NS_OK;
@@ -11973,6 +12088,22 @@ nsresult QuotaClient::FlushPendingFileDeletions() {
   return NS_OK;
 }
 
+RefPtr<BoolPromise> QuotaClient::DoMaintenance() {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(!IsShuttingDownOnBackgroundThread());
+
+  if (!mBackgroundThread) {
+    mBackgroundThread = GetCurrentSerialEventTarget();
+  }
+
+  auto maintenance = MakeRefPtr<Maintenance>(this);
+
+  mMaintenanceQueue.AppendElement(maintenance);
+  ProcessMaintenanceQueue();
+
+  return maintenance->OnResults();
+}
+
 nsThreadPool* QuotaClient::GetOrCreateThreadPool() {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!IsShuttingDownOnBackgroundThread());
@@ -12371,12 +12502,7 @@ void QuotaClient::StartIdleMaintenance() {
     return;
   }
 
-  if (!mBackgroundThread) {
-    mBackgroundThread = GetCurrentSerialEventTarget();
-  }
-
-  mMaintenanceQueue.EmplaceBack(MakeRefPtr<Maintenance>(this));
-  ProcessMaintenanceQueue();
+  DoMaintenance();
 }
 
 void QuotaClient::StopIdleMaintenance() {
@@ -12724,7 +12850,8 @@ void DeleteFilesRunnable::UnblockOpen() {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(mState == State_UnblockingOpen);
 
-  mDirectoryLock = nullptr;
+  SafeDropDirectoryLock(mDirectoryLock);
+
   MOZ_ASSERT(mDEBUGCountsAsPending);
   sPendingRunnables--;
   DEBUGONLY(mDEBUGCountsAsPending = false);
@@ -12790,8 +12917,6 @@ void Maintenance::Abort() {
     aDatabaseMaintenance.GetData()->Abort();
   }
 
-  // mDirectoryLock must be cleared before transition to finished state
-  mDirectoryLock = nullptr;
   mAborted = true;
 }
 
@@ -13115,14 +13240,15 @@ nsresult Maintenance::DirectoryWork() {
 
                 QM_TRY_UNWRAP(
                     const DebugOnly<bool> created,
-                    quotaManager->EnsurePersistentOriginIsInitialized(metadata)
+                    quotaManager
+                        ->EnsurePersistentOriginIsInitializedInternal(metadata)
                         .map([](const auto& res) { return res.second; }),
                     // Not much we can do here...
                     Ok{});
 
                 // We found this origin directory by traversing the repository,
-                // so EnsurePersistentOriginIsInitialized shouldn't report that
-                // a new directory has been created.
+                // so EnsurePersistentOriginIsInitializedInternal shouldn't
+                // report that a new directory has been created.
                 MOZ_ASSERT(!created);
               }
 
@@ -13261,22 +13387,19 @@ nsresult Maintenance::BeginDatabaseMaintenance() {
   RefPtr<nsThreadPool> threadPool;
 
   for (DirectoryInfo& directoryInfo : mDirectoryInfos) {
-    RefPtr<DirectoryLock> directoryLock;
-
     for (const nsAString& databasePath : *directoryInfo.mDatabasePaths) {
       if (Helper::IsSafeToRunMaintenance(databasePath)) {
-        if (!directoryLock) {
-          directoryLock = mDirectoryLock->SpecializeForClient(
-              directoryInfo.mPersistenceType, *directoryInfo.mOriginMetadata,
-              Client::IDB);
-          MOZ_ASSERT(directoryLock);
-        }
+        RefPtr<DirectoryLock> directoryLock =
+            mDirectoryLock->SpecializeForClient(directoryInfo.mPersistenceType,
+                                                *directoryInfo.mOriginMetadata,
+                                                Client::IDB);
+        MOZ_ASSERT(directoryLock);
 
         // No key needs to be passed here, because we skip encrypted databases
         // in DoDirectoryWork as long as they are only used in private browsing
         // mode.
         const auto databaseMaintenance = MakeRefPtr<DatabaseMaintenance>(
-            this, directoryLock, directoryInfo.mPersistenceType,
+            this, std::move(directoryLock), directoryInfo.mPersistenceType,
             *directoryInfo.mOriginMetadata, databasePath, Nothing{});
 
         if (!threadPool) {
@@ -13300,7 +13423,7 @@ nsresult Maintenance::BeginDatabaseMaintenance() {
 
   mDirectoryInfos.Clear();
 
-  mDirectoryLock = nullptr;
+  DropDirectoryLock(mDirectoryLock);
 
   if (mDatabaseMaintenances.Count()) {
     mState = State::WaitingForDatabaseMaintenancesToComplete;
@@ -13314,15 +13437,20 @@ nsresult Maintenance::BeginDatabaseMaintenance() {
 
 void Maintenance::Finish() {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(!mDirectoryLock);
   MOZ_ASSERT(mState == State::Finishing);
 
-  if (NS_FAILED(mResultCode)) {
+  if (NS_SUCCEEDED(mResultCode)) {
+    mPromiseHolder.ResolveIfExists(true, __func__);
+  } else {
+    mPromiseHolder.RejectIfExists(mResultCode, __func__);
+
     nsCString errorName;
     GetErrorName(mResultCode, errorName);
 
     IDB_WARNING("Maintenance finished with error: %s", errorName.get());
   }
+
+  SafeDropDirectoryLock(mDirectoryLock);
 
   // It can happen that we are only referenced by mCurrentMaintenance which is
   // cleared in NoteFinishedMaintenance()
@@ -13453,12 +13581,6 @@ nsresult DatabaseMaintenance::Abort() {
       QM_TRY(MOZ_TO_RESULT(connection->Interrupt()));
     }
   }
-
-  // mDirectoryLock must not be released here - otherwise QuotaVFS of storage
-  // emits a crash to disallow getting a quota object for an unregistered
-  // directory lock when connection is closed.
-  // mDirectoryLock will be dropped by RunOnOwningThread in a timely fashion
-  // after the interrupted maintenance completes.
 
   return NS_OK;
 }
@@ -13790,7 +13912,7 @@ void DatabaseMaintenance::FullVacuum(mozIStorageConnection& aConnection,
 void DatabaseMaintenance::RunOnOwningThread() {
   AssertIsOnBackgroundThread();
 
-  mDirectoryLock = nullptr;
+  DropDirectoryLock(mDirectoryLock);
 
   if (mCompleteCallback) {
     MOZ_ALWAYS_SUCCEEDS(NS_DispatchToCurrentThread(mCompleteCallback.forget()));
@@ -15048,14 +15170,15 @@ nsresult OpenDatabaseOp::DoDatabaseWork() {
       ([persistenceType, &quotaManager, this]()
            -> mozilla::Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult> {
         if (persistenceType == PERSISTENCE_TYPE_PERSISTENT) {
-          QM_TRY_RETURN(quotaManager->EnsurePersistentOriginIsInitialized(
-              mOriginMetadata));
+          QM_TRY_RETURN(
+              quotaManager->EnsurePersistentOriginIsInitializedInternal(
+                  mOriginMetadata));
         }
 
         QM_TRY(MOZ_TO_RESULT(
             quotaManager->EnsureTemporaryStorageIsInitializedInternal()));
-        QM_TRY_RETURN(quotaManager->EnsureTemporaryOriginIsInitialized(
-            persistenceType, mOriginMetadata));
+        QM_TRY_RETURN(quotaManager->EnsureTemporaryOriginIsInitializedInternal(
+            mOriginMetadata));
       }()
                   .map([](const auto& res) { return res.first; })));
 
@@ -15797,7 +15920,7 @@ void OpenDatabaseOp::ConnectionClosedCallback() {
   MOZ_ASSERT(HasFailed());
   MOZ_ASSERT(mDirectoryLock);
 
-  mDirectoryLock = nullptr;
+  DropDirectoryLock(mDirectoryLock);
 
   CleanupMetadata();
 }
@@ -16047,7 +16170,8 @@ nsresult OpenDatabaseOp::VersionChangeOp::DoDatabaseWork(
 
   Transaction().SetActiveOnConnectionThread();
 
-  QM_TRY(MOZ_TO_RESULT(aConnection->BeginWriteTransaction()));
+  QM_TRY(MOZ_TO_RESULT(
+      aConnection->BeginWriteTransaction(Transaction().GetDurability())));
 
   // The parameter names are not used, parameters are bound by index only
   // locally in the same function.
@@ -16379,7 +16503,7 @@ void DeleteDatabaseOp::SendResults() {
                                                                  response);
   }
 
-  mDirectoryLock = nullptr;
+  SafeDropDirectoryLock(mDirectoryLock);
 
   CleanupMetadata();
 
@@ -16596,12 +16720,12 @@ nsresult GetDatabasesOp::DoDatabaseWork() {
   QM_TRY(([&quotaManager, this]()
               -> mozilla::Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult> {
     if (mPersistenceType == PERSISTENCE_TYPE_PERSISTENT) {
-      QM_TRY_RETURN(
-          quotaManager->EnsurePersistentOriginIsInitialized(mOriginMetadata));
+      QM_TRY_RETURN(quotaManager->EnsurePersistentOriginIsInitializedInternal(
+          mOriginMetadata));
     }
 
-    QM_TRY_RETURN(quotaManager->EnsureTemporaryOriginIsInitialized(
-        mPersistenceType, mOriginMetadata));
+    QM_TRY_RETURN(quotaManager->EnsureTemporaryOriginIsInitializedInternal(
+        mOriginMetadata));
   }()
                      .map([](const auto& res) { return Ok{}; })));
 
@@ -16736,7 +16860,7 @@ void GetDatabasesOp::SendResults() {
 
   mResolver(mDatabaseMetadataArray);
 
-  mDirectoryLock = nullptr;
+  SafeDropDirectoryLock(mDirectoryLock);
 
   CleanupMetadata();
 
@@ -20629,6 +20753,37 @@ mozilla::ipc::IPCResult Utils::RecvGetFileReferences(
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return IPC_FAIL(this, "DispatchAndReturnFileReferences failed!");
   }
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult Utils::RecvDoMaintenance(
+    DoMaintenanceResolver&& aResolver) {
+  AssertIsOnBackgroundThread();
+
+  QM_TRY(MOZ_TO_RESULT(!QuotaManager::IsShuttingDown()),
+         ResolveNSResultResponseAndReturn(aResolver));
+
+  QM_TRY(QuotaManager::EnsureCreated(),
+         ResolveNSResultResponseAndReturn(aResolver));
+
+  QuotaClient* quotaClient = QuotaClient::GetInstance();
+  QM_TRY(MOZ_TO_RESULT(quotaClient), QM_IPC_FAIL(this));
+
+  quotaClient->DoMaintenance()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [self = RefPtr(this), resolver = std::move(aResolver)](
+          const BoolPromise::ResolveOrRejectValue& aValue) {
+        if (!self->CanSend()) {
+          return;
+        }
+
+        if (aValue.IsResolve()) {
+          resolver(NS_OK);
+        } else {
+          resolver(aValue.RejectValue());
+        }
+      });
 
   return IPC_OK();
 }

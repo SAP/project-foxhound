@@ -69,27 +69,22 @@ object FeatureFlags {
     const val fxSuggest = true
 
     /**
-     * Allows users to enable SuggestStrongPassword feature.
-     */
-    const val suggestStrongPassword = true
-
-    /**
      * Enable Meta attribution.
      */
     const val metaAttributionEnabled = true
 
     /**
-     * Enable Toolbar Redesign components and behaviors ready for Nightly.
+     * Enables Navigation Toolbar.
      */
-    val completeToolbarRedesignEnabled = Config.channel.isNightlyOrDebug
+    val navigationToolbarEnabled = Config.channel.isNightlyOrDebug
 
     /**
-     * Enables the menu redesign.
+     * Enables the Compose Homepage.
      */
-    const val menuRedesignEnabled = false
+    const val composeHomepage = false
 
     /**
-     * Enables microsurveys.
+     * Enables Homepage as a New Tab.
      */
-    val microsurveysEnabled = Config.channel.isDebug
+    const val homepageAsNewTab = false
 }

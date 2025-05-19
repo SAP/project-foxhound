@@ -47,6 +47,7 @@ const { CRLiteFiltersClient } = RemoteSecuritySettings.init();
 
 const CRLITE_FILTERS_ENABLED_PREF =
   "security.remote_settings.crlite_filters.enabled";
+const CRLITE_FILTER_CHANNEL_PREF = "security.pki.crlite_channel";
 const INTERMEDIATES_ENABLED_PREF =
   "security.remote_settings.intermediates.enabled";
 const INTERMEDIATES_DL_PER_POLL_PREF =
@@ -101,7 +102,7 @@ function getFilenameForFilter(filter) {
  * @param {boolean} clear Whether or not to clear the local DB first. Defaults
  *                        to true.
  */
-async function syncAndDownload(filters, clear = true) {
+async function syncAndDownload(filters, clear = true, channel = "specified") {
   const localDB = await CRLiteFiltersClient.client.db;
   if (clear) {
     await localDB.clear();
@@ -130,6 +131,8 @@ async function syncAndDownload(filters, clear = true) {
       coverage: filter.type == "full" ? filter.coverage : undefined,
       enrolledIssuers:
         filter.type == "full" ? filter.enrolledIssuers : undefined,
+      channel: `${channel}`,
+      filter_expression: `'${channel}' == '${CRLITE_FILTER_CHANNEL_PREF}'|preferenceValue('none')`,
     };
 
     await localDB.create(record);
@@ -142,6 +145,17 @@ async function syncAndDownload(filters, clear = true) {
   Services.obs.notifyObservers(null, "remote-settings:changes-poll-end");
   let results = await promise;
   return results[1]; // topicObserved gives back a 2-array
+}
+
+function expectDownloads(result, expected) {
+  let [status, filters] = result.split(";");
+  equal(status, "finished", "CRLite filter download should have run");
+  let filtersSplit = filters.split(",");
+  deepEqual(
+    filtersSplit,
+    expected.length ? expected : [""],
+    "Should have downloaded the expected CRLite filters"
+  );
 }
 
 add_task(async function test_crlite_filters_disabled() {
@@ -168,6 +182,21 @@ add_task(async function test_crlite_no_filters() {
   Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
 
   let result = await syncAndDownload([]);
+  equal(
+    result,
+    "unavailable",
+    "CRLite filter download should have run, but nothing was available"
+  );
+});
+
+add_task(async function test_crlite_no_filters_in_channel() {
+  Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
+
+  let result = await syncAndDownload(
+    [{ timestamp: "2019-01-01T00:00:00Z", type: "full", id: "0000" }],
+    true,
+    "other"
+  );
   equal(
     result,
     "unavailable",
@@ -229,14 +258,10 @@ add_task(async function test_crlite_incremental_filters_with_wrong_parent() {
       parent: "0003",
     },
   ]);
-  let [status, filters] = result.split(";");
-  equal(status, "finished", "CRLite filter download should have run");
-  let filtersSplit = filters.split(",");
-  deepEqual(
-    filtersSplit,
-    ["2019-01-01T00:00:00Z-full", "2019-01-01T06:00:00Z-diff"],
-    "Should have downloaded the expected CRLite filters"
-  );
+  expectDownloads(result, [
+    "2019-01-01T00:00:00Z-full",
+    "2019-01-01T06:00:00Z-diff",
+  ]);
 });
 
 add_task(async function test_crlite_incremental_filter_too_early() {
@@ -319,19 +344,12 @@ add_task(async function test_crlite_filters_full_and_incremental() {
       parent: "0001",
     },
   ]);
-  let [status, filters] = result.split(";");
-  equal(status, "finished", "CRLite filter download should have run");
-  let filtersSplit = filters.split(",");
-  deepEqual(
-    filtersSplit,
-    [
-      "2019-01-01T00:00:00Z-full",
-      "2019-01-01T06:00:00Z-diff",
-      "2019-01-01T12:00:00Z-diff",
-      "2019-01-01T18:00:00Z-diff",
-    ],
-    "Should have downloaded the expected CRLite filters"
-  );
+  expectDownloads(result, [
+    "2019-01-01T00:00:00Z-full",
+    "2019-01-01T06:00:00Z-diff",
+    "2019-01-01T12:00:00Z-diff",
+    "2019-01-01T18:00:00Z-diff",
+  ]);
 });
 
 add_task(async function test_crlite_filters_multiple_days() {
@@ -397,19 +415,12 @@ add_task(async function test_crlite_filters_multiple_days() {
       parent: "0020",
     },
   ]);
-  let [status, filters] = result.split(";");
-  equal(status, "finished", "CRLite filter download should have run");
-  let filtersSplit = filters.split(",");
-  deepEqual(
-    filtersSplit,
-    [
-      "2019-01-03T00:00:00Z-full",
-      "2019-01-03T06:00:00Z-diff",
-      "2019-01-03T12:00:00Z-diff",
-      "2019-01-03T18:00:00Z-diff",
-    ],
-    "Should have downloaded the expected CRLite filters"
-  );
+  expectDownloads(result, [
+    "2019-01-03T00:00:00Z-full",
+    "2019-01-03T06:00:00Z-diff",
+    "2019-01-03T12:00:00Z-diff",
+    "2019-01-03T18:00:00Z-diff",
+  ]);
 });
 
 add_task(async function test_crlite_confirm_revocations_mode() {
@@ -807,19 +818,12 @@ add_task(async function test_crlite_filters_avoid_reprocessing_filters() {
       parent: "0002",
     },
   ]);
-  let [status, filters] = result.split(";");
-  equal(status, "finished", "CRLite filter download should have run");
-  let filtersSplit = filters.split(",");
-  deepEqual(
-    filtersSplit,
-    [
-      "2019-01-01T00:00:00Z-full",
-      "2019-01-01T06:00:00Z-diff",
-      "2019-01-01T12:00:00Z-diff",
-      "2019-01-01T18:00:00Z-diff",
-    ],
-    "Should have downloaded the expected CRLite filters"
-  );
+  expectDownloads(result, [
+    "2019-01-01T00:00:00Z-full",
+    "2019-01-01T06:00:00Z-diff",
+    "2019-01-01T12:00:00Z-diff",
+    "2019-01-01T18:00:00Z-diff",
+  ]);
   // This simulates another poll without clearing the database first. The
   // filter and stashes should not be re-downloaded.
   result = await syncAndDownload([], false);
@@ -839,6 +843,96 @@ add_task(async function test_crlite_filters_avoid_reprocessing_filters() {
   );
   equal(result, "finished;2019-01-02T00:00:00Z-diff");
 });
+
+add_task(
+  async function test_crlite_filters_reprocess_filters_on_channel_change() {
+    Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
+    Services.prefs.setStringPref(CRLITE_FILTER_CHANNEL_PREF, "specified");
+    registerCleanupFunction(() => {
+      Services.prefs.clearUserPref(CRLITE_FILTERS_ENABLED_PREF);
+      Services.prefs.clearUserPref(CRLITE_FILTER_CHANNEL_PREF);
+    });
+
+    // Download filters from the "specified" channel.
+    let result = await syncAndDownload(
+      [
+        {
+          timestamp: "2019-01-01T00:00:00Z",
+          type: "full",
+          id: "0000",
+          coverage: [
+            {
+              logID: "9lyUL9F3MCIUVBgIMJRWjuNNExkzv98MLyALzE7xZOM=",
+              minTimestamp: 0,
+              maxTimestamp: 9999999999999,
+            },
+          ],
+          enrolledIssuers: [ISSUER_PEM_UID, NO_SCT_ISSUER_PEM_UID],
+        },
+        {
+          timestamp: "2019-01-01T06:00:00Z",
+          type: "diff",
+          id: "0001",
+          parent: "0000",
+        },
+      ],
+      true,
+      "specified"
+    );
+    expectDownloads(result, [
+      "2019-01-01T00:00:00Z-full",
+      "2019-01-01T06:00:00Z-diff",
+    ]);
+
+    // Now add records for the "priority" channel without clearing the database.
+    // The user is subscribed to "specified" so nothing should be downloaded.
+    result = await syncAndDownload(
+      [
+        {
+          timestamp: "2020-01-01T00:00:00Z",
+          type: "full",
+          id: "0002",
+          coverage: [
+            {
+              logID: "9lyUL9F3MCIUVBgIMJRWjuNNExkzv98MLyALzE7xZOM=",
+              minTimestamp: 0,
+              maxTimestamp: 9999999999999,
+            },
+          ],
+          enrolledIssuers: [ISSUER_PEM_UID, NO_SCT_ISSUER_PEM_UID],
+        },
+        {
+          timestamp: "2020-01-01T06:00:00Z",
+          type: "diff",
+          id: "0003",
+          parent: "0002",
+        },
+      ],
+      false,
+      "priority"
+    );
+    expectDownloads(result, []);
+
+    // Subscribe the user to "priority" channel and simulate another poll
+    // without clearing the database. The user should download the priority
+    // filters.
+    Services.prefs.setStringPref(CRLITE_FILTER_CHANNEL_PREF, "priority");
+    result = await syncAndDownload([], false);
+    expectDownloads(result, [
+      "2020-01-01T00:00:00Z-full",
+      "2020-01-01T06:00:00Z-diff",
+    ]);
+
+    // Switch back to the "specified" channel and simulate another poll without
+    // clearing the database. The user should download the specified filters.
+    Services.prefs.setStringPref(CRLITE_FILTER_CHANNEL_PREF, "specified");
+    result = await syncAndDownload([], false);
+    expectDownloads(result, [
+      "2019-01-01T00:00:00Z-full",
+      "2019-01-01T06:00:00Z-diff",
+    ]);
+  }
+);
 
 let server;
 

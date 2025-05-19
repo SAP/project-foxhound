@@ -2,7 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, PremultipliedColorF};
+use api::ColorF;
+
+use crate::{render_task_graph::RenderTaskId, renderer::GpuBufferBuilder, scene::SceneProperties};
 
 #[repr(u32)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -40,11 +42,43 @@ impl Default for PatternShaderInput {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PatternTextureInput {
+    pub task_id: RenderTaskId,
+}
+
+impl Default for PatternTextureInput {
+    fn default() -> Self {
+        PatternTextureInput {
+            task_id: RenderTaskId::INVALID,
+        }
+    }
+}
+
+pub struct PatternBuilderContext<'a> {
+    pub scene_properties: &'a SceneProperties,
+}
+
+pub struct PatternBuilderState<'a> {
+    pub frame_gpu_data: &'a mut GpuBufferBuilder,
+}
+
+pub trait PatternBuilder {
+    fn build(
+        &self,
+        _ctx: &PatternBuilderContext,
+        _state: &mut PatternBuilderState,
+    ) -> Pattern;
+}
+
+#[derive(Clone, Debug)]
 pub struct Pattern {
     pub kind: PatternKind,
     pub shader_input: PatternShaderInput,
-    pub base_color: PremultipliedColorF,
+    pub texture_input: PatternTextureInput,
+    pub base_color: ColorF,
     pub is_opaque: bool,
 }
 
@@ -53,7 +87,8 @@ impl Pattern {
         Pattern {
             kind: PatternKind::ColorOrTexture,
             shader_input: PatternShaderInput::default(),
-            base_color: color.premultiplied(),
+            texture_input: PatternTextureInput::default(),
+            base_color: color,
             is_opaque: color.a >= 1.0,
         }
     }
@@ -63,7 +98,8 @@ impl Pattern {
         Pattern {
             kind: PatternKind::ColorOrTexture,
             shader_input: PatternShaderInput::default(),
-            base_color: PremultipliedColorF::WHITE,
+            texture_input: PatternTextureInput::default(),
+            base_color: ColorF::BLACK,
             is_opaque: false,
         }
     }

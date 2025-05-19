@@ -149,9 +149,12 @@ class _QuickSuggestTestUtils {
    *   Options object
    * @param {Array} options.remoteSettingsRecords
    *   Array of remote settings records. Each item in this array should be a
-   *   realistic remote settings record with some exceptions, e.g.,
-   *   `record.attachment`, if defined, should be the attachment itself and not
-   *   its metadata. For details see `RemoteSettingsServer.addRecords()`.
+   *   realistic remote settings record with some exceptions as noted below.
+   *   For details see `RemoteSettingsServer.addRecords()`.
+   *     - `record.attachment` - Optional. This should be the attachment itself
+   *       and not its metadata. It should be a JSONable object.
+   *     - `record.collection` - Optional. The name of the RS collection that
+   *       the record should be added to. Defaults to "quicksuggest".
    * @param {Array} options.merinoSuggestions
    *   Array of Merino suggestion objects. If given, this function will start
    *   the mock Merino server and set `quicksuggest.dataCollection.enabled` to
@@ -186,6 +189,19 @@ class _QuickSuggestTestUtils {
   } = {}) {
     prefs.push(["quicksuggest.enabled", true]);
 
+    // Make a Map from collection name to the array of records that should be
+    // added to that collection.
+    let recordsByCollection = remoteSettingsRecords.reduce((memo, record) => {
+      let collection = record.collection || "quicksuggest";
+      let records = memo.get(collection);
+      if (!records) {
+        records = [];
+        memo.set(collection, records);
+      }
+      records.push(record);
+      return memo;
+    }, new Map());
+
     // Set up the local remote settings server.
     this.#log(
       "ensureQuickSuggestInit",
@@ -194,13 +210,16 @@ class _QuickSuggestTestUtils {
     if (!this.#remoteSettingsServer) {
       this.#remoteSettingsServer = new lazy.RemoteSettingsServer();
     }
-    await this.#remoteSettingsServer.setRecords({
+
+    this.#remoteSettingsServer.removeRecords();
+    for (let [collection, records] of recordsByCollection.entries()) {
+      await this.#remoteSettingsServer.addRecords({ collection, records });
+    }
+    await this.#remoteSettingsServer.addRecords({
       collection: "quicksuggest",
-      records: [
-        ...remoteSettingsRecords,
-        { type: "configuration", configuration: config },
-      ],
+      records: [{ type: "configuration", configuration: config }],
     });
+
     this.#log("ensureQuickSuggestInit", "Starting remote settings server");
     await this.#remoteSettingsServer.start();
     this.#log("ensureQuickSuggestInit", "Remote settings server started");
@@ -229,13 +248,10 @@ class _QuickSuggestTestUtils {
     }
 
     // Tell the Rust backend to use the local remote setting server.
-    await lazy.QuickSuggest.rustBackend._test_setRemoteSettingsConfig(
-      new lazy.RemoteSettingsConfig({
-        collectionName: "quicksuggest",
-        bucketName: "main",
-        serverUrl: this.#remoteSettingsServer.url.toString(),
-      })
-    );
+    await lazy.QuickSuggest.rustBackend._test_setRemoteSettingsConfig({
+      bucketName: "main",
+      serverUrl: this.#remoteSettingsServer.url.toString(),
+    });
 
     // Wait for the current backend to finish syncing.
     await this.forceSync();
@@ -380,7 +396,7 @@ class _QuickSuggestTestUtils {
     url = "http://example.com/amp",
     title = "Amp Suggestion",
     score = 0.3,
-  }) {
+  } = {}) {
     return {
       keywords,
       url,
@@ -407,7 +423,7 @@ class _QuickSuggestTestUtils {
     url = "http://example.com/wikipedia",
     title = "Wikipedia Suggestion",
     score = 0.2,
-  }) {
+  } = {}) {
     return {
       keywords,
       url,
@@ -434,7 +450,7 @@ class _QuickSuggestTestUtils {
     url = "http://example.com/amo",
     title = "Amo Suggestion",
     score = 0.2,
-  }) {
+  } = {}) {
     return {
       keywords,
       url,

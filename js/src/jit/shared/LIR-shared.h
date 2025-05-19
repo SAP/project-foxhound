@@ -267,7 +267,7 @@ class LNewObject : public LInstructionHelper<1, 0, 1> {
 
 template <size_t Defs, size_t Ops>
 class LWasmReinterpretBase : public LInstructionHelper<Defs, Ops, 0> {
-  typedef LInstructionHelper<Defs, Ops, 0> Base;
+  using Base = LInstructionHelper<Defs, Ops, 0>;
 
  protected:
   explicit LWasmReinterpretBase(LNode::Opcode opcode) : Base(opcode) {}
@@ -309,7 +309,7 @@ class LWasmReinterpretToI64 : public LWasmReinterpretBase<INT64_PIECES, 1> {
 namespace details {
 template <size_t Defs, size_t Ops, size_t Temps>
 class RotateBase : public LInstructionHelper<Defs, Ops, Temps> {
-  typedef LInstructionHelper<Defs, Ops, Temps> Base;
+  using Base = LInstructionHelper<Defs, Ops, Temps>;
 
  protected:
   explicit RotateBase(LNode::Opcode opcode) : Base(opcode) {}
@@ -2318,19 +2318,21 @@ class LLoadUnboxedBigInt : public LInstructionHelper<1, 2, 1 + INT64_PIECES> {
   const LInt64Definition temp64() { return getInt64Temp(1); }
 };
 
-class LLoadDataViewElement : public LInstructionHelper<1, 3, 1 + INT64_PIECES> {
+class LLoadDataViewElement : public LInstructionHelper<1, 3, 2 + INT64_PIECES> {
  public:
   LIR_HEADER(LoadDataViewElement)
 
   LLoadDataViewElement(const LAllocation& elements, const LAllocation& index,
-                       const LAllocation& littleEndian, const LDefinition& temp,
+                       const LAllocation& littleEndian,
+                       const LDefinition& temp1, const LDefinition& temp2,
                        const LInt64Definition& temp64)
       : LInstructionHelper(classOpcode) {
     setOperand(0, elements);
     setOperand(1, index);
     setOperand(2, littleEndian);
-    setTemp(0, temp);
-    setInt64Temp(1, temp64);
+    setTemp(0, temp1);
+    setTemp(1, temp2);
+    setInt64Temp(2, temp64);
   }
   const MLoadDataViewElement* mir() const {
     return mir_->toLoadDataViewElement();
@@ -2338,8 +2340,9 @@ class LLoadDataViewElement : public LInstructionHelper<1, 3, 1 + INT64_PIECES> {
   const LAllocation* elements() { return getOperand(0); }
   const LAllocation* index() { return getOperand(1); }
   const LAllocation* littleEndian() { return getOperand(2); }
-  const LDefinition* temp() { return getTemp(0); }
-  const LInt64Definition temp64() { return getInt64Temp(1); }
+  const LDefinition* temp1() { return getTemp(0); }
+  const LDefinition* temp2() { return getTemp(1); }
+  const LInt64Definition temp64() { return getInt64Temp(2); }
 };
 
 class LLoadTypedArrayElementHoleBigInt
@@ -3071,7 +3074,7 @@ class LIsNullOrUndefinedAndBranch
 
 template <size_t Defs, size_t Ops>
 class LWasmSelectBase : public LInstructionHelper<Defs, Ops, 0> {
-  typedef LInstructionHelper<Defs, Ops, 0> Base;
+  using Base = LInstructionHelper<Defs, Ops, 0>;
 
  protected:
   explicit LWasmSelectBase(LNode::Opcode opcode) : Base(opcode) {}
@@ -3177,7 +3180,7 @@ namespace details {
 template <size_t Defs, size_t Temp>
 class LWasmLoadBase : public LInstructionHelper<Defs, 2, Temp> {
  public:
-  typedef LInstructionHelper<Defs, 2, Temp> Base;
+  using Base = LInstructionHelper<Defs, 2, Temp>;
   explicit LWasmLoadBase(LNode::Opcode opcode, const LAllocation& ptr,
                          const LAllocation& memoryBase)
       : Base(opcode) {

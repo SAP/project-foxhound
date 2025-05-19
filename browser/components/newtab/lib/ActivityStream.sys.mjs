@@ -47,8 +47,17 @@ import {
   actionTypes as at,
 } from "resource://activity-stream/common/Actions.mjs";
 
+const REGION_TOPICS_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.topicSelection.region-topics-config";
+const LOCALE_TOPICS_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.topicSelection.locale-topics-config";
 const REGION_BASIC_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-basic-config";
+
+const REGION_THUMBS_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.region-thumbs-config";
+const LOCALE_THUMBS_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.locale-thumbs-config";
 
 // Determine if spocs should be shown for a geo/locale
 function showSpocs({ geo }) {
@@ -58,14 +67,52 @@ function showSpocs({ geo }) {
   return spocsGeo.includes(geo);
 }
 
-function showWeather({ geo }) {
+function showWeather({ geo, locale }) {
   const weatherGeoString =
     lazy.NimbusFeatures.pocketNewtab.getVariable("regionWeatherConfig") || "";
+  const weatherLocaleString =
+    lazy.NimbusFeatures.pocketNewtab.getVariable("localeWeatherConfig") || "";
   const weatherGeo = weatherGeoString
     .split(",")
     .map(s => s.trim())
     .filter(item => item);
-  return weatherGeo.includes(geo);
+  const weatherLocale = weatherLocaleString
+    .split(",")
+    .map(s => s.trim())
+    .filter(item => item);
+  return weatherGeo.includes(geo) && weatherLocale.includes(locale);
+}
+
+function showTopicsSelection({ geo, locale }) {
+  const topicsGeoString =
+    Services.prefs.getStringPref(REGION_TOPICS_CONFIG) || "";
+  const topicsLocaleString =
+    Services.prefs.getStringPref(LOCALE_TOPICS_CONFIG) || "";
+  const topicsGeo = topicsGeoString
+    .split(",")
+    .map(s => s.trim())
+    .filter(item => item);
+  const topicsLocale = topicsLocaleString
+    .split(",")
+    .map(s => s.trim())
+    .filter(item => item);
+  return topicsGeo.includes(geo) && topicsLocale.includes(locale);
+}
+
+function showThumbsUpDown({ geo, locale }) {
+  const thumbsUpDownGeoString =
+    Services.prefs.getStringPref(REGION_THUMBS_CONFIG) || "";
+  const thumbsUpDownLocaleString =
+    Services.prefs.getStringPref(LOCALE_THUMBS_CONFIG) || "";
+  const thumbsUpDownGeo = thumbsUpDownGeoString
+    .split(",")
+    .map(s => s.trim())
+    .filter(item => item);
+  const thumbsUpDownLocale = thumbsUpDownLocaleString
+    .split(",")
+    .map(s => s.trim())
+    .filter(item => item);
+  return thumbsUpDownGeo.includes(geo) && thumbsUpDownLocale.includes(locale);
 }
 
 // Configure default Activity Stream prefs with a plain `value` or a `getValue`
@@ -414,21 +461,6 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "asrouter.providers.onboarding",
-    {
-      title: "Configuration for onboarding provider",
-      value: JSON.stringify({
-        id: "onboarding",
-        type: "local",
-        localProvider: "OnboardingMessageProvider",
-        enabled: true,
-        // Block specific messages from this local provider
-        exclude: [],
-      }),
-    },
-  ],
-  // See browser/app/profile/firefox.js for other ASR preferences. They must be defined there to enable roll-outs.
-  [
     "discoverystream.flight.blocks",
     {
       title: "Track flight blocks",
@@ -455,7 +487,7 @@ export const PREFS_CONFIG = new Map([
       title:
         "Endpoint prefixes (comma-separated) that are allowed to be requested",
       value:
-        "https://getpocket.cdn.mozilla.net/,https://firefox-api-proxy.cdn.mozilla.net/,https://spocs.getpocket.com/",
+        "https://getpocket.cdn.mozilla.net/,https://firefox-api-proxy.cdn.mozilla.net/,https://spocs.getpocket.com/,https://merino.services.mozilla.com/",
     },
   ],
   [
@@ -471,6 +503,22 @@ export const PREFS_CONFIG = new Map([
       title: "Allows the user to dismiss the new Pocket onboarding experience",
       skipBroadcast: true,
       alsoToPreloaded: true,
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.thumbsUpDown.enabled",
+    {
+      title: "Allow users to give thumbs up/down on recommended stories",
+      // pref is dynamic
+      getValue: showThumbsUpDown,
+    },
+  ],
+  [
+    "discoverystream.thumbsUpDown.searchTopsitesCompact",
+    {
+      title:
+        "A compact layout of the search/topsites/stories sections to account for new height from thumbs up/down icons ",
       value: false,
     },
   ],
@@ -521,10 +569,118 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "discoverystream.topicSelection.enabled",
+    {
+      title: "Enables topic selection for discovery stream",
+      // pref is dynamic
+      getValue: showTopicsSelection,
+    },
+  ],
+  [
+    "discoverystream.topicSelection.topics",
+    {
+      title: "Topics available",
+      value:
+        "business, arts, food, health, finance, government, sports, tech, travel, education-science, society",
+    },
+  ],
+  [
+    "discoverystream.topicSelection.selectedTopics",
+    {
+      title: "Selected topics",
+      value: "",
+    },
+  ],
+  [
+    "discoverystream.topicSelection.suggestedTopics",
+    {
+      title: "Suggested topics to choose during onboarding for topic selection",
+      value: "business, arts, government",
+    },
+  ],
+  [
+    "discoverystream.topicSelection.hasBeenUpdatedPreviously",
+    {
+      title: "Returns true only if the user has previously selected topics",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.topicSelection.onboarding.displayCount",
+    {
+      title: "amount of times that topic selection onboarding has been shown",
+      value: 0,
+    },
+  ],
+  [
+    "discoverystream.topicSelection.onboarding.maybeDisplay",
+    {
+      title:
+        "Whether the onboarding should be shown, based on previous interactions",
+      value: true,
+    },
+  ],
+  [
+    "discoverystream.topicSelection.onboarding.lastDisplayed",
+    {
+      title:
+        "time in ms that onboarding was last shown (stored as string due to contraits of prefs)",
+      value: "",
+    },
+  ],
+  [
+    "discoverystream.topicSelection.onboarding.displayTimeout",
+    {
+      title: "time in ms that the onboarding show be shown next",
+      value: 0,
+    },
+  ],
+  [
+    "discoverystream.topicSelection.onboarding.enabled",
+    {
+      title: "enabled onboarding experience for topic selection onboarding",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.topicLabels.enabled",
+    {
+      title: "Enables topic labels for discovery stream",
+      value: true,
+    },
+  ],
+  [
     "showRecentSaves",
     {
       title: "Control whether a user wants recent saves visible on Newtab",
       value: true,
+    },
+  ],
+  [
+    "discoverystream.spocs.cacheTimeout",
+    {
+      title: "Set sponsored content cache timeout in minutes.",
+    },
+  ],
+  [
+    "discoverystream.spocs.startupCache.enabled",
+    {
+      title: "Controls if spocs should be included in startup cache.",
+      value: true,
+    },
+  ],
+  [
+    "support.url",
+    {
+      title: "Link to HNT's support page",
+      getValue: () => {
+        // Services.urlFormatter completes the in-product SUMO page URL:
+        // https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/new-tab
+        const baseUrl = Services.urlFormatter.formatURLPref(
+          "app.support.baseURL"
+        );
+        return `${baseUrl}new-tab`;
+      },
     },
   ],
 ]);

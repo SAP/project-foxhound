@@ -37,6 +37,7 @@
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/ClientImpl.h"
 #include "mozilla/dom/quota/DirectoryLock.h"
+#include "mozilla/dom/quota/DirectoryLockInlines.h"
 #include "mozilla/dom/quota/FileStreams.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/QuotaManager.h"
@@ -718,7 +719,9 @@ void Connection::OnClose() {
 
   mOrigin.Truncate();
   mName.Truncate();
-  mDirectoryLock = nullptr;
+
+  DropDirectoryLock(mDirectoryLock);
+
   mFileRandomAccessStream = nullptr;
   mOpen = false;
 
@@ -1182,14 +1185,15 @@ nsresult OpenOp::DatabaseWork() {
         this]()
            -> mozilla::Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult> {
         if (persistenceType == PERSISTENCE_TYPE_PERSISTENT) {
-          QM_TRY_RETURN(quotaManager->EnsurePersistentOriginIsInitialized(
-              mOriginMetadata));
+          QM_TRY_RETURN(
+              quotaManager->EnsurePersistentOriginIsInitializedInternal(
+                  mOriginMetadata));
         }
 
         QM_TRY(MOZ_TO_RESULT(
             quotaManager->EnsureTemporaryStorageIsInitializedInternal()));
-        QM_TRY_RETURN(quotaManager->EnsureTemporaryOriginIsInitialized(
-            persistenceType, mOriginMetadata));
+        QM_TRY_RETURN(quotaManager->EnsureTemporaryOriginIsInitializedInternal(
+            mOriginMetadata));
       }()
                   .map([](const auto& res) { return res.first; })));
 
@@ -1267,7 +1271,8 @@ void OpenOp::StreamClosedCallback() {
   MOZ_ASSERT(mFileRandomAccessStream);
   MOZ_ASSERT(mFileRandomAccessStreamOpen);
 
-  mDirectoryLock = nullptr;
+  DropDirectoryLock(mDirectoryLock);
+
   mFileRandomAccessStream = nullptr;
   mFileRandomAccessStreamOpen = false;
 }
@@ -1325,10 +1330,10 @@ void OpenOp::Cleanup() {
         new StreamHelper(mFileRandomAccessStream, callback);
     helper->AsyncClose();
   } else {
-    MOZ_ASSERT(!mFileRandomAccessStreamOpen);
+    SafeDropDirectoryLock(mDirectoryLock);
 
-    mDirectoryLock = nullptr;
     mFileRandomAccessStream = nullptr;
+    MOZ_ASSERT(!mFileRandomAccessStreamOpen);
   }
 
   ConnectionOperationBase::Cleanup();

@@ -9,6 +9,7 @@
 
 #include "mozilla/Attributes.h"
 
+#include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
 #include "jit/Snapshots.h"
 
@@ -116,6 +117,7 @@ namespace jit {
   _(TypeOfName)                   \
   _(ToDouble)                     \
   _(ToFloat32)                    \
+  _(ToFloat16)                    \
   _(TruncateToInt32)              \
   _(NewObject)                    \
   _(NewPlainObject)               \
@@ -739,6 +741,14 @@ class RToDouble final : public RInstruction {
 class RToFloat32 final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(ToFloat32, 1)
+
+  [[nodiscard]] bool recover(JSContext* cx,
+                             SnapshotIterator& iter) const override;
+};
+
+class RToFloat16 final : public RInstruction {
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(ToFloat16, 1)
 
   [[nodiscard]] bool recover(JSContext* cx,
                              SnapshotIterator& iter) const override;

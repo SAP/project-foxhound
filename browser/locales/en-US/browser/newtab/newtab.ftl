@@ -205,6 +205,8 @@ newtab-section-expand-section-label =
 newtab-section-header-topsites = Top Sites
 newtab-section-header-recent-activity = Recent activity
 newtab-section-header-stories = Thought-provoking stories
+# "picks" refers to recommended articles
+newtab-section-header-todays-picks = Today’s picks for you
 
 ## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
 
@@ -236,6 +238,19 @@ newtab-pocket-pocket-firefox-family = { -pocket-brand-name } is part of the { -b
 # A save to Pocket button that shows over the card thumbnail on hover.
 newtab-pocket-save = Save
 newtab-pocket-saved = Saved
+
+## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
+
+# Clicking the thumbs up button for this story will result in more stories like this one being recommended
+newtab-pocket-thumbs-up-tooltip =
+    .title = More like this
+# Clicking the thumbs down button for this story informs us that the user does not feel like the story is interesting for them
+newtab-pocket-thumbs-down-tooltip =
+    .title = Not for me
+newtab-toast-thumbs-up-or-down = Thanks. Your feedback will help us improve your feed.
+newtab-toast-dismiss-button =
+    .title = Dismiss
+    .aria-label = Dismiss
 
 ## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
 
@@ -375,3 +390,42 @@ newtab-weather-menu-hide-weather = Hide weather on New Tab
 newtab-weather-menu-learn-more = Learn more
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Weather data is not available right now.
+
+## Topic Labels
+
+newtab-topic-label-business = Business
+newtab-topic-label-career = Career
+newtab-topic-label-education = Education
+newtab-topic-label-arts = Entertainment
+newtab-topic-label-food = Food
+newtab-topic-label-health = Health
+newtab-topic-label-hobbies = Gaming
+# ”Money” = “Personal Finance”, refers to articles and stories that help readers better manage
+# and understand their personal finances – from saving money to buying a home. See the
+# “Curated by our editors“ section at the top of https://getpocket.com/explore/personal-finance for more context
+newtab-topic-label-finance = Money
+newtab-topic-label-society-parenting = Parenting
+newtab-topic-label-government = Politics
+newtab-topic-label-education-science = Science
+# ”Life Hacks” = “Self Improvement”, refers to articles and stories aimed at helping readers improve various
+# aspects of their lives – from mental health to  productivity. See the “Curated by our editors“ section
+# at the top of https://getpocket.com/explore/self-improvement for more context.
+newtab-topic-label-society = Life Hacks
+newtab-topic-label-sports = Sports
+newtab-topic-label-tech = Tech
+newtab-topic-label-travel = Travel
+
+## Topic Selection Modal
+
+# “fine-tune” refers to the process of making small adjustments to something to get
+# the best or desired experience or performance.
+newtab-topic-selection-title = Select topics to fine-tune your feed
+# “tailored” refers to process of (a tailor) making (clothes) to fit individual customers.
+# In other words, “Our expert curators prioritize stories to fit your selected interests”
+newtab-topic-selection-subtitle = Choose two or more topics. Our expert curators prioritize stories tailored to your interests. Update anytime.
+newtab-topic-selection-save-button = Save
+newtab-topic-selection-cancel-button = Cancel
+newtab-topic-selection-button-maybe-later = Maybe later
+newtab-topic-selection-privacy-link = Learn how we protect and manage data
+newtab-topic-selection-button-update-interests = Update your interests
+newtab-topic-selection-button-pick-interests = Pick your interests

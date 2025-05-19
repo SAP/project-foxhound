@@ -590,13 +590,13 @@ files = [
 
 [[package]]
 name = "glean-parser"
-version = "14.1.2"
+version = "14.3.0"
 description = "Parser tools for Mozilla's Glean telemetry"
 optional = false
 python-versions = "*"
 files = [
-    {file = "glean_parser-14.1.2-py3-none-any.whl", hash = "sha256:c3e87165fe0a0fcbcb28b76bbad025601a86eb447c5779472b62915c46cd44ab"},
-    {file = "glean_parser-14.1.2.tar.gz", hash = "sha256:38be7d4e0fab0f83340e3427914e08a8631c7fab088a8c60e9b543cab6ea830c"},
+    {file = "glean_parser-14.3.0-py3-none-any.whl", hash = "sha256:cd5adf99515e8cfbeef20ebbb30abb363d7dab3685a304f86733ef4eee2691a8"},
+    {file = "glean_parser-14.3.0.tar.gz", hash = "sha256:b48d643029fb824b0b76adb2b4a00e88a49de4ec479ac9c5add52c511e9be481"},
 ]
 
 [package.dependencies]
@@ -1245,12 +1245,13 @@ tests = ["coverage (>=3.7.1,<5.0.0)", "flake8", "pytest", "pytest-cov", "pytest-
 
 [[package]]
 name = "rsa"
-version = "3.1.4"
+version = "4.9"
 description = "Pure-Python RSA implementation"
 optional = false
-python-versions = "*"
+python-versions = ">=3.6,<4"
 files = [
-    {file = "rsa-3.1.4.tar.gz", hash = "sha256:e2b0b05936c276b1edd2e1525553233b666df9e29b5c3ba223eed738277c82a0"},
+    {file = "rsa-4.9-py3-none-any.whl", hash = "sha256:90260d9058e514786967344d0ef75fa8727eed8a7d2e43ce9f4bcf1b536174f7"},
+    {file = "rsa-4.9.tar.gz", hash = "sha256:e38464a49c6c85d7f1351b0126661487a7e0a14a50f1675ec50eb34d4f20ef21"},
 ]
 
 [package.dependencies]
@@ -1348,13 +1349,13 @@ test = ["aiofiles", "coverage", "flake8", "httmock", "httptest", "hypothesis", "
 
 [[package]]
 name = "taskcluster-taskgraph"
-version = "9.0.0"
+version = "10.0.2"
 description = "Build taskcluster taskgraphs"
 optional = false
 python-versions = "*"
 files = [
-    {file = "taskcluster-taskgraph-9.0.0.tar.gz", hash = "sha256:3ebc1a07c31168c19159e71507341b40fc33ae3e652c7c80d8871904855021d1"},
-    {file = "taskcluster_taskgraph-9.0.0-py3-none-any.whl", hash = "sha256:306366c70da7353cc198406a36630b28ecc77ded32f7e4ca0187913d56c40713"},
+    {file = "taskcluster-taskgraph-10.0.2.tar.gz", hash = "sha256:e6aa6ccb3816ca8b959b14c9d3eb39bca6d6bf3b88e18c02a80a53c73f3030e4"},
+    {file = "taskcluster_taskgraph-10.0.2-py3-none-any.whl", hash = "sha256:24f382d154429418dc8ce44ad8bed32bad1f30a159d7c1cf22f1159eb09a0dba"},
 ]
 
 [package.dependencies]
@@ -1594,4 +1595,4 @@ testing = ["func-timeout", "jaraco.itertools", "pytest (>=4.6)", "pytest-black (
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "f372bf50cc4ec17d72e7ccb25bef84b3fe27913479e4031090e17c0926e849e0"
+content-hash = "ad0982c4635e942eb20748cd51f91125c039c264163b9a5f6e7ee7a50092d3e7"

@@ -7,12 +7,12 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#ifdef XP_WIN
-#  include "objbase.h"
-#endif
-
 #include "mozilla/dom/HTMLMediaElement.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <type_traits>
 #include <unordered_map>
 
 #include "AudioDeviceInfo.h"
@@ -41,19 +41,21 @@
 #include "MediaShutdownManager.h"
 #include "MediaSourceDecoder.h"
 #include "MediaStreamError.h"
-#include "MediaTrackGraphImpl.h"
-#include "MediaTrackListener.h"
 #include "MediaStreamWindowCapturer.h"
 #include "MediaTrack.h"
+#include "MediaTrackGraphImpl.h"
 #include "MediaTrackList.h"
+#include "MediaTrackListener.h"
 #include "Navigator.h"
+#include "ReferrerInfo.h"
 #include "TimeRanges.h"
+#include "TimeUnits.h"
 #include "VideoFrameContainer.h"
 #include "VideoOutput.h"
 #include "VideoStreamTrack.h"
 #include "base/basictypes.h"
-#include "jsapi.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
+#include "jsapi.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
@@ -64,16 +66,17 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/ScopeExit.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/AudioTrack.h"
 #include "mozilla/dom/AudioTrackList.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ContentMediaController.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/HTMLAudioElement.h"
@@ -107,12 +110,12 @@
 #include "nsError.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsICachingChannel.h"
 #include "nsIClassOfService.h"
 #include "nsIContentPolicy.h"
 #include "nsIDocShell.h"
-#include "mozilla/dom/Document.h"
 #include "nsIFrame.h"
 #include "nsIHttpChannel.h"
 #include "nsIObserverService.h"
@@ -136,13 +139,10 @@
 #include "nsURIHashKey.h"
 #include "nsURLHelper.h"
 #include "nsVideoFrame.h"
-#include "ReferrerInfo.h"
-#include "TimeUnits.h"
+#ifdef XP_WIN
+#  include "objbase.h"
+#endif
 #include "xpcpublic.h"
-#include <algorithm>
-#include <cmath>
-#include <limits>
-#include <type_traits>
 
 mozilla::LazyLogModule gMediaElementLog("HTMLMediaElement");
 mozilla::LazyLogModule gMediaElementEventsLog("HTMLMediaElementEvents");
@@ -570,8 +570,8 @@ class HTMLMediaElement::MediaControlKeyListener final
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mControlAgent);
     MEDIACONTROL_LOG("NotifyMediaState from state='%s' to state='%s'",
-                     ToMediaPlaybackStateStr(mState),
-                     ToMediaPlaybackStateStr(aState));
+                     dom::EnumValueToString(mState),
+                     dom::EnumValueToString(aState));
     MOZ_ASSERT(mState != aState, "Should not notify same state again!");
     mState = aState;
     mControlAgent->NotifyMediaPlaybackChanged(mOwnerBrowsingContextId, mState);
@@ -1624,8 +1624,8 @@ class HTMLMediaElement::AudioChannelAgentCallback final
     MOZ_LOG(AudioChannelService::GetAudioChannelLog(), LogLevel::Debug,
             ("HTMLMediaElement::AudioChannelAgentCallback, "
              "NotifyAudioPlaybackChanged, this=%p, current=%s, new=%s",
-             this, AudibleStateToStr(mIsOwnerAudible),
-             AudibleStateToStr(newAudibleState)));
+             this, AudioChannelService::EnumValueToString(mIsOwnerAudible),
+             AudioChannelService::EnumValueToString(newAudibleState)));
     if (mIsOwnerAudible == newAudibleState) {
       return;
     }
@@ -3159,6 +3159,7 @@ MediaResult HTMLMediaElement::LoadResource() {
     if (NS_SUCCEEDED(rv)) return rv;
   }
 
+  LOG(LogLevel::Debug, ("%p LoadResource", this));
   if (mMediaSource) {
     MediaDecoderInit decoderInit(
         this, this, mMuted ? 0.0 : mVolume, mPreservesPitch,
@@ -3675,11 +3676,11 @@ void HTMLMediaElement::AddOutputTrackSourceToOutputStream(
   RefPtr<MediaStreamTrack> domTrack;
   if (aSource->Track()->mType == MediaSegment::AUDIO) {
     domTrack = new AudioStreamTrack(
-        aOutputStream.mStream->GetOwner(), aSource->Track(), aSource,
+        aOutputStream.mStream->GetOwnerWindow(), aSource->Track(), aSource,
         MediaStreamTrackState::Live, aSource->Muted());
   } else {
     domTrack = new VideoStreamTrack(
-        aOutputStream.mStream->GetOwner(), aSource->Track(), aSource,
+        aOutputStream.mStream->GetOwnerWindow(), aSource->Track(), aSource,
         MediaStreamTrackState::Live, aSource->Muted());
   }
 
@@ -4771,7 +4772,7 @@ void HTMLMediaElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     // content, since we always do that for touchstart.
     case eTouchMove:
     case eTouchStart:
-    case eMouseClick:
+    case ePointerClick:
     case eMouseDoubleClick:
     case eMouseDown:
     case eMouseUp:
@@ -5166,7 +5167,7 @@ nsresult HTMLMediaElement::InitializeDecoderForChannel(
   }
 
   reportCanPlay(true);
-  bool isPrivateBrowsing = NodePrincipal()->GetPrivateBrowsingId() > 0;
+  bool isPrivateBrowsing = NodePrincipal()->GetIsInPrivateBrowsing();
   return SetupDecoder(decoder.get(), aChannel, isPrivateBrowsing, aListener);
 }
 

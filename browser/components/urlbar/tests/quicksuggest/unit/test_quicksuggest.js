@@ -84,8 +84,8 @@ function expectedNonSponsoredResult() {
   });
 }
 
-function expectedSponsoredResult() {
-  return makeAmpResult();
+function expectedSponsoredResult({ suggestedIndex } = {}) {
+  return makeAmpResult({ suggestedIndex });
 }
 
 function expectedSponsoredPriorityResult() {
@@ -384,7 +384,7 @@ add_tasks_with_rust(async function emptySearchStringsAndSpaces() {
 
 // Results should be returned even when `browser.search.suggest.enabled` is
 // false.
-add_tasks_with_rust(async function browser_search_suggest_enabled() {
+add_tasks_with_rust(async function browser_search_suggest_disabled() {
   UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
   UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
   UrlbarPrefs.set("browser.search.suggest.enabled", false);
@@ -396,7 +396,7 @@ add_tasks_with_rust(async function browser_search_suggest_enabled() {
   });
   await check_results({
     context,
-    matches: [expectedSponsoredResult()],
+    matches: [expectedSponsoredResult({ suggestedIndex: -1 })],
   });
 
   UrlbarPrefs.clear("browser.search.suggest.enabled");
@@ -404,7 +404,7 @@ add_tasks_with_rust(async function browser_search_suggest_enabled() {
 
 // Results should be returned even when `browser.urlbar.suggest.searches` is
 // false.
-add_tasks_with_rust(async function browser_search_suggest_enabled() {
+add_tasks_with_rust(async function browser_suggest_searches_disabled() {
   UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
   UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
   UrlbarPrefs.set("suggest.searches", false);
@@ -416,7 +416,7 @@ add_tasks_with_rust(async function browser_search_suggest_enabled() {
   });
   await check_results({
     context,
-    matches: [expectedSponsoredResult()],
+    matches: [expectedSponsoredResult({ suggestedIndex: -1 })],
   });
 
   UrlbarPrefs.clear("suggest.searches");
@@ -531,8 +531,8 @@ add_tasks_with_rust(async function suggestionsBeforeGeneral_others() {
         suggestion: SPONSORED_SEARCH_STRING + " bar",
         engineName: Services.search.defaultEngine.name,
       }),
-      ...historyResults,
       expectedSponsoredResult(),
+      ...historyResults,
     ],
   });
 
@@ -561,7 +561,7 @@ add_tasks_with_rust(async function generalBeforeSuggestions_only() {
         query: SPONSORED_SEARCH_STRING,
         engineName: Services.search.defaultEngine.name,
       }),
-      expectedSponsoredResult(),
+      expectedSponsoredResult({ suggestedIndex: -1 }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " foo",
@@ -617,7 +617,7 @@ add_tasks_with_rust(async function generalBeforeSuggestions_others() {
         engineName: Services.search.defaultEngine.name,
       }),
       ...historyResults,
-      expectedSponsoredResult(),
+      expectedSponsoredResult({ suggestedIndex: -1 }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " foo",
@@ -694,8 +694,11 @@ async function doDedupeAgainstURLTest({
   otherPrefix,
   expectOther,
 }) {
-  // Disable search suggestions.
+  // Disable search suggestions. This means the expected suggestedIndex for
+  // sponsored suggestions will now be -1. We assume expectedQuickSuggestResult
+  // is sponsored, so set its suggestedIndex now.
   UrlbarPrefs.set("suggest.searches", false);
+  expectedQuickSuggestResult.suggestedIndex = -1;
 
   // Add a visit that will match our query below.
   let otherURL = otherPrefix + PREFIX_SUGGESTIONS_STRIPPED_URL;
@@ -736,6 +739,7 @@ async function doDedupeAgainstURLTest({
       engineName: Services.search.defaultEngine.name,
     }),
   ];
+
   if (expectOther) {
     expectedResults.push(
       makeVisitResult(context, {
@@ -744,6 +748,8 @@ async function doDedupeAgainstURLTest({
       })
     );
   }
+
+  // The expected result is last since its expected suggestedIndex is -1.
   expectedResults.push(expectedQuickSuggestResult);
 
   info("Doing second query");
@@ -946,7 +952,8 @@ add_tasks_with_rust(async function timestamps() {
 // the two URLs should be treated as dupes and only the quick suggest should be
 // shown, not the URL from history.
 add_tasks_with_rust(async function dedupeAgainstURL_timestamps() {
-  // Disable search suggestions.
+  // Disable search suggestions. This means the expected suggestedIndex for
+  // sponsored suggestions will now be -1.
   UrlbarPrefs.set("suggest.searches", false);
 
   // Add a visit that will match the query below and dupe the quick suggest.
@@ -1023,13 +1030,14 @@ add_tasks_with_rust(async function dedupeAgainstURL_timestamps() {
     blockId: 5,
     advertiser: "TestAdvertiserTimestamp",
     iabCategory: "22 - Shopping",
+    // suggestedIndex is -1 since search suggestions are disabled.
+    suggestedIndex: -1,
   });
 
-  let expectedResults = [
-    expectedHeuristic,
-    ...expectedBadTimestampResults,
-    expectedQuickSuggest,
-  ];
+  let expectedResults = [expectedHeuristic, ...expectedBadTimestampResults];
+
+  const QUICK_SUGGEST_INDEX = expectedResults.length;
+  expectedResults.push(expectedQuickSuggest);
 
   let controller = UrlbarTestUtils.newMockController();
   await controller.startQuery(context);
@@ -1078,9 +1086,8 @@ add_tasks_with_rust(async function dedupeAgainstURL_timestamps() {
       `result.heuristic at result index ${i}`
     );
 
-    // Check payloads except for the last result, which should be the quick
-    // suggest.
-    if (i != expectedResults.length - 1) {
+    // Check payloads except for the quick suggest.
+    if (i != QUICK_SUGGEST_INDEX) {
       Assert.deepEqual(
         getPayload(context.results[i]),
         getPayload(expectedResults[i]),
@@ -1091,7 +1098,7 @@ add_tasks_with_rust(async function dedupeAgainstURL_timestamps() {
 
   // Check the quick suggest's payload excluding the timestamp-related
   // properties.
-  let actualQuickSuggest = context.results[context.results.length - 1];
+  let actualQuickSuggest = context.results[QUICK_SUGGEST_INDEX];
   let timestampKeys = [
     "displayUrl",
     "sponsoredClickUrl",

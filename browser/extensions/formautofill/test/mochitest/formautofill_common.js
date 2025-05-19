@@ -313,7 +313,7 @@ function checkMenuEntriesComment(expectedValues, extraRows = 1) {
       is(
         actualValue[key],
         value,
-        ` Checking menu entry #${i}, ${key} should be ${value}`
+        ` Checking menu entry #${i}, ${key} should be the same`
       );
     }
   }
@@ -381,22 +381,74 @@ async function canTestOSKeyStoreLogin() {
   return canTest;
 }
 
+/**
+ * This function should be used along with the `waitForOSKeyStoreLogin` API.
+ * See the comment in `waitForOSKeyStoreLogin` for more details.
+ */
+async function waitForOSKeyStoreLoginTestSetupComplete() {
+  if (
+    !(await SpecialPowers.spawnChrome([], () => {
+      // Need to re-import this because we're running in the parent.
+      // eslint-disable-next-line no-shadow
+      const { FormAutofillUtils } = ChromeUtils.importESModule(
+        "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
+      );
+
+      return FormAutofillUtils.getOSAuthEnabled(
+        FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF
+      );
+    }))
+  ) {
+    return;
+  }
+
+  await SimpleTest.promiseWaitForCondition(async () => {
+    return await SpecialPowers.spawnChrome([], () => {
+      const { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+        "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
+      );
+
+      return Services.prefs.getStringPref(
+        OSKeyStoreTestUtils.TEST_ONLY_REAUTH,
+        ""
+      );
+    });
+  });
+}
+
+/**
+ * This API returns a promise that will be resolved when
+ * `waitForOSKeyStoreLogin` in `OSKeyStoreTestUtils.sys.mjs` completes.
+ * It is common to use it as follows:
+ *   const promise = waitForOSKeyStoreLogin();
+ *   triggerOSReauth();  // Code that triggers OS re-authentication
+ *   await promise;
+ *
+ * However, the timing to switch to using test OS re-auth after calling this
+ * function is asynchronous, which means triggering OS re-auth right after
+ * this API may still activate the real OS re-auth popup. To avoid that, you
+ * need to call `await waitForOSKeyStoreLoginTestSetupComplete()` before
+ * triggering OS re-auth.
+ */
 async function waitForOSKeyStoreLogin(login = false) {
   // Need to fetch this from the parent in order for it to be correct.
-  let isOSAuthEnabled = await SpecialPowers.spawnChrome([], () => {
-    // Need to re-import this because we're running in the parent.
-    // eslint-disable-next-line no-shadow
-    const { FormAutofillUtils } = ChromeUtils.importESModule(
-      "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
-    );
+  if (
+    !(await SpecialPowers.spawnChrome([], () => {
+      // Need to re-import this because we're running in the parent.
+      // eslint-disable-next-line no-shadow
+      const { FormAutofillUtils } = ChromeUtils.importESModule(
+        "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
+      );
 
-    return FormAutofillUtils.getOSAuthEnabled(
-      FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF
-    );
-  });
-  if (isOSAuthEnabled) {
-    await invokeAsyncChromeTask("FormAutofillTest:OSKeyStoreLogin", { login });
+      return FormAutofillUtils.getOSAuthEnabled(
+        FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF
+      );
+    }))
+  ) {
+    return;
   }
+
+  await invokeAsyncChromeTask("FormAutofillTest:OSKeyStoreLogin", { login });
 }
 
 function patchRecordCCNumber(record) {

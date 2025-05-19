@@ -25,8 +25,8 @@ webrender_bindings = { path = "../../../../gfx/webrender_bindings" }
 cubeb-coreaudio = { git = "https://github.com/mozilla/cubeb-coreaudio-rs", rev = "8bce3b333a920999055397a397e59c2b81a93b9a", optional = true }
 cubeb-pulse = { git = "https://github.com/mozilla/cubeb-pulse-rs", rev="8678dcab1c287de79c4c184ccc2e065bc62b70e2", optional = true, features=["pulse-dlopen"] }
 cubeb-sys = { version = "0.13", optional = true, features=["gecko-in-tree"] }
-audioipc2-client = { git = "https://github.com/mozilla/audioipc", rev = "3495905752a4263827f5d43737f9ca3ed0243ce0", optional = true }
-audioipc2-server = { git = "https://github.com/mozilla/audioipc", rev = "3495905752a4263827f5d43737f9ca3ed0243ce0", optional = true }
+audioipc2-client = { git = "https://github.com/mozilla/audioipc", rev = "e6f44a2bd1e57d11dfc737632a9e849077632330", optional = true }
+audioipc2-server = { git = "https://github.com/mozilla/audioipc", rev = "e6f44a2bd1e57d11dfc737632a9e849077632330", optional = true }
 encoding_glue = { path = "../../../../intl/encoding_glue" }
 authrs_bridge = { path = "../../../../dom/webauthn/authrs_bridge" }
 gkrust_utils = { path = "../../../../xpcom/rust/gkrust_utils" }
@@ -45,14 +45,15 @@ storage = { path = "../../../../storage/rust" }
 bookmark_sync = { path = "../../../components/places/bookmark_sync", optional = true }
 buildid_reader = { path = "../../buildid_reader" }
 chardetng_c = "0.1.1"
-audio_thread_priority = { version = "0.32", default_features = false }
+audio_thread_priority = { version = "0.32", default-features = false }
 mdns_service = { path="../../../../dom/media/webrtc/transport/mdns_service", optional = true }
 neqo_glue = { path = "../../../../netwerk/socket/neqo_glue" }
 wgpu_bindings = { path = "../../../../gfx/wgpu_bindings" }
-mapped_hyph = { git = "https://github.com/jfkthame/mapped_hyph.git", rev = "c7651a0cffff41996ad13c44f689bd9cd2192c01" }
+mapped_hyph = { git = "https://github.com/jfkthame/mapped_hyph.git", rev = "eff105f6ad7ec9b79816cfc1985a28e5340ad14b" }
 fog_control = { path = "../../../components/glean" }
 app_services_logger = { path = "../../../../services/common/app_services_logger" }
 http_sfv = { path = "../../../../netwerk/base/http-sfv" }
+idna_glue = { path = "../../../../netwerk/base/idna_glue" }
 unic-langid = { version = "0.9", features = ["likelysubtags"] }
 unic-langid-ffi = { path = "../../../../intl/locale/rust/unic-langid-ffi" }
 fluent-langneg = { version = "0.13", features = ["cldr"] }
@@ -105,6 +106,7 @@ qcms = { path = "../../../../gfx/qcms", features = ["c_bindings", "neon"], defau
 
 wpf-gpu-raster = { git = "https://github.com/FirefoxGraphics/wpf-gpu-raster", rev = "99979da091fd58fba8477e7fcdf5ec0727102916" }
 aa-stroke = { git = "https://github.com/FirefoxGraphics/aa-stroke", rev = "d94278ed9c7020f50232689a26d1277eb0eb74d2" }
+etagere = { version = "0.2.13", features = ["ffi"] }
 
 url = "2.5.0"
 
@@ -151,6 +153,7 @@ uniffi_fixtures = [
 ]
 webmidi_midir_impl = ["midir_impl"]
 icu4x = ["jsrust_shared/icu4x"]
+icu4x_calendar = ["jsrust_shared/icu4x_calendar"]
 
 [lib]
 path = "lib.rs"

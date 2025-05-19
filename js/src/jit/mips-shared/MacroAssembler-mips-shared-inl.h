@@ -14,12 +14,20 @@ namespace jit {
 
 //{{{ check_macroassembler_style
 
+void MacroAssembler::moveGPRToFloat16(Register src, FloatRegister dest) {
+  MOZ_CRASH("Not supported for this target");
+}
+
 void MacroAssembler::moveFloat32ToGPR(FloatRegister src, Register dest) {
   moveFromFloat32(src, dest);
 }
 
 void MacroAssembler::moveGPRToFloat32(Register src, FloatRegister dest) {
   moveToFloat32(src, dest);
+}
+
+void MacroAssembler::move8ZeroExtend(Register src, Register dest) {
+  as_andi(dest, src, 0xff);
 }
 
 void MacroAssembler::move8SignExtend(Register src, Register dest) {
@@ -1298,6 +1306,15 @@ FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat32(
     FloatRegister src, const BaseIndex& addr) {
   return FaultingCodeOffset();  // FIXME
   ma_ss(src, addr);
+}
+
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const Address& dest, Register) {
+  MOZ_CRASH("Not supported for this target");
+}
+FaultingCodeOffset MacroAssembler::storeUncanonicalizedFloat16(
+    FloatRegister src, const BaseIndex& dest, Register) {
+  MOZ_CRASH("Not supported for this target");
 }
 
 void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {

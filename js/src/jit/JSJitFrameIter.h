@@ -69,11 +69,6 @@ enum class FrameType {
   // point of view of JS JITs, this is just another kind of entry frame.
   WasmToJSJit,
 
-  // A JS to wasm frame is constructed during fast calls from any JS jits to
-  // wasm, and is a special kind of exit frame that doesn't have the exit
-  // footer. From the point of view of the jit, it can be skipped as an exit.
-  JSJitToWasm,
-
   // Frame for a TrampolineNative, a JS builtin implemented with a JIT
   // trampoline. See jit/TrampolineNatives.h.
   TrampolineNative,
@@ -133,8 +128,7 @@ class JSJitFrameIter {
 
   // A constructor specialized for jit->wasm frames, which starts at a
   // specific FP.
-  JSJitFrameIter(const JitActivation* activation, FrameType frameType,
-                 uint8_t* fp);
+  JSJitFrameIter(const JitActivation* activation, uint8_t* fp, bool unwinding);
 
   void setResumePCInCurrentFrame(uint8_t* newAddr) {
     resumePCinCurrentFrame_ = newAddr;
@@ -319,7 +313,7 @@ class JSJitProfilingFrameIterator {
 
 class RInstructionResults {
   // Vector of results of recover instructions.
-  typedef mozilla::Vector<HeapPtr<Value>, 1, SystemAllocPolicy> Values;
+  using Values = mozilla::Vector<HeapPtr<Value>, 1, SystemAllocPolicy>;
   UniquePtr<Values> results_;
 
   // The frame pointer is used as a key to check if the current frame already

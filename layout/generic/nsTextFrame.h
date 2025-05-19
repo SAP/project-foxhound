@@ -76,7 +76,8 @@ class nsTextFrame : public nsIFrame {
                      const gfxSkipCharsIterator& aStart, int32_t aLength,
                      nsIFrame* aLineContainer,
                      nscoord aOffsetFromBlockOriginForTabs,
-                     nsTextFrame::TextRunType aWhichTextRun);
+                     nsTextFrame::TextRunType aWhichTextRun,
+                     bool aAtStartOfLine);
 
     /**
      * Use this constructor after the frame has been reflowed and we don't
@@ -158,6 +159,12 @@ class nsTextFrame : public nsIFrame {
 
     const gfxSkipCharsIterator& GetEndHint() const { return mTempIterator; }
 
+    // Set a position that should be treated as start-of-line (for trimming
+    // potential letter-spacing).
+    void SetStartOfLine(const gfxSkipCharsIterator& aPosition) {
+      mStartOfLineOffset = aPosition.GetSkippedOffset();
+    }
+
    protected:
     void SetupJustificationSpacing(bool aPostReflow);
 
@@ -194,6 +201,7 @@ class nsTextFrame : public nsIFrame {
 
     const bool mReflowing;
     const nsTextFrame::TextRunType mWhichTextRun;
+    uint32_t mStartOfLineOffset = UINT32_MAX;
   };
 
   explicit nsTextFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
@@ -385,8 +393,10 @@ class nsTextFrame : public nsIFrame {
   void SetFontSizeInflation(float aInflation);
 
   void MarkIntrinsicISizesDirty() final;
-  nscoord GetMinISize(gfxContext* aRenderingContext) final;
-  nscoord GetPrefISize(gfxContext* aRenderingContext) final;
+
+  nscoord IntrinsicISize(gfxContext* aContext,
+                         mozilla::IntrinsicISizeType aType) final;
+
   void AddInlineMinISize(gfxContext* aRenderingContext,
                          InlineMinISizeData* aData) override;
   void AddInlinePrefISize(gfxContext* aRenderingContext,
@@ -435,7 +445,7 @@ class nsTextFrame : public nsIFrame {
   };
 
   void AddInlineMinISizeForFlow(gfxContext* aRenderingContext,
-                                nsIFrame::InlineMinISizeData* aData,
+                                InlineMinISizeData* aData,
                                 TextRunType aTextRunType);
   void AddInlinePrefISizeForFlow(gfxContext* aRenderingContext,
                                  InlinePrefISizeData* aData,
@@ -1061,6 +1071,17 @@ class nsTextFrame : public nsIFrame {
 
   nsPoint GetPointFromIterator(const gfxSkipCharsIterator& aIter,
                                PropertyProvider& aProperties);
+
+  /**
+   * Return the content offset of the first preserved newline in this frame,
+   * or return -1 if no preserved NL.
+   */
+  struct NewlineProperty;
+  int32_t GetContentNewLineOffset(int32_t aOffset,
+                                  NewlineProperty*& aCachedNewlineOffset);
+
+  void MaybeSplitFramesForFirstLetter();
+  void SetFirstLetterLength(int32_t aLength);
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsTextFrame::TrimmedOffsetFlags)

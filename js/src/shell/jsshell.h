@@ -24,7 +24,7 @@
 
 // Some platform hooks must be implemented for single-step profiling.
 #if defined(JS_SIMULATOR_ARM) || defined(JS_SIMULATOR_MIPS64) || \
-    defined(JS_SIMULATOR_MIPS32)
+    defined(JS_SIMULATOR_MIPS32) || defined(JS_SIMULATOR_ARM64)
 #  define SINGLESTEP_PROFILING
 #endif
 
@@ -175,7 +175,7 @@ class NonshrinkingGCObjectVector
   }
 };
 
-using MarkBitObservers = WeakCache<NonshrinkingGCObjectVector>;
+using MarkBitObservers = JS::WeakCache<NonshrinkingGCObjectVector>;
 
 #ifdef SINGLESTEP_PROFILING
 using StackChars = Vector<char16_t, 0, SystemAllocPolicy>;

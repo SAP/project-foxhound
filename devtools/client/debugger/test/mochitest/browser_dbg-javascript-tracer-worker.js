@@ -14,22 +14,9 @@ add_task(async function testTracingWorker() {
   const dbg = await initDebugger("doc-scripts.html");
 
   info("Instantiate a worker");
-  const { targetCommand } = dbg.toolbox.commands;
-  let onAvailable;
-  const onNewTarget = new Promise(resolve => {
-    onAvailable = ({ targetFront }) => {
-      resolve(targetFront);
-    };
-  });
-  await targetCommand.watchTargets({
-    types: [targetCommand.TYPES.FRAME],
-    onAvailable,
-  });
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     content.worker = new content.Worker("simple-worker.js");
   });
-  info("Wait for the worker target");
-  const workerTarget = await onNewTarget;
 
   await waitFor(
     () => findAllElements(dbg, "threadsPaneItems").length == 2,
@@ -39,13 +26,7 @@ add_task(async function testTracingWorker() {
   is(threadsEl.length, 2, "There are two threads in the thread panel");
 
   info("Enable tracing on all threads");
-  await clickElement(dbg, "trace");
-  info("Wait for tracing to be enabled for the worker");
-  await waitForState(dbg, () => {
-    return dbg.selectors.getIsThreadCurrentlyTracing(
-      workerTarget.threadFront.actorID
-    );
-  });
+  await toggleJsTracer(dbg.toolbox);
 
   // `timer` is called within the worker via a setInterval of 1 second
   await hasConsoleMessage(dbg, "setIntervalCallback");

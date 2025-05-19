@@ -175,8 +175,6 @@ class nsWindow final : public nsBaseWidget {
   void Resize(double aWidth, double aHeight, bool aRepaint) override;
   void Resize(double aX, double aY, double aWidth, double aHeight,
               bool aRepaint) override;
-  void PlaceBehind(nsTopLevelWidgetZPlacement aPlacement, nsIWidget* aWidget,
-                   bool aActivate) override;
   void SetSizeMode(nsSizeMode aMode) override;
   nsSizeMode SizeMode() override;
   void GetWorkspaceID(nsAString& workspaceID) override;
@@ -190,7 +188,6 @@ class nsWindow final : public nsBaseWidget {
   [[nodiscard]] nsresult GetRestoredBounds(LayoutDeviceIntRect& aRect) override;
   LayoutDeviceIntRect GetClientBounds() override;
   LayoutDeviceIntPoint GetClientOffset() override;
-  void SetBackgroundColor(const nscolor& aColor) override;
   void SetCursor(const Cursor&) override;
   bool PrepareForFullscreenTransition(nsISupports** aData) override;
   void PerformFullscreenTransition(FullscreenTransitionStage aStage,
@@ -723,7 +720,6 @@ class nsWindow final : public nsBaseWidget {
   HWND mWnd = nullptr;
   HWND mTransitionWnd = nullptr;
   mozilla::Maybe<WNDPROC> mPrevWndProc;
-  HBRUSH mBrush;
   IMEContext mDefaultIMC;
   HDEVNOTIFY mDeviceNotifyHandle = nullptr;
   bool mIsTopWidgetWindow = false;
@@ -742,6 +738,7 @@ class nsWindow final : public nsBaseWidget {
   bool mIsEarlyBlankWindow = false;
   bool mIsShowingPreXULSkeletonUI = false;
   bool mResizable = false;
+  bool mHasBeenShown = false;
   // Whether we're an alert window. Alert windows don't have taskbar icons and
   // don't steal focus from other windows when opened. They're also expected to
   // be of type WindowType::Dialog.

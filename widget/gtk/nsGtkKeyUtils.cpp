@@ -32,7 +32,9 @@
 #include "nsWindow.h"
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 
@@ -650,11 +652,7 @@ void KeymapWrapper::InitBySystemSettingsX11() {
 void KeymapWrapper::SetModifierMask(xkb_keymap* aKeymap,
                                     ModifierIndex aModifierIndex,
                                     const char* aModifierName) {
-  static auto sXkbKeymapModGetIndex =
-      (xkb_mod_index_t(*)(struct xkb_keymap*, const char*))dlsym(
-          RTLD_DEFAULT, "xkb_keymap_mod_get_index");
-
-  xkb_mod_index_t index = sXkbKeymapModGetIndex(aKeymap, aModifierName);
+  xkb_mod_index_t index = xkb_keymap_mod_get_index(aKeymap, aModifierName);
   if (index != XKB_MOD_INVALID) {
     mModifierMasks[aModifierIndex] = (1 << index);
   }
@@ -707,19 +705,10 @@ static void keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
     return;
   }
 
-  static auto sXkbContextNew =
-      (struct xkb_context * (*)(enum xkb_context_flags))
-          dlsym(RTLD_DEFAULT, "xkb_context_new");
-  static auto sXkbKeymapNewFromString =
-      (struct xkb_keymap * (*)(struct xkb_context*, const char*,
-                               enum xkb_keymap_format,
-                               enum xkb_keymap_compile_flags))
-          dlsym(RTLD_DEFAULT, "xkb_keymap_new_from_string");
-
-  struct xkb_context* xkb_context = sXkbContextNew(XKB_CONTEXT_NO_FLAGS);
-  struct xkb_keymap* keymap =
-      sXkbKeymapNewFromString(xkb_context, mapString, XKB_KEYMAP_FORMAT_TEXT_V1,
-                              XKB_KEYMAP_COMPILE_NO_FLAGS);
+  struct xkb_context* xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+  struct xkb_keymap* keymap = xkb_keymap_new_from_string(
+      xkb_context, mapString, XKB_KEYMAP_FORMAT_TEXT_V1,
+      XKB_KEYMAP_COMPILE_NO_FLAGS);
 
   munmap(mapString, size);
   close(fd);
@@ -731,13 +720,9 @@ static void keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
 
   KeymapWrapper::SetModifierMasks(keymap);
 
-  static auto sXkbKeymapUnRef =
-      (void (*)(struct xkb_keymap*))dlsym(RTLD_DEFAULT, "xkb_keymap_unref");
-  sXkbKeymapUnRef(keymap);
+  xkb_keymap_unref(keymap);
 
-  static auto sXkbContextUnref =
-      (void (*)(struct xkb_context*))dlsym(RTLD_DEFAULT, "xkb_context_unref");
-  sXkbContextUnref(xkb_context);
+  xkb_context_unref(xkb_context);
 }
 
 static void keyboard_handle_enter(void* data, struct wl_keyboard* keyboard,
@@ -1112,6 +1097,7 @@ void KeymapWrapper::InitInputEvent(WidgetInputEvent& aInputEvent,
 
   switch (aInputEvent.mClass) {
     case eMouseEventClass:
+    case ePointerEventClass:
     case eMouseScrollEventClass:
     case eWheelEventClass:
     case eDragEventClass:
@@ -1449,10 +1435,8 @@ bool KeymapWrapper::MaybeDispatchContextMenuEvent(nsWindow* aWindow,
     return false;
   }
 
-  WidgetMouseEvent contextMenuEvent(true, eContextMenu, aWindow,
-                                    WidgetMouseEvent::eReal,
-                                    WidgetMouseEvent::eContextMenuKey);
-
+  WidgetPointerEvent contextMenuEvent(true, eContextMenu, aWindow,
+                                      WidgetMouseEvent::eContextMenuKey);
   contextMenuEvent.mRefPoint = LayoutDeviceIntPoint(0, 0);
   contextMenuEvent.AssignEventTime(aWindow->GetWidgetEventTime(aEvent->time));
   contextMenuEvent.mClickCount = 1;

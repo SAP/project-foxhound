@@ -650,7 +650,7 @@ public class GeckoSession {
             case 0: // OPEN_DEFAULTWINDOW
             case 1: // OPEN_CURRENTWINDOW
               return NavigationDelegate.TARGET_WINDOW_CURRENT;
-            default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_NEWTAB_BACKGROUND
+            default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_NEWTAB_BACKGROUND, OPEN_NEWTAB_FOREGROUND
               return NavigationDelegate.TARGET_WINDOW_NEW;
           }
         }
@@ -1603,6 +1603,22 @@ public class GeckoSession {
             final ContentDelegate delegate = session.getContentDelegate();
             if (delegate != null) {
               delegate.onShowDynamicToolbar(session);
+            }
+          });
+    }
+
+    @WrapForJNI(calledFrom = "gecko")
+    private void onHideDynamicToolbar() {
+      final Window self = this;
+      ThreadUtils.runOnUiThread(
+          () -> {
+            final GeckoSession session = self.mOwner.get();
+            if (session == null) {
+              return;
+            }
+            final ContentDelegate delegate = session.getContentDelegate();
+            if (delegate != null) {
+              delegate.onHideDynamicToolbar(session);
             }
           });
     }
@@ -4519,6 +4535,14 @@ public class GeckoSession {
     default void onShowDynamicToolbar(@NonNull final GeckoSession geckoSession) {}
 
     /**
+     * The app should hide its dynamic toolbar.
+     *
+     * @param geckoSession GeckoSession that initiated the callback.
+     */
+    @UiThread
+    default void onHideDynamicToolbar(@NonNull final GeckoSession geckoSession) {}
+
+    /**
      * This method is called when a cookie banner was detected.
      *
      * <p>Note: this method is called only if the cookie banner setting is such that allows to
@@ -5003,7 +5027,7 @@ public class GeckoSession {
           case 0: // OPEN_DEFAULTWINDOW
           case 1: // OPEN_CURRENTWINDOW
             return TARGET_WINDOW_CURRENT;
-          default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_NEWTAB_BACKGROUND
+          default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_NEWTAB_BACKGROUND, OPEN_NEWTAB_FOREGROUND
             return TARGET_WINDOW_NEW;
         }
       }

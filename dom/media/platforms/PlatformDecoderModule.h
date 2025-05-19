@@ -54,6 +54,8 @@ enum class Option {
                                 // delivered before initialization data.
   DefaultPlaybackDeviceMono,    // Currently only used by Opus on RDD to avoid
                                 // initialization of audio backends on RDD
+  KeepOriginalPts,  // It can be that the decoder mangles the pts of decoded
+                    // frames, this forces using the input PTS.
 
   SENTINEL  // one past the last valid value
 };
@@ -118,6 +120,10 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
   using UseNullDecoder = media::UseNullDecoder;
   using NoWrapper = media::NoWrapper;
   using VideoFrameRate = media::VideoFrameRate;
+  enum class EncryptedCustomIdent : bool {
+    False,
+    True,
+  };
 
   explicit CreateDecoderParams(const TrackInfo& aConfig) : mConfig(aConfig) {}
   CreateDecoderParams(const CreateDecoderParams& aParams) = default;
@@ -183,6 +189,7 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
   // Used on Windows when the MF media engine playback is enabled.
   Maybe<uint64_t> mMediaEngineId;
   Maybe<TrackingId> mTrackingId;
+  EncryptedCustomIdent mEncryptedCustomIdent;
 
  private:
   void Set(layers::ImageContainer* aImageContainer) {
@@ -215,6 +222,9 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
     mMediaEngineId = aMediaEngineId;
   }
   void Set(const Maybe<TrackingId>& aTrackingId) { mTrackingId = aTrackingId; }
+  void Set(const EncryptedCustomIdent aEncryptedCustomIdent) {
+    mEncryptedCustomIdent = aEncryptedCustomIdent;
+  }
   void Set(const CreateDecoderParams& aParams) {
     // Set all but mTrackInfo;
     mImageContainer = aParams.mImageContainer;
@@ -543,6 +553,11 @@ class MediaDataDecoder : public DecoderDoctorLifeLogger<MediaDataDecoder> {
   // Reuse the decoder if the decoder support recycling.
   // Currently, only Android video decoder will return true.
   virtual bool SupportDecoderRecycling() const { return false; }
+
+  // Recycling decoder is controlled by the pref and other different conditions
+  // in our media pipeloine. True if the decoder should always be reused no
+  // matter what situation is.
+  virtual bool ShouldDecoderAlwaysBeRecycled() const { return false; }
 
   enum class ConversionRequired {
     kNeedNone = 0,

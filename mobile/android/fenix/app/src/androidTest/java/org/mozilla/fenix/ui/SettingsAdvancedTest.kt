@@ -14,6 +14,7 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
@@ -35,7 +36,7 @@ class SettingsAdvancedTest : TestSetup() {
     @get:Rule
     val activityIntentTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides()
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2092699
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2092699
     // Walks through settings menu and sub-menus to ensure all items are present
     @Test
     fun verifyAdvancedSettingsSectionItemsTest() {
@@ -59,7 +60,7 @@ class SettingsAdvancedTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2121046
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2121046
     // Assumes Youtube is installed and enabled
     @SmokeTest
     @Test
@@ -80,12 +81,12 @@ class SettingsAdvancedTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
             clickPageObject(playStoreLink)
-            waitForPageToLoad()
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyUrl(playStoreUrl)
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2121052
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2121052
     // Assumes Youtube is installed and enabled
     @Test
     fun privateBrowsingNeverOpenLinkInAppTest() {
@@ -108,12 +109,12 @@ class SettingsAdvancedTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
             clickPageObject(playStoreLink)
-            waitForPageToLoad()
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyUrl(playStoreUrl)
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2121045
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2121045
     // Assumes Youtube is installed and enabled
     @SmokeTest
     @Test
@@ -144,7 +145,7 @@ class SettingsAdvancedTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2288347
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2288347
     // Assumes Youtube is installed and enabled
     @SmokeTest
     @Test
@@ -176,7 +177,7 @@ class SettingsAdvancedTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2121051
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2121051
     // Assumes Youtube is installed and enabled
     @Test
     fun privateBrowsingAskBeforeOpeningLinkInAppCancelTest() {
@@ -213,7 +214,7 @@ class SettingsAdvancedTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2288350
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2288350
     // Assumes Youtube is installed and enabled
     @Test
     fun privateBrowsingAskBeforeOpeningLinkInAppOpenTest() {
@@ -250,7 +251,7 @@ class SettingsAdvancedTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1058618
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1058618
     // Assumes Youtube is installed and enabled
     @Test
     fun alwaysOpenLinkInAppTest() {
@@ -279,7 +280,7 @@ class SettingsAdvancedTest : TestSetup() {
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/1058617
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1058617
     @Test
     fun dismissOpenLinksInAppCFRTest() {
         activityIntentTestRule.applySettingsExceptions {
@@ -288,14 +289,14 @@ class SettingsAdvancedTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser("https://m.youtube.com/".toUri()) {
-            waitForPageToLoad()
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyOpenLinksInAppsCFRExists(true)
             clickOpenLinksInAppsDismissCFRButton()
             verifyOpenLinksInAppsCFRExists(false)
         }
     }
 
-    // TestRail link: https://testrail.stage.mozaws.net/index.php?/cases/view/2288331
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2288331
     @Test
     fun goToSettingsFromOpenLinksInAppCFRTest() {
         activityIntentTestRule.applySettingsExceptions {
@@ -304,7 +305,7 @@ class SettingsAdvancedTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser("https://m.youtube.com/".toUri()) {
-            waitForPageToLoad()
+            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyOpenLinksInAppsCFRExists(true)
         }.clickOpenLinksInAppsGoToSettingsCFRButton {
             verifyOpenLinksInAppsButton()

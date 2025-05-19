@@ -56,6 +56,9 @@ const L10N = new Localization([
 const HOMEPAGE_PREF = "browser.startup.homepage";
 const NEWTAB_PREF = "browser.newtabpage.enabled";
 const FOURTEEN_DAYS_IN_MS = 14 * 24 * 60 * 60 * 1000;
+const isMSIX =
+  AppConstants.platform === "win" &&
+  Services.sysinfo.getProperty("hasWinPackageId", false);
 
 const BASE_MESSAGES = () => [
   {
@@ -145,11 +148,23 @@ const BASE_MESSAGES = () => [
             },
             primary_button: {
               label: {
-                string_id: "mr2022-onboarding-pin-primary-button-label",
+                string_id: isMSIX
+                  ? "mr2022-onboarding-pin-primary-button-label-msix"
+                  : "mr2022-onboarding-pin-primary-button-label",
               },
               action: {
+                type: "MULTI_ACTION",
                 navigate: true,
-                type: "PIN_FIREFOX_TO_TASKBAR",
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "PIN_FIREFOX_TO_START_MENU",
+                    },
+                  ],
+                },
               },
             },
             checkbox: {
@@ -170,6 +185,9 @@ const BASE_MESSAGES = () => [
                     },
                     {
                       type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "PIN_FIREFOX_TO_START_MENU",
                     },
                   ],
                 },
@@ -477,8 +495,18 @@ const BASE_MESSAGES = () => [
                 string_id: "fx100-thank-you-pin-primary-button-label",
               },
               action: {
+                type: "MULTI_ACTION",
                 navigate: true,
-                type: "PIN_FIREFOX_TO_TASKBAR",
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "PIN_FIREFOX_TO_START_MENU",
+                    },
+                  ],
+                },
               },
             },
             secondary_button: {
@@ -1126,8 +1154,15 @@ const BASE_MESSAGES = () => [
     frequency: {
       lifetime: 2,
     },
-    targeting:
-      "source == 'startup' && !isMajorUpgrade && !activeNotifications && !isDefaultBrowser && !willShowDefaultPrompt && 'browser.shell.checkDefaultBrowser'|preferenceValue && (currentDate|date - profileAgeCreated|date) / 86400000 >= 28 && userPrefs.cfrFeatures == true",
+    targeting: `source == 'startup'
+    && !isMajorUpgrade
+    && !activeNotifications
+    && !isDefaultBrowser
+    && !willShowDefaultPrompt
+    && 'browser.shell.checkDefaultBrowser'|preferenceValue
+    && (currentDate|date - profileAgeCreated|date) / 86400000 >= 28
+    && previousSessionEnd
+    && userPrefs.cfrFeatures == true`,
     trigger: {
       id: "defaultBrowserCheck",
     },
@@ -1202,8 +1237,16 @@ const BASE_MESSAGES = () => [
     frequency: {
       lifetime: 1,
     },
-    targeting:
-      "source == 'startup' && !isMajorUpgrade && !activeNotifications && !isDefaultBrowser && !willShowDefaultPrompt && 'browser.shell.checkDefaultBrowser'|preferenceValue && (currentDate|date - profileAgeCreated|date) / 86400000 <= 28 && (currentDate|date - profileAgeCreated|date) / 86400000 >= 7 && userPrefs.cfrFeatures == true",
+    targeting: `source == 'startup'
+    && !isMajorUpgrade
+    && !activeNotifications
+    && !isDefaultBrowser
+    && !willShowDefaultPrompt
+    && 'browser.shell.checkDefaultBrowser'|preferenceValue
+    && (currentDate|date - profileAgeCreated|date) / 86400000 <= 28
+    && (currentDate|date - profileAgeCreated|date) / 86400000 >= 7
+    && previousSessionEnd
+    && userPrefs.cfrFeatures == true`,
     trigger: {
       id: "defaultBrowserCheck",
     },
@@ -1307,6 +1350,20 @@ const BASE_MESSAGES = () => [
     targeting:
       "os.isWindows && os.windowsVersion >= 10.0 && os.windowsBuildNumber >= 22000",
     trigger: { id: "deeplinkedToWindowsSettingsUI" },
+  },
+  {
+    id: "FXA_ACCOUNTS_BADGE_REVISED",
+    template: "toolbar_badge",
+    content: {
+      delay: 1000,
+      target: "fxa-toolbar-menu-button",
+    },
+    skip_in_tests: "covered by browser_asrouter_toolbarbadge.js",
+    targeting:
+      "source == 'newtab' && !hasAccessedFxAPanel && !usesFirefoxSync && isFxAEnabled && !isFxASignedIn",
+    trigger: {
+      id: "defaultBrowserCheck",
+    },
   },
 ];
 

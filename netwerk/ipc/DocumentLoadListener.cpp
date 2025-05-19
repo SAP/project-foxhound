@@ -161,12 +161,15 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
   }
 
   loadInfo->SetWasSchemelessInput(aLoadState->GetWasSchemelessInput());
+  loadInfo->SetHttpsUpgradeTelemetry(aLoadState->GetHttpsUpgradeTelemetry());
 
   loadInfo->SetTriggeringSandboxFlags(aLoadState->TriggeringSandboxFlags());
   loadInfo->SetTriggeringWindowId(aLoadState->TriggeringWindowId());
   loadInfo->SetTriggeringStorageAccess(aLoadState->TriggeringStorageAccess());
   loadInfo->SetHasValidUserGestureActivation(
       aLoadState->HasValidUserGestureActivation());
+  loadInfo->SetTextDirectiveUserActivation(
+      aLoadState->GetTextDirectiveUserActivation());
   loadInfo->SetIsMetaRefresh(aLoadState->IsMetaRefresh());
 
   return loadInfo.forget();
@@ -190,6 +193,8 @@ static auto CreateObjectLoadInfo(
 
   loadInfo->SetHasValidUserGestureActivation(
       aLoadState->HasValidUserGestureActivation());
+  loadInfo->SetTextDirectiveUserActivation(
+      aLoadState->GetTextDirectiveUserActivation());
   loadInfo->SetTriggeringSandboxFlags(aLoadState->TriggeringSandboxFlags());
   loadInfo->SetTriggeringWindowId(aLoadState->TriggeringWindowId());
   loadInfo->SetTriggeringStorageAccess(aLoadState->TriggeringStorageAccess());
@@ -1687,8 +1692,9 @@ static int32_t GetWhereToOpen(nsIChannel* aChannel, bool aIsDocumentLoad) {
       where == nsIBrowserDOMWindow::OPEN_NEWTAB) {
     return where;
   }
-  // NOTE: nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND is not allowed as a pref
-  //       value.
+  // NOTE: nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND and
+  //       nsIBrowserDOMWindow::OPEN_NEWTAB_FOREGROUND are not allowed as pref
+  //       values.
   return nsIBrowserDOMWindow::OPEN_NEWTAB;
 }
 
@@ -1781,6 +1787,7 @@ static RefPtr<dom::BrowsingContextCallbackReceivedPromise> SwitchToNewTab(
     CanonicalBrowsingContext* aLoadingBrowsingContext, int32_t aWhere) {
   MOZ_ASSERT(aWhere == nsIBrowserDOMWindow::OPEN_NEWTAB ||
                  aWhere == nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND ||
+                 aWhere == nsIBrowserDOMWindow::OPEN_NEWTAB_FOREGROUND ||
                  aWhere == nsIBrowserDOMWindow::OPEN_NEWWINDOW,
              "Unsupported open location");
 
@@ -2502,7 +2509,7 @@ DocumentLoadListener::OnStartRequest(nsIRequest* aRequest) {
   // do not kick in.
   if (httpChannel) {
     nsCOMPtr<nsILoadInfo> loadInfo = httpChannel->LoadInfo();
-    bool isPrivateWin = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
+    bool isPrivateWin = loadInfo->GetOriginAttributes().IsPrivateBrowsing();
     if (nsHTTPSOnlyUtils::IsHttpsOnlyModeEnabled(isPrivateWin)) {
       uint32_t httpsOnlyStatus = loadInfo->GetHttpsOnlyStatus();
       httpsOnlyStatus |= nsILoadInfo::HTTPS_ONLY_TOP_LEVEL_LOAD_IN_PROGRESS;
@@ -2672,8 +2679,10 @@ DocumentLoadListener::OnStartRequest(nsIRequest* aRequest) {
 
   if (httpChannel) {
     uint32_t responseStatus = 0;
+    nsAutoCString protocol;
     Unused << httpChannel->GetResponseStatus(&responseStatus);
-    mEarlyHintsService.FinalResponse(responseStatus);
+    Unused << httpChannel->GetProtocolVersion(protocol);
+    mEarlyHintsService.FinalResponse(responseStatus, protocol);
   } else {
     mEarlyHintsService.Cancel(
         "DocumentLoadListener::OnStartRequest: no httpChannel"_ns);

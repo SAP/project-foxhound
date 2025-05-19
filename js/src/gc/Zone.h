@@ -78,7 +78,7 @@ class MissingAllocSites {
   using ScriptMap = JS::GCHashMap<WeakHeapPtr<JSScript*>, SiteMap,
                                   StableCellHasher<WeakHeapPtr<JSScript*>>,
                                   SystemAllocPolicy>;
-  WeakCache<ScriptMap> scriptMap;
+  JS::WeakCache<ScriptMap> scriptMap;
 
   explicit MissingAllocSites(JS::Zone* zone) : scriptMap(zone) {}
 };
@@ -95,12 +95,14 @@ using StringWrapperMap =
     NurseryAwareHashMap<JSString*, JSString*, ZoneAllocPolicy,
                         DuplicatesPossible>;
 
-// Cache for NewMaybeExternalString. It has cache entries for both the
-// Latin1 JSInlineString path and JSExternalString.
+// Cache for NewMaybeExternalString and NewStringFromBuffer. It has separate
+// cache entries for the Latin1 JSThinInlineString fast path and for the generic
+// path where we allocate either a JSExternalString, an inline string, or a
+// string with a StringBuffer.
 class MOZ_NON_TEMPORARY_CLASS ExternalStringCache {
   static const size_t NumEntries = 4;
-  mozilla::Array<JSExternalString*, NumEntries> externalEntries_;
-  mozilla::Array<JSInlineString*, NumEntries> inlineEntries_;
+  mozilla::Array<JSInlineString*, NumEntries> inlineLatin1Entries_;
+  mozilla::Array<JSLinearString*, NumEntries> entries_;
 
  public:
   ExternalStringCache() { purge(); }
@@ -109,29 +111,29 @@ class MOZ_NON_TEMPORARY_CLASS ExternalStringCache {
   void operator=(const ExternalStringCache&) = delete;
 
   void purge() {
-    externalEntries_ = {};
-    inlineEntries_ = {};
+    inlineLatin1Entries_ = {};
+    entries_ = {};
   }
 
-  MOZ_ALWAYS_INLINE JSExternalString* lookupExternal(
-      const JS::Latin1Char* chars, size_t len) const;
-  MOZ_ALWAYS_INLINE JSExternalString* lookupExternal(const char16_t* chars,
-                                                     size_t len) const;
-  MOZ_ALWAYS_INLINE void putExternal(JSExternalString* s);
+  MOZ_ALWAYS_INLINE JSLinearString* lookup(const JS::Latin1Char* chars,
+                                           size_t len) const;
+  MOZ_ALWAYS_INLINE JSLinearString* lookup(const char16_t* chars,
+                                           size_t len) const;
+  MOZ_ALWAYS_INLINE void put(JSLinearString* s);
 
-  MOZ_ALWAYS_INLINE JSInlineString* lookupInline(const JS::Latin1Char* chars,
-                                                 size_t len) const;
-  MOZ_ALWAYS_INLINE JSInlineString* lookupInline(const char16_t* chars,
-                                                 size_t len) const;
-  MOZ_ALWAYS_INLINE void putInline(JSInlineString* s);
+  MOZ_ALWAYS_INLINE JSInlineString* lookupInlineLatin1(
+      const JS::Latin1Char* chars, size_t len) const;
+  MOZ_ALWAYS_INLINE JSInlineString* lookupInlineLatin1(const char16_t* chars,
+                                                       size_t len) const;
+  MOZ_ALWAYS_INLINE void putInlineLatin1(JSInlineString* s);
 
  private:
   template <typename CharT>
-  MOZ_ALWAYS_INLINE JSExternalString* lookupExternalImpl(const CharT* chars,
-                                                         size_t len) const;
+  MOZ_ALWAYS_INLINE JSLinearString* lookupImpl(const CharT* chars,
+                                               size_t len) const;
   template <typename CharT>
-  MOZ_ALWAYS_INLINE JSInlineString* lookupInlineImpl(const CharT* chars,
-                                                     size_t len) const;
+  MOZ_ALWAYS_INLINE JSInlineString* lookupInlineLatin1Impl(const CharT* chars,
+                                                           size_t len) const;
 };
 
 class MOZ_NON_TEMPORARY_CLASS FunctionToStringCache {
@@ -468,7 +470,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   // List of non-ephemeron weak containers to sweep during
   // beginSweepingSweepGroup.
-  js::MainThreadOrGCTaskData<mozilla::LinkedList<js::gc::WeakCacheBase>>
+  js::MainThreadOrGCTaskData<mozilla::LinkedList<detail::WeakCacheBase>>
       weakCaches_;
 
   // Mapping from not yet marked keys to a vector of all values that the key
@@ -766,10 +768,10 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     }
   }
 
-  mozilla::LinkedList<js::gc::WeakCacheBase>& weakCaches() {
+  mozilla::LinkedList<detail::WeakCacheBase>& weakCaches() {
     return weakCaches_.ref();
   }
-  void registerWeakCache(js::gc::WeakCacheBase* cachep) {
+  void registerWeakCache(detail::WeakCacheBase* cachep) {
     weakCaches().insertBack(cachep);
   }
 
@@ -794,7 +796,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   // Perform all pending weakmap entry marking for this zone after
   // transitioning to weak marking mode.
   js::gc::IncrementalProgress enterWeakMarkingMode(js::GCMarker* marker,
-                                                   js::SliceBudget& budget);
+                                                   JS::SliceBudget& budget);
 
   // A set of edges from this zone to other zones used during GC to calculate
   // sweep groups.

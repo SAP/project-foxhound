@@ -45,6 +45,7 @@ typedef MozPromise<MemoryReport, bool, true> MemoryReportPromise;
 
 class RendererOGL;
 class RenderTextureHost;
+class RenderTextureHostUsageInfo;
 class RenderThread;
 
 /// A rayon thread pool that is shared by all WebRender instances within a
@@ -68,6 +69,22 @@ class WebRenderThreadPool {
 
  protected:
   wr::WrThreadPool* mThreadPool;
+};
+
+/// An optional dedicated thread for glyph rasterization shared by all WebRender
+/// instances within a process.
+class MaybeWebRenderGlyphRasterThread {
+ public:
+  explicit MaybeWebRenderGlyphRasterThread(bool aEnabled);
+
+  ~MaybeWebRenderGlyphRasterThread();
+
+  bool IsEnabled() const { return mThread != nullptr; }
+
+  const wr::WrGlyphRasterThread* Raw() { return mThread; }
+
+ protected:
+  wr::WrGlyphRasterThread* mThread;
 };
 
 class WebRenderProgramCache final {
@@ -188,7 +205,7 @@ class RenderThread final {
                        const Maybe<gfx::IntSize>& aReadbackSize,
                        const Maybe<wr::ImageFormat>& aReadbackFormat,
                        const Maybe<Range<uint8_t>>& aReadbackBuffer,
-                       bool* aNeedsYFlip = nullptr);
+                       RendererStats* aStats, bool* aNeedsYFlip = nullptr);
 
   void Pause(wr::WindowId aWindowId);
   bool Resume(wr::WindowId aWindowId);
@@ -215,6 +232,11 @@ class RenderThread final {
 
   void HandleRenderTextureOps();
 
+  /// Can be called from any thread.
+  RefPtr<RenderTextureHostUsageInfo> GetOrMergeUsageInfo(
+      const wr::ExternalImageId& aExternalImageId,
+      RefPtr<RenderTextureHostUsageInfo> aUsageInfo);
+
   /// Can only be called from the render thread.
   void UnregisterExternalImageDuringShutdown(
       const wr::ExternalImageId& aExternalImageId);
@@ -222,6 +244,10 @@ class RenderThread final {
   /// Can only be called from the render thread.
   RenderTextureHost* GetRenderTexture(
       const wr::ExternalImageId& aExternalImageId);
+
+  /// Can only be called from the render thread.
+  std::tuple<RenderTextureHost*, RefPtr<RenderTextureHostUsageInfo>>
+  GetRenderTextureAndUsageInfo(const wr::ExternalImageId& aExternalImageId);
 
   /// Can be called from any thread.
   bool IsDestroyed(wr::WindowId aWindowId);
@@ -249,6 +275,12 @@ class RenderThread final {
   /// Thread pool for low priority scene building
   /// Can be called from any thread.
   WebRenderThreadPool& ThreadPoolLP() { return mThreadPoolLP; }
+
+  /// Optional global glyph raster thread.
+  /// Can be called from any thread.
+  MaybeWebRenderGlyphRasterThread& GlyphRasterThread() {
+    return mGlyphRasterThread;
+  }
 
   /// Returns the cache used to serialize shader programs to disk, if enabled.
   ///
@@ -429,6 +461,7 @@ class RenderThread final {
 
   WebRenderThreadPool mThreadPool;
   WebRenderThreadPool mThreadPoolLP;
+  MaybeWebRenderGlyphRasterThread mGlyphRasterThread;
 
   UniquePtr<WebRenderProgramCache> mProgramCache;
   UniquePtr<WebRenderShaders> mShaders;

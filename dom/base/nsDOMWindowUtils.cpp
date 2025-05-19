@@ -33,6 +33,7 @@
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/SharedStyleSheetCache.h"
+#include "mozilla/dom/SharedScriptCache.h"
 #include "mozilla/StaticPrefs_test.h"
 #include "mozilla/InputTaskManager.h"
 #include "nsIObjectLoadingContent.h"
@@ -851,7 +852,23 @@ nsDOMWindowUtils::SendTouchEvent(
   return SendTouchEventCommon(aType, aIdentifiers, aXs, aYs, aRxs, aRys,
                               aRotationAngles, aForces, aTiltXs, aTiltYs,
                               aTwists, aModifiers, aIgnoreRootScrollFrame,
-                              false, aPreventDefault);
+                              /* aIsPen */ false,
+                              /* aToWindow */ false, aPreventDefault);
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SendTouchEventAsPen(
+    const nsAString& aType, uint32_t aIdentifier, int32_t aX, int32_t aY,
+    uint32_t aRx, uint32_t aRy, float aRotationAngle, float aForce,
+    int32_t aTiltX, int32_t aTiltY, int32_t aTwist, int32_t aModifier,
+    bool aIgnoreRootScrollFrame, bool* aPreventDefault) {
+  return SendTouchEventCommon(
+      aType, nsTArray{aIdentifier}, nsTArray{aX}, nsTArray{aY}, nsTArray{aRx},
+      nsTArray{aRy}, nsTArray{aRotationAngle}, nsTArray{aForce},
+      nsTArray{aTiltX}, nsTArray{aTiltY}, nsTArray{aTwist}, aModifier,
+      aIgnoreRootScrollFrame,
+      /* aIsPen */ true,
+      /* aToWindow */ false, aPreventDefault);
 }
 
 NS_IMETHODIMP
@@ -865,8 +882,9 @@ nsDOMWindowUtils::SendTouchEventToWindow(
     bool aIgnoreRootScrollFrame, bool* aPreventDefault) {
   return SendTouchEventCommon(aType, aIdentifiers, aXs, aYs, aRxs, aRys,
                               aRotationAngles, aForces, aTiltXs, aTiltYs,
-                              aTwists, aModifiers, aIgnoreRootScrollFrame, true,
-                              aPreventDefault);
+                              aTwists, aModifiers, aIgnoreRootScrollFrame,
+                              /* aIsPen */ false,
+                              /* aToWindow */ true, aPreventDefault);
 }
 
 nsresult nsDOMWindowUtils::SendTouchEventCommon(
@@ -876,7 +894,8 @@ nsresult nsDOMWindowUtils::SendTouchEventCommon(
     const nsTArray<float>& aRotationAngles, const nsTArray<float>& aForces,
     const nsTArray<int32_t>& aTiltXs, const nsTArray<int32_t>& aTiltYs,
     const nsTArray<int32_t>& aTwists, int32_t aModifiers,
-    bool aIgnoreRootScrollFrame, bool aToWindow, bool* aPreventDefault) {
+    bool aIgnoreRootScrollFrame, bool aIsPen, bool aToWindow,
+    bool* aPreventDefault) {
   // get the widget to send the event to
   nsPoint offset;
   nsCOMPtr<nsIWidget> widget = GetWidget(&offset);
@@ -898,6 +917,9 @@ nsresult nsDOMWindowUtils::SendTouchEventCommon(
   WidgetTouchEvent event(true, msg, widget);
   event.mFlags.mIsSynthesizedForTests = true;
   event.mModifiers = nsContentUtils::GetWidgetModifiers(aModifiers);
+  if (aIsPen) {
+    event.mInputSource = MouseEvent_Binding::MOZ_SOURCE_PEN;
+  }
 
   nsPresContext* presContext = GetPresContext();
   if (!presContext) {
@@ -1265,6 +1287,12 @@ nsDOMWindowUtils::SuppressAnimation(bool aSuppress) {
 NS_IMETHODIMP
 nsDOMWindowUtils::ClearSharedStyleSheetCache() {
   SharedStyleSheetCache::Clear();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::ClearSharedScriptCache() {
+  SharedScriptCache::Clear();
   return NS_OK;
 }
 
@@ -1856,8 +1884,8 @@ nsDOMWindowUtils::TransformRectLayoutToVisual(float aX, float aY, float aWidth,
   return NS_OK;
 }
 
-Result<mozilla::ScreenRect, nsresult> nsDOMWindowUtils::ConvertToScreenRect(
-    float aX, float aY, float aWidth, float aHeight) {
+Result<mozilla::LayoutDeviceRect, nsresult> nsDOMWindowUtils::ConvertTo(
+    float aX, float aY, float aWidth, float aHeight, CoordsType aCoordsType) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   if (!window) {
     return Err(NS_ERROR_NOT_AVAILABLE);
@@ -1894,24 +1922,27 @@ Result<mozilla::ScreenRect, nsresult> nsDOMWindowUtils::ConvertToScreenRect(
   LayoutDeviceRect devPixelsRect = LayoutDeviceRect::FromAppUnits(
       appUnitsRect, presContext->AppUnitsPerDevPixel());
   devPixelsRect =
-      widget->WidgetToTopLevelWidgetTransform().TransformBounds(devPixelsRect) +
-      widget->TopLevelWidgetToScreenOffset();
+      widget->WidgetToTopLevelWidgetTransform().TransformBounds(devPixelsRect);
 
-  return ViewAs<ScreenPixel>(
-      devPixelsRect, PixelCastJustification::ScreenIsParentLayerForRoot);
+  switch (aCoordsType) {
+    case CoordsType::Screen:
+      devPixelsRect += widget->TopLevelWidgetToScreenOffset();
+      break;
+    case CoordsType::TopLevelWidget:
+      // There's nothing to do.
+      break;
+  }
+  return devPixelsRect;
 }
 
 NS_IMETHODIMP
 nsDOMWindowUtils::ToScreenRectInCSSUnits(float aX, float aY, float aWidth,
                                          float aHeight, DOMRect** aResult) {
-  ScreenRect rect;
-  MOZ_TRY_VAR(rect, ConvertToScreenRect(aX, aY, aWidth, aHeight));
+  LayoutDeviceRect devRect;
+  MOZ_TRY_VAR(devRect, ConvertTo(aX, aY, aWidth, aHeight, CoordsType::Screen));
 
   nsPresContext* presContext = GetPresContext();
   MOZ_ASSERT(presContext);
-
-  const auto devRect = ViewAs<LayoutDevicePixel>(
-      rect, PixelCastJustification::ScreenIsParentLayerForRoot);
 
   // We want to return the screen rect in CSS units of the browser chrome.
   //
@@ -1931,8 +1962,25 @@ nsDOMWindowUtils::ToScreenRectInCSSUnits(float aX, float aY, float aWidth,
 NS_IMETHODIMP
 nsDOMWindowUtils::ToScreenRect(float aX, float aY, float aWidth, float aHeight,
                                DOMRect** aResult) {
-  ScreenRect rect;
-  MOZ_TRY_VAR(rect, ConvertToScreenRect(aX, aY, aWidth, aHeight));
+  LayoutDeviceRect devPixelsRect;
+  MOZ_TRY_VAR(devPixelsRect,
+              ConvertTo(aX, aY, aWidth, aHeight, CoordsType::Screen));
+
+  ScreenRect rect = ViewAs<ScreenPixel>(
+      devPixelsRect, PixelCastJustification::ScreenIsParentLayerForRoot);
+
+  RefPtr<DOMRect> outRect = new DOMRect(mWindow);
+  outRect->SetRect(rect.x, rect.y, rect.width, rect.height);
+  outRect.forget(aResult);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::ToTopLevelWidgetRect(float aX, float aY, float aWidth,
+                                       float aHeight, DOMRect** aResult) {
+  LayoutDeviceRect rect;
+  MOZ_TRY_VAR(rect,
+              ConvertTo(aX, aY, aWidth, aHeight, CoordsType::TopLevelWidget));
 
   RefPtr<DOMRect> outRect = new DOMRect(mWindow);
   outRect->SetRect(rect.x, rect.y, rect.width, rect.height);
@@ -2275,6 +2323,23 @@ NS_IMETHODIMP nsDOMWindowUtils::DispatchDOMEventViaPresShellForTesting(
   RefPtr<PresShell> targetPresShell = targetDoc->GetPresShell();
   NS_ENSURE_STATE(targetPresShell);
 
+  WidgetGUIEvent* guiEvent = internalEvent->AsGUIEvent();
+  if (guiEvent && !guiEvent->mWidget) {
+    auto* pc = GetPresContext();
+    auto* widget = pc ? pc->GetRootWidget() : nullptr;
+    // In content, screen coordinates would have been
+    // transformed by BrowserParent::TransformParentToChild
+    // so we do that here.
+    if (widget) {
+      guiEvent->mWidget = widget;
+
+      // Setting the widget makes the event's mRefPoint coordinates
+      // widget-relative, so we transform them from being
+      // screen-relative here.
+      guiEvent->mRefPoint -= widget->WidgetToScreenOffset();
+    }
+  }
+
   targetDoc->FlushPendingNotifications(FlushType::Layout);
 
   nsEventStatus status = nsEventStatus_eIgnore;
@@ -2501,7 +2566,10 @@ nsDOMWindowUtils::SendSelectionSetEvent(uint32_t aOffset, uint32_t aLength,
 NS_IMETHODIMP
 nsDOMWindowUtils::SendContentCommandEvent(const nsAString& aType,
                                           nsITransferable* aTransferable,
-                                          const nsAString& aString) {
+                                          const nsAString& aString,
+                                          uint32_t aOffset,
+                                          const nsAString& aReplaceSrcString,
+                                          uint32_t aAdditionalFlags) {
   // get the widget to send the event to
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget) return NS_ERROR_FAILURE;
@@ -2521,6 +2589,8 @@ nsDOMWindowUtils::SendContentCommandEvent(const nsAString& aType,
     msg = eContentCommandRedo;
   } else if (aType.EqualsLiteral("insertText")) {
     msg = eContentCommandInsertText;
+  } else if (aType.EqualsLiteral("replaceText")) {
+    msg = eContentCommandReplaceText;
   } else if (aType.EqualsLiteral("pasteTransferable")) {
     msg = eContentCommandPasteTransferable;
   } else {
@@ -2530,8 +2600,13 @@ nsDOMWindowUtils::SendContentCommandEvent(const nsAString& aType,
   WidgetContentCommandEvent event(true, msg, widget);
   if (msg == eContentCommandInsertText) {
     event.mString.emplace(aString);
-  }
-  if (msg == eContentCommandPasteTransferable) {
+  } else if (msg == eContentCommandReplaceText) {
+    event.mString.emplace(aString);
+    event.mSelection.mReplaceSrcString = aReplaceSrcString;
+    event.mSelection.mOffset = aOffset;
+    event.mSelection.mPreventSetSelection =
+        !!(aAdditionalFlags & CONTENT_COMMAND_FLAG_PREVENT_SET_SELECTION);
+  } else if (msg == eContentCommandPasteTransferable) {
     event.mTransferable = aTransferable;
   }
 
@@ -3013,12 +3088,7 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
     return NS_OK;
   }
 
-  nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (!fm) {
-    return NS_OK;
-  }
-
-  RefPtr<Element> element = fm->GetFocusedElement();
+  const RefPtr<Element> element = nsFocusManager::GetFocusedElementStatic();
   if (!element) {
     return NS_OK;
   }
@@ -4287,61 +4357,6 @@ struct StateTableEntry {
   ElementState mState;
 };
 
-static constexpr StateTableEntry kManuallyManagedStates[] = {
-    {"autofill", ElementState::AUTOFILL},
-    // :-moz-autofill-preview implies :autofill.
-    {"-moz-autofill-preview",
-     ElementState::AUTOFILL_PREVIEW | ElementState::AUTOFILL},
-    {nullptr, ElementState()},
-};
-
-static_assert(!kManuallyManagedStates[ArrayLength(kManuallyManagedStates) - 1]
-                   .mStateString,
-              "last kManuallyManagedStates entry must be a sentinel with "
-              "mStateString == nullptr");
-
-static ElementState GetEventStateForString(const nsAString& aStateString) {
-  for (const StateTableEntry* entry = kManuallyManagedStates;
-       entry->mStateString; ++entry) {
-    if (aStateString.EqualsASCII(entry->mStateString)) {
-      return entry->mState;
-    }
-  }
-  return ElementState();
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::AddManuallyManagedState(Element* aElement,
-                                          const nsAString& aStateString) {
-  if (!aElement) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  ElementState state = GetEventStateForString(aStateString);
-  if (state.IsEmpty()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  aElement->AddStates(state);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::RemoveManuallyManagedState(Element* aElement,
-                                             const nsAString& aStateString) {
-  if (!aElement) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  ElementState state = GetEventStateForString(aStateString);
-  if (state.IsEmpty()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  aElement->RemoveStates(state);
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsDOMWindowUtils::GetStorageUsage(Storage* aStorage, int64_t* aRetval) {
   if (!aStorage) {
@@ -4783,7 +4798,7 @@ nsDOMWindowUtils::GetEffectivelyThrottlesFrameRequests(bool* aResult) {
   if (!doc) {
     return NS_ERROR_FAILURE;
   }
-  *aResult = !doc->WouldScheduleFrameRequestCallbacks() ||
+  *aResult = !doc->ShouldFireFrameRequestCallbacks() ||
              doc->ShouldThrottleFrameRequests();
   return NS_OK;
 }
@@ -4872,4 +4887,11 @@ nsDOMWindowUtils::RestoreHiDPIMode() {
 #else
   return NS_ERROR_NOT_AVAILABLE;
 #endif
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetDragSession(nsIDragSession** aSession) {
+  RefPtr<nsIDragSession> session = nsContentUtils::GetDragSession(GetWidget());
+  session.forget(aSession);
+  return NS_OK;
 }

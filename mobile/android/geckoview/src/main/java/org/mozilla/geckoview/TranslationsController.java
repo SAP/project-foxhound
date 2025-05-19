@@ -127,8 +127,6 @@ public class TranslationsController {
      * Manage the language model or models. Options are to download or delete a BCP 47 language or
      * all or cache.
      *
-     * <p>Bug 1869404 will add an option for deleting translations model "cache".
-     *
      * @param options contain language, operation, and operation level to perform on the model
      * @return the request proceeded as expected or an exception.
      */
@@ -1088,29 +1086,6 @@ public class TranslationsController {
 
       /** If the DOM has began visibly changing to the translated text. */
       public final @NonNull Boolean hasVisibleChange;
-
-      /**
-       * This constructor is deprecated, please use the [TranslationState] with [hasVisibleChange]
-       * parameter. This constructor will be removed in bug 1895275. Translation State constructor.
-       *
-       * @param requestedTranslationPair the language pair to translate
-       * @param error if an error occurred
-       * @param detectedLanguages detected language
-       * @param isEngineReady if the engine is ready for translations
-       */
-      @Deprecated
-      @DeprecationSchedule(version = 130, id = "translation-state-deprecated-constructor")
-      public TranslationState(
-          final @Nullable TranslationPair requestedTranslationPair,
-          final @Nullable String error,
-          final @Nullable DetectedLanguages detectedLanguages,
-          final @NonNull Boolean isEngineReady) {
-        this.requestedTranslationPair = requestedTranslationPair;
-        this.error = error;
-        this.detectedLanguages = detectedLanguages;
-        this.isEngineReady = isEngineReady;
-        this.hasVisibleChange = false;
-      }
 
       /**
        * Translation State constructor.
