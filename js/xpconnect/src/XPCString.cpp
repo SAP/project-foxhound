@@ -66,6 +66,9 @@ bool xpc::NonVoidStringToJsval(JSContext* cx, const nsAString& readable,
   }
 
   if (StringBuffer* buf = readable.GetStringBuffer()) {
+    if(readable.isTainted()) {
+      buf->setTaint(readable.Taint());
+    }
     return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp);
   }
 
@@ -96,6 +99,9 @@ bool xpc::NonVoidLatin1StringToJsval(JSContext* cx, const nsACString& latin1,
   }
 
   if (StringBuffer* buf = latin1.GetStringBuffer()) {
+    if(latin1.isTainted()) {
+      buf->setTaint(latin1.Taint());
+    }
     return XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp);
   }
 
@@ -123,6 +129,9 @@ bool xpc::NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& utf8,
   }
 
   if (StringBuffer* buf = utf8.GetStringBuffer()) {
+    if(utf8.isTainted()) {
+      buf->setTaint(utf8.Taint());
+    }
     return XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp);
   }
 
