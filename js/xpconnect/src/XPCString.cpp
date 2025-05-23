@@ -66,7 +66,13 @@ bool xpc::NonVoidStringToJsval(JSContext* cx, const nsAString& readable,
   }
 
   if (StringBuffer* buf = readable.GetStringBuffer()) {
-    return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp);
+    if(!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, vp)) {
+      return false;
+    }
+    if (readable.isTainted()) { 
+      JS_SetTaint(cx, vp, readable.Taint());
+    }
+    return true;
   }
 
   // blech, have to copy.
@@ -96,7 +102,14 @@ bool xpc::NonVoidLatin1StringToJsval(JSContext* cx, const nsACString& latin1,
   }
 
   if (StringBuffer* buf = latin1.GetStringBuffer()) {
-    return XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp);
+
+    if(!XPCStringConvert::Latin1StringBufferToJSVal(cx, buf, length, vp)) {
+      return false;
+    }
+    if (latin1.isTainted()) {
+      JS_SetTaint(cx, vp, latin1.Taint());
+    }
+    return true;
   }
 
   JSString* str = JS_NewStringCopyN(cx, latin1.BeginReading(), length);
@@ -123,7 +136,13 @@ bool xpc::NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& utf8,
   }
 
   if (StringBuffer* buf = utf8.GetStringBuffer()) {
-    return XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp);
+    if(!XPCStringConvert::UTF8StringBufferToJSVal(cx, buf, length, vp)) {
+      return false;
+    }
+    if (utf8.isTainted()) {
+      JS_SetTaint(cx, vp, utf8.Taint());
+    }
+    return true;
   }
 
   JSString* str =

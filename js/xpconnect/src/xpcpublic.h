@@ -518,7 +518,12 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
   if (str.HasStringBuffer()) {
     uint32_t length = str.StringBufferLength();
     mozilla::StringBuffer* buf = str.StringBuffer();
-    return XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, rval);
+    if(!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, rval)) {
+      return false;
+    }
+    JS_SetTaint(cx, rval, str.Taint());
+
+    return true;
   }
 
   if (str.HasLiteral()) {
