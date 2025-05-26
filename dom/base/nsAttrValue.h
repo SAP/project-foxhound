@@ -488,7 +488,7 @@ class nsAttrValue {
   nsAtom* GetStoredAtom() const;
   mozilla::StringBuffer* GetStoredStringBuffer() const;
 
-  // Foxhound: In case we have a attributed based on a tainted atom, this retrieves the taint
+  // Foxhound: In case we have a attribute based on a tainted atom, this retrieves the taint
   StringTaint GetAtomTaint() const;
 
  private:
