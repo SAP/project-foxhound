@@ -195,10 +195,11 @@ struct opFosterParentText {
   char16_t* mBuffer;
   nsIContent** mTable;
   int32_t mLength;
+  SafeStringTaint mTaint;
 
   explicit opFosterParentText(nsIContentHandle* aStackParent, char16_t* aBuffer,
-                              nsIContentHandle* aTable, int32_t aLength)
-      : mBuffer(aBuffer), mLength(aLength) {
+                              nsIContentHandle* aTable, int32_t aLength, const StringTaint& aTaint)
+      : mBuffer(aBuffer), mLength(aLength), mTaint(aTaint) {
     mStackParent = static_cast<nsIContent**>(aStackParent);
     mTable = static_cast<nsIContent**>(aTable);
   };
@@ -208,10 +209,11 @@ struct opAppendComment {
   nsIContent** mParent;
   char16_t* mBuffer;
   int32_t mLength;
+  SafeStringTaint mTaint;
 
   explicit opAppendComment(nsIContentHandle* aParent, char16_t* aBuffer,
-                           int32_t aLength)
-      : mBuffer(aBuffer), mLength(aLength) {
+                           int32_t aLength, const StringTaint& aTaint)
+      : mBuffer(aBuffer), mLength(aLength), mTaint(aTaint) {
     mParent = static_cast<nsIContent**>(aParent);
   };
 };
@@ -219,9 +221,10 @@ struct opAppendComment {
 struct opAppendCommentToDocument {
   char16_t* mBuffer;
   int32_t mLength;
+  SafeStringTaint mTaint;
 
-  explicit opAppendCommentToDocument(char16_t* aBuffer, int32_t aLength)
-      : mBuffer(aBuffer), mLength(aLength) {};
+  explicit opAppendCommentToDocument(char16_t* aBuffer, int32_t aLength, const StringTaint& aTaint)
+      : mBuffer(aBuffer), mLength(aLength), mTaint(aTaint){};
 };
 
 class nsHtml5TreeOperationStringPair {
@@ -616,14 +619,15 @@ class nsHtml5TreeOperation final {
                                       nsHtml5DocumentBuilder* aBuilder);
 
   static nsresult FosterParentText(nsIContent* aStackParent, char16_t* aBuffer,
-                                   uint32_t aLength, nsIContent* aTable,
+                                   uint32_t aLength, const StringTaint& aTaint, nsIContent* aTable,
                                    nsHtml5DocumentBuilder* aBuilder);
 
   static nsresult AppendComment(nsIContent* aParent, char16_t* aBuffer,
-                                int32_t aLength,
+                                int32_t aLength, const StringTaint& aTaint,
                                 nsHtml5DocumentBuilder* aBuilder);
 
   static nsresult AppendCommentToDocument(char16_t* aBuffer, int32_t aLength,
+                                          const StringTaint& aTaint,
                                           nsHtml5DocumentBuilder* aBuilder);
 
   static nsresult AppendDoctypeToDocument(nsAtom* aName,

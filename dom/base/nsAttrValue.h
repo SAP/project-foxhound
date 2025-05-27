@@ -488,6 +488,9 @@ class nsAttrValue {
   nsAtom* GetStoredAtom() const;
   mozilla::StringBuffer* GetStoredStringBuffer() const;
 
+  // Foxhound: In case we have a attribute based on a tainted atom, this retrieves the taint
+  StringTaint GetAtomTaint() const;
+
  private:
   // These have to be the same as in ValueType
   enum ValueBaseType {

@@ -238,7 +238,7 @@ void nsHtml5TreeBuilder::doctype(nsAtom* name, nsHtml5String publicIdentifier,
   return;
 }
 
-void nsHtml5TreeBuilder::comment(char16_t* buf, int32_t start, int32_t length) {
+void nsHtml5TreeBuilder::comment(char16_t* buf, const StringTaint& taint, int32_t start, int32_t length) {
   needToDropLF = false;
   if (!isInForeign()) {
     switch (mode) {
@@ -246,12 +246,12 @@ void nsHtml5TreeBuilder::comment(char16_t* buf, int32_t start, int32_t length) {
       case BEFORE_HTML:
       case AFTER_AFTER_BODY:
       case AFTER_AFTER_FRAMESET: {
-        appendCommentToDocument(buf, start, length);
+        appendCommentToDocument(buf, taint, start, length);
         return;
       }
       case AFTER_BODY: {
         flushCharacters();
-        appendComment(stack[0]->node, buf, start, length);
+        appendComment(stack[0]->node, buf, taint, start, length);
         return;
       }
       default: {
@@ -260,7 +260,7 @@ void nsHtml5TreeBuilder::comment(char16_t* buf, int32_t start, int32_t length) {
     }
   }
   flushCharacters();
-  appendComment(stack[currentPtr]->node, buf, start, length);
+  appendComment(stack[currentPtr]->node, buf, taint, start, length);
   return;
 }
 
@@ -296,7 +296,7 @@ nsHtml5TreeBuilder::characters(const char16_t* buf, const StringTaint& taint, in
     case IN_TABLE:
     case IN_TABLE_BODY:
     case IN_ROW: {
-      accumulateCharactersForced(buf, start, length);
+      accumulateCharactersForced(buf, taint, start, length);
       return;
     }
     default: {
@@ -345,7 +345,7 @@ nsHtml5TreeBuilder::characters(const char16_t* buf, const StringTaint& taint, in
               case IN_TABLE:
               case IN_TABLE_BODY:
               case IN_ROW: {
-                accumulateCharactersForced(buf, i, 1);
+                accumulateCharactersForced(buf, taint, i, 1);
                 start = i + 1;
                 continue;
               }
@@ -446,7 +446,7 @@ nsHtml5TreeBuilder::characters(const char16_t* buf, const StringTaint& taint, in
               case IN_TABLE:
               case IN_TABLE_BODY:
               case IN_ROW: {
-                accumulateCharactersForced(buf, i, 1);
+                accumulateCharactersForced(buf, taint, i, 1);
                 start = i + 1;
                 continue;
               }
@@ -4561,7 +4561,7 @@ void nsHtml5TreeBuilder::flushCharacters() {
         return;
       }
       nsHtml5StackNode* tableElt = stack[tablePos];
-      insertFosterParentedCharacters(charBuffer, 0, charBufferLen,
+      insertFosterParentedCharacters(charBuffer, charTaint, 0, charBufferLen,
                                      tableElt->node, stack[tablePos - 1]->node);
       charBufferLen = 0;
       charTaint.clear();
