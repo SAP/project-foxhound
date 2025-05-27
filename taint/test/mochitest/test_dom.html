@@ -31,7 +31,22 @@
 
       add_task(async function test_div() {
           check_tainted(document.getElementById("content").getAttribute("test"));
+      });
+
+      add_task(async function test_div_long() {
           check_tainted(document.getElementById("content").getAttribute("long"));
+      });
+
+      add_task(async function test_div_short() {
+          check_tainted(document.getElementById("content").getAttribute("short"));
+      });
+
+      add_task(async function test_div_short() {
+          check_tainted(document.getElementById("content").getAttribute("two"));
+      });
+
+      add_task(async function test_div_short() {
+          check_tainted(document.getElementById("content").getAttribute("three"));
       });
 
       add_task(async function test_div_dynamic() {
@@ -58,6 +73,16 @@
       add_task(async function test_script_src() {
           check_tainted(document.getElementById("s1").src);
           check_tainted(document.getElementById("s1").getAttribute("src"));
+      });
+
+      add_task(async function test_script_src_short() {
+          check_tainted(document.getElementById("s2").src);
+          check_tainted(document.getElementById("s2").getAttribute("src"));
+      });
+
+      add_task(async function test_script_src_atom() {
+          check_tainted(document.getElementById("s3").src);
+          check_tainted(document.getElementById("s3").getAttribute("src"));
       });
 
       add_task(async function test_element_no_selector() {
@@ -234,11 +259,14 @@
   </head>
   <body>
     <p id="display"></p>
-    <div id="content" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
+    <div id="content" style="display: none" test="hello" long="This should be so long that it does not get atomized!" short="a" two="aa" three="aaa"></div>
     <pre id="test"></pre>
     <a href="https://example.com">Visit Example Website</a>
     <img src="default16.png" alt="A test file">
-    <script id="s1" src="xx"></script>
+
+    <script id="s1" src="ALongSourceNameToEnsureNoAtoms.js"></script>
+    <script id="s2" src="x.js"></script>
+    <script id="s3" src="xx"></script>
 
     <div id="content_by_id" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
     <div id="content_by_id_already_tainted" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>

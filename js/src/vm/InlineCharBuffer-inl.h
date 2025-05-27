@@ -124,10 +124,9 @@ class MOZ_NON_PARAM InlineCharBuffer {
           !heapStorage,
           "expected only inline storage when length fits in inline string");
 
-      // Foxhound: disable
-      // if (JSString* str = TryEmptyOrStaticString(cx, inlineStorage, length)) {
-      //   return str;
-      // }
+      if (JSString* str = TryEmptyOrStaticString(cx, inlineStorage, length)) {
+        return str;
+      }
 
       mozilla::Range<const CharT> range(inlineStorage, length);
       return NewInlineString<CanGC>(cx, range, heap);
