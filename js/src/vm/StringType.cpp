@@ -2385,9 +2385,16 @@ static JSString* NewStringFromBuffer(JSContext* cx, BufferT&& buffer,
 
   const auto* s = static_cast<const CharT*>(buffer->Data());
 
-  if (JSString* str = TryEmptyOrStaticString(cx, s, length)) {
-    return str;
-  }
+  /*
+   * Foxhound: disable creation of static strings as we can't taint them
+   * Investigate whether we could add a taint argument to this function
+   * to allow static string creation for untainted StringBuffers. Using
+   * buffer->Taint() doesn't work, sometimes the tainting information
+   * is set from a separate string.
+   */
+  // if (JSString* str = TryEmptyOrStaticString(cx, s, length)) {
+  //   return str;
+  // }
 
   ExternalStringCache& cache = cx->zone()->externalStringCache();
 
