@@ -172,15 +172,22 @@ static MOZ_ALWAYS_INLINE JSLinearString* TryEmptyOrStaticString(
   // Measurements on popular websites indicate empty strings are pretty common
   // and most strings with length 1 or 2 are in the StaticStrings table. For
   // length 3 strings that's only about 1%, so we check n <= 2.
-  // Foxhound: TODO: check whether we should disable this function
+
   if (n <= 2) {
     if (n == 0) {
       return cx->emptyString();
     }
 
-    if (JSLinearString* str = cx->staticStrings().lookup(chars, n)) {
-      return str;
-    }
+  /*
+   * Foxhound: disable creation of static strings as we can't taint them
+   * Investigate whether we could add a taint argument to this function
+   * to allow static string creation for untainted StringBuffers. Using
+   * buffer->Taint() doesn't work, sometimes the tainting information
+   * is set from a separate string.
+   */
+    // if (JSLinearString* str = cx->staticStrings().lookup(chars, n)) {
+    //   return str;
+    // }
   }
 
   return nullptr;

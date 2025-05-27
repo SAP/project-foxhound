@@ -1891,10 +1891,9 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringDeflated(
 template <AllowGC allowGC>
 static JSLinearString* NewStringDeflated(JSContext* cx, const char16_t* s,
                                          size_t n, gc::Heap heap) {
-// Foxhound: Avoid creating atoms
-//  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
-//    return str;
-//  }
+  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
+    return str;
+  }
 
   if (JSInlineString::lengthFits<Latin1Char>(n)) {
     return NewInlineStringDeflated<allowGC>(
@@ -1953,11 +1952,9 @@ template <AllowGC allowGC, typename CharT>
 JSLinearString* js::NewStringDontDeflate(
   JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length,
   gc::Heap heap) {
-  // Foxhound: TODO disabled for now, causes XPConnect string conversion to
-  // fail wrt taint propagation if this function returns a JSAtom.
-  // if (JSLinearString* str = TryEmptyOrStaticString(cx, chars.get(), length)) {
-  //   return str;
-  // }
+  if (JSLinearString* str = TryEmptyOrStaticString(cx, chars.get(), length)) {
+    return str;
+  }
 
   if (JSInlineString::lengthFits<CharT>(length)) {
     // |chars.get()| is safe because 1) |NewInlineString| necessarily *copies*,
@@ -2051,10 +2048,9 @@ template JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
 template <AllowGC allowGC, typename CharT>
 JSLinearString* NewStringCopyNDontDeflate(JSContext* cx, const CharT* s,
                                           size_t n, gc::Heap heap) {
-  // Foxhound: don't create atoms
-  // if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
-  //   return str;
-  // }
+  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
+    return str;
+  }
 
   if (MOZ_UNLIKELY(!JSLinearString::validateLength(cx, n))) {
     return nullptr;
@@ -2327,11 +2323,10 @@ template <typename CharT>
 JSString* NewMaybeExternalString(JSContext* cx, const CharT* s, size_t n,
                                  const JSExternalStringCallbacks* callbacks,
                                  bool* allocatedExternal, gc::Heap heap) {
-// Foxhound: Avoid creating atoms
-//  if (JSString* str = TryEmptyOrStaticString(cx, s, n)) {
-//    *allocatedExternal = false;
-//    return str;
-//  }
+  if (JSString* str = TryEmptyOrStaticString(cx, s, n)) {
+    *allocatedExternal = false;
+    return str;
+  }
 
   ExternalStringCache& cache = cx->zone()->externalStringCache();
 
@@ -2385,16 +2380,9 @@ static JSString* NewStringFromBuffer(JSContext* cx, BufferT&& buffer,
 
   const auto* s = static_cast<const CharT*>(buffer->Data());
 
-  /*
-   * Foxhound: disable creation of static strings as we can't taint them
-   * Investigate whether we could add a taint argument to this function
-   * to allow static string creation for untainted StringBuffers. Using
-   * buffer->Taint() doesn't work, sometimes the tainting information
-   * is set from a separate string.
-   */
-  // if (JSString* str = TryEmptyOrStaticString(cx, s, length)) {
-  //   return str;
-  // }
+  if (JSString* str = TryEmptyOrStaticString(cx, s, length)) {
+    return str;
+  }
 
   ExternalStringCache& cache = cx->zone()->externalStringCache();
 
