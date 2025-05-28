@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <title>Taint URL Object propagation</title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
-    <script src="./taint_helper.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
-      SimpleTest.waitForExplicitFinish();
-      function startTest() {
+      add_task(async function test_untainted_url_object() {
         const url = new URL("https://untainted.com/example/1?payload=abcd&sp=x#12345");
         check_untainted(url.toString());
+      });
 
+      add_task(async function test_tainted_url_object() {
         const tainted_url = new URL(String.tainted("https://user:password@tainted_url.com/example/1?payload=abcd&sp=x#12345"));
         check_tainted(tainted_url.toString());
         check_tainted(tainted_url.hostname);
@@ -20,27 +20,30 @@
         check_tainted(tainted_url.password);
         check_tainted(tainted_url.pathname);
         check_tainted(tainted_url.search);
+      });
 
+      add_task(async function test_partially_tainted_url_object() {
         const partially_tainted = new URL("https://" + String.tainted("hostname") + ".com/" + String.tainted("path/to/file"));
 
         check_untainted(partially_tainted.protocol);
         check_tainted(partially_tainted.hostname);
         check_tainted(partially_tainted.pathname);
+      });
 
+      add_task(async function test_taint_overrriden_url_object() {
         const taint_overwritten = new URL("../untainted", "https://something.org/" + String.tainted("tainted"));
 
         check_untainted(taint_overwritten.toString());
+      });
 
+      add_task(async function test_taint_appended_url_object() {
         const taint_appended = new URL(String.tainted("tainted_path"), "https://something.org");
         check_tainted(taint_appended.toString());
         check_untainted(taint_appended.hostname);
-
-        SimpleTest.finish();
-      }
-
+      });
     </script>
   </head>
-  <body onload="startTest()">
+  <body>
     <p id="display"></p>
     <div id="content" style="display: none"></div>
     <pre id="test"></pre>
