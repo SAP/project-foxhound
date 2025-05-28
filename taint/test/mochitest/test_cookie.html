@@ -7,18 +7,10 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script "text/javascript">
 
-      function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted");
-      }
-
-      function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted");
-      }
-
       function startTest() {
-	  document.cookie = "c=untainted";
-	  check_tainted(document.cookie);
-	  SimpleTest.finish();
+	      document.cookie = "c=untainted";
+	      check_tainted(document.cookie);
+	      SimpleTest.finish();
       }
 
       SimpleTest.waitForExplicitFinish();

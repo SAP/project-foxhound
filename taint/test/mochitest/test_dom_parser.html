@@ -7,17 +7,7 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
-        function todo_tainted(str) {
-            todo(str.taint.length > 0, "Check tainted: " + str);
-        }
 
-        function check_tainted(str) {
-            ok(str.taint.length > 0, "Check tainted: " + str);
-        }
-
-        function check_untainted(str) {
-            ok(str.taint.length == 0, "Check untainted: " + str);
-        }
 
         function testDomParser(str) {
             const parser = new DOMParser();
