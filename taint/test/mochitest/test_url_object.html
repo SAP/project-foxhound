@@ -4,17 +4,9 @@
     <meta charset="utf-8">
     <title>Taint URL Object propagation</title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="./taint_helper.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
-
-      function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted");
-      }
-
-      function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted");
-      }
-
       SimpleTest.waitForExplicitFinish();
       function startTest() {
         const url = new URL("https://untainted.com/example/1?payload=abcd&sp=x#12345");

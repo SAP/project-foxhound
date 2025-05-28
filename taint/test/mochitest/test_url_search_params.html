@@ -4,17 +4,9 @@
     <meta charset="utf-8">
     <title>Taint URL Search Params propagation</title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="./taint_helper.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
-
-      function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted");
-      }
-
-      function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted");
-      }
-
       // Check untainted
       const paramsString = "q=URLUtils.searchParams&topic=api";
       const searchParams = new URLSearchParams(paramsString);

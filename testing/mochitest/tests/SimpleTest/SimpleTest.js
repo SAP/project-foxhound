@@ -2265,3 +2265,34 @@ addEventListener("message", async event => {
     SimpleTest.finish();
   }
 });
+
+function check_tainted(str) {
+    ok(str?.taint?.length > 0, "Check tainted: " + str + " Taint: " + JSON.stringify(str.taint));
+}
+
+function check_untainted(str) {
+  ok(str?.taint?.length == 0, "Check untainted: " + str);
+}
+
+
+function todo_tainted(str) {
+    todo(str?.taint?.length > 0, "Check tainted: " + str);
+}
+
+function check_taint_source(str, src) {
+    var flow = str.taint[0].flow;
+    var op = flow[flow.length-1];
+    ok(op.operation == src, "Source operation check: '" + op.operation + "' =? '" + src + "'");
+}
+
+
+function check_range_position(str, range_index, begin, end, content = null) {
+  if(content != null) {
+    let sub = str.substring(begin, end);
+    ok(sub === content, `Check that '${sub}', i.e., str.substring(${begin}, ${end}) equals the expected value`);
+  }
+  ok(str.taint.length >= range_index+1, `Taint range at index ${range_index} exists`);
+  let range = str.taint[range_index];
+  ok(begin == range.begin, `Start index check ${range.begin}`);
+  ok(end == range.end, `End index check ${range.end}`);
+}
