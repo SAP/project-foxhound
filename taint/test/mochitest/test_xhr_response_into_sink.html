@@ -1,0 +1,75 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8">
+    <title>Check XMLHttpRequest Respones Source</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script "text/javascript">
+
+      function runTest(method, f) {
+            let request = new XMLHttpRequest();
+            request.onload = () => {
+                SimpleTest.info(`done! Response: ${request.responseText}`);
+                check_tainted(request.responseText);
+                f(request.responseText);
+
+            };
+            //request.open("GET", "http://mochi.test:8888/tests/SimpleTest/setup.js", true);
+            request.open("GET", `http://mochi.test:8888/tests/taint/test/mochitest/payload.sjs?${method}`, true);
+            //request.open("GET", "/tests/SimpleTest/test.css", true);
+            request.send("");
+        }
+
+
+      let i = 0;
+              let sink_names = [
+        "eval",
+        "innerHTML",
+        //"document.writeln",
+        "document.write"
+      ];
+      let contents = [
+
+        'console.log("remote loaded payload");'
+        ,"hello!"
+        ,"hello!"
+        ,"hello!"
+      ];
+
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+
+          is(report.detail.str, contents[i], "Check sink string content");
+
+          let flow = report.detail.str.taint[0].flow;
+          is(flow[2].operation, sink_names[i], `Check sink: ${sink_names[i]}`);
+
+          i += 1;
+          if (i >= sink_names.length) {
+            SimpleTest.finish();
+          }
+      }, false);
+            runTest("eval", p => eval(p));
+            runTest("innerHTML", p => {
+              let d = document.getElementById("foo");
+              d.innerHTML = p;
+            });
+            runTest("doc_writeln", p => {
+              document.writeln(p);
+            });
+            runTest("doc_write", p => {
+              document.write(p);
+            });
+
+
+
+
+    </script>
+  </head>
+
+  <body>
+    <div id="foo">
+
+    </div>
+</html>
