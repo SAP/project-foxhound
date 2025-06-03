@@ -15,7 +15,7 @@ on:
 jobs:
 
   # Test complete build on Ubuntu
-  ubuntu-build:
+  ubuntu-build-clang-plugin:
     runs-on: ubuntu-22.04
 
     steps:
