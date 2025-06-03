@@ -677,7 +677,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Save operation to avoid GC issues
-  SafeStringTaint taint = str->taint();
+  SafeStringTaint taint(str->taint());
   TaintOperation op = TaintOperationFromContext(cx, "unescape", true, str);
 
   // Steps 2, 4-5.
@@ -1216,7 +1216,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
 
   InlineCharBuffer<CharT> newChars;
   // Foxhound: cache the taint up here to prevent GC issues
-  SafeStringTaint taint = str->taint();
+  SafeStringTaint taint(str->taint());
   if (taint.hasTaint()) {
     taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
   }
@@ -1630,7 +1630,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   using TwoByteBuffer = InlineCharBuffer<char16_t>;
 
   mozilla::MaybeOneOf<Latin1Buffer, TwoByteBuffer> newChars;
-  SafeStringTaint taint = str->taint();
+  SafeStringTaint taint(str->taint());
   if (taint.hasTaint()) {
     taint.extend(TaintOperationFromContextJSString(cx, "toUpperCase", true, str));
   }
@@ -5100,7 +5100,7 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // Foxhound: Add encode operation to output taint.
-  SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
+  SafeStringTaint taint(sb.empty() ? str->taint() : sb.taint());
   if(taint.hasTaint()) {
     if (unescapedSet == js_isUriReservedPlusPound) {
       taint.extend(TaintOperationFromContext(cx, "encodeURI", true, str));
@@ -5266,7 +5266,7 @@ static bool Decode(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // Foxhound: Add decode operation to output taint.
-  SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
+  SafeStringTaint taint(sb.empty() ? str->taint() : sb.taint());
   if(taint.hasTaint()) {
     if(reservedSet == js_isUriReservedPlusPound) {
       taint.extend(TaintOperationFromContext(cx, "decodeURI", true, str));

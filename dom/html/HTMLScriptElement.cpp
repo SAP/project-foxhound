@@ -165,6 +165,7 @@ void HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML,
                                      OOMReporter& aError) {
   if (!nsContentUtils::GetNodeTextContent(this, false, aInnerHTML, fallible)) {
     aError.ReportOOM();
+    return;
   }
   // Foxhound: script.innerHTML source
   MarkTaintSourceElement(aInnerHTML, "script.innerHTML", this);

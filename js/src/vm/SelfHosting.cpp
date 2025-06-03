@@ -1781,10 +1781,12 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
             if (!argStr) {
                 taint_args.push_back(taintarg(cx, u""));
             } else {
-                taint_args.push_back(taintarg(cx, RootedString(cx, argStr)));
+                RootedString rs(cx, argStr);
+                taint_args.push_back(taintarg(cx, rs));
             }
         } else {
-            taint_args.push_back(taintarg(cx, RootedString(cx, argStr)));
+            RootedString rs(cx, argStr);
+            taint_args.push_back(taintarg(cx, rs));
         }
     }
 
@@ -1829,10 +1831,12 @@ taint_addTaintOperation_native_full(JSContext* cx, unsigned argc, Value* vp)
             if (!argStr) {
                 taint_args.push_back(taintarg(cx, u""));
             } else {
-                taint_args.push_back(taintarg_full(cx, RootedString(cx, argStr)));
+                RootedString rs(cx, argStr);
+                taint_args.push_back(taintarg_full(cx, rs));
             }
         } else {
-            taint_args.push_back(taintarg_full(cx, RootedString(cx, argStr)));
+            RootedString rs(cx, argStr);
+            taint_args.push_back(taintarg_full(cx, rs));
         }
     }
 
@@ -1877,10 +1881,12 @@ taint_addTaintOperation_native(JSContext* cx, unsigned argc, Value* vp)
             if (!argStr) {
                 taint_args.push_back(taintarg(cx, u""));
             } else {
-                taint_args.push_back(taintarg(cx, RootedString(cx, argStr)));
+                RootedString rs(cx, argStr);
+                taint_args.push_back(taintarg(cx, rs));
             }
         } else {
-            taint_args.push_back(taintarg(cx, RootedString(cx, argStr)));
+            RootedString rs(cx, argStr);
+            taint_args.push_back(taintarg(cx, rs));
         }
     }
 

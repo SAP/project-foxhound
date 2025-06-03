@@ -1233,14 +1233,14 @@ TaintRange ParseRange(const std::string& str, size_t& i, size_t length, bool& va
         std::cout << "Error: invalid taint range" << std::endl;
 #endif
         valid = false;
-        return TaintRange(0, 0, TaintOperation(""));
+        return TaintRange(0, 0, TaintFlow(TaintOperation("")));
     }
 
     valid = true;
 #if (DEBUG_E2E_TAINTING)
     std::cout << "  ParseTaintRange done: " << begin << " - " << end << " : " << source << std::endl;
 #endif
-    return TaintRange(begin, end, TaintOperation(source.c_str()));
+    return TaintRange(begin, end, TaintFlow(TaintOperation(source.c_str())));
 }
 
 StringTaint ParseTaint(const std::string& str)
