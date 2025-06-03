@@ -42,6 +42,8 @@ SKIP_BUILD=
 SKIP_PACKAGE=
 RESET_GIT_REPO=
 DRY_RUN=
+APPLY_PATCHES=
+PATCH_FILES=()
 
 _determine_obj_dir() {
   if [ ! -d "${FOXHOUND_OBJ_DIR}" ]; then
@@ -64,7 +66,47 @@ _determine_bin_name() {
     fi
     FOXHOUND_NAME="$BIN_NAME"
 }
+_apply_patches() {
+  pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
+  for pf in ${PATCH_FILES[@]}; do
+    local SUCCESS
+    if [ -z "$DRY_RUN" ]; then
+      git apply "${pf}" || _die "Can not apply ${pf}.."
+    else
+      git apply --check "${pf}" || _die "Can not apply ${pf}.."
+    fi
+    _status "Successfully applied ${pf}"
+  done
+  popd > /dev/null || exit 1
+}
 
+_revert_patches() {
+  pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
+  for pf in ${PATCH_FILES[@]}; do
+    local SUCCESS
+    if [ -z "$DRY_RUN" ]; then
+      git apply -R "${pf}" || _die "Can not revert ${pf}.."
+    fi
+    _status "Successfully reverted ${pf}"
+  done
+  popd > /dev/null || exit 1
+}
+
+_prepare_foxhound_patches() {
+  if [ -z "${FOXHOUND_PATCHES}" ]; then
+    _die "FOXHOUND_PATCHES env variable is empty depite -a flag"
+  fi
+  local PATCHES
+  PATCHES=(${FOXHOUND_PATCHES//;/ })
+  for p in ${PATCHES[@]}; do
+    if [ ! -f "$p" ]; then
+      _die "Patch file ${p} does not exist, please check your syntax"
+    else
+      _status "Adding $p to patch file queue to apply"
+      PATCH_FILES+=("$p")
+    fi
+  done
+}
 
 _make_git_commit() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
@@ -213,7 +255,9 @@ main() {
   PLAYWRIGHT_DIR="${BASEDIR}/playwright"
 
   _status "Starting Foxhound build in ${FOXHOUND_DIR}"
-
+  if [ -n "$APPLY_PATCHES" ]; then
+    _prepare_foxhound_patches
+  fi
   # First get playwright / rust versions
   _get_playwright_version
 
@@ -231,12 +275,20 @@ main() {
     _prepare_playwright
     _patch_foxhound
   fi
+  if [ -n "$APPLY_PATCHES" ] && (( ${#PATCH_FILES[@]} )); then
+    _status "Applying ${#PATCH_FILES[@]} patches prior to building Foxhound"
+    _apply_patches
+  fi
   _determine_obj_dir
   _status "Determined MOZ_OBJDIR as: $FOXHOUND_OBJ_DIR"
   _determine_bin_name
   _status "Determined binary name as: $FOXHOUND_NAME"
   if [ -z "$SKIP_BUILD" ]; then
       _build_foxhound
+  fi
+  if [ -n "$APPLY_PATCHES" ] && (( ${#PATCH_FILES[@]} )); then
+    _status "Reverting ${#PATCH_FILES[@]} patches after successfull build"
+    _revert_patches
   fi
   if [ -z "$SKIP_PACKAGE" ]; then
      _package_foxhound
@@ -246,7 +298,7 @@ main() {
 _help() {
    echo "Builds project foxhound"
    echo
-   echo "Syntax: build.sh [-c|s|t|u|v|b|r|p|g|n|h]"
+   echo "Syntax: build.sh [-c|s|t|u|v|b|r|p|g|n|a|h]"
    echo
    echo "For example, to build from scratch with playwright:"
    echo "> bash build.sh -p"
@@ -262,10 +314,14 @@ _help() {
    echo "p     Builds with playwright integration."
    echo "g     Create a Git commit with the playwright patches."
    echo "n     Dry run. Only print the step the script would perform."
+   echo "a     Apply patches provided in env variable FOXHOUND_PATCHES: ${FOXHOUND_PATCHES} as a semicolon separated list"
    echo "h     Print this Help."
    echo
    echo
    echo "Environment variables:"
+   echo
+   echo "FOXHOUND_PATCHES:"
+   echo "Combined with the -a flag, this splits the content into a list of semicolon separated patch files that we apply before the build and revert afterwards."
    echo
    echo "These are meant to be used if you know what you are doing and can lead to states that are difficult to revert. Use with caution!"
    echo
@@ -274,7 +330,7 @@ _help() {
    echo "Warning: When used together with Playwright support this can lead to a state where untangling the Playwright patches from your changes to commit them is very cumbersome!"
 }
 
-while getopts "hpcstuvrbgn" option; do
+while getopts "hpcstuvrbgna" option; do
   case "$option" in
     h)
         _help
@@ -299,6 +355,8 @@ while getopts "hpcstuvrbgn" option; do
         WITH_PLAYWRIGHT_INTEGRATION=1;;
     n)
         DRY_RUN=1;;
+    a)
+        APPLY_PATCHES=1;;
     \?)
         _die "Error: Invalid option: $option";;
   esac
