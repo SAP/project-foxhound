@@ -31,6 +31,7 @@
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 #include "nsIInputStream.h"
+#include "nsTaintingUtils.h"
 
 // Undefine the macro of CreateFile to avoid FileCreatorHelper#CreateFile being
 // replaced by FileCreatorHelper#CreateFileW.
@@ -726,8 +727,10 @@ void BodyConsumer::ContinueConsumeBody(nsresult aStatus, uint32_t aResultLength,
       if (NS_SUCCEEDED(
               BodyUtil::ConsumeText(aResultLength, resultPtr.get(), decoded))) {
         if (mConsumeType == ConsumeType::Text) {
+          MarkTaintSource(decoded, "fetch.text()");
           localPromise->MaybeResolve(decoded);
         } else {
+          MarkTaintSource(decoded, "fetch.json()");
           JS::Rooted<JS::Value> json(cx);
           BodyUtil::ConsumeJson(cx, &json, decoded, error);
           if (!error.Failed()) {
