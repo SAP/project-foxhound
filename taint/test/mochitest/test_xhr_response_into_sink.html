@@ -26,7 +26,7 @@
               let sink_names = [
         "eval",
         "innerHTML",
-        //"document.writeln",
+        "document.writeln",
         "document.write"
       ];
       let contents = [
@@ -38,28 +38,33 @@
       ];
 
       SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
+        window.addEventListener("__taintreport", (report) => {
 
-          is(report.detail.str, contents[i], "Check sink string content");
+            is(report.detail.str, contents[i], "Check sink string content");
 
-          let flow = report.detail.str.taint[0].flow;
-          is(flow[2].operation, sink_names[i], `Check sink: ${sink_names[i]}`);
+            let flow = report.detail.str.taint[0].flow;
+            is(flow[2].operation, sink_names[i], `Check sink: ${sink_names[i]}`);
 
-          i += 1;
-          if (i >= sink_names.length) {
-            SimpleTest.finish();
-          }
-      }, false);
+            i += 1;
+            if (i >= sink_names.length) {
+              SimpleTest.finish();
+            }
+        });
+
+
             runTest("eval", p => eval(p));
             runTest("innerHTML", p => {
               let d = document.getElementById("foo");
               d.innerHTML = p;
             });
+            let parser = new DOMParser();
+            let d1 = parser.parseFromString("<html><body><div>", "text/html");
+
             runTest("doc_writeln", p => {
-              document.writeln(p);
+              d1.writeln(p);
             });
             runTest("doc_write", p => {
-              document.write(p);
+              d1.write(p);
             });
 
 
