@@ -10,6 +10,7 @@
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
+#include "nsTaintingUtils.h"
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -379,6 +380,15 @@ SafeRefPtr<Request> Request::Constructor(
       return nullptr;
     }
     headers = h->GetInternalHeaders();
+
+    // Foxhound:
+    nsTArray<InternalHeaders::Entry> headerEntries;
+    headers->GetEntries(headerEntries);
+    for(InternalHeaders::Entry entry : headerEntries) {
+      ReportTaintSink(entry.mName, "fetch.header(key)");
+      ReportTaintSink(entry.mValue, "fetch.header(value)");
+    }
+
   } else {
     headers = new InternalHeaders(*requestHeaders);
   }
