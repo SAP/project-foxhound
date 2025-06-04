@@ -79,6 +79,14 @@ extern JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const char16_t* chars,
                                        uint32_t len,
                                        JS::MutableHandle<JS::Value> vp);
 
+
+/**
+ * Performs the JSON.parse operation as specified by ECMAScript.
+ */
+extern JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const char16_t* chars,
+                                       uint32_t len, const StringTaint& taint,
+                                       JS::MutableHandle<JS::Value> vp);
+
 /**
  * Performs the JSON.parse operation as specified by ECMAScript.
  */

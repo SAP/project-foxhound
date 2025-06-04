@@ -482,7 +482,7 @@ void BodyUtil::ConsumeJson(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
   aRv.MightThrowJSException();
 
   JS::Rooted<JS::Value> json(aCx);
-  if (!JS_ParseJSON(aCx, aStr.get(), aStr.Length(), &json)) {
+  if (!JS_ParseJSON(aCx, aStr.get(), aStr.Length(), aStr.Taint(), &json)) {
     if (!JS_IsExceptionPending(aCx)) {
       aRv.Throw(NS_ERROR_DOM_UNKNOWN_ERR);
       return;

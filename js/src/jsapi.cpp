@@ -3711,6 +3711,16 @@ JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const char16_t* chars,
                               NullHandleValue, vp, EmptyTaint);
 }
 
+// TODO: Foxhound: check whether we need to propagate taint here
+JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const char16_t* chars,
+                                uint32_t len, const StringTaint& taint,
+                                MutableHandleValue vp) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  return ParseJSONWithReviver(cx, mozilla::Range<const char16_t>(chars, len),
+                              NullHandleValue, vp, taint);
+}
+
 JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, HandleString str,
                                 MutableHandleValue vp) {
   return JS_ParseJSONWithReviver(cx, str, NullHandleValue, vp);
