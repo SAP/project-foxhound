@@ -1,0 +1,65 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test HTML Taint Sinks</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+      function check_tainted(str) {
+        SimpleTest.ok(str.taint.length > 0, "Check tainted for: " + str);
+      }
+      
+      let sink_names = [
+        "fetch.header(key)",
+        "fetch.header(value)",
+        "fetch.header(value)"
+      ];
+
+
+      let i = 0;
+
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+
+        let flow = report.detail.str.taint[0].flow;
+        is(flow[1].operation, sink_names[i]);
+
+        i += 1;
+        if (i >= sink_names.length) {
+          SimpleTest.finish();
+        }
+      }, false);
+
+      async function startTest() {
+        try {
+          let tName = String.tainted("X_TAINT_HEADER");
+          let tValue = String.tainted("Foxhound");
+          let hs = new Headers();
+          hs.append(tName, tValue);
+          let response = await fetch(`http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?text`,
+            {
+              headers: hs,
+          });
+          response = await fetch(`http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?text`,
+            {
+              headers: { x : tValue },
+          });
+          return response.ok;
+        } catch(error
+        ) {
+          SimpleTest.info(error.message);
+          SimpleTest.is(true, false, "Error");
+          return null;
+        };
+      }
+
+
+    </script>
+  </head>
+  <body onload="startTest()">
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <p id="test"></p>
+  </body>
+</html>
