@@ -126,7 +126,7 @@ Finding the `location.hash` taint source becomes as easy as `git grep -n Foxhoun
 Taint information is available in JavaScript via the `.taint` property of string instances:
 
 ```javaScript
-var a = taint("abc");
+var a = String.tainted("abc"); // Alternatively with a source name as a second parameter
 var b = "def";
 var c = a.toUpperCase() + b;
 print(JSON.stringify(c.taint));
