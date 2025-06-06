@@ -7,20 +7,6 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
-      function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted " + str);
-      }
-
-      function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted " + str);
-      }
-
-      function check_taint_source(str, src) {
-          var flow = str.taint[0].flow;
-          var op = flow[flow.length-1];
-          ok(op.operation == src, "Source operation check: '" + op.operation + "' =? '" + src + "'");
-      }
-
       add_task(async function test_untainted() {
           check_untainted("hello");
       });

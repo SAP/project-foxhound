@@ -6,31 +6,21 @@
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script "text/javascript">
+    add_task(async function test_set_untainted_str() {
 
-      function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted");
-      }
+	    localStorage.setItem("untainted", "untainted string");
+	    // Even untainted strings should be tainted as localStorage getItem is a source
+	    check_tainted(localStorage.getItem("untainted"));
+    });
 
-      function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted");
-      }
+    add_task(async function test_set_tainted_str() {
+	    localStorage.setItem("tainted", String.tainted("tainted string"));
+	    check_tainted(localStorage.getItem("tainted"));
 
-      function startTest() {
-	  localStorage.setItem("untainted", "untainted string");
-	  // Even untainted strings should be tainted as localStorage getItem is a source
-	  check_tainted(localStorage.getItem("untainted"));
-
-	  localStorage.setItem("tainted", String.tainted("tainted string"));
-	  check_tainted(localStorage.getItem("tainted"));
-
-	  SimpleTest.finish();
-      }
-
-      SimpleTest.waitForExplicitFinish();
-      
+    });
     </script>
   </head>
 
-  <body onload="startTest();">
+  <body>
 
 </html>
