@@ -7,16 +7,32 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script "text/javascript">
 
-      function runTest(method, f) {
+      function runTest(method, r, f) {
             let request = new XMLHttpRequest();
             request.onload = () => {
-                SimpleTest.info(`done! Response: ${request.responseText}`);
-                check_tainted(request.responseText);
-                f(request.responseText);
+                let resp = r(request);
+                SimpleTest.info(`done! Response: ${resp}`);
+                check_tainted(resp);
+                f(resp);
 
             };
             //request.open("GET", "http://mochi.test:8888/tests/SimpleTest/setup.js", true);
             request.open("GET", `http://mochi.test:8888/tests/taint/test/mochitest/payload.sjs?${method}`, true);
+            //request.open("GET", "/tests/SimpleTest/test.css", true);
+            request.send("");
+        }
+
+        function runTest2(method, r, f, responseType="text") {
+            let request = new XMLHttpRequest();
+            request.responseType = responseType;
+            request.onload = () => {
+                let resp = r(request);
+                SimpleTest.info(`done! Response: ${resp}`);
+                f(resp);
+
+            };
+            //request.open("GET", "http://mochi.test:8888/tests/SimpleTest/setup.js", true);
+            request.open("GET", `http://mochi.test:8888/tests/taint/test/mochitest/xhr_server.sjs?${method}`, true);
             //request.open("GET", "/tests/SimpleTest/test.css", true);
             request.send("");
         }
@@ -27,7 +43,13 @@
         "eval",
         "innerHTML",
         "document.writeln",
-        "document.write"
+        "document.write",
+                        "innerHTML",
+
+
+                        "innerHTML",
+        "innerHTML",
+
       ];
       let contents = [
 
@@ -35,6 +57,9 @@
         ,"hello!"
         ,"hello!"
         ,"hello!"
+        ,"<b>hi</b>"
+        ,"hello"
+        ,"hello"
       ];
 
       SimpleTest.waitForExplicitFinish();
@@ -51,20 +76,43 @@
             }
         });
 
-
-            runTest("eval", p => eval(p));
-            runTest("innerHTML", p => {
+function secondBatch() {
+              runTest2("json", r => { return r.response }, p => {
+              SimpleTest.info(JSON.stringify(p));
+              check_tainted(p.txt);
+              let d = document.getElementById("foo");
+              d.innerHTML = p.txt;
+            }, "json");
+            runTest2("xml", r => {return r.responseXML }, p => {
+              SimpleTest.info(`XML: ${p.contentType}`);
+              let txt = p.getElementById("bar").innerHTML;
+              check_tainted(txt);
+              let d = document.getElementById("foo");
+              d.innerHTML = txt;
+            }, "document");
+            runTest2("html", r => r.response, p => {
+              SimpleTest.info(`HTML: ${p.contentType}`);
+              let txt = p.getElementById("bar").innerHTML;
+              check_tainted(txt);
+              let d = document.getElementById("foo");
+              d.innerHTML = txt;
+            }, "document");
+}
+            runTest("eval", r => r.responseText, p => eval(p));
+            runTest("innerHTML", r => r.responseText, p => {
               let d = document.getElementById("foo");
               d.innerHTML = p;
             });
             let parser = new DOMParser();
             let d1 = parser.parseFromString("<html><body><div>", "text/html");
 
-            runTest("doc_writeln", p => {
+            runTest("doc_writeln", r => r.responseText, p => {
               d1.writeln(p);
             });
-            runTest("doc_write", p => {
+
+            runTest("doc_write", r => r.responseText, p => {
               d1.write(p);
+              secondBatch();
             });
 
 
