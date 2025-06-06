@@ -1,5 +1,5 @@
 # Attempt to build the whole browser
-name: Browser
+name: Build with clang-plugin
 
 # Controls when the workflow will run
 on:
