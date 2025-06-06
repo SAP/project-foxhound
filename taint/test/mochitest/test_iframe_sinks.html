@@ -7,30 +7,19 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
-      let string_content = "hello";
+      let string_content = "tainted=hello";
       let sink_names = [
           "iframe.src", 
           "iframe.srcdoc",
       ];
+      let strings = [string_content, string_content];
 
-      let i = 0;
-      
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-          SimpleTest.is(report.detail.str, "tainted=hello", "Check sink string content");
+      setupSinkChecks(sink_names, strings);
 
-          let flow = report.detail.str.taint[0].flow;
-          SimpleTest.is(flow[2].operation, sink_names[i]);
-
-	  i += 1;
-	  if (i >= sink_names.length) {
-              SimpleTest.finish();
-	  }
-      }, false);
 
       function startTest() {
           const frame = document.getElementById("iframe");
-          const tainted_str = String.tainted("tainted=hello");
+          const tainted_str = String.tainted(string_content);
 
           frame.src = tainted_str;
           frame.srcdoc = tainted_str;

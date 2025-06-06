@@ -20,23 +20,14 @@
         "track.src",
         "Range.createContextualFragment(fragment)",
         "EventSource",
-        "eventHandler",
+        //"eventHandler",
       ];
+      let strings = [];
+      for(const s of sink_names) {
+        strings.push(string_content);
+      }
 
-      let i = 0;
-      
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-          is(report.detail.str, string_content, "Check sink string content");
-
-          let flow = report.detail.str.taint[0].flow;
-          is(flow[2].operation, sink_names[i]);
-
-          i += 1;
-          if (i >= sink_names.length) {
-            SimpleTest.finish();
-          }
-      }, false);
+      setupSinkChecks(sink_names, strings, 2);
 
       let taint_string = String.tainted(string_content);
 

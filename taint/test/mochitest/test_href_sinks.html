@@ -7,33 +7,24 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
-      let string_content = "hello";
+      let string_content = "tainted_url";
       let sink_names = [
           "a.href",
           "area.href",
       ];
+      let strings = [
+        string_content,
+        string_content
+      ];
 
-      let i = 0;
-      
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-          SimpleTest.is(report.detail.str, "tainted_url", "Check sink string content");
-
-          let flow = report.detail.str.taint[0].flow;
-          SimpleTest.is(flow[2].operation, sink_names[i]);
-
-          i += 1;
-          if (i >= sink_names.length) {
-              SimpleTest.finish();
-          }
-      }, false);
+      setupSinkChecks(sink_names, strings);
 
       function startTest() {
           let link = document.getElementById("link");
-          link.href = String.tainted("tainted_url");
+          link.href = String.tainted(string_content);
 
           let area = document.getElementById("area");
-          area.href = String.tainted("tainted_url");
+          area.href = String.tainted(string_content);
       }
       
     </script>

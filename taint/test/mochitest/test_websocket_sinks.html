@@ -6,26 +6,15 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
-        let string_content = "hello";
+        let string_content = "tainted=hello";
         let sink_names = [
           "WebSocket",
           "WebSocket.send",
         ];
 
-        let i = 0;
+      let strings = [string_content, string_content];
 
-        SimpleTest.waitForExplicitFinish();
-        addEventListener("__taintreport", (report) => {
-          SimpleTest.is(report.detail.str, "tainted=hello", "Check sink string content");
-
-          let flow = report.detail.str.taint[0].flow;
-          SimpleTest.is(flow[2].operation, sink_names[i]);
-
-          i += 1;
-          if (i >= sink_names.length) {
-              SimpleTest.finish();
-          }
-        }, false);
+        setupSinkChecks(sink_names, strings, 2);
 
         function startTest() {
             let tainted_str = String.tainted("tainted=hello");
