@@ -21,18 +21,18 @@ jobs:
           #
           # We explicitly increase the max. stack size here to workaround this issue.
           #
-          
+
           which node
           node --version
-          
+
           mv /usr/local/bin/node /usr/local/bin/node_org
           echo '#!/bin/bash' >> /usr/local/bin/node
           echo '/usr/local/bin/node_org --stack-size=2048 $@' >> /usr/local/bin/node
           cat /usr/local/bin/node
           chmod +x /usr/local/bin/node
-    - uses: dorny/test-reporter@v2
-      with:
-        artifact: test-results            # artifact name
+      - uses: dorny/test-reporter@v2
+        with:
+          artifact: test-results            # artifact name
         name: JavaScript Tests            # Name of the check run which will be created
         path: '*.xml'                     # Path to test results (inside artifact .zip)
         reporter: java-junit              # Format of test results
