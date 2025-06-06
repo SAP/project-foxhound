@@ -16,14 +16,14 @@
         string_content, string_content
       ]
 
-      setupSinkChecks(sink_names, strings, 2);
+      setupSinkChecks(sink_names, strings);
 
       function startTest() {
 	      let taint_string = String.tainted(string_content);
 	      sessionStorage.setItem("tainted", taint_string);
 	      sessionStorage.setItem(taint_string, "tainted");
       }
-      
+
     </script>
   </head>
 
