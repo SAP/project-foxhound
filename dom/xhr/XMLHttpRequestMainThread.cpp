@@ -731,10 +731,11 @@ nsresult XMLHttpRequestMainThread::CreateResponseParsedJSON(JSContext* aCx) {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
+  MarkTaintSource(string, "XHR.json");
 
   // The Unicode converter has already zapped the BOM if there was one
   JS::Rooted<JS::Value> value(aCx);
-  if (!JS_ParseJSON(aCx, string.BeginReading(), string.Length(), &value)) {
+  if (!JS_ParseJSON(aCx, string.BeginReading(), string.Length(), string.Taint(), &value)) {
     return NS_ERROR_FAILURE;
   }
 

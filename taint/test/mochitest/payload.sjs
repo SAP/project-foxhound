@@ -1,4 +1,5 @@
 function handleRequest(request, response) {
+  response.processAsync();
   // Allow cross-origin, so you can XHR to it!
   response.setHeader("Access-Control-Allow-Origin", "*", false);
   // Avoid confusing cache behaviors
@@ -12,4 +13,5 @@ function handleRequest(request, response) {
      response.write("hello!");
 
   }
+  response.finish();
 }
