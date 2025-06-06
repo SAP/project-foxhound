@@ -7,28 +7,20 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
-      let sink_names = [
+      let sinks = [
         "fetch.url",
         "fetch.body"
       ];
+      const string = "http://mochi.test:8888/tests/taint/test/mochitest/hello";
+      let strings = [
+        string,
+        string
+      ];
 
-      let i = 0;
-      
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-          is(report.detail.str, "http://mochi.test:8888/tests/taint/test/mochitest/hello", "Check sink string content");
-
-          let flow = report.detail.str.taint[0].flow;
-          is(flow[2].operation, sink_names[i]);
-
-	  i += 1;
-	  if (i >= sink_names.length) {
-              SimpleTest.finish();
-	  }
-      }, false);
+      setupSinkChecks(sinks, strings);
 
       function startTest() {
-          let taint_string = String.tainted("http://mochi.test:8888/tests/taint/test/mochitest/hello",);
+          let taint_string = String.tainted(string);
 
           fetch(taint_string);
           fetch("some_url", {

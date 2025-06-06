@@ -9,29 +9,19 @@
 
       let string_content = "hello";
       let sink_names = [
-	  "sessionStorage.setItem",
-	  "sessionStorage.setItem(key)"
+	      "sessionStorage.setItem",
+	      "sessionStorage.setItem(key)"
       ];
+      let strings = [
+        string_content, string_content
+      ]
 
-      let i = 0;
-      
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-          is(report.detail.str, string_content, "Check sink string content");
-
-          let flow = report.detail.str.taint[0].flow;
-          is(flow[2].operation, sink_names[i]);
-
-	  i += 1;
-	  if (i >= sink_names.length) {
-              SimpleTest.finish();
-	  }
-      }, false);
+      setupSinkChecks(sink_names, strings, 2);
 
       function startTest() {
-	  let taint_string = String.tainted(string_content);
-	  sessionStorage.setItem("tainted", taint_string);
-	  sessionStorage.setItem(taint_string, "tainted");
+	      let taint_string = String.tainted(string_content);
+	      sessionStorage.setItem("tainted", taint_string);
+	      sessionStorage.setItem(taint_string, "tainted");
       }
       
     </script>

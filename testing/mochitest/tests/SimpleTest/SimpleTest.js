@@ -2266,26 +2266,31 @@ addEventListener("message", async event => {
   }
 });
 
+// Is the provided string tainted?
 function check_tainted(str) {
     ok(str?.taint?.length > 0, "Check tainted: " + str + " Taint: " + JSON.stringify(str.taint));
 }
 
+// Is the provided string untainted?
 function check_untainted(str) {
   ok(str?.taint?.length == 0, "Check untainted: " + str);
 }
 
-
+// Is the provided string tainted? Does not fail the test, i.e., something is not implemented yet.
 function todo_tainted(str) {
     todo(str?.taint?.length > 0, "Check tainted: " + str);
 }
 
+// Does string `str` originate from source `src`?
+// Expects a tainted string!
 function check_taint_source(str, src) {
     var flow = str.taint[0].flow;
     var op = flow[flow.length-1];
     ok(op.operation == src, "Source operation check: '" + op.operation + "' =? '" + src + "'");
 }
 
-
+// Checks that a tainted string `str` contains a taint range at the provided index and offsets.
+// With optional content equality check.
 function check_range_position(str, range_index, begin, end, content = null) {
   if(content != null) {
     let sub = str.substring(begin, end);
@@ -2295,4 +2300,23 @@ function check_range_position(str, range_index, begin, end, content = null) {
   let range = str.taint[range_index];
   ok(begin == range.begin, `Start index check ${range.begin}`);
   ok(end == range.end, `End index check ${range.end}`);
+}
+
+function setupSinkChecks(sink_names, contents, operation_index=2, flow_index=0) {
+  SimpleTest.waitForExplicitFinish();
+  let i = 0;
+
+  addEventListener("__taintreport", (report) => {
+    if(contents != undefined) {
+      SimpleTest.is(report.detail.str, contents[i], `Check sink string content for string: ${contents[i]}`);
+    }
+    let flow = report.detail.str.taint[flow_index].flow;
+    let operation = flow[operation_index].operation;
+    SimpleTest.is(operation, sink_names[i], `Does operation in flow (${operation}) match expected sink (${sink_names[i]})?`);
+
+    i += 1;
+    if (i >= sink_names.length) {
+      SimpleTest.finish();
+    }
+  }, false);
 }

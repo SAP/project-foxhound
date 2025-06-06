@@ -16,18 +16,7 @@
           "XMLHttpRequest.setRequestHeader(value)",
           "XMLHttpRequest.send",
       ];
-
-      let i = 0;
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-          let flow = report.detail.str.taint[0].flow;
-          SimpleTest.is(flow[1].operation, sink_names[i]);
-
-          i += 1;
-          if (i >= sink_names.length) {
-              SimpleTest.finish();
-          }
-      }, false);
+      setupSinkChecks(sink_names, undefined, 1);
 
       function startTest() {
           let request = new XMLHttpRequest();
