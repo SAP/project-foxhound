@@ -1,0 +1,55 @@
+# limit number of parallel jobs - do not do this by default, but might be needed for build systems with limited resources
+# mk_add_options MOZ_PARALLEL_BUILD=4
+
+# Use ccache, make sure the path is correct
+#ac_add_options --with-ccache=/usr/bin/ccache
+
+# On OS X we only support newer releases so that clang uses libc++ (llvm) instead of stdlibc++
+# We could work around this (typedef basic_string<char16_t> u16string), but this should be fine.
+#ac_add_options --enable-macos-target=10.10
+
+# disable updater
+ac_add_options --disable-updater
+
+# Add-on signing is not required for DevEdition
+MOZ_REQUIRE_SIGNING=
+
+ac_add_options --with-branding=browser/branding/foxhound
+
+#
+# DEBUG BUILD
+#
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-dbg
+#ac_add_options --enable-debug-symbols
+#ac_add_options --enable-debug
+ac_add_options --disable-optimize
+#ac_add_options --disable-tests
+#ac_add_options --enable-project=js
+#ac_add_options --enable-jitspew
+
+# Package js shell.
+export MOZ_PACKAGE_JSSHELL=1
+
+#
+# RELEASE BUILD
+#
+ac_add_options --with-app-name=foxhound
+mk_add_options MOZ_APP_NAME=foxhound
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
+#ac_add_options --disable-tests
+ac_add_options --disable-sandbox
+ac_add_options --without-wasm-sandboxed-libraries
+ac_add_options --disable-crashreporter
+ac_add_options --disable-backgroundtasks
+ac_add_options --enable-release
+ac_add_options --enable-js-shell
+ac_add_options --enable-clang-plugin
+
+#
+# OPTIMIZED BUILD WITH DEBUG SYMBOLS
+#
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release-with-symbols
+#ac_add_options --enable-debug-symbols
+#ac_add_options --enable-gczeal
+#ac_add_options --enable-optimize
+#ac_add_options --disable-tests

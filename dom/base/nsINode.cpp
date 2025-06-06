@@ -990,7 +990,7 @@ void nsINode::Normalize() {
           "mutation events messed us up");
       if (!hasRemoveListeners || (target && target->NodeType() == TEXT_NODE)) {
         nsTextNode* t = static_cast<nsTextNode*>(target);
-        SafeStringTaint taint = text->Taint();
+        SafeStringTaint taint(text->Taint());
         if (text->Is2b()) {
           t->AppendTextForNormalize(text->Get2b(), text->GetLength(), taint, true,
                                     node);
