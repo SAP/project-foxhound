@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <title>Test Cookie Sinks</title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="/tests/taint/test/mochitest/taint_helper.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
@@ -14,24 +15,15 @@
           "script.innerHTML",
           "script.textContent",
       ];
+      let strings = [
+        "url",
+        "console.log();",
+        "console.log();",
+        "console.log();"
+      ]
 
-      let i = 0;
-      
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-        if(i == 0) {
-          SimpleTest.is(report.detail.str, "url", "Check sink string content");
-        } else {
-          SimpleTest.is(report.detail.str, "console.log();", "Check sink string content");
-        }
-          let flow = report.detail.str.taint[0].flow;
-          SimpleTest.is(flow[2].operation, sink_names[i], `${sink_names[i]} sink test`);
+      setupSinkChecks(sink_names, strings, 2);
 
-          i += 1;
-          if (i >= sink_names.length) {
-              SimpleTest.finish();
-          }
-      }, false);
 
       function setScriptProperty(text, f) {
         let script = document.createElement("script");

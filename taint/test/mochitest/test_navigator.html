@@ -6,32 +6,12 @@
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script "text/javascript">
-
-
       let sink_names = [
-          "navigator.sendBeacon(url)",
-          "navigator.sendBeacon(body)",
+        "navigator.sendBeacon(url)",
+        "navigator.sendBeacon(body)",
       ];
 
-      function check_tainted(str) {
-          SimpleTest.ok(str.taint.length > 0, "Check tainted");
-      }
-
-      function check_untainted(str) {
-          SimpleTest.ok(str.taint.length == 0, "Check untainted");
-      }
-
-      let i = 0;
-      SimpleTest.waitForExplicitFinish();
-      addEventListener("__taintreport", (report) => {
-          let flow = report.detail.str.taint[0].flow;
-          SimpleTest.is(flow[1].operation, sink_names[i]);
-
-          i += 1;
-          if (i >= sink_names.length) {
-              SimpleTest.finish();
-          }
-      }, false);
+      setupSinkChecks(sink_names, undefined, 1);
 
       function startTest() {
           let navigator = window.navigator;

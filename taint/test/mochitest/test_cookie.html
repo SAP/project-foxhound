@@ -7,25 +7,14 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script "text/javascript">
 
-      function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted");
-      }
+      add_task(async function test_cookie_tainted() {
+	      document.cookie = "c=untainted";
+	      check_tainted(document.cookie);
+      });
 
-      function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted");
-      }
-
-      function startTest() {
-	  document.cookie = "c=untainted";
-	  check_tainted(document.cookie);
-	  SimpleTest.finish();
-      }
-
-      SimpleTest.waitForExplicitFinish();
-      
     </script>
   </head>
 
-  <body onload="startTest();">
+  <body>
 
 </html>
