@@ -618,11 +618,9 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
     len += written;
     MOZ_ASSERT(len <= destBufferLen.value());
     handle.Finish(len, false);
-<<<<<<< HEAD
     // Foxhound: propagate taint. TODO(samuel) deal with encoding
-    helper.AppendTaintAt(len, aTaint);
-=======
->>>>>>> 0fb671309baf (WIP: debugging end2end tainting)
+    //helper.AppendTaintAt(len, aTaint);
+    // TODO: post merge FIX?
   }  // release mutex
 
   if (aLast) {

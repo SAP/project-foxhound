@@ -101,7 +101,9 @@ nsresult ScriptDecoder::DecodeRawDataHelper(
 
 // FOXHOUND: MERGE FOO
   // Taintfox: Append Taint
-  mRequest->mScriptTextTaint.concat(aTaint, mRequest->mScriptTextLength);
+  StringTaint taint(aRequest->Taint());
+  taint.concat(aTaint, aRequest->ReceivedScriptTextLength());
+  aRequest->SetReceivedScriptTaint(taint);
 
   return NS_OK;
 }
@@ -196,11 +198,14 @@ ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
 
     // Decoder has already been initialized. -- trying to decode all loaded
     // bytes.
-
+    StringTaint taint(EmptyTaint);
+    if(aTaint != nullptr) {
+      taint = *aTaint;
+    }
     rv = mDecoder->DecodeRawData(mRequest, aData, aDataLength,
-                                 /* aEndOfStream = */ false, aTaint);
+                                 /* aEndOfStream = */ false, taint);
     puts(__PRETTY_FUNCTION__);
-    DumpTaint(aTaint);
+    DumpTaint(taint);
 
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -428,7 +433,7 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
           EnsureDecoder(aLoader, aData, aDataLength, /* aEndOfStream = */ true);
       MOZ_ASSERT(encoderSet);
       rv = mDecoder->DecodeRawData(mRequest, aData, aDataLength,
-                                   /* aEndOfStream = */ true, aTaint);
+                                   /* aEndOfStream = */ true, *aTaint);
       NS_ENSURE_SUCCESS(rv, rv);
 
       LOG(("ScriptLoadRequest (%p): Source length in code units = %u",

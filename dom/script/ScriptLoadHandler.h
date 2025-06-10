@@ -60,8 +60,8 @@ class ScriptDecoder {
    */
   template <typename Unit>
   nsresult DecodeRawDataHelper(JS::loader::ScriptLoadRequest* aRequest,
-                               const uint8_t* aData, uint32_t aDataLength,
-                               const StringTaint& aTaint, bool aEndOfStream);
+                               const uint8_t* aData, uint32_t aDataLength, bool aEndOfStream,
+                               const StringTaint& aTaint);
 
   // Unicode decoder for charset.
   mozilla::UniquePtr<mozilla::Decoder> mDecoder;

@@ -899,11 +899,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsIContent* parent = *aOperation.mParent;
       char16_t* buffer = aOperation.mBuffer;
       uint32_t length = aOperation.mLength;
-<<<<<<< HEAD
       const StringTaint taint = aOperation.mTaint;
-=======
-      const StringTaint& taint = aOperation.mTaint;
->>>>>>> 0fb671309baf (WIP: debugging end2end tainting)
       return AppendText(buffer, length, taint, parent, mBuilder);
     }
 

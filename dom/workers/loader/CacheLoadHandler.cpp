@@ -556,8 +556,9 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
   // Set the Source type to "text" for decoding.
   loadContext->mRequest->SetTextSource(loadContext);
 
+  // Foxhound(david): Is this sane?
   rv = mDecoder->DecodeRawData(loadContext->mRequest, aString, aStringLen,
-                               /* aEndOfStream = */ true);
+                               /* aEndOfStream = */ true, EmptyTaint);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!loadContext->mRequest->ScriptTextLength()) {

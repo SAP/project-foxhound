@@ -1630,13 +1630,8 @@ class TokenStreamCharsShared {
 
   TaggedParserAtomIndex drainCharBufferIntoAtom(const StringTaint& taint = EmptyTaint) {
     // Add to parser atoms table.
-<<<<<<< HEAD
     auto atom = this->parserAtoms->internChar16(fc, charBuffer.begin(),
-                                                charBuffer.length());
-=======
-    auto atom = this->parserAtoms->internChar16(cx, charBuffer.begin(),
                                                 charBuffer.length(), taint);
->>>>>>> 89d342d5308d (Foxhound: enabling JavaScript parser tainting)
     charBuffer.clear();
     return atom;
   }
