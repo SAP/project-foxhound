@@ -61,7 +61,7 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsAString& arg)
 {
   if (cx && JS::CurrentGlobalOrNull(cx)) {
-    JS::RootedValue argval(cx);
+    JS::Rooted<JS::Value> argval(cx);
     if (mozilla::dom::ToJSValue(cx, arg, &argval)) {
       return JS_GetTaintOperationFullArgs(cx, name, argval);
     }
@@ -73,7 +73,7 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args)
 {
   if (cx && JS::CurrentGlobalOrNull(cx)) {
-    JS::RootedValue argval(cx);
+    JS::Rooted<JS::Value> argval(cx);
 
     if (mozilla::dom::ToJSValue(cx, args, &argval)) {
       return JS_GetTaintOperationFullArgs(cx, name, argval);
@@ -86,7 +86,7 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsCString> &args)
 {
   if (cx && JS::CurrentGlobalOrNull(cx)) {
-    JS::RootedValue argval(cx);
+    JS::Rooted<JS::Value> argval(cx);
 
     if (mozilla::dom::ToJSValue(cx, args, &argval)) {
       return JS_GetTaintOperationFullArgs(cx, name, argval);
@@ -445,11 +445,11 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, 
     return NS_OK;
   }
 
-  JS::RootedValue argval(cx);
+  JS::Rooted<JS::Value> argval(cx);
   if (!mozilla::dom::ToJSValue(cx, arg, &argval))
     return NS_ERROR_FAILURE;
 
-  JS::RootedValue strval(cx);
+  JS::Rooted<JS::Value> strval(cx);
   if (!mozilla::dom::ToJSValue(cx, str, &strval))
     return NS_ERROR_FAILURE;
 
@@ -476,7 +476,7 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
     return NS_OK;
   }
 
-  JS::RootedValue strval(cx);
+  JS::Rooted<JS::Value> strval(cx);
   if (!mozilla::dom::ToJSValue(cx, str, &strval)) {
     return NS_ERROR_FAILURE;
   }
@@ -504,7 +504,7 @@ nsresult ReportTaintSink(JSContext *cx, const nsACString &str, const char* name)
     return NS_OK;
   }
 
-  JS::RootedValue strval(cx);
+  JS::Rooted<JS::Value> strval(cx);
   if (!mozilla::dom::ToJSValue(cx, str, &strval)) {
     return NS_ERROR_FAILURE;
   }

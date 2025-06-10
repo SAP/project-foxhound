@@ -1,0 +1,66 @@
+# Attempt to build the whole browser
+name: Build with clang-plugin
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the main branch
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+
+  # Test complete build on Ubuntu
+  ubuntu-build-clang-plugin:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install Dependencies
+        run: |
+          df -h
+          sudo apt-get update
+          sudo apt-get install -y   \
+               curl                 \
+               python3              \
+               python3-pip          \
+               python3-venv         \
+               tar                  \
+               zip                  \
+               unzip                \
+               git
+          sudo apt-get install -y --no-install-recommends ffmpeg libasound2 libatk1.0-0 libcairo-gobject2 libcairo2 libdbus-1-3 libdbus-glib-1-2 libfontconfig1 libfreetype6 libgdk-pixbuf-2.0-0 libglib2.0-0 libgtk-3-0 libpango-1.0-0 libpangocairo-1.0-0 libx11-6 libx11-xcb1 libxcb-shm0 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxtst6 xvfb fonts-noto-color-emoji fonts-unifont xfonts-cyrillic xfonts-scalable fonts-liberation fonts-ipafont-gothic fonts-wqy-zenhei fonts-tlwg-loma-otf fonts-freefont-ttf
+          python3 -m pip install setuptools
+
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Dry Run
+        run: |
+          cp taintfox_mozconfig_ubuntu_clang_plugin .mozconfig
+          bash build.sh -p -n
+
+      - name: Bootstrap
+        run: |
+          df -h
+          bash build.sh -u -v
+
+      - name: Build
+        run: |
+          bash build.sh -s -v

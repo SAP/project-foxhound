@@ -65,6 +65,7 @@ void MessageEvent::GetData(JSContext* aCx, JS::MutableHandle<JS::Value> aData,
 
   if (!JS_WrapValue(aCx, aData)) {
     aRv.Throw(NS_ERROR_FAILURE);
+    return;
   }
 
   // Foxhound: MessageEvent source

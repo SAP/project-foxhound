@@ -128,7 +128,7 @@ class TaintOperation
     TaintOperation(const char* name, bool is_native, TaintLocation location, std::vector<std::u16string> args);
 
     // Constructs a taint operation with no arguments.
-    TaintOperation(const char* name);
+    explicit TaintOperation(const char* name);
     TaintOperation(const char* name, bool is_native);
 
     // Constructs a taint operation with location information
@@ -193,13 +193,13 @@ class TaintNode
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, const TaintOperation& operation);
     // Constructs a root node.
-    TaintNode(const TaintOperation& operation);
+    explicit TaintNode(const TaintOperation& operation);
 
     // Constructing a taint node sets the initial reference count to 1.
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept;
     // Constructs a root node.
-    TaintNode(TaintOperation&& operation) noexcept;
+    explicit TaintNode(TaintOperation&& operation) noexcept;
     
     // Increments the reference count of this object by one.
     void addref();
@@ -280,7 +280,7 @@ class TaintFlow
     // lifetime of any iterator instance.
     class Iterator {
       public:
-        Iterator(TaintNode* head);
+        explicit Iterator(TaintNode* head);
         Iterator();
 
         Iterator(const Iterator& other);
@@ -306,7 +306,7 @@ class TaintFlow
     explicit TaintFlow(TaintNode* head);
 
     // Construct a new taint flow from the provided taint source.
-    TaintFlow(const TaintOperation& source);
+    explicit TaintFlow(const TaintOperation& source);
 
     // Copying taint flows is an O(1) operation since it only requires
     // incrementing the reference count on the head node of the flow.
@@ -314,7 +314,7 @@ class TaintFlow
     // Moving is even faster..
     TaintFlow(TaintFlow&& other) noexcept;
 
-    TaintFlow(const TaintFlow* other);
+    explicit TaintFlow(const TaintFlow* other);
  
     ~TaintFlow();
 
@@ -362,7 +362,7 @@ class TaintFlow
     bool isNotEmpty() const { return !!head_; }
 
     // Boolean operator, indicates whether this taint flow is empty or not.
-    operator bool() const { return isNotEmpty(); }
+    explicit operator bool() const { return isNotEmpty(); }
 
     static const TaintFlow& getEmptyTaintFlow();
 
@@ -508,7 +508,7 @@ class StringTaint
     }
 
     // Boolean operator, indicates whether this taint flow is empty or not.
-    operator bool() const { return hasTaint(); }
+    explicit operator bool() const { return hasTaint(); }
 
     // Removes all taint information.
     void clear();
@@ -695,8 +695,8 @@ class SafeStringTaint : public StringTaint
     SafeStringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : StringTaint(other, begin, end) {}
     SafeStringTaint(const StringTaint& other, uint32_t index) : StringTaint(other, index) {}
 
-    SafeStringTaint(const StringTaint& other) : StringTaint(other) {}
-    SafeStringTaint(StringTaint&& other) noexcept : StringTaint(other) {}
+    explicit SafeStringTaint(const StringTaint& other) : StringTaint(other) {}
+    explicit SafeStringTaint(StringTaint&& other) noexcept : StringTaint(other) {}
     SafeStringTaint& operator=(const StringTaint& other) { StringTaint::operator=(other); return *this; }
     SafeStringTaint& operator=(StringTaint&& other) noexcept { StringTaint::operator=(other); return *this; }
 

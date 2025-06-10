@@ -107,7 +107,7 @@ JSString* js::CopyStringPure(JSContext* cx, JSString* str) {
 
   size_t len = str->length();
   // Foxhound: Copy taint up here to avoid GC problems later
-  SafeStringTaint taint = str->Taint();
+  SafeStringTaint taint(str->Taint());
   JSString* copy;
   if (str->isLinear()) {
     // If the string has a refcounted StringBuffer, we can share it.
