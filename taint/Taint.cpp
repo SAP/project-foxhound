@@ -1341,7 +1341,7 @@ void TaintDebug(std::string_view message,
 
 #endif
 
-std::string convertToString(const TaintRange& range) 
+std::string convertToString(const TaintRange& range)
 {
   std::stringstream ss;
   ss << "begin: ";
@@ -1349,7 +1349,9 @@ std::string convertToString(const TaintRange& range)
   ss << ", end: ";
   ss << range.end();
   ss << ", source: ";
+  ss << "\"";
   ss << range.flow().source().name();
+  ss << "\"";
   ss << ", sink: ";
   ss << "\"" << range.flow().head()->operation().name() << "\"";
   return ss.str();
