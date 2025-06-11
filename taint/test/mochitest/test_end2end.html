@@ -1,0 +1,26 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check Element Sources</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+        add_task(async function test_element() {
+          const ifr = document.createElement("iframe");
+          ifr.src="http://mochi.test:8888/tests/taint/test/mochitest/end2end_tests.sjs?a";
+          document.body.appendChild(ifr);
+          //check_tainted(div.getAttribute("id"));
+        });
+
+        add_task(async function test_eval_tainted() {
+                var s = String.tainted("hello");
+                eval("var t = '" + s + "'");
+                check_tainted(t);
+        });
+    </script>
+  </head>
+  <body>
+    <div id="tainted" style="display: none"></div>
+  </body>
+</html>
