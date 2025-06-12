@@ -57,6 +57,19 @@ TaintLocation& TaintLocation::operator=(TaintLocation&& other) noexcept
     return *this;
 }
 
+bool TaintLocation::operator==(const TaintLocation& other) const
+{
+    return (
+        (filename_ == other.filename_) &&
+        (line_ == other.line_) &&
+        (pos_ == other.pos_) &&
+        (scriptStartLine_ == other.scriptStartLine_) &&
+        (scriptHash_ == other.scriptHash_) &&
+        (function_ == other.function_)
+    );
+}
+
+
 TaintOperation::TaintOperation(const char* name, TaintLocation location, std::initializer_list<std::u16string> args)
     : name_(name), arguments_(args), source_(0), is_native_(false), location_(std::move(location)) {}
 
@@ -108,6 +121,15 @@ TaintOperation& TaintOperation::operator=(TaintOperation&& other) noexcept
     is_native_ = other.is_native_;
     location_ = std::move(other.location_);
     return *this;
+}
+
+bool TaintOperation::operator==(const TaintOperation& other) const
+{
+    return (
+        (name_ == other.name_) &&
+        (arguments_ == other.arguments_) &&
+        (location_ == other.location_)
+    );
 }
 
 #ifdef DEBUG
@@ -317,6 +339,13 @@ const TaintOperation& TaintFlow::source() const
 
 TaintFlow& TaintFlow::extend(const TaintOperation& operation)
 {
+    // Check whether we are adding another second node with the same operation
+    if (head_) {
+        if (operation == head_->operation()) {
+            return *this;
+        }
+    }
+
     TaintNode* newhead = new TaintNode(head_, operation);
     if (head_) {
         head_->release();
