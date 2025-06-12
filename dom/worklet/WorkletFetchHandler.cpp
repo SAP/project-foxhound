@@ -215,8 +215,9 @@ NS_IMETHODIMP FetchCompleteRunnable::RunOnWorkletThread() {
   if (mScriptBuffer) {
     UniquePtr<ScriptDecoder> decoder = MakeUnique<ScriptDecoder>(
         UTF_8_ENCODING, ScriptDecoder::BOMHandling::Remove);
+    // Foxhound(david): Is this sane?
     rv = decoder->DecodeRawData(request, mScriptBuffer.get(), mScriptLength,
-                                true);
+                                true, EmptyTaint);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 

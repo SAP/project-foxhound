@@ -19,6 +19,7 @@
 #include <atomic>
 #include <string_view>
 
+#define TAINT_DEBUG (1)
 // It appears that source_location is not supported as standard and
 // breaks windows builds. Keep it behind a debug macro for now.
 #ifdef TAINT_DEBUG
@@ -154,7 +155,7 @@ class TaintOperation
     void set_native() { is_native_ = 1; }
 
     static void dump(const TaintOperation& op);
-    
+
   private:
     // The operation name is owned by this instance. It will be copied from the
     // argument string during construction.
@@ -846,6 +847,13 @@ class TaintList
 StringTaint ParseTaint(const std::string& str);
 
 /*
+ * This Piece of code is added to add the ability to deserialize a Taintstring object 
+ * and convert it to a json like Taint representation as a string : [{begin: 10, end: 20, source: 'src1'}, {begin: 80, end: 90, source: 'src2'}]
+*/
+
+std::string serializeStringtaint(const StringTaint& taintstr);
+
+/*
  * Print a string representation of the given StringTaint instance to stdout.
  */
 
@@ -861,7 +869,9 @@ void DumpTaintOperation(const TaintOperation& operation);
 
 void TaintDebug(std::string_view message,
                 std::experimental::source_location location = std::experimental::source_location::current());
-
+#else
+void DumpTaint(const StringTaint& taint) {}
+void PrintTaint(const StringTaint& taint) {}
 #endif
 
 #endif

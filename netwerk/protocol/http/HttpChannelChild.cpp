@@ -623,6 +623,7 @@ void HttpChannelChild::DoOnStartRequest(nsIRequest* aRequest) {
 void HttpChannelChild::ProcessOnTransportAndData(
     const nsresult& aChannelStatus, const nsresult& aTransportStatus,
     const uint64_t& aOffset, const uint32_t& aCount, const nsACString& aData,
+    const nsACString& aTaint,
     const TimeStamp& aOnDataAvailableStartTime) {
   LOG(("HttpChannelChild::ProcessOnTransportAndData [this=%p]\n", this));
   MOZ_ASSERT(OnSocketThread());
@@ -631,11 +632,11 @@ void HttpChannelChild::ProcessOnTransportAndData(
         return self->GetODATarget();
       },
       [self = UnsafePtr<HttpChannelChild>(this), aChannelStatus,
-       aTransportStatus, aOffset, aCount, aData = nsCString(aData),
+       aTransportStatus, aOffset, aCount, aData = nsCString(aData), aTaint = nsCString(aTaint),
        aOnDataAvailableStartTime]() {
         self->mOnDataAvailableStartTime = aOnDataAvailableStartTime;
         self->OnTransportAndData(aChannelStatus, aTransportStatus, aOffset,
-                                 aCount, aData);
+                                 aCount, aData, aTaint);
       }));
 }
 
@@ -643,7 +644,8 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
                                           const nsresult& aTransportStatus,
                                           const uint64_t& aOffset,
                                           const uint32_t& aCount,
-                                          const nsACString& aData) {
+                                          const nsACString& aData,
+                                          const nsACString& aTaint) {
   LOG(("HttpChannelChild::OnTransportAndData [this=%p]\n", this));
 
   if (!mCanceled && NS_SUCCEEDED(mStatus)) {
@@ -701,9 +703,11 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
   // support only reading part of the data, allowing later calls to read the
   // rest.
   nsCOMPtr<nsIInputStream> stringStream;
+  std::string taintString(aTaint.BeginReading());
+  SafeStringTaint taint(ParseTaint(taintString));
   nsresult rv =
       NS_NewByteInputStream(getter_AddRefs(stringStream),
-                            Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND);
+                            Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND, taint);
   if (NS_FAILED(rv)) {
     CancelWithReason(rv, "HttpChannelChild NS_NewByteInputStream failed"_ns);
     return;

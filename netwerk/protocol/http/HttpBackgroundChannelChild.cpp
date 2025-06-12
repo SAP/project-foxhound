@@ -213,12 +213,13 @@ IPCResult HttpBackgroundChannelChild::RecvOnStartRequest(
 IPCResult HttpBackgroundChannelChild::RecvOnTransportAndData(
     const nsresult& aChannelStatus, const nsresult& aTransportStatus,
     const uint64_t& aOffset, const uint32_t& aCount, const nsACString& aData,
+    const nsACString& aTaint,
     const bool& aDataFromSocketProcess,
     const TimeStamp& aOnDataAvailableStart) {
   RefPtr<HttpBackgroundChannelChild> self = this;
   std::function<void()> callProcessOnTransportAndData =
       [self, aChannelStatus, aTransportStatus, aOffset, aCount,
-       data = nsCString(aData), aDataFromSocketProcess,
+       data = nsCString(aData), taint = nsCString(aTaint), aDataFromSocketProcess,
        aOnDataAvailableStart]() {
         LOG(
             ("HttpBackgroundChannelChild::RecvOnTransportAndData [this=%p, "
@@ -247,7 +248,7 @@ IPCResult HttpBackgroundChannelChild::RecvOnTransportAndData(
         }
 
         self->mChannelChild->ProcessOnTransportAndData(
-            aChannelStatus, aTransportStatus, aOffset, aCount, data,
+            aChannelStatus, aTransportStatus, aOffset, aCount, data, taint,
             aOnDataAvailableStart);
       };
 

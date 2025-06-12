@@ -979,7 +979,7 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
   MOZ_ASSERT(aBuffer, "Null buffer");
   MOZ_ASSERT(aParent, "Null parent");
   MOZ_ASSERT(!aStart, "aStart must always be zero.");
-
+  
   if (mBuilder) {
     nsresult rv = nsHtml5TreeOperation::AppendText(
       aBuffer, // XXX aStart always ignored???

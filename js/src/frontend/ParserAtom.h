@@ -413,12 +413,16 @@ class alignas(alignof(uint32_t)) ParserAtom {
 
   uint32_t flags_ = 0;
 
+  // Reserve some memory for Taint information
+  uint32_t taint_length_ = 0;
+
   // End of fields.
 
-  ParserAtom(uint32_t length, HashNumber hash, bool hasTwoByteChars)
+  ParserAtom(uint32_t length, HashNumber hash, bool hasTwoByteChars, uint32_t taint)
       : hash_(hash),
         length_(length),
-        flags_(hasTwoByteChars ? HasTwoByteCharsFlag : 0) {}
+        flags_(hasTwoByteChars ? HasTwoByteCharsFlag : 0),
+        taint_length_(taint) {}
 
  public:
   // The constexpr constructor is used by XDR
@@ -432,7 +436,8 @@ class alignas(alignof(uint32_t)) ParserAtom {
   template <typename CharT, typename SeqCharT>
   static ParserAtom* allocate(FrontendContext* fc, LifoAlloc& alloc,
                               InflatedChar16Sequence<SeqCharT> seq,
-                              uint32_t length, HashNumber hash);
+                              uint32_t length, HashNumber hash,
+                              const StringTaint& taint = EmptyTaint);
 
   bool hasLatin1Chars() const { return !(flags_ & HasTwoByteCharsFlag); }
   bool hasTwoByteChars() const { return flags_ & HasTwoByteCharsFlag; }
@@ -500,6 +505,19 @@ class alignas(alignof(uint32_t)) ParserAtom {
   CharT* chars() {
     MOZ_ASSERT(sizeof(CharT) == (hasTwoByteChars() ? 2 : 1));
     return reinterpret_cast<CharT*>(this + 1);
+  }
+
+  // Pointer to the serialized taint information
+  const char* taint() const {
+    return hasTwoByteChars() ?
+      reinterpret_cast<const char*>(chars<char16_t>() + length_) :
+      reinterpret_cast<const char*>(chars<Latin1Char>() + length_);
+  }
+
+  char* taint() {
+    return hasTwoByteChars() ?
+      reinterpret_cast<char*>(chars<char16_t>() + length_) :
+      reinterpret_cast<char*>(chars<Latin1Char>() + length_);
   }
 
   const Latin1Char* latin1Chars() const { return chars<Latin1Char>(); }
@@ -704,7 +722,8 @@ class ParserAtomsTable {
                                         EntryMap::AddPtr& addPtr,
                                         HashNumber hash,
                                         InflatedChar16Sequence<SeqCharT> seq,
-                                        uint32_t length);
+                                        uint32_t length,
+                                        const StringTaint& taint = EmptyTaint);
 
   template <typename AtomCharT>
   TaggedParserAtomIndex internExternalParserAtomImpl(FrontendContext* fc,
@@ -724,7 +743,8 @@ class ParserAtomsTable {
 
   TaggedParserAtomIndex internChar16(FrontendContext* fc,
                                      const char16_t* char16Ptr,
-                                     uint32_t length);
+                                     uint32_t length,
+                                    const StringTaint& taint = EmptyTaint);
 
   TaggedParserAtomIndex internJSAtom(FrontendContext* fc,
                                      CompilationAtomCache& atomCache,

@@ -901,7 +901,8 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
 #if (DEBUG_E2E_TAINTING)
       printf("+++++ Writing taint of length %d, %d/%lu bytes written +++++\n", aTaint.begin()->end(), read, written);
 #endif
-      mLastBuffer->setTaint(aTaint.safeSubTaint(totalRead, totalRead + read));
+      SafeStringTaint taint = aTaint.safeSubTaint(totalRead, totalRead + read);
+      mLastBuffer->setTaint(taint);
     }
 
     src = src.From(read);
@@ -1560,7 +1561,6 @@ void nsHtml5StreamParser::DoDataAvailable(Span<const uint8_t> aBuffer, const Str
   MOZ_RELEASE_ASSERT(STREAM_BEING_READ == mStreamState,
                      "DoDataAvailable called when stream not open.");
   mTokenizerMutex.AssertCurrentThreadOwns();
-
   if (IsTerminated()) {
     return;
   }
@@ -1749,6 +1749,7 @@ nsHtml5StreamParser::CopySegmentsToParser(
   nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
 
   parser->DoDataAvailable(AsBytes(Span(aFromSegment, aCount)), aTaint);
+
   // Assume DoDataAvailable consumed all available bytes.
   *aWriteCount = aCount;
   return NS_OK;
