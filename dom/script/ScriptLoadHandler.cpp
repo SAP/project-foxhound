@@ -99,8 +99,8 @@ nsresult ScriptDecoder::DecodeRawDataHelper(
   MOZ_ALWAYS_TRUE(scriptText.resize(haveRead));
   aRequest->SetReceivedScriptTextLength(scriptText.length());
 
-// FOXHOUND: MERGE FOO
-  // Taintfox: Append Taint
+  // Foxhound: Append Taint
+  // Foxhound(David): Check if this really matches the prior semantics
   StringTaint taint(aRequest->Taint());
   taint.concat(aTaint, aRequest->ReceivedScriptTextLength());
   aRequest->SetReceivedScriptTaint(taint);
