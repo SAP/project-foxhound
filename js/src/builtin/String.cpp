@@ -1690,7 +1690,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     // Foxhound: disabled. We need to return a new string here (so we can correctly
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
-    if (i == length && taint.hasTaint()) {
+    if (i == length) {
       str->setTaint(cx, taint);
       return str;
     }
