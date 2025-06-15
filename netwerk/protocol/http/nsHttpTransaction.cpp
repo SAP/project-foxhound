@@ -52,6 +52,7 @@
 #include "nsIPipe.h"
 #include "nsIRequestContext.h"
 #include "nsISeekableStream.h"
+#include "nsITaintableInputStream.h"
 #include "nsITLSSocketControl.h"
 #include "nsIThrottledInputChannel.h"
 #include "nsITransport.h"
@@ -2431,13 +2432,21 @@ nsresult nsHttpTransaction::HandleContentStart() {
       }
     }
 
-    // Foxhound: parse any taint information from the header and
-    // add it to the content pipe.
-    nsAutoCString serializedTaint;
-    if (mResponseHead->GetHeader(nsHttp::X_Taint, serializedTaint) == NS_OK) {
-        // Foxhound(david): Reenable to parse Taint Header
-        //std::string taint(serializedTaint.BeginReading());
-        //mPipe->SetTaint(ParseTaint(taint));
+    // Foxhound(david): disable debug prints
+    nsCOMPtr<nsITaintableInputStream> taintableInputStream(do_QueryInterface(mPipeIn));
+    if (taintableInputStream) {
+      puts("!!!!! Got taintable stream!! !!!!!");
+
+      // Foxhound: parse any taint information from the header and
+      // add it to the content pipe.
+      nsAutoCString serializedTaint;
+      if (mResponseHead->GetHeader(nsHttp::X_Taint, serializedTaint) == NS_OK) {
+        puts("!!!!! Received Taint header !!!!!");
+        std::string taint(serializedTaint.BeginReading());
+        taintableInputStream->SetTaint(ParseTaint(taint));
+      }
+    } else {
+      puts("!!!!! Got non table input stream pipe !!!!");
     }
   }
 

@@ -1249,7 +1249,7 @@ StringTaint ParseTaint(const std::string& str)
 #if (DEBUG_E2E_TAINTING)
     std::cout << "ParseTaint: " << str << std::endl;
 #endif
-    if (str.length() <= 2 || str.front() != '[' || str.back() != ']') {
+    if (str.length() < 2 || str.front() != '[' || str.back() != ']') {
 #if (DEBUG_E2E_TAINTING)
         std::cout << "Error: malformed taint information" << std::endl;
 #endif

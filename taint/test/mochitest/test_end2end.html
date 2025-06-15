@@ -6,11 +6,17 @@
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
+        async function sleep (ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+};
+
         add_task(async function test_element() {
           const ifr = document.createElement("iframe");
           ifr.src="http://mochi.test:8888/tests/taint/test/mochitest/end2end_tests.sjs?a";
           document.body.appendChild(ifr);
           //check_tainted(div.getAttribute("id"));
+          await sleep(1000);
+          check_tainted(ifr.innerHTML);
         });
 
         add_task(async function test_eval_tainted() {

@@ -1,0 +1,31 @@
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsITaintableInputStream;
+
+%{C++
+    #include "Taint.h"
+%}
+
+native StringTaint(StringTaint);
+
+/**
+ * Foxhound: nsITaintableInputStream
+ *
+ * An input stream that allows to set taints
+ */
+[scriptable, builtinclass, uuid(8db7ac19-9667-4d34-b6cf-8f91c8ffd06d)]
+interface nsITaintableInputStream : nsISupports
+{
+
+    /*
+     * Sets the taint of the input Stream
+
+       * @param aTaint The taint for the input stream
+    */
+    [noscript] void SetTaint(in StringTaint aTaint);
+};

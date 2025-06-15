@@ -29,6 +29,7 @@
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIInputStreamPriority.h"
+#include "nsITaintableInputStream.h"
 #include "nsITaintawareInputStream.h"
 #include "nsThreadUtils.h"
 
@@ -194,7 +195,8 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
                                 public nsIClassInfo,
                                 public nsIBufferedInputStream,
                                 public nsIInputStreamPriority,
-                                public nsITaintawareInputStream {
+                                public nsITaintawareInputStream,
+                                public nsITaintableInputStream {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
@@ -206,6 +208,7 @@ class nsPipeInputStream final : public nsIAsyncInputStream,
   NS_DECL_NSIBUFFEREDINPUTSTREAM
   NS_DECL_NSIINPUTSTREAMPRIORITY
   NS_DECL_NSITAINTAWAREINPUTSTREAM
+  NS_DECL_NSITAINTABLEINPUTSTREAM
 
   explicit nsPipeInputStream(nsPipe* aPipe)
       : mPipe(aPipe),
@@ -355,7 +358,7 @@ class nsPipe final {
 
   // public constructor
   friend void NS_NewPipe2(nsIAsyncInputStream**, nsIAsyncOutputStream**, bool,
-                          bool, uint32_t, uint32_t, StringTaint**);
+                          bool, uint32_t, uint32_t);
 
  private:
   nsPipe(uint32_t aSegmentSize, uint32_t aSegmentCount);
@@ -366,6 +369,10 @@ class nsPipe final {
   // of these methods require passing a ReentrantMonitorAutoEnter to prove the
   // monitor is held.
   //
+
+  void SetTaint(const StringTaint& aTaint) MOZ_REQUIRES(mReentrantMonitor) {
+    mTaint = SafeStringTaint(aTaint);
+  }
 
   void PeekSegment(const nsPipeReadState& aReadState, uint32_t aIndex,
                    char*& aCursor, char*& aLimit)
@@ -1218,6 +1225,7 @@ NS_INTERFACE_TABLE_HEAD(nsPipeInputStream)
     NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsIClassInfo)
     NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsIInputStreamPriority)
     NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsITaintawareInputStream)
+    NS_INTERFACE_TABLE_ENTRY(nsPipeInputStream, nsITaintableInputStream)
     NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(nsPipeInputStream, nsIInputStream,
                                        nsIAsyncInputStream)
     NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(nsPipeInputStream, nsISupports,
@@ -1623,6 +1631,15 @@ nsPipeInputStream::TaintedReadSegments(nsWriteTaintedSegmentFun aWriter,
 
 // Foxhound
 NS_IMETHODIMP
+nsPipeInputStream::SetTaint(StringTaint aTaint)
+{
+  ReentrantMonitorAutoEnter mon(mPipe->mReentrantMonitor);
+  mPipe->SetTaint(aTaint);
+  return NS_OK;
+}
+
+// Foxhound
+NS_IMETHODIMP
 nsPipeInputStream::TaintedRead(char* aToBuf, uint32_t aBufLen, StringTaint* aTaint, uint32_t* aReadCount)
 {
   TaintedBuffer buf(aToBuf, aTaint);
@@ -1885,7 +1902,7 @@ void NS_NewPipe(nsIInputStream** aPipeIn, nsIOutputStream** aPipeOut,
 void NS_NewPipe2(nsIAsyncInputStream** aPipeIn, nsIAsyncOutputStream** aPipeOut,
                  bool aNonBlockingInput, bool aNonBlockingOutput,
                  uint32_t aSegmentSize,
-                 uint32_t aSegmentCount, StringTaint** aTaint) MOZ_NO_THREAD_SAFETY_ANALYSIS {
+                 uint32_t aSegmentCount) MOZ_NO_THREAD_SAFETY_ANALYSIS {
   RefPtr<nsPipe> pipe =
       new nsPipe(aSegmentSize ? aSegmentSize : DEFAULT_SEGMENT_SIZE,
                  aSegmentCount ? aSegmentCount : DEFAULT_SEGMENT_COUNT);
@@ -1899,10 +1916,6 @@ void NS_NewPipe2(nsIAsyncInputStream** aPipeIn, nsIAsyncOutputStream** aPipeOut,
 
   pipeIn.forget(aPipeIn);
   pipeOut.forget(aPipeOut);
-
-  if (aTaint) {
-    // do nothing for the moment
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
