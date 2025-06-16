@@ -869,8 +869,8 @@ void DumpTaintOperation(const TaintOperation& operation);
 void TaintDebug(std::string_view message,
                 std::experimental::source_location location = std::experimental::source_location::current());
 #else
-void DumpTaint(const StringTaint& taint) {}
-void PrintTaint(const StringTaint& taint) {}
+void DumpTaint(const StringTaint& taint);
+void PrintTaint(const StringTaint& taint);
 #endif
 
 #endif

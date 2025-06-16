@@ -1340,7 +1340,9 @@ void TaintDebug(std::string_view message,
               << location.function_name() << " "
               << message << std::endl;
 }
-
+#else
+void DumpTaint(const StringTaint& taint) {}
+void PrintTaint(const StringTaint& taint) {}
 #endif
 
 std::string convertToString(const TaintRange& range, bool addSinks = false)
