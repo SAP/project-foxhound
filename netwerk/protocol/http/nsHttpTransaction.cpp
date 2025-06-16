@@ -2432,21 +2432,26 @@ nsresult nsHttpTransaction::HandleContentStart() {
       }
     }
 
-    // Foxhound(david): disable debug prints
     nsCOMPtr<nsITaintableInputStream> taintableInputStream(do_QueryInterface(mPipeIn));
     if (taintableInputStream) {
-      puts("!!!!! Got taintable stream!! !!!!!");
+      #if (DEBUG_E2E_TAINTING)
+        puts("!!!!! Got taintable stream!! !!!!!");
+      #endif
 
       // Foxhound: parse any taint information from the header and
       // add it to the content pipe.
       nsAutoCString serializedTaint;
       if (mResponseHead->GetHeader(nsHttp::X_Taint, serializedTaint) == NS_OK) {
-        puts("!!!!! Received Taint header !!!!!");
+        #if (DEBUG_E2E_TAINTING)
+          puts("!!!!! Received Taint header !!!!!");
+        #endif
         std::string taint(serializedTaint.BeginReading());
         taintableInputStream->SetTaint(ParseTaint(taint));
       }
     } else {
-      puts("!!!!! Got non table input stream pipe !!!!");
+      #if (DEBUG_E2E_TAINTING)
+        puts("!!!!! Got non table input stream pipe !!!!");
+      #endif
     }
   }
 
