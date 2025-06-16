@@ -1493,7 +1493,7 @@ HttpChannelParent::OnDataAvailable(nsIRequest* aRequest,
                                    uint64_t aOffset, uint32_t aCount) {
 
 #if (DEBUG_E2E_TAINTING)
-  // TaintFox: see if there's taint information available.
+  // Foxhound: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in HttpChannelParent::OnDataAvailable !!!!!");

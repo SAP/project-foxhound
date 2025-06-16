@@ -8790,7 +8790,7 @@ nsHttpChannel::OnDataAvailable(nsIRequest* request, nsIInputStream* input,
                                uint64_t offset, uint32_t count) {
 
 #if (DEBUG_E2E_TAINTING)
-  // TaintFox: see if there's taint information available.
+  // Foxhound: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(input));
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in nsHttpChannel::OnDataAvailable !!!!!");

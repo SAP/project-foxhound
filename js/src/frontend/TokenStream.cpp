@@ -3644,7 +3644,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
       break;
     }
 
-    // Taintfox: if the incoming Unit is tainted, append the corresponding taint flow to the end
+    // Foxhound: if the incoming Unit is tainted, append the corresponding taint flow to the end
     if (taintFlow) {
       taintBuffer.concat(SafeStringTaint(TaintFlow(taintFlow), 1), this->charBuffer.length());
     }
