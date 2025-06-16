@@ -19,7 +19,6 @@
 #include <atomic>
 #include <string_view>
 
-#define TAINT_DEBUG (1)
 // It appears that source_location is not supported as standard and
 // breaks windows builds. Keep it behind a debug macro for now.
 #ifdef TAINT_DEBUG
@@ -838,7 +837,7 @@ class TaintList
 
 // Set to true to enable various debug outputs regarding end2end tainting
 // throughout the engine.
-#define DEBUG_E2E_TAINTING (TAINT_DEBUG)
+//#define DEBUG_E2E_TAINTING (TAINT_DEBUG)
 
 /*
  * Deserialize taint information from its string representation. Required for

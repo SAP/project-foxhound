@@ -1,0 +1,26 @@
+option(
+    "--enable-taint-debug",
+    help="Enable taint debug prints"
+)
+
+@depends("--enable-taint-debug")
+def taint_debug(value):
+    if value:
+        return True
+
+set_define("TAINT_DEBUG", taint_debug)
+set_config("TAINT_DEBUG", taint_debug)
+
+option(
+    "--enable-taint-e2e-debug",
+    help="Enable end to end tainting debug prints"
+)
+
+@depends("--enable-taint-e2e-debug")
+def taint_e2e_debug(value):
+    if value:
+        return True
+
+set_define("DEBUG_E2E_TAINTING", taint_e2e_debug)
+set_config("DEBUG_E2E_TAINTING", taint_e2e_debug)
+imply_option("--enable-taint-debug", True, when=taint_e2e_debug)
