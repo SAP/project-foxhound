@@ -851,7 +851,7 @@ StringTaint ParseTaint(const std::string& str);
  * and convert it to a json like Taint representation as a string : [{begin: 10, end: 20, source: 'src1'}, {begin: 80, end: 90, source: 'src2'}]
 */
 
-std::string serializeStringtaint(const StringTaint& taintstr);
+std::string serializeStringtaint(const StringTaint& taintstr, bool addSinks = false);
 
 /*
  * Print a string representation of the given StringTaint instance to stdout.

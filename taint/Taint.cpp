@@ -1343,7 +1343,7 @@ void TaintDebug(std::string_view message,
 
 #endif
 
-std::string convertToString(const TaintRange& range)
+std::string convertToString(const TaintRange& range, bool addSinks = false)
 {
   std::stringstream ss;
   ss << "begin: ";
@@ -1354,24 +1354,27 @@ std::string convertToString(const TaintRange& range)
   ss << "\"";
   ss << range.flow().source().name();
   ss << "\"";
-  ss << ", sink: ";
-  ss << "\"" << range.flow().head()->operation().name() << "\"";
+  if(addSinks) {
+    ss << ", sink: ";
+    ss << "\"" << range.flow().head()->operation().name() << "\"";
+  }
   return ss.str();
 }
 
-std::string serializeStringtaint(const StringTaint& taintstr) {
+std::string serializeStringtaint(const StringTaint& taintstr, bool addSinks) {
   std::string s = "[";
   bool nonempty=false;
   for (auto& range : taintstr) {
     nonempty=true;
     s +="{";
-    s += convertToString(range);
-    s +="},";  }
+    s += convertToString(range, addSinks);
+    s +="},";
+  }
 
-    if (nonempty) {
+  if (nonempty) {
     s=s.substr(0,s.length()-1);
-    }
-    
+  }
+
   s += "]";
     
   return s;
