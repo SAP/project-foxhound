@@ -10,6 +10,7 @@
 #include "mozilla/UniquePtr.h"  // mozilla::UniquePtr
 
 #include "mozilla/dom/ScriptLoadContext.h"  // ScriptLoadContext
+#include "nsTaintingUtils.h"
 #include "jsfriendapi.h"
 #include "js/Modules.h"       // JS::{Get,Set}ModulePrivate
 #include "LoadContextBase.h"  // LoadContextBase
@@ -137,8 +138,8 @@ nsresult LoadedScript::GetScriptSource(JSContext* aCx,
     size_t nbytes = inlineData.Length() * sizeof(char16_t);
 
     // Foxhound: tainted JavaScript inline script data
-    // Foxhound(david): TODO: look into fixing this
-    //ReportTaintSink(inlineData, "Inline Script");
+    // Foxhound(david): This breaks some tests atm, have to investigate.
+    // ReportTaintSink(inlineData, "Inline Script");
     JS::UniqueTwoByteChars chars(
         static_cast<char16_t*>(JS_malloc(aCx, nbytes)));
     if (!chars) {

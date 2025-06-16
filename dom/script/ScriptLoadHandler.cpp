@@ -204,8 +204,11 @@ ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
     }
     rv = mDecoder->DecodeRawData(mRequest, aData, aDataLength,
                                  /* aEndOfStream = */ false, taint);
+
+#if (DEBUG_E2E_TAINTING)
     puts(__PRETTY_FUNCTION__);
     DumpTaint(taint);
+#endif
 
     NS_ENSURE_SUCCESS(rv, rv);
 
