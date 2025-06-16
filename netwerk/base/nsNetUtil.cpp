@@ -1445,7 +1445,7 @@ class BufferWriter final : public nsIInputStreamCallback {
   }
 
   nsresult WriteSync() {
-  // TaintFox: see if there's taint information available.
+  // Foxhound: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(mInputStream));
 #if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
@@ -1655,9 +1655,9 @@ NS_IMPL_ISUPPORTS(BufferWriter, nsIInputStreamCallback)
 nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
                                     int64_t aCount, uint64_t* aWritten, StringTaint* aTaint) {
 
+#if (DEBUG_E2E_TAINTING)
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
-#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in NS_ReadInputStreamToBuffer !!!!!");
   } else {
@@ -1700,9 +1700,9 @@ nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
 nsresult NS_ReadInputStreamToString(nsIInputStream* aInputStream,
                                     nsACString& aDest, int64_t aCount,
                                     uint64_t* aWritten) {
+#if (DEBUG_E2E_TAINTING)
   // TaintFox: see if there's taint information available.
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
-#if (DEBUG_E2E_TAINTING)
   if (!taintInputStream) {
     puts("!!!!! NO taint-aware input stream available in NS_ReadInputStreamToString !!!!!");
   } else {
