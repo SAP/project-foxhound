@@ -101,7 +101,7 @@ nsresult ScriptDecoder::DecodeRawDataHelper(
 
   // Foxhound: Append Taint
   // Foxhound(David): Check if this really matches the prior semantics
-  StringTaint taint(aRequest->Taint());
+  SafeStringTaint taint(aRequest->Taint());
   taint.concat(aTaint, aRequest->ReceivedScriptTextLength());
   aRequest->SetReceivedScriptTaint(taint);
 
@@ -198,7 +198,7 @@ ScriptLoadHandler::OnIncrementalData(nsIIncrementalStreamLoader* aLoader,
 
     // Decoder has already been initialized. -- trying to decode all loaded
     // bytes.
-    StringTaint taint(EmptyTaint);
+    SafeStringTaint taint(EmptyTaint);
     if(aTaint != nullptr) {
       taint = *aTaint;
     }

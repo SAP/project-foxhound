@@ -1672,7 +1672,7 @@ nsresult NS_ReadInputStreamToBuffer(nsIInputStream* aInputStream, void** aDest,
     aWritten = &dummyWritten;
   }
 
-  StringTaint dummyTaint;
+  SafeStringTaint dummyTaint;
   if (!aTaint) {
     aTaint = &dummyTaint;
   }
