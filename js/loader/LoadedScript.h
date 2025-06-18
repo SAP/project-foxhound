@@ -203,6 +203,14 @@ class LoadedScript : public nsIMemoryReporter {
     mReceivedScriptTextLength = aLength;
   }
 
+  void SetReceivedScriptTaint(const StringTaint& aTaint) {
+    mScriptTextTaint = aTaint;
+  }
+
+  const StringTaint& Taint() {
+    return mScriptTextTaint;
+  }
+
   bool CanHaveBytecode() const {
     return IsBytecode() || IsSource() || IsStencil();
   }
@@ -255,6 +263,9 @@ class LoadedScript : public nsIMemoryReporter {
   // The length of script source text, set when reading completes. This is used
   // since mScriptData is cleared when the source is passed to the JS engine.
   size_t mReceivedScriptTextLength;
+
+  // The taint corresponding to the script data
+  SafeStringTaint mScriptTextTaint;
 
   // Holds the SRI serialized hash and the script bytecode for non-inline
   // scripts. The data is laid out according to ScriptBytecodeDataLayout
@@ -333,6 +344,14 @@ class LoadedScriptDelegate {
 
   void SetReceivedScriptTextLength(size_t aLength) {
     GetLoadedScript()->SetReceivedScriptTextLength(aLength);
+  }
+
+  const StringTaint& Taint() {
+    return GetLoadedScript()->Taint();
+  }
+
+  void SetReceivedScriptTaint(const StringTaint& aTaint) {
+    GetLoadedScript()->SetReceivedScriptTaint(aTaint);
   }
 
   // Get source text.  On success |aMaybeSource| will contain either UTF-8 or

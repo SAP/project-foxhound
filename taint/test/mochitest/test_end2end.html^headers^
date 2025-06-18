@@ -1,0 +1,2 @@
+Content-Type: text/html
+x-taint: [{begin: 1, end: 750, source: "e2e"}]

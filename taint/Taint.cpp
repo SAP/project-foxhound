@@ -15,6 +15,7 @@
 #include <stack>
 #include <string>   // stoi and u32string
 #include <algorithm>
+#include <sstream>  // stringstream
 
 #include "mozilla/Assertions.h"
 
@@ -1240,7 +1241,9 @@ TaintRange ParseRange(const std::string& str, size_t& i, size_t length, bool& va
 #if (DEBUG_E2E_TAINTING)
     std::cout << "  ParseTaintRange done: " << begin << " - " << end << " : " << source << std::endl;
 #endif
-    return TaintRange(begin, end, TaintFlow(TaintOperation(source.c_str())));
+    TaintOperation op(source.c_str());
+    op.setSource();
+    return TaintRange(begin, end, TaintFlow(std::move(op)));
 }
 
 StringTaint ParseTaint(const std::string& str)
@@ -1248,7 +1251,7 @@ StringTaint ParseTaint(const std::string& str)
 #if (DEBUG_E2E_TAINTING)
     std::cout << "ParseTaint: " << str << std::endl;
 #endif
-    if (str.length() <= 2 || str.front() != '[' || str.back() != ']') {
+    if (str.length() < 2 || str.front() != '[' || str.back() != ']') {
 #if (DEBUG_E2E_TAINTING)
         std::cout << "Error: malformed taint information" << std::endl;
 #endif
@@ -1302,6 +1305,9 @@ void PrintTaint(const StringTaint& taint)
 void DumpTaint(const StringTaint& taint, std::experimental::source_location location)
 {
     TaintDebug("Taint Information", location);
+    if (!taint.hasTaint()) {
+        std::cout << "EmptyTaint" << std::endl;
+    }
     for (auto& range : taint) {
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << ":\n";
         DumpTaintFlow(range.flow());
@@ -1334,5 +1340,44 @@ void TaintDebug(std::string_view message,
               << location.function_name() << " "
               << message << std::endl;
 }
-
+#else
+void DumpTaint(const StringTaint& taint) {}
+void PrintTaint(const StringTaint& taint) {}
 #endif
+
+std::string convertToString(const TaintRange& range, bool addSinks = false)
+{
+  std::stringstream ss;
+  ss << "begin: ";
+  ss << range.begin();
+  ss << ", end: ";
+  ss << range.end();
+  ss << ", source: ";
+  ss << "\"";
+  ss << range.flow().source().name();
+  ss << "\"";
+  if(addSinks) {
+    ss << ", sink: ";
+    ss << "\"" << range.flow().head()->operation().name() << "\"";
+  }
+  return ss.str();
+}
+
+std::string serializeStringtaint(const StringTaint& taintstr, bool addSinks) {
+  std::string s = "[";
+  bool nonempty=false;
+  for (auto& range : taintstr) {
+    nonempty=true;
+    s +="{";
+    s += convertToString(range, addSinks);
+    s +="},";
+  }
+
+  if (nonempty) {
+    s=s.substr(0,s.length()-1);
+  }
+
+  s += "]";
+    
+  return s;
+}

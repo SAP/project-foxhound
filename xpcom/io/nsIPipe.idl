@@ -8,12 +8,6 @@
 interface nsIAsyncInputStream;
 interface nsIAsyncOutputStream;
 
-%{C++
-    #include "Taint.h"
-%}
-
-native StringTaint(StringTaint);
-
 /**
  * nsIPipe represents an in-process buffer that can be read using nsIInputStream
  * and written using nsIOutputStream.  The reader and writer of a pipe do not
@@ -42,7 +36,7 @@ native StringTaint(StringTaint);
  * references to the pipe's input and output end.  In which case, the pipe is
  * automatically closed when the respective pipe ends are released.
  */
-[scriptable, uuid(25d0de93-685e-4ea4-95d3-d884e31df63c)]
+[scriptable, builtinclass, uuid(25d0de93-685e-4ea4-95d3-d884e31df63c)]
 interface nsIPipe : nsISupports
 {
     /**
@@ -142,8 +136,7 @@ NS_NewPipe2(nsIAsyncInputStream **pipeIn,
             bool nonBlockingInput = false,
             bool nonBlockingOutput = false,
             uint32_t segmentSize = 0,
-            uint32_t segmentCount = 0,
-            StringTaint **taint = nullptr);
+            uint32_t segmentCount = 0);
 
 /**
  * NS_NewPipe

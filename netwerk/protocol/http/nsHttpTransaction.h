@@ -350,8 +350,6 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsITransportEventSink> mTransportSink;
   nsCOMPtr<nsIEventTarget> mConsumerTarget;
-  // Foxhound: reference to pipe added for SetTaint()
-  nsCOMPtr<nsIPipe> mPipe;
   nsCOMPtr<nsITransportSecurityInfo> mSecurityInfo;
   nsCOMPtr<nsIAsyncInputStream> mPipeIn;
   nsCOMPtr<nsIAsyncOutputStream> mPipeOut;

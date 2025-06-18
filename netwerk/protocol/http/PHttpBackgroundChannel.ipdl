@@ -36,6 +36,7 @@ child:
                            uint64_t  offset,
                            uint32_t  count,
                            nsCString data,
+                           nsCString taint,
                            bool dataFromSocketProcess,
                            TimeStamp onDataAvailableStart);
 

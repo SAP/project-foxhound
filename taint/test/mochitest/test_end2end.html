@@ -1,0 +1,28 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>End-to_End Tests</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+  </head>
+  <body>
+    <div id="tainted">foo</div>
+  </body>
+      <script>
+        async function sleep (ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+};
+
+        add_task(async function test_element() {
+          const d = document.getElementById("tainted");
+          check_tainted(d.textContent);
+        });
+
+        add_task(async function test_eval_tainted() {
+                var s = String.tainted("hello");
+                eval("var t = '" + s + "'");
+                check_tainted(t);
+        });
+    </script>
+</html>

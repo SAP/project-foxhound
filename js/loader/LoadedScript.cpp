@@ -10,6 +10,7 @@
 #include "mozilla/UniquePtr.h"  // mozilla::UniquePtr
 
 #include "mozilla/dom/ScriptLoadContext.h"  // ScriptLoadContext
+#include "nsTaintingUtils.h"
 #include "jsfriendapi.h"
 #include "js/Modules.h"       // JS::{Get,Set}ModulePrivate
 #include "LoadContextBase.h"  // LoadContextBase
@@ -49,6 +50,7 @@ LoadedScript::LoadedScript(ScriptKind aKind,
       mURI(aURI),
       mDataType(DataType::eUnknown),
       mReceivedScriptTextLength(0),
+      mScriptTextTaint(EmptyTaint),
       mBytecodeOffset(0) {
   MOZ_ASSERT(mFetchOptions);
   MOZ_ASSERT(mURI);
@@ -134,6 +136,10 @@ nsresult LoadedScript::GetScriptSource(JSContext* aCx,
     scriptLoadContext->GetInlineScriptText(inlineData);
 
     size_t nbytes = inlineData.Length() * sizeof(char16_t);
+
+    // Foxhound: tainted JavaScript inline script data
+    // Foxhound(david): This breaks some tests atm, have to investigate.
+    // ReportTaintSink(inlineData, "Inline Script");
     JS::UniqueTwoByteChars chars(
         static_cast<char16_t*>(JS_malloc(aCx, nbytes)));
     if (!chars) {
@@ -143,7 +149,7 @@ nsresult LoadedScript::GetScriptSource(JSContext* aCx,
     memcpy(chars.get(), inlineData.get(), nbytes);
 
     SourceText<char16_t> srcBuf;
-    if (!srcBuf.init(aCx, std::move(chars), inlineData.Length())) {
+    if (!srcBuf.init(aCx, std::move(chars), inlineData.Length(), inlineData.Taint())) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -161,7 +167,7 @@ nsresult LoadedScript::GetScriptSource(JSContext* aCx,
     }
 
     SourceText<char16_t> srcBuf;
-    if (!srcBuf.init(aCx, std::move(chars), length)) {
+    if (!srcBuf.init(aCx, std::move(chars), length, mScriptTextTaint)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -178,7 +184,7 @@ nsresult LoadedScript::GetScriptSource(JSContext* aCx,
   }
 
   SourceText<Utf8Unit> srcBuf;
-  if (!srcBuf.init(aCx, std::move(chars), length)) {
+  if (!srcBuf.init(aCx, std::move(chars), length, mScriptTextTaint)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

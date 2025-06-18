@@ -605,6 +605,9 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
 
     auto handle = handleOrErr.unwrap();
 
+    // Foxhound: propagate taint. TODO(samuel) deal with encoding
+    helper.AppendTaintAt(len, aTaint);
+
     uint32_t result;
     size_t read;
     size_t written;
@@ -615,8 +618,6 @@ nsresult XMLHttpRequestMainThread::AppendToResponseText(
     len += written;
     MOZ_ASSERT(len <= destBufferLen.value());
     handle.Finish(len, false);
-    // Foxhound: propagate taint. TODO(samuel) deal with encoding
-    helper.AppendTaintAt(len, aTaint);
   }  // release mutex
 
   if (aLast) {

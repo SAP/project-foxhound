@@ -443,6 +443,7 @@ include(include_project_configure)
 include(
     "build/moz.configure/finalize-flags.configure", when="--enable-compile-environment"
 )
+include("taint/moz.configure")
 
 # -------------------------------------------------
 

@@ -1491,6 +1491,16 @@ NS_IMETHODIMP
 HttpChannelParent::OnDataAvailable(nsIRequest* aRequest,
                                    nsIInputStream* aInputStream,
                                    uint64_t aOffset, uint32_t aCount) {
+
+#if (DEBUG_E2E_TAINTING)
+  // Foxhound: see if there's taint information available.
+  nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(aInputStream));
+  if (!taintInputStream) {
+    puts("!!!!! NO taint-aware input stream available in HttpChannelParent::OnDataAvailable !!!!!");
+  } else {
+    puts("+++++ Taint-aware input stream available in HttpChannelParent::OnDataAvailable +++++");
+  }
+#endif
   LOG(("HttpChannelParent::OnDataAvailable [this=%p aRequest=%p offset=%" PRIu64
        " count=%" PRIu32 "]\n",
        this, aRequest, aOffset, aCount));

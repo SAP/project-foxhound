@@ -168,8 +168,9 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
 
   // Use the regular ScriptDecoder Decoder for this grunt work! Should be just
   // fine because we're running on the main thread.
+  // Foxhound(david): Is this sane?
   rv = mDecoder->DecodeRawData(loadContext->mRequest, aString, aStringLen,
-                               /* aEndOfStream = */ true);
+                               /* aEndOfStream = */ true, EmptyTaint);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!loadContext->mRequest->ScriptTextLength()) {
