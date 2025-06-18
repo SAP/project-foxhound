@@ -361,9 +361,13 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
   RootedValue name(cx);
 
   JS::Rooted<JSAtom*> atom(cx);
-  if (function->getDisplayAtom(cx, &atom)) {
-    name = StringValue(atom);
+  JSAtom* ma = function->maybePartialDisplayAtom();
+  if (ma != nullptr) {
+    atom = ma;
+  } else {
+    atom = Atomize(cx,"", 0);
   }
+  name = StringValue(atom);
 
   RootedFunction fun(cx, function);
 
