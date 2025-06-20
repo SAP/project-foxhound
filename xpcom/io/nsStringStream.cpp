@@ -535,6 +535,9 @@ nsStringInputStream::Clone(nsIInputStream** aCloneOut) {
   // Nothing else can access this yet, but suppress static analysis warnings
   ReentrantMonitorAutoEnter reflock(ref->mMon);
   if (mSource && !mSource->Owning()) {
+#if (DEBUG_E2E_TAINTING)
+    puts("!!!! Lossy clone of nsStringInputStream !!!!");
+#endif
     auto data = mSource->Data();
     nsresult rv = ref->SetData(data.Elements(), data.Length());
     if (NS_WARN_IF(NS_FAILED(rv))) {

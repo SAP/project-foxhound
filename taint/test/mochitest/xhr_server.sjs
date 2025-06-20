@@ -34,12 +34,24 @@ function handleRequest(request, response) {
     case "e2e-html":
      response.setHeader("Content-Type", "text/html", false);
      response.setHeader("X-Taint", '[{begin: 0, end: 25, source: "e2e"}]', false);
-     response.write("<div>hello!</div>");
+     response.write(`<div id="a">hello!</div>`);
      break;
+
     case "e2e-partial-html":
      response.setHeader("Content-Type", "text/html", false);
-     response.setHeader("X-Taint", '[{begin: 5, end: 11, source: "e2e"}]', false);
-     response.write("<div>hello!</div>");
+     response.setHeader("X-Taint", '[{begin: 12, end: 18, source: "e2e"}]', false);
+     response.write(`<div id="a">hello!</div>`);
+     break;
+    case "e2e-xml":
+     response.setHeader("Content-Type", "text/xml", false);
+     response.setHeader("X-Taint", '[{begin: 0, end: 25, source: "e2e"}]', false);
+     response.write(`<div id="a">hello!</div>`);
+     break;
+
+    case "e2e-partial-xml":
+     response.setHeader("Content-Type", "text/xml", false);
+     response.setHeader("X-Taint", '[{begin: 12, end: 18, source: "e2e"}]', false);
+     response.write(`<div id="a">hello!</div>`);
      break;
     default:
      response.setHeader("Content-Type", "text/plain", false);
