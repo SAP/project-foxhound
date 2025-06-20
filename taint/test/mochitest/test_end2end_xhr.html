@@ -1,0 +1,63 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>End-to_End Tests</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+  </head>
+  <body>
+    <div id="tainted">foo</div>
+  </body>
+      <script>
+        let responses = 0;
+
+      SimpleTest.waitForExplicitFinish();
+
+      function runTest(method) {
+            let request = new XMLHttpRequest();
+            request.onload = async () => {
+                let resp = request.response;
+                SimpleTest.info(`done! Response: ${resp}`);
+                check_tainted(resp);
+                responses++;
+                if(responses == 4) {
+                  SimpleTest.finish();
+                }
+
+            };
+            //request.open("GET", "http://mochi.test:8888/tests/SimpleTest/setup.js", true);
+            request.open("GET", `http://mochi.test:8888/tests/taint/test/mochitest/xhr_server.sjs?${method}`, true);
+            //request.open("GET", "/tests/SimpleTest/test.css", true);
+            request.send("");
+
+        }
+
+              function runTestSync(method) {
+            let request = new XMLHttpRequest();
+            //request.open("GET", "http://mochi.test:8888/tests/SimpleTest/setup.js", true);
+            request.open("GET", `http://mochi.test:8888/tests/taint/test/mochitest/xhr_server.sjs?${method}`, false);
+            //request.open("GET", "/tests/SimpleTest/test.css", true);
+            request.send("");
+            let resp = request.response;
+                SimpleTest.info(`done! Response: ${resp}`);
+                check_tainted(resp);
+                responses++;
+                if(responses == 8) {
+                  SimpleTest.finish();
+                }
+
+        }
+
+         runTest("e2e");
+         runTest("e2e-partial");
+         runTest("e2e-partial-html");
+         runTest("e2e-html");
+
+         runTestSync("e2e");
+         runTest("e2e-partial");
+         runTestSync("e2e-partial-html");
+         runTestSync("e2e-html");
+
+    </script>
+</html>
