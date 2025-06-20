@@ -800,7 +800,14 @@ nsresult NS_NewInputStreamChannelInternal(nsIChannel** outChannel, nsIURI* aUri,
   nsCOMPtr<nsIStringInputStream> stream;
   stream = do_CreateInstance(NS_STRINGINPUTSTREAM_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
+#if (DEBUG_E2E_TAINTING)
+  if(aData.isTainted()) {
+    puts("++++ Losing Taint when writing to StringInputStream in NsNetUtil::NS_NewInputStreamChannelInternal +++");
+  } else {
+    puts("++++ NOT Losing Taint when writing to StringInputStream in NsNetUtil::NS_NewInputStreamChannelInternal +++");
 
+  }
+#endif
   uint32_t len;
   char* utf8Bytes = ToNewUTF8String(aData, &len);
   rv = stream->AdoptData(utf8Bytes, len);
@@ -1493,6 +1500,7 @@ class BufferWriter final : public nsIInputStreamCallback {
     return NS_OK;
   }
 
+  //Foxhound(David): This might be the reason we lose taints here?
   nsresult WriteAsync() {
     NS_ASSERT_OWNINGTHREAD(BufferWriter);
 

@@ -633,6 +633,15 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
                                                ErrorResult& aRv) {
   MOZ_DIAGNOSTIC_ASSERT(!mForWorker);
 
+  #if (DEBUG_E2E_TAINTING)
+    if(mResponseText.Taint().hasTaint()) {
+      puts("!!!!! GetResponseText with non empty Taint !!!!!");
+      PrintTaint(mResponseText.Taint());
+    } else {
+      puts("!!!!! GettResponseText with empty Taint !!!!!");
+    }
+  #endif
+
   XMLHttpRequestStringSnapshot snapshot;
   GetResponseText(snapshot, aRv);
   if (aRv.Failed()) {
@@ -1774,6 +1783,11 @@ nsresult XMLHttpRequestMainThread::HandleStreamInput(
     if (!xmlHttpRequest->mResponseBody.Append(fromRawSegment, count,
                                               fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
+    } else {
+      #if (DEBUG_E2E_TAINTING)
+        puts("!!!!! Appending Taint to response body !!!!!");
+      #endif
+      xmlHttpRequest->mResponseBody.AppendTaint(taint);
     }
   } else if (xmlHttpRequest->mResponseType ==
                  XMLHttpRequestResponseType::_empty ||
@@ -1785,6 +1799,13 @@ nsresult XMLHttpRequestMainThread::HandleStreamInput(
                "We shouldn't be parsing a doc here");
     rv = xmlHttpRequest->AppendToResponseText(
         AsBytes(Span(fromRawSegment, count)), taint);
+        #if (DEBUG_E2E_TAINTING)
+          if(taint.hasTaint()) {
+            puts("!!!!! Appending non empty Taint to response text !!!!!");
+          } else {
+            puts("!!!!! Appending empty Taint to response text !!!!!");
+          }
+        #endif
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -1792,6 +1813,13 @@ nsresult XMLHttpRequestMainThread::HandleStreamInput(
 
   if (xmlHttpRequest->mFlagParseBody) {
     // Give the same data to the parser.
+    #if (DEBUG_E2E_TAINTING)
+      if(taint.hasTaint()) {
+        puts("!!!!!Parsing Body with ByteInputStream and non empty Taint !!!!!");
+      } else {
+        puts("!!!!!Parsing Body with ByteInputStream and empty Taint !!!!!");
+      }
+    #endif
 
     // We need to wrap the data in a new lightweight stream and pass that
     // to the parser, because calling ReadSegments() recursively on the same
@@ -1799,7 +1827,7 @@ nsresult XMLHttpRequestMainThread::HandleStreamInput(
     nsCOMPtr<nsIInputStream> copyStream;
     rv = NS_NewByteInputStream(getter_AddRefs(copyStream),
                                Span(fromRawSegment, count),
-                               NS_ASSIGNMENT_DEPEND);
+                               NS_ASSIGNMENT_DEPEND, taint);
 
     if (NS_SUCCEEDED(rv) && xmlHttpRequest->mXMLParserStreamListener) {
       NS_ASSERTION(copyStream, "NS_NewByteInputStream lied");
@@ -1833,6 +1861,13 @@ XMLHttpRequestMainThread::StreamReaderFunc(nsITaintawareInputStream* in,
                                  const StringTaint& aTaint,
                                  uint32_t *writeCount)
 {
+  #if (DEBUG_E2E_TAINTING)
+    if(aTaint.hasTaint()) {
+      puts("!!!!! StreamReaderFunc with  non empty Taint !!!!!");
+    } else {
+      puts("!!!!! StreamReaderFunc with empty Taint !!!!!");
+    }
+  #endif
   return HandleStreamInput(closure, fromRawSegment, toOffset, count, aTaint, writeCount);
 }
 
@@ -2011,14 +2046,14 @@ XMLHttpRequestMainThread::OnDataAvailable(nsIRequest* request,
 
   nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(inStr));
   if (!taintInputStream) {
-#if (DEBUG_E2E_TAINTING)
-    puts("!!!!! NO taint-aware input stream available in XMLHttpRequest::OnDataAvailable !!!!!");
-#endif
+    #if (DEBUG_E2E_TAINTING)
+      puts("!!!!! NO taint-aware input stream available in XMLHttpRequest::OnDataAvailable !!!!!");
+    #endif
     rv = inStr->ReadSegments(StreamReaderFuncNoTaint, (void*)this, count, &totalRead);
   } else {
-#if (DEBUG_E2E_TAINTING)
-    puts("+++++ Taint-aware input stream available in XMLHttpRequest::OnDataAvailable +++++");
-#endif
+    #if (DEBUG_E2E_TAINTING)
+      puts("+++++ Taint-aware input stream available in XMLHttpRequest::OnDataAvailable +++++");
+    #endif
     rv = taintInputStream->TaintedReadSegments(StreamReaderFunc, (void*)this, count, &totalRead);
   }
 

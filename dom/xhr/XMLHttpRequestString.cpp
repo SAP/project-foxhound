@@ -33,6 +33,10 @@ class XMLHttpRequestStringBuffer final {
     return mData.Length();
   }
 
+  const StringTaint& Taint() const MOZ_NO_THREAD_SAFETY_ANALYSIS {
+    return mData.Taint();
+  }
+
   mozilla::Result<mozilla::BulkWriteHandle<char16_t>, nsresult> UnsafeBulkWrite(
       uint32_t aCapacity) MOZ_NO_THREAD_SAFETY_ANALYSIS {
     return mData.BulkWrite(aCapacity, UnsafeLength(), false);
@@ -124,6 +128,10 @@ size_t XMLHttpRequestString::SizeOfThis(MallocSizeOf aMallocSizeOf) const {
   return mBuffer->SizeOfThis(aMallocSizeOf);
 }
 
+const StringTaint& XMLHttpRequestString::Taint() const {
+  return mBuffer->Taint();
+}
+
 bool XMLHttpRequestString::IsEmpty() const { return !mBuffer->Length(); }
 
 void XMLHttpRequestString::CreateSnapshot(
@@ -171,8 +179,14 @@ bool XMLHttpRequestStringSnapshot::GetAsString(DOMString& aString) const {
 JSString* XMLHttpRequestStringSnapshot::GetAsJSStringCopy(
     JSContext* aCx) const {
   MutexAutoLock lock(mBuffer->mMutex);
-  return JS_NewUCStringCopyN(aCx, mBuffer->mData.BeginReading(),
+  JSString* str = JS_NewUCStringCopyN(aCx, mBuffer->mData.BeginReading(),
                              mBuffer->mData.Length());
+  JS_SetStringTaint(aCx, str, mBuffer->Taint());
+  return str;
+}
+
+const StringTaint& XMLHttpRequestStringSnapshot::Taint() const {
+  return mBuffer->Taint();
 }
 
 // ---------------------------------------------------------------------------
