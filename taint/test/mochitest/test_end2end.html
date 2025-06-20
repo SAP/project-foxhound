@@ -13,7 +13,6 @@
         async function sleep (ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 };
-
         add_task(async function test_element() {
           const d = document.getElementById("tainted");
           check_tainted(d.textContent);
