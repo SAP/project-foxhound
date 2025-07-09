@@ -1,6 +1,20 @@
 ![Logo](browser/branding/foxhound/content/about-logo.png)
 
 # Project "Foxhound"
+[![License](https://img.shields.io/github/license/SAP/project-foxhound?label=License)](https://github.com/SAP/project-foxhound?tab=GPL-3.0-1-ov-file#readme)
+![Main Version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftmbrbr%2Fproject-foxhound%2Frefs%2Fheads%2Fmain%2Fbrowser%2Fconfig%2Fversion.txt&search=(.*)&replace=v%241&label=Version)
+![Playwright Version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FSAP%2Fproject-foxhound%2Frefs%2Fheads%2Fmain%2F.PLAYWRIGHT_VERSION&search=PLAYWRIGHT_VERSION%3D%22(.*%3F)%22&replace=%241&label=Playwright)
+[![Latest Release](https://img.shields.io/github/v/release/sap/project-foxhound.svg?label=Latest%20Release)](https://github.com/SAP/project-foxhound/releases/latest)
+[![Code Size](https://img.shields.io/github/languages/code-size/SAP/project-foxhound?label=Code%20Size)](https://github.com/SAP/project-foxhound/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/sap/project-foxhound/total?label=Downloads)](https://github.com/SAP/project-foxhound/releases)
+
+[![JavaScript Build](https://github.com/sap/project-foxhound/actions/workflows/main.yml/badge.svg)](https://github.com/sap/project-foxhound/actions/workflows/main.yml)
+[![Browser Build](https://github.com/sap/project-foxhound/actions/workflows/browser.yml/badge.svg)](https://github.com/sap/project-foxhound/actions/workflows/browser.yml)
+[![Playwright Build](https://github.com/sap/project-foxhound/actions/workflows/playwright.yml/badge.svg)](https://github.com/sap/project-foxhound/actions/workflows/playwright.yml)
+
+[![GitHub Stars](https://img.shields.io/github/stars/sap/project-foxhound)](https://github.com/SAP/project-foxhound/stargazers)
+[![GitHub Watchers](https://img.shields.io/github/watchers/sap/project-foxhound)](https://github.com/SAP/project-foxhound/forks)
+[![GitHub Forks](https://img.shields.io/github/forks/sap/project-foxhound)](https://github.com/SAP/project-foxhound/watchers)
 
 This is the repository for project "Foxhound", a Firefox fork capable of tracking taint flows through the browser.
 
