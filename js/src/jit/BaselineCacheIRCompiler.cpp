@@ -1236,10 +1236,6 @@ bool BaselineCacheIRCompiler::emitLoadStringCharResult(
   Label tagResult;
   Label loadFailed;
   if (outOfBounds == StringCharOutOfBounds::Failure) {
-    FailurePath* failure;
-    if (!addFailurePath(&failure)) {
-      return false;
-    }
 
     masm.spectreBoundsCheck32(index, Address(str, JSString::offsetOfLength()),
                               scratch3, failure->label());

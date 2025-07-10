@@ -1429,7 +1429,9 @@ void URLParams::Serialize(nsACString& aValue, bool aEncode) const {
       aValue.Append(mParams[i].mValue);
     }
   }
-  MarkTaintOperation(aValue, "URLHelper.Serialize");
+  if(nsContentUtils::IsInitialized()) {
+    MarkTaintOperation(aValue, "URLHelper.Serialize");
+  }
 }
 
 void URLParams::Sort() {
