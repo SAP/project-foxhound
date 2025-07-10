@@ -31,6 +31,9 @@ mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
     Close();
     return IPC_OK();
   }
+  #if (DEBUG_E2E_TAINTING)
+    puts("++++ sending empty taint over data bridge ++++");
+  #endif
   nsDependentCSubstring taint;
   return mBgChild->RecvOnTransportAndData(NS_OK, NS_NET_STATUS_RECEIVING_FROM,
                                           offset, count, data, taint, true,

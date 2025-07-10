@@ -39,6 +39,8 @@ class XMLHttpRequestString final {
 
   void Append(const nsAString& aString);
 
+  const StringTaint& Taint() const;
+
   // This method should be called only when the string is really needed because
   // it can cause the duplication of the strings in case the loading of the XHR
   // is not completed yet.
@@ -114,6 +116,8 @@ class XMLHttpRequestStringSnapshot final {
   [[nodiscard]] bool GetAsString(DOMString& aString) const;
 
   JSString* GetAsJSStringCopy(JSContext* aCx) const;
+
+  const StringTaint& Taint() const;
 
  private:
   XMLHttpRequestStringSnapshot(const XMLHttpRequestStringSnapshot&) = delete;
