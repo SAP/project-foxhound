@@ -1487,7 +1487,7 @@ class BufferWriter final : public nsIInputStreamCallback {
     nsresult rv;
     if (!taintInputStream) {
       rv = mInputStream->ReadSegments(NS_CopySegmentToBuffer, mBuffer,
-                                               length, &writtenData);   
+                                               length, &writtenData);
     } else {
       TaintedBuffer buf((char*)mBuffer, mTaint);
       rv = taintInputStream->TaintedReadSegments(NS_TaintedCopySegmentToBuffer, &buf,
@@ -1500,9 +1500,17 @@ class BufferWriter final : public nsIInputStreamCallback {
     return NS_OK;
   }
 
-  //Foxhound(David): This might be the reason we lose taints here?
   nsresult WriteAsync() {
     NS_ASSERT_OWNINGTHREAD(BufferWriter);
+    // Foxhound: see if there's taint information available.
+    nsCOMPtr<nsITaintawareInputStream> taintInputStream(do_QueryInterface(mAsyncInputStream));
+#if (DEBUG_E2E_TAINTING)
+  if (!taintInputStream) {
+    puts("!!!!! NO Async taint-aware input stream available in BufferWriter::WriteAsync !!!!!");
+  } else {
+    puts("+++++ Taint-aware input stream available in BufferWriter::WriteAsync +++++");
+  }
+#endif
 
     if (mCount > 0 && mBufferType == eInternal) {
       mBuffer = malloc(mCount);
@@ -1521,9 +1529,17 @@ class BufferWriter final : public nsIInputStreamCallback {
 
       // Let's try to read data directly.
       uint32_t writtenData;
-      nsresult rv = mAsyncInputStream->ReadSegments(
-          NS_CopySegmentToBuffer, static_cast<char*>(mBuffer) + offset, length,
-          &writtenData);
+      nsresult rv;
+      if (!taintInputStream) {
+        rv = mAsyncInputStream->ReadSegments(
+            NS_CopySegmentToBuffer, static_cast<char*>(mBuffer) + offset, length,
+            &writtenData);
+      } else {
+        TaintedBuffer buf((char*)mBuffer + offset, mTaint);
+        rv = taintInputStream->TaintedReadSegments(NS_TaintedCopySegmentToBuffer, &buf,
+                                                length, &writtenData);
+      }
+
 
       // Operation completed. Nothing more to read.
       if (NS_SUCCEEDED(rv) && writtenData == 0) {
