@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check location property of network taint operations (see
+      https://github.com/SAP/project-foxhound/issues/321)
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      function checkLocation(value, opName) {
+        check_tainted(value);
+        const op = value.taint[0].flow.slice(-1)[0];
+        SimpleTest.is(op.operation, opName);
+        SimpleTest.is(op.location.filename, document.URL, "Unexpected value for location property of taint operation");
+      }
+
+      add_task(async function test_fetch_json_location() {
+        const response = await fetch(
+          `http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?text`
+        );
+        const value = await response.text();
+        checkLocation(value, "fetch.text()");
+      });
+
+      add_task(async function test_fetch_json_location() {
+        const response = await fetch(
+          `http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?json`
+        );
+        const obj = await response.json();
+        const value = obj.txt;
+        checkLocation(value, "fetch.json()");
+      });
+
+      add_task(async function test_WebSocket_MessageEvent_data_location() {
+        const ws = new WebSocket(
+          "ws://mochi.test:8888/tests/taint/test/mochitest/file_websocket"
+        );
+        const messageEvent = await new Promise((resolve) => {
+          ws.addEventListener("message", (e) => resolve(e));
+        });
+        const value = messageEvent.data;
+        checkLocation(value, "WebSocket.MessageEvent.data");
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>
