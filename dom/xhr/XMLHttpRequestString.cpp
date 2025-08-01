@@ -128,7 +128,7 @@ size_t XMLHttpRequestString::SizeOfThis(MallocSizeOf aMallocSizeOf) const {
   return mBuffer->SizeOfThis(aMallocSizeOf);
 }
 
-const StringTaint& XMLHttpRequestString::Taint() const {
+const StringTaint XMLHttpRequestString::Taint() const {
   return mBuffer->Taint();
 }
 
@@ -185,7 +185,7 @@ JSString* XMLHttpRequestStringSnapshot::GetAsJSStringCopy(
   return str;
 }
 
-const StringTaint& XMLHttpRequestStringSnapshot::Taint() const {
+const StringTaint XMLHttpRequestStringSnapshot::Taint() const {
   return mBuffer->Taint();
 }
 

@@ -1733,7 +1733,7 @@ nsresult NS_ReadInputStreamToString(nsIInputStream* aInputStream,
     puts("+++++ Taint-aware input stream available in NS_ReadInputStreamToString +++++");
   }
 #endif
-  SafeStringTaint taint;
+  StringTaint taint;
                                       
   uint64_t dummyWritten;
   if (!aWritten) {

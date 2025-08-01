@@ -4912,6 +4912,7 @@ JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint)
   }
 }
 
+
 JS_PUBLIC_API void
 JS_SetTaint(JSContext* cx, JS::MutableHandleValue value, const StringTaint& taint)
 {
