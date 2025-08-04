@@ -644,6 +644,14 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
 
   XMLHttpRequestStringSnapshot snapshot;
   GetResponseText(snapshot, aRv);
+    #if (DEBUG_E2E_TAINTING)
+    if(snapshot.Taint().hasTaint()) {
+      puts("!!!!! GetResponseText with tainted snapshot !!!!!");
+      PrintTaint(snapshot.Taint());
+    } else {
+      puts("!!!!! GetResponseText with untainted snapshot !!!!!");
+    }
+    #endif
   if (aRv.Failed()) {
     return;
   }
@@ -652,6 +660,15 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
+
+      #if (DEBUG_E2E_TAINTING)
+    if(aResponseText.Taint().hasTaint()) {
+      puts("!!!!! GetResponseText with tainted snapshot !!!!!");
+      PrintTaint(aResponseText.Taint());
+    } else {
+      puts("!!!!! GetResponseText with untainted snapshot !!!!!");
+    }
+    #endif
 
   // Foxhound: XMLHttpRequest.response source
   nsTArray<nsString> args;

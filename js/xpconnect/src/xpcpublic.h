@@ -514,6 +514,7 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
     rval.set(JS_GetEmptyStringValue(cx));
     return true;
   }
+  SafeStringTaint taint(str.Taint());
 
   if (str.HasStringBuffer()) {
     uint32_t length = str.StringBufferLength();
@@ -521,7 +522,7 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
     if(!XPCStringConvert::UCStringBufferToJSVal(cx, buf, length, rval)) {
       return false;
     }
-    JS_SetTaint(cx, rval, str.Taint());
+    JS_SetTaint(cx, rval, taint);
 
     return true;
   }
@@ -529,7 +530,7 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
   if (str.HasLiteral()) {
     return XPCStringConvert::StringLiteralToJSVal(cx, str.Literal(),
                                                   str.LiteralLength(),
-                                                  str.Taint(), rval);
+                                                  taint, rval);
   }
 
   // It's an actual XPCOM string
