@@ -789,8 +789,13 @@ bool JSONFullParseHandler<CharT>::JSONStringBuilder::append(char16_t c, const Ta
 
 template <typename CharT>
 bool JSONFullParseHandler<CharT>::JSONStringBuilder::append(const CharT* begin,
-                                                        const CharT* end,
-                                                        const StringTaint& taint) {
+                                                            const CharT* end,
+                                                            const StringTaint& taint) {
+  buffer.appendTaintAt(buffer.length(), taint);
+  return buffer.append(begin, end);
+}
+
+JSString* JSONFullParseHandlerAnyChar::CurrentJsonPath(const Vector<StackEntry, 10>& stack) const {
   // https://www.ietf.org/archive/id/draft-goessner-dispatch-jsonpath-00.html
 
   JSStringBuilder builder(cx);

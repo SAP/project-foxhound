@@ -1027,7 +1027,7 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
                                                  lhsLength, rhsLength, newTaint);
       }
       return SubstringInlineString<char16_t>(cx, left, right, begin, lhsLength,
-                                             rhsLength);
+                                             rhsLength, newTaint);
     }
   }
 
@@ -4850,7 +4850,6 @@ const ClassSpec StringObject::classSpec_ = {
     string_static_methods,
     nullptr,
     string_methods,
-    nullptr,
     string_taint_properties,    
     StringClassFinish,
 };

@@ -163,13 +163,13 @@ JS_PUBLIC_API JSObject* JS::CompileJsonModule(
   auto charRange =
       mozilla::Range<const char16_t>(srcBuf.get(), srcBuf.length());
   Rooted<JSONParser<char16_t>> parser(
-      cx, cx, charRange, JSONParser<char16_t>::ParseType::JSONParse);
+      cx, cx, charRange, srcBuf.Taint(), JSONParser<char16_t>::ParseType::JSONParse);
 
   parser.reportLineNumbersFromParsedData(true);
   parser.setFilename(options.filename());
 
   JS::RootedValue jsonValue(cx);
-  if (!parser.parse(&jsonValue, EmptyTaint)) {
+  if (!parser.parse(&jsonValue)) {
     return nullptr;
   }
 

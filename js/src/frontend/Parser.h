@@ -938,9 +938,9 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
                 CompilationState& compilationState, SyntaxParser* syntaxParser);
 
   GeneralParser(FrontendContext* fc, const JS::ReadOnlyCompileOptions& options,
-                const Unit* units, size_t length, bool foldConstants,
+                const Unit* units, size_t length,
                 CompilationState& compilationState, SyntaxParser* syntaxParser) :
-   GeneralParser(fc, options, units, length, EmptyTaint, foldConstants,
+   GeneralParser(fc, options, units, length, EmptyTaint,
                  compilationState, syntaxParser) {}
   
   inline void setAwaitHandling(AwaitHandling awaitHandling);

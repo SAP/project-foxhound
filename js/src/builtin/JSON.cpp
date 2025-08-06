@@ -2004,7 +2004,7 @@ bool js::ParseJSONWithReviver(JSContext* cx,
   /* https://262.ecma-international.org/14.0/#sec-json.parse steps 2-10. */
   Rooted<ParseRecordObject> pro(cx);
   if (JS::Prefs::experimental_json_parse_with_source() && IsCallable(reviver)) {
-    Rooted<JSONReviveParser<CharT>> parser(cx, cx, chars);
+    Rooted<JSONReviveParser<CharT>> parser(cx, cx, chars, taint);
     if (!parser.get().parse(vp, &pro)) {
       return false;
     }
@@ -2294,11 +2294,11 @@ static bool json_rawJSON(JSContext* cx, unsigned argc, Value* vp) {
   /* Step 3. */
   RootedValue parsedValue(cx);
   if (linearChars.isLatin1()) {
-    if (!ParseJSON(cx, linearChars.latin1Range(), &parsedValue)) {
+    if (!ParseJSON(cx, linearChars.latin1Range(), linear->Taint(), &parsedValue)) {
       return false;
     }
   } else {
-    if (!ParseJSON(cx, linearChars.twoByteRange(), &parsedValue)) {
+    if (!ParseJSON(cx, linearChars.twoByteRange(), linear->Taint(), &parsedValue)) {
       return false;
     }
   }

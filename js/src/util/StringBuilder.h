@@ -293,7 +293,11 @@ class StringBuilder : public TaintableString {
 
   [[nodiscard]] inline bool append(const char16_t* begin, const char16_t* end);
 
-  [[nodiscard]] inline bool append(const char16_t* begin, const char16_t* end, const StringTaint& taint);
+  [[nodiscard]] inline bool append(const char16_t* begin, const char16_t* end, const StringTaint& taint) {
+    // Foxhound: append taint information.
+    appendTaintAt(length(), taint);
+    return append(begin, end);
+  }
 
   [[nodiscard]] bool append(const char16_t* chars, size_t len) {
     return append(chars, chars + len);

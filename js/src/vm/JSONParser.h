@@ -379,19 +379,19 @@ class MOZ_STACK_CLASS JSONReviveHandler : public JSONFullParseHandler<CharT> {
 
   JSContext* context() { return this->cx; }
 
-  template <JSONStringType ST>
-  inline bool setStringValue(CharPtr start, size_t length, SourceT&& source) {
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(CharPtr start, size_t length, SourceT&& source, const StringTaint& taint, const ParserT* parser) {
     if (!Base::template setStringValue<ST>(start, length,
-                                           std::forward<SourceT&&>(source))) {
+                                           std::forward<SourceT&&>(source), taint, parser)) {
       return false;
     }
     return finishPrimitiveParseRecord(this->v, source);
   }
 
-  template <JSONStringType ST>
-  inline bool setStringValue(JSONStringBuilder& builder, SourceT&& source) {
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(JSONStringBuilder& builder, SourceT&& source, const ParserT* parser) {
     if (!Base::template setStringValue<ST>(builder,
-                                           std::forward<SourceT&&>(source))) {
+                                           std::forward<SourceT&&>(source), parser)) {
       return false;
     }
     return finishPrimitiveParseRecord(this->v, source);
@@ -656,7 +656,11 @@ class MOZ_STACK_CLASS JSONReviveParser
 
   /* Create a parser for the provided JSON data. */
   JSONReviveParser(JSContext* cx, mozilla::Range<const CharT> data)
-      : Base(cx, data) {}
+      : Base(cx, data, EmptyTaint) {}
+
+  /* Create a parser for the provided JSON data. */
+  JSONReviveParser(JSContext* cx, mozilla::Range<const CharT> data, const StringTaint& taint)
+      : Base(cx, data, taint) {}
 
   /* Allow move construction for use with Rooted. */
   JSONReviveParser(JSONReviveParser&& other) noexcept

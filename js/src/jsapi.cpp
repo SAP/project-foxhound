@@ -53,6 +53,7 @@
 #include "js/ContextOptions.h"  // JS::ContextOptions{,Ref}
 #include "js/Conversions.h"
 #include "js/Date.h"  // JS::GetReduceMicrosecondTimePrecisionCallback
+#include "js/EnvironmentChain.h"       // JS::EnvironmentChain
 #include "js/ErrorInterceptor.h"
 #include "js/ErrorReport.h"           // JSErrorBase
 #include "js/experimental/JitInfo.h"  // JSJitInfo
@@ -5093,8 +5094,8 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
     CompileOptions options(cx);
     options.setFile("taint_reporting.js");
 
-    RootedObjectVector emptyScopeChain(cx);
-    report = CompileFunctionUtf8(cx, emptyScopeChain,
+    JS::EnvironmentChain emptyChain(cx, JS::SupportUnscopables::No);
+    report = CompileFunctionUtf8(cx, emptyChain,
                                  options, "ReportTaintSink", 3,
                                  argnames, funbody, strlen(funbody));
     MOZ_ASSERT(report);

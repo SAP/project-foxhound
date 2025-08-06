@@ -1300,7 +1300,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   // initialization with ClassFlags
   constexpr explicit nsTSubstring(ClassFlags aClassFlags)
       : base_string_type(char_traits::sEmptyBuffer, 0, DataFlags::TERMINATED,
-                         aClassFlags, EmptyTaint) {
+                         aClassFlags) {
     AssertValid();
   }
 
