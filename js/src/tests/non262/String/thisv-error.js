@@ -9,10 +9,9 @@ function testName(thisv) {
     // Aliases
     "trimLeft",
     "trimRight",
-    // Returns empty string
-    "constructor",
     // Foxhound
     "taint",
+    "untaint",
   ]
 
   var keys = Object.getOwnPropertyNames(String.prototype);
