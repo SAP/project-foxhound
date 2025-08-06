@@ -90,6 +90,9 @@ class JSONPrinter {
   void endList();
   void endInlineList();
 
+  // Force flushing the output
+  void flush() { out_.flush(); }
+
  protected:
   void beginInline();
   void endInline();
