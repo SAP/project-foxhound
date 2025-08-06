@@ -44,6 +44,10 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 /**
+ * @typedef {import("SearchEngineSelector.sys.mjs").RefinedConfig} RefinedConfig
+ */
+
+/**
  * A reference to the handler for the default override allowlist.
  *
  * @type {SearchDefaultOverrideAllowlistHandler}
@@ -51,35 +55,6 @@ XPCOMUtils.defineLazyServiceGetter(
 ChromeUtils.defineLazyGetter(lazy, "defaultOverrideAllowlist", () => {
   return new SearchDefaultOverrideAllowlistHandler();
 });
-
-// Exported to tests for not splitting ids when building webextension ids.
-export const NON_SPLIT_ENGINE_IDS = [
-  "allegro-pl",
-  "bok-NO",
-  "daum-kr",
-  "faclair-beag",
-  "gulesider-NO",
-  "mapy-cz",
-  "naver-kr",
-  "prisjakt-sv-SE",
-  "seznam-cz",
-  "tyda-sv-SE",
-  "wolnelektury-pl",
-  "yahoo-jp",
-  "yahoo-jp-auctions",
-  // below are test engines
-  "engine-pref",
-  "engine-rel-searchform-purpose",
-  "engine-chromeicon",
-  "engine-resourceicon",
-  "engine-resourceicon-gd",
-  "engine-reordered",
-  "engine-same-name",
-  "engine-same-name-gd",
-  "engine-purpose",
-  "engine-fr",
-  "fixup_search",
-];
 
 const TOPIC_LOCALES_CHANGE = "intl:app-locales-changed";
 const QUIT_APPLICATION_TOPIC = "quit-application";
@@ -432,6 +407,19 @@ export class SearchService {
     return this.#getEnginesByExtensionID(extensionID);
   }
 
+  async findContextualSearchEngineByHost(host) {
+    await this.init();
+    let settings = await this._settings.get();
+    let config = await this.#engineSelector.findContextualSearchEngineByHost(
+      host
+    );
+    if (config) {
+      let engine = new lazy.AppProvidedSearchEngine({ config, settings });
+      return engine;
+    }
+    return null;
+  }
+
   /**
    * This function calls #init to start initialization when it has not been
    * started yet. Otherwise, it returns the pending promise.
@@ -440,7 +428,6 @@ export class SearchService {
    *   Returns the pending Promise when #init has started but not yet finished.
    *   | Resolved | when initialization has successfully finished.
    *   | Rejected | when initialization has failed.
-   *
    */
   async init() {
     if (["started", "success", "failed"].includes(this.#initializationStatus)) {
@@ -537,10 +524,7 @@ export class SearchService {
         };
       }
       if (
-        !(await lazy.defaultOverrideAllowlist.canOverride(
-          extension,
-          engine._extensionID
-        ))
+        !(await lazy.defaultOverrideAllowlist.canOverride(extension, engine.id))
       ) {
         lazy.logConsole.debug(
           "Allowing default engine to be set to app-provided.",
@@ -567,10 +551,7 @@ export class SearchService {
 
     if (
       engine.getAttr("overriddenBy") == extension.id &&
-      (await lazy.defaultOverrideAllowlist.canOverride(
-        extension,
-        engine._extensionID
-      ))
+      (await lazy.defaultOverrideAllowlist.canOverride(extension, engine.id))
     ) {
       engine.overrideWithEngine({ extension });
       lazy.logConsole.debug(
@@ -624,6 +605,11 @@ export class SearchService {
     this.#addEngineToStore(newEngine);
   }
 
+  async addContextualSearchEngine(engine) {
+    await this.init();
+    this.#addEngineToStore(engine);
+  }
+
   /**
    * Called from the AddonManager when it either installs a new
    * extension containing a search engine definition or an upgrade
@@ -669,7 +655,6 @@ export class SearchService {
 
     await this.#createAndAddAddonEngine({
       extension,
-      locale: lazy.SearchUtils.DEFAULT_TAG,
     });
   }
 
@@ -1038,7 +1023,7 @@ export class SearchService {
   #loadPathIgnoreList = [];
 
   /**
-   * A map of engine display names to `SearchEngine`.
+   * A map of engine identifiers to `SearchEngine`.
    *
    * @type {Map<string, object>|null}
    */
@@ -1060,7 +1045,7 @@ export class SearchService {
   #dontSetUseSavedOrder = false;
 
   /**
-   * An object containing the {id, locale} of the WebExtension for the default
+   * An object containing the id of the AppProvidedSearchEngine for the default
    * engine, as suggested by the configuration.
    * For the legacy configuration, this is the user visible name.
    *
@@ -1072,7 +1057,7 @@ export class SearchService {
   _searchDefault = null;
 
   /**
-   * An object containing the {id, locale} of the WebExtension for the default
+   * An object containing the id of the AppProvidedSearchEngine for the default
    * engine for private browsing mode, as suggested by the configuration.
    * For the legacy configuration, this is the user visible name.
    *
@@ -1176,10 +1161,7 @@ export class SearchService {
    */
   #getEngineByWebExtensionDetails(details) {
     for (const engine of this._engines.values()) {
-      if (
-        engine._extensionID == details.id &&
-        engine._locale == details.locale
-      ) {
+      if (engine._extensionID == details.id) {
         return engine;
       }
     }
@@ -1344,12 +1326,11 @@ export class SearchService {
 
       initSection = "FetchEngines";
       this.#maybeThrowErrorInTest(initSection);
-      const { engines, privateDefault } =
-        await this._fetchEngineSelectorEngines();
+      const refinedConfig = await this._fetchEngineSelectorEngines();
 
       initSection = "LoadEngines";
       this.#maybeThrowErrorInTest(initSection);
-      await this.#loadEngines(settings, engines, privateDefault);
+      await this.#loadEngines(settings, refinedConfig);
     } catch (ex) {
       Glean.searchService.initializationStatus[`failed${initSection}`].add();
       Glean.searchService.startupTime.cancel(timerId);
@@ -1557,7 +1538,7 @@ export class SearchService {
    *   The engine that is default.
    */
   #appDefaultEngine(privateMode = false) {
-    let defaultEngine = this.#getEngineByWebExtensionDetails(
+    let defaultEngine = this._engines.get(
       privateMode && this.#searchPrivateDefault
         ? this.#searchPrivateDefault
         : this._searchDefault
@@ -1599,12 +1580,10 @@ export class SearchService {
    *
    * @param {object} settings
    *   An object representing the search engine settings.
-   * @param {Array} engines
-   *   An array containing the engines objects from remote settings.
-   * @param {object} privateDefault
-   *   An object representing the private default search engine.
+   * @param {RefinedConfig} refinedConfig
+   *   The refined search configuration for this user.
    */
-  async #loadEngines(settings, engines, privateDefault) {
+  async #loadEngines(settings, refinedConfig) {
     // Get user's current settings and search engine before we load engines from
     // config. These values will be compared after engines are loaded.
     let prevMetaData = { ...settings?.metaData };
@@ -1612,9 +1591,9 @@ export class SearchService {
     let prevAppDefaultEngineId = prevMetaData?.appDefaultEngineId;
 
     lazy.logConsole.debug("#loadEngines: start");
-    this.#setDefaultAndOrdersFromSelector(engines, privateDefault);
+    this.#setDefaultFromSelector(refinedConfig);
 
-    this.#loadEnginesFromConfig(engines, settings);
+    this.#loadEnginesFromConfig(refinedConfig.engines, settings);
 
     await this.#loadStartupEngines(settings);
 
@@ -1799,7 +1778,6 @@ export class SearchService {
       try {
         await this.#createAndAddAddonEngine({
           extension,
-          locale: lazy.SearchUtils.DEFAULT_TAG,
           settings,
         });
       } catch (ex) {
@@ -1875,7 +1853,7 @@ export class SearchService {
         if (
           await lazy.defaultOverrideAllowlist.canEngineOverride(
             restoringEngine,
-            engine._extensionID
+            engine.id
           )
         ) {
           engine.overrideWithEngine({ engine: restoringEngine });
@@ -1970,10 +1948,9 @@ export class SearchService {
     // This isn't a user action, so we shouldn't be switching it.
     this.#dontSetUseSavedOrder = true;
 
-    let { engines: appDefaultConfigEngines, privateDefault } =
-      await this._fetchEngineSelectorEngines();
+    let refinedConfig = await this._fetchEngineSelectorEngines();
 
-    let configEngines = [...appDefaultConfigEngines];
+    let configEngines = [...refinedConfig.engines];
     let oldEngineList = [...this._engines.values()];
 
     for (let engine of oldEngineList) {
@@ -1986,55 +1963,16 @@ export class SearchService {
         continue;
       }
 
-      let index = configEngines.findIndex(
-        e =>
-          e.webExtension.id == engine._extensionID &&
-          e.webExtension.locale == engine._locale
-      );
+      let index = configEngines.findIndex(e => e.identifier == engine.id);
 
       if (index == -1) {
-        // No engines directly match on id and locale, however, check to see
-        // if we have a new entry that matches on id and name - we might just
-        // be swapping the in-use locale.
-        let replacementEngines = configEngines.filter(
-          e => e.webExtension.id == engine._extensionID
-        );
-        // If there's no possible, or more than one, we treat these as distinct
-        // engines so we'll remove the existing engine and add new later if
-        // necessary.
-        if (replacementEngines.length != 1) {
-          engine.pendingRemoval = true;
-          continue;
-        }
-
-        // Update the index so we can handle the updating below.
-        index = configEngines.findIndex(
-          e =>
-            e.webExtension.id == replacementEngines[0].webExtension.id &&
-            e.webExtension.locale == replacementEngines[0].webExtension.locale
-        );
-        let locale =
-          replacementEngines[0].webExtension.locale ||
-          lazy.SearchUtils.DEFAULT_TAG;
-
-        // If the name is different, then we must treat the engine as different,
-        // and go through the remove and add cycle, rather than modifying the
-        // existing one.
-        let hasUpdated = await engine.updateIfNoNameChange({
-          configuration: configEngines[index],
-          locale,
-        });
-        if (!hasUpdated) {
-          // No matching name, so just remove it.
-          engine.pendingRemoval = true;
-          continue;
-        }
+        engine.pendingRemoval = true;
+        continue;
       } else {
         // This is an existing engine that we should update (we don't know if
         // the configuration for this engine has changed or not).
         await engine.update({
           configuration: configEngines[index],
-          locale: engine._locale,
         });
       }
 
@@ -2089,10 +2027,7 @@ export class SearchService {
       this._settings.setMetaDataAttribute("privateDefaultEngineId", "");
     }
 
-    this.#setDefaultAndOrdersFromSelector(
-      appDefaultConfigEngines,
-      privateDefault
-    );
+    this.#setDefaultFromSelector(refinedConfig);
 
     let skipDefaultChangedNotification = false;
 
@@ -2101,14 +2036,14 @@ export class SearchService {
         if (
           await lazy.defaultOverrideAllowlist.canEngineOverride(
             duplicateEngine,
-            newAppEngine?._extensionID
+            newAppEngine?.id
           )
         ) {
           lazy.logConsole.log(
             "Applying override from",
             duplicateEngine.id,
             "to application engine",
-            newAppEngine._extensionID,
+            newAppEngine.id,
             "and setting app engine default"
           );
           // This engine was default, and is allowed to override our application
@@ -2257,14 +2192,12 @@ export class SearchService {
       // overridden by another engine. We want to put the previous engine back,
       // so that the user retains that engine as default.
       engine = new lazy.AddonSearchEngine({
-        isAppProvided: false,
         details: {
           extensionID: overriddenBy,
-          locale: lazy.SearchUtils.DEFAULT_TAG,
         },
       });
       try {
-        await engine.init({ locale: lazy.SearchUtils.DEFAULT_TAG });
+        await engine.init();
       } catch (ex) {
         // If there is an error, the add-on may no longer be available, or
         // there was some other issue with the settings.
@@ -2437,7 +2370,6 @@ export class SearchService {
           }
 
           engine = new lazy.AddonSearchEngine({
-            isAppProvided: false,
             json: engineJSON,
           });
         } else {
@@ -2499,7 +2431,7 @@ export class SearchService {
       existingEngine?.isAppProvided &&
       (await lazy.defaultOverrideAllowlist.canEngineOverride(
         engine,
-        existingEngine?._extensionID
+        existingEngine?.id
       ))
     ) {
       existingEngine.overrideWithEngine({
@@ -2535,55 +2467,14 @@ export class SearchService {
       this._settings.setMetaDataAttribute(key, value);
     }
 
-    let { engines, privateDefault } =
-      await this.#engineSelector.fetchEngineConfiguration(
-        searchEngineSelectorProperties
-      );
-
-    for (let e of engines) {
-      if (!e.webExtension) {
-        e.webExtension = {};
-      }
-      e.webExtension.locale =
-        e.webExtension?.locale ?? lazy.SearchUtils.DEFAULT_TAG;
-
-      // TODO Bug 1875912 - Remove the webextension.id and webextension.locale when
-      // we're ready to remove old search-config and use search-config-v2 for all
-      // clients. The id in appProvidedSearchEngine should be changed to
-      // engine.identifier.
-      let identifierComponents = NON_SPLIT_ENGINE_IDS.includes(e.identifier)
-        ? [e.identifier]
-        : e.identifier.split("-");
-
-      if (e.identifier == "amazon-se") {
-        identifierComponents[1] = "sweden";
-      }
-
-      if (e.identifier == "amazon-es") {
-        identifierComponents[1] = "spain";
-      }
-
-      let locale = identifierComponents.slice(1).join("-") || "default";
-
-      e.webExtension.id = identifierComponents[0] + "@search.mozilla.org";
-      e.webExtension.locale = locale;
-    }
-
-    return { engines, privateDefault };
+    return this.#engineSelector.fetchEngineConfiguration(
+      searchEngineSelectorProperties
+    );
   }
 
-  #setDefaultAndOrdersFromSelector(engines, privateDefault) {
-    const defaultEngine = engines[0];
-    this._searchDefault = {
-      id: defaultEngine.webExtension.id,
-      locale: defaultEngine.webExtension.locale,
-    };
-    if (privateDefault) {
-      this.#searchPrivateDefault = {
-        id: privateDefault.webExtension.id,
-        locale: privateDefault.webExtension.locale,
-      };
-    }
+  #setDefaultFromSelector(refinedConfig) {
+    this._searchDefault = refinedConfig.appDefaultEngineId;
+    this.#searchPrivateDefault = refinedConfig.appPrivateDefaultEngineId;
   }
 
   #saveSortedEngineList() {
@@ -2633,13 +2524,13 @@ export class SearchService {
       }
 
       // Filter out any nulls for engines that may have been removed
-      var filteredEngines = this._cachedSortedEngines.filter(function (a) {
+      var refinedConfig = this._cachedSortedEngines.filter(function (a) {
         return !!a;
       });
-      if (this._cachedSortedEngines.length != filteredEngines.length) {
+      if (this._cachedSortedEngines.length != refinedConfig.length) {
         needToSaveEngineList = true;
       }
-      this._cachedSortedEngines = filteredEngines;
+      this._cachedSortedEngines = refinedConfig;
 
       if (needToSaveEngineList) {
         this.#saveSortedEngineList();
@@ -2771,20 +2662,12 @@ export class SearchService {
       }
     }
 
-    Services.telemetry.scalarSet(
-      "browser.searchinit.secure_opensearch_engine_count",
-      totalSecure
-    );
-    Services.telemetry.scalarSet(
-      "browser.searchinit.insecure_opensearch_engine_count",
-      totalInsecure
-    );
-    Services.telemetry.scalarSet(
-      "browser.searchinit.secure_opensearch_update_count",
+    Glean.browserSearchinit.secureOpensearchEngineCount.set(totalSecure);
+    Glean.browserSearchinit.insecureOpensearchEngineCount.set(totalInsecure);
+    Glean.browserSearchinit.secureOpensearchUpdateCount.set(
       totalWithSecureUpdates
     );
-    Services.telemetry.scalarSet(
-      "browser.searchinit.insecure_opensearch_update_count",
+    Glean.browserSearchinit.insecureOpensearchUpdateCount.set(
       totalWithInsecureUpdates
     );
   }
@@ -2798,24 +2681,16 @@ export class SearchService {
    *   Options for the engine.
    * @param {Extension} options.extension
    *   An Extension object containing data about the extension.
-   * @param {string} [options.locale]
-   *   The locale to use within the WebExtension. Defaults to the WebExtension's
-   *   default locale.
    * @param {object} [options.settings]
    *   The saved settings for the user.
    */
-  async #createAndAddAddonEngine({
-    extension,
-    locale = lazy.SearchUtils.DEFAULT_TAG,
-    settings,
-  }) {
+  async #createAndAddAddonEngine({ extension, settings }) {
     // If we're in the startup cycle, and we've already loaded this engine,
     // then we use the existing one rather than trying to start from scratch.
     // This also avoids console errors.
     if (extension.startupReason == "APP_STARTUP") {
       let engine = this.#getEngineByWebExtensionDetails({
         id: extension.id,
-        locale,
       });
       if (engine) {
         lazy.logConsole.debug(
@@ -2828,8 +2703,7 @@ export class SearchService {
 
     lazy.logConsole.debug(
       "#createAndAddAddonEngine: installing:",
-      extension.id,
-      locale
+      extension.id
     );
 
     let shouldSetAsDefault = false;
@@ -2848,16 +2722,13 @@ export class SearchService {
     }
 
     let newEngine = new lazy.AddonSearchEngine({
-      isAppProvided: false,
       details: {
         extensionID: extension.id,
-        locale,
       },
     });
     await newEngine.init({
       settings,
       extension,
-      locale,
     });
 
     // If this extension is starting up, check to see if it previously overrode
@@ -2875,10 +2746,6 @@ export class SearchService {
         e => !!e._metaData.overriddenBy
       );
       if (previouslyOverridden) {
-        let previousWebExtensionId = previouslyOverridden.id.endsWith("default")
-          ? previouslyOverridden.id.slice(0, -7)
-          : previouslyOverridden.id;
-
         // Only allow override if we were previously overriding and the
         // engine is no longer installed, and the new engine still matches the
         // override allow list.
@@ -2887,7 +2754,7 @@ export class SearchService {
           !this._engines.get(previouslyOverridden.id) &&
           (await lazy.defaultOverrideAllowlist.canEngineOverride(
             newEngine,
-            previousWebExtensionId
+            previouslyOverridden.id
           ))
         ) {
           shouldSetAsDefault = true;
@@ -2914,7 +2781,6 @@ export class SearchService {
    *   An Extension object containing data about the extension.
    */
   async #upgradeExtensionEngine(extension) {
-    let { engines } = await this._fetchEngineSelectorEngines();
     let extensionEngines = await this.getEnginesByExtensionID(extension.id);
 
     for (let engine of extensionEngines) {
@@ -2922,17 +2788,9 @@ export class SearchService {
       let isDefaultPrivate = engine == this.defaultPrivateEngine;
 
       let originalName = engine.name;
-      let locale = engine._locale || lazy.SearchUtils.DEFAULT_TAG;
-      let configuration =
-        engines.find(
-          e =>
-            e.webExtension.id == extension.id && e.webExtension.locale == locale
-        ) ?? {};
 
       await engine.update({
-        configuration,
         extension,
-        locale,
       });
 
       if (engine.name != originalName) {
@@ -3305,7 +3163,6 @@ export class SearchService {
     changeSource = Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   ) {
     changeSource = REASON_CHANGE_MAP.get(changeSource) ?? "unknown";
-    Services.telemetry.setEventRecordingEnabled("search", true);
     let telemetryId;
     let engineInfo;
     // If we are toggling the separate private browsing settings, we might not
@@ -3322,23 +3179,6 @@ export class SearchService {
     }
 
     let submissionURL = engineInfo.submissionURL ?? "";
-    Services.telemetry.recordEvent(
-      "search",
-      "engine",
-      isPrivate ? "change_private" : "change_default",
-      changeSource,
-      {
-        // In docshell tests, the previous engine does not exist, so we allow
-        // for the previousEngine to be undefined.
-        prev_id: previousEngine?.telemetryId ?? "",
-        new_id: telemetryId,
-        new_name: engineInfo.name,
-        new_load_path: engineInfo.loadPath,
-        // Telemetry has a limit of 80 characters.
-        new_sub_url: submissionURL.slice(0, 80),
-      }
-    );
-
     let extraArgs = {
       // In docshell tests, the previous engine does not exist, so we allow
       // for the previousEngine to be undefined.
@@ -3408,7 +3248,6 @@ export class SearchService {
    *
    * @param {string} errorType
    *   The error that can occur during search service init.
-   *
    */
   #maybeThrowErrorInTest(errorType) {
     if (
@@ -3741,7 +3580,6 @@ export class SearchService {
    *   The name of the previous default engine that will be replaced.
    * @param {string} newCurrentEngineName
    *   The name of the engine that will be the new default engine.
-   *
    */
   _showRemovalOfSearchEngineNotificationBox(
     prevCurrentEngineName,
@@ -3811,13 +3649,13 @@ class SearchDefaultOverrideAllowlistHandler {
    * @param {object} extension
    *   The extension object (from add-on manager) that will override the
    *   app provided search engine.
-   * @param {string} appProvidedExtensionId
+   * @param {string} appProvidedEngineId
    *   The id of the search engine that will be overriden.
    * @returns {boolean}
    *   Returns true if the search engine extension may override the app provided
    *   instance.
    */
-  async canOverride(extension, appProvidedExtensionId) {
+  async canOverride(extension, appProvidedEngineId) {
     const overrideTable = await this._getAllowlist();
 
     let entry = overrideTable.find(e => e.thirdPartyId == extension.id);
@@ -3825,7 +3663,7 @@ class SearchDefaultOverrideAllowlistHandler {
       return false;
     }
 
-    if (appProvidedExtensionId != entry.overridesId) {
+    if (appProvidedEngineId != entry.overridesAppIdv2) {
       return false;
     }
 
@@ -3846,13 +3684,13 @@ class SearchDefaultOverrideAllowlistHandler {
    *
    * @param {SearchEngine} engine
    *   The existing search engine.
-   * @param {string} appProvidedEngineExtensionId
+   * @param {string} appProvidedEngineId
    *   The id of the search engine that will be overriden.
    * @returns {boolean}
    *   Returns true if the existing search engine is allowed to override the
    *   app provided instance.
    */
-  async canEngineOverride(engine, appProvidedEngineExtensionId) {
+  async canEngineOverride(engine, appProvidedEngineId) {
     const overrideEntries = await this._getAllowlist();
 
     let entry;
@@ -3870,7 +3708,7 @@ class SearchDefaultOverrideAllowlistHandler {
       return false;
     }
 
-    if (appProvidedEngineExtensionId != entry.overridesId) {
+    if (appProvidedEngineId != entry.overridesAppIdv2) {
       return false;
     }
 

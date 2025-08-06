@@ -10,8 +10,11 @@
 
 #include "api/test/audioproc_float.h"
 
+#include <memory>
 #include <utility>
 
+#include "api/audio/audio_processing.h"
+#include "api/scoped_refptr.h"
 #include "modules/audio_processing/test/audioproc_float_impl.h"
 
 namespace webrtc {
@@ -29,15 +32,6 @@ int AudioprocFloat(std::unique_ptr<AudioProcessingBuilder> ap_builder,
   return AudioprocFloatImpl(std::move(ap_builder), argc, argv,
                             /*input_aecdump=*/"",
                             /*processed_capture_samples=*/nullptr);
-}
-
-int AudioprocFloat(std::unique_ptr<AudioProcessingBuilder> ap_builder,
-                   int argc,
-                   char* argv[],
-                   absl::string_view input_aecdump,
-                   std::vector<float>* processed_capture_samples) {
-  return AudioprocFloatImpl(std::move(ap_builder), argc, argv, input_aecdump,
-                            processed_capture_samples);
 }
 
 }  // namespace test

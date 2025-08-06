@@ -27,12 +27,13 @@ from tryselect.selectors.perfselector.classification import (
     check_for_live_sites,
     check_for_profile,
 )
+from tryselect.selectors.perfselector.perfpushinfo import PerfPushInfo
 
 here = os.path.abspath(os.path.dirname(__file__))
 FTG_SAMPLE_PATH = pathlib.Path(here, "full-task-graph-perf-test.json")
 
 TASKS = [
-    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-motionmark-animometer",
+    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-motionmark-animometer-1-3",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-wasm-firefox-wasm-godot-optimizing",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-webaudio",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-speedometer",
@@ -47,9 +48,10 @@ TASKS = [
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-assorted-dom",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-stylebench",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-wasm-firefox-wasm-misc-baseline",
-    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-motionmark-htmlsuite",
+    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-motionmark-htmlsuite-1-3",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-unity-webgl",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-wasm-firefox-wasm-godot",
+    "test-linux1804-64-shippable-qr/opt-browsertime-amazon",
 ]
 
 # The TEST_VARIANTS, and TEST_CATEGORIES are used to force
@@ -186,6 +188,12 @@ def category_reset():
         yield
     finally:
         PerfParser.categories = original_categories
+
+
+def setup_perfparser():
+    PerfParser.categories = TEST_CATEGORIES
+    PerfParser.variants = TEST_VARIANTS
+    PerfParser.push_info = PerfPushInfo()
 
 
 @pytest.mark.parametrize(
@@ -428,10 +436,10 @@ def category_reset():
                         "!safari-tp",
                     ],
                 },
-                "Responsiveness android-a51 geckoview": {
+                "Responsiveness android-a55 geckoview": {
                     "raptor": [
                         "'browsertime 'responsive",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'geckoview",
                         "!nofis",
                         "!live",
@@ -440,7 +448,7 @@ def category_reset():
                 },
             },
             [
-                "Responsiveness android-a51 chrome-m",
+                "Responsiveness android-a55 chrome-m",
                 "Firefox Pageload android",
             ],
         ),
@@ -460,10 +468,10 @@ def category_reset():
                         "!safari-tp",
                     ],
                 },
-                "Responsiveness android-a51 chrome-m": {
+                "Responsiveness android-a55 chrome-m": {
                     "raptor": [
                         "'browsertime 'responsive",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'chrome-m",
                         "!nofis",
                         "!live",
@@ -507,10 +515,10 @@ def category_reset():
             {"android": True, "fenix": True},
             88,
             {
-                "Pageload android-a51": {
+                "Pageload android-a55": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "!nofis",
                         "!live",
                         "!profil",
@@ -520,10 +528,10 @@ def category_reset():
                         "!safari-tp",
                     ]
                 },
-                "Pageload android-a51 fenix": {
+                "Pageload android-a55 fenix": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "!nofis",
                         "!live",
@@ -546,7 +554,7 @@ def category_reset():
                 "Benchmarks windows firefox": {
                     "raptor": [
                         "'browsertime 'benchmark",
-                        "!-32 'windows 'shippable",
+                        "!-32 !10-64 'windows 'shippable",
                         "!chrom !geckoview !fenix !safari !m-car !safari-tp",
                         "!bytecode",
                         "!live",
@@ -586,7 +594,7 @@ def category_reset():
                 "Pageload android fenix": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "!nofis",
                         "!live",
@@ -608,7 +616,7 @@ def category_reset():
                 "Benchmarks android geckoview": {
                     "raptor": [
                         "'browsertime 'benchmark",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'geckoview",
                         "!nofis",
                         "!live",
@@ -618,7 +626,7 @@ def category_reset():
                 "Pageload android fenix": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "!nofis",
                         "!live",
@@ -642,19 +650,19 @@ def category_reset():
             },
             32,
             {
-                "Pageload android-a51 fenix": {
+                "Pageload android-a55 fenix": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "!live",
                         "!profil",
                     ],
                 },
-                "Pageload android-a51 fenix fission": {
+                "Pageload android-a55 fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "'nofis",
                         "!live",
@@ -664,7 +672,7 @@ def category_reset():
                 "Pageload (essential) android fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6 'essential",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "'nofis",
                         "!live",
@@ -688,28 +696,28 @@ def category_reset():
             },
             40,
             {
-                "Pageload android-a51 fenix": {
+                "Pageload android-a55 fenix": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "!profil",
                     ],
                 },
-                "Pageload android-a51 fenix fission": {
+                "Pageload android-a55 fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "'nofis",
                         "!live",
                         "!profil",
                     ],
                 },
-                "Pageload android-a51 fenix live-sites": {
+                "Pageload android-a55 fenix live-sites": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "'live",
                         "!nofis",
@@ -719,7 +727,7 @@ def category_reset():
                 "Pageload (essential) android fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6 'essential",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "'nofis",
                         "!live",
@@ -729,7 +737,7 @@ def category_reset():
                 "Pageload android fenix fission+live-sites": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "'android 'a51 'shippable 'aarch64",
+                        "'android 'a55 'shippable 'aarch64",
                         "'fenix",
                         "'nofis",
                         "'live",
@@ -756,7 +764,7 @@ def category_reset():
                 "Responsiveness windows firefox": {
                     "raptor": [
                         "'browsertime 'responsive",
-                        "!-32 'windows 'shippable",
+                        "!-32 !10-64 'windows 'shippable",
                         "!chrom !geckoview !fenix !safari !m-car !safari-tp",
                         "!bytecode",
                         "!live",
@@ -778,7 +786,7 @@ def category_reset():
                 "Responsiveness windows firefox": {
                     "raptor": [
                         "'browsertime 'responsive",
-                        "!-32 'windows 'shippable",
+                        "!-32 !10-64 'windows 'shippable",
                         "!chrom !geckoview !fenix !safari !m-car !safari-tp",
                         "!bytecode",
                         "!profil",
@@ -787,7 +795,7 @@ def category_reset():
                 "Pageload windows live-sites": {
                     "raptor": [
                         "'browsertime 'tp6",
-                        "!-32 'windows 'shippable",
+                        "!-32 !10-64 'windows 'shippable",
                         "'live",
                         "!bytecode",
                         "!profil",
@@ -800,7 +808,7 @@ def category_reset():
                 "Graphics, & Media Playback windows": {
                     "raptor": [
                         "'browsertime 'youtube-playback",
-                        "!-32 'windows 'shippable",
+                        "!-32 !10-64 'windows 'shippable",
                         "!bytecode",
                         "!profil",
                         "!chrom",
@@ -810,7 +818,7 @@ def category_reset():
                     ],
                     "talos": [
                         "'talos 'svgr | 'bcv | 'webgl",
-                        "!-32 'windows 'shippable",
+                        "!-32 !10-64 'windows 'shippable",
                         "!profil",
                         "!swr",
                     ],
@@ -888,9 +896,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             2,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=13\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=13\n"
             ),
         ),
         (
@@ -899,9 +910,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             2,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=13\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=13\n"
             ),
         ),
         (
@@ -910,20 +924,22 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             2,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=cached_base_revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=cached_base_revision&newRev=revision&"
+                "baseRepo=try&newRepo=try&framework=13\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=cached_base_revision&newProject=try&newRevision=revision&framework=13\n"
             ),
         ),
         (
             {"dry_run": True},
-            [10, 1, 1, 10, 2, 0],
+            [10, 1, 1, 4, 2, 0],
             2,
             (
-                "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=&newProject=try&newRevision=revision\n"
+                "If you need any help, you can find us in the #perf-help Matrix channel:\n"
+                "https://matrix.to/#/#perf-help:mozilla.org\n"
             ),
         ),
         (
@@ -932,9 +948,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             0,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=1\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=1\n"
             ),
         ),
         (
@@ -943,9 +962,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             0,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=1\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=1\n"
             ),
         ),
         (
@@ -963,20 +985,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             2,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
-            ),
-        ),
-        (
-            {"perfcompare_beta": True},
-            [10, 2, 2, 10, 2, 1],
-            2,
-            (
-                "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://beta--mozilla-perfcompare.netlify.app/compare-results?"
-                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=13\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=13\n"
             ),
         ),
         (
@@ -985,9 +999,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             2,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=13\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=13\n"
             ),
         ),
         (
@@ -996,9 +1013,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             1,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=1\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=1\n"
             ),
         ),
         (
@@ -1007,9 +1027,12 @@ def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
             0,
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
-                "here once the tests are complete (ensure you select the right framework): "
-                "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
-                "Revision=revision&newProject=try&newRevision=revision\n"
+                "here once the tests are complete (ensure you select the right framework):\n"
+                " https://perf.compare/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try&framework=1\n\n"
+                " The old comparison tool is still available at this URL:\n"
+                " https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
+                "Revision=revision&newProject=try&newRevision=revision&framework=1\n"
             ),
         ),
     ],
@@ -1136,6 +1159,8 @@ def test_change_detection_task_injection_failure(
     expected_log_message,
     expected_failure,
 ):
+    setup_perfparser()
+
     with mock.patch("tryselect.selectors.perf.push_to_try") as ptt, mock.patch(
         "tryselect.selectors.perf.run_fzf"
     ) as fzf, mock.patch(
@@ -1385,7 +1410,9 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
         "tryselect.selectors.perf.pathlib.Path.open"
     ):
         is_file.return_value = exists_cache_file
-        PerfParser.save_revision_treeherder(TASKS, args[0], args[1])
+
+        PerfParser.push_info.base_revision = "base_revision_treeherder"
+        PerfParser.save_revision_treeherder(TASKS, args[0])
 
         assert load.call_count == call_counts[0]
         assert dump.call_count == call_counts[1]
@@ -1444,9 +1471,7 @@ def test_max_perf_tasks(
     expected_log_message,
     expected_failure,
 ):
-    # Set the categories, and variants to expand
-    PerfParser.categories = TEST_CATEGORIES
-    PerfParser.variants = TEST_VARIANTS
+    setup_perfparser()
 
     with mock.patch("tryselect.selectors.perf.push_to_try") as ptt, mock.patch(
         "tryselect.selectors.perf.print",
@@ -1457,7 +1482,6 @@ def test_max_perf_tasks(
     ), mock.patch(
         "tryselect.selectors.perf.PerfParser.perf_push_to_try",
         new_callable=mock.MagicMock,
-        return_value=("revision1", "revision2"),
     ) as perf_push_to_try_mock, mock.patch(
         "tryselect.selectors.perf.PerfParser.get_perf_tasks"
     ) as get_perf_tasks_mock, mock.patch(
@@ -1471,6 +1495,7 @@ def test_max_perf_tasks(
         get_tasks_mock.return_value = tasks
         get_perf_tasks_mock.return_value = tasks, [], []
 
+        PerfParser.push_info.finished_run = not expected_failure
         run(**options)
 
         assert perf_push_to_try_mock.call_count == 0 if expected_failure else 1
@@ -1484,7 +1509,7 @@ def test_max_perf_tasks(
     "try_config, selected_tasks, expected_try_config",
     [
         (
-            {"use-artifact-builds": True},
+            {"use-artifact-builds": True, "disable-pgo": True},
             ["some-android-task"],
             {"use-artifact-builds": False},
         ),
@@ -1499,7 +1524,7 @@ def test_max_perf_tasks(
             {"use-artifact-builds": False},
         ),
         (
-            {"use-artifact-builds": True},
+            {"use-artifact-builds": True, "disable-pgo": True},
             ["some-desktop-task", "some-android-task"],
             {"use-artifact-builds": False},
         ),
@@ -1607,6 +1632,12 @@ def test_test_selection(tests, tasks_found, categories_produced):
 
             assert len(all_tasks) == tasks_found
             assert len(PerfParser.categories) == categories_produced
+
+
+def test_unknown_framework():
+    setup_perfparser()
+    PerfParser.get_majority_framework(["unknown"])
+    assert PerfParser.push_info.framework == 1
 
 
 if __name__ == "__main__":

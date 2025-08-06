@@ -20,6 +20,7 @@
 #include "UnitTransforms.h"
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/layers/APZPublicUtils.h"  // for DispatchToContent
 #include "mozilla/DefineEnum.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/FloatingPoint.h"
@@ -111,8 +112,6 @@ inline AsyncTransformMatrix CompleteAsyncTransform(
   return ViewAs<AsyncTransformMatrix>(
       aMatrix, PixelCastJustification::MultipleAsyncTransforms);
 }
-
-enum class DispatchToContent : bool { No, Yes };
 
 struct TargetConfirmationFlags final {
   explicit TargetConfirmationFlags(bool aTargetConfirmed)
@@ -217,14 +216,6 @@ bool IsStuckAtBottom(gfxFloat aTranslation,
 // stuck with a top margin.
 bool IsStuckAtTop(gfxFloat aTranslation, const LayerRectAbsolute& aInnerRange,
                   const LayerRectAbsolute& aOuterRange);
-
-/**
- * Compute the translation that should be applied to a layer that's fixed
- * at |eFixedSides|, to respect the fixed layer margins |aFixedMargins|.
- */
-ScreenPoint ComputeFixedMarginsOffset(
-    const ScreenMargin& aCompositorFixedLayerMargins, SideBits aFixedSides,
-    const ScreenMargin& aGeckoFixedLayerMargins);
 
 /**
  * Takes the visible rect from the compositor metrics, adds a pref-based

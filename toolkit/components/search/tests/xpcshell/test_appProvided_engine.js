@@ -11,7 +11,6 @@
 let CONFIG = [
   {
     identifier: "testEngine",
-    recordType: "engine",
     base: {
       aliases: ["testEngine1", "testEngine2"],
       charset: "EUC-JP",
@@ -26,16 +25,6 @@ let CONFIG = [
             { name: "partnerCode", value: "{partnerCode}" },
             { name: "starbase", value: "Regula I" },
             { name: "experiment", value: "Genesis" },
-            {
-              name: "accessPoint",
-              searchAccessPoint: {
-                addressbar: "addressbar",
-                contextmenu: "contextmenu",
-                homepage: "homepage",
-                newtab: "newtab",
-                searchbar: "searchbar",
-              },
-            },
           ],
           searchTermParamName: "search",
         },
@@ -50,11 +39,9 @@ let CONFIG = [
         },
       },
     },
-    variants: [{ environment: { allRegionsAndLocales: true } }],
   },
   {
     identifier: "testOtherValuesEngine",
-    recordType: "engine",
     base: {
       classification: "unknown",
       name: "testOtherValuesEngine name",
@@ -63,9 +50,11 @@ let CONFIG = [
           base: "https://example.com/1",
           searchTermParamName: "search",
         },
+        trending: {
+          base: "https://example.com/3",
+        },
       },
     },
-    variants: [{ environment: { allRegionsAndLocales: true } }],
   },
   {
     identifier: "override",
@@ -94,15 +83,6 @@ let CONFIG = [
       },
     ],
   },
-  {
-    recordType: "defaultEngines",
-    globalDefault: "engine_no_initial_icon",
-    specificDefaults: [],
-  },
-  {
-    recordType: "engineOrders",
-    orders: [],
-  },
 ];
 
 const TEST_CONFIG_OVERRIDE = [
@@ -119,14 +99,12 @@ const TEST_CONFIG_OVERRIDE = [
 ];
 
 add_setup(async function () {
-  await SearchTestUtils.useTestEngines("simple-engines", null, CONFIG);
+  SearchTestUtils.setRemoteSettingsConfig(CONFIG);
   await Services.search.init();
 });
 
 add_task(async function test_engine_with_all_params_set() {
-  let engine = Services.search.getEngineById(
-    "testEngine@search.mozilla.orgdefault"
-  );
+  let engine = Services.search.getEngineById("testEngine");
   Assert.ok(engine, "Should have found the engine");
 
   Assert.equal(
@@ -152,7 +130,7 @@ add_task(async function test_engine_with_all_params_set() {
   let submission = engine.getSubmission("test");
   Assert.equal(
     submission.uri.spec,
-    "https://example.com/1?partnerCode=pc&starbase=Regula%20I&experiment=Genesis&accessPoint=searchbar&search=test",
+    "https://example.com/1?partnerCode=pc&starbase=Regula%20I&experiment=Genesis&search=test",
     "Should have the correct search URL"
   );
   Assert.ok(!submission.postData, "Should not have postData for a GET url");
@@ -173,20 +151,22 @@ add_task(async function test_engine_with_all_params_set() {
   );
 
   let trendingSubmission = engine.getSubmission(
-    "test",
+    "",
     SearchUtils.URL_TYPE.TRENDING_JSON
   );
   Assert.equal(
     trendingSubmission.uri.spec,
-    "https://example.com/3?trending=test"
+    "https://example.com/3?trending=",
+    "Should have the correct trending URL with search term parameter."
   );
-  Assert.ok(!submission.postData, "Should not have postData for a GET url");
+  Assert.ok(
+    !trendingSubmission.postData,
+    "Should not have postData for a GET url"
+  );
 });
 
 add_task(async function test_engine_with_some_params_set() {
-  let engine = Services.search.getEngineById(
-    "testOtherValuesEngine@search.mozilla.orgdefault"
-  );
+  let engine = Services.search.getEngineById("testOtherValuesEngine");
   Assert.ok(engine, "Should have found the engine");
 
   Assert.equal(
@@ -214,18 +194,20 @@ add_task(async function test_engine_with_some_params_set() {
     null,
     "Should not have a suggestions URL"
   );
+  let trendingSubmission = engine.getSubmission(
+    "",
+    SearchUtils.URL_TYPE.TRENDING_JSON
+  );
   Assert.equal(
-    engine.getSubmission("test", SearchUtils.URL_TYPE.TRENDING_JSON),
-    null,
-    "Should not have a trending URL"
+    trendingSubmission.uri.spec,
+    "https://example.com/3",
+    "Should have the correct trending URL without search term parameter."
   );
 });
 
 add_task(async function test_engine_remote_override() {
   // First check the existing engine doesn't have the overrides.
-  let engine = Services.search.getEngineById(
-    "override@search.mozilla.orgdefault"
-  );
+  let engine = Services.search.getEngineById("override");
   Assert.ok(engine, "Should have found the override engine");
 
   Assert.equal(engine.name, "override name", "Should have the expected name");
@@ -242,13 +224,12 @@ add_task(async function test_engine_remote_override() {
   Assert.equal(engine.clickUrl, null, "Should not have a click URL");
 
   // Now apply and test the overrides.
-  const overrides = await RemoteSettings(SearchUtils.SETTINGS_OVERRIDES_KEY);
-  sinon.stub(overrides, "get").returns(TEST_CONFIG_OVERRIDE);
+  await SearchTestUtils.updateRemoteSettingsConfig(
+    CONFIG,
+    TEST_CONFIG_OVERRIDE
+  );
 
-  await Services.search.wrappedJSObject.reset();
-  await Services.search.init();
-
-  engine = Services.search.getEngineById("override@search.mozilla.orgdefault");
+  engine = Services.search.getEngineById("override");
   Assert.ok(engine, "Should have found the override engine");
 
   Assert.equal(engine.name, "override name", "Should have the expected name");

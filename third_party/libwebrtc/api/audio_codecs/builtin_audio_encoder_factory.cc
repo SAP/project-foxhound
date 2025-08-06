@@ -11,12 +11,19 @@
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "api/audio_codecs/L16/audio_encoder_L16.h"
+#include "api/audio_codecs/audio_codec_pair_id.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/audio_encoder_factory_template.h"
+#include "api/audio_codecs/audio_format.h"
 #include "api/audio_codecs/g711/audio_encoder_g711.h"
 #include "api/audio_codecs/g722/audio_encoder_g722.h"
+#include "api/field_trials_view.h"
+#include "api/scoped_refptr.h"
 #if WEBRTC_USE_BUILTIN_ILBC
 #include "api/audio_codecs/ilbc/audio_encoder_ilbc.h"  // nogncheck
 #endif
@@ -33,8 +40,7 @@ namespace {
 template <typename T>
 struct NotAdvertised {
   using Config = typename T::Config;
-  static absl::optional<Config> SdpToConfig(
-      const SdpAudioFormat& audio_format) {
+  static std::optional<Config> SdpToConfig(const SdpAudioFormat& audio_format) {
     return T::SdpToConfig(audio_format);
   }
   static void AppendSupportedEncoders(std::vector<AudioCodecSpec>* specs) {
@@ -46,7 +52,7 @@ struct NotAdvertised {
   static std::unique_ptr<AudioEncoder> MakeAudioEncoder(
       const Config& config,
       int payload_type,
-      absl::optional<AudioCodecPairId> codec_pair_id = absl::nullopt,
+      std::optional<AudioCodecPairId> codec_pair_id = std::nullopt,
       const FieldTrialsView* field_trials = nullptr) {
     return T::MakeAudioEncoder(config, payload_type, codec_pair_id,
                                field_trials);

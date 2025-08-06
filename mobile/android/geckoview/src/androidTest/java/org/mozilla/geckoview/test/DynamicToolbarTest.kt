@@ -7,7 +7,6 @@ package org.mozilla.geckoview.test
 import android.graphics.* // ktlint-disable no-wildcard-imports
 import android.graphics.Bitmap
 import android.os.SystemClock
-import android.util.Base64
 import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
@@ -25,7 +24,7 @@ import org.mozilla.geckoview.PanZoomController
 import org.mozilla.geckoview.ScreenLength
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
-import java.io.ByteArrayOutputStream
+import org.mozilla.geckoview.test.util.AssertUtils
 
 private const val SCREEN_WIDTH = 100
 private const val SCREEN_HEIGHT = 200
@@ -49,29 +48,7 @@ class DynamicToolbarTest : BaseSessionTest() {
 
     private fun assertScreenshotResult(result: GeckoResult<Bitmap>, comparisonImage: Bitmap) {
         sessionRule.waitForResult(result).let {
-            assertThat(
-                "Screenshot is not null",
-                it,
-                notNullValue(),
-            )
-            assertThat("Widths are the same", comparisonImage.width, equalTo(it.width))
-            assertThat("Heights are the same", comparisonImage.height, equalTo(it.height))
-            assertThat("Byte counts are the same", comparisonImage.byteCount, equalTo(it.byteCount))
-            assertThat("Configs are the same", comparisonImage.config, equalTo(it.config))
-
-            if (!comparisonImage.sameAs(it)) {
-                val outputForComparison = ByteArrayOutputStream()
-                comparisonImage.compress(Bitmap.CompressFormat.PNG, 100, outputForComparison)
-
-                val outputForActual = ByteArrayOutputStream()
-                it.compress(Bitmap.CompressFormat.PNG, 100, outputForActual)
-                val actualString: String = Base64.encodeToString(outputForActual.toByteArray(), Base64.DEFAULT)
-                val comparisonString: String = Base64.encodeToString(outputForComparison.toByteArray(), Base64.DEFAULT)
-
-                assertThat("Encoded strings are the same", comparisonString, equalTo(actualString))
-            }
-
-            assertThat("Bytes are the same", comparisonImage.sameAs(it), equalTo(true))
+            AssertUtils.assertScreenshotResult(it, comparisonImage)
         }
     }
 
@@ -1081,5 +1058,125 @@ class DynamicToolbarTest : BaseSessionTest() {
         sessionRule.display?.let {
             assertScreenshotResult(it.capturePixels(), reference)
         }
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun hitTestOnPositionSticky() {
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for foreground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(BaseSessionTest.POSITION_STICKY_HTML_PATH)
+        mainSession.waitForPageStop()
+        mainSession.flushApzRepaints()
+
+        val clickEventPromise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                document.querySelector('button').addEventListener('click', () => {
+                    resolve(true);
+                });
+            });
+            """.trimIndent(),
+        )
+
+        // Explicitly call `waitForRoundTrip()` to make sure the above event listener
+        // has set up in the content.
+        mainSession.waitForRoundTrip()
+
+        // Simulate the dynamic toolbar being hidden by the scroll
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
+
+        // To make sure the dynamic toolbar height has been reflected into APZ.
+        mainSession.flushApzRepaints()
+
+        mainSession.synthesizeTap(SCREEN_WIDTH / 2, SCREEN_HEIGHT - dynamicToolbarMaxHeight / 4)
+
+        assertThat("click event", clickEventPromise.value as Boolean, equalTo(true))
+    }
+
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun hitTestOnPositionStickyOnMainThread() {
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for foreground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(BaseSessionTest.POSITION_STICKY_ON_MAIN_THREAD_HTML_PATH)
+        mainSession.waitForPageStop()
+        mainSession.flushApzRepaints()
+
+        // Scroll to the bottom edge first.
+        val scrollPromise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                window.addEventListener('scroll', () => {
+                    resolve(true);
+                }, { once: true });
+            });
+            """.trimIndent(),
+        )
+        mainSession.waitForRoundTrip()
+        mainSession.evaluateJS(
+            """
+            document.scrollingElement.scrollTo(0, document.scrollingElement.scrollHeight);
+            """.trimIndent(),
+        )
+
+        assertThat("scroll", scrollPromise.value as Boolean, equalTo(true))
+        mainSession.flushApzRepaints()
+
+        var clickEventPromise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                document.querySelectorAll('button').forEach(element => {
+                    element.addEventListener('click', event => {
+                        resolve(event.target.id);
+                    }, { once: true });
+                });
+            });
+            """.trimIndent(),
+        )
+
+        // Explicitly call `waitForRoundTrip()` to make sure the above event listener
+        // has set up in the content.
+        mainSession.waitForRoundTrip()
+
+        // Simulate the dynamic toolbar being hidden by the scroll
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
+
+        // To make sure the dynamic toolbar height has been reflected into APZ.
+        mainSession.flushApzRepaints()
+        // Also to make sure the dynamic toolbar height has been reflected on the main-thread.
+        mainSession.promiseAllPaintsDone()
+
+        // Click a point where the dynamic toolbar was covering originally.
+        mainSession.synthesizeTap(SCREEN_WIDTH / 2, SCREEN_HEIGHT - dynamicToolbarMaxHeight / 4)
+        assertThat("click event on sticky", clickEventPromise.value as String, equalTo("sticky"))
+
+        clickEventPromise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                document.querySelectorAll('button').forEach(element => {
+                    element.addEventListener('click', event => {
+                        resolve(event.target.id);
+                    }, { once: true });
+                });
+            });
+            """.trimIndent(),
+        )
+
+        mainSession.waitForRoundTrip()
+
+        mainSession.synthesizeTap(
+            SCREEN_WIDTH / 2,
+            SCREEN_HEIGHT - dynamicToolbarMaxHeight - dynamicToolbarMaxHeight / 4,
+        )
+        assertThat("click event on not-sticky", clickEventPromise.value as String, equalTo("not-sticky"))
     }
 }

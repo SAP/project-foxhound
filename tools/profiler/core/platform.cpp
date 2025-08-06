@@ -45,11 +45,13 @@
 #include "ProfilerStackWalk.h"
 #include "ProfilerRustBindings.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Perfetto.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
+#include "nsISupports.h"
 #include "nsXPCOM.h"
 #include "shared-libraries.h"
 #include "VTuneProfiler.h"
@@ -60,6 +62,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoProfilerLabel.h"
 #include "mozilla/BaseAndGeckoProfilerDetail.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 #include "mozilla/glean/GleanMetrics.h"
@@ -141,6 +144,7 @@
 #  include <fcntl.h>
 #  include <unistd.h>
 #  include <errno.h>
+#  include <pthread.h>
 #endif
 
 #if defined(GP_OS_android)
@@ -458,9 +462,9 @@ Json::String ToCompactString(const Json::Value& aJsonValue) {
   return Json::writeString(builder, aJsonValue);
 }
 
-/* static */ mozilla::baseprofiler::detail::BaseProfilerMutex
+MOZ_RUNINIT /* static */ mozilla::baseprofiler::detail::BaseProfilerMutex
     ProfilingLog::gMutex;
-/* static */ mozilla::UniquePtr<Json::Value> ProfilingLog::gLog;
+MOZ_RUNINIT /* static */ mozilla::UniquePtr<Json::Value> ProfilingLog::gLog;
 
 /* static */ void ProfilingLog::Init() {
   mozilla::baseprofiler::detail::BaseProfilerAutoLock lock{gMutex};
@@ -512,7 +516,7 @@ class MOZ_RAII PSAutoLock {
   mozilla::baseprofiler::detail::BaseProfilerAutoLock mLock;
 };
 
-/* static */ mozilla::baseprofiler::detail::BaseProfilerMutex
+MOZ_RUNINIT /* static */ mozilla::baseprofiler::detail::BaseProfilerMutex
     PSAutoLock::gPSMutex{"Gecko Profiler mutex"};
 
 // Only functions that take a PSLockRef arg can access CorePS's and ActivePS's
@@ -765,6 +769,7 @@ class AsyncSignalControlThread {
 };
 
 static void* AsyncSignalControlThreadEntry(void* aArg) {
+  NS_SetCurrentThreadName("AsyncSignalControlThread");
   auto* thread = static_cast<AsyncSignalControlThread*>(aArg);
   thread->Watch();
   return nullptr;
@@ -957,7 +962,7 @@ class CorePS {
   PS_GET_AND_SET(const nsACString&, ProcessName)
   PS_GET_AND_SET(const nsACString&, ETLDplus1)
 #if !defined(XP_WIN)
-  PS_GET_AND_SET(const Maybe<nsCOMPtr<nsIFile>>&, DownloadDirectory)
+  PS_GET_AND_SET(const Maybe<nsCOMPtr<nsIFile>>&, AsyncSignalDumpDirectory)
 #endif
 
   static void SetBandwidthCounter(ProfilerBandwidthCounter* aBandwidthCounter) {
@@ -1023,7 +1028,7 @@ class CorePS {
 
   // Cached download directory for when we need to dump profiles to disk.
 #if !defined(XP_WIN)
-  Maybe<nsCOMPtr<nsIFile>> mDownloadDirectory;
+  Maybe<nsCOMPtr<nsIFile>> mAsyncSignalDumpDirectory;
 #endif
 };
 
@@ -1077,6 +1082,13 @@ class ActivePS {
 
     if (aFeatures & ProfilerFeature::CPUAllThreads) {
       aFeatures |= ProfilerFeature::CPUUtilization;
+    }
+
+    if (aFeatures & ProfilerFeature::Tracing) {
+      aFeatures &= ~ProfilerFeature::CPUUtilization;
+      aFeatures &= ~ProfilerFeature::Memory;
+      aFeatures |= ProfilerFeature::NoStackSampling;
+      aFeatures |= ProfilerFeature::JS;
     }
 
     return aFeatures;
@@ -1875,7 +1887,7 @@ using ProfilerStateChangeMutex =
     mozilla::baseprofiler::detail::BaseProfilerMutex;
 using ProfilerStateChangeLock =
     mozilla::baseprofiler::detail::BaseProfilerAutoLock;
-static ProfilerStateChangeMutex gProfilerStateChangeMutex;
+MOZ_RUNINIT static ProfilerStateChangeMutex gProfilerStateChangeMutex;
 
 struct IdentifiedProfilingStateChangeCallback {
   ProfilingStateSet mProfilingStateSet;
@@ -1893,7 +1905,7 @@ struct IdentifiedProfilingStateChangeCallback {
 using IdentifiedProfilingStateChangeCallbackUPtr =
     UniquePtr<IdentifiedProfilingStateChangeCallback>;
 
-static Vector<IdentifiedProfilingStateChangeCallbackUPtr>
+MOZ_RUNINIT static Vector<IdentifiedProfilingStateChangeCallbackUPtr>
     mIdentifiedProfilingStateChangeCallbacks;
 
 void profiler_add_state_change_callback(
@@ -5490,6 +5502,11 @@ static ProfilingStack* locked_register_thread(
         if (lockedRWFromAnyThread->GetJSContext()) {
           profiledThreadData->NotifyReceivedJSContext(
               ActivePS::Buffer(aLock).BufferRangeEnd());
+          if (ActivePS::FeatureTracing(aLock)) {
+            CycleCollectedJSContext* ctx =
+                lockedRWFromAnyThread->GetCycleCollectedJSContext();
+            ctx->BeginExecutionTracingAsync();
+          }
         }
       }
     }
@@ -5669,10 +5686,10 @@ Maybe<nsAutoCString> profiler_find_dump_path() {
     // Acquire the lock so that we can get things from CorePS
     PSAutoLock lock;
     Maybe<nsCOMPtr<nsIFile>> downloadDir = Nothing();
-    downloadDir = CorePS::DownloadDirectory(lock);
+    downloadDir = CorePS::AsyncSignalDumpDirectory(lock);
 
     // This needs to be done within the context of the lock, as otherwise
-    // another thread might modify CorePS::mDownloadDirectory while we're
+    // another thread might modify CorePS::mAsyncSignalDumpDirectory while we're
     // cloning the pointer.
     if (downloadDir) {
       nsCOMPtr<nsIFile> d;
@@ -5710,39 +5727,112 @@ Maybe<nsAutoCString> profiler_find_dump_path() {
 #endif
 }
 
-void profiler_dump_and_stop() {
-  // Do nothing unless we're the parent process, as we're sandboxed and can't
-  // write anyway.
-  if (XRE_IsParentProcess()) {
-    // pause the profiler until we are done dumping
-    profiler_pause();
-
-    // Try to save the profile to a file
-    if (auto path = profiler_find_dump_path()) {
-      profiler_save_profile_to_file(path.value().get());
-    } else {
-      LOG("Failed to dump profile to disk");
-    }
-
-    // Stop the profiler
-    profiler_stop();
-  }
-}
-
 void profiler_start_from_signal() {
   // Do nothing unless we're the parent process, as we're sandboxed and can't
   // write any data that we gather anyway.
   if (XRE_IsParentProcess()) {
     // Start the profiler here directly, as we're on a background thread.
     // set of preferences, configuration of them is TODO, see Bug 1866007
+    // Enabling the JS feature leaks an 8-byte object during testing, but is too
+    // useful to disable. See Bug 1904897, Bug 1699681, and browser.toml for
+    // more details.
     uint32_t features = ProfilerFeature::JS | ProfilerFeature::StackWalk |
                         ProfilerFeature::CPUUtilization;
     // as we often don't know what threads we'll care about, tell the
     // profiler to profile all threads.
     const char* filters[] = {"*"};
-    profiler_start(PROFILER_DEFAULT_SIGHANDLE_ENTRIES,
-                   PROFILER_DEFAULT_INTERVAL, features, filters,
-                   MOZ_ARRAY_LENGTH(filters), 0);
+    if (MOZ_UNLIKELY(NS_IsMainThread())) {
+      // We are on the main thread here, so `NotifyProfilerStarted` will
+      // start the profiler in content/child processes.
+      profiler_start(PROFILER_DEFAULT_SIGHANDLE_ENTRIES,
+                     PROFILER_DEFAULT_INTERVAL, features, filters,
+                     std::size(filters), 0);
+    } else {
+      // Directly start the profiler on this thread. We know we're not the main
+      // thread here, so this will not start the profiler in child processes,
+      // but we want to make sure that we do it here in case the main thread is
+      // stuck.
+      profiler_start(PROFILER_DEFAULT_SIGHANDLE_ENTRIES,
+                     PROFILER_DEFAULT_INTERVAL, features, filters,
+                     std::size(filters), 0);
+      // Now also try and start the profiler from the main thread, so that the
+      // ParentProfiler will start child threads.
+      NS_DispatchToMainThread(
+          NS_NewRunnableFunction("StartProfilerInChildProcesses", [=] {
+            Unused << NotifyProfilerStarted(
+                PROFILER_DEFAULT_SIGHANDLE_ENTRIES, Nothing(),
+                PROFILER_DEFAULT_INTERVAL, features,
+                const_cast<const char**>(filters), std::size(filters), 0);
+          }));
+    }
+  }
+}
+
+void profiler_dump_and_stop() {
+  // Do nothing unless we're the parent process, as we're sandboxed and can't
+  // open a file handle anyway.
+  if (!XRE_IsParentProcess()) {
+    return;
+  }
+
+  // pause the profiler until we are done dumping
+  profiler_pause();
+
+  // Try to save the profile to a file
+  auto path = profiler_find_dump_path();
+
+  // Exit quickly if we can't find the path, while stopping the profiler
+  if (!path) {
+    LOG("Failed to find a valid dump path to write profile to disk");
+    profiler_stop();
+    return;
+  }
+
+  // Dump the profile of this process first, in case the multi-process
+  // gathering is unsuccessful (e.g. due to a blocked main threaed).
+  profiler_save_profile_to_file(path.value().get());
+
+  // We are probably not the main thread, but check anyway, and dispatch
+  // directly.
+  if (NS_IsMainThread()) {
+    nsCOMPtr<nsIProfiler> nsProfiler(
+        do_GetService("@mozilla.org/tools/profiler;1"));
+    nsProfiler->DumpProfileToFileAsyncNoJs(path.value(), 0)
+        ->Then(
+            GetMainThreadSerialEventTarget(), __func__,
+            [](void_t ok) {
+              LOG("Stopping profiler after dumping profile to disk");
+              profiler_stop();
+            },
+            [](nsresult aRv) {
+              LOG("Dumping to disk failed with error \"%s\", stopping "
+                  "profiler.",
+                  GetStaticErrorName(aRv));
+              profiler_stop();
+            });
+  } else {
+    // Dispatch a runnable, as nsProfiler classes are currently main-thread
+    // only. We also stop the profiler within the runnable, as otherwise we
+    // may find ourselves stopping the profiler before the runnable has
+    // gathered all the profile data.
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("WriteProfileDataToFile", [=] {
+          nsCOMPtr<nsIProfiler> nsProfiler(
+              do_GetService("@mozilla.org/tools/profiler;1"));
+          nsProfiler->DumpProfileToFileAsyncNoJs(path.value(), 0)
+              ->Then(
+                  GetMainThreadSerialEventTarget(), __func__,
+                  [](void_t ok) {
+                    LOG("Stopping profiler after dumping profile to disk");
+                    profiler_stop();
+                  },
+                  [](nsresult aRv) {
+                    LOG("Dumping to disk failed with error \"%s\", stopping "
+                        "profiler.",
+                        GetStaticErrorName(aRv));
+                    profiler_stop();
+                  });
+        }));
   }
 }
 
@@ -5790,6 +5880,9 @@ void profiler_init(void* aStackTop) {
   VTUNE_INIT();
   ETW::Init();
   InitPerfetto();
+#if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
+  mozilla::profiler::memory_hooks_tls_init();
+#endif
 
   MOZ_RELEASE_ASSERT(!CorePS::Exists());
 
@@ -5799,6 +5892,10 @@ void profiler_init(void* aStackTop) {
   }
 
   SharedLibraryInfo::Initialize();
+
+  // We initialize here as well as in baseprofiler because
+  // baseprofiler init doesn't happen in child processes.
+  Flow::Init();
 
   uint32_t features = DefaultFeatures() & AvailableFeatures();
 
@@ -6541,6 +6638,11 @@ static void locked_profiler_start(PSLockRef aLock, PowerOfTwo32 aCapacity,
       lockedThreadData->ReinitializeOnResume();
       if (ActivePS::FeatureJS(aLock) && lockedThreadData->GetJSContext()) {
         profiledThreadData->NotifyReceivedJSContext(0);
+        if (ActivePS::FeatureTracing(aLock)) {
+          CycleCollectedJSContext* ctx =
+              lockedThreadData->GetCycleCollectedJSContext();
+          ctx->BeginExecutionTracingAsync();
+        }
       }
     }
   }
@@ -6752,6 +6854,14 @@ void profiler_ensure_started(PowerOfTwo32 aCapacity, double aInterval,
     lockedThreadData->ClearProfilingFeaturesAndData(aLock);
 
     if (ActivePS::FeatureJS(aLock)) {
+      if (ActivePS::FeatureTracing(aLock)) {
+        CycleCollectedJSContext* ctx =
+            lockedThreadData->GetCycleCollectedJSContext();
+        if (ctx) {
+          ctx->EndExecutionTracingAsync();
+        }
+      }
+
       lockedThreadData->StopJSSampling();
       if (!lockedThreadData.GetLockedRWOnThread() &&
           lockedThreadData->Info().IsMainThread()) {
@@ -6865,12 +6975,12 @@ bool profiler_is_paused() {
 }
 
 // See `ProfilerControl.h` for more details.
-void profiler_lookup_download_directory() {
+void profiler_lookup_async_signal_dump_directory() {
 // This implementation is causing issues on Windows (see Bug 1890154) but as it
 // only exists to support the posix signal handling (on non-windows platforms)
 // we can remove it for now.
 #if !defined(XP_WIN)
-  LOG("profiler_lookup_download_directory");
+  LOG("profiler_lookup_async_signal_dump_directory");
 
   MOZ_ASSERT(
       NS_IsMainThread(),
@@ -6881,16 +6991,39 @@ void profiler_lookup_download_directory() {
 
   // take the lock so that we can write to CorePS
   PSAutoLock lock;
+  nsresult rv;
 
-  nsCOMPtr<nsIFile> tDownloadDir;
-  nsresult rv = NS_GetSpecialDirectory(NS_OS_DEFAULT_DOWNLOAD_DIR,
-                                       getter_AddRefs(tDownloadDir));
-  if (NS_FAILED(rv)) {
-    LOG("Failed to find download directory. Profiler signal handling will not "
-        "be able to save to disk. Error: %s",
-        GetStaticErrorName(rv));
+  // Check to see if we have a `MOZ_UPLOAD_DIR` first - i.e., check to see if
+  // we're running in CI.
+  LOG("Checking if MOZ_UPLOAD_DIR exists");
+  const char* mozUploadDir = getenv("MOZ_UPLOAD_DIR");
+  if (mozUploadDir && mozUploadDir[0] != '\0') {
+    LOG("Found MOZ_UPLOAD_DIR at: %s", mozUploadDir);
+    // We want to do the right thing, and turn this into an nsIFile. Go through
+    // the motions here:
+    nsCOMPtr<nsIFile> mozUploadDirFile;
+    rv = NS_NewNativeLocalFile(nsDependentCString(mozUploadDir),
+                               getter_AddRefs(mozUploadDirFile));
+    if (NS_FAILED(rv)) {
+      LOG("Failed to assign a filepath while creating MOZ_UPLOAD_DIR file "
+          "%s, Error %s ",
+          mozUploadDir, GetStaticErrorName(rv));
+      return;
+    }
+
+    CorePS::SetAsyncSignalDumpDirectory(lock, Some(mozUploadDirFile));
   } else {
-    CorePS::SetDownloadDirectory(lock, Some(tDownloadDir));
+    LOG("Defaulting to the user's Download directory for profile dumps");
+    nsCOMPtr<nsIFile> tDownloadDir;
+    rv = NS_GetSpecialDirectory(NS_OS_DEFAULT_DOWNLOAD_DIR,
+                                getter_AddRefs(tDownloadDir));
+    if (NS_FAILED(rv)) {
+      LOG("Failed to find download directory. Profiler signal handling will "
+          "not be able to save to disk. Error: %s",
+          GetStaticErrorName(rv));
+    } else {
+      CorePS::SetAsyncSignalDumpDirectory(lock, Some(tDownloadDir));
+    }
   }
 #endif
 }
@@ -7669,7 +7802,7 @@ bool profiler_is_locked_on_current_thread() {
          ProfilerChild::IsLockedOnCurrentThread();
 }
 
-void profiler_set_js_context(JSContext* aCx) {
+void profiler_set_js_context(CycleCollectedJSContext* aCx) {
   MOZ_ASSERT(aCx);
   ThreadRegistration::WithOnThreadRef(
       [&](ThreadRegistration::OnThreadRef aOnThreadRef) {
@@ -7677,7 +7810,7 @@ void profiler_set_js_context(JSContext* aCx) {
         PSAutoLock lock;
         aOnThreadRef.WithLockedRWOnThread(
             [&](ThreadRegistration::LockedRWOnThread& aThreadData) {
-              aThreadData.SetJSContext(aCx);
+              aThreadData.SetCycleCollectedJSContext(aCx);
 
               if (!ActivePS::Exists(lock) || !ActivePS::FeatureJS(lock)) {
                 return;
@@ -7688,6 +7821,9 @@ void profiler_set_js_context(JSContext* aCx) {
                   profiledThreadData) {
                 profiledThreadData->NotifyReceivedJSContext(
                     ActivePS::Buffer(lock).BufferRangeEnd());
+                if (ActivePS::FeatureTracing(lock)) {
+                  aCx->BeginExecutionTracingAsync();
+                }
               }
             });
       });
@@ -7702,11 +7838,14 @@ void profiler_clear_js_context() {
 
   ThreadRegistration::WithOnThreadRef(
       [](ThreadRegistration::OnThreadRef aOnThreadRef) {
-        JSContext* cx =
-            aOnThreadRef.UnlockedReaderAndAtomicRWOnThreadCRef().GetJSContext();
-        if (!cx) {
+        CycleCollectedJSContext* cccx =
+            aOnThreadRef.UnlockedReaderAndAtomicRWOnThreadCRef()
+                .GetCycleCollectedJSContext();
+        if (!cccx) {
           return;
         }
+
+        JSContext* cx = cccx->Context();
 
         // The profiler mutex must be locked before the ThreadRegistration's.
         {
@@ -7720,12 +7859,16 @@ void profiler_clear_js_context() {
                 ActivePS::FeatureJS(lock))) {
             // This thread is not being profiled or JS profiling is off, we only
             // need to clear the context pointer.
-            lockedThreadData->ClearJSContext();
+            lockedThreadData->ClearCycleCollectedJSContext();
             return;
           }
 
           profiledThreadData->NotifyAboutToLoseJSContext(
               cx, CorePS::ProcessStartTime(), ActivePS::Buffer(lock));
+
+          if (ActivePS::FeatureTracing(lock)) {
+            cccx->EndExecutionTracingAsync();
+          }
 
           // Notify the JS context that profiling for this context has
           // stopped. Do this by calling StopJSSampling and PollJSSampling
@@ -7734,7 +7877,7 @@ void profiler_clear_js_context() {
         }
 
         // Drop profiler mutex for call into JS engine. This must happen before
-        // ClearJSContext below.
+        // ClearCycleCollectedJSContext below.
         PollJSSamplingForCurrentThread();
 
         {
@@ -7742,7 +7885,7 @@ void profiler_clear_js_context() {
           ThreadRegistration::OnThreadRef::RWOnThreadWithLock lockedThreadData =
               aOnThreadRef.GetLockedRWOnThread();
 
-          lockedThreadData->ClearJSContext();
+          lockedThreadData->ClearCycleCollectedJSContext();
 
           // Tell the thread that we'd like to have JS sampling on this
           // thread again, once it gets a new JSContext (if ever).

@@ -21,6 +21,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/mozalloc.h"
@@ -131,7 +132,8 @@ static void RecordTypeForTelemetry(const nsAString& aType,
 /* static */
 void MediaSource::IsTypeSupported(const nsAString& aType,
                                   DecoderDoctorDiagnostics* aDiagnostics,
-                                  ErrorResult& aRv) {
+                                  ErrorResult& aRv,
+                                  Maybe<bool> aShouldResistFingerprinting) {
   if (aType.IsEmpty()) {
     return aRv.ThrowTypeError("Empty type");
   }
@@ -157,16 +159,25 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
 
   // Now we know that this media type could be played.
   // MediaSource imposes extra restrictions, and some prefs.
+  // Avoid leaking information about the fact that it's pref-disabled,
+  // or that HW acceleration is available (only applicable to VP9 on Android).
+  bool shouldResistFingerprinting =
+      aShouldResistFingerprinting.isSome()
+          ? aShouldResistFingerprinting.value()
+          : nsContentUtils::ShouldResistFingerprinting(
+                "Couldn't drill down ShouldResistFingerprinting",
+                RFPTarget::MediaCapabilities);
   const MediaMIMEType& mimeType = containerType->Type();
   if (mimeType == MEDIAMIMETYPE("video/mp4") ||
       mimeType == MEDIAMIMETYPE("audio/mp4")) {
-    if (!StaticPrefs::media_mediasource_mp4_enabled()) {
+    if (!StaticPrefs::media_mediasource_mp4_enabled() &&
+        !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act
       // like we can't play it.  Or should this throw "Unknown type"?
       return aRv.ThrowNotSupportedError("Can't play type");
     }
     if (!StaticPrefs::media_mediasource_vp9_enabled() && hasVP9 &&
-        !IsVP9Forced(aDiagnostics)) {
+        !IsVP9Forced(aDiagnostics) && !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act
       // like we can't play it.  Or should this throw "Unknown type"?
       return aRv.ThrowNotSupportedError("Can't play type");
@@ -175,13 +186,14 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
     return;
   }
   if (mimeType == MEDIAMIMETYPE("video/webm")) {
-    if (!StaticPrefs::media_mediasource_webm_enabled()) {
+    if (!StaticPrefs::media_mediasource_webm_enabled() &&
+        !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act
       // like we can't play it.  Or should this throw "Unknown type"?
       return aRv.ThrowNotSupportedError("Can't play type");
     }
     if (!StaticPrefs::media_mediasource_vp9_enabled() && hasVP9 &&
-        !IsVP9Forced(aDiagnostics)) {
+        !IsVP9Forced(aDiagnostics) && !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act
       // like we can't play it.  Or should this throw "Unknown type"?
       return aRv.ThrowNotSupportedError("Can't play type");
@@ -189,7 +201,8 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
     return;
   }
   if (mimeType == MEDIAMIMETYPE("audio/webm")) {
-    if (!StaticPrefs::media_mediasource_webm_enabled()) {
+    if (!StaticPrefs::media_mediasource_webm_enabled() &&
+        !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act
       // like we can't play it.  Or should this throw "Unknown type"?
       return aRv.ThrowNotSupportedError("Can't play type");
@@ -278,13 +291,16 @@ void MediaSource::SetDuration(const media::TimeUnit& aDuration) {
 already_AddRefed<SourceBuffer> MediaSource::AddSourceBuffer(
     const nsAString& aType, ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
+  nsCOMPtr<nsPIDOMWindowInner> window = GetOwnerWindow();
+  Document* doc = window ? window->GetExtantDoc() : nullptr;
   DecoderDoctorDiagnostics diagnostics;
-  IsTypeSupported(aType, &diagnostics, aRv);
-  RecordTypeForTelemetry(aType, GetOwnerWindow());
+  IsTypeSupported(
+      aType, &diagnostics, aRv,
+      doc ? Some(doc->ShouldResistFingerprinting(RFPTarget::MediaCapabilities))
+          : Nothing());
+  RecordTypeForTelemetry(aType, window);
   bool supported = !aRv.Failed();
-  diagnostics.StoreFormatDiagnostics(
-      GetOwnerWindow() ? GetOwnerWindow()->GetExtantDoc() : nullptr, aType,
-      supported, __func__);
+  diagnostics.StoreFormatDiagnostics(doc, aType, supported, __func__);
   MSE_API("AddSourceBuffer(aType=%s)%s", NS_ConvertUTF16toUTF8(aType).get(),
           supported ? "" : " [not supported]");
   if (!supported) {
@@ -395,8 +411,7 @@ void MediaSource::EndOfStream(
   SetReadyState(MediaSourceReadyState::Ended);
   mSourceBuffers->Ended();
   if (!aError.WasPassed()) {
-    DurationChange(mSourceBuffers->GetHighestBufferedEndTime().ToBase(1000000),
-                   aRv);
+    DurationChangeOnEndOfStream();
     // Notify reader that all data is now available.
     mDecoder->Ended(true);
     return;
@@ -431,13 +446,16 @@ bool MediaSource::IsTypeSupported(const GlobalObject& aOwner,
   MOZ_ASSERT(NS_IsMainThread());
   DecoderDoctorDiagnostics diagnostics;
   IgnoredErrorResult rv;
-  IsTypeSupported(aType, &diagnostics, rv);
-  bool supported = !rv.Failed();
   nsCOMPtr<nsPIDOMWindowInner> window =
       do_QueryInterface(aOwner.GetAsSupports());
+  Document* doc = window ? window->GetExtantDoc() : nullptr;
+  IsTypeSupported(
+      aType, &diagnostics, rv,
+      doc ? Some(doc->ShouldResistFingerprinting(RFPTarget::MediaCapabilities))
+          : Nothing());
+  bool supported = !rv.Failed();
   RecordTypeForTelemetry(aType, window);
-  diagnostics.StoreFormatDiagnostics(window ? window->GetExtantDoc() : nullptr,
-                                     aType, supported, __func__);
+  diagnostics.StoreFormatDiagnostics(doc, aType, supported, __func__);
   MOZ_LOG(GetMediaSourceAPILog(), mozilla::LogLevel::Debug,
           ("MediaSource::%s: IsTypeSupported(aType=%s) %s", __func__,
            NS_ConvertUTF16toUTF8(aType).get(),
@@ -590,30 +608,37 @@ void MediaSource::QueueAsyncSimpleEvent(const char* aName) {
   mAbstractMainThread->Dispatch(event.forget());
 }
 
-void MediaSource::DurationChange(const media::TimeUnit& aNewDuration,
-                                 ErrorResult& aRv) {
+void MediaSource::DurationChangeOnEndOfStream() {
   MOZ_ASSERT(NS_IsMainThread());
-  MSE_DEBUG("DurationChange(aNewDuration=%s)", aNewDuration.ToString().get());
+  MOZ_ASSERT(mReadyState == MediaSourceReadyState::Ended);
+  // https://w3c.github.io/media-source/#dfn-end-of-stream
+  // 3.1 Run the duration change algorithm with new duration set to the
+  // largest track buffer ranges end time across all the track buffers across
+  // all SourceBuffer objects in sourceBuffers.
 
+  // https://w3c.github.io/media-source/#duration-change-algorithm
   // 1. If the current value of duration is equal to new duration, then return.
-  if (mDecoder->GetDuration() == aNewDuration.ToSeconds()) {
-    return;
-  }
-
   // 2. If new duration is less than the highest starting presentation timestamp
   // of any buffered coded frames for all SourceBuffer objects in sourceBuffers,
   // then throw an InvalidStateError exception and abort these steps.
-  if (aNewDuration < mSourceBuffers->HighestStartTime()) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return;
-  }
-
   // 3. Let highest end time be the largest track buffer ranges end time across
   // all the track buffers across all SourceBuffer objects in sourceBuffers.
-  media::TimeUnit highestEndTime = mSourceBuffers->HighestEndTime();
   // 4. If new duration is less than highest end time, then
   //    4.1 Update new duration to equal highest end time.
-  media::TimeUnit newDuration = std::max(aNewDuration, highestEndTime);
+  media::TimeUnit highestEndTime = mSourceBuffers->HighestEndTime();
+  // Highest track buffer ranges end time == highest end time when Ended, so
+  // new duration == highest end time and steps 2 and 4 are no-ops.
+  MOZ_ASSERT(highestEndTime == mSourceBuffers->GetHighestBufferedEndTime());
+  MOZ_ASSERT(highestEndTime >= mSourceBuffers->HighestStartTime());
+  // Truncate to microsecond resolution for consistency with the
+  // SourceBuffer.buffered getter.  Do this before comparison because
+  // mDecoder->GetDuration() may have been similarly truncated.
+  media::TimeUnit newDuration = highestEndTime.ToBase(USECS_PER_S);
+  MSE_DEBUG("DurationChangeOnEndOfStream(newDuration=%s)",
+            newDuration.ToString().get());
+  if (mDecoder->GetDuration() == newDuration.ToSeconds()) {
+    return;
+  }
 
   // 5. Update the media duration to new duration and run the HTMLMediaElement
   // duration change algorithm.

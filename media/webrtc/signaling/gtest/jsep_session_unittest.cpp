@@ -26,7 +26,7 @@
 #include "jsep/JsepSessionImpl.h"
 
 namespace mozilla {
-static std::string kAEqualsCandidate("a=candidate:");
+MOZ_RUNINIT static std::string kAEqualsCandidate("a=candidate:");
 const static size_t kNumCandidatesPerComponent = 3;
 
 class JsepSessionTestBase : public ::testing::Test {
@@ -5533,7 +5533,7 @@ TEST_F(JsepSessionTest, CreateOfferDontReceiveVideoRemoveVideoTrack) {
   CreateOffer(Some(options));
 }
 
-static const std::string strSampleCandidate =
+MOZ_RUNINIT static const std::string strSampleCandidate =
     "a=candidate:1 1 UDP 2130706431 192.168.2.1 50005 typ host\r\n";
 
 static const unsigned short nSamplelevel = 2;
@@ -7708,6 +7708,54 @@ TEST_F(JsepSessionTest, TestTransportAttributeValidation) {
     auto sdp = parsed->ToString();
     auto result = mSessionOff->SetRemoteDescription(kJsepSdpOffer, sdp);
     ASSERT_FALSE(result.mError.isSome());
+  }
+}
+
+TEST_F(JsepSessionTest, TestBundleSupportWithZeroPort) {
+  AddTracks(*mSessionOff, "audio,video,video,datachannel");
+  AddTracks(*mSessionAns, "audio,video,video,datachannel");
+
+  std::string offer;
+  mSessionOff->CreateOffer(JsepOfferOptions(), &offer);
+
+  mSessionOff->SetLocalDescription(kJsepSdpOffer, offer);
+  mSessionAns->SetRemoteDescription(kJsepSdpOffer, offer);
+
+  std::string answer;
+  mSessionAns->CreateAnswer(JsepAnswerOptions(), &answer);
+
+  // Manipulate the bundling on the answer
+  UniquePtr<Sdp> sdp(Parse(answer));
+  ASSERT_TRUE(!!sdp);
+  size_t num_m_sections = sdp->GetMediaSectionCount();
+  for (size_t i = 0; i < num_m_sections; ++i) {
+    auto& msection = sdp->GetMediaSection(i);
+    const SdpAttributeList& attrs = msection.GetAttributeList();
+    // If this is not the last msection then ensure we have bundle only set and
+    // port 0.
+    if (!attrs.HasAttribute(SdpAttribute::kBundleOnlyAttribute) &&
+        i < num_m_sections - 1) {
+      sdp->GetMediaSection(i).GetAttributeList().SetAttribute(
+          new SdpFlagAttribute(SdpAttribute::kBundleOnlyAttribute));
+      sdp->GetMediaSection(i).SetPort(0);
+    } else {
+      // For the last msection setting port to non 0 and removing bundle only if
+      // it existed.
+      if (attrs.HasAttribute(SdpAttribute::kBundleOnlyAttribute)) {
+        sdp->GetMediaSection(i).GetAttributeList().RemoveAttribute(
+            SdpAttribute::kBundleOnlyAttribute);
+      }
+      sdp->GetMediaSection(i).SetPort(9);
+    }
+  }
+  auto answerSdp = sdp->ToString();
+
+  mSessionOff->SetRemoteDescription(kJsepSdpAnswer, answerSdp);
+
+  // Ensure all the transcievers are still active bug 1923416
+  for (const auto& offerTransceiver : GetTransceivers(*mSessionOff)) {
+    ASSERT_TRUE(offerTransceiver.mRecvTrack.GetActive());
+    ASSERT_TRUE(offerTransceiver.mSendTrack.GetActive());
   }
 }
 }  // namespace mozilla

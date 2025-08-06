@@ -56,13 +56,17 @@ export function paused(pauseInfo) {
       validateSelectedFrame(getState(), selectedFrame);
 
       // Fetch the previews for variables visible in the currently selected paused stackframe
-      await dispatch(fetchScopes(selectedFrame));
+      await dispatch(fetchScopes());
+      // We might have resumed while fetching the scopes
+      // Prevent further computation if this happens.
+      validateSelectedFrame(getState(), selectedFrame);
 
       // Run after fetching scoping data so that it may make use of the sourcemap
       // expression mappings for local variables.
       const atException = why.type == "exception";
       if (!atException || !isEvaluatingExpression(getState(), thread)) {
         await dispatch(evaluateExpressions(selectedFrame));
+        validateSelectedFrame(getState(), selectedFrame);
       }
     }
   };

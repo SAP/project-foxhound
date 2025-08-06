@@ -37,9 +37,6 @@
 namespace js {
 namespace wasm {
 
-using mozilla::DebugOnly;
-using mozilla::Maybe;
-
 // The Opcode compactly and safely represents the primary opcode plus any
 // extension, with convenient predicates and accessors.
 
@@ -340,7 +337,7 @@ class Decoder {
 
   template <typename UInt>
   [[nodiscard]] bool readVarU(UInt* out) {
-    DebugOnly<const uint8_t*> before = cur_;
+    mozilla::DebugOnly<const uint8_t*> before = cur_;
     const unsigned numBits = sizeof(UInt) * CHAR_BIT;
     const unsigned remainderBits = numBits % 7;
     const unsigned numBitsInSevens = numBits - remainderBits;
@@ -556,12 +553,12 @@ class Decoder {
 
   // See "section" description in Encoder.
 
-  [[nodiscard]] bool readSectionHeader(uint8_t* id, SectionRange* range);
+  [[nodiscard]] bool readSectionHeader(uint8_t* id, BytecodeRange* range);
 
   [[nodiscard]] bool startSection(SectionId id, CodeMetadata* codeMeta,
-                                  MaybeSectionRange* range,
+                                  MaybeBytecodeRange* range,
                                   const char* sectionName);
-  [[nodiscard]] bool finishSection(const SectionRange& range,
+  [[nodiscard]] bool finishSection(const BytecodeRange& range,
                                    const char* sectionName);
 
   // Custom sections do not cause validation errors unless the error is in
@@ -570,25 +567,25 @@ class Decoder {
   [[nodiscard]] bool startCustomSection(const char* expected,
                                         size_t expectedLength,
                                         CodeMetadata* codeMeta,
-                                        MaybeSectionRange* range);
+                                        MaybeBytecodeRange* range);
 
   template <size_t NameSizeWith0>
   [[nodiscard]] bool startCustomSection(const char (&name)[NameSizeWith0],
                                         CodeMetadata* codeMeta,
-                                        MaybeSectionRange* range) {
+                                        MaybeBytecodeRange* range) {
     MOZ_ASSERT(name[NameSizeWith0 - 1] == '\0');
     return startCustomSection(name, NameSizeWith0 - 1, codeMeta, range);
   }
 
-  void finishCustomSection(const char* name, const SectionRange& range);
-  void skipAndFinishCustomSection(const SectionRange& range);
+  void finishCustomSection(const char* name, const BytecodeRange& range);
+  void skipAndFinishCustomSection(const BytecodeRange& range);
 
   [[nodiscard]] bool skipCustomSection(CodeMetadata* codeMeta);
 
   // The Name section has its own optional subsections.
 
   [[nodiscard]] bool startNameSubsection(NameType nameType,
-                                         Maybe<uint32_t>* endOffset);
+                                         mozilla::Maybe<uint32_t>* endOffset);
   [[nodiscard]] bool finishNameSubsection(uint32_t endOffset);
   [[nodiscard]] bool skipNameSubsection();
 
@@ -703,10 +700,6 @@ inline bool Decoder::readPackedType(const TypeContext& types,
     }
     case uint8_t(TypeCode::Ref):
     case uint8_t(TypeCode::NullableRef): {
-#ifdef ENABLE_WASM_GC
-      if (!features.gc) {
-        return fail("gc not enabled");
-      }
       bool nullable = code == uint8_t(TypeCode::NullableRef);
       RefType refType;
       if (!readHeapType(types, features, nullable, &refType)) {
@@ -714,9 +707,6 @@ inline bool Decoder::readPackedType(const TypeContext& types,
       }
       *type = refType;
       return true;
-#else
-      break;
-#endif
     }
     case uint8_t(TypeCode::AnyRef):
     case uint8_t(TypeCode::I31Ref):
@@ -726,15 +716,8 @@ inline bool Decoder::readPackedType(const TypeContext& types,
     case uint8_t(TypeCode::NullFuncRef):
     case uint8_t(TypeCode::NullExternRef):
     case uint8_t(TypeCode::NullAnyRef): {
-#ifdef ENABLE_WASM_GC
-      if (!features.gc) {
-        return fail("gc not enabled");
-      }
       *type = RefType::fromTypeCode(TypeCode(code), true);
       return true;
-#else
-      break;
-#endif
     }
     default: {
       if (!T::isValidTypeCode(TypeCode(code))) {
@@ -785,7 +768,6 @@ inline bool Decoder::readHeapType(const TypeContext& types,
         *type = RefType::fromTypeCode(TypeCode(code), nullable);
         return true;
       }
-#ifdef ENABLE_WASM_GC
       case uint8_t(TypeCode::AnyRef):
       case uint8_t(TypeCode::I31Ref):
       case uint8_t(TypeCode::EqRef):
@@ -794,29 +776,20 @@ inline bool Decoder::readHeapType(const TypeContext& types,
       case uint8_t(TypeCode::NullFuncRef):
       case uint8_t(TypeCode::NullExternRef):
       case uint8_t(TypeCode::NullAnyRef):
-        if (!features.gc) {
-          return fail("gc not enabled");
-        }
         *type = RefType::fromTypeCode(TypeCode(code), nullable);
         return true;
-#endif
       default:
         return fail("invalid heap type");
     }
   }
 
-#ifdef ENABLE_WASM_GC
-  if (features.gc) {
-    int32_t x;
-    if (!readVarS32(&x) || x < 0 || uint32_t(x) >= types.length()) {
-      return fail("invalid heap type index");
-    }
-    const TypeDef* typeDef = &types.type(x);
-    *type = RefType::fromTypeDef(typeDef, nullable);
-    return true;
+  int32_t x;
+  if (!readVarS32(&x) || x < 0 || uint32_t(x) >= types.length()) {
+    return fail("invalid heap type index");
   }
-#endif
-  return fail("invalid heap type");
+  const TypeDef* typeDef = &types.type(x);
+  *type = RefType::fromTypeDef(typeDef, nullable);
+  return true;
 }
 
 inline bool Decoder::readRefType(const TypeContext& types,

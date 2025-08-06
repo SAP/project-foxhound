@@ -503,6 +503,10 @@ impl super::Adapter {
             wgt::Features::TEXTURE_COMPRESSION_BC,
             bcn_exts.iter().all(|&ext| extensions.contains(ext)),
         );
+        features.set(
+            wgt::Features::TEXTURE_COMPRESSION_BC_SLICED_3D,
+            bcn_exts.iter().all(|&ext| extensions.contains(ext)), // BC guaranteed Sliced 3D
+        );
         let has_etc = if cfg!(any(webgl, Emscripten)) {
             extensions.contains("WEBGL_compressed_texture_etc")
         } else {
@@ -837,6 +841,16 @@ impl super::Adapter {
                 alignments: crate::Alignments {
                     buffer_copy_offset: wgt::BufferSize::new(4).unwrap(),
                     buffer_copy_pitch: wgt::BufferSize::new(4).unwrap(),
+                    // #6151: `wgpu_hal::gles` doesn't ask Naga to inject bounds
+                    // checks in GLSL, and it doesn't request extensions like
+                    // `KHR_robust_buffer_access_behavior` that would provide
+                    // them, so we can't really implement the checks promised by
+                    // [`crate::BufferBinding`].
+                    //
+                    // Since this is a pre-existing condition, for the time
+                    // being, provide 1 as the value here, to cause as little
+                    // trouble as possible.
+                    uniform_bounds_check_alignment: wgt::BufferSize::new(1).unwrap(),
                 },
             },
         })
@@ -1093,7 +1107,7 @@ impl crate::Adapter for super::Adapter {
             Tf::Rgba8Sint => renderable | storage,
             Tf::Rgb10a2Uint => renderable,
             Tf::Rgb10a2Unorm => filterable_renderable,
-            Tf::Rg11b10Float => filterable | float_renderable,
+            Tf::Rg11b10Ufloat => filterable | float_renderable,
             Tf::Rg32Uint => renderable,
             Tf::Rg32Sint => renderable,
             Tf::Rg32Float => unfilterable | float_renderable | texture_float_linear,

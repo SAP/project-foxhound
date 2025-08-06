@@ -3,6 +3,8 @@ head = "head.js"
 tags = "condprof"
 support-files = [
   "basics_profile.zip",
+  "clearStoragesForClient_profile.json",
+  "clearStoragesForClient_profile.zip",
   "clearStoragesForOriginPrefix_profile.json",
   "clearStoragesForOriginPrefix_profile.zip",
   "clearStoragesForPrincipal_profile.zip",
@@ -11,6 +13,8 @@ support-files = [
   "createLocalStorage_profile.zip",
   "defaultStorageDirectory_shared.json",
   "defaultStorageDirectory_shared.zip",
+  "getCachedUsageForPrincipal_profile.zip",
+  "getUsageForPrincipal_profile.zip",
   "getUsage_profile.zip",
   "groupMismatch_profile.zip",
   "indexedDBDirectory_shared.json",
@@ -25,6 +29,12 @@ support-files = [
   "unknownFiles_profile.zip",
 ]
 
+["make_getCachedUsageForPrincipal.js"]
+skip-if = ["true"] # Only used for recreating getCachedUsageForPrincipal_profile.zip
+
+["make_getUsageForPrincipal.js"]
+skip-if = ["true"] # Only used for recreating getUsageForPrincipal_profile.zip
+
 ["make_unknownFiles.js"]
 skip-if = ["true"] # Only used for recreating unknownFiles_profile.zip
 
@@ -33,9 +43,13 @@ skip-if = ["true"] # Only used for recreating unsetLastAccessTime_profile.zip
 
 ["test_allowListFiles.js"]
 
+["test_artificialFailure.js"]
+
 ["test_bad_origin_directory.js"]
 
 ["test_basics.js"]
+
+["test_clearStoragesForClient.js"]
 
 ["test_clearStoragesForOriginAttributesPattern.js"]
 
@@ -45,11 +59,17 @@ skip-if = ["true"] # Only used for recreating unsetLastAccessTime_profile.zip
 
 ["test_clearStoragesForPrivateBrowsing.js"]
 
+["test_clientDirectoryOpeningStarted.js"]
+
 ["test_createLocalStorage.js"]
 
 ["test_estimateOrigin.js"]
 
+["test_getCachedUsageForPrincipal.js"]
+
 ["test_getUsage.js"]
+
+["test_getUsageForPrincipal.js"]
 
 ["test_groupMismatch.js"]
 skip-if = ["true"] # The group is now always empty, so metadata can't differ anymore.
@@ -61,7 +81,17 @@ skip-if = ["condprof"] # frequent perma fail, then goes away.
 
 ["test_initializePersistentClient.js"]
 
+["test_initializePersistentOrigin.js"]
+
+["test_initializePersistentStorage.js"]
+
 ["test_initializeTemporaryClient.js"]
+
+["test_initializeTemporaryOrigin.js"]
+
+["test_initializeTemporaryOrigin_failure.js"]
+
+["test_listCachedOrigins.js"]
 
 ["test_listOrigins.js"]
 
@@ -80,6 +110,8 @@ skip-if = ["condprof"] # frequent perma fail, then goes away.
 ["test_persist_globalLimit.js"]
 
 ["test_persist_groupLimit.js"]
+
+["test_quotaClientInteractions.js"]
 
 ["test_removeLocalStorage.js"]
 

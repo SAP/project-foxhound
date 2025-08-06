@@ -70,6 +70,8 @@
     <string name="mozac_feature_addons_permissions_tab_hide_description">ເຊື່ອງ ແລະ ສະແດງແທັບຂອງບຣາວເຊີ</string>
     <!-- Description for top_sites permission. -->
     <string name="mozac_feature_addons_permissions_top_sites_description">ເຂົ້າເຖິງປະຫວັດການທ່ອງເວັບ</string>
+    <!-- Description for trialML permission. -->
+    <string name="mozac_feature_addons_permissions_trial_ml_description">ດາວໂຫຼດ ແລະ ເປີດໃຊ້ໂມເດວ AI ໃນອຸປະກອນຂອງທ່ານ</string>
     <!-- Description for devtools permission. -->
     <string name="mozac_feature_addons_permissions_devtools_description">ຂະຫຍາຍເຄື່ອງມືຂອງນັກພັດທະນາເພື່ອເຂົ້າເຖິງຂໍ້ມູນຂອງທ່ານໃນແທັບທີ່ເປີດຢູ່</string>
     <!-- The version on of add-on. -->
@@ -94,6 +96,8 @@
     <string name="mozac_feature_addons_settings_allow_in_private_browsing">ອະນຸຍາດໃຫ້ຢູ່ໃນໂຫມດການທ່ອງເວັບແບບສ່ວນຕົວ</string>
     <!-- Indicates the add-on is allowed in private browsing mode. -->
     <string name="mozac_feature_addons_settings_run_in_private_browsing">ດໍາເນີນການໃນໂຫມດການທ່ອງເວັບແບບສ່ວນຕົວ</string>
+    <!-- This is displayed when the add-on is not allowed to run in private browsing. -->
+    <string name="mozac_feature_addons_not_allowed_in_private_browsing">ບໍ່ອະນຸຍາດໃຫ້ໃຊ້ໃນໜ້າຕ່າງສ່ວນຕົວ</string>
     <!-- Indicates the add-on is enabled. -->
     <string name="mozac_feature_addons_enabled">ເປີດໃຊ້ງານແລ້ວ</string>
     <!-- This is displayed in a page where the user can see the installed and recommended(not installed yet) add-ons, this string indicates the installed section. -->
@@ -128,6 +132,8 @@
     <string name="mozac_feature_addons_permissions_dialog_allow">ອະນຸຍາດ</string>
     <!-- This is a button to deny the optional permissions requested by an add-on . -->
     <string name="mozac_feature_addons_permissions_dialog_deny">ປະຕິເສດ</string>
+    <!-- Text link to learn more about permission requests on the add-on permissions dialog . -->
+    <string name="mozac_feature_addons_permissions_dialog_learn_more">ຮຽນຮູ້ເພີ່ມເຕີມ</string>
     <!-- This is a button to cancel the add-on installation . -->
     <string name="mozac_feature_addons_permissions_dialog_cancel">ຍົກເລີກ</string>
     <!-- Accessibility content description to install add-on button. %1$s is the add-on name. -->
@@ -136,10 +142,20 @@
     <string name="mozac_feature_addons_install_addon_dialog_cancel">ຍົກເລີກ</string>
     <!-- Indicates how many users have rated an add-on. %1$s will be replaced with number of reviews -->
     <string name="mozac_feature_addons_user_rating_count_2">ກວດຄືນ: %1$s</string>
+    <!-- Accessibility content description for the amount of stars that add-on has, where %1$.02f will be the amount of stars. -->
+    <string name="mozac_feature_addons_rating_content_description_2">ຄະແນນ: %1$.02f ຈາກທັງໝົດ 5</string>
     <!-- This is the title of page where all the add-ons are listed-->
     <string name="mozac_feature_addons_addons">Add-ons</string>
     <!-- Label for add-ons sub menu item for add-ons manager-->
     <string name="mozac_feature_addons_addons_manager">ຕົວຈັດການ Add-ons</string>
+    <!-- The title of the "crash" notification in the extensions manager -->
+    <string name="mozac_feature_extensions_manager_notification_title_text">ສ່ວນຂະຫຍາຍຖືກປິດໃຊ້ງານຊົ່ວຄາວ</string>
+    <!-- The content of the "crash" notification in the extensions manager -->
+    <string name="mozac_feature_extensions_manager_notification_content_text">ໜຶ່ງ ຫຼື ຫຼາຍສ່ວນຂະຫຍາຍຢຸດເຮັດວຽກ, ເຮັດໃຫ້ລະບົບຂອງທ່ານບໍ່ສະຖຽນ.</string>
+    <!-- Button to re-enable the extensions in the "crash" notification -->
+    <string name="mozac_feature_extensions_manager_notification_restart_button">ຣີສະຕາດສ່ວນຂະຫຍາຍໃໝ່</string>
+    <!-- Button in the extensions manager that opens AMO in a tab -->
+    <string name="mozac_feature_addons_find_more_extensions_button_text">ຊອກຫາສ່ວນຂະຫຍາຍເພີ່ມເຕີມ</string>
     <!-- The label of the allow button, this will be shown to the user when an add-on needs new permissions, with the button the user will indicate that they want to accept the new permissions and update the add-on-->
     <string name="mozac_feature_addons_updater_notification_allow_button">ອະນຸຍາດ</string>
     <!-- The label of the deny button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated-->
@@ -150,6 +166,8 @@
     <string name="mozac_feature_addons_updater_notification_content" tools:ignore="PluralsCandidate">%1$d ຕ້ອງການສິດໃຫມ່</string>
     <!-- The content of the notification displayed when an add-on needs a new permission-->
     <string name="mozac_feature_addons_updater_notification_content_singular">ຕ້ອງການສິດໃຫມ່</string>
+    <!-- Name of the "notification channel" used for displaying a notification for updating an extension. See https://developer.android.com/training/notify-user/channels -->
+    <string name="mozac_feature_addons_updater_notification_channel_2">ການປັບປຸງສ່ວນຂະຫຍາຍ</string>
     <!-- Name of the "notification channel" used for displaying a notification for new supported add-ons. See https://developer.android.com/training/notify-user/channels -->
     <string name="mozac_feature_addons_supported_checker_notification_channel" tools:ignore="UnusedResources">ຮອງຮັບໂຕກວດ Add-on</string>
     <!-- The tile of the notification, this will be shown to the user when one newly supported add-on is available.-->
@@ -164,12 +182,32 @@
     <string name="mozac_feature_addons_supported_checker_notification_content_more_than_two">ເພີ່ມເຂົ້າໄປໃນ %1$s</string>
     <!-- This is the caption for not yet supported screen caption -->
     <string name="mozac_feature_addons_not_yet_supported_caption2">ພວກເຮົາກຳລັງສ້າງໃຫ້ມີການຊັບພອດການເລືອກ Extensions ທີ່ແນະນຳໃນຂັ້ນພື້ນຖານ.</string>
+    <!-- This is the caption for the extension installation progress overlay -->
+    <string name="mozac_extension_install_progress_caption">ກຳລັງດາວໂຫຼດ ແລະ ກວດສອບສ່ວນຂະຫຍາຍ…</string>
+    <!-- Error shown when something unexpected happened while trying to get the extension list from the server -->
+    <string name="mozac_feature_addons_failed_to_query_extensions">ລົ້ມເຫລວໃນການສອບຖາມສ່ວນຂະຫຍາຍ!</string>
     <!-- Error shown when unable to find a translation for an add-on field. %1$s is the locale of the user and %2$s is the default language of the add-on -->
     <string name="mozac_feature_addons_failed_to_translate">ບໍ່ພົບການແປສຳລັບພາສາ %1$s ແລະ ພາສາພື້ນຖານ %2$s</string>
     <!-- Text shown after successfully installed an add-on. %1$s is the add-on name. -->
     <string name="mozac_feature_addons_successfully_installed">ສຳເລັດການຕິດຕັ້ງ %1$s</string>
-    <!-- Text shown after failed to install an add-on. %1$s is the add-on name. -->
+    <!-- Text shown after failing to install an add-on (when add-on type isn't supported or an unknown has errored). %1$s is the add-on name. -->
     <string name="mozac_feature_addons_failed_to_install">ການຕິດຕັ້ງ %1$s ລົ້ມເຫລວ</string>
+    <!-- Text shown after failing to install an extension for which we don't have its name (when add-on type isn't supported or an unknown has errored). -->
+    <string name="mozac_feature_addons_extension_failed_to_install">ລົ້ມເຫລວໃນການຕິດຕັ້ງສ່ວນຂະຫຍາຍນີ້.</string>
+    <!-- Text shown when installing an add-on has failed. -->
+    <string name="mozac_feature_addons_cant_install_extension">ບໍ່ສາມາດຕິດຕັ້ງສ່ວນຂະຫຍາຍໄດ້</string>
+    <!-- Text shown when attempting to install an extension and a network error happened. -->
+    <string name="mozac_feature_addons_extension_failed_to_install_network_error">ສ່ວນຂະຫຍາຍນີ້ບໍ່ສາມາດດາວໂຫຼດໄດ້ເນື່ອງຈາກການເຊື່ອມຕໍ່ລົ້ມເຫລວ.</string>
+    <!-- Text shown when attempting to install an extension and the downloaded file is corrupted. -->
+    <string name="mozac_feature_addons_extension_failed_to_install_corrupt_error">ບໍ່ສາມາດຕິດຕັ້ງສ່ວນຂະຫຍາຍນີ້ໄດ້ເນື່ອງຈາກມັນປະກົດວ່າເສຍຫາຍ.</string>
+    <!-- Text shown when attempting to install an add-on and an error occurred because the extension was not signed. -->
+    <string name="mozac_feature_addons_extension_failed_to_install_not_signed_error">ສ່ວນຂະຫຍາຍນີ້ບໍ່ສາມາດຕິດຕັ້ງໄດ້ເພາະວ່າມັນບໍ່ໄດ້ຖືກກວດສອບ.</string>
+    <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
+    <string name="mozac_feature_addons_failed_to_install_incompatible_error">%1$s ບໍ່ສາມາດຕິດຕັ້ງໄດ້ ເພາະວ່າມັນບໍ່ເຂົ້າກັນໄດ້ກັບ %2$s %3$s.</string>
+    <!-- Text shown when attempting to install a blocklisted add-on. %1$s is the add-on name. -->
+    <string name="mozac_feature_addons_blocklisted_1" moz:removedIn="133" tools:ignore="UnusedResources">%1$s ບໍ່ສາມາດຕິດຕັ້ງໄດ້ເນື່ອງຈາກມັນມີຄວາມສ່ຽງສູງທີ່ຈະເຮັດໃຫ້ເກີດບັນຫາຄວາມສະຖຽນ ຫຼື ຄວາມປອດໄພ.</string>
+    <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
+    <string name="mozac_feature_addons_admin_install_only">ບໍ່ສາມາດຕິດຕັ້ງ %1$s ໄດ້ ເນື່ອງຈາກຕ້ອງຕິດຕັ້ງໂດຍອົງກອນທີ່ໃຊ້ນະໂຍບາຍຂອງອົງກອນເທົ່ານັ້ນ, ເຊິ່ງບໍ່ຮອງຮັບໃນ platform ນີ້.</string>
     <!-- Text shown after successfully enabled an add-on. %1$s is the add-on name. -->
     <string name="mozac_feature_addons_successfully_enabled">ສຳເລັດການເປີດໃຊ້ງານ %1$s</string>
     <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
@@ -188,6 +226,10 @@
     <string name="mozac_feature_addons_failed_to_remove" tools:ignore="UnusedResources">ລຶບ %1$s ລົ້ມເຫລວ</string>
     <!-- Label shown to indicate that the add-on was migrated from a previous version of the app. %1$s is the app name most of the case it will be Firefox. -->
     <string name="mozac_feature_addons_migrated_from_a_previous_version_label" tools:ignore="UnusedResources">Add-on ນີ້ແມ່ນໄດ້ຮັບການໂອນຍ້າຍມາຈາກເວີຊັນ %1$s ກ່ອນຫນ້ານີ້</string>
+    <!-- Text shown in not yet supported add-ons section. -->
+    <string name="mozac_feature_addons_unsupported_caption_2">1 ສ່ວນຂະຫຍາຍ</string>
+    <!-- Text shown in not yet supported add-ons section - plural. %1$s is the number of unsupported extensions. -->
+    <string name="mozac_feature_addons_unsupported_caption_plural_2">ສ່ວນຂະຫຍາຍ %1$s</string>
     <!-- Text link to a sumo page for learning more about unsupported add-ons. -->
     <string name="mozac_feature_addons_unsupported_learn_more">ຮຽນຮູ້ເພີ່ມເຕີມ</string>
     <!-- Displayed in the "Status" field for the updater when an add-on has been correctly updated. -->
@@ -204,4 +246,20 @@
     <string name="mozac_feature_addons_updater_dialog_status">ສະຖານະ:</string>
     <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
     <string name="mozac_feature_addons_installed_dialog_title">%1$s ໄດ້ຖືກເພີ່ມເຂົ້າໃນ %2$s</string>
-    </resources>
+    <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
+    <string name="mozac_feature_addons_installed_dialog_description_2">ເຂົ້າເຖິງ %1$s ຈາກເມນູ %2$s.</string>
+    <!-- Confirmation button text for the dialog when add-on installation is completed. -->
+    <string name="mozac_feature_addons_installed_dialog_okay_button_2">ຕົກລົງ</string>
+    <!-- "Learn more" link displayed below an add-on status message. -->
+    <string name="mozac_feature_addons_status_learn_more">ຮຽນຮູ້ເພີ່ມເຕີມ</string>
+    <!-- "See details" link displayed below an add-on status message. -->
+    <string name="mozac_feature_addons_status_see_details">ເບິ່ງລາຍລະອຽດ</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
+    <string name="mozac_feature_addons_status_blocklisted" moz:removedIn="133" tools:ignore="UnusedResources">%1$s ຖືກປິດການນຳໃຊ້ເນື່ອງຈາກບັນຫາຄວາມປອດໄພ ຫຼື ຄວາມສະຖຽນ.</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
+    <string name="mozac_feature_addons_status_blocklisted_1">ສ່ວນຂະຫຍາຍນີ້ຖືກບລັອກເນື່ອງຈາກລະເມີດນະໂຍບາຍຂອງ Mozilla ແລະ ຖືກປິດໃຊ້ງານ.</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
+    <string name="mozac_feature_addons_status_unsigned">%1$s ບໍ່ສາມາດກວດສອບໄດ້ວ່າປອດໄພ ແລະ ຖືກປິດການນຳໃຊ້ແລ້ວ.</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
+    <string name="mozac_feature_addons_status_incompatible">%1$s ບໍ່ເຂົ້າກັນໄດ້ກັບ %2$s ເວີຊັນຂອງທ່ານ (ເວີຊັນ %3$s).</string>
+</resources>

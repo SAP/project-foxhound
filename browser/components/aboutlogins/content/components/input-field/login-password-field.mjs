@@ -11,14 +11,31 @@ class LoginPasswordField extends MozLitElement {
 
   static properties = {
     _value: { type: String, state: true },
+    name: { type: String },
     readonly: { type: Boolean, reflect: true },
     visible: { type: Boolean, reflect: true },
+    required: { type: Boolean, reflect: true },
   };
 
   static queries = {
     input: "input",
     button: "button",
   };
+
+  static formAssociated = true;
+
+  constructor() {
+    super();
+    this._value = "";
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.internals.setFormValue(this._value);
+    this.addEventListener("input", e => {
+      this.internals.setFormValue(e.composedTarget.value);
+    });
+  }
 
   set value(newValue) {
     this._value = newValue;
@@ -34,21 +51,35 @@ class LoginPasswordField extends MozLitElement {
       : this._value;
   }
 
+  #revealIconSrc(concealed) {
+    return concealed
+      ? "chrome://browser/content/aboutlogins/icons/password-hide.svg"
+      : "chrome://browser/content/aboutlogins/icons/password.svg";
+  }
+
   render() {
     return html`
       ${stylesTemplate()}
-      <label
-        class="field-label"
-        data-l10n-id="login-item-password-label"
-      ></label>
       ${editableFieldTemplate({
         type: this.#type,
         value: this.#password,
         labelId: "login-item-password-label",
         disabled: this.readonly,
+        required: this.required,
         onFocus: this.handleFocus,
         onBlur: this.handleBlur,
+        labelL10nId: "login-item-password-label",
+        noteL10nId: "passwords-password-tooltip",
       })}
+      <moz-button
+        data-l10n-id=${this.visible
+          ? "login-item-password-conceal-checkbox"
+          : "login-item-password-reveal-checkbox"}
+        class="reveal-password-button"
+        type="icon ghost"
+        iconSrc=${this.#revealIconSrc(this.visible)}
+        @click=${this.toggleVisibility}
+      ></moz-button>
     `;
   }
 
@@ -69,7 +100,6 @@ class LoginPasswordField extends MozLitElement {
     if (this.visible) {
       this.onPasswordVisible?.();
     }
-    this.input.focus();
   }
 }
 

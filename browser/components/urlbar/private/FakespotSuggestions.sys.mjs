@@ -113,6 +113,10 @@ export class FakespotSuggestions extends BaseFeature {
     return !cap || this.showLessFrequentlyCount < cap;
   }
 
+  isSuggestionSponsored(_suggestion) {
+    return true;
+  }
+
   getSuggestionTelemetryType(suggestion) {
     return "fakespot_" + this.#parseProvider(suggestion);
   }
@@ -130,7 +134,6 @@ export class FakespotSuggestions extends BaseFeature {
       totalReviews: Number(suggestion.totalReviews),
       fakespotGrade: suggestion.fakespotGrade,
       fakespotProvider: this.#parseProvider(suggestion),
-      shouldNavigate: true,
       dynamicType: "fakespot",
     };
 

@@ -104,6 +104,7 @@ class Texture;
 namespace layers {
 class CompositableHost;
 class RemoteTextureOwnerClient;
+class SharedSurfacesHolder;
 class SurfaceDescriptor;
 }  // namespace layers
 
@@ -487,6 +488,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   void DummyReadFramebufferOperation();
 
+  layers::SharedSurfacesHolder* GetSharedSurfacesHolder() const;
+
   dom::ContentParentId GetContentId() const;
 
   WebGLTexture* GetActiveTex(const GLenum texTarget) const;
@@ -549,10 +552,15 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
                                                   const bool webvr);
 
   std::optional<dom::PredefinedColorSpace> mDrawingBufferColorSpace;
+  std::optional<dom::PredefinedColorSpace> mUnpackColorSpace;
   std::optional<color::ColorProfileDesc> mDisplayProfile;
 
   void SetDrawingBufferColorSpace(const dom::PredefinedColorSpace val) {
     mDrawingBufferColorSpace = val;
+  }
+
+  void SetUnpackColorSpace(const dom::PredefinedColorSpace val) {
+    mUnpackColorSpace = val;
   }
 
   void ClearVRSwapChain();

@@ -19,9 +19,7 @@ class GenericExperimentIntegrationTest {
 
     @get:Rule
     val activityTestRule = HomeActivityTestRule(
-        isJumpBackInCFREnabled = false,
         isPWAsPromptEnabled = false,
-        isTCPCFREnabled = false,
     )
 
     @Before
@@ -47,6 +45,17 @@ class GenericExperimentIntegrationTest {
             verifyStudiesToggle(true)
             clickStudiesToggle()
             clickStudiesDialogOkButton()
+        }
+    }
+
+    @Test
+    fun verifyStudiesAreDisabled() {
+        homeScreen {
+        }.openThreeDotMenu {
+        }.openSettings {
+        }.openSettingsSubMenuDataCollection {
+            clickStudiesOption()
+            verifyStudiesToggle(false)
         }
     }
 

@@ -16,6 +16,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
+  UrlbarProviderGlobalActions:
+    "resource:///modules/UrlbarProviderGlobalActions.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
 });
@@ -136,6 +138,7 @@ const UPDATE_CHECK_PERIOD_MS = 12 * 60 * 60 * 1000; // 12 hours
 /**
  * A node in the QueryScorer's phrase tree.
  */
+// eslint-disable-next-line no-shadow
 class Node {
   constructor(word) {
     this.word = word;
@@ -499,7 +502,8 @@ class ProviderInterventions extends UrlbarProvider {
         queryContext.searchString
       ) ||
       !EN_LOCALE_MATCH.test(Services.locale.appLocaleAsBCP47) ||
-      !Services.policies.isAllowed("urlbarinterventions")
+      !Services.policies.isAllowed("urlbarinterventions") ||
+      lazy.UrlbarProviderGlobalActions.isActive(queryContext)
     ) {
       return false;
     }
@@ -712,11 +716,7 @@ class ProviderInterventions extends UrlbarProvider {
 
   onImpression(state, queryContext, controller, providerVisibleResults) {
     providerVisibleResults.forEach(({ result }) => {
-      Services.telemetry.keyedScalarAdd(
-        "urlbar.tips",
-        `${result.payload.type}-shown`,
-        1
-      );
+      Glean.urlbar.tips[`${result.payload.type}-shown`].add(1);
     });
   }
 

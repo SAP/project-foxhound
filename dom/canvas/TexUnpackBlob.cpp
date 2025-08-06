@@ -11,6 +11,7 @@
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/ImageDataSerializer.h"
+#include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/VideoBridgeParent.h"
 #include "mozilla/RefPtr.h"
@@ -314,6 +315,15 @@ static bool SDIsNullRemoteDecoder(const layers::SurfaceDescriptor& sd) {
                  .type() == layers::RemoteDecoderVideoSubDescriptor::Tnull_t;
 }
 
+// Check if the surface descriptor describes an ExternalImage surface for which
+// we only have an opaque source/handle to derive the actual surface from.
+static bool SDIsExternalImage(const layers::SurfaceDescriptor& sd) {
+  return sd.type() ==
+             layers::SurfaceDescriptor::TSurfaceDescriptorExternalImage &&
+         sd.get_SurfaceDescriptorExternalImage().source() ==
+             wr::ExternalImageSource::SharedSurfaces;
+}
+
 // static
 std::unique_ptr<TexUnpackBlob> TexUnpackBlob::Create(
     const TexUnpackBlobDesc& desc) {
@@ -339,7 +349,8 @@ std::unique_ptr<TexUnpackBlob> TexUnpackBlob::Create(
       // Otherwise, TexUnpackImage will try to blit the surface descriptor as
       // if it can be mapped as a framebuffer, whereas the Shmem is still CPU
       // data.
-      if (SDIsRGBBuffer(*desc.sd) || SDIsNullRemoteDecoder(*desc.sd)) {
+      if (SDIsRGBBuffer(*desc.sd) || SDIsNullRemoteDecoder(*desc.sd) ||
+          SDIsExternalImage(*desc.sd)) {
         return new TexUnpackSurface(desc);
       }
       return new TexUnpackImage(desc);
@@ -408,6 +419,12 @@ bool TexUnpackBlob::ConvertIfNeeded(
     dstOrigin = srcOrigin;
   }
 
+  // TODO (Bug 754256): Figure out the source colorSpace.
+  dom::PredefinedColorSpace srcColorSpace = dom::PredefinedColorSpace::Srgb;
+  dom::PredefinedColorSpace dstColorSpace =
+      webgl->mUnpackColorSpace ? *webgl->mUnpackColorSpace
+                               : dom::PredefinedColorSpace::Srgb;
+
   if (srcFormat != dstFormat) {
     webgl->GeneratePerfWarning(
         "Conversion requires pixel reformatting. (%u->%u)", uint32_t(srcFormat),
@@ -421,6 +438,10 @@ bool TexUnpackBlob::ConvertIfNeeded(
   } else if (srcStride != dstStride) {
     webgl->GeneratePerfWarning("Conversion requires change in stride. (%u->%u)",
                                uint32_t(srcStride), uint32_t(dstStride));
+  } else if (srcColorSpace != dstColorSpace) {
+    webgl->GeneratePerfWarning(
+        "Conversion requires colorSpace conversion. (%u->%u)",
+        uint32_t(srcColorSpace), uint32_t(dstColorSpace));
   } else {
     return true;
   }
@@ -446,7 +467,8 @@ bool TexUnpackBlob::ConvertIfNeeded(
   bool wasTrivial;
   if (!ConvertImage(rowLength, rowCount, srcBegin, srcStride, srcOrigin,
                     srcFormat, srcIsPremult, dstBegin, dstStride, dstOrigin,
-                    dstFormat, dstIsPremult, &wasTrivial)) {
+                    dstFormat, dstIsPremult, srcColorSpace, dstColorSpace,
+                    &wasTrivial)) {
     webgl->ErrorImplementationBug("ConvertImage failed.");
     return false;
   }
@@ -673,7 +695,8 @@ bool TexUnpackImage::Validate(const WebGLContext* const webgl,
 Maybe<std::string> BlitPreventReason(
     const int32_t level, const ivec3& offset, const GLenum internalFormat,
     const webgl::PackingInfo& pi, const TexUnpackBlobDesc& desc,
-    const OptionalRenderableFormatBits optionalRenderableFormatBits) {
+    const OptionalRenderableFormatBits optionalRenderableFormatBits,
+    bool sameColorSpace) {
   const auto& size = desc.size;
   const auto& unpacking = desc.unpacking;
 
@@ -703,6 +726,10 @@ Maybe<std::string> BlitPreventReason(
       }
     }();
     if (premultReason) return premultReason;
+
+    if (!sameColorSpace) {
+      return "not same colorSpace";
+    }
 
     const auto formatReason = [&]() -> const char* {
       if (pi.type != LOCAL_GL_UNSIGNED_BYTE) {
@@ -800,9 +827,16 @@ bool TexUnpackImage::TexOrSubImage(bool isSubImage, bool needsRespec,
 
   // -
 
-  const auto reason =
-      BlitPreventReason(level, {xOffset, yOffset, zOffset}, dui->internalFormat,
-                        pi, mDesc, webgl->mOptionalRenderableFormatBits);
+  // TODO (Bug 754256): Figure out the source colorSpace.
+  dom::PredefinedColorSpace srcColorSpace = dom::PredefinedColorSpace::Srgb;
+  dom::PredefinedColorSpace dstColorSpace =
+      webgl->mUnpackColorSpace ? *webgl->mUnpackColorSpace
+                               : dom::PredefinedColorSpace::Srgb;
+  bool sameColorSpace = (srcColorSpace == dstColorSpace);
+
+  const auto reason = BlitPreventReason(
+      level, {xOffset, yOffset, zOffset}, dui->internalFormat, pi, mDesc,
+      webgl->mOptionalRenderableFormatBits, sameColorSpace);
   if (reason) {
     webgl->GeneratePerfWarning(
         "Failed to hit GPU-copy fast-path."
@@ -901,7 +935,7 @@ static bool GetFormatForSurf(const gfx::SourceSurface* surf,
       *out_bpp = 1;
       return true;
 
-    case gfx::SurfaceFormat::YUV:
+    case gfx::SurfaceFormat::YUV420:
       // Ugh...
       NS_ERROR("We don't handle uploads from YUV sources yet.");
       // When we want to, check out gfx/ycbcr/YCbCrUtils.h. (specifically
@@ -976,6 +1010,17 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
         return false;
       }
       surf = texture->GetAsSurface();
+    } else if (SDIsExternalImage(sd)) {
+      const auto& sdei = sd.get_SurfaceDescriptorExternalImage();
+      if (auto* sharedSurfacesHolder = webgl->GetSharedSurfacesHolder()) {
+        surf = sharedSurfacesHolder->Get(sdei.id());
+      }
+      if (!surf) {
+        // Most likely the content process crashed before it was able to finish
+        // sharing the surface with the compositor process.
+        gfxCriticalNote << "TexUnpackSurface failed to get ExternalImage";
+        return false;
+      }
     } else {
       MOZ_ASSERT_UNREACHABLE("Unexpected surface descriptor!");
     }

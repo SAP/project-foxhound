@@ -145,4 +145,102 @@ add_heuristic_tests([
       },
     ],
   },
+  {
+    description: "address field matches cc-number as well as address-line1",
+    fixtureData: `
+        <html><body><form>
+          <label for="first-name">First Name</label>
+          <input id="first-name">
+          <label for="last-name">Last Name</label>
+          <input id="last-name">
+          <label for="a1">Saisir une adresse numero de maison inclus</label>
+          <input id="a1">
+        </form></body></html>`,
+    expectedResult: [
+      {
+        fields: [
+          { fieldName: "given-name", reason: "regex-heuristic" },
+          { fieldName: "family-name", reason: "regex-heuristic" },
+          { fieldName: "address-line1", reason: "update-heuristic-alternate" },
+        ],
+      },
+    ],
+  },
+  {
+    description: "address field matches house number",
+    fixtureData: `
+        <html><body><form>
+          <label for="strasse">Street</label>
+          <input id="strasse">
+          <label for="haus">Haus</label>
+          <input id="haus">
+          <label for="adresszusatz"></label>
+          <input id="adresszusatz">
+        </form></body></html>`,
+    expectedResult: [
+      {
+        fields: [
+          { fieldName: "address-line1", reason: "update-heuristic" },
+          { fieldName: "address-housenumber", reason: "regex-heuristic" },
+          { fieldName: "address-line2", reason: "regex-heuristic" },
+        ],
+      },
+    ],
+  },
+  {
+    description: "address1 and address2 not adjacent",
+    fixtureData: `<form>
+      <input id="firstname">
+      <input id="lastname">
+      <input id="address1">
+      <input id="postalcode">
+      <input id="city">
+      <input id="address2">
+    </form>`,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "given-name" },
+          { fieldName: "family-name" },
+          { fieldName: "address-line1" },
+          { fieldName: "postal-code" },
+          { fieldName: "address-level2" },
+          { fieldName: "address-line2" },
+        ],
+      },
+    ],
+  },
+  {
+    description: "address1 and address2 not adjacent with house number",
+    fixtureData: `<form>
+      <input id="firstname">
+      <input id="lastname">
+      <input id="strasse">
+      <input id="haus">
+      <input id="organization">
+      <input id="city">
+      <input id="address2">
+      <input id="postal-code">
+    </form>`,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "given-name" },
+          { fieldName: "family-name" },
+          { fieldName: "address-line1" },
+          { fieldName: "address-housenumber" },
+          { fieldName: "organization" },
+          { fieldName: "address-level2" },
+          { fieldName: "address-line2" },
+          { fieldName: "postal-code" },
+        ],
+      },
+    ],
+  },
 ]);

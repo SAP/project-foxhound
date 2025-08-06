@@ -129,7 +129,7 @@ impl QPackEncoder {
     }
 
     fn read_instructions(&mut self, conn: &mut Connection, stream_id: StreamId) -> Res<()> {
-        qdebug!([self], "read a new instraction");
+        qdebug!([self], "read a new instruction");
         loop {
             let mut recv = ReceiverConnWrapper::new(conn, stream_id);
             match self.instruction_reader.read_instructions(&mut recv) {
@@ -572,9 +572,9 @@ mod tests {
 
         pub fn send_instructions(&mut self, encoder_instruction: &[u8]) {
             self.encoder.send_encoder_updates(&mut self.conn).unwrap();
-            let out = self.conn.process(None, now());
-            let out2 = self.peer_conn.process(out.as_dgram_ref(), now());
-            mem::drop(self.conn.process(out2.as_dgram_ref(), now()));
+            let out = self.conn.process_output(now());
+            let out2 = self.peer_conn.process(out.dgram(), now());
+            mem::drop(self.conn.process(out2.dgram(), now()));
             let mut buf = [0_u8; 100];
             let (amount, fin) = self
                 .peer_conn
@@ -635,8 +635,8 @@ mod tests {
             .peer_conn
             .stream_send(encoder.recv_stream_id, decoder_instruction)
             .unwrap();
-        let out = encoder.peer_conn.process(None, now());
-        mem::drop(encoder.conn.process(out.as_dgram_ref(), now()));
+        let out = encoder.peer_conn.process_output(now());
+        mem::drop(encoder.conn.process(out.dgram(), now()));
         assert!(encoder
             .encoder
             .read_instructions(&mut encoder.conn, encoder.recv_stream_id)
@@ -677,7 +677,7 @@ mod tests {
 
     // test insert_with_name_literal which fails because there is not enough space in the table
     #[test]
-    fn test_insert_with_name_literal_1() {
+    fn insert_with_name_literal_1() {
         let mut encoder = connect(false);
 
         // insert "content-length: 1234
@@ -691,7 +691,7 @@ mod tests {
 
     // test insert_with_name_literal - succeeds
     #[test]
-    fn test_insert_with_name_literal_2() {
+    fn insert_with_name_literal_2() {
         let mut encoder = connect(false);
 
         assert!(encoder.encoder.set_max_capacity(200).is_ok());
@@ -708,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn test_change_capacity() {
+    fn change_capacity() {
         let mut encoder = connect(false);
 
         assert!(encoder.encoder.set_max_capacity(200).is_ok());
@@ -722,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn test_header_block_encoder_non() {
+    fn header_block_encoder_non() {
         let test_cases: [TestElement; 6] = [
             // test a header with ref to static - encode_indexed
             TestElement {
@@ -798,7 +798,7 @@ mod tests {
     }
 
     #[test]
-    fn test_header_block_encoder_huffman() {
+    fn header_block_encoder_huffman() {
         let test_cases: [TestElement; 6] = [
             // test a header with ref to static - encode_indexed
             TestElement {
@@ -873,7 +873,7 @@ mod tests {
 
     // Test inserts block on waiting for an insert count increment.
     #[test]
-    fn test_insertion_blocked_on_insert_count_feedback() {
+    fn insertion_blocked_on_insert_count_feedback() {
         let mut encoder = connect(false);
 
         encoder.encoder.set_max_capacity(60).unwrap();
@@ -968,12 +968,12 @@ mod tests {
     }
 
     #[test]
-    fn test_header_ack() {
+    fn header_ack() {
         test_insertion_blocked_on_waiting_for_header_ack_or_stream_cancel(0);
     }
 
     #[test]
-    fn test_stream_canceled() {
+    fn stream_canceled() {
         test_insertion_blocked_on_waiting_for_header_ack_or_stream_cancel(1);
     }
 
@@ -1563,8 +1563,8 @@ mod tests {
         encoder.send_instructions(ONE_INSTRUCTION_1);
 
         // exchange a flow control update.
-        let out = encoder.peer_conn.process(None, now());
-        mem::drop(encoder.conn.process(out.as_dgram_ref(), now()));
+        let out = encoder.peer_conn.process_output(now());
+        mem::drop(encoder.conn.process(out.dgram(), now()));
 
         // Try writing a new header block. Now, headers will be added to the dynamic table again,
         // because instructions can be sent.
@@ -1595,7 +1595,7 @@ mod tests {
     }
 
     #[test]
-    fn test_do_not_evict_entry_that_are_referred_only_by_the_same_header_blocked_encoding() {
+    fn do_not_evict_entry_that_are_referred_only_by_the_same_header_blocked_encoding() {
         let mut encoder = connect(false);
 
         encoder.encoder.set_max_blocked_streams(20).unwrap();
@@ -1610,8 +1610,8 @@ mod tests {
             .encoder
             .send_encoder_updates(&mut encoder.conn)
             .unwrap();
-        let out = encoder.conn.process(None, now());
-        mem::drop(encoder.peer_conn.process(out.as_dgram_ref(), now()));
+        let out = encoder.conn.process_output(now());
+        mem::drop(encoder.peer_conn.process(out.dgram(), now()));
         // receive an insert count increment.
         recv_instruction(&mut encoder, &[0x01]);
 
@@ -1639,7 +1639,7 @@ mod tests {
     }
 
     #[test]
-    fn test_streams_cancel_cleans_up_unacked_header_blocks() {
+    fn streams_cancel_cleans_up_unacked_header_blocks() {
         let mut encoder = connect(false);
 
         encoder.encoder.set_max_blocked_streams(10).unwrap();

@@ -20,6 +20,7 @@
 #include "api/audio_codecs/ilbc/audio_encoder_ilbc.h"
 #include "api/audio_codecs/opus/audio_decoder_opus.h"
 #include "api/audio_codecs/opus/audio_encoder_opus.h"
+#include "api/environment/environment_factory.h"
 #include "modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 #include "modules/audio_coding/test/PCMFile.h"
 #include "rtc_base/strings/string_builder.h"
@@ -66,12 +67,14 @@ void MonitoringAudioPacketizationCallback::GetStatistics(uint32_t* counter) {
 }
 
 TestVadDtx::TestVadDtx()
-    : encoder_factory_(
+    : env_(CreateEnvironment()),
+      encoder_factory_(
           CreateAudioEncoderFactory<AudioEncoderIlbc, AudioEncoderOpus>()),
       decoder_factory_(
           CreateAudioDecoderFactory<AudioDecoderIlbc, AudioDecoderOpus>()),
       acm_send_(AudioCodingModule::Create()),
       acm_receive_(std::make_unique<acm2::AcmReceiver>(
+          env_,
           acm2::AcmReceiver::Config(decoder_factory_))),
       channel_(std::make_unique<Channel>()),
       packetization_callback_(
@@ -83,12 +86,12 @@ TestVadDtx::TestVadDtx()
 }
 
 bool TestVadDtx::RegisterCodec(const SdpAudioFormat& codec_format,
-                               absl::optional<Vad::Aggressiveness> vad_mode) {
+                               std::optional<Vad::Aggressiveness> vad_mode) {
   constexpr int payload_type = 17, cn_payload_type = 117;
   bool added_comfort_noise = false;
 
-  auto encoder = encoder_factory_->MakeAudioEncoder(payload_type, codec_format,
-                                                    absl::nullopt);
+  auto encoder = encoder_factory_->Create(env_, codec_format,
+                                          {.payload_type = payload_type});
   if (vad_mode.has_value() &&
       !absl::EqualsIgnoreCase(codec_format.name, "opus")) {
     AudioEncoderCngConfig config;
@@ -177,14 +180,17 @@ void TestVadDtx::Run(absl::string_view in_filename,
 TestWebRtcVadDtx::TestWebRtcVadDtx() : output_file_num_(0) {}
 
 void TestWebRtcVadDtx::Perform() {
+// TODO(bugs.webrtc.org/345525069): Either fix/enable or remove iLBC.
+#if defined(__has_feature) && !__has_feature(undefined_behavior_sanitizer)
   RunTestCases({"ILBC", 8000, 1});
+#endif
   RunTestCases({"opus", 48000, 2});
 }
 
 // Test various configurations on VAD/DTX.
 void TestWebRtcVadDtx::RunTestCases(const SdpAudioFormat& codec_format) {
   Test(/*new_outfile=*/true,
-       /*expect_dtx_enabled=*/RegisterCodec(codec_format, absl::nullopt));
+       /*expect_dtx_enabled=*/RegisterCodec(codec_format, std::nullopt));
 
   Test(/*new_outfile=*/false,
        /*expect_dtx_enabled=*/RegisterCodec(codec_format, Vad::kVadAggressive));
@@ -219,7 +225,7 @@ void TestOpusDtx::Perform() {
   // Register Opus as send codec
   std::string out_filename =
       webrtc::test::OutputPath() + "testOpusDtx_outFile_mono.pcm";
-  RegisterCodec({"opus", 48000, 2}, absl::nullopt);
+  RegisterCodec({"opus", 48000, 2}, std::nullopt);
   acm_send_->ModifyEncoder([](std::unique_ptr<AudioEncoder>* encoder_ptr) {
     (*encoder_ptr)->SetDtx(false);
   });

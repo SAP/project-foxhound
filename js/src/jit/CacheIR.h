@@ -174,7 +174,7 @@ class TypedOperandId : public OperandId {
   _(GetName)              \
   _(GetPropSuper)         \
   _(GetElemSuper)         \
-  _(GetIntrinsic)         \
+  _(LazyConstant)         \
   _(SetProp)              \
   _(SetElem)              \
   _(BindName)             \
@@ -534,6 +534,7 @@ enum class GuardClassKind : uint8_t {
   BoundFunction,
   Set,
   Map,
+  Date,
 };
 
 const JSClass* ClassFor(GuardClassKind kind);

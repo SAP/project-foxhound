@@ -28,6 +28,7 @@ import mozilla.components.feature.top.sites.DefaultTopSitesStorage
 import mozilla.components.feature.top.sites.PinnedSiteStorage
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.support.utils.ManufacturerCodes
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.AppMenu
@@ -51,7 +52,6 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.ext.openSetDefaultBrowserOption
-import org.mozilla.fenix.settings.biometric.bindBiometricsCredentialsPromptOrShowWarning
 import org.mozilla.fenix.settings.deletebrowsingdata.deleteAndQuit
 import org.mozilla.fenix.utils.Settings
 
@@ -81,8 +81,6 @@ class DefaultBrowserToolbarMenuController(
     private val tabCollectionStorage: TabCollectionStorage,
     private val topSitesStorage: DefaultTopSitesStorage,
     private val pinnedSiteStorage: PinnedSiteStorage,
-    private val onShowPinVerification: (Intent) -> Unit,
-    private val onBiometricAuthenticationSuccessful: () -> Unit,
 ) : BrowserToolbarMenuController {
 
     private val currentSession
@@ -292,9 +290,15 @@ class DefaultBrowserToolbarMenuController(
                         if (isInstallable()) {
                             addToHomescreen()
                         } else {
-                            val directions =
-                                BrowserFragmentDirections.actionBrowserFragmentToCreateShortcutFragment()
-                            navController.navigateSafe(R.id.browserFragment, directions)
+                            if (ManufacturerCodes.isXiaomi) {
+                                val directions =
+                                    BrowserFragmentDirections.actionBrowserFragmentToCreateXiaomiShortcutFragment()
+                                navController.navigateSafe(R.id.browserFragment, directions)
+                            } else {
+                                val directions =
+                                    BrowserFragmentDirections.actionBrowserFragmentToCreateShortcutFragment()
+                                navController.navigateSafe(R.id.browserFragment, directions)
+                            }
                         }
                     }
                 }
@@ -352,13 +356,10 @@ class DefaultBrowserToolbarMenuController(
                 )
             }
             is ToolbarMenu.Item.Passwords -> {
-                fragment.view?.let { view ->
-                    bindBiometricsCredentialsPromptOrShowWarning(
-                        view = view,
-                        onShowPinVerification = onShowPinVerification,
-                        onAuthSuccess = onBiometricAuthenticationSuccessful,
-                    )
-                }
+                navController.nav(
+                    R.id.browserFragment,
+                    BrowserFragmentDirections.actionLoginsListFragment(),
+                )
             }
             is ToolbarMenu.Item.Downloads -> browserAnimator.captureEngineViewAndDrawStatically {
                 navController.nav(

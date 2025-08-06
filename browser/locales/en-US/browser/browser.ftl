@@ -580,6 +580,8 @@ urlbar-go-button =
   .tooltiptext = Go to the address in the Location Bar
 urlbar-page-action-button =
   .tooltiptext = Page actions
+urlbar-revert-button =
+  .tooltiptext = Show the address in the Location Bar
 
 ## Action text shown in urlbar results, usually appended after the search
 ## string or the url, like "result value - action text".
@@ -637,9 +639,45 @@ urlbar-result-action-calculator-result = = { $result }
 
 ## Strings used for buttons in the urlbar
 
+# Searchmode Switcher button
+# Variables:
+#   $engine (String): the current default search engine.
+urlbar-searchmode-button2 =
+    .label = { $engine }, pick a search engine
+    .tooltiptext = { $engine }, pick a search engine
+urlbar-searchmode-button-no-engine =
+    .label = No shortcut selected, pick a shortcut
+    .tooltiptext = No shortcut selected, pick a shortcut
+urlbar-searchmode-dropmarker =
+    .tooltiptext = Pick a Search Engine
+urlbar-searchmode-bookmarks =
+    .label = Bookmarks
+urlbar-searchmode-tabs =
+    .label = Tabs
+urlbar-searchmode-history =
+    .label = History
+urlbar-searchmode-actions =
+    .label = Actions
+urlbar-searchmode-exit-button =
+    .tooltiptext = Close
+
+urlbar-searchmode-popup-description = This time search with:
+urlbar-searchmode-popup-search-settings = Search Settings
+
 # Label prompting user to search with a particular search engine.
 #  $engine (String): the name of a search engine that searches a specific site
 urlbar-result-search-with = Search with { $engine }
+
+# Label for the urlbar result row, prompting the user to use a local keyword to enter search mode.
+#  $keywords (String): the restrict keyword to enter search mode.
+#  $localSearchMode (String): the local search mode (history, tabs, bookmarks,
+#  or actions) to search with.
+urlbar-result-search-with-local-search-mode = { $keywords } - Search { $localSearchMode }
+
+# Label for the urlbar result row, prompting the user to use engine keywords to enter search mode.
+#  $keywords (String): the default keyword and user's set keyword if available
+#  $engine (String): the name of a search engine
+urlbar-result-search-with-engine-keywords = {$keywords} - Search with { $engine }
 
 ## Action text shown in urlbar results, usually appended after the search
 ## string or the url, like "result value - action text".
@@ -991,6 +1029,10 @@ data-reporting-notification-button =
 # Label for the indicator shown in the private browsing window titlebar.
 private-browsing-indicator-label = Private browsing
 
+# Tooltip for the indicator shown in the private browsing window titlebar.
+private-browsing-indicator-tooltip =
+    .tooltiptext = Private browsing
+
 # Tooltip for the indicator shown in the window titlebar when content analysis is active.
 # Variables:
 #   $agentName (String): The name of the DLP agent that is connected
@@ -999,7 +1041,7 @@ content-analysis-indicator-tooltip =
 content-analysis-panel-title = Data protection
 # Variables:
 #   $agentName (String): The name of the DLP agent that is connected
-content-analysis-panel-text = Your organization uses { $agentName } to protect against data loss. <a data-l10n-name="info">Learn more</a>
+content-analysis-panel-text-styled = Your organization uses <b>{ $agentName }</b> to protect against data loss. <a data-l10n-name="info">Learn more</a>
 
 ## Unified extensions (toolbar) button
 
@@ -1024,6 +1066,15 @@ unified-extensions-button-quarantined =
     .tooltiptext =
         Extensions
         Some extensions are not allowed
+
+## Unified extensions button when some extensions are disabled (e.g. through add-ons blocklist).
+## Note that the new line is intentionally part of the tooltip.
+
+unified-extensions-button-blocklisted =
+    .label = Extensions
+    .tooltiptext =
+        Extensions
+        Some extensions are disabled
 
 ## Private browsing reset button
 
@@ -1067,6 +1118,8 @@ firefox-relay-offer-legal-notice = By clicking “Use email mask”, you agree t
 popup-notification-addon-install-unsigned =
     .value = (Unverified)
 popup-notification-xpinstall-prompt-learn-more = Learn more about installing add-ons safely
+
+popup-notification-xpinstall-prompt-block-url = See details
 
 # Note: Access key is set to P to match "Private" in the corresponding localized label.
 popup-notification-addon-privatebrowsing-checkbox =

@@ -200,8 +200,6 @@ class nsStandardURL : public nsIFileURL,
   };
   friend class nsSegmentEncoder;
 
-  static nsresult NormalizeIPv4(const nsACString& host, nsCString& result);
-
   static nsIIDNService* GetIDNService();
 
  protected:
@@ -344,6 +342,9 @@ class nsStandardURL : public nsIFileURL,
 
   // Checks if the URL has a valid representation.
   bool IsValid();
+
+  // This value will only be updated on the main thread once.
+  static Atomic<bool, Relaxed> gInitialized;
 
   // mSpec contains the normalized version of the URL spec (UTF-8 encoded).
   nsCString mSpec;

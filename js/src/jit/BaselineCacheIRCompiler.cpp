@@ -23,6 +23,7 @@
 #include "proxy/DeadObjectProxy.h"
 #include "proxy/Proxy.h"
 #include "util/Unicode.h"
+#include "vm/PortableBaselineInterpret.h"
 #include "vm/StaticStrings.h"
 
 #include "jit/JitScript-inl.h"
@@ -2043,7 +2044,7 @@ bool BaselineCacheIRCompiler::init(CacheKind kind) {
   switch (kind) {
     case CacheKind::NewArray:
     case CacheKind::NewObject:
-    case CacheKind::GetIntrinsic:
+    case CacheKind::LazyConstant:
       MOZ_ASSERT(numInputs == 0);
       outputUnchecked_.emplace(R0);
       break;
@@ -2147,7 +2148,11 @@ static void ResetEnteredCounts(const ICEntry* icEntry) {
 
 static const uint32_t MaxFoldedShapes = 16;
 
-const JSClass ShapeListObject::class_ = {"JIT ShapeList", 0, &classOps_};
+const JSClass ShapeListObject::class_ = {
+    "JIT ShapeList",
+    0,
+    &classOps_,
+};
 
 const JSClassOps ShapeListObject::classOps_ = {
     nullptr,                 // addProperty
@@ -2170,6 +2175,7 @@ const JSClassOps ShapeListObject::classOps_ = {
 
   // Register this object so the GC can sweep its weak pointers.
   if (!cx->zone()->registerObjectWithWeakPointers(obj)) {
+    ReportOutOfMemory(cx);
     return nullptr;
   }
 
@@ -2684,8 +2690,12 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
                          : outerScript;
     }
     cx->zone()->jitZone()->clearStubFoldingBailoutData();
-    if (stub->usedByTranspiler() && owningScript->hasIonScript()) {
-      owningScript->ionScript()->resetNumFixableBailouts();
+    if (stub->usedByTranspiler()) {
+      if (owningScript->hasIonScript()) {
+        owningScript->ionScript()->resetNumFixableBailouts();
+      } else if (owningScript->hasJitScript()) {
+        owningScript->jitScript()->clearFailedICHash();
+      }
     } else {
       // Update the last IC counter if this is not a bailout from Ion.
       owningScript->updateLastICStubCounter();
@@ -2725,6 +2735,11 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
   auto newStub = new (newStubMem) ICCacheIRStub(code, stubInfo);
   writer.copyStubData(newStub->stubDataStart());
   newStub->setTypeData(writer.typeData());
+
+#ifdef ENABLE_PORTABLE_BASELINE_INTERP
+  newStub->updateRawJitCode(pbl::GetICInterpreter());
+#endif
+
   stub->addNewStub(icEntry, newStub);
 
   JSScript* owningScript = icScript->isInlined()
@@ -3224,7 +3239,7 @@ void BaselineCacheIRCompiler::pushBoundFunctionArguments(
 bool BaselineCacheIRCompiler::emitCallNativeShared(
     NativeCallType callType, ObjOperandId calleeId, Int32OperandId argcId,
     CallFlags flags, uint32_t argcFixed, Maybe<bool> ignoresReturnValue,
-    Maybe<uint32_t> targetOffset) {
+    Maybe<uint32_t> targetOffset, ClearLocalAllocSite clearLocalAllocSite) {
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
   AutoScratchRegister scratch2(allocator, masm);
@@ -3322,7 +3337,22 @@ bool BaselineCacheIRCompiler::emitCallNativeShared(
     masm.switchToBaselineFrameRealm(scratch2);
   }
 
+  // We will also unilaterally clear this on exception handling.
+  if (clearLocalAllocSite == ClearLocalAllocSite::Yes) {
+    masm.storeLocalAllocSite(ImmPtr(nullptr), scratch2);
+  }
+
   return true;
+}
+
+void BaselineCacheIRCompiler::loadAllocSiteIntoContext(uint32_t siteOffset) {
+  AutoScratchRegister scratch(allocator, masm);
+  AutoScratchRegister site(allocator, masm);
+
+  StubFieldOffset siteField(siteOffset, StubField::Type::AllocSite);
+  emitLoadStubField(siteField, site);
+
+  masm.storeLocalAllocSite(site.get(), scratch);
 }
 
 #ifdef JS_SIMULATOR
@@ -3347,6 +3377,19 @@ bool BaselineCacheIRCompiler::emitCallDOMFunction(
   return emitCallNativeShared(NativeCallType::Native, calleeId, argcId, flags,
                               argcFixed, ignoresReturnValue, targetOffset_);
 }
+
+bool BaselineCacheIRCompiler::emitCallDOMFunctionWithAllocSite(
+    ObjOperandId calleeId, Int32OperandId argcId, ObjOperandId thisObjId,
+    CallFlags flags, uint32_t argcFixed, uint32_t siteOffset,
+    uint32_t targetOffset) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  loadAllocSiteIntoContext(siteOffset);
+  Maybe<bool> ignoresReturnValue;
+  Maybe<uint32_t> targetOffset_ = mozilla::Some(targetOffset);
+  return emitCallNativeShared(NativeCallType::Native, calleeId, argcId, flags,
+                              argcFixed, ignoresReturnValue, targetOffset_,
+                              ClearLocalAllocSite::Yes);
+}
 #else
 bool BaselineCacheIRCompiler::emitCallNativeFunction(ObjOperandId calleeId,
                                                      Int32OperandId argcId,
@@ -3370,6 +3413,18 @@ bool BaselineCacheIRCompiler::emitCallDOMFunction(ObjOperandId calleeId,
   Maybe<uint32_t> targetOffset;
   return emitCallNativeShared(NativeCallType::Native, calleeId, argcId, flags,
                               argcFixed, ignoresReturnValue, targetOffset);
+}
+
+bool BaselineCacheIRCompiler::emitCallDOMFunctionWithAllocSite(
+    ObjOperandId calleeId, Int32OperandId argcId, ObjOperandId thisObjId,
+    CallFlags flags, uint32_t argcFixed, uint32_t siteOffset) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  loadAllocSiteIntoContext(siteOffset);
+  Maybe<bool> ignoresReturnValue = mozilla::Some(false);
+  Maybe<uint32_t> targetOffset;
+  return emitCallNativeShared(NativeCallType::Native, calleeId, argcId, flags,
+                              argcFixed, ignoresReturnValue, targetOffset,
+                              ClearLocalAllocSite::Yes);
 }
 #endif
 

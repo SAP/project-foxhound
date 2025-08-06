@@ -37,7 +37,6 @@
 #include "mozilla/TemplateLib.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/EffectsInfo.h"
 #include "mozilla/gfx/UserData.h"
 #include "mozilla/layers/BSPTree.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
@@ -442,6 +441,13 @@ class nsDisplayListBuilder {
    * Get the scrollframe to ignore, if any.
    */
   nsIFrame* GetIgnoreScrollFrame() { return mIgnoreScrollFrame; }
+  /**
+   * Set for display lists built for hit-testing a point that is already
+   * relative to the layout viewport. Display lists with this flag set
+   * do not build an async zoom container (which would transform coordinates
+   * relative to the visual viewport into coordinates relative to the
+   * layout viewport during hit-testing).
+   */
   void SetIsRelativeToLayoutViewport();
   bool IsRelativeToLayoutViewport() const {
     return mIsRelativeToLayoutViewport;
@@ -787,13 +793,6 @@ class nsDisplayListBuilder {
   uint32_t GetImageDecodeFlags() const;
 
   /**
-   * Subtracts aRegion from *aVisibleRegion. We avoid letting
-   * aVisibleRegion become overcomplex by simplifying it if necessary.
-   */
-  void SubtractFromVisibleRegion(nsRegion* aVisibleRegion,
-                                 const nsRegion& aRegion);
-
-  /**
    * Mark the frames in aFrames to be displayed if they intersect aDirtyRect
    * (which is relative to aDirtyFrame). If the frames have placeholders
    * that might not be displayed, we mark the placeholders and their ancestors
@@ -886,14 +885,6 @@ class nsDisplayListBuilder {
 
   void RemoveModifiedWindowRegions();
   void ClearRetainedWindowRegions();
-
-  const nsTHashMap<nsPtrHashKey<dom::RemoteBrowser>, dom::EffectsInfo>&
-  GetEffectUpdates() const {
-    return mEffectsUpdates;
-  }
-
-  void AddEffectUpdate(dom::RemoteBrowser* aBrowser,
-                       const dom::EffectsInfo& aUpdate);
 
   /**
    * Invalidates the caret frames from previous paints, if they have changed.
@@ -1800,9 +1791,6 @@ class nsDisplayListBuilder {
   // and thus is in-budget.
   nsTHashMap<nsPtrHashKey<const nsIFrame>, FrameWillChangeBudget>
       mFrameWillChangeBudgets;
-
-  nsTHashMap<nsPtrHashKey<dom::RemoteBrowser>, dom::EffectsInfo>
-      mEffectsUpdates;
 
   nsTHashSet<nsCString> mDestinations;  // Destination names emitted.
 
@@ -3417,8 +3405,6 @@ class nsDisplayListSet {
    */
   nsDisplayList* Content() const { return mLists[5]; }
 
-  const std::array<nsDisplayList*, 6>& Lists() const { return mLists; }
-
   /**
    * Clears all the display lists in the set.
    */
@@ -3494,6 +3480,10 @@ class nsDisplayListSet {
   // it.  Don't let us be heap-allocated!
   void* operator new(size_t sz) noexcept(true);
 
+  // We use an array here so that we can use a range-based for loop whenever
+  // we need to carry out the same operation on each nsDisplayList. The size of
+  // the array does not change; it always contains exactly six non-null
+  // pointers (provided to our ctor).
   std::array<nsDisplayList*, 6> mLists;
 };
 
@@ -3532,6 +3522,9 @@ struct nsDisplayListCollection : public nsDisplayListSet {
   // it.  Don't let us be heap-allocated!
   void* operator new(size_t sz) noexcept(true);
 
+  // Self contained allocation of the memory for our lists, which we pass
+  // pointers to to our nsDisplayListSet base class for it to store in it's
+  // `mLists` std::array.
   nsDisplayList mLists[6];
 };
 

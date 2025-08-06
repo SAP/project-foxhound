@@ -20,6 +20,11 @@ tags = "os_integration"
 ["test_BinarySearch.js"]
 
 ["test_BrowserUtils.js"]
+support-files = [
+  "my_catman_1.sys.mjs",
+  "my_catman_2.sys.mjs",
+]
+
 
 ["test_BrowserUtils_urlFormatting.js"]
 
@@ -32,7 +37,9 @@ tags = "os_integration"
 ["test_DeferredTask.js"]
 skip-if = [
   "os == 'android'",
-  "os == 'mac'",  # osx: Bug 1550141;
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # osx: Bug 1550141
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # osx: Bug 1550141
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929423
 ]
 
 ["test_E10SUtils_getRemoteTypeForURIObject.js"]
@@ -112,7 +119,7 @@ tags = "os_integration"
 ["test_jsesc.js"]
 
 ["test_osKeyStore.js"]
-skip-if = ["apple_silicon"] # bug 1729538
+skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # bug 1729538
 tags = "os_integration"
 
 ["test_propertyListsUtils.js"]

@@ -161,7 +161,7 @@ ElementEditor.prototype = {
     this.elt.appendChild(open);
 
     this.tag = this.doc.createElement("span");
-    this.tag.classList.add("tag", "theme-fg-color3");
+    this.tag.classList.add("tag", "force-color-on-flash");
     this.tag.setAttribute("tabindex", "-1");
     this.tag.textContent = this.node.displayName;
     open.appendChild(this.tag);
@@ -194,6 +194,7 @@ ElementEditor.prototype = {
     this.newAttr.editMode = editableField({
       element: this.newAttr,
       multiline: true,
+      inputClass: "newattr-input",
       maxWidth: () => getAutocompleteMaxWidth(this.newAttr, this.container.elt),
       trigger: "dblclick",
       stopOnReturn: true,
@@ -234,7 +235,7 @@ ElementEditor.prototype = {
     this.elt.appendChild(close);
 
     this.closeTag = this.doc.createElement("span");
-    this.closeTag.classList.add("tag", "theme-fg-color3");
+    this.closeTag.classList.add("tag", "force-color-on-flash");
     this.closeTag.textContent = this.node.displayName;
     close.appendChild(this.closeTag);
 
@@ -699,9 +700,9 @@ ElementEditor.prototype = {
    *   " ",
    *   dom.span(
    *     { className: "editable", tabIndex: 0 },
-   *     dom.span({ className: "attr-name theme-fg-color1" }, attribute.name),
+   *     dom.span({ className: "attr-name" }, attribute.name),
    *     '="',
-   *     dom.span({ className: "attr-value theme-fg-color2" }, attribute.value),
+   *     dom.span({ className: "attr-value" }, attribute.value),
    *     '"'
    *   )
    */
@@ -720,16 +721,14 @@ ElementEditor.prototype = {
     attr.appendChild(inner);
 
     const name = this.doc.createElement("span");
-    name.classList.add("attr-name");
-    name.classList.add("theme-fg-color1");
+    name.classList.add("attr-name", "force-color-on-flash");
     name.textContent = attribute.name;
     inner.appendChild(name);
 
     inner.appendChild(this.doc.createTextNode('="'));
 
     const val = this.doc.createElement("span");
-    val.classList.add("attr-value");
-    val.classList.add("theme-fg-color2");
+    val.classList.add("attr-value", "force-color-on-flash");
     inner.appendChild(val);
 
     inner.appendChild(this.doc.createTextNode('"'));
@@ -1158,10 +1157,7 @@ ElementEditor.prototype = {
       }
     }
 
-    this.markup.telemetry.scalarAdd(
-      "devtools.markup.scrollable.badge.clicked",
-      1
-    );
+    Glean.devtoolsMarkupScrollableBadge.clicked.add(1);
   },
 
   /**

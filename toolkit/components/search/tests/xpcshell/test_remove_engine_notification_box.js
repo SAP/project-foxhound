@@ -43,7 +43,7 @@ let userSettings;
 add_setup(async function () {
   SearchSettings.SETTINGS_INVALIDATION_DELAY = 100;
   SearchTestUtils.useMockIdleService();
-  await SearchTestUtils.setRemoteSettingsConfig(CONFIG_V2);
+  SearchTestUtils.setRemoteSettingsConfig(CONFIG_V2);
 
   stub = sinon.stub(
     await Services.search.wrappedJSObject,
@@ -220,7 +220,7 @@ add_task(async function test_default_engine_changed_and_metadata_unchanged() {
   await Services.search.wrappedJSObject._fetchEngineSelectorEngines();
   userSettings.metaData = {
     ...Services.search.wrappedJSObject._settings.getSettingsMetaData(),
-    appDefaultEngineId: "engine_to_remove@search.mozilla.orgdefault",
+    appDefaultEngineId: "engine_to_remove",
   };
 
   // Update config by removing the app default engine
@@ -300,7 +300,7 @@ add_task(async function test_app_default_engine_change_start_up_still_exists() {
 
 async function setConfigToLoad(config) {
   Services.search.wrappedJSObject.resetEngineSelector();
-  await SearchTestUtils.setRemoteSettingsConfig(config);
+  SearchTestUtils.setRemoteSettingsConfig(config);
 }
 
 function writeSettings(settings) {

@@ -256,6 +256,8 @@ void ShadowRoot::AddSlot(HTMLSlotElement* aSlot) {
     return;
   }
 
+  InvalidateStyleAndLayoutOnSubtree(aSlot);
+
   HTMLSlotElement* oldSlot = currentSlots->SafeElementAt(1);
   if (SlotAssignment() == SlotAssignmentMode::Named) {
     if (oldSlot) {
@@ -409,7 +411,7 @@ void ShadowRoot::RuleRemoved(StyleSheet& aSheet, css::Rule& aRule) {
 }
 
 void ShadowRoot::RuleChanged(StyleSheet& aSheet, css::Rule*,
-                             StyleRuleChangeKind) {
+                             const StyleRuleChange&) {
   if (!aSheet.IsApplicable()) {
     return;
   }
@@ -419,7 +421,7 @@ void ShadowRoot::RuleChanged(StyleSheet& aSheet, css::Rule*,
   ApplicableRulesChanged();
 }
 
-void ShadowRoot::ImportRuleLoaded(CSSImportRule&, StyleSheet& aSheet) {
+void ShadowRoot::ImportRuleLoaded(StyleSheet& aSheet) {
   if (mStyleRuleMap) {
     mStyleRuleMap->SheetAdded(aSheet);
   }

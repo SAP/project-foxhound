@@ -15,6 +15,9 @@ const { threadSpec } = require("resource://devtools/shared/specs/thread.js");
 const {
   createValueGrip,
 } = require("resource://devtools/server/actors/object/utils.js");
+const {
+  ObjectActorPool,
+} = require("resource://devtools/server/actors/object/ObjectActorPool.js");
 const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 const Debugger = require("Debugger");
 const { assert, dumpn, reportException } = DevToolsUtils;
@@ -44,12 +47,6 @@ loader.lazyRequireGetter(
   this,
   "BreakpointActorMap",
   "resource://devtools/server/actors/utils/breakpoint-actor-map.js",
-  true
-);
-loader.lazyRequireGetter(
-  this,
-  "PauseScopedObjectActor",
-  "resource://devtools/server/actors/pause-scoped.js",
   true
 );
 loader.lazyRequireGetter(
@@ -223,8 +220,6 @@ class ThreadActor extends Actor {
     this.createCompletionGrip = this.createCompletionGrip.bind(this);
     this.onDebuggerStatement = this.onDebuggerStatement.bind(this);
     this.onNewScript = this.onNewScript.bind(this);
-    this.objectGrip = this.objectGrip.bind(this);
-    this.pauseObjectGrip = this.pauseObjectGrip.bind(this);
     this._onOpeningRequest = this._onOpeningRequest.bind(this);
     this._onNewDebuggee = this._onNewDebuggee.bind(this);
     this._onExceptionUnwind = this._onExceptionUnwind.bind(this);
@@ -272,9 +267,13 @@ class ThreadActor extends Actor {
     return this.state == STATES.RUNNING || this.state == STATES.PAUSED;
   }
 
+  get pauseLifetimePool() {
+    return this._pausePool;
+  }
+
   get threadLifetimePool() {
     if (!this._threadLifetimePool) {
-      this._threadLifetimePool = new Pool(this.conn, "thread");
+      this._threadLifetimePool = new ObjectActorPool(this, "thread", true);
       this._threadLifetimePool.objectActors = new WeakMap();
     }
     return this._threadLifetimePool;
@@ -284,8 +283,9 @@ class ThreadActor extends Actor {
     return this.threadLifetimePool.objectActors.get(raw);
   }
 
-  createValueGrip(value) {
-    return createValueGrip(value, this.threadLifetimePool, this.objectGrip);
+  promoteObjectToThreadLifetime(objectActor) {
+    this.threadLifetimePool.manage(objectActor);
+    this.threadLifetimePool.objectActors.set(objectActor.obj, objectActor);
   }
 
   get sourcesManager() {
@@ -598,9 +598,7 @@ class ThreadActor extends Actor {
   }
 
   getAvailableEventBreakpoints() {
-    return getAvailableEventBreakpoints(
-      this.targetActor.window || this.targetActor.workerGlobal
-    );
+    return getAvailableEventBreakpoints(this.targetActor.targetGlobal);
   }
   getActiveEventBreakpoints() {
     return Array.from(this._activeEventBreakpoints);
@@ -1146,16 +1144,14 @@ class ThreadActor extends Actor {
       return packet;
     }
 
-    const createGrip = value =>
-      createValueGrip(value, this._pausePool, this.objectGrip);
     packet.why.frameFinished = {};
 
     if (completion.hasOwnProperty("return")) {
-      packet.why.frameFinished.return = createGrip(completion.return);
+      packet.why.frameFinished.return = this.createValueGrip(completion.return);
     } else if (completion.hasOwnProperty("yield")) {
-      packet.why.frameFinished.return = createGrip(completion.yield);
+      packet.why.frameFinished.return = this.createValueGrip(completion.yield);
     } else if (completion.hasOwnProperty("throw")) {
-      packet.why.frameFinished.throw = createGrip(completion.throw);
+      packet.why.frameFinished.throw = this.createValueGrip(completion.throw);
     }
 
     return packet;
@@ -1665,7 +1661,7 @@ class ThreadActor extends Actor {
     // Create the actor pool that will hold the pause actor and its
     // children.
     assert(!this._pausePool, "No pause pool should exist yet");
-    this._pausePool = new Pool(this.conn, "pause");
+    this._pausePool = new ObjectActorPool(this, "pause", true);
 
     // Give children of the pause pool a quick link back to the
     // thread...
@@ -1755,75 +1751,24 @@ class ThreadActor extends Actor {
   }
 
   /**
-   * Create a grip for the given debuggee object.
+   * Create a grip for the given debuggee value.
+   * Depdending on if the thread is paused, the object actor may have a different lifetime:
+   *  - when thread is paused, the object actor will be kept alive until the thread is resumed
+   *    (which also happens when we step)
+   *  - when thread is not paused, the object actor will be kept alive until the related target
+   *    is destroyed (thread stops or devtools closes)
    *
-   * @param value Debugger.Object
-   *        The debuggee object value.
-   * @param pool Pool
-   *        The actor pool where the new object actor will be added.
+   * @param value Debugger.Object|any
+   *        A Debugger.Object for all JS objects, or any primitive JS type.
+   * @return The value's grip
+   *        Primitive JS type, Object actor Form JSON object, or a JSON object to describe the value.
    */
-  objectGrip(value, pool) {
-    if (!pool.objectActors) {
-      pool.objectActors = new WeakMap();
-    }
+  createValueGrip(value) {
+    // When the thread is paused, all objects are stored in a transient pool
+    // which will be cleared on resume (which also happens when we step).
+    const pool = this._pausePool || this.threadLifetimePool;
 
-    if (pool.objectActors.has(value)) {
-      return pool.objectActors.get(value).form();
-    }
-
-    if (this.threadLifetimePool.objectActors.has(value)) {
-      return this.threadLifetimePool.objectActors.get(value).form();
-    }
-
-    const actor = new PauseScopedObjectActor(
-      value,
-      {
-        thread: this,
-        getGripDepth: () => this._gripDepth,
-        incrementGripDepth: () => this._gripDepth++,
-        decrementGripDepth: () => this._gripDepth--,
-        createValueGrip: v => {
-          if (this._pausePool) {
-            return createValueGrip(v, this._pausePool, this.pauseObjectGrip);
-          }
-
-          return createValueGrip(v, this.threadLifetimePool, this.objectGrip);
-        },
-        createEnvironmentActor: (e, p) => this.createEnvironmentActor(e, p),
-        promote: () => this.threadObjectGrip(actor),
-        isThreadLifetimePool: () =>
-          actor.getParent() !== this.threadLifetimePool,
-      },
-      this.conn
-    );
-    pool.manage(actor);
-    pool.objectActors.set(value, actor);
-    return actor.form();
-  }
-
-  /**
-   * Create a grip for the given debuggee object with a pause lifetime.
-   *
-   * @param value Debugger.Object
-   *        The debuggee object value.
-   */
-  pauseObjectGrip(value) {
-    if (!this._pausePool) {
-      throw new Error("Object grip requested while not paused.");
-    }
-
-    return this.objectGrip(value, this._pausePool);
-  }
-
-  /**
-   * Extend the lifetime of the provided object actor to thread lifetime.
-   *
-   * @param actor object
-   *        The object actor.
-   */
-  threadObjectGrip(actor) {
-    this.threadLifetimePool.manage(actor);
-    this.threadLifetimePool.objectActors.set(actor.obj, actor);
+    return createValueGrip(this, value, pool);
   }
 
   _onWindowReady({ isTopLevel, isBFCache }) {
@@ -1930,10 +1875,11 @@ class ThreadActor extends Actor {
         message: `DOM Mutation: '${mutationType}'`,
       },
       pkt => {
-        // We have to add this here because `_pausePool` is `null` beforehand.
-        pkt.why.nodeGrip = this.objectGrip(targetObj, this._pausePool);
+        // We have to create the object actors late, from here because `_pausePool` is `null` beforehand,
+        // and the actors created by createValueGrip would otherwise be registered in the thread lifetime pool
+        pkt.why.nodeGrip = this.createValueGrip(targetObj);
         pkt.why.ancestorGrip = ancestorObj
-          ? this.objectGrip(ancestorObj, this._pausePool)
+          ? this.createValueGrip(ancestorObj)
           : null;
         pkt.why.action = action;
         return pkt;
@@ -2057,7 +2003,7 @@ class ThreadActor extends Actor {
 
       packet.why = {
         type: PAUSE_REASONS.EXCEPTION,
-        exception: createValueGrip(value, this._pausePool, this.objectGrip),
+        exception: this.createValueGrip(value),
       };
       this.emit("paused", packet);
 

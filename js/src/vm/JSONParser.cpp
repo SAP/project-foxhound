@@ -40,14 +40,14 @@
 #include "js/TypeDecls.h"  // Latin1Char
 #include "js/Utility.h"    // js_delete
 #include "js/Value.h"  // JS::Value, JS::BooleanValue, JS::NullValue, JS::NumberValue, JS::StringValue
-#include "js/Vector.h"          // Vector
-#include "util/StringBuffer.h"  // JSStringBuilder
-#include "vm/ArrayObject.h"     // ArrayObject
-#include "vm/ErrorReporting.h"  // ReportCompileErrorLatin1, ErrorMetadata
-#include "vm/JSAtomUtils.h"     // AtomizeChars
-#include "vm/JSContext.h"       // JSContext
-#include "vm/PlainObject.h"     // NewPlainObjectWithMaybeDuplicateKeys
-#include "vm/Realm.h"           // JS::Realm
+#include "js/Vector.h"           // Vector
+#include "util/StringBuilder.h"  // JSStringBuilder
+#include "vm/ArrayObject.h"      // ArrayObject
+#include "vm/ErrorReporting.h"   // ReportCompileErrorLatin1, ErrorMetadata
+#include "vm/JSAtomUtils.h"      // AtomizeChars
+#include "vm/JSContext.h"        // JSContext
+#include "vm/PlainObject.h"      // NewPlainObjectWithMaybeDuplicateKeys
+#include "vm/Realm.h"            // JS::Realm
 #include "vm/StringType.h"  // JSString, JSAtom, JSLinearString, NewStringCopyN, NameToId
 
 #include "vm/JSAtomUtils-inl.h"  // AtomToId
@@ -59,9 +59,9 @@ using mozilla::IsAsciiDigit;
 using mozilla::IsAsciiHexDigit;
 using mozilla::RangedPtr;
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-void JSONTokenizer<CharT, ParserT, StringBuilderT>::getTextPosition(
-    uint32_t* column, uint32_t* line) {
+template <typename CharT, typename ParserT>
+void JSONTokenizer<CharT, ParserT>::getTextPosition(uint32_t* column,
+                                                    uint32_t* line) {
   CharPtr ptr = begin;
   uint32_t col = 1;
   uint32_t row = 1;
@@ -85,9 +85,8 @@ static inline bool IsJSONWhitespace(char16_t c) {
   return c == '\t' || c == '\r' || c == '\n' || c == ' ';
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-bool JSONTokenizer<CharT, ParserT,
-                   StringBuilderT>::consumeTrailingWhitespaces() {
+template <typename CharT, typename ParserT>
+bool JSONTokenizer<CharT, ParserT>::consumeTrailingWhitespaces() {
   for (; current < end; current++) {
     if (!IsJSONWhitespace(*current)) {
       return false;
@@ -96,8 +95,8 @@ bool JSONTokenizer<CharT, ParserT,
   return true;
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::advance() {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::advance() {
   while (current < end && IsJSONWhitespace(*current)) {
     current++;
   }
@@ -188,8 +187,8 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::advance() {
   }
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::advancePropertyName() {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::advancePropertyName() {
   MOZ_ASSERT(current[-1] == ',');
 
   while (current < end && IsJSONWhitespace(*current)) {
@@ -208,9 +207,8 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::advancePropertyName() {
   return token(JSONToken::Error);
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken
-JSONTokenizer<CharT, ParserT, StringBuilderT>::advancePropertyColon() {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::advancePropertyColon() {
   MOZ_ASSERT(current[-1] == '"');
 
   while (current < end && IsJSONWhitespace(*current)) {
@@ -247,9 +245,8 @@ static inline void AssertPastValue(const RangedPtr<const CharT> current) {
              IsAsciiDigit(current[-1]));
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken
-JSONTokenizer<CharT, ParserT, StringBuilderT>::advanceAfterProperty() {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::advanceAfterProperty() {
   AssertPastValue(current);
 
   while (current < end && IsJSONWhitespace(*current)) {
@@ -274,9 +271,8 @@ JSONTokenizer<CharT, ParserT, StringBuilderT>::advanceAfterProperty() {
   return token(JSONToken::Error);
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken
-JSONTokenizer<CharT, ParserT, StringBuilderT>::advanceAfterObjectOpen() {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::advanceAfterObjectOpen() {
   MOZ_ASSERT(current[-1] == '{');
 
   while (current < end && IsJSONWhitespace(*current)) {
@@ -300,9 +296,8 @@ JSONTokenizer<CharT, ParserT, StringBuilderT>::advanceAfterObjectOpen() {
   return token(JSONToken::Error);
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken
-JSONTokenizer<CharT, ParserT, StringBuilderT>::advanceAfterArrayElement() {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::advanceAfterArrayElement() {
   AssertPastValue(current);
 
   while (current < end && IsJSONWhitespace(*current)) {
@@ -327,38 +322,38 @@ JSONTokenizer<CharT, ParserT, StringBuilderT>::advanceAfterArrayElement() {
   return token(JSONToken::Error);
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
+template <typename CharT, typename ParserT>
 template <JSONStringType ST>
-JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::stringToken(
-    const CharPtr start, size_t length, const StringTaint& taint) {
-  if (!parser->handler.template setStringValue<ST, ParserT>(start, length,
+JSONToken JSONTokenizer<CharT, ParserT>::stringToken(const CharPtr start,
+                                                     size_t length, const StringTaint& taint) {
+  if (!parser->handler.template setStringValue<ST>(start, length,
                                                    getSource(), taint, parser)) {
     return JSONToken::OOM;
   }
   return JSONToken::String;
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
+template <typename CharT, typename ParserT>
 template <JSONStringType ST>
-JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::stringToken(
-    StringBuilderT& builder) {
-  if (!parser->handler.template setStringValue<ST, ParserT>(builder, getSource(), parser)) {
+JSONToken JSONTokenizer<CharT, ParserT>::stringToken(
+    JSONStringBuilder& builder) {
+  if (!parser->handler.template setStringValue<ST>(builder, getSource(), parser)) {
     return JSONToken::OOM;
   }
   return JSONToken::String;    
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::numberToken(double d) {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::numberToken(double d) {
   if (!parser->handler.setNumberValue(d, getSource())) {
     return JSONToken::OOM;
   }
   return JSONToken::Number;
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
+template <typename CharT, typename ParserT>
 template <JSONStringType ST>
-JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readString() {
+JSONToken JSONTokenizer<CharT, ParserT>::readString() {
   MOZ_ASSERT(current < end);
   MOZ_ASSERT(*current == '"');
 
@@ -400,7 +395,7 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readString() {
    * of unescaped characters into a temporary buffer, then an escaped
    * character, and repeat until the entire string is consumed.
    */
-  StringBuilderT builder(parser->handler.context());
+  JSONStringBuilder builder(parser->handler.context());
   do {
     if (start < current && !builder.append(start.get(), current.get(), mTaint.safeSubTaint(start - begin, current - begin))) {
       return token(JSONToken::OOM);
@@ -501,8 +496,8 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readString() {
   return token(JSONToken::Error);
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readNumber() {
+template <typename CharT, typename ParserT>
+JSONToken JSONTokenizer<CharT, ParserT>::readNumber() {
   MOZ_ASSERT(current < end);
   MOZ_ASSERT(IsAsciiDigit(*current) || *current == '-');
 
@@ -600,9 +595,20 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readNumber() {
   return numberToken(negative ? -d : d);
 }
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
-void JSONTokenizer<CharT, ParserT, StringBuilderT>::error(const char* msg) {
+template <typename CharT, typename ParserT>
+void JSONTokenizer<CharT, ParserT>::error(const char* msg) {
   parser->error(msg);
+}
+
+static void ReportJSONSyntaxError(FrontendContext* fc, ErrorMetadata&& metadata,
+                                  unsigned errorNumber, ...) {
+  va_list args;
+  va_start(args, errorNumber);
+
+  js::ReportCompileErrorLatin1VA(fc, std::move(metadata), nullptr, errorNumber,
+                                 &args);
+
+  va_end(args);
 }
 
 // JSONFullParseHandlerAnyChar uses an AutoSelectGCHeap to switch to allocating
@@ -775,21 +781,16 @@ void JSONFullParseHandlerAnyChar::trace(JSTracer* trc) {
 }
 
 template <typename CharT>
-bool JSONFullParseHandler<CharT>::StringBuilder::append(char16_t c, const TaintFlow& taintFlow) {
+bool JSONFullParseHandler<CharT>::JSONStringBuilder::append(char16_t c, const TaintFlow& taintFlow) {
   // Foxhound: add taint information for next output character.
   buffer.taint().append(TaintRange(buffer.length(), buffer.length() + 1, taintFlow));
   return buffer.append(c);
 }
 
 template <typename CharT>
-bool JSONFullParseHandler<CharT>::StringBuilder::append(const CharT* begin,
+bool JSONFullParseHandler<CharT>::JSONStringBuilder::append(const CharT* begin,
                                                         const CharT* end,
                                                         const StringTaint& taint) {
-  buffer.appendTaintAt(buffer.length(), taint);
-  return buffer.append(begin, end);
-}
-
-JSString* JSONFullParseHandlerAnyChar::CurrentJsonPath(const Vector<StackEntry, 10>& stack) const {
   // https://www.ietf.org/archive/id/draft-goessner-dispatch-jsonpath-00.html
 
   JSStringBuilder builder(cx);
@@ -872,7 +873,7 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
 template <typename CharT>
 template <JSONStringType ST, typename ParserT>
 inline bool JSONFullParseHandler<CharT>::setStringValue(
-    StringBuilder& builder, mozilla::Span<const CharT>&& source, const ParserT* parser) {
+    JSONStringBuilder& builder, mozilla::Span<const CharT>&& source, const ParserT* parser) {
 
   TaintOperation op("JSON.parse");
   // Foxhound: propagate taint.
@@ -930,8 +931,22 @@ void JSONFullParseHandler<CharT>::reportError(const char* msg, uint32_t line,
   char lineString[MaxWidth];
   SprintfLiteral(lineString, "%" PRIu32, line);
 
-  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_JSON_BAD_PARSE,
-                            msg, lineString, columnString);
+  if (reportLineNumbersFromParsedData) {
+    AutoReportFrontendContext fc(cx);
+
+    ErrorMetadata metadata;
+    metadata.isMuted = false;
+    metadata.filename = filename.valueOr(JS::ConstUTF8CharsZ(""));
+    metadata.lineNumber = line;
+    metadata.columnNumber = JS::ColumnNumberOneOrigin(column);
+
+    ReportJSONSyntaxError(&fc, std::move(metadata), JSMSG_JSON_BAD_PARSE, msg,
+                          lineString, columnString);
+  } else {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_JSON_BAD_PARSE, msg, lineString,
+                              columnString);
+  }
 }
 
 template <typename CharT, typename HandlerT>
@@ -1135,12 +1150,10 @@ template class js::JSONPerHandlerParser<Latin1Char,
 template class js::JSONPerHandlerParser<char16_t,
                                         js::JSONFullParseHandler<char16_t>>;
 
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
 template class js::JSONPerHandlerParser<Latin1Char,
                                         js::JSONReviveHandler<Latin1Char>>;
 template class js::JSONPerHandlerParser<char16_t,
                                         js::JSONReviveHandler<char16_t>>;
-#endif
 
 template class js::JSONPerHandlerParser<Latin1Char,
                                         js::JSONSyntaxParseHandler<Latin1Char>>;
@@ -1173,7 +1186,6 @@ void JSONParser<CharT>::trace(JSTracer* trc) {
 template class js::JSONParser<Latin1Char>;
 template class js::JSONParser<char16_t>;
 
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
 template <typename CharT>
 inline bool JSONReviveHandler<CharT>::objectOpen(Vector<StackEntry, 10>& stack,
                                                  PropertyVector** properties) {
@@ -1313,7 +1325,6 @@ void JSONReviveParser<CharT>::trace(JSTracer* trc) {
 
 template class js::JSONReviveParser<Latin1Char>;
 template class js::JSONReviveParser<char16_t>;
-#endif  // ENABLE_JSON_PARSE_WITH_SOURCE
 
 template <typename CharT>
 inline bool JSONSyntaxParseHandler<CharT>::objectOpen(
@@ -1347,17 +1358,6 @@ inline bool JSONSyntaxParseHandler<CharT>::finishArray(
     Vector<StackEntry, 10>& stack, DummyValue* vp, ElementVector* elements) {
   stack.popBack();
   return true;
-}
-
-static void ReportJSONSyntaxError(FrontendContext* fc, ErrorMetadata&& metadata,
-                                  unsigned errorNumber, ...) {
-  va_list args;
-  va_start(args, errorNumber);
-
-  js::ReportCompileErrorLatin1VA(fc, std::move(metadata), nullptr, errorNumber,
-                                 &args);
-
-  va_end(args);
 }
 
 template <typename CharT>
@@ -1433,11 +1433,11 @@ class MOZ_STACK_CLASS DelegateHandler {
   struct ElementVector {};
   struct PropertyVector {};
 
-  class StringBuilder {
+  class JSONStringBuilder {
    public:
-    StringBuffer buffer;
+    StringBuilder buffer;
 
-    explicit StringBuilder(FrontendContext* fc) : buffer(fc) {}
+    explicit JSONStringBuilder(FrontendContext* fc) : buffer(fc) {}
 
     bool append(char16_t c, const TaintFlow& taintFlow) { return buffer.append(c, taintFlow); }
     bool append(const CharT* begin, const CharT* end, const StringTaint& taint) {
@@ -1478,7 +1478,7 @@ class MOZ_STACK_CLASS DelegateHandler {
   }
 
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(StringBuilder& builder,
+  inline bool setStringValue(JSONStringBuilder& builder,
                              mozilla::Span<const CharT>&& source,
                              const ParserT* parser) {
     if (hadHandlerError_) {

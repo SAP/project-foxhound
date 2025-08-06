@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Text
@@ -18,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
@@ -30,16 +33,21 @@ import org.mozilla.fenix.theme.Theme
 @Composable
 internal fun SubmenuHeader(
     header: String,
+    backButtonContentDescription: String? = null,
     onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .padding(start = 4.dp, end = 16.dp)
-            .defaultMinSize(minHeight = 56.dp),
+            .defaultMinSize(minHeight = 56.dp)
+            .verticalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
             onClick = { onClick() },
+            modifier = Modifier.semantics {
+                backButtonContentDescription?.also { this.contentDescription = it }
+            },
         ) {
             Icon(
                 painter = painterResource(id = R.drawable.mozac_ic_back_24),

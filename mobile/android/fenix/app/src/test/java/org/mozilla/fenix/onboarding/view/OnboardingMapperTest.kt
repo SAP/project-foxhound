@@ -7,6 +7,7 @@ package org.mozilla.fenix.onboarding.view
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mozilla.fenix.R
+import org.mozilla.fenix.onboarding.store.OnboardingAddonStatus
 
 class OnboardingMapperTest {
 
@@ -39,6 +40,7 @@ class OnboardingMapperTest {
             onNotificationPermissionSkipClick = {},
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
+            onAddOnsButtonClick = {},
         )
 
         assertEquals(expected, actual)
@@ -73,6 +75,7 @@ class OnboardingMapperTest {
             onNotificationPermissionSkipClick = {},
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
+            onAddOnsButtonClick = {},
         )
 
         assertEquals(expected, actual)
@@ -107,6 +110,7 @@ class OnboardingMapperTest {
             onNotificationPermissionSkipClick = unitLambda,
             onAddFirefoxWidgetClick = {},
             onAddFirefoxWidgetSkipClick = {},
+            onAddOnsButtonClick = {},
         )
 
         assertEquals(expected, actual)
@@ -141,6 +145,74 @@ class OnboardingMapperTest {
             onNotificationPermissionSkipClick = {},
             onAddFirefoxWidgetClick = unitLambda,
             onAddFirefoxWidgetSkipClick = unitLambda,
+            onAddOnsButtonClick = {},
+        )
+
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `GIVEN an add-ons page WHEN mapToOnboardingPageState is called THEN creates the expected OnboardingPageState`() {
+        val addOns = listOf(
+            OnboardingAddOn(
+                id = "add-on-1",
+                iconRes = R.drawable.ic_extensions_onboarding,
+                name = "test add-on 1",
+                description = "test 1 add-on description",
+                averageRating = "5",
+                reviewCount = "12,345",
+                installUrl = "url1",
+                status = OnboardingAddonStatus.NOT_INSTALLED,
+            ),
+            OnboardingAddOn(
+                id = "add-on-2",
+                iconRes = R.drawable.ic_extensions_onboarding,
+                name = "test add-on 2",
+                description = "test 2 add-on description",
+                averageRating = "4.5",
+                reviewCount = "1,234",
+                installUrl = "url2",
+                status = OnboardingAddonStatus.NOT_INSTALLED,
+            ),
+            OnboardingAddOn(
+                id = "add-on-2",
+                iconRes = R.drawable.ic_extensions_onboarding,
+                name = "test add-on 3",
+                description = "test 3 add-on description",
+                averageRating = "4",
+                reviewCount = "123",
+                installUrl = "url3",
+                status = OnboardingAddonStatus.NOT_INSTALLED,
+            ),
+        )
+        val expected = OnboardingPageState(
+            imageRes = R.drawable.ic_onboarding_add_ons,
+            title = "add-ons title",
+            description = "add-ons body",
+            primaryButton = Action("add-ons primary button text", unitLambda),
+            addOns = addOns,
+        )
+
+        val onboardingPageUiData = OnboardingPageUiData(
+            type = OnboardingPageUiData.Type.ADD_ONS,
+            imageRes = R.drawable.ic_onboarding_add_ons,
+            title = "add-ons title",
+            description = "add-ons body",
+            primaryButtonLabel = "add-ons primary button text",
+            addOns = addOns,
+        )
+
+        val actual = mapToOnboardingPageState(
+            onboardingPageUiData = onboardingPageUiData,
+            onMakeFirefoxDefaultClick = {},
+            onMakeFirefoxDefaultSkipClick = {},
+            onSignInButtonClick = {},
+            onSignInSkipClick = {},
+            onNotificationPermissionButtonClick = {},
+            onNotificationPermissionSkipClick = {},
+            onAddFirefoxWidgetClick = {},
+            onAddFirefoxWidgetSkipClick = {},
+            onAddOnsButtonClick = unitLambda,
         )
 
         assertEquals(expected, actual)
@@ -150,7 +222,3 @@ class OnboardingMapperTest {
 private val unitLambda = { dummyUnitFunc() }
 
 private fun dummyUnitFunc() {}
-
-private fun dummyStringArgFunc(string: String) {
-    print(string)
-}

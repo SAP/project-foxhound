@@ -269,11 +269,11 @@ void ViewportFrame::RemoveFrame(DestroyContext& aContext, ChildListID aListID,
 }
 #endif
 
-nscoord ViewportFrame::IntrinsicISize(gfxContext* aContext,
+nscoord ViewportFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                       IntrinsicISizeType aType) {
   return mFrames.IsEmpty()
              ? 0
-             : mFrames.FirstChild()->IntrinsicISize(aContext, aType);
+             : mFrames.FirstChild()->IntrinsicISize(aInput, aType);
 }
 
 nsPoint ViewportFrame::AdjustReflowInputForScrollbars(
@@ -353,7 +353,7 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
         kidReflowInput.SetBResize(true);
       }
       if (aReflowInput.IsBResizeForPercentagesForWM(kidWM)) {
-        kidReflowInput.mFlags.mIsBResizeForPercentages = true;
+        kidReflowInput.SetBResizeForPercentages(true);
       }
       ReflowChild(kidFrame, aPresContext, kidDesiredSize, kidReflowInput, 0, 0,
                   ReflowChildFlags::Default, aStatus);

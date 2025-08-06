@@ -30,7 +30,6 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIObserverService.h"
-#include "nsISound.h"
 #include "nsFocusManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLInputElement.h"
@@ -66,7 +65,6 @@ nsTypeAheadFind::nsTypeAheadFind()
     : mStartLinksOnlyPref(false),
       mCaretBrowsingOn(false),
       mDidAddObservers(false),
-      mLastFindLength(0),
       mCaseSensitive(false),
       mEntireWord(false),
       mMatchDiacritics(false) {}
@@ -113,15 +111,6 @@ nsresult nsTypeAheadFind::PrefsReset() {
 
   prefBranch->GetBoolPref("accessibility.typeaheadfind.startlinksonly",
                           &mStartLinksOnlyPref);
-
-  bool isSoundEnabled = true;
-  prefBranch->GetBoolPref("accessibility.typeaheadfind.enablesound",
-                          &isSoundEnabled);
-  nsAutoCString soundStr;
-  if (isSoundEnabled)
-    prefBranch->GetCharPref("accessibility.typeaheadfind.soundURL", soundStr);
-
-  mNotFoundSoundURL = soundStr;
 
   prefBranch->GetBoolPref("accessibility.browsewithcaret", &mCaretBrowsingOn);
 
@@ -267,33 +256,6 @@ void nsTypeAheadFind::DisconnectFromOwner() {
 
 void nsTypeAheadFind::SaveFind() {
   if (mWebBrowserFind) mWebBrowserFind->SetSearchString(mTypeAheadBuffer);
-
-  // save the length of this find for "not found" sound
-  mLastFindLength = mTypeAheadBuffer.Length();
-}
-
-void nsTypeAheadFind::PlayNotFoundSound() {
-  if (mNotFoundSoundURL.IsEmpty())  // no sound
-    return;
-
-  nsCOMPtr<nsISound> soundInterface = do_GetService("@mozilla.org/sound;1");
-
-  if (soundInterface) {
-    if (mNotFoundSoundURL.EqualsLiteral("beep")) {
-      soundInterface->Beep();
-      return;
-    }
-
-    nsCOMPtr<nsIURI> soundURI;
-    if (mNotFoundSoundURL.EqualsLiteral("default"))
-      NS_NewURI(getter_AddRefs(soundURI),
-                nsLiteralCString(TYPEAHEADFIND_NOTFOUND_WAV_URL));
-    else
-      NS_NewURI(getter_AddRefs(soundURI), mNotFoundSoundURL);
-
-    nsCOMPtr<nsIURL> soundURL(do_QueryInterface(soundURI));
-    if (soundURL) soundInterface->Play(soundURL);
-  }
 }
 
 nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
@@ -564,10 +526,10 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
         // ScrollSelectionIntoView.
         SetSelectionModeAndRepaint(nsISelectionController::SELECTION_ATTENTION);
         selectionController->ScrollSelectionIntoView(
-            nsISelectionController::SELECTION_NORMAL,
+            SelectionType::eNormal,
             nsISelectionController::SELECTION_WHOLE_SELECTION,
-            nsISelectionController::SCROLL_VERTICAL_CENTER |
-                nsISelectionController::SCROLL_SYNCHRONOUS);
+            ScrollAxis(WhereToScroll::Center), ScrollAxis(), ScrollFlags::None,
+            SelectionScrollMode::SyncFlush);
       }
 
       SetCurrentWindow(window);
@@ -1009,10 +971,6 @@ nsresult nsTypeAheadFind::FindInternal(uint32_t aMode,
         }
       }
     }
-  } else if (isInitial) {
-    // Error sound, except when whole word matching is ON.
-    if (!mEntireWord && mTypeAheadBuffer.Length() > mLastFindLength)
-      PlayNotFoundSound();
   }
 
   SaveFind();

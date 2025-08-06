@@ -27,7 +27,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/StaticPrefs_print.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Try.h"
 #include "nsIBrowserChild.h"
 #include "nsIOService.h"
@@ -410,8 +410,9 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
   }
 
   // XXX This isn't really correct...
-  if (!mPrintObject->mDocument || !mPrintObject->mDocument->GetRootElement())
+  if (!mPrintObject->mDocument || !mPrintObject->mDocument->GetRootElement()) {
     return NS_ERROR_GFX_PRINTER_STARTDOC;
+  }
 
   mPrintSettings->GetShrinkToFit(&mShrinkToFit);
 
@@ -430,7 +431,7 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
   }
 
   if (mIsDoingPrinting && printSilently) {
-    Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_SILENT_PRINT, 1);
+    glean::printing::silent_print.Add(1);
   }
 
   MOZ_TRY(devspec->Init(mPrintSettings, mIsCreatingPrintPreview));
@@ -742,8 +743,8 @@ nsresult nsPrintJob::ReconstructAndReflow() {
       return NS_ERROR_FAILURE;
     }
 
-    nsresult rv = UpdateSelectionAndShrinkPrintObject(po, documentIsTopLevel);
-    NS_ENSURE_SUCCESS(rv, rv);
+    po->mDocument->UpdateRemoteFrameEffects();
+    MOZ_TRY(UpdateSelectionAndShrinkPrintObject(po, documentIsTopLevel));
   }
   return NS_OK;
 }
@@ -1229,9 +1230,7 @@ nsresult nsPrintJob::SetRootView(nsPrintObject* aPO, bool& doReturn,
       canCreateScrollbars = false;
     }
   } else {
-    nscoord pageWidth, pageHeight;
-    mPrt->mPrintDC->GetDeviceSurfaceDimensions(pageWidth, pageHeight);
-    adjSize = nsSize(pageWidth, pageHeight);
+    adjSize = mPrt->mPrintDC->GetDeviceSurfaceDimensions();
     documentIsTopLevel = true;
     parentView = GetParentViewForRoot();
   }
@@ -1322,7 +1321,7 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
             do_QueryInterface(mDocViewerPrint)) {
       // If we're print-previewing and the top level document, use the bounds
       // from our doc viewer. Page bounds is not what we want.
-      nsIntRect bounds;
+      LayoutDeviceIntRect bounds;
       viewer->GetBounds(bounds);
       adjSize = nsSize(bounds.width * p2a, bounds.height * p2a);
     }
@@ -1421,6 +1420,7 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   }
   // Process the reflow event Initialize posted
   presShell->FlushPendingNotifications(FlushType::Layout);
+  aPO->mDocument->UpdateRemoteFrameEffects();
 
   MOZ_TRY(UpdateSelectionAndShrinkPrintObject(aPO.get(), documentIsTopLevel));
 
@@ -1724,39 +1724,8 @@ nsresult nsPrintJob::DoPrint(const UniquePtr<nsPrintObject>& aPO) {
       return NS_ERROR_FAILURE;
     }
 
-    // For telemetry, get paper size being used; convert the dimensions to
-    // points and ensure they reflect portrait orientation.
-    nsIPrintSettings* settings = mPrintSettings;
-    double paperWidth, paperHeight;
-    settings->GetPaperWidth(&paperWidth);
-    settings->GetPaperHeight(&paperHeight);
-    int16_t sizeUnit;
-    settings->GetPaperSizeUnit(&sizeUnit);
-    switch (sizeUnit) {
-      case nsIPrintSettings::kPaperSizeInches:
-        paperWidth *= 72.0;
-        paperHeight *= 72.0;
-        break;
-      case nsIPrintSettings::kPaperSizeMillimeters:
-        paperWidth *= 72.0 / 25.4;
-        paperHeight *= 72.0 / 25.4;
-        break;
-      default:
-        MOZ_ASSERT_UNREACHABLE("unknown paper size unit");
-        break;
-    }
-    if (paperWidth > paperHeight) {
-      std::swap(paperWidth, paperHeight);
-    }
-    // Use the paper size to build a Telemetry Scalar key.
-    nsString key;
-    key.AppendInt(int32_t(NS_round(paperWidth)));
-    key.Append(u"x");
-    key.AppendInt(int32_t(NS_round(paperHeight)));
-    Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_PAPER_SIZE, key, 1);
-
     mPageSeqFrame = seqFrame;
-    seqFrame->StartPrint(poPresContext, settings, docTitleStr, docURLStr);
+    seqFrame->StartPrint(poPresContext, mPrintSettings, docTitleStr, docURLStr);
 
     // Schedule Page to Print
     PR_PL(("Scheduling Print of PO: %p (%s) \n", aPO.get(),
@@ -2093,7 +2062,9 @@ class nsPrintCompletionEvent : public Runnable {
   }
 
   NS_IMETHOD Run() override {
-    if (mDocViewerPrint) mDocViewerPrint->OnDonePrinting();
+    if (mDocViewerPrint) {
+      mDocViewerPrint->OnDonePrinting();
+    }
     return NS_OK;
   }
 

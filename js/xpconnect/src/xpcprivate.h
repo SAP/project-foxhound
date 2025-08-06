@@ -379,6 +379,11 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
     IDX_CRYPTO,
     IDX_INDEXEDDB,
     IDX_STRUCTUREDCLONE,
+    IDX_LOCKS,
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    IDX_SUPPRESSED,
+    IDX_ERROR,
+#endif
     IDX_TOTAL_COUNT  // just a count of the above
   };
 
@@ -2264,6 +2269,7 @@ class MOZ_STACK_CLASS OptionsBase {
   bool ParseJSString(const char* name, JS::MutableHandleString prop);
   bool ParseString(const char* name, nsCString& prop);
   bool ParseString(const char* name, nsString& prop);
+  bool ParseOptionalString(const char* name, mozilla::Maybe<nsString>& prop);
   bool ParseId(const char* name, JS::MutableHandleId id);
   bool ParseUInt32(const char* name, uint32_t* prop);
 
@@ -2301,6 +2307,7 @@ class MOZ_STACK_CLASS SandboxOptions : public OptionsBase {
   bool wantExportHelpers;
   bool isWebExtensionContentScript;
   JS::RootedObject proto;
+  mozilla::Maybe<nsString> sandboxContentSecurityPolicy;
   nsCString sandboxName;
   JS::RootedObject sameZoneAs;
   bool forceSecureContext;

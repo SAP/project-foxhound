@@ -788,7 +788,7 @@ static inline int32_t CoreTextWeightToCSSWeight(CGFloat aCTWeight) {
       // clang-format on
   };
   const auto* begin = &kCoreTextToCSSWeights[0];
-  const auto* end = begin + ArrayLength(kCoreTextToCSSWeights);
+  const auto* end = begin + std::size(kCoreTextToCSSWeights);
   auto m = std::upper_bound(begin, end, aCTWeight,
                             [](CGFloat aValue, const Mapping& aMapping) {
                               return aValue <= aMapping.first;
@@ -850,7 +850,7 @@ void CTFontFamily::AddFace(CTFontDescriptorRef aFace) {
   if (cssWeight) {
     // scale down and clamp, to get a value from 1..9
     cssWeight = ((cssWeight + 50) / 100);
-    cssWeight = std::max(1, std::min(cssWeight, 9));
+    cssWeight = std::clamp(cssWeight, 1, 9);
     cssWeight *= 100;  // scale up to CSS values
   } else {
     CGFloat weightValue;
@@ -1251,7 +1251,7 @@ void CoreTextFontList::InitSharedFontListForPlatform() {
     nsTArray<fontlist::Family::InitData> families;
     families.SetCapacity(CFArrayGetCount(familyNames)
 #if USE_DEPRECATED_FONT_FAMILY_NAMES
-                         + ArrayLength(kDeprecatedFontFamilies)
+                         + std::size(kDeprecatedFontFamilies)
 #endif
     );
     for (CFIndex i = 0; i < CFArrayGetCount(familyNames); ++i) {
@@ -1724,7 +1724,7 @@ void CoreTextFontList::AddFaceInitData(
   if (cssWeight) {
     // scale down and clamp, to get a value from 1..9
     cssWeight = ((cssWeight + 50) / 100);
-    cssWeight = std::max(1, std::min(cssWeight, 9));
+    cssWeight = std::clamp(cssWeight, 1, 9);
     cssWeight *= 100;  // scale up to CSS values
   } else {
     CGFloat weightValue;

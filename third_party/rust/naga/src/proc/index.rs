@@ -112,21 +112,15 @@ pub struct BoundsCheckPolicies {
     /// This controls the behavior of [`ImageLoad`] expressions when a coordinate,
     /// texture array index, level of detail, or multisampled sample number is out of range.
     ///
+    /// There is no corresponding policy for [`ImageStore`] statements. All the
+    /// platforms we support already discard out-of-bounds image stores,
+    /// effectively implementing the "skip write" part of [`ReadZeroSkipWrite`].
+    ///
     /// [`ImageLoad`]: crate::Expression::ImageLoad
+    /// [`ImageStore`]: crate::Statement::ImageStore
+    /// [`ReadZeroSkipWrite`]: BoundsCheckPolicy::ReadZeroSkipWrite
     #[cfg_attr(feature = "deserialize", serde(default))]
     pub image_load: BoundsCheckPolicy,
-
-    /// How should the generated code handle image texel stores that are out
-    /// of range?
-    ///
-    /// This controls the behavior of [`ImageStore`] statements when a coordinate,
-    /// texture array index, level of detail, or multisampled sample number is out of range.
-    ///
-    /// This policy should't be needed since all backends should ignore OOB writes.
-    ///
-    /// [`ImageStore`]: crate::Statement::ImageStore
-    #[cfg_attr(feature = "deserialize", serde(default))]
-    pub image_store: BoundsCheckPolicy,
 
     /// How should the generated code handle binding array indexes that are out of bounds.
     #[cfg_attr(feature = "deserialize", serde(default))]
@@ -173,10 +167,7 @@ impl BoundsCheckPolicies {
 
     /// Return `true` if any of `self`'s policies are `policy`.
     pub fn contains(&self, policy: BoundsCheckPolicy) -> bool {
-        self.index == policy
-            || self.buffer == policy
-            || self.image_load == policy
-            || self.image_store == policy
+        self.index == policy || self.buffer == policy || self.image_load == policy
     }
 }
 
@@ -259,7 +250,7 @@ pub fn find_checked_indexes(
                             base,
                             GuardedIndex::Expression(index),
                             module,
-                            function,
+                            &function.expressions,
                             info,
                         )
                         .is_some()
@@ -320,7 +311,7 @@ pub fn access_needs_check(
     base: Handle<crate::Expression>,
     mut index: GuardedIndex,
     module: &crate::Module,
-    function: &crate::Function,
+    expressions: &crate::Arena<crate::Expression>,
     info: &valid::FunctionInfo,
 ) -> Option<IndexableLength> {
     let base_inner = info[base].ty.inner_with(&module.types);
@@ -328,7 +319,7 @@ pub fn access_needs_check(
     // length constants, but `access_needs_check` is only used by back ends, so
     // validation should have caught those problems.
     let length = base_inner.indexable_length(module).unwrap();
-    index.try_resolve_to_constant(function, module);
+    index.try_resolve_to_constant(expressions, module);
     if let (&GuardedIndex::Known(index), &IndexableLength::Known(length)) = (&index, &length) {
         if index < length {
             // Index is statically known to be in bounds, no check needed.
@@ -343,14 +334,24 @@ impl GuardedIndex {
     /// Make a `GuardedIndex::Known` from a `GuardedIndex::Expression` if possible.
     ///
     /// Return values that are already `Known` unchanged.
-    fn try_resolve_to_constant(&mut self, function: &crate::Function, module: &crate::Module) {
+    pub(crate) fn try_resolve_to_constant(
+        &mut self,
+        expressions: &crate::Arena<crate::Expression>,
+        module: &crate::Module,
+    ) {
         if let GuardedIndex::Expression(expr) = *self {
-            if let Ok(value) = module
-                .to_ctx()
-                .eval_expr_to_u32_from(expr, &function.expressions)
-            {
-                *self = GuardedIndex::Known(value);
-            }
+            *self = GuardedIndex::from_expression(expr, expressions, module);
+        }
+    }
+
+    pub(crate) fn from_expression(
+        expr: Handle<crate::Expression>,
+        expressions: &crate::Arena<crate::Expression>,
+        module: &crate::Module,
+    ) -> Self {
+        match module.to_ctx().eval_expr_to_u32_from(expr, expressions) {
+            Ok(value) => Self::Known(value),
+            Err(_) => Self::Expression(expr),
         }
     }
 }

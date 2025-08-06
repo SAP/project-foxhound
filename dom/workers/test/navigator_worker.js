@@ -20,6 +20,8 @@ var supportedProps = [
   "hardwareConcurrency",
   { name: "storage", isSecureContext: true },
   "connection",
+  "permissions",
+  { name: "serviceWorker", isSecureContext: true },
 ];
 
 self.onmessage = function (event) {

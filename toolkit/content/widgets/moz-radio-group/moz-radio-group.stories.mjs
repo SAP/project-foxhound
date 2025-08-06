@@ -11,6 +11,7 @@ let icons = [
   "chrome://global/skin/icons/delete.svg",
   "chrome://global/skin/icons/defaultFavicon.svg",
 ];
+let accesskeyOptions = ["h", "w", "X"];
 
 let defaultLabelIds = ["moz-radio-0", "moz-radio-1", "moz-radio-2"];
 let wrappedLabelIds = [
@@ -35,6 +36,9 @@ export default {
       },
       control: { type: "radio" },
     },
+    accesskeys: {
+      if: { arg: "showAccesskeys", truthy: true },
+    },
   },
   parameters: {
     actions: {
@@ -42,20 +46,38 @@ export default {
     },
     status: "in-development",
     fluent: `
+moz-radio-group =
+  .label = This is the group label
 moz-radio-0 =
   .label = Hello
 moz-radio-1 =
   .label = Howdy
 moz-radio-2 =
   .label = Hola
-moz-radio-group =
-  .label = This is the group label
 moz-radio-long-0 =
   .label = Hello ipsum dolor sit amet, consectetur adipiscing elit. Cras tincidunt diam id ligula faucibus volutpat. Integer quis ultricies elit. In in dolor luctus velit sollicitudin efficitur vel id massa.
 moz-radio-long-1 =
   .label = Howdy ipsum dolor sit amet, consectetur adipiscing elit. Cras tincidunt diam id ligula faucibus volutpat. Integer quis ultricies elit. In in dolor luctus velit sollicitudin efficitur vel id massa.
 moz-radio-long-2 =
   .label = Hola ipsum dolor sit amet, consectetur adipiscing elit. Cras tincidunt diam id ligula faucibus volutpat. Integer quis ultricies elit. In in dolor luctus velit sollicitudin efficitur vel id massa.
+moz-radio-described-0 =
+  .label = Hello
+  .description = This is the first option.
+moz-radio-described-1 =
+  .label = Howdy
+  .description = This is the second option.
+moz-radio-described-2 =
+  .label = Hola
+  .description = This is the third option.
+moz-radio-described-long-0 =
+  .label = Hello ipsum dolor sit amet, consectetur adipiscing elit. Cras tincidunt diam id ligula faucibus volutpat. Integer quis ultricies elit. In in dolor luctus velit sollicitudin efficitur vel id massa.
+  .description = This is the first option.
+moz-radio-described-long-1 =
+  .label = Howdy ipsum dolor sit amet, consectetur adipiscing elit. Cras tincidunt diam id ligula faucibus volutpat. Integer quis ultricies elit. In in dolor luctus velit sollicitudin efficitur vel id massa.
+  .description = This is the second option.
+moz-radio-described-long-2 =
+  .label = Hola ipsum dolor sit amet, consectetur adipiscing elit. Cras tincidunt diam id ligula faucibus volutpat. Integer quis ultricies elit. In in dolor luctus velit sollicitudin efficitur vel id massa.
+  .description = This is the third option.
     `,
   },
 };
@@ -68,6 +90,10 @@ const Template = ({
   showIcons,
   disabled,
   disabledButtons,
+  showDescriptions,
+  showAccesskeys,
+  accesskeys,
+  supportPage,
 }) => html`
   <moz-radio-group
     name=${groupName}
@@ -80,9 +106,14 @@ const Template = ({
           ?checked=${i == 0 && !unchecked}
           ?disabled=${disabledButtons.includes(greeting)}
           value=${greeting}
-          data-l10n-id=${buttonLabels[i]}
+          data-l10n-id=${showDescriptions
+            ? buttonLabels[i].replace("moz-radio", "moz-radio-described")
+            : buttonLabels[i]}
           iconSrc=${ifDefined(showIcons ? icons[i] : "")}
-        ></moz-radio>
+          accesskey=${ifDefined(showAccesskeys ? accesskeys[i] : "")}
+          support-page=${ifDefined(supportPage)}
+        >
+        </moz-radio>
       `
     )}
   </moz-radio-group>
@@ -97,6 +128,10 @@ Default.args = {
   showIcons: false,
   disabled: false,
   disabledButtons: [],
+  showDescriptions: false,
+  showAccesskeys: false,
+  accesskeys: accesskeyOptions,
+  supportPage: "",
 };
 
 export const AllUnchecked = Template.bind({});
@@ -121,4 +156,22 @@ export const DisabledRadioButton = Template.bind({});
 DisabledRadioButton.args = {
   ...Default.args,
   disabledButtons: ["hello"],
+};
+
+export const WithDescriptions = Template.bind({});
+WithDescriptions.args = {
+  ...Default.args,
+  showDescriptions: true,
+};
+
+export const WithAccesskeys = Template.bind({});
+WithAccesskeys.args = {
+  ...Default.args,
+  showAccesskeys: true,
+};
+
+export const WithSupportLinks = Template.bind({});
+WithSupportLinks.args = {
+  ...Default.args,
+  supportPage: "test",
 };

@@ -2,7 +2,7 @@
 # cargo-vet config file
 
 [cargo-vet]
-version = "0.9"
+version = "0.10"
 
 [imports.bytecode-alliance]
 url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
@@ -18,6 +18,10 @@ url = "https://raw.githubusercontent.com/divviup/libprio-rs/main/supply-chain/au
 
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
+
+[policy.allocator-api2]
+audit-as-crates-io = true
+notes = "This is the upstream code without the Box implementation which may have a soundness issue."
 
 [policy.any_all_workaround]
 audit-as-crates-io = true
@@ -47,10 +51,6 @@ notes = "This is a pinned version of the upstream code, presumably to get a fix 
 audit-as-crates-io = true
 notes = "This is upstream plus a warning fix from bug 1823866."
 
-[policy.d3d12]
-audit-as-crates-io = true
-notes = "Part of the wgpu repository, pinned as the rest of wgpu crates."
-
 [policy.firefox-on-glean]
 audit-as-crates-io = false
 notes = "The crates.io version of this is just a placeholder to allow public crates to depend on firefox-on-glean."
@@ -72,12 +72,6 @@ notes = "The dependencies on tokio-reactor and tokio-threadpools are just a hack
 criteria = "safe-to-run"
 notes = "Used for fuzzing."
 
-[policy.gpu-descriptor]
-audit-as-crates-io = true
-
-[policy.gpu-descriptor-types]
-audit-as-crates-io = true
-
 [policy.http3server]
 criteria = "safe-to-run"
 notes = "Used for testing."
@@ -97,6 +91,9 @@ notes = "This crate has two testing-only dependencies which are specified as reg
 [policy.libudev-sys]
 audit-as-crates-io = false
 notes = "This override is an api-compatible fork with an orthogonal implementation."
+
+[policy."libz-rs-sys:0.2.1@git:4aa430ccb77537d0d60dab8db993ca51bb1194c5"]
+audit-as-crates-io = true
 
 [policy.malloc_size_of_derive]
 audit-as-crates-io = false
@@ -191,6 +188,14 @@ notes = "This is a first-party crate which is entirely unrelated to the crates.i
 audit-as-crates-io = false
 notes = "This is a first-party crate, maintained by the appservices team, which is entirely unrelated to the crates.io package of the same name."
 
+[policy.to_shmem]
+audit-as-crates-io = true
+notes = "This is a first-party crate which is also published to crates.io"
+
+[policy.to_shmem_derive]
+audit-as-crates-io = true
+notes = "This is a first-party crate which is also published to crates.io"
+
 [policy.unicode-bidi]
 audit-as-crates-io = true
 
@@ -230,6 +235,9 @@ notes = "Local override of the crates.io crate that uses a non-vendored local co
 
 [policy.wr_malloc_size_of]
 audit-as-crates-io = false
+
+[policy."zlib-rs:0.2.1@git:4aa430ccb77537d0d60dab8db993ca51bb1194c5"]
+audit-as-crates-io = true
 
 [[exemptions.ahash]]
 version = "0.7.6"
@@ -319,10 +327,6 @@ criteria = "safe-to-deploy"
 version = "0.2.2"
 criteria = "safe-to-deploy"
 
-[[exemptions.crc32fast]]
-version = "1.3.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.crossbeam-channel]]
 version = "0.5.4"
 criteria = "safe-to-deploy"
@@ -337,10 +341,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.crossbeam-utils]]
 version = "0.8.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.d3d12]]
-version = "0.4.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.darling]]
@@ -478,10 +478,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.hashlink]]
 version = "0.7.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.hermit-abi]]
-version = "0.1.19"
 criteria = "safe-to-deploy"
 
 [[exemptions.hexf-parse]]

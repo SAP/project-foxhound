@@ -119,7 +119,7 @@ const XPI_PERMISSION = "install";
 
 const XPI_SIGNATURE_CHECK_PERIOD = 24 * 60 * 60;
 
-const DB_SCHEMA = 36;
+const DB_SCHEMA = 37;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -2533,9 +2533,10 @@ export var XPIProvider = {
           AddonManagerPrivate.notifyAddonChanged(null, "theme")
         );
       }
+      // Keep version in sync with toolkit/mozapps/extensions/default-theme/manifest.json
       this.maybeInstallBuiltinAddon(
         "default-theme@mozilla.org",
-        "1.3",
+        "1.4.1",
         "resource://default-theme/"
       );
 
@@ -3272,6 +3273,14 @@ export var XPIProvider = {
     }
 
     return { addons: result, fullData: false };
+  },
+
+  shouldShowBlocklistAttention() {
+    return XPIExports.XPIDatabase.shouldShowBlocklistAttention();
+  },
+
+  getBlocklistAttentionInfo() {
+    return XPIExports.XPIDatabase.getBlocklistAttentionInfo();
   },
 
   /*

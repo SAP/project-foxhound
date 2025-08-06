@@ -13,18 +13,43 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.DecodeSequenceMode
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.decodeToSequence
 import kotlinx.serialization.json.encodeToStream
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import mozilla.components.lib.crash.Crash
+import mozilla.components.lib.crash.GleanMetrics.Crash.AsyncShutdownTimeoutObject
+import mozilla.components.lib.crash.GleanMetrics.Crash.QuotaManagerShutdownTimeoutObject
+import mozilla.components.lib.crash.GleanMetrics.Crash.StackTracesObject
 import mozilla.components.lib.crash.GleanMetrics.CrashMetrics
 import mozilla.components.lib.crash.GleanMetrics.Pings
+import mozilla.components.lib.crash.MinidumpAnalyzer
+import mozilla.components.lib.crash.db.Breadcrumb
+import mozilla.components.lib.crash.db.toBreadcrumb
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.content.isMainProcess
+import mozilla.telemetry.glean.private.BooleanMetricType
+import mozilla.telemetry.glean.private.ObjectMetricType
+import mozilla.telemetry.glean.private.QuantityMetricType
+import mozilla.telemetry.glean.private.StringListMetricType
+import mozilla.telemetry.glean.private.StringMetricType
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.Date
 import mozilla.components.lib.crash.GleanMetrics.Crash as GleanCrash
+import mozilla.components.lib.crash.GleanMetrics.Environment as GleanEnvironment
+import mozilla.components.lib.crash.GleanMetrics.Memory as GleanMemory
 
 /**
  * A [CrashReporterService] implementation for recording metrics with Glean.  The purpose of this
@@ -53,10 +78,7 @@ class GleanCrashReporterService(
         const val FOREGROUND_CHILD_PROCESS_NATIVE_CODE_CRASH_KEY = "fg_proc_native_code_crash"
         const val BACKGROUND_CHILD_PROCESS_NATIVE_CODE_CRASH_KEY = "bg_proc_native_code_crash"
 
-        // These keys are deprecated and should be removed after a period to allow for persisted
-        // crashes to be submitted.
-        const val FATAL_NATIVE_CODE_CRASH_KEY = "fatal_native_code_crash"
-        const val NONFATAL_NATIVE_CODE_CRASH_KEY = "nonfatal_native_code_crash"
+        private const val MINIDUMP_READ_BUFFER_SIZE: Int = 8192
     }
 
     /**
@@ -82,23 +104,260 @@ class GleanCrashReporterService(
         }
 
         @Serializable
+        sealed class PingCause {
+            abstract fun setMetrics()
+
+            @Serializable
+            @SerialName("os_fault")
+            data class OsFault(
+                val remoteType: String?,
+                val extras: JsonObject?,
+                val minidumpHash: String?,
+            ) : PingCause() {
+                override fun setMetrics() {
+                    GleanCrash.cause.set("os_fault")
+                    remoteType?.let { GleanCrash.remoteType.set(it) }
+                    minidumpHash?.let { GleanCrash.minidumpSha256Hash.set(it) }
+
+                    extras?.let(::setExtraMetrics)
+                }
+
+                private fun setExtraMetrics(extras: JsonObject) {
+                    // We ignore RemoteType and UptimeTS from extras as we have that information in
+                    // the Crash object or tracked manually (respectively).
+
+                    GleanCrash.appChannel.setIfNonNull(extras["ReleaseChannel"])
+                    GleanCrash.appDisplayVersion.setIfNonNull(extras["Version"])
+                    GleanCrash.appBuild.setIfNonNull(extras["BuildID"])
+                    GleanCrash.asyncShutdownTimeout.setAsyncShutdownTimeoutIfNonNull(extras["AsyncShutdownTimeout"])
+                    GleanCrash.backgroundTaskName.setIfNonNull(extras["BackgroundTaskName"])
+                    GleanCrash.eventLoopNestingLevel.setIfNonNull(extras["EventLoopNestingLevel"])
+                    GleanCrash.fontName.setIfNonNull(extras["FontName"])
+                    GleanCrash.gpuProcessLaunch.setIfNonNull(extras["GPUProcessLaunchCount"])
+                    GleanCrash.ipcChannelError.setIfNonNull(extras["ipc_channel_error"])
+                    GleanCrash.isGarbageCollecting.setIfNonNull(extras["IsGarbageCollecting"])
+                    GleanCrash.mainThreadRunnableName.setIfNonNull(extras["MainThreadRunnableName"])
+                    GleanCrash.mozCrashReason.setIfNonNull(extras["MozCrashReason"])
+                    GleanCrash.profilerChildShutdownPhase.setIfNonNull(extras["ProfilerChildShutdownPhase"])
+                    GleanCrash.quotaManagerShutdownTimeout.setQuotaManagerShutdownTimeoutIfNonNull(
+                        extras["QuotaManagerShutdownTimeout"],
+                    )
+                    GleanCrash.shutdownProgress.setIfNonNull(extras["ShutdownProgress"])
+                    GleanCrash.stackTraces.setStackTracesIfNonNull(extras["StackTraces"])
+                    // Overrides the original `startup` parameter to `Ping` when present
+                    GleanCrash.startup.setIfNonNull(extras["StartupCrash"])
+
+                    GleanEnvironment.experimentalFeatures.setExperimentalFeaturesIfNonNull(
+                        extras["ExperimentalFeatures"],
+                    )
+                    GleanEnvironment.headlessMode.setIfNonNull(extras["HeadlessMode"])
+
+                    GleanMemory.availableCommit.setIfNonNull(extras["AvailablePageFile"])
+                    GleanMemory.availablePhysical.setIfNonNull(extras["AvailablePhysicalMemory"])
+                    GleanMemory.availableSwap.setIfNonNull(extras["AvailableSwapMemory"])
+                    GleanMemory.availableVirtual.setIfNonNull(extras["AvailableVirtualMemory"])
+                    GleanMemory.lowPhysical.setIfNonNull(extras["LowPhysicalMemoryEvents"])
+                    GleanMemory.oomAllocationSize.setIfNonNull(extras["OOMAllocationSize"])
+                    GleanMemory.purgeablePhysical.setIfNonNull(extras["PurgeablePhysicalMemory"])
+                    GleanMemory.systemUsePercentage.setIfNonNull(extras["SystemMemoryUsePercentage"])
+                    GleanMemory.texture.setIfNonNull(extras["TextureUsage"])
+                    GleanMemory.totalPageFile.setIfNonNull(extras["TotalPageFile"])
+                    GleanMemory.totalPhysical.setIfNonNull(extras["TotalPhysicalMemory"])
+                    GleanMemory.totalVirtual.setIfNonNull(extras["TotalVirtualMemory"])
+                }
+
+                private fun StringMetricType.setIfNonNull(element: JsonElement?) {
+                    element?.jsonPrimitive?.content?.let(::set)
+                }
+
+                private fun BooleanMetricType.setIfNonNull(element: JsonElement?) {
+                    element?.jsonPrimitive?.content?.let { this.set(it == "1") }
+                }
+
+                private fun QuantityMetricType.setIfNonNull(element: JsonElement?) {
+                    element?.jsonPrimitive?.long?.let(::set)
+                }
+
+                private fun StringListMetricType.setExperimentalFeaturesIfNonNull(
+                    element: JsonElement?,
+                ) {
+                    element?.let {
+                        // Split on commas
+                        set(it.jsonPrimitive.content.split(',').filter(String::isNotEmpty))
+                    }
+                }
+
+                private fun ObjectMetricType<AsyncShutdownTimeoutObject>.setAsyncShutdownTimeoutIfNonNull(
+                    element: JsonElement?,
+                ) {
+                    element?.jsonPrimitive?.content?.let { content ->
+                        val a =
+                            Json.decodeFromString<JsonObject>(content).mapValues { (key, value) ->
+                                // The conditions object is sent as a serialized string.
+                                if (key == "conditions") JsonPrimitive(value.toString()) else value
+                            }
+                        set(Json.decodeFromJsonElement(JsonObject(a)))
+                    }
+                }
+
+                private fun ObjectMetricType<QuotaManagerShutdownTimeoutObject>.setQuotaManagerShutdownTimeoutIfNonNull(
+                    element: JsonElement?,
+                ) {
+                    element?.let {
+                        // The Glean metric is an array of the lines.
+                        set(
+                            Json.decodeFromJsonElement(
+                                JsonArray(
+                                    it.jsonPrimitive.content.split('\n')
+                                        .map { s -> JsonPrimitive(s) },
+                                ),
+                            ),
+                        )
+                    }
+                }
+
+                private fun crashInfoEntries(crashInfo: JsonObject): List<Pair<String, JsonElement>> =
+                    crashInfo.mapNotNull { (k, v) ->
+                        when (k) {
+                            "type" -> "crashType"
+                            "address" -> "crashAddress"
+                            "crashing_thread" -> "crashThread"
+                            else -> null
+                        }?.let { it to v }
+                    }
+
+                private fun modulesEntries(modules: JsonArray): List<Pair<String, JsonElement>> =
+                    listOf(
+                        "modules" to modules.map {
+                            it.jsonObject.mapNotNull { (key, value) ->
+                                when (key) {
+                                    "base_addr" -> "baseAddress"
+                                    "end_addr" -> "endAddress"
+                                    "code_id" -> "codeId"
+                                    "debug_file" -> "debugFile"
+                                    "debug_id" -> "debugId"
+                                    "filename", "version" -> key
+                                    else -> null
+                                }?.let { it to value }
+                            }.toMap()
+                                .let(::JsonObject)
+                        }.let(::JsonArray),
+                    )
+
+                private fun threadsEntries(threads: JsonArray): List<Pair<String, JsonElement>> =
+                    listOf(
+                        "threads" to threads.map {
+                            it.jsonObject.mapNotNull { (key, value) ->
+                                when (key) {
+                                    "frames" -> "frames" to value.jsonArray.map { frame ->
+                                        frame.jsonObject.mapNotNull { (k, v) ->
+                                            when (k) {
+                                                "module_index" -> "moduleIndex"
+                                                "ip", "trust" -> k
+                                                else -> null
+                                            }?.let { it to v }
+                                        }.toMap().let(::JsonObject)
+                                    }.let(::JsonArray)
+
+                                    else -> null
+                                }
+                            }.toMap()
+                                .let(::JsonObject)
+                        }.let(::JsonArray),
+                    )
+
+                private fun ObjectMetricType<StackTracesObject>.setStackTracesIfNonNull(
+                    element: JsonElement?,
+                ) {
+                    element?.jsonObject?.let { obj ->
+                        // The Glean metric has a slightly different layout. We
+                        // explicitly set/filter to the values we support, in
+                        // case there are new values in the object.
+                        val m = obj.mapNotNull { (key, value) ->
+                            when (key) {
+                                "status" -> if (value.jsonPrimitive.content != "OK") {
+                                    listOf("error" to value)
+                                } else {
+                                    null
+                                }
+
+                                "crash_info" -> (value as? JsonObject)?.let(::crashInfoEntries)
+                                "modules" -> (value as? JsonArray)?.let(::modulesEntries)
+                                "threads" -> (value as? JsonArray)?.let(::threadsEntries)
+                                "main_module" -> listOf("mainModule" to value)
+                                else -> null
+                            }
+                        }
+                            .flatten()
+                            .toMap()
+                        set(Json.decodeFromJsonElement(JsonObject(m)))
+                    }
+                }
+            }
+
+            @Serializable
+            @SerialName("java_exception")
+            data class JavaException(
+                val throwableJson: JsonElement,
+                val breadcrumbs: List<Breadcrumb>? = null,
+            ) : PingCause() {
+                override fun setMetrics() {
+                    GleanCrash.cause.set("java_exception")
+                    GleanCrash.javaException.set(
+                        Json.decodeFromJsonElement<GleanCrash.JavaExceptionObject>(throwableJson),
+                    )
+                }
+            }
+        }
+
+        @Serializable
         @SerialName("ping")
         data class Ping(
             val uptimeNanos: Long,
             val processType: String,
             val timeMillis: Long,
-            val startup: Boolean,
             val reason: Pings.crashReasonCodes,
-            val cause: String = "os_fault",
-            val remoteType: String = "",
+            val cause: PingCause,
+            val breadcrumbs: List<Breadcrumb> = listOf(),
+            val startup: Boolean = false,
         ) : GleanCrashAction() {
             override fun submit() {
-                GleanCrash.uptime.setRawNanos(uptimeNanos)
+                GleanEnvironment.uptime.setRawNanos(uptimeNanos)
                 GleanCrash.processType.set(processType)
-                GleanCrash.remoteType.set(remoteType)
                 GleanCrash.time.set(Date(timeMillis))
                 GleanCrash.startup.set(startup)
-                GleanCrash.cause.set(cause)
+                cause.setMetrics()
+
+                if (breadcrumbs.isNotEmpty()) {
+                    GleanCrash.breadcrumbs.set(
+                        Json.decodeFromJsonElement<GleanCrash.BreadcrumbsObject>(
+                            JsonArray(
+                                breadcrumbs.map { breadcrumb ->
+                                    JsonObject(
+                                        mapOf(
+                                            "timestamp" to JsonPrimitive(breadcrumb.timestamp),
+                                            "category" to JsonPrimitive(breadcrumb.category),
+                                            "type" to JsonPrimitive(breadcrumb.type),
+                                            "level" to JsonPrimitive(breadcrumb.level),
+                                            "message" to JsonPrimitive(breadcrumb.message),
+                                            "data" to JsonArray(
+                                                breadcrumb.data.map {
+                                                    JsonObject(
+                                                        mapOf(
+                                                            "key" to JsonPrimitive(it.key),
+                                                            "value" to JsonPrimitive(it.value),
+                                                        ),
+                                                    )
+                                                },
+                                            ),
+                                        ),
+                                    )
+                                },
+                            ),
+                        ),
+                    )
+                }
+
                 Pings.crash.submit(reason)
             }
         }
@@ -243,11 +502,76 @@ class GleanCrashReporterService(
             GleanCrashAction.Ping(
                 uptimeNanos = uptime(),
                 processType = "main",
-                remoteType = "",
                 timeMillis = crash.timestamp,
-                startup = false,
                 reason = Pings.crashReasonCodes.crash,
-                cause = "java_exception",
+                cause = GleanCrashAction.PingCause.JavaException(crash.throwable.toJson()),
+                breadcrumbs = crash.breadcrumbs.map { it.toBreadcrumb() },
+            ),
+        )
+    }
+
+    private fun getExtrasJson(path: String): JsonObject? {
+        val extrasFile = File(path)
+        if (extrasFile.exists()) {
+            try {
+                @OptIn(ExperimentalSerializationApi::class)
+                return Json.decodeFromStream<JsonObject>(extrasFile.inputStream())
+            } catch (e: IOException) {
+                logger.error("Error reading crash extra file", e)
+            } catch (e: SerializationException) {
+                logger.error("Error deserializing crash extra file", e)
+            }
+        } else {
+            logger.warn("Crash extra file missing: $path")
+        }
+        return null
+    }
+
+    @Throws()
+    private fun calculateMinidumpHash(path: String): String? {
+        val minidumpFile = File(path)
+        if (!minidumpFile.exists()) return null
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val input = minidumpFile.inputStream()
+
+            val buffer = ByteArray(MINIDUMP_READ_BUFFER_SIZE)
+            var n = 0
+            while (n != -1) {
+                digest.update(buffer, 0, n)
+                n = input.read(buffer)
+            }
+
+            val hexString = StringBuilder()
+            for (b in digest.digest()) {
+                hexString.append("%02x".format(b))
+            }
+            return hexString.toString()
+        } catch (e: IOException) {
+            logger.error("Failed to generate minidump hash", e)
+            return null
+        }
+    }
+
+    private fun Throwable.toJson(): JsonElement {
+        val messages =
+            generateSequence(this) { it.cause }.mapNotNull { it.message }.map { JsonPrimitive(it) }
+                .toList()
+
+        val stack = this.stackTrace.map { element ->
+            mapOf(
+                "file" to element.fileName.let(::JsonPrimitive),
+                "line" to element.lineNumber.takeIf { it >= 0 }.let(::JsonPrimitive),
+                "className" to element.className.let(::JsonPrimitive),
+                "methodName" to element.methodName.let(::JsonPrimitive),
+                "isNative" to JsonPrimitive(element.isNativeMethod),
+            ).filterValues { it !is JsonNull }.let(::JsonObject)
+        }
+
+        return JsonObject(
+            mapOf(
+                "messages" to JsonArray(messages),
+                "stack" to JsonArray(stack),
             ),
         )
     }
@@ -293,15 +617,27 @@ class GleanCrashReporterService(
 
             else -> "main"
         }
+
+        if (crash.minidumpPath != null && crash.extrasPath != null) {
+            MinidumpAnalyzer.load()?.run(crash.minidumpPath, crash.extrasPath, false)
+        }
+
+        val extrasJson = crash.extrasPath?.let { getExtrasJson(it) }
+
+        val minidumpHash = crash.minidumpPath?.let { calculateMinidumpHash(it) }
+
         recordCrashAction(
             GleanCrashAction.Ping(
                 uptimeNanos = uptime(),
                 processType = processType,
-                remoteType = crash.remoteType ?: "",
                 timeMillis = crash.timestamp,
-                startup = false,
                 reason = Pings.crashReasonCodes.crash,
-                cause = "os_fault",
+                cause = GleanCrashAction.PingCause.OsFault(
+                    remoteType = crash.remoteType,
+                    extras = extrasJson,
+                    minidumpHash = minidumpHash,
+                ),
+                breadcrumbs = crash.breadcrumbs.map { it.toBreadcrumb() },
             ),
         )
     }

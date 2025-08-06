@@ -40,7 +40,9 @@ import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertItemTextEquals
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
 import org.mozilla.fenix.helpers.SessionLoadedIdlingResource
@@ -127,15 +129,23 @@ class NavigationToolbarRobot {
         Log.i(TAG, "toggleReaderView: Clicked the reader view button")
     }
 
-    fun verifyClipboardSuggestionsAreDisplayed(link: String = "", shouldBeDisplayed: Boolean) =
+    fun verifyClipboardSuggestionsAreDisplayed(link: String = "", shouldBeDisplayed: Boolean) {
         assertUIObjectExists(
             itemWithResId("$packageName:id/fill_link_from_clipboard"),
-            itemWithResIdAndText(
-                "$packageName:id/clipboard_url",
-                link,
-            ),
             exists = shouldBeDisplayed,
         )
+        // On Android 12 or above we don't SHOW the URL unless the user requests to do so.
+        // See for more information https://github.com/mozilla-mobile/fenix/issues/22271
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            assertUIObjectExists(
+                itemWithResIdAndText(
+                    "$packageName:id/clipboard_url",
+                    link,
+                ),
+                exists = shouldBeDisplayed,
+            )
+        }
+    }
 
     fun longClickEditModeToolbar() {
         Log.i(TAG, "longClickEditModeToolbar: Trying to long click the edit mode toolbar")
@@ -188,6 +198,19 @@ class NavigationToolbarRobot {
         }
     }
 
+    fun verifyRedesignedNavigationToolbarItems() {
+        assertUIObjectExists(
+            itemWithDescription(getStringResource(R.string.browser_menu_back)),
+            itemWithDescription(getStringResource(R.string.browser_menu_forward)),
+            itemWithDescription(getStringResource(R.string.search_hint)),
+            itemWithResIdAndDescription(
+                "$packageName:id/icon",
+                getStringResource(R.string.mozac_browser_menu_button),
+            ),
+            itemWithResId("$packageName:id/counter_box"),
+        )
+    }
+
     class Transition {
         private lateinit var sessionLoadedIdlingResource: SessionLoadedIdlingResource
 
@@ -219,17 +242,19 @@ class NavigationToolbarRobot {
             return BrowserRobot.Transition()
         }
 
-        fun enterURLAndEnterToBrowserForTCPCFR(
+        fun enterURL(
             url: Uri,
             interact: BrowserRobot.() -> Unit,
         ): BrowserRobot.Transition {
+            sessionLoadedIdlingResource = SessionLoadedIdlingResource()
+
             openEditURLView()
-            Log.i(TAG, "enterURLAndEnterToBrowserForTCPCFR: Trying to set toolbar text to: $url")
+            Log.i(TAG, "enterURLAndEnterToBrowser: Trying to set toolbar text to: $url")
             awesomeBar().setText(url.toString())
-            Log.i(TAG, "enterURLAndEnterToBrowserForTCPCFR: Toolbar text was set to: $url")
-            Log.i(TAG, "enterURLAndEnterToBrowserForTCPCFR: Trying to press device enter button")
+            Log.i(TAG, "enterURLAndEnterToBrowser: Toolbar text was set to: $url")
+            Log.i(TAG, "enterURLAndEnterToBrowser: Trying to press device enter button")
             mDevice.pressEnter()
-            Log.i(TAG, "enterURLAndEnterToBrowserForTCPCFR: Pressed device enter button")
+            Log.i(TAG, "enterURLAndEnterToBrowser: Pressed device enter button")
 
             BrowserRobot().interact()
             return BrowserRobot.Transition()
@@ -321,7 +346,7 @@ class NavigationToolbarRobot {
             )
 
             // On Android 12 or above we don't SHOW the URL unless the user requests to do so.
-            // See for mor information https://github.com/mozilla-mobile/fenix/issues/22271
+            // See for more information https://github.com/mozilla-mobile/fenix/issues/22271
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
                 mDevice.waitNotNull(
                     Until.findObject(By.res("$packageName:id/clipboard_url")),
@@ -331,6 +356,10 @@ class NavigationToolbarRobot {
             Log.i(TAG, "visitLinkFromClipboard: Trying to click the fill link from clipboard button")
             fillLinkButton().click()
             Log.i(TAG, "visitLinkFromClipboard: Clicked the fill link from clipboard button")
+
+            Log.i(TAG, "visitLinkFromClipboard: Trying to press device enter button")
+            mDevice.pressEnter()
+            Log.i(TAG, "visitLinkFromClipboard: Pressed device enter button")
 
             BrowserRobot().interact()
             return BrowserRobot.Transition()

@@ -43,7 +43,7 @@
 #include "js/UniquePtr.h"
 #include "js/Wrapper.h"
 #include "util/DifferentialTesting.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "util/Text.h"
 #include "util/WindowsWrapper.h"
 #include "vm/ArrayBufferObject.h"
@@ -120,12 +120,10 @@ static bool IsTypedArrayObject(HandleValue v) {
   return v.isObject() && v.toObject().is<TypedArrayObject>();
 }
 
-#ifdef NIGHTLY_BUILD
 static bool IsUint8ArrayObject(HandleValue v) {
   return IsTypedArrayObject(v) &&
          v.toObject().as<TypedArrayObject>().type() == Scalar::Uint8;
 }
-#endif
 
 /* static */
 bool TypedArrayObject::ensureHasBuffer(JSContext* cx,
@@ -1133,31 +1131,29 @@ bool TypedArrayObjectTemplate<uint64_t>::convertValue(JSContext* cx,
   return true;
 }
 
-// https://tc39.github.io/proposal-bigint/#sec-integerindexedelementset
-// 9.4.5.11 IntegerIndexedElementSet ( O, index, value )
+/**
+ * 10.4.5.16 TypedArraySetElement ( O, index, value )
+ *
+ * ES2025 draft rev ac21460fedf4b926520b06c9820bdbebad596a8b
+ */
 template <typename NativeType>
 /* static */ bool TypedArrayObjectTemplate<NativeType>::setElement(
     JSContext* cx, Handle<TypedArrayObject*> obj, uint64_t index, HandleValue v,
     ObjectOpResult& result) {
-  MOZ_ASSERT(!obj->hasDetachedBuffer());
-  MOZ_ASSERT(index < obj->length().valueOr(0));
-
-  // Step 1 is enforced by the caller.
-
-  // Steps 2-3.
+  // Steps 1-2.
   NativeType nativeValue;
   if (!convertValue(cx, v, &nativeValue)) {
     return false;
   }
 
-  // Step 4.
+  // Step 3.
   if (index < obj->length().valueOr(0)) {
     MOZ_ASSERT(!obj->hasDetachedBuffer(),
                "detaching an array buffer sets the length to zero");
     TypedArrayObjectTemplate<NativeType>::setIndex(*obj, index, nativeValue);
   }
 
-  // Step 5.
+  // Step 4.
   return result.succeed();
 }
 
@@ -1641,7 +1637,8 @@ static bool TypedArray_toStringTagGetter(JSContext* cx, unsigned argc,
     JS_PSG("byteLength", TypedArray_byteLengthGetter, 0),
     JS_PSG("byteOffset", TypedArray_byteOffsetGetter, 0),
     JS_SYM_GET(toStringTag, TypedArray_toStringTagGetter, 0),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 template <typename T>
 static inline bool SetFromTypedArray(Handle<TypedArrayObject*> target,
@@ -2029,8 +2026,6 @@ bool TypedArrayObject::copyWithin(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsTypedArrayObject,
                               TypedArrayObject::copyWithin_impl>(cx, args);
 }
-
-#ifdef NIGHTLY_BUILD
 
 // Byte vector with large enough inline storage to allow constructing small
 // typed arrays without extra heap allocations.
@@ -3119,8 +3114,6 @@ static bool uint8array_toHex(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsUint8ArrayObject, uint8array_toHex>(cx, args);
 }
 
-#endif
-
 /* static */ const JSFunctionSpec TypedArrayObject::protoFunctions[] = {
     JS_SELF_HOSTED_FN("subarray", "TypedArraySubarray", 2, 0),
     JS_FN("set", TypedArrayObject::set, 1, 0),
@@ -3458,7 +3451,6 @@ static const JSPropertySpec
 #undef IMPL_TYPED_ARRAY_PROPERTIES
 };
 
-#ifdef NIGHTLY_BUILD
 static const JSFunctionSpec uint8array_static_methods[] = {
     JS_FN("fromBase64", uint8array_fromBase64, 1, 0),
     JS_FN("fromHex", uint8array_fromHex, 1, 0),
@@ -3472,24 +3464,19 @@ static const JSFunctionSpec uint8array_methods[] = {
     JS_FN("toHex", uint8array_toHex, 0, 0),
     JS_FS_END,
 };
-#endif
 
 static constexpr const JSFunctionSpec* TypedArrayStaticMethods(
     Scalar::Type type) {
-#ifdef NIGHTLY_BUILD
   if (type == Scalar::Uint8) {
     return uint8array_static_methods;
   }
-#endif
   return nullptr;
 }
 
 static constexpr const JSFunctionSpec* TypedArrayMethods(Scalar::Type type) {
-#ifdef NIGHTLY_BUILD
   if (type == Scalar::Uint8) {
     return uint8array_methods;
   }
-#endif
   return nullptr;
 }
 
@@ -3549,14 +3536,6 @@ const JSClass TypedArrayObject::anyClasses[2][Scalar::MaxTypedArrayViewType] = {
 #undef IMPL_TYPED_ARRAY_CLASS
     },
 };
-
-const JSClass (
-    &TypedArrayObject::fixedLengthClasses)[Scalar::MaxTypedArrayViewType] =
-    TypedArrayObject::anyClasses[0];
-
-const JSClass (
-    &TypedArrayObject::resizableClasses)[Scalar::MaxTypedArrayViewType] =
-    TypedArrayObject::anyClasses[1];
 
 // The various typed array prototypes are supposed to 1) be normal objects,
 // 2) stringify to "[object <name of constructor>]", and 3) (Gecko-specific)
@@ -3815,44 +3794,13 @@ bool js::SetTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
   MOZ_CRASH("Unsupported TypedArray type");
 }
 
-bool js::SetTypedArrayElementOutOfBounds(JSContext* cx,
-                                         Handle<TypedArrayObject*> obj,
-                                         uint64_t index, HandleValue v,
-                                         ObjectOpResult& result) {
-  // This method is only called for non-existent properties, which means any
-  // absent indexed properties must be out of range. Unless the typed array is
-  // backed by a growable SharedArrayBuffer, in which case another thread may
-  // have grown the buffer.
-  MOZ_ASSERT(index >= obj->length().valueOr(0) ||
-             (obj->isSharedMemory() && obj->bufferShared()->isGrowable()));
-
-  // The following steps refer to 10.4.5.16 TypedArraySetElement.
-
-  // Steps 1-2.
-  RootedValue converted(cx);
-  if (!obj->convertValue(cx, v, &converted)) {
-    return false;
-  }
-
-  // Step 3.
-  if (index < obj->length().valueOr(0)) {
-    // Side-effects when converting the value may have put the index in-bounds
-    // when the backing buffer is resizable.
-    MOZ_ASSERT(obj->hasResizableBuffer());
-    return SetTypedArrayElement(cx, obj, index, converted, result);
-  }
-
-  // Step 4.
-  return result.succeed();
-}
-
-// ES2021 draft rev b3f9b5089bcc3ddd8486379015cd11eb1427a5eb
-// 9.4.5.3 [[DefineOwnProperty]], step 3.b.
+// ES2025 draft rev ac21460fedf4b926520b06c9820bdbebad596a8b
+// 10.4.5.3 [[DefineOwnProperty]], step 1.b.
 bool js::DefineTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
                                  uint64_t index,
                                  Handle<PropertyDescriptor> desc,
                                  ObjectOpResult& result) {
-  // These are all substeps of 3.b.
+  // These are all substeps of 1.b.
 
   // Step i.
   if (index >= obj->length().valueOr(0)) {
@@ -3863,17 +3811,17 @@ bool js::DefineTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
   }
 
   // Step ii.
-  if (desc.isAccessorDescriptor()) {
-    return result.fail(JSMSG_CANT_REDEFINE_PROP);
-  }
-
-  // Step iii.
   if (desc.hasConfigurable() && !desc.configurable()) {
     return result.fail(JSMSG_CANT_REDEFINE_PROP);
   }
 
-  // Step iv.
+  // Step iii.
   if (desc.hasEnumerable() && !desc.enumerable()) {
+    return result.fail(JSMSG_CANT_REDEFINE_PROP);
+  }
+
+  // Step iv.
+  if (desc.isAccessorDescriptor()) {
     return result.fail(JSMSG_CANT_REDEFINE_PROP);
   }
 
@@ -3884,20 +3832,7 @@ bool js::DefineTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
 
   // Step vi.
   if (desc.hasValue()) {
-    switch (obj->type()) {
-#define DEFINE_TYPED_ARRAY_ELEMENT(_, T, N)                        \
-  case Scalar::N:                                                  \
-    return TypedArrayObjectTemplate<T>::setElement(cx, obj, index, \
-                                                   desc.value(), result);
-      JS_FOR_EACH_TYPED_ARRAY(DEFINE_TYPED_ARRAY_ELEMENT)
-#undef DEFINE_TYPED_ARRAY_ELEMENT
-      case Scalar::MaxTypedArrayViewType:
-      case Scalar::Int64:
-      case Scalar::Simd128:
-        break;
-    }
-
-    MOZ_CRASH("Unsupported TypedArray type");
+    return SetTypedArrayElement(cx, obj, index, desc.value(), result);
   }
 
   // Step vii.

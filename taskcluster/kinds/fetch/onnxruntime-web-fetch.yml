@@ -1,0 +1,54 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+ort-training.wasm:
+    description: Onnx runtime wasm training SIMD and threaded 1.20.0-dev.20240827-1d059b8702
+    fetch:
+        type: static-url
+        url: https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0-dev.20240827-1d059b8702/dist/ort-training-wasm-simd-threaded.wasm
+        sha256: 7eb4ae0c65323064f8e4bf28916a3c4c1836e88ac3b5e29cad51a0737f96487e
+        size: 11861991
+
+ort.jsep.wasm:
+    description: Onnx runtime wasm SIMD, threaded and JSEP 1.20.0-dev.20240827-1d059b8702
+    fetch:
+        type: static-url
+        url: https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0-dev.20240827-1d059b8702/dist/ort-wasm-simd-threaded.jsep.wasm
+        sha256: c4547919f496dc3f566d3ca5889d1ac4aa3bde58e73799935431d63a30889245
+        size: 21513127
+
+ort.wasm:
+    description: Onnx runtime wasm SIMD and threaded 1.20.0-dev.20240827-1d059b8702
+    fetch:
+        type: static-url
+        url: https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0-dev.20240827-1d059b8702/dist/ort-wasm-simd-threaded.wasm
+        sha256: 23f9328b96edfd86238773f0ffe8ccf6d2e15b8932ff9863963973b48b97eb2b
+        size: 11105821
+
+xenova-all-minilm-l6-v2:
+    description: feature extraction model
+    fetch:
+        type: git
+        repo: https://huggingface.co/Xenova/all-MiniLM-L6-v2
+        revision: 5f8986ea538762fd82a43a768d583a5a9d71d1ec
+        path-prefix: "onnx-models/Xenova/all-MiniLM-L6-v2/main/"
+        artifact-name: all-MiniLM-L6-v2.tar.zst
+
+mozilla-ner:
+    description: named entity model
+    fetch:
+        type: git
+        repo: https://huggingface.co/Mozilla/distilbert-uncased-NER-LoRA
+        revision: 7cd1d24c22a55fea06dd2d52e449235954d6c51d
+        path-prefix: "onnx-models/Mozilla/distilbert-uncased-NER-LoRA/main/"
+        artifact-name: distilbert-uncased-NER-LoRA.tar.zst
+
+mozilla-intent:
+    description: intent model
+    fetch:
+        type: git
+        repo: https://huggingface.co/Mozilla/mobilebert-uncased-finetuned-LoRA-intent-classifier
+        revision: 67edcd40da2b681d03072d5ea4943d2bff1284ef
+        path-prefix: "onnx-models/Mozilla/mobilebert-uncased-finetuned-LoRA-intent-classifier/main/"
+        artifact-name: mobilebert-uncased-finetuned-LoRA-intent-classifier.tar.zst

@@ -192,10 +192,6 @@ impl GuiTest {
         // Create a default mock environment which allows successful operation.
         let mut mock = mock::builder();
         mock.set(
-            Command::mock("work_dir/minidump-analyzer"),
-            Box::new(|_| Ok(crate::std::process::success_output())),
-        )
-        .set(
             Command::mock("work_dir/pingsender"),
             Box::new(|_| Ok(crate::std::process::success_output())),
         )
@@ -452,29 +448,8 @@ fn no_dump_file() {
 }
 
 #[test]
-fn minidump_analyzer_error() {
-    mock::builder()
-        .set(
-            Command::mock("work_dir/minidump-analyzer"),
-            Box::new(|_| Err(ErrorKind::NotFound.into())),
-        )
-        .set(
-            crate::std::env::MockCurrentExe,
-            "work_dir/crashreporter".into(),
-        )
-        .run(|| {
-            let cfg = test_config();
-            assert!(try_run(&mut Arc::new(cfg)).is_err());
-        });
-}
-
-#[test]
 fn no_extra_file() {
     mock::builder()
-        .set(
-            Command::mock("work_dir/minidump-analyzer"),
-            Box::new(|_| Ok(crate::std::process::success_output())),
-        )
         .set(
             crate::std::env::MockCurrentExe,
             "work_dir/crashreporter".into(),
@@ -633,7 +608,7 @@ fn no_submit() {
         "data_dir/crashreporter_settings.json",
         Settings {
             submit_report: true,
-            include_url: true,
+            include_url: false,
         }
         .to_string(),
     );
@@ -642,7 +617,7 @@ fn no_submit() {
             assert!(c.checked.get())
         });
         interact.element("include-url", |_style, c: &model::Checkbox| {
-            assert!(c.checked.get())
+            assert!(!c.checked.get())
         });
         interact.element("send", |_style, c: &model::Checkbox| c.checked.set(false));
         interact.element("include-url", |_style, c: &model::Checkbox| {
@@ -904,6 +879,7 @@ fn details_window() {
              TelemetryServerURL: https://telemetry.example.com\n\
              TelemetrySessionId: telemetry_session\n\
              Throttleable: 1\n\
+             URL: https://url.example.com\n\
              Vendor: FooCorp\n\
              Version: 100.0\n\
              This report also contains technical information about the state of the application when it crashed.\n"

@@ -236,8 +236,8 @@ async function doSuggestTest({ trigger, assert }) {
   const cleanupQuickSuggest = await ensureQuickSuggestInit();
 
   await doTest(async () => {
-    await openPopup("nonsponsored");
-    await selectRowByURL("https://example.com/nonsponsored");
+    await openPopup("wikipedia");
+    await selectRowByURL("https://example.com/wikipedia");
 
     await trigger();
     await assert();
@@ -272,6 +272,38 @@ async function doSuggestedIndexTest({ trigger, assert }) {
     await selectRowByProvider("UnitConversion");
 
     await trigger();
+    await assert();
+  });
+
+  await SpecialPowers.popPrefEnv();
+}
+
+async function doRestrictKeywordsTest({ trigger, assert }) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.searchRestrictKeywords.featureGate", true]],
+  });
+
+  await doTest(async () => {
+    await openPopup("@");
+
+    let totalResults = await UrlbarTestUtils.getResultCount(window);
+    let restrictSymbols = Object.values(UrlbarTokenizer.RESTRICT);
+
+    for (let i = 0; i < totalResults; i++) {
+      let details = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
+      let symbol = details.result.payload.keyword;
+      let keyword = details.result.payload.l10nRestrictKeyword?.toLowerCase();
+
+      if (restrictSymbols.includes(symbol)) {
+        let rowToSelect = await UrlbarTestUtils.waitForAutocompleteResultAt(
+          window,
+          i
+        );
+
+        await trigger(rowToSelect, keyword);
+        await openPopup("@");
+      }
+    }
     await assert();
   });
 

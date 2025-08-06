@@ -6,13 +6,11 @@
 #include "SocketProcessImpl.h"
 
 #include "base/command_line.h"
-#include "base/shared_memory.h"
 #include "base/string_util.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/GeckoArgs.h"
 #include "mozilla/ipc/ProcessUtils.h"
-#include "mozilla/ipc/IOThreadChild.h"
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxTarget.h"
@@ -24,8 +22,6 @@
 #ifdef XP_UNIX
 #  include <unistd.h>  // For sleep().
 #endif
-
-using mozilla::ipc::IOThreadChild;
 
 namespace mozilla {
 namespace net {

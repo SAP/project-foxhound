@@ -150,29 +150,29 @@ impl QuicDatagrams {
     /// not fit into the packet.
     pub fn add_datagram(
         &mut self,
-        buf: &[u8],
+        data: Vec<u8>,
         tracking: DatagramTracking,
         stats: &mut Stats,
     ) -> Res<()> {
-        if u64::try_from(buf.len()).unwrap() > self.remote_datagram_size {
+        if u64::try_from(data.len())? > self.remote_datagram_size {
             return Err(Error::TooMuchData);
         }
         if self.datagrams.len() == self.max_queued_outgoing_datagrams {
             self.conn_events.datagram_outcome(
-                self.datagrams.pop_front().unwrap().tracking(),
+                self.datagrams
+                    .pop_front()
+                    .ok_or(Error::InternalError)?
+                    .tracking(),
                 OutgoingDatagramOutcome::DroppedQueueFull,
             );
             stats.datagram_tx.dropped_queue_full += 1;
         }
-        self.datagrams.push_back(QuicDatagram {
-            data: buf.to_vec(),
-            tracking,
-        });
+        self.datagrams.push_back(QuicDatagram { data, tracking });
         Ok(())
     }
 
     pub fn handle_datagram(&self, data: &[u8], stats: &mut Stats) -> Res<()> {
-        if self.local_datagram_size < u64::try_from(data.len()).unwrap() {
+        if self.local_datagram_size < u64::try_from(data.len())? {
             return Err(Error::ProtocolViolation);
         }
         self.conn_events

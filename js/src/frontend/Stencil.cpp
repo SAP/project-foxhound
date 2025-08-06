@@ -8,6 +8,7 @@
 
 #include "mozilla/AlreadyAddRefed.h"        // already_AddRefed
 #include "mozilla/Assertions.h"             // MOZ_RELEASE_ASSERT
+#include "mozilla/CheckedInt.h"             // mozilla::CheckedInt
 #include "mozilla/Maybe.h"                  // mozilla::Maybe
 #include "mozilla/OperatorNewExtensions.h"  // mozilla::KnownNotNull
 #include "mozilla/PodOperations.h"          // mozilla::PodCopy
@@ -42,7 +43,7 @@
 #include "js/Utility.h"                 // js_malloc, js_calloc, js_free
 #include "js/Value.h"                   // ObjectValue
 #include "js/WasmModule.h"              // JS::WasmModule
-#include "vm/BigIntType.h"   // ParseBigIntLiteral, BigIntLiteralIsZero
+#include "vm/BigIntType.h"   // ParseBigIntLiteral, BigInt::createFromInt64
 #include "vm/BindingKind.h"  // BindingKind
 #include "vm/EnvironmentObject.h"
 #include "vm/GeneratorAndAsyncKind.h"  // GeneratorKind, FunctionAsyncKind
@@ -2615,7 +2616,7 @@ void CompilationStencil::assertBorrowingFromExtensibleCompilationStencil(
 
 CompilationStencil::CompilationStencil(
     UniquePtr<ExtensibleCompilationStencil>&& extensibleStencil)
-    : alloc(LifoAllocChunkSize) {
+    : alloc(LifoAllocChunkSize, js::BackgroundMallocArena) {
   ownedBorrowStencil = std::move(extensibleStencil);
 
   storageType = StorageType::OwnedExtensible;
@@ -3010,21 +3011,21 @@ bool CompilationStencil::deserializeStencils(
 }
 
 ExtensibleCompilationStencil::ExtensibleCompilationStencil(ScriptSource* source)
-    : alloc(CompilationStencil::LifoAllocChunkSize),
+    : alloc(CompilationStencil::LifoAllocChunkSize, js::BackgroundMallocArena),
       source(source),
       parserAtoms(alloc) {}
 
 ExtensibleCompilationStencil::ExtensibleCompilationStencil(
     CompilationInput& input)
     : canLazilyParse(CanLazilyParse(input.options)),
-      alloc(CompilationStencil::LifoAllocChunkSize),
+      alloc(CompilationStencil::LifoAllocChunkSize, js::BackgroundMallocArena),
       source(input.source),
       parserAtoms(alloc) {}
 
 ExtensibleCompilationStencil::ExtensibleCompilationStencil(
     const JS::ReadOnlyCompileOptions& options, RefPtr<ScriptSource> source)
     : canLazilyParse(CanLazilyParse(options)),
-      alloc(CompilationStencil::LifoAllocChunkSize),
+      alloc(CompilationStencil::LifoAllocChunkSize, js::BackgroundMallocArena),
       source(std::move(source)),
       parserAtoms(alloc) {}
 
@@ -3429,7 +3430,7 @@ bool ExtensibleCompilationStencil::cloneFromImpl(FrontendContext* fc,
     return false;
   }
   for (size_t i = 0; i < bigIntSize; i++) {
-    if (!bigIntData[i].init(fc, alloc, other.bigIntData[i].source())) {
+    if (!bigIntData[i].init(fc, alloc, other.bigIntData[i])) {
       return false;
     }
   }
@@ -3626,39 +3627,87 @@ mozilla::Span<TaggedScriptThingIndex> ScriptStencil::gcthings(
   return stencil.gcThingData.Subspan(gcThingsOffset, gcThingsLength);
 }
 
-bool BigIntStencil::init(FrontendContext* fc, LifoAlloc& alloc,
-                         const mozilla::Span<const char16_t> buf) {
-#ifdef DEBUG
-  // Assert we have no separators; if we have a separator then the algorithm
-  // used in BigInt::literalIsZero will be incorrect.
-  for (char16_t c : buf) {
-    MOZ_ASSERT(c != '_');
-  }
-#endif
+bool BigIntStencil::initFromChars(FrontendContext* fc, LifoAlloc& alloc,
+                                  mozilla::Span<const char16_t> buf) {
+  MOZ_ASSERT(ParseBigInt64Literal(buf).isNothing(),
+             "int64-sized BigInts are stored inline");
+
   size_t length = buf.size();
+  MOZ_ASSERT(length > 0);
+
   char16_t* p = alloc.template newArrayUninitialized<char16_t>(length);
   if (!p) {
     ReportOutOfMemory(fc);
     return false;
   }
   mozilla::PodCopy(p, buf.data(), length);
-  source_ = mozilla::Span(p, length);
+  bigInt_ = mozilla::AsVariant(mozilla::Span(p, length));
   return true;
 }
 
+bool BigIntStencil::init(FrontendContext* fc, LifoAlloc& alloc,
+                         mozilla::Span<const char16_t> buf) {
+  if (auto int64 = ParseBigInt64Literal(buf)) {
+    bigInt_ = mozilla::AsVariant(*int64);
+    return true;
+  }
+  return initFromChars(fc, alloc, buf);
+}
+
+bool BigIntStencil::init(FrontendContext* fc, LifoAlloc& alloc,
+                         const BigIntStencil& other) {
+  if (other.bigInt_.is<int64_t>()) {
+    bigInt_ = other.bigInt_;
+    return true;
+  }
+  return initFromChars(fc, alloc, other.source());
+}
+
 BigInt* BigIntStencil::createBigInt(JSContext* cx) const {
-  mozilla::Range<const char16_t> source(source_.data(), source_.size());
-  return js::ParseBigIntLiteral(cx, source);
+  return bigInt_.match(
+      [cx](mozilla::Span<char16_t> source) {
+        return js::ParseBigIntLiteral(cx, source);
+      },
+      [cx](int64_t int64) {
+        // BigInts are stored in the script's data vector and therefore need to
+        // be allocated in the tenured heap.
+        constexpr gc::Heap heap = gc::Heap::Tenured;
+        return BigInt::createFromInt64(cx, int64, heap);
+      });
 }
 
 bool BigIntStencil::isZero() const {
-  mozilla::Range<const char16_t> source(source_.data(), source_.size());
-  return js::BigIntLiteralIsZero(source);
+  return bigInt_.match([](mozilla::Span<char16_t>) { return false; },
+                       [](int64_t int64) { return int64 == 0; });
+}
+
+bool BigIntStencil::inplaceNegate() {
+  return bigInt_.match([](mozilla::Span<char16_t>) { return false; },
+                       [](int64_t& int64) {
+                         auto negated = -mozilla::CheckedInt<int64_t>{int64};
+                         if (!negated.isValid()) {
+                           return false;
+                         }
+                         int64 = negated.value();
+                         return true;
+                       });
+}
+
+bool BigIntStencil::inplaceBitNot() {
+  return bigInt_.match([](mozilla::Span<char16_t>) { return false; },
+                       [](int64_t& int64) {
+                         int64 = ~int64;
+                         return true;
+                       });
 }
 
 #ifdef DEBUG
 bool BigIntStencil::isContainedIn(const LifoAlloc& alloc) const {
-  return alloc.contains(source_.data());
+  return bigInt_.match(
+      [&alloc](mozilla::Span<char16_t> source) {
+        return alloc.contains(source.data());
+      },
+      [](int64_t) { return true; });
 }
 #endif
 
@@ -3869,9 +3918,13 @@ void BigIntStencil::dump(js::JSONPrinter& json) const {
 }
 
 void BigIntStencil::dumpCharsNoQuote(GenericPrinter& out) const {
-  for (char16_t c : source_) {
-    out.putChar(char(c));
-  }
+  bigInt_.match(
+      [&out](mozilla::Span<char16_t> source) {
+        for (char16_t c : source) {
+          out.putChar(char(c));
+        }
+      },
+      [&out](int64_t int64) { out.printf("%" PRId64, int64); });
 }
 
 void ScopeStencil::dump() const {
@@ -5330,7 +5383,7 @@ bool CompilationStencilMerger::addDelazification(
     data.atom_ = mapAtomIndex(data.atom_);
   }
 
-  // Append bigIntData, with copying BigIntStencil.source_.
+  // Append bigIntData, with copying BigIntStencil.bigInt_.
   if (!initial_->bigIntData.reserve(bigIntOffset +
                                     delazification.bigIntData.size())) {
     js::ReportOutOfMemory(fc);
@@ -5338,7 +5391,7 @@ bool CompilationStencilMerger::addDelazification(
   }
   for (const auto& data : delazification.bigIntData) {
     initial_->bigIntData.infallibleEmplaceBack();
-    if (!initial_->bigIntData.back().init(fc, initial_->alloc, data.source())) {
+    if (!initial_->bigIntData.back().init(fc, initial_->alloc, data)) {
       return false;
     }
   }

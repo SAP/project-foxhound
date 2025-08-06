@@ -46,7 +46,7 @@
       }
 
       &[data-selected] {
-        color: var(--in-content-accent-color);
+        color: var(--color-accent-primary);
       }
     }
   }
@@ -232,7 +232,7 @@
   }
 
   .sourceLabel:not(:empty) {
-    background: var(--in-content-box-background);
+    background: var(--background-color-box);
     padding: 2px 5px;
     border-radius: 3px;
 
@@ -398,9 +398,6 @@
   textarea[readonly] {
     color: var(--text-color-deemphasized);
     border-color: var(--in-content-border-color);
-    // Show a text cursor on readonly textareas. Otherwise, they are selectable,
-    // but there's no cursor to show the caret position.
-    -moz-user-modify: read-write;
   }
 
   .monospace {
@@ -415,6 +412,14 @@
   h2 .no-margins,
   p .no-margins {
     margin: 0;
+  }
+
+  .targeting-editor {
+    resize: vertical;
+
+    &.small {
+      white-space: nowrap;
+    }
   }
 
   .impressions-section {

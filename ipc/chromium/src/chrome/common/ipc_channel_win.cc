@@ -12,7 +12,6 @@
 #include <sstream>
 
 #include "base/command_line.h"
-#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/process.h"
 #include "base/process_util.h"
@@ -49,8 +48,8 @@ Channel::ChannelImpl::ChannelImpl(ChannelHandle pipe, Mode mode,
                                   base::ProcessId other_pid)
     : chan_cap_("ChannelImpl::SendMutex",
                 MessageLoopForIO::current()->SerialEventTarget()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(output_state_(this)),
+      input_state_(this),
+      output_state_(this),
       other_pid_(other_pid) {
   Init(mode);
 
@@ -754,16 +753,6 @@ void Channel::SetOtherPid(base::ProcessId other_pid) {
 }
 
 bool Channel::IsClosed() const { return channel_impl_->IsClosed(); }
-
-HANDLE Channel::GetClientChannelHandle() {
-  // Read the switch from the command line which passed the initial handle for
-  // this process, and convert it back into a HANDLE.
-  std::wstring switchValue = CommandLine::ForCurrentProcess()->GetSwitchValue(
-      switches::kProcessChannelID);
-
-  uint32_t handleInt = std::stoul(switchValue);
-  return Uint32ToHandle(handleInt);
-}
 
 // static
 bool Channel::CreateRawPipe(ChannelHandle* server, ChannelHandle* client) {

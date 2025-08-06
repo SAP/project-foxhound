@@ -15,6 +15,7 @@
 #include "nsISupportsImpl.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
 
 typedef void* EGLImageKHR;
 typedef void* EGLSyncKHR;
@@ -34,7 +35,8 @@ typedef void* EGLSyncKHR;
 namespace mozilla {
 namespace gfx {
 class DataSourceSurface;
-}
+class FileHandleWrapper;
+}  // namespace gfx
 namespace layers {
 class MemoryOrShmem;
 class SurfaceDescriptor;
@@ -44,6 +46,11 @@ class SurfaceDescriptorDMABuf;
 namespace gl {
 class GLContext;
 }
+namespace webgpu {
+namespace ffi {
+struct WGPUDMABufInfo;
+}
+}  // namespace webgpu
 }  // namespace mozilla
 
 typedef enum {
@@ -128,6 +135,8 @@ class DMABufSurface {
   void FenceWait();
   void FenceDelete();
 
+  void MaybeSemaphoreWait(GLuint aGlTexture);
+
   // Set and get a global surface UID. The UID is shared across process
   // and it's used to track surface lifetime in various parts of rendering
   // engine.
@@ -198,7 +207,7 @@ class DMABufSurface {
   uint64_t mBufferModifiers[DMABUF_BUFFER_PLANES];
 
   int mBufferPlaneCount;
-  int mDmabufFds[DMABUF_BUFFER_PLANES];
+  RefPtr<mozilla::gfx::FileHandleWrapper> mDmabufFds[DMABUF_BUFFER_PLANES];
   int32_t mDrmFormats[DMABUF_BUFFER_PLANES];
   int32_t mStrides[DMABUF_BUFFER_PLANES];
   int32_t mOffsets[DMABUF_BUFFER_PLANES];
@@ -208,8 +217,9 @@ class DMABufSurface {
   void* mMappedRegionData[DMABUF_BUFFER_PLANES];
   uint32_t mMappedRegionStride[DMABUF_BUFFER_PLANES];
 
-  int mSyncFd;
+  RefPtr<mozilla::gfx::FileHandleWrapper> mSyncFd;
   EGLSyncKHR mSync;
+  RefPtr<mozilla::gfx::FileHandleWrapper> mSemaphoreFd;
   RefPtr<mozilla::gl::GLContext> mGL;
 
   int mGlobalRefCountFd;
@@ -227,6 +237,11 @@ class DMABufSurfaceRGBA final : public DMABufSurface {
   static already_AddRefed<DMABufSurface> CreateDMABufSurface(
       mozilla::gl::GLContext* aGLContext, const EGLImageKHR aEGLImage,
       int aWidth, int aHeight);
+
+  static already_AddRefed<DMABufSurface> CreateDMABufSurface(
+      RefPtr<mozilla::gfx::FileHandleWrapper>&& aFd,
+      const mozilla::webgpu::ffi::WGPUDMABufInfo& aDMABufInfo, int aWidth,
+      int aHeight);
 
   bool Serialize(mozilla::layers::SurfaceDescriptor& aOutDescriptor) override;
 
@@ -283,6 +298,9 @@ class DMABufSurfaceRGBA final : public DMABufSurface {
   bool Create(int aWidth, int aHeight, int aDMABufSurfaceFlags);
   bool Create(const mozilla::layers::SurfaceDescriptor& aDesc) override;
   bool Create(mozilla::gl::GLContext* aGLContext, const EGLImageKHR aEGLImage,
+              int aWidth, int aHeight);
+  bool Create(RefPtr<mozilla::gfx::FileHandleWrapper>&& aFd,
+              const mozilla::webgpu::ffi::WGPUDMABufInfo& aDMABufInfo,
               int aWidth, int aHeight);
 
   bool ImportSurfaceDescriptor(const mozilla::layers::SurfaceDescriptor& aDesc);

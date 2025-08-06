@@ -612,10 +612,7 @@ void HttpChannelChild::DoOnStartRequest(nsIRequest* aRequest) {
     // final listener might not support it
     if (nsCOMPtr<nsIStreamConverter> conv =
             do_QueryInterface((mCompressListener))) {
-      rv = conv->MaybeRetarget(this);
-      if (NS_SUCCEEDED(rv)) {
-        mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::successOnlyDecomp;
-      }
+      conv->MaybeRetarget(this);
     }
   }
 }
@@ -913,6 +910,14 @@ void HttpChannelChild::ProcessOnStopRequest(
           TimeDuration delay = now - start;
           glean::networking::http_content_ondatafinished_delay
               .AccumulateRawDuration(delay);
+          // We can be on main thread or background thread at this point
+          // http_content_ondatafinished_delay_2 is used to track
+          // delay observed between dispatch the OnDataFinished on the socket
+          // thread and running OnDataFinished on the background thread
+          if (!NS_IsMainThread()) {
+            glean::networking::http_content_ondatafinished_delay_2
+                .AccumulateRawDuration(delay);
+          }
           timing->mOnDataFinishedTime = now;
           self->SendOnDataFinished(status);
         }));
@@ -1024,7 +1029,7 @@ void HttpChannelChild::OnStopRequest(
         mLastStatusReported, now, mTransferSize, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        &mTransactionTimings, std::move(mSource),
+        mRequestHead.Version(), &mTransactionTimings, std::move(mSource),
         Some(nsDependentCString(contentType.get())));
   }
 
@@ -1120,25 +1125,6 @@ void HttpChannelChild::DoPreOnStopRequest(nsresult aStatus) {
   if (!mCanceled && NS_SUCCEEDED(mStatus)) {
     mStatus = aStatus;
   }
-
-  CollectOMTTelemetry();
-}
-
-void HttpChannelChild::CollectOMTTelemetry() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  // Only collect telemetry for HTTP channel that is loaded successfully and
-  // completely.
-  if (mCanceled || NS_FAILED(mStatus)) {
-    return;
-  }
-
-  // Use content policy type to accumulate data by usage.
-  nsAutoCString key(
-      NS_CP_ContentTypeName(mLoadInfo->InternalContentPolicyType()));
-
-  Telemetry::AccumulateCategoricalKeyed(
-      key, static_cast<LABELS_HTTP_CHILD_OMT_STATS_2>(mOMTResult));
 }
 
 // We want to inspect all upgradable mixed content loads
@@ -1616,7 +1602,7 @@ void HttpChannelChild::Redirect1Begin(
         NetworkLoadType::LOAD_REDIRECT, mLastStatusReported, TimeStamp::Now(),
         0, kCacheUnknown, mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        &mTransactionTimings, std::move(mSource),
+        mRequestHead.Version(), &mTransactionTimings, std::move(mSource),
         Some(nsDependentCString(contentType.get())), newOriginalURI,
         redirectFlags, channelId);
   }
@@ -1938,7 +1924,8 @@ HttpChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener) {
         mURI, requestMethod, mPriority, mChannelId, NetworkLoadType::LOAD_START,
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing());
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
+        mRequestHead.Version());
   }
   StoreIsPending(true);
   StoreWasOpened(true);
@@ -2280,7 +2267,8 @@ nsresult HttpChannelChild::AsyncOpenInternal(nsIStreamListener* aListener) {
         mURI, requestMethod, mPriority, mChannelId, NetworkLoadType::LOAD_START,
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
-        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing());
+        mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
+        mRequestHead.Version());
   }
   StoreIsPending(true);
   StoreWasOpened(true);
@@ -2395,7 +2383,9 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   openArgs.uri() = mURI;
   openArgs.original() = mOriginalURI;
   openArgs.doc() = mDocumentURI;
-  openArgs.apiRedirectTo() = mAPIRedirectToURI;
+  if (mAPIRedirectTo) {
+    openArgs.apiRedirectTo() = mAPIRedirectTo->first();
+  }
   openArgs.loadFlags() = mLoadFlags;
   openArgs.requestHeaders() = mClientSetRequestHeaders;
   mRequestHead.Method(openArgs.requestMethod());
@@ -2480,6 +2470,7 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   openArgs.classicScriptHintCharset() = mClassicScriptHintCharset;
 
   openArgs.isUserAgentHeaderModified() = LoadIsUserAgentHeaderModified();
+  openArgs.initiatorType() = mInitiatorType;
 
   RefPtr<Document> doc;
   mLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
@@ -2598,6 +2589,11 @@ HttpChannelChild::SetEmptyRequestHeader(const nsACString& aHeader) {
 NS_IMETHODIMP
 HttpChannelChild::RedirectTo(nsIURI* newURI) {
   // disabled until/unless addons run in child or something else needs this
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+HttpChannelChild::TransparentRedirectTo(nsIURI* newURI) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -2848,7 +2844,7 @@ HttpChannelChild::ResumeAt(uint64_t startPos, const nsACString& entityID) {
 NS_IMETHODIMP
 HttpChannelChild::SetPriority(int32_t aPriority) {
   LOG(("HttpChannelChild::SetPriority %p p=%d", this, aPriority));
-  int16_t newValue = clamped<int32_t>(aPriority, INT16_MIN, INT16_MAX);
+  int16_t newValue = std::clamp<int32_t>(aPriority, INT16_MIN, INT16_MAX);
   if (mPriority == newValue) return NS_OK;
   mPriority = newValue;
   if (RemoteChannelExists()) SendSetPriority(mPriority);
@@ -3037,15 +3033,10 @@ HttpChannelChild::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
   NS_ENSURE_ARG(aNewTarget);
   if (aNewTarget->IsOnCurrentThread()) {
     NS_WARNING("Retargeting delivery to same thread");
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::successMainThread;
     return NS_OK;
   }
 
   if (mMultiPartID) {
-    // TODO: Maybe add a new label for this? Maybe it doesn't
-    // matter though, since we also blocked QI, so we shouldn't
-    // ever get here.
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::failListener;
     return NS_ERROR_NO_INTERFACE;
   }
 
@@ -3056,24 +3047,24 @@ HttpChannelChild::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
       do_QueryInterface(mListener, &rv);
   if (!retargetableListener || NS_FAILED(rv)) {
     NS_WARNING("Listener is not retargetable");
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::failListener;
     return NS_ERROR_NO_INTERFACE;
   }
 
   rv = retargetableListener->CheckListenerChain();
   if (NS_FAILED(rv)) {
     NS_WARNING("Subsequent listeners are not retargetable");
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::failListenerChain;
     return rv;
   }
 
+  // We allow multiple retargeting. However all such modification must happen
+  // before we have have received the first OnDataAvailable.
+  // See Bug 1887783
+  MOZ_ASSERT(mOnDataAvailableStartTime.IsNull());
   {
     MutexAutoLock lock(mEventTargetMutex);
-    MOZ_ASSERT(!mODATarget);
     RetargetDeliveryToImpl(aNewTarget, lock);
   }
 
-  mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::success;
   return NS_OK;
 }
 

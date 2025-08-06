@@ -214,8 +214,8 @@ def vendor_rust(command_context, **kwargs):
     "python",
     description="Vendor Python packages from pypi.org into third_party/python. "
     "Some extra files like docs and tests will automatically be excluded."
-    "Installs the packages listed in third_party/python/requirements.in and "
-    "their dependencies.",
+    "Downloads the packages listed in third_party/python/pyproject.toml, along "
+    "with their transitive dependencies, and adds them to version control.",
     virtualenv_name="vendor",
 )
 @CommandArgument(
@@ -224,8 +224,53 @@ def vendor_rust(command_context, **kwargs):
     default=False,
     help="Keep all files, including tests and documentation.",
 )
-def vendor_python(command_context, keep_extra_files):
+@CommandArgument(
+    "--add",
+    action="append",
+    default=[],
+    help="Specify one or more dependencies to vendor.\nUse the format: '<dependency>==<version>' (e.g. '--add pip==24.1.1')",
+)
+@CommandArgument(
+    "--remove",
+    action="append",
+    default=[],
+    help="Remove one or more vendored dependencies.\nUse the format: '<dependency>' (e.g. '--remove pip')",
+)
+@CommandArgument(
+    "-P",
+    "--upgrade-package",
+    action="append",
+    default=[],
+    help="Specify one or more dependencies to upgrade.\nFormat: '<dependency>' (e.g. '--upgrade-package pip)\n\nNote: This will not do anything is the package is pinned with '==' in the pyproject.toml",
+)
+@CommandArgument(
+    "-U",
+    "--upgrade",
+    action="store_true",
+    default=False,
+    help="Upgrade all unpinned dependencies to their latest compatible versions before vendoring.",
+)
+@CommandArgument(
+    "-f",
+    "--force",
+    action="store_true",
+    help="Force a re-vendor even if we're up to date.",
+)
+def vendor_python(
+    command_context, keep_extra_files, add, remove, upgrade, upgrade_package, force
+):
     from mozbuild.vendor.vendor_python import VendorPython
 
+    if upgrade or upgrade_package and add or remove:
+        command_context.log(
+            logging.ERROR,
+            "vendor-python-upgrade-and-add-or-remove",
+            {},
+            "Upgrading packages and adding or removing others at the same time is forbidden. Please complete them as separate commits.",
+        )
+        return 1
+
     vendor_command = command_context._spawn(VendorPython)
-    vendor_command.vendor(keep_extra_files)
+    vendor_command.vendor(
+        keep_extra_files, add, remove, upgrade, upgrade_package, force
+    )

@@ -373,13 +373,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.79.0:
-    description: Rust 1.79.0 source code
+rust-1.81.0:
+    description: Rust 1.81.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 129f3b9964af4d4a709d1383930ade12dfe7c081
+        revision: eeb90cda1969383f56a2637cbd3037bdf598841c
 
 rust-nightly:
     description: Rust nightly source code
@@ -403,15 +403,36 @@ wasi-sdk:
         repo: https://github.com/WebAssembly/wasi-sdk
         revision: 935fe1acd2fcd7ea4aed2d5ee4527482862b6344
 
-ninja:
-    description: ninja 1.9.0
+macosx64-ninja:
+    description: ninja 1.12.1
     fetch:
         type: static-url
-        url: https://github.com/ninja-build/ninja/releases/download/v1.9.0/ninja-win.zip
-        sha256: 2d70010633ddaacc3af4ffbd21e22fae90d158674a09e132e06424ba3ab036e9
-        size: 254497
+        url: https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-mac.zip
+        sha256: 89a287444b5b3e98f88a945afa50ce937b8ffd1dcc59c555ad9b1baf855298c9
+        size: 281130
         artifact-name: ninja.tar.zst
         add-prefix: ninja/bin/
+
+win64-ninja:
+    description: ninja 1.12.1
+    fetch:
+        type: static-url
+        url: https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip
+        sha256: f550fec705b6d6ff58f2db3c374c2277a37691678d6aba463adcbb129108467a
+        size: 275425
+        artifact-name: ninja.tar.zst
+        add-prefix: ninja/bin/
+
+macosx64-cmake:
+    description: cmake 3.25.1
+    fetch:
+        type: static-url
+        url: https://github.com/Kitware/CMake/releases/download/v3.25.1/cmake-3.25.1-macos-universal.tar.gz
+        sha256: e95e75ea506189785355a7e8dd86b059780a5613b9e62ab6e7419d6bfba3510b
+        size: 74418897
+        artifact-name: cmake.tar.zst
+        strip-components: 3
+        add-prefix: cmake/
 
 cmake:
     description: cmake 3.25.1 source code
@@ -429,7 +450,7 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: 5e2d4b3cadccde790d6599a374b7464bb0888a62
+        revision: ca31661882b190c97a6869c0add73b27000c92c5
 
 rust-minidump:
     description: rust-minidump 0.19.1 source code (for minidump-stackwalk)
@@ -467,9 +488,9 @@ jdk-8-linux64:
     description: Java 8 JDK
     fetch:
         type: static-url
-        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u422-b05/OpenJDK8U-jdk_x64_linux_hotspot_8u422b05.tar.gz
-        sha256: 4c6056f6167fae73ace7c3080b78940be5c87d54f5b08894b3517eed1cbb2c06
-        size: 103022651
+        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u432-b06/OpenJDK8U-jdk_x64_linux_hotspot_8u432b06.tar.gz
+        sha256: abaaa90deadf51bd28921453baf2992b3dff6171bb7142f5bdd14ef269f7b245
+        size: 103033330
         artifact-name: jdk-8.tar.zst
         strip-components: 1
         add-prefix: jdk-8/
@@ -581,21 +602,21 @@ afl-plus-plus-4.0:
     fetch:
         type: git
         repo: https://github.com/AFLplusplus/AFLplusplus
-        revision: 36db3428ab16156dd72196213d2a02a5eadaed11
+        revision: 78b7e14c73baacf1d88b3c03955e78f5080d17ba
 
 cargo-vet:
     description: cargo-vet source
     fetch:
         type: git
         repo: https://github.com/mozilla/cargo-vet
-        revision: 25f4898add9e22b206eae9e15a57e2e351694aa7
+        revision: c23b21659b9902d97bef2f54c8e14529031092c5
 
 symbol-scrapers:
     description: Linux distribution symbol scraper source
     fetch:
         type: git
         repo: https://github.com/mozilla/symbol-scrapers
-        revision: 239e4055425bf4a56e877e1919ec49506b784748
+        revision: 00de13e086204f342e4776e92ecede30b8a1ce43
 
 xz-5.4.4:
     description: xz 5.4.4 source code
@@ -652,9 +673,9 @@ windows-rs:
     description: Source of the windows rust crate
     fetch:
         type: static-url
-        url: https://crates.io/api/v1/crates/windows/0.52.0/download
-        sha256: e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be
-        size: 11843715
+        url: https://crates.io/api/v1/crates/windows/0.58.0/download
+        sha256: dd04d41d93c4992d421894c18c8b43496aa748dd4c081bac0dc93eb0489272b6
+        size: 9744521
         artifact-name: windows-rs.tar.zst
         strip-components: 1
         add-prefix: windows-rs/
@@ -675,7 +696,7 @@ mozilla-pdf.js:
     fetch:
         type: git
         repo: https://github.com/mozilla/pdf.js
-        revision: d64f334f98d4b7f1c2e09a731a63b68629c946f9
+        revision: 81cf42df470f85eb60150bdffca380e3eee79c08
 
 xmlstarlet-1.6.1:
     description: xmlstarlet for Android Performance Tests
@@ -685,3 +706,12 @@ xmlstarlet-1.6.1:
         sha256: d1d7f55f7887d2d1c3283e1b06a68675b5bead2eebf14939f9cdd84b849ced19
         size: 267112
         artifact-name: xmlstarlet.deb
+
+chromium-depot-tools:
+    description: Chromium depot tools for managing Chromium repository
+    fetch:
+        type: git
+        repo: https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        revision: 5304f2bbb31bad413e029a660097d1da1552e6f4
+        artifact-name: chromium-depot-tools.tar.zst
+        include-dot-git: true

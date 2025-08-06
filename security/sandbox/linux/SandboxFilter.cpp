@@ -1299,9 +1299,6 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
   Maybe<ResultExpr> EvaluateSocketCall(int aCall,
                                        bool aHasArgs) const override {
     switch (aCall) {
-      case SYS_SENDMMSG:  // libresolv via libasyncns; see bug 1355274
-        return Some(Allow());
-
 #ifdef ANDROID
       case SYS_SOCKET:
         return Some(Error(EACCES));
@@ -1602,6 +1599,10 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
         // usually do something reasonable on error.
       case __NR_clone:
         return ClonePolicy(Error(EPERM));
+#  ifdef __NR_fork
+      case __NR_fork:
+        return Error(ENOSYS);
+#  endif
 
 #  ifdef __NR_fadvise64
       case __NR_fadvise64:
@@ -1635,11 +1636,6 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
       case __NR_sysinfo:
 #endif
         return Allow();
-
-#ifdef MOZ_JPROF
-      case __NR_setitimer:
-        return Allow();
-#endif  // MOZ_JPROF
 
       default:
         return SandboxPolicyCommon::EvaluateSyscall(sysno);
@@ -1994,6 +1990,10 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // nvidia drivers may attempt to spawn nvidia-modprobe
       case __NR_clone:
         return ClonePolicy(Error(EPERM));
+#ifdef __NR_fork
+      case __NR_fork:
+        return Error(ENOSYS);
+#endif
 
         // Pass through the common policy.
       default:
@@ -2040,7 +2040,12 @@ class SocketProcessSandboxPolicy final : public SandboxPolicyCommon {
       case SYS_BIND:
         return Some(Allow());
 
-        // FIXME(bug 1641401) do we really need this?
+      // sendmsg and recvmmsg needed for HTTP3/QUIC UDP IO. Note sendmsg is
+      // allowed in SandboxPolicyCommon.
+      case SYS_RECVMMSG:
+        return Some(Allow());
+
+      // Required for the DNS Resolver thread.
       case SYS_SENDMMSG:
         return Some(Allow());
 

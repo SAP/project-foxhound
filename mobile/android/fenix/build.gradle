@@ -22,10 +22,10 @@ buildscript {
 
     dependencies {
         classpath ComponentsDependencies.tools_androidgradle
+        classpath ComponentsDependencies.tools_benchmarkgradle
         classpath ComponentsDependencies.tools_kotlingradle
-        classpath FenixDependencies.tools_benchmarkgradle
-        classpath ComponentsDependencies.androidx_safeargs
-        classpath FenixDependencies.osslicenses_plugin
+        classpath ComponentsDependencies.androidx_navigation_safeargs
+        classpath ComponentsDependencies.osslicenses_plugin
         classpath "org.mozilla.telemetry:glean-gradle-plugin:${Versions.mozilla_glean}"
         classpath "${ApplicationServicesConfig.groupId}:tooling-nimbus-gradle:${ApplicationServicesConfig.version}"
 
@@ -38,7 +38,7 @@ buildscript {
     ext {
         detekt_plugin = Versions.detekt
         ksp_plugin = Versions.ksp_plugin
-        protobuf_plugin = FenixVersions.protobuf_plugin
+        protobuf_plugin = Versions.protobuf_plugin
         python_envs_plugin = Versions.python_envs_plugin
     }
 }
@@ -77,6 +77,38 @@ subprojects {
     afterEvaluate {
         kotlin {
             jvmToolchain(config.jvmTargetCompatibility)
+        }
+
+        if (it.hasProperty('android')) {
+            android {
+                buildToolsVersion gradle.mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
+            }
+        }
+    }
+
+    project.configurations.configureEach {
+        // Dependencies can't depend on a different major version of Glean than A-C itself.
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'org.mozilla.telemetry'
+                    && details.requested.name.contains('glean') ) {
+                def requested = details.requested.version.tokenize(".")
+                    def defined = Versions.mozilla_glean.tokenize(".")
+                    // Check the major version
+                    if (requested[0] != defined[0]) {
+                        throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${Versions.mozilla_glean}")
+                    } else {
+                        // Enforce that all (transitive) dependencies are using the defined Glean version
+                        details.useVersion Versions.mozilla_glean
+                    }
+            }
+        }
+
+        resolutionStrategy.capabilitiesResolution.withCapability("org.mozilla.telemetry:glean-native") {
+            def toBeSelected = candidates.find { it.id instanceof ModuleComponentIdentifier && it.id.module.contains('geckoview') }
+            if (toBeSelected != null) {
+                select(toBeSelected)
+            }
+            because 'use GeckoView Glean instead of standalone Glean'
         }
     }
 
@@ -123,6 +155,7 @@ tasks.register('clean', Delete) {
 detekt {
     input = files("$projectDir/app/src")
     config = files("$projectDir/config/detekt.yml")
+    baseline = file("$projectDir/config/detekt-baseline.xml")
 
     reports {
         html {
@@ -177,14 +210,23 @@ tasks.register('ktlint', JavaExec) {
     description = "Check Kotlin code style."
     classpath = configurations.ktlint
     mainClass.set("com.pinterest.ktlint.Main")
-    args "app/src/**/*.kt", "!**/build/**/*.kt", "--baseline=ktlint-baseline.xml"
+    args "app/src/**/*.kt"
+    args "!**/build/**/*.kt"
+    args "--baseline=ktlint-baseline.xml"
+    args "--reporter=json,output=build/reports/ktlint/ktlint.json"
+    args "--reporter=plain"
 }
 
 tasks.register('ktlintFormat', JavaExec) {
     description = "Fix Kotlin code style deviations."
     classpath = configurations.ktlint
     mainClass.set("com.pinterest.ktlint.Main")
-    args "-F", "app/src/**/*.kt", "!**/build/**/*.kt", "--baseline=ktlint-baseline.xml"
+    args "-F"
+    args "app/src/**/*.kt"
+    args "!**/build/**/*.kt"
+    args "--baseline=ktlint-baseline.xml"
+    args "--reporter=json,output=build/reports/ktlint/ktlintFormat.json"
+    args "--reporter=plain"
     jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
 }
 
@@ -197,20 +239,5 @@ tasks.register("listRepositories") {
     doLast {
         println "Repositories:"
         project.repositories.each { println "Name: " + it.name + "; url: " + it.url }
-    }
-}
-
-// Task to copy generated baseline profile to the app module nightly variant.
-tasks.register("copyBaselineProfile", DefaultTask) {
-    doLast {
-        File profileFile = fileTree('benchmark/build/outputs') {
-            include '**/*baseline-prof.txt'
-        }.getSingleFile()
-        def destinationPath = Paths.get("app", "src", "nightly", "baselineProfiles", "baseline-prof.txt")
-        File destinationDir = destinationPath.toFile().parentFile
-        if (!destinationDir.exists()) {
-            destinationDir.mkdirs()
-        }
-        Files.copy(profileFile.toPath(), destinationPath, StandardCopyOption.REPLACE_EXISTING)
     }
 }

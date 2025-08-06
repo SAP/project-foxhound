@@ -119,11 +119,7 @@ where
     }
 
     // https://drafts.csswg.org/css-display/#unbox-mathml
-    //
-    // We always treat XUL as display: none. We don't use display:
-    // contents in XUL anyway, so should be fine to be consistent with
-    // MathML unless there's a use case for it.
-    if element.is_mathml_element() || element.is_xul_element() {
+    if element.is_mathml_element() {
         return true;
     }
 
@@ -494,13 +490,13 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             //     Applies layout containment, style containment, and inline-size
             //     containment to the principal box.
             ContainerType::InlineSize => {
-                new_contain.insert(Contain::LAYOUT | Contain::STYLE | Contain::INLINE_SIZE)
+                new_contain.insert(Contain::STYLE | Contain::INLINE_SIZE)
             },
             // https://drafts.csswg.org/css-contain-3/#valdef-container-type-size:
             //     Applies layout containment, style containment, and size
             //     containment to the principal box.
             ContainerType::Size => {
-                new_contain.insert(Contain::LAYOUT | Contain::STYLE | Contain::SIZE)
+                new_contain.insert(Contain::STYLE | Contain::SIZE)
             },
         }
         if new_contain == old_contain {
@@ -577,10 +573,24 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     /// parent, but we need to make sure it's still scrollable.
     #[cfg(feature = "gecko")]
     fn adjust_for_text_control_editing_root(&mut self) {
+        use crate::properties::longhands::white_space_collapse::computed_value::T as WhiteSpaceCollapse;
         use crate::selector_parser::PseudoElement;
 
         if self.style.pseudo != Some(&PseudoElement::MozTextControlEditingRoot) {
             return;
+        }
+
+        let old_collapse = self.style.get_inherited_text().clone_white_space_collapse();
+        let new_collapse = match old_collapse {
+            WhiteSpaceCollapse::Preserve | WhiteSpaceCollapse::BreakSpaces => old_collapse,
+            WhiteSpaceCollapse::Collapse |
+            WhiteSpaceCollapse::PreserveSpaces |
+            WhiteSpaceCollapse::PreserveBreaks => WhiteSpaceCollapse::Preserve,
+        };
+        if new_collapse != old_collapse {
+            self.style
+                .mutate_inherited_text()
+                .set_white_space_collapse(new_collapse);
         }
 
         let box_style = self.style.get_box();
@@ -632,7 +642,6 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     ///
     /// In this case, we don't want to inherit the text alignment into the
     /// table.
-    #[cfg(feature = "gecko")]
     fn adjust_for_table_text_align(&mut self) {
         use crate::properties::longhands::text_align::computed_value::T as TextAlign;
         if self.style.get_box().clone_display() != Display::Table {
@@ -964,9 +973,9 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         {
             self.adjust_for_contain();
             self.adjust_for_contain_intrinsic_size();
-            self.adjust_for_table_text_align();
             self.adjust_for_justify_items();
         }
+        self.adjust_for_table_text_align();
         self.adjust_for_border_width();
         #[cfg(feature = "gecko")]
         self.adjust_for_column_rule_width();

@@ -368,6 +368,674 @@ addUiaTask(
 );
 
 /**
+ * Test the Format TextUnit. Exercises ExpandToEnclosingUnit, Move, and
+ * MoveEndpointByUnit. Tested here separately since the setup and implementation
+ * is somewhat different from other TextUnits.
+ */
+addUiaTask(
+  `
+<div id="bold-container">a <b>bcd</b> ef</div>
+<div id="container-container">a <span tabindex="0">bcd</span> ef</div>
+<textarea id="textarea" spellcheck="true">test tset test</textarea>
+`,
+  async function testTextRangeMove(browser, docAcc) {
+    info("Constructing range on bold text run");
+    await runPython(`
+      global doc, docText, range
+      doc = getDocUia()
+      docText = getUiaPattern(doc, "Text")
+      boldContainerAcc = findUiaByDomId(doc, "bold-container")
+      range = docText.RangeFromChild(boldContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("Moving to bold text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+
+    // Testing ExpandToEnclosingUnit (on formatting boundaries)
+    info("Expanding to character (shrinking the range)");
+    await runPython(`range.ExpandToEnclosingUnit(TextUnit_Character)`);
+    is(await runPython(`range.GetText(-1)`), "b", "range text correct");
+    info("Expanding to Format");
+    await runPython(`range.ExpandToEnclosingUnit(TextUnit_Format)`);
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+
+    info("Making range larger than the Format unit");
+    is(
+      await runPython(
+        `range.MoveEndpointByUnit(TextPatternRangeEndpoint_End, TextUnit_Character, 1)`
+      ),
+      1,
+      "MoveEndpointByUnit return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd ", "range text correct");
+
+    info("Expanding to Format (shrinking the range)");
+    await runPython(`range.ExpandToEnclosingUnit(TextUnit_Format)`);
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+
+    // Testing Move (on formatting boundaries)
+    info("Moving 1 Format unit");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), " ef", "range text correct");
+    info("Moving -3 Format units (but only -2 are left)");
+    is(
+      await runPython(`range.Move(TextUnit_Format, -3)`),
+      -2,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "a ", "range text correct");
+
+    // Testing MoveEndpointByUnit (on formatting boundaries)
+    info("Moving end 1 Format unit");
+    is(
+      await runPython(
+        `range.MoveEndpointByUnit(TextPatternRangeEndpoint_End, TextUnit_Format, 1)`
+      ),
+      1,
+      "MoveEndpointByUnit return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "a bcd", "range text correct");
+    info("Moving start 1 Format unit");
+    is(
+      await runPython(
+        `range.MoveEndpointByUnit(TextPatternRangeEndpoint_Start, TextUnit_Format, 1)`
+      ),
+      1,
+      "MoveEndpointByUnit return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+
+    // Testing above three methods on text runs defined by container boundaries
+    info("Constructing range on text run defined by container boundaries");
+    await runPython(`
+      global doc, docText, range
+      containerContainer = findUiaByDomId(doc, "container-container")
+      range = docText.RangeFromChild(containerContainer)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("Expanding to Format");
+    await runPython(`range.ExpandToEnclosingUnit(TextUnit_Format)`);
+    is(await runPython(`range.GetText(-1)`), "a ", "range text correct");
+    info("Moving 1 Format unit");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("Moving start -1 Format unit");
+    is(
+      await runPython(
+        `range.MoveEndpointByUnit(TextPatternRangeEndpoint_Start, TextUnit_Format, -1)`
+      ),
+      -1,
+      "MoveEndpointByUnit return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "a bcd", "range text correct");
+
+    // Trigger spelling errors so we can test text offset attributes
+    const textarea = findAccessibleChildByID(docAcc, "textarea");
+    textarea.takeFocus();
+    await waitForEvent(EVENT_TEXT_ATTRIBUTE_CHANGED);
+
+    // Testing above three methods on text offset attributes
+    info("Constructing range on italic text run");
+    await runPython(`
+      global doc, docText, range
+      textarea = findUiaByDomId(doc, "textarea")
+      range = docText.RangeFromChild(textarea)
+    `);
+    is(
+      await runPython(`range.GetText(-1)`),
+      "test tset test",
+      "range text correct"
+    );
+    info("Expanding to Format");
+    await runPython(`range.ExpandToEnclosingUnit(TextUnit_Format)`);
+    is(await runPython(`range.GetText(-1)`), "test ", "range text correct");
+    info("Moving 1 Format unit");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "tset", "range text correct");
+    info("Moving start -1 Format unit");
+    is(
+      await runPython(
+        `range.MoveEndpointByUnit(TextPatternRangeEndpoint_Start, TextUnit_Format, -1)`
+      ),
+      -1,
+      "MoveEndpointByUnit return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "test tset", "range text correct");
+  }
+);
+
+/**
+ * Test the GetAttributeValue method. Verify the behavior of various UIA
+ * Attribute IDs.
+ */
+addUiaTask(
+  `
+<div id="font-weight-container">a <span tabindex="0"><b>bcd</b></span><b> ef</b></div>
+<div id="font-size-container">a <span style="font-size:20px">bcd</span> ef</div>
+<div id="font-family-container">a <span style="font-family:Arial">bcd</span> ef</div>
+<div id="italic-container">a <span style="font-style:italic">bcd</span> ef</div>
+<div id="subscript-container">a <sub>bcd</sub> ef</div>
+<div id="superscript-container">a <sup>bcd</sup> ef</div>
+<div id="not-hidden-container">a bcd ef</div>
+<div id="readonly-container">a <span contenteditable="true">bcd</span> ef</div>
+<div id="spelling-error-container">a <span aria-invalid="spelling">bcd</span> ef</div>
+<div id="grammar-error-container">a <span aria-invalid="grammar">bcd</span> ef</div>
+<div id="data-validation-error-container">a <span aria-invalid="true">bcd</span> ef</div>
+<div id="highlight-container">a highlighted phrase ef</div>
+<div id="heading-container">ab<h3>h3</h3>cd</div>
+<div id="blockquote-container">ab<blockquote>quote</blockquote>cd</div>
+<div id="emphasis-container">ab<em>emph</em>cd</div>
+`,
+  async function testTextRangeGetAttributeValue() {
+    // ================== UIA_FontWeightAttributeId ==================
+    info("Constructing range on bold text run");
+    await runPython(`
+      global doc, docText, range
+      doc = getDocUia()
+      docText = getUiaPattern(doc, "Text")
+      fontWeightContainerAcc = findUiaByDomId(doc, "font-weight-container")
+      range = docText.RangeFromChild(fontWeightContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+
+    info("checking mixed font weights");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_FontWeightAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "FontWeight correct (mixed)"
+    );
+
+    info("Moving to bold text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+
+    info("checking FontWeight");
+    is(
+      await runPython(`range.GetAttributeValue(UIA_FontWeightAttributeId)`),
+      700,
+      "FontWeight correct"
+    );
+
+    info("Moving end 1 Format unit");
+    is(
+      await runPython(
+        `range.MoveEndpointByUnit(TextPatternRangeEndpoint_End, TextUnit_Format, 1)`
+      ),
+      1,
+      "MoveEndpointByUnit return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd ef", "range text correct");
+    info(
+      "checking font weight (across equivalent container-separated Format runs)"
+    );
+    is(
+      await runPython(`range.GetAttributeValue(UIA_FontWeightAttributeId)`),
+      700,
+      "FontWeight correct"
+    );
+
+    // ================== UIA_FontSizeAttributeId ==================
+    await runPython(`
+      global range
+      fontSizeContainerAcc = findUiaByDomId(doc, "font-size-container")
+      range = docText.RangeFromChild(fontSizeContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed font weights");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_FontSizeAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "FontSize correct (mixed)"
+    );
+    info("Moving to increased font-size text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking FontSize");
+    is(
+      await runPython(`range.GetAttributeValue(UIA_FontSizeAttributeId)`),
+      15,
+      "FontSize correct"
+    );
+
+    // ================== UIA_FontNameAttributeId ==================
+    await runPython(`
+      global range
+      fontFamilyContainerAcc = findUiaByDomId(doc, "font-family-container")
+      range = docText.RangeFromChild(fontFamilyContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed font families");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_FontNameAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "FontName correct (mixed)"
+    );
+    info("Moving to sans-serif font-family text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking FontName");
+    is(
+      await runPython(`range.GetAttributeValue(UIA_FontNameAttributeId)`),
+      "Arial",
+      "FontName correct"
+    );
+
+    // ================== UIA_IsItalicAttributeId ==================
+    await runPython(`
+      global range
+      italicContainerAcc = findUiaByDomId(doc, "italic-container")
+      range = docText.RangeFromChild(italicContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed IsItalic properties");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_IsItalicAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "IsItalic correct (mixed)"
+    );
+    info("Moving to italic text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking IsItalic");
+    is(
+      await runPython(`range.GetAttributeValue(UIA_IsItalicAttributeId)`),
+      true,
+      "IsItalic correct"
+    );
+
+    // ================== UIA_IsSubscriptAttributeId ==================
+    await runPython(`
+      global range
+      subscriptContainerAcc = findUiaByDomId(doc, "subscript-container")
+      range = docText.RangeFromChild(subscriptContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed IsSubscript properties");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_IsSubscriptAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "IsSubscript correct (mixed)"
+    );
+    info("Moving to subscript text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking IsSubscript");
+    is(
+      await runPython(`range.GetAttributeValue(UIA_IsSubscriptAttributeId)`),
+      true,
+      "IsSubscript correct"
+    );
+
+    // ================== UIA_IsSuperscriptAttributeId ==================
+    await runPython(`
+      global range
+      superscriptContainerAcc = findUiaByDomId(doc, "superscript-container")
+      range = docText.RangeFromChild(superscriptContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed IsSuperscript properties");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_IsSuperscriptAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "IsSuperscript correct (mixed)"
+    );
+    info("Moving to superscript text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking IsSuperscript");
+    is(
+      await runPython(`range.GetAttributeValue(UIA_IsSuperscriptAttributeId)`),
+      true,
+      "IsSuperscript correct"
+    );
+
+    // ================== UIA_IsHiddenAttributeId ==================
+    // Testing the "true" case is not really possible since these Accessible
+    // nodes are not present in the tree. Verify the "false" case.
+    await runPython(`
+      global range
+      notHiddenContainerAcc = findUiaByDomId(doc, "not-hidden-container")
+      range = docText.RangeFromChild(notHiddenContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed IsHidden properties");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_IsHiddenAttributeId)
+        return val != uiaClient.ReservedMixedAttributeValue
+      `),
+      "IsHidden correct (not mixed)"
+    );
+
+    // ================== UIA_IsReadOnlyAttributeId ==================
+    await runPython(`
+      global range
+      readonlyContainerAcc = findUiaByDomId(doc, "readonly-container")
+      range = docText.RangeFromChild(readonlyContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed ReadOnly properties");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_IsReadOnlyAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "ReadOnly correct (mixed)"
+    );
+    info("Moving to editable text run");
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking IsReadOnly");
+    is(
+      await runPython(`range.GetAttributeValue(UIA_IsReadOnlyAttributeId)`),
+      false,
+      "IsReadOnly correct"
+    );
+
+    // ================== UIA_AnnotationTypesAttributeId - AnnotationType_SpellingError ==================
+    await runPython(`
+      global range
+      spellingErrorContainerAcc = findUiaByDomId(doc, "spelling-error-container")
+      range = docText.RangeFromChild(spellingErrorContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed SpellingError properties");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "SpellingError correct (mixed)"
+    );
+    info('Moving to aria-invalid="spelling" text run');
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking SpellingError");
+    ok(
+      await runPython(`
+        annotations = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return annotations == (AnnotationType_SpellingError,)
+      `),
+      "SpellingError correct"
+    );
+
+    // ================== UIA_AnnotationTypesAttributeId - AnnotationType_GrammarError ==================
+    await runPython(`
+      global range
+      grammarErrorContainerAcc = findUiaByDomId(doc, "grammar-error-container")
+      range = docText.RangeFromChild(grammarErrorContainerAcc)
+    `);
+    is(await runPython(`range.GetText(-1)`), "a bcd ef", "range text correct");
+    info("checking mixed GrammarError properties");
+    ok(
+      await runPython(`
+        val = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+      "GrammarError correct (mixed)"
+    );
+    info('Moving to aria-invalid="grammar" text run');
+    is(
+      await runPython(`range.Move(TextUnit_Format, 1)`),
+      1,
+      "Move return correct"
+    );
+    is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+    info("checking GrammarError");
+    ok(
+      await runPython(`
+        annotations = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return annotations == (AnnotationType_GrammarError,)
+      `),
+      "GrammarError correct"
+    );
+
+    // ================== UIA_AnnotationTypesAttributeId - AnnotationType_DataValidationError ==================
+    // The IA2 -> UIA bridge does not work for aria-invalid=true or highlights.
+    if (gIsUiaEnabled) {
+      await runPython(`
+      global range
+      dataValidationErrorContainerAcc = findUiaByDomId(doc, "data-validation-error-container")
+      range = docText.RangeFromChild(dataValidationErrorContainerAcc)
+    `);
+      is(
+        await runPython(`range.GetText(-1)`),
+        "a bcd ef",
+        "range text correct"
+      );
+      info("checking mixed DataValidationError properties");
+      ok(
+        await runPython(`
+        val = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+        "DataValidationError correct (mixed)"
+      );
+      info('Moving to aria-invalid="true" text run');
+      is(
+        await runPython(`range.Move(TextUnit_Format, 1)`),
+        1,
+        "Move return correct"
+      );
+      is(await runPython(`range.GetText(-1)`), "bcd", "range text correct");
+      info("checking DataValidationError");
+      ok(
+        await runPython(`
+        annotations = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return annotations == (AnnotationType_DataValidationError,)
+      `),
+        "DataValidationError correct"
+      );
+
+      // ================== UIA_AnnotationTypesAttributeId - AnnotationType_Highlighted ==================
+      await runPython(`
+      global range
+      highlightContainerAcc = findUiaByDomId(doc, "highlight-container")
+      range = docText.RangeFromChild(highlightContainerAcc)
+    `);
+      is(
+        await runPython(`range.GetText(-1)`),
+        "a highlighted phrase ef",
+        "range text correct"
+      );
+      info("checking mixed Highlighted properties");
+      ok(
+        await runPython(`
+        val = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return val == uiaClient.ReservedMixedAttributeValue
+      `),
+        "Highlighted correct (mixed)"
+      );
+      info("Moving to highlighted text run");
+      is(
+        await runPython(`range.Move(TextUnit_Format, 1)`),
+        1,
+        "Move return correct"
+      );
+      is(
+        await runPython(`range.GetText(-1)`),
+        "highlighted phrase",
+        "range text correct"
+      );
+      info("checking Highlighted");
+      ok(
+        await runPython(`
+        annotations = range.GetAttributeValue(UIA_AnnotationTypesAttributeId)
+        return annotations == (AnnotationType_Highlighted,)
+      `),
+        "Highlighted correct"
+      );
+    }
+
+    // The IA2 -> UIA bridge does not work correctly here.
+    if (gIsUiaEnabled) {
+      // ================== UIA_StyleIdAttributeId - StyleId_Heading* ==================
+      await runPython(`
+        global range
+        headingContainerAcc = findUiaByDomId(doc, "heading-container")
+        range = docText.RangeFromChild(headingContainerAcc)
+      `);
+      is(await runPython(`range.GetText(-1)`), "abh3cd", "range text correct");
+      info("checking mixed StyleId properties");
+      ok(
+        await runPython(`
+          val = range.GetAttributeValue(UIA_StyleIdAttributeId)
+          return val == uiaClient.ReservedMixedAttributeValue
+        `),
+        "StyleId correct (mixed)"
+      );
+      info("Moving to h3 text run");
+      is(
+        await runPython(`range.Move(TextUnit_Format, 1)`),
+        1,
+        "Move return correct"
+      );
+      is(await runPython(`range.GetText(-1)`), "h3", "range text correct");
+      info("checking StyleId");
+      ok(
+        await runPython(`
+          styleId = range.GetAttributeValue(UIA_StyleIdAttributeId)
+          return styleId == StyleId_Heading3
+        `),
+        "StyleId correct"
+      );
+
+      // ================== UIA_StyleIdAttributeId - StyleId_Quote ==================
+      await runPython(`
+        global range
+        blockquoteContainerAcc = findUiaByDomId(doc, "blockquote-container")
+        range = docText.RangeFromChild(blockquoteContainerAcc)
+      `);
+      is(
+        await runPython(`range.GetText(-1)`),
+        "abquotecd",
+        "range text correct"
+      );
+      info("checking mixed StyleId properties");
+      ok(
+        await runPython(`
+          val = range.GetAttributeValue(UIA_StyleIdAttributeId)
+          return val == uiaClient.ReservedMixedAttributeValue
+        `),
+        "StyleId correct (mixed)"
+      );
+      info("Moving to blockquote text run");
+      is(
+        await runPython(`range.Move(TextUnit_Format, 1)`),
+        1,
+        "Move return correct"
+      );
+      is(await runPython(`range.GetText(-1)`), "quote", "range text correct");
+      info("checking StyleId");
+      ok(
+        await runPython(`
+          styleId = range.GetAttributeValue(UIA_StyleIdAttributeId)
+          return styleId == StyleId_Quote
+        `),
+        "StyleId correct"
+      );
+
+      // ================== UIA_StyleIdAttributeId - StyleId_Emphasis ==================
+      await runPython(`
+        global range
+        emphasisContainerAcc = findUiaByDomId(doc, "emphasis-container")
+        range = docText.RangeFromChild(emphasisContainerAcc)
+      `);
+      is(
+        await runPython(`range.GetText(-1)`),
+        "abemphcd",
+        "range text correct"
+      );
+      info("checking mixed StyleId properties");
+      ok(
+        await runPython(`
+          val = range.GetAttributeValue(UIA_StyleIdAttributeId)
+          return val == uiaClient.ReservedMixedAttributeValue
+        `),
+        "StyleId correct (mixed)"
+      );
+      info("Moving to emphasized text run");
+      is(
+        await runPython(`range.Move(TextUnit_Format, 1)`),
+        1,
+        "Move return correct"
+      );
+      is(await runPython(`range.GetText(-1)`), "emph", "range text correct");
+      info("checking StyleId");
+      ok(
+        await runPython(`
+          styleId = range.GetAttributeValue(UIA_StyleIdAttributeId)
+          return styleId == StyleId_Emphasis
+        `),
+        "StyleId correct"
+      );
+    }
+  },
+  { urlSuffix: "#:~:text=highlighted%20phrase" }
+);
+
+/**
  * Test the TextRange pattern's Move method.
  */
 addUiaTask(
@@ -1088,4 +1756,103 @@ addUiaTask(
   },
   // The IA2 -> UIA proxy has too many quirks/bugs here.
   { uiaEnabled: true, uiaDisabled: false }
+);
+
+/**
+ * Test the Text pattern's RangeFromPoint method.
+ */
+addUiaTask(
+  `<div id="test">a <span>b </span>c</div>`,
+  async function testTextRangeFromPoint(browser, docAcc) {
+    const acc = findAccessibleChildByID(docAcc, "test", [nsIAccessibleText]);
+    await runPython(`
+      global doc, docText
+      doc = getDocUia()
+      docText = getUiaPattern(doc, "Text")
+    `);
+
+    // Walk through every offset in the accessible and hit test each. Verify
+    // that the returned range is empty, and that it hit the right character.
+    for (let offset = 0; offset < acc.characterCount; ++offset) {
+      const x = {};
+      const y = {};
+      acc.getCharacterExtents(offset, x, y, {}, {}, COORDTYPE_SCREEN_RELATIVE);
+      await runPython(`
+        global range
+        range = docText.RangeFromPoint(POINT(${x.value}, ${y.value}))`);
+      is(
+        await runPython(`range.GetText(-1)`),
+        ``,
+        "doc returned correct empty range"
+      );
+      await runPython(`range.ExpandToEnclosingUnit(TextUnit_Character)`);
+      const charAtOffset = acc.getCharacterAtOffset(offset);
+      is(
+        await runPython(`range.GetText(-1)`),
+        `${charAtOffset}`,
+        "doc returned correct range"
+      );
+    }
+
+    // An arbitrary invalid point should cause an invalid argument error.
+    await testPythonRaises(
+      `docText.RangeFromPoint(POINT(9999999999, 9999999999))`,
+      "no text leaves at invalid point"
+    );
+  },
+  { uiaEnabled: true, uiaDisabled: true }
+);
+
+/**
+ * Test the TextRange pattern's GetBoundingRectangles method.
+ */
+addUiaTask(
+  `
+<div id="test"><p id="line1">abc</p><p id="line2">d</p><p id="line3"></p></div>
+<div id="offscreen" style="position:absolute; left:200vw;">xyz</div>
+  `,
+  async function testTextRangeGetBoundingRectangles(browser, docAcc) {
+    const line1 = findAccessibleChildByID(docAcc, "line1", [nsIAccessibleText]);
+    const line2 = findAccessibleChildByID(docAcc, "line2", [nsIAccessibleText]);
+
+    const lineRects = await runPython(`
+      global doc, docText, testAcc, range
+      doc = getDocUia()
+      docText = getUiaPattern(doc, "Text")
+      testAcc = findUiaByDomId(doc, "test")
+      range = docText.RangeFromChild(testAcc)
+      return range.GetBoundingRectangles()
+    `);
+
+    is(lineRects.length, 8, "GetBoundingRectangles returned two rectangles");
+    const firstLineRect = [
+      lineRects[0],
+      lineRects[1],
+      lineRects[2],
+      lineRects[3],
+    ];
+    const secondLineRect = [
+      lineRects[4],
+      lineRects[5],
+      lineRects[6],
+      lineRects[7],
+    ];
+    testTextBounds(line1, 0, -1, firstLineRect, COORDTYPE_SCREEN_RELATIVE);
+    testTextBounds(line2, 0, -1, secondLineRect, COORDTYPE_SCREEN_RELATIVE);
+    // line3 has no rectangle - GetBoundingRectangles shouldn't return anything for empty lines.
+
+    // GetBoundingRectangles shouldn't return anything for offscreen lines.
+    const offscreenRects = await runPython(`
+      global offscreenAcc, range
+      offscreenAcc = findUiaByDomId(doc, "offscreen")
+      range = docText.RangeFromChild(offscreenAcc)
+      return range.GetBoundingRectangles()
+    `);
+    is(
+      offscreenRects.length,
+      0,
+      "GetBoundingRectangles returned no rectangles"
+    );
+  },
+  { uiaEnabled: true, uiaDisabled: true, chrome: true }
 );

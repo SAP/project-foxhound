@@ -967,11 +967,8 @@ bool NativeLayerCA::ShouldSpecializeVideo(const MutexAutoLock& aProofOfLock) {
     return true;
   }
 
-  CFTypeRefPtr<IOSurfaceRef> surface = macIOSurface->GetIOSurfaceRef();
-  OSType pixelFormat = IOSurfaceGetPixelFormat(surface.get());
-  if (pixelFormat == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
-      pixelFormat == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange) {
-    // HDR videos require specialized video layers.
+  if (macIOSurface->GetColorDepth() == gfx::ColorDepth::COLOR_10) {
+    // 10-bit videos require specialized video layers.
     return true;
   }
 
@@ -980,12 +977,6 @@ bool NativeLayerCA::ShouldSpecializeVideo(const MutexAutoLock& aProofOfLock) {
 
   if (!StaticPrefs::gfx_core_animation_specialize_video()) {
     // Pref must be set.
-    return false;
-  }
-
-  if (pixelFormat != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
-      pixelFormat != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
-    // The video is not in one of the formats that qualifies for detachment.
     return false;
   }
 
@@ -1207,22 +1198,23 @@ void NativeLayerCA::DumpLayer(std::ostream& aOutputStream) {
     // Attempt to render the surface as a PNG. Skia can do this for RGB
     // surfaces.
     RefPtr<MacIOSurface> surf = new MacIOSurface(surface);
-    surf->Lock(true);
-    SurfaceFormat format = surf->GetFormat();
-    if (format == SurfaceFormat::B8G8R8A8 ||
-        format == SurfaceFormat::B8G8R8X8) {
-      RefPtr<gfx::DrawTarget> dt =
-          surf->GetAsDrawTargetLocked(gfx::BackendType::SKIA);
-      if (dt) {
-        RefPtr<gfx::SourceSurface> sourceSurf = dt->Snapshot();
-        nsCString dataUrl;
-        gfxUtils::EncodeSourceSurface(sourceSurf, ImageType::PNG, u""_ns,
-                                      gfxUtils::eDataURIEncode, nullptr,
-                                      &dataUrl);
-        aOutputStream << dataUrl.get();
+    if (surf->Lock(true)) {
+      SurfaceFormat format = surf->GetFormat();
+      if (format == SurfaceFormat::B8G8R8A8 ||
+          format == SurfaceFormat::B8G8R8X8) {
+        RefPtr<gfx::DrawTarget> dt =
+            surf->GetAsDrawTargetLocked(gfx::BackendType::SKIA);
+        if (dt) {
+          RefPtr<gfx::SourceSurface> sourceSurf = dt->Snapshot();
+          nsCString dataUrl;
+          gfxUtils::EncodeSourceSurface(sourceSurf, ImageType::PNG, u""_ns,
+                                        gfxUtils::eDataURIEncode, nullptr,
+                                        &dataUrl);
+          aOutputStream << dataUrl.get();
+        }
       }
+      surf->Unlock(true);
     }
-    surf->Unlock(true);
   }
 
   aOutputStream << "\"/></div>\n";
@@ -1335,8 +1327,13 @@ RefPtr<gfx::DrawTarget> NativeLayerCA::NextSurfaceAsDrawTarget(
     return nullptr;
   }
 
-  mInProgressLockedIOSurface = new MacIOSurface(mInProgressSurface->mSurface);
-  mInProgressLockedIOSurface->Lock(false);
+  auto surf = MakeRefPtr<MacIOSurface>(mInProgressSurface->mSurface);
+  if (NS_WARN_IF(!surf->Lock(false))) {
+    gfxCriticalError() << "NextSurfaceAsDrawTarget lock surface failed.";
+    return nullptr;
+  }
+
+  mInProgressLockedIOSurface = std::move(surf);
   RefPtr<gfx::DrawTarget> dt =
       mInProgressLockedIOSurface->GetAsDrawTargetLocked(aBackendType);
 
@@ -1345,8 +1342,7 @@ RefPtr<gfx::DrawTarget> NativeLayerCA::NextSurfaceAsDrawTarget(
       [&](CFTypeRefPtr<IOSurfaceRef> validSource,
           const gfx::IntRegion& copyRegion) {
         RefPtr<MacIOSurface> source = new MacIOSurface(validSource);
-        source->Lock(true);
-        {
+        if (source->Lock(true)) {
           RefPtr<gfx::DrawTarget> sourceDT =
               source->GetAsDrawTargetLocked(aBackendType);
           RefPtr<gfx::SourceSurface> sourceSurface = sourceDT->Snapshot();
@@ -1355,8 +1351,10 @@ RefPtr<gfx::DrawTarget> NativeLayerCA::NextSurfaceAsDrawTarget(
             const gfx::IntRect& r = iter.Get();
             dt->CopySurface(sourceSurface, r, r.TopLeft());
           }
+          source->Unlock(true);
+        } else {
+          gfxCriticalError() << "HandlePartialUpdate lock surface failed.";
         }
-        source->Unlock(true);
       });
 
   return dt;

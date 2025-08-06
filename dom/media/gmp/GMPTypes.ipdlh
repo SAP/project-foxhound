@@ -46,14 +46,13 @@ struct GMPVideoEncodedFrameData {
   uint32_t mFrameType;
   uint32_t mSize;
   GMPBufferType mBufferType;
-  Shmem mBuffer;
   bool mCompleteFrame;
 };
 
 struct GMPPlaneData {
+  int32_t mOffset;
   int32_t mSize;
   int32_t mStride;
-  Shmem mBuffer;
 };
 
 struct GMPVideoi420FrameData {

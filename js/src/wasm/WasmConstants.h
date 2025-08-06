@@ -879,8 +879,8 @@ enum class MiscOp {
 
 // Opcodes from threads proposal as of June 30, 2017
 enum class ThreadOp {
-  // Wait and wake
-  Wake = 0x00,
+  // Wait and notify
+  Notify = 0x00,
   I32Wait = 0x01,
   I64Wait = 0x02,
   Fence = 0x03,
@@ -963,16 +963,29 @@ enum class ThreadOp {
 };
 
 enum class BuiltinModuleFuncId {
+  None = 0,
+
 // ------------------------------------------------------------------------
 // These are part/suffix of the MozOp::CallBuiltinModuleFunc operators that are
 // emitted internally when compiling intrinsic modules and are rejected by wasm
 // validation.
 // See wasm/WasmBuiltinModule.yaml for the list.
-#define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, entry, has_memory, \
-                           idx)                                             \
-  op = idx,  // NOLINT
+#define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, entry, uses_memory, \
+                           inline_op, idx)                                   \
+  op = idx + 1,  // NOLINT
   FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
 #undef VISIT_BUILTIN_FUNC
+
+  // Op limit.
+  Limit
+};
+
+enum class BuiltinInlineOp {
+  None = 0,
+
+  StringCast,
+  StringTest,
+  StringLength,
 
   // Op limit.
   Limit
@@ -1096,6 +1109,11 @@ struct OpBytes {
         return true;
     }
   }
+
+#ifdef DEBUG
+  // Defined in WasmOpIter.cpp
+  const char* toString() const;
+#endif
 };
 
 static const char NameSectionName[] = "name";
@@ -1133,14 +1151,15 @@ static const unsigned MaxDataSegments = 100000;
 static const unsigned MaxDataSegmentLengthPages = 16384;
 static const unsigned MaxElemSegments = 10000000;
 static const unsigned MaxElemSegmentLength = 10000000;
-static const unsigned MaxTableLimitField = UINT32_MAX;
-static const unsigned MaxTableLength = 10000000;
+static const uint64_t MaxTable32ElemsValidation = UINT32_MAX;
+static const uint64_t MaxTable64ElemsValidation = UINT64_MAX;
+static const unsigned MaxTableElemsRuntime = 10000000;
 static const unsigned MaxLocals = 50000;
 static const unsigned MaxParams = 1000;
 static const unsigned MaxResults = 1000;
 static const unsigned MaxStructFields = 10000;
-static const uint64_t MaxMemory32LimitField = uint64_t(1) << 16;
-static const uint64_t MaxMemory64LimitField = uint64_t(1) << 48;
+static const uint64_t MaxMemory32PagesValidation = uint64_t(1) << 16;
+static const uint64_t MaxMemory64PagesValidation = uint64_t(1) << 48;
 static const unsigned MaxStringBytes = 100000;
 static const unsigned MaxModuleBytes = 1024 * 1024 * 1024;
 static const unsigned MaxFunctionBytes = 7654321;

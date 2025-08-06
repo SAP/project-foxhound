@@ -298,7 +298,7 @@ class TestChecksConfigure(unittest.TestCase):
         config, out, status = self.get_result(
             textwrap.dedent(
                 """
-            option("--with-ccache", nargs=1, help="ccache")
+            option("--with-ccache", nargs=1, help="Ccache")
             check_prog("CCACHE", ("known-a",), input="--with-ccache")
         """
             ),
@@ -310,7 +310,7 @@ class TestChecksConfigure(unittest.TestCase):
 
         script = textwrap.dedent(
             """
-            option(env="CC", nargs=1, help="compiler")
+            option(env="CC", nargs=1, help="Compiler")
             @depends("CC")
             def compiler(value):
                 return value[0].split()[0] if value else None
@@ -345,7 +345,7 @@ class TestChecksConfigure(unittest.TestCase):
 
         script = textwrap.dedent(
             """
-            option(env="TARGET", nargs=1, default="linux", help="target")
+            option(env="TARGET", nargs=1, default="linux", help="Target")
             @depends("TARGET")
             def compiler(value):
                 if value:
@@ -592,7 +592,7 @@ class TestChecksConfigure(unittest.TestCase):
         javac = mozpath.abspath("/usr/bin/javac")
         paths = {java: None, javac: None}
         expected_error_message = (
-            "ERROR: Could not locate Java at /mozbuild/jdk/jdk-17.0.12+7/bin, "
+            "ERROR: Could not locate Java at /mozbuild/jdk/jdk-17.0.13+11/bin, "
             "please run ./mach bootstrap --no-system-changes\n"
         )
 
@@ -725,7 +725,7 @@ class TestChecksConfigure(unittest.TestCase):
             return self.get_result(
                 textwrap.dedent(
                     """\
-                option('--disable-compile-environment', help='compile env')
+                option('--disable-compile-environment', help='Compile env')
                 compile_environment = depends(when='--enable-compile-environment')(lambda: True)
                 toolchain_prefix = depends(when=True)(lambda: None)
                 target_multiarch_dir = depends(when=True)(lambda: None)
@@ -742,9 +742,11 @@ class TestChecksConfigure(unittest.TestCase):
             """
                     % {
                         "topsrcdir": topsrcdir,
-                        "sysroot": "namespace(bootstrapped=True)"
-                        if bootstrapped_sysroot
-                        else "None",
+                        "sysroot": (
+                            "namespace(bootstrapped=True)"
+                            if bootstrapped_sysroot
+                            else "None"
+                        ),
                     }
                 )
                 + cmd,

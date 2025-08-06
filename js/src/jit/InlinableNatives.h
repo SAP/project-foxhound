@@ -9,6 +9,14 @@
 
 #include <stdint.h>  // For uint16_t
 
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+#  define INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_) \
+    _(IntrinsicGuardToAsyncDisposableStack)                \
+    _(IntrinsicGuardToDisposableStack)
+#else
+#  define INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_)
+#endif
+
 #ifdef FUZZING_JS_FUZZILLI
 #  define INLINABLE_NATIVE_FUZZILLI_LIST(_) _(FuzzilliHash)
 #else
@@ -34,7 +42,9 @@
   _(AtomicsOr)                                     \
   _(AtomicsXor)                                    \
   _(AtomicsIsLockFree)                             \
+  _(AtomicsPause)                                  \
                                                    \
+  _(BigInt)                                        \
   _(BigIntAsIntN)                                  \
   _(BigIntAsUintN)                                 \
                                                    \
@@ -63,11 +73,21 @@
   _(DataViewSetBigInt64)                           \
   _(DataViewSetBigUint64)                          \
                                                    \
+  _(DateGetTime)                                   \
+  _(DateGetFullYear)                               \
+  _(DateGetMonth)                                  \
+  _(DateGetDate)                                   \
+  _(DateGetDay)                                    \
+  _(DateGetHours)                                  \
+  _(DateGetMinutes)                                \
+  _(DateGetSeconds)                                \
+                                                   \
   _(FunctionBind)                                  \
                                                    \
   _(IntlGuardToCollator)                           \
   _(IntlGuardToDateTimeFormat)                     \
   _(IntlGuardToDisplayNames)                       \
+  _(IntlGuardToDurationFormat)                     \
   _(IntlGuardToListFormat)                         \
   _(IntlGuardToNumberFormat)                       \
   _(IntlGuardToPluralRules)                        \
@@ -76,8 +96,11 @@
   _(IntlGuardToSegments)                           \
   _(IntlGuardToSegmentIterator)                    \
                                                    \
+  _(MapConstructor)                                \
+  _(MapDelete)                                     \
   _(MapGet)                                        \
   _(MapHas)                                        \
+  _(MapSet)                                        \
                                                    \
   _(MathAbs)                                       \
   _(MathFloor)                                     \
@@ -132,7 +155,10 @@
   _(RegExpInstanceOptimizable)                     \
   _(GetFirstDollarIndex)                           \
                                                    \
+  _(SetConstructor)                                \
+  _(SetDelete)                                     \
   _(SetHas)                                        \
+  _(SetAdd)                                        \
   _(SetSize)                                       \
                                                    \
   _(String)                                        \
@@ -229,6 +255,9 @@
   _(IntrinsicTypedArrayByteOffset)                 \
   _(IntrinsicTypedArrayElementSize)                \
                                                    \
+  _(IntrinsicThisTimeValue)                        \
+                                                   \
+  INLINABLE_EXPLICIT_RESOURCE_MANAGEMENENT_LIST(_) \
   INLINABLE_NATIVE_FUZZILLI_LIST(_)
 
 struct JSClass;

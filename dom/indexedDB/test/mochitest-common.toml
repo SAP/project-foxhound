@@ -221,9 +221,13 @@ skip-if = ["verify"]
 
 ["test_file_delete.html"]
 
+["test_file_filelist.html"]
+
 ["test_file_put_get_object.html"]
 
 ["test_file_put_get_values.html"]
+
+["test_file_repeated_add_delete.html"]
 
 ["test_file_replace.html"]
 
@@ -282,8 +286,8 @@ skip-if = ["true"] # disabled for the moment
 
 ["test_names_sorted.html"]
 skip-if = [
-  "xorigin && !debug", # Hangs
-  "os == 'linux' && os_version == '18.04' && bits == 64 && !debug", # Bug 1602927
+  "xorigin && opt", # Hangs
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1602927
 ]
 
 ["test_objectCursors.html"]
@@ -325,7 +329,7 @@ skip-if = [
 ["test_remove_objectStore.html"]
 
 ["test_rename_index.html"]
-skip-if = ["os == 'linux' && os_version == '18.04'"] #Bug 1601601
+skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64'"] #Bug 1601601
 
 ["test_rename_index_errors.html"]
 
@@ -385,9 +389,9 @@ skip-if = [
 
 ["test_upgrade_add_index.html"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && bits == 64 && !debug",
-  "apple_silicon && !debug",
-  "apple_catalina && !debug",
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt",
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt",
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt",
   "os == 'win'", #Bug 1637715
 ]
 scheme = "https"

@@ -16,22 +16,30 @@ export const stylesTemplate = () =>
 export const editableFieldTemplate = ({
   type,
   value,
-  inputId,
   disabled,
+  required,
   onFocus,
   onBlur,
+  labelL10nId,
+  noteL10nId,
 }) =>
   html`
+    <label for="input" class="field-label" data-l10n-id=${labelL10nId}> </label>
     <input
+      id="input"
       class="input-field"
-      data-l10n-id=${ifDefined(inputId)}
       type=${type}
       value=${value}
+      aria-describedby="explainer"
       ?disabled=${disabled}
+      ?required=${required}
       @focus=${onFocus}
       @blur=${onBlur}
     />
-    <div class="actions">
-      <slot name="actions"></slot>
-    </div>
+    <span
+      id="explainer"
+      role="note"
+      class="explainer text-deemphasized"
+      data-l10n-id=${ifDefined(noteL10nId)}
+    ></span>
   `;

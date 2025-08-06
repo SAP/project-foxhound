@@ -3,8 +3,6 @@ buildDir "${topobjdir}/gradle/build/mobile/android/examples/messaging_example"
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
-apply from: "${topsrcdir}/mobile/android/gradle/product_flavors.gradle"
-
 android {
     buildToolsVersion project.ext.buildToolsVersion
     compileSdkVersion project.ext.compileSdkVersion
@@ -33,9 +31,6 @@ android {
         noCompress 'ja'
     }
 
-    project.configureProductFlavors.delegate = it
-    project.configureProductFlavors()
-
     namespace 'org.mozilla.geckoview.example.messaging'
 }
 
@@ -44,7 +39,7 @@ dependencies {
     implementation ComponentsDependencies.androidx_annotation
     implementation ComponentsDependencies.androidx_appcompat
     implementation ComponentsDependencies.androidx_constraintlayout
-    testImplementation ComponentsDependencies.testing_junit
+    testImplementation ComponentsDependencies.junit_vintage
     // Replace this with implementation "org.mozilla.geckoview:geckoview-${geckoviewChannel}:${geckoviewVersion}"
     implementation project(path: ':geckoview')
 }

@@ -45,6 +45,7 @@
 #include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/SharedImmutableStringsCache.h"
 #include "vm/Warnings.h"  // js::WarnNumberUC
+#include "wasm/WasmPI.h"
 #include "wasm/WasmSignalHandlers.h"
 
 #include "debugger/DebugAPI-inl.h"
@@ -56,8 +57,6 @@ using namespace js;
 
 using mozilla::Atomic;
 using mozilla::DebugOnly;
-using mozilla::NegativeInfinity;
-using mozilla::PositiveInfinity;
 
 /* static */ MOZ_THREAD_LOCAL(JSContext*) js::TlsContext;
 /* static */
@@ -297,6 +296,8 @@ void JSRuntime::setTelemetryCallback(
 
 void JSRuntime::setUseCounter(JSObject* obj, JSUseCounter counter) {
   if (useCounterCallback) {
+    // A use counter callback cannot GC.
+    JS::AutoSuppressGCAnalysis suppress;
     (*useCounterCallback)(obj, counter);
   }
 }
@@ -392,6 +393,16 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
       wasmInstances.lock()->sizeOfExcludingThis(mallocSizeOf);
 }
 
+static bool InvokeInterruptCallbacks(JSContext* cx) {
+  bool stop = false;
+  for (JSInterruptCallback cb : cx->interruptCallbacks()) {
+    if (!cb(cx)) {
+      stop = true;
+    }
+  }
+  return stop;
+}
+
 static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
 
@@ -413,11 +424,16 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
     return true;
   }
 
-  bool stop = false;
-  for (JSInterruptCallback cb : cx->interruptCallbacks()) {
-    if (!cb(cx)) {
-      stop = true;
-    }
+  bool stop;
+#ifdef ENABLE_WASM_JSPI
+  if (IsSuspendableStackActive(cx)) {
+    stop = wasm::CallOnMainStack(
+        cx, reinterpret_cast<wasm::CallOnMainStackFn>(InvokeInterruptCallbacks),
+        (void*)cx);
+  } else
+#endif
+  {
+    stop = InvokeInterruptCallbacks(cx);
   }
 
   if (!stop) {
@@ -455,6 +471,7 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
     chars = u"(stack not available)";
   }
   WarnNumberUC(cx, JSMSG_TERMINATED, chars);
+  cx->reportUncatchableException();
   return false;
 }
 
@@ -846,4 +863,10 @@ void JSRuntime::ensureRealmIsRecordingAllocations(
     // debuggers and runtime profiling.
     global->realm()->chooseAllocationSamplingProbability();
   }
+}
+
+void js::HasSeenObjectEmulateUndefinedFuse::popFuse(JSContext* cx) {
+  js::InvalidatingRuntimeFuse::popFuse(cx);
+  MOZ_ASSERT(cx->global());
+  cx->runtime()->setUseCounter(cx->global(), JSUseCounter::ISHTMLDDA_FUSE);
 }

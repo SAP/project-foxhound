@@ -47,21 +47,19 @@ void CommandEncoder::ConvertTextureCopyViewToFFI(
   *aViewFFI = {};
   aViewFFI->texture = aCopy.mTexture->mId;
   aViewFFI->mip_level = aCopy.mMipLevel;
-  if (aCopy.mOrigin.WasPassed()) {
-    const auto& origin = aCopy.mOrigin.Value();
-    if (origin.IsRangeEnforcedUnsignedLongSequence()) {
-      const auto& seq = origin.GetAsRangeEnforcedUnsignedLongSequence();
-      aViewFFI->origin.x = seq.Length() > 0 ? seq[0] : 0;
-      aViewFFI->origin.y = seq.Length() > 1 ? seq[1] : 0;
-      aViewFFI->origin.z = seq.Length() > 2 ? seq[2] : 0;
-    } else if (origin.IsGPUOrigin3DDict()) {
-      const auto& dict = origin.GetAsGPUOrigin3DDict();
-      aViewFFI->origin.x = dict.mX;
-      aViewFFI->origin.y = dict.mY;
-      aViewFFI->origin.z = dict.mZ;
-    } else {
-      MOZ_CRASH("Unexpected origin type");
-    }
+  const auto& origin = aCopy.mOrigin;
+  if (origin.IsRangeEnforcedUnsignedLongSequence()) {
+    const auto& seq = origin.GetAsRangeEnforcedUnsignedLongSequence();
+    aViewFFI->origin.x = seq.Length() > 0 ? seq[0] : 0;
+    aViewFFI->origin.y = seq.Length() > 1 ? seq[1] : 0;
+    aViewFFI->origin.z = seq.Length() > 2 ? seq[2] : 0;
+  } else if (origin.IsGPUOrigin3DDict()) {
+    const auto& dict = origin.GetAsGPUOrigin3DDict();
+    aViewFFI->origin.x = dict.mX;
+    aViewFFI->origin.y = dict.mY;
+    aViewFFI->origin.z = dict.mZ;
+  } else {
+    MOZ_CRASH("Unexpected origin type");
   }
 }
 
@@ -234,6 +232,21 @@ already_AddRefed<RenderPassEncoder> CommandEncoder::BeginRenderPass(
 
   RefPtr<RenderPassEncoder> pass = new RenderPassEncoder(this, aDesc);
   return pass.forget();
+}
+
+void CommandEncoder::ResolveQuerySet(QuerySet& aQuerySet, uint32_t aFirstQuery,
+                                     uint32_t aQueryCount,
+                                     webgpu::Buffer& aDestination,
+                                     uint64_t aDestinationOffset) {
+  if (!mBridge->CanSend()) {
+    return;
+  }
+
+  ipc::ByteBuf bb;
+  ffi::wgpu_command_encoder_resolve_query_set(aQuerySet.mId, aFirstQuery,
+                                              aQueryCount, aDestination.mId,
+                                              aDestinationOffset, ToFFI(&bb));
+  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
 }
 
 void CommandEncoder::EndComputePass(ffi::WGPURecordedComputePass& aPass) {

@@ -169,6 +169,27 @@ class PromptFeatureTest {
     }
 
     @Test
+    fun `PromptFeatures must cancel promptRequest when there is an active permission`() {
+        val feature = spy(
+            PromptFeature(
+                fragment = mock(),
+                fileUploadsDirCleaner = mock(),
+                store = store,
+                tabsUseCases = mock(),
+                fragmentManager = fragmentManager,
+            ) { },
+        )
+
+        feature.start()
+
+        val promptRequest = SingleChoice(arrayOf(), {}, {})
+        store.dispatch(ContentAction.UpdatePermissionsRequest(tabId, mock())).joinBlocking()
+        store.dispatch(ContentAction.UpdatePromptRequestAction(tabId, promptRequest)).joinBlocking()
+
+        verify(feature).onCancel(tabId, promptRequest.uid)
+    }
+
+    @Test
     fun `PromptFeature acts on the selected session if there is no custom tab ID`() {
         val feature = spy(
             PromptFeature(
@@ -1547,6 +1568,7 @@ class PromptFeatureTest {
             title = "title",
             onLeave = { onLeaveWasCalled = true },
             onStay = { },
+            onDismiss = { },
         )
 
         feature.start()
@@ -1736,9 +1758,12 @@ class PromptFeatureTest {
             ) { }
         var onCancelWasCalled = false
 
-        val promptRequest = PromptRequest.BeforeUnload("http://www.test.com/", { }) {
-            onCancelWasCalled = true
-        }
+        val promptRequest = PromptRequest.BeforeUnload(
+            title = "http://www.test.com/",
+            onLeave = { },
+            onStay = { onCancelWasCalled = true },
+            onDismiss = { },
+        )
 
         feature.start()
 

@@ -889,6 +889,21 @@ void MacroAssembler::moveValue(const Value& src, const ValueOperand& dest) {
 }
 
 // ===============================================================
+// Arithmetic functions
+
+void MacroAssembler::flexibleQuotientPtr(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  flexibleQuotient32(rhs, srcDest, isUnsigned, volatileLiveRegs);
+}
+
+void MacroAssembler::flexibleRemainderPtr(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  flexibleRemainder32(rhs, srcDest, isUnsigned, volatileLiveRegs);
+}
+
+// ===============================================================
 // Branch functions
 
 void MacroAssembler::loadStoreBuffer(Register ptr, Register buffer) {
@@ -1879,8 +1894,7 @@ void MacroAssembler::wasmBoundsCheck64(Condition cond, Register64 index,
   bind(&notOk);
 }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
-void MacroAssembler::wasmMarkSlowCall() {
+void MacroAssembler::wasmMarkCallAsSlow() {
   static_assert(esi == InstanceReg);
   or32(esi, esi);
 }
@@ -1893,6 +1907,5 @@ void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
   cmp16(Address(ra, 0), Imm32(SlowCallMarker));
   j(Assembler::NotEqual, notSlow);
 }
-#endif  // ENABLE_WASM_TAIL_CALLS
 
 //}}} check_macroassembler_style

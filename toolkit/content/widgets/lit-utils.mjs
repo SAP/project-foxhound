@@ -2,7 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { LitElement } from "chrome://global/content/vendor/lit.all.mjs";
+import {
+  LitElement,
+  html,
+  ifDefined,
+} from "chrome://global/content/vendor/lit.all.mjs";
 
 /**
  * Helper for our replacement of @query. Used with `static queries` property.
@@ -63,6 +67,16 @@ function queryAll(el, selector) {
  *
  *******
  *
+ * Mapped properties support (moving a standard attribute to rendered content)
+ *
+ * When you want to accept a standard attribute such as accesskey, title or
+ * aria-label at the component level but it should really be set on a child
+ * element then you can set the `mapped: true` option in your property
+ * definition and the attribute will be removed from the host when it is set.
+ * Note that the attribute can not be unset once it is set.
+ *
+ *******
+ *
  * Test helper for sending events after a change: `dispatchOnUpdateComplete`
  *
  * When some async stuff is going on and you want to wait for it in a test, you
@@ -93,17 +107,27 @@ export class MozLitElement extends LitElement {
   #l10nObj;
   #l10nRootConnected = false;
 
-  static _finalizeFluentProperties() {
-    if (!this.fluentProperties) {
-      this.fluentProperties = [];
-      for (let [propName, attributes] of this.elementProperties.entries()) {
-        if (attributes.fluent) {
-          this.fluentProperties.push(
-            attributes.attribute || propName.toLowerCase()
-          );
-        }
+  static createProperty(attrName, options) {
+    if (options.mapped) {
+      let domAttrPropertyName = `${attrName}Attribute`;
+      let domAttrName = options.attribute ?? attrName.toLowerCase();
+      if (attrName.startsWith("aria")) {
+        domAttrName = domAttrName.replace("aria", "aria-");
       }
+      this.mappedAttributes ??= [];
+      this.mappedAttributes.push([attrName, domAttrPropertyName]);
+      options.state = true;
+      super.createProperty(domAttrPropertyName, {
+        type: String,
+        attribute: domAttrName,
+        reflect: true,
+      });
     }
+    if (options.fluent) {
+      this.fluentProperties ??= [];
+      this.fluentProperties.push(options.attribute || attrName.toLowerCase());
+    }
+    return super.createProperty(attrName, options);
   }
 
   constructor() {
@@ -122,7 +146,6 @@ export class MozLitElement extends LitElement {
         }
       }
     }
-    this.constructor._finalizeFluentProperties();
   }
 
   connectedCallback() {
@@ -135,7 +158,7 @@ export class MozLitElement extends LitElement {
       this.#l10n.connectRoot(this.renderRoot);
       this.#l10nRootConnected = true;
 
-      if (this.constructor.fluentProperties.length) {
+      if (this.constructor.fluentProperties?.length) {
         this.dataset.l10nAttrs = this.constructor.fluentProperties.join(",");
         if (this.dataset.l10nId) {
           this.#l10n.translateElements([this]);
@@ -153,6 +176,22 @@ export class MozLitElement extends LitElement {
     ) {
       this.#l10n.disconnectRoot(this.renderRoot);
       this.#l10nRootConnected = false;
+    }
+  }
+
+  willUpdate(changes) {
+    this.#handleMappedAttributeChange(changes);
+  }
+
+  #handleMappedAttributeChange(changes) {
+    if (!this.constructor.mappedAttributes) {
+      return;
+    }
+    for (let [attrName, domAttrName] of this.constructor.mappedAttributes) {
+      if (changes.has(domAttrName)) {
+        this[attrName] = this[domAttrName];
+        this[domAttrName] = null;
+      }
     }
   }
 
@@ -174,5 +213,130 @@ export class MozLitElement extends LitElement {
     if (this.#l10n) {
       this.#l10n.translateFragment(this.renderRoot);
     }
+  }
+}
+
+/**
+ * A base input element. Provides common layout and properties for our design
+ * system input elements.
+ *
+ * Subclasses must implement the inputTemplate() method which returns the input
+ * template for this specific input element with its id set to "input".
+ *
+ * @property {string} label - The text of the label element
+ * @property {string} name - The name of the input control
+ * @property {string} value - The value of the input control
+ * @property {boolean} disabled - The disabled state of the input control
+ * @property {string} iconSrc - The src for an optional icon
+ * @property {string} description - The text for the description element that helps describe the input control
+ * @property {string} supportPage - Name of the SUMO support page to link to.
+ */
+export class MozBaseInputElement extends MozLitElement {
+  static properties = {
+    label: { type: String, fluent: true },
+    name: { type: String },
+    value: { type: String },
+    iconSrc: { type: String },
+    disabled: { type: Boolean, reflect: true },
+    description: { type: String, fluent: true },
+    supportPage: { type: String, attribute: "support-page" },
+    accessKey: { type: String, mapped: true, fluent: true },
+  };
+  static inputLayout = "inline";
+
+  constructor() {
+    super();
+    this.disabled = false;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.setAttribute("inputlayout", this.constructor.inputLayout);
+  }
+
+  get inputEl() {
+    return this.renderRoot.getElementById("input");
+  }
+
+  get labelEl() {
+    return this.renderRoot.querySelector("label");
+  }
+
+  get icon() {
+    return this.renderRoot.querySelector(".icon");
+  }
+
+  get descriptionEl() {
+    return this.renderRoot.getElementById("description");
+  }
+
+  click() {
+    this.inputEl.click();
+  }
+
+  focus() {
+    this.inputEl.focus();
+  }
+
+  inputTemplate() {
+    throw new Error(
+      "inputTemplate() must be implemented and provide the input element"
+    );
+  }
+
+  render() {
+    let isInlineLayout = this.constructor.inputLayout == "inline";
+    return html`
+      <link
+        rel="stylesheet"
+        href="chrome://global/content/elements/moz-input-common.css"
+      />
+      <span class="label-wrapper">
+        <label
+          is="moz-label"
+          part="label"
+          for="input"
+          shownaccesskey=${ifDefined(this.accessKey)}
+        >
+          ${isInlineLayout ? this.inputTemplate() : ""}${this.labelTemplate()}
+        </label>
+        ${this.supportLinkTemplate()}
+      </span>
+      ${this.descriptionTemplate()}
+      ${!isInlineLayout ? this.inputTemplate() : ""}
+    `;
+  }
+
+  labelTemplate() {
+    return html`<span class="label-content">
+      ${this.iconTemplate()}
+      <span class="text">${this.label}</span>
+    </span>`;
+  }
+
+  descriptionTemplate() {
+    return html`
+      <div id="description" class="description text-deemphasized">
+        ${this.description ?? html`<slot name="description"></slot>`}
+      </div>
+    `;
+  }
+
+  iconTemplate() {
+    if (this.iconSrc) {
+      return html`<img src=${this.iconSrc} role="presentation" class="icon" />`;
+    }
+    return "";
+  }
+
+  supportLinkTemplate() {
+    if (this.supportPage) {
+      return html`<a
+        is="moz-support-link"
+        support-page=${this.supportPage}
+        part="support-link"
+      ></a>`;
+    }
+    return html`<slot name="support-link"></slot>`;
   }
 }

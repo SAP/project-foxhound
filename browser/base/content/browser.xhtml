@@ -96,8 +96,11 @@
   <link rel="localization" href="browser/shopping.ftl"/>
   <link rel="localization" href="preview/shopping.ftl"/>
   <link rel="localization" href="browser/sidebar.ftl"/>
-  <link rel="localization" href="preview/profiles.ftl"/>
+  <link rel="localization" href="browser/profiles.ftl"/>
   <link rel="localization" href="preview/onboarding.ftl"/>
+  <link rel="localization" href="preview/firefoxRelayToAllBrowsers.ftl"/>
+  <link rel="localization" href="preview/tabGroups.ftl"/>
+  <link rel="localization" href="preview/tabUnload.ftl"/>
 
   <title data-l10n-id="browser-main-window-title"></title>
 
@@ -124,6 +127,7 @@
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tab.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabbrowser.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabgroup.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabgroup-menu.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabs.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/places/places-menupopup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/search/autocomplete-popup.js", this);

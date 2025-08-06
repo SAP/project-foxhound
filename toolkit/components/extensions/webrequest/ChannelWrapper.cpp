@@ -189,12 +189,20 @@ already_AddRefed<ChannelWrapper> ChannelWrapper::GetRegisteredChannel(
 }
 
 void ChannelWrapper::SetChannel(nsIChannel* aChannel) {
+  // SetChannel is called when the channel changes, e.g. by redirects.
+  // NOTE: Redirect tracking depends on a webRequest listener (bug 1799118).
   detail::ChannelHolder::SetChannel(aChannel);
   ClearCachedAttributes();
+  // Method may change when the request is redirected with HTTP 301, 302, 303.
+  ChannelWrapper_Binding::ClearCachedMethodValue(this);
+
+  // Clear all fields whose state is derived from the channel's URL.
   ChannelWrapper_Binding::ClearCachedFinalURIValue(this);
   ChannelWrapper_Binding::ClearCachedFinalURLValue(this);
   mFinalURLInfo.reset();
   ChannelWrapper_Binding::ClearCachedProxyInfoValue(this);
+  ChannelWrapper_Binding::ClearCachedThirdPartyValue(this);
+  ChannelWrapper_Binding::ClearCachedCanModifyValue(this);
 }
 
 void ChannelWrapper::ClearCachedAttributes() {
@@ -511,24 +519,6 @@ bool ChannelWrapper::IsServiceWorkerScript(const nsCOMPtr<nsIChannel>& chan) {
   return false;
 }
 
-static inline bool IsSystemPrincipal(nsIPrincipal* aPrincipal) {
-  return BasePrincipal::Cast(aPrincipal)->Is<SystemPrincipal>();
-}
-
-bool ChannelWrapper::IsSystemLoad() const {
-  if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
-    if (nsIPrincipal* prin = loadInfo->GetLoadingPrincipal()) {
-      return IsSystemPrincipal(prin);
-    }
-
-    // loadingPrincipal is only non-null for top-level loads.
-    // In practice we would never encounter a system principal for a top-level
-    // load that passes through ChannelWrapper, at least not for HTTP channels.
-    MOZ_ASSERT(Type() == MozContentPolicyType::Main_frame);
-  }
-  return false;
-}
-
 bool ChannelWrapper::CanModify() const {
   if (!HaveChannel()) {
     return false;
@@ -539,7 +529,7 @@ bool ChannelWrapper::CanModify() const {
 
   if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
     if (nsIPrincipal* prin = loadInfo->GetLoadingPrincipal()) {
-      if (IsSystemPrincipal(prin)) {
+      if (prin->IsSystemPrincipal()) {
         return false;
       }
 
@@ -664,17 +654,17 @@ bool ChannelWrapper::Matches(
       return false;
     }
 
-    bool isProxy =
-        aOptions.mIsProxy && aExtension->HasPermission(nsGkAtoms::proxy);
-    // Proxies are allowed access to all urls, including restricted urls.
-    if (!aExtension->CanAccessURI(urlInfo, false, !isProxy, true)) {
+    // The third parameter (aCheckRestricted) is false because we already check
+    // restricted URLs below as part of CanModify().
+    if (!aExtension->CanAccessURI(urlInfo, false, false, true)) {
       return false;
     }
 
+    // Proxies are allowed access to all urls, including restricted urls.
     // If this isn't the proxy phase of the request, check that the extension
     // has origin permissions for origin that originated the request.
-    if (!isProxy) {
-      if (IsSystemLoad()) {
+    if (!aOptions.mIsProxy || !aExtension->HasPermission(nsGkAtoms::proxy)) {
+      if (!CanModify()) {
         return false;
       }
 
@@ -682,11 +672,14 @@ bool ChannelWrapper::Matches(
       // Extensions with the file:-permission may observe requests from file:
       // origins, because such documents can already be modified by content
       // scripts anyway.
-      if (origin && !aExtension->CanAccessURI(*origin, false, true, true)) {
+      if (origin && !aExtension->CanAccessURI(*origin, false, false, true)) {
         return false;
       }
     }
   }
+  // In theory, we could still be checking CanModify() even if !aExtension
+  // because the check is independent of extensions. However, we do not because
+  // there is no way for unprivileged code to end up with !aExtension.
 
   return true;
 }

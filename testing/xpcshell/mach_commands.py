@@ -12,7 +12,7 @@ import sys
 from mach.decorators import Command
 from mozbuild.base import BinaryNotFoundException, MozbuildObject
 from mozbuild.base import MachCommandConditions as conditions
-from mozbuild.util import cpu_count
+from mozbuild.util import cpu_count, macos_performance_cores
 from mozlog import structured
 from xpcshellcommandline import parser_desktop, parser_remote
 
@@ -168,7 +168,7 @@ class AndroidXPCShellRunner(MozbuildObject):
             for root, _, paths in os.walk(os.path.join(kwargs["objdir"], "gradle")):
                 for file_name in paths:
                     if file_name.endswith(".apk") and file_name.startswith(
-                        "test_runner-withGeckoBinaries"
+                        "test_runner"
                     ):
                         kwargs["localAPK"] = os.path.join(root, file_name)
                         print("using APK: %s" % kwargs["localAPK"])
@@ -242,8 +242,20 @@ def run_xpcshell_test(command_context, test_objects=None, **params):
         )
 
     if not params["threadCount"]:
-        # pylint --py3k W1619
-        params["threadCount"] = int((cpu_count() * 3) / 2)
+        if sys.platform == "darwin":
+            # On Apple Silicon, we have found that increasing the number of
+            # threads (processes) above the CPU count reduces the performance
+            # (bug 1917833), and makes the machine less performant. It is even
+            # better if we can use the exact number of performance cores, so we
+            # attempt to do that here.
+            perf_cores = macos_performance_cores()
+            if perf_cores > 0:
+                params["threadCount"] = perf_cores
+            else:
+                params["threadCount"] = int((cpu_count() * 3) / 2)
+        else:
+            # pylint --py3k W1619
+            params["threadCount"] = int((cpu_count() * 3) / 2)
 
     if conditions.is_android(command_context):
         from mozrunner.devices.android_device import (

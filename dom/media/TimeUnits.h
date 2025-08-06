@@ -94,8 +94,13 @@ class TimeUnit final {
     return std::numeric_limits<int64_t>::max() - 1;
   }
 
-  // This is only precise up to a point, which is aValue * aBase <= 2^53 - 1
+  // These are only precise up to a point, which is aValue * aBase <= 2^53 - 1
   static TimeUnit FromSeconds(double aValue, int64_t aBase = USECS_PER_S);
+  static TimeUnit FromSecondsWithBaseOf(double aSeconds,
+                                        const TimeUnit& aOtherForBase) {
+    return FromSeconds(aSeconds, aOtherForBase.mBase);
+  }
+
   static constexpr TimeUnit FromMicroseconds(int64_t aValue) {
     return TimeUnit(aValue, USECS_PER_S);
   }
@@ -214,6 +219,10 @@ class TimeUnit final {
   template <class RoundingPolicy = TruncatePolicy>
   TimeUnit ToBase(int64_t aTargetBase, double& aOutError) const {
     aOutError = 0.0;
+    if (mTicks.value() == INT64_MAX || mTicks.value() == INT64_MIN) {
+      // -ve or +ve infinity
+      return TimeUnit(mTicks, aTargetBase);
+    }
     CheckedInt<int64_t> ticks = mTicks * aTargetBase;
     if (ticks.isValid()) {
       imaxdiv_t rv = imaxdiv(ticks.value(), mBase);

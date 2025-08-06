@@ -50,14 +50,16 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ModuleLoadRequest,
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 /* static */
-VisitedURLSet* ModuleLoadRequest::NewVisitedSetForTopLevelImport(nsIURI* aURI) {
+VisitedURLSet* ModuleLoadRequest::NewVisitedSetForTopLevelImport(
+    nsIURI* aURI, JS::ModuleType aModuleType) {
   auto set = new VisitedURLSet();
-  set->PutEntry(aURI);
+  set->PutEntry(ModuleMapKey(aURI, aModuleType));
   return set;
 }
 
 ModuleLoadRequest::ModuleLoadRequest(
-    nsIURI* aURI, mozilla::dom::ReferrerPolicy aReferrerPolicy,
+    nsIURI* aURI, JS::ModuleType aModuleType,
+    mozilla::dom::ReferrerPolicy aReferrerPolicy,
     ScriptFetchOptions* aFetchOptions,
     const mozilla::dom::SRIMetadata& aIntegrity, nsIURI* aReferrer,
     LoadContextBase* aContext, bool aIsTopLevel, bool aIsDynamicImport,
@@ -66,6 +68,7 @@ ModuleLoadRequest::ModuleLoadRequest(
     : ScriptLoadRequest(ScriptKind::eModule, aURI, aReferrerPolicy,
                         aFetchOptions, aIntegrity, aReferrer, aContext),
       mIsTopLevel(aIsTopLevel),
+      mModuleType(aModuleType),
       mIsDynamicImport(aIsDynamicImport),
       mLoader(aLoader),
       mRootModule(aRootModule),
@@ -128,7 +131,7 @@ void ModuleLoadRequest::ModuleLoaded() {
 
   MOZ_ASSERT(IsFetching() || IsPendingFetchingError());
 
-  mModuleScript = mLoader->GetFetchedModule(mURI);
+  mModuleScript = mLoader->GetFetchedModule(ModuleMapKey(mURI, mModuleType));
   if (IsErrored()) {
     ModuleErrored();
     return;

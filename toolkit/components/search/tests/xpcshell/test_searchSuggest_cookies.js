@@ -78,15 +78,15 @@ add_setup(async function () {
   let unicodeName = ["\u30a8", "\u30c9"].join("");
   engines = [
     await SearchTestUtils.installOpenSearchEngine({
-      url: `${gDataUrl}engineMaker.sjs?${JSON.stringify({
-        baseURL: gDataUrl,
+      url: `${gHttpURL}/sjs/engineMaker.sjs?${JSON.stringify({
+        baseURL: `${gHttpURL}/sjs/`,
         name: unicodeName,
         method: "GET",
       })}`,
     }),
     await SearchTestUtils.installOpenSearchEngine({
-      url: `${gDataUrl}engineMaker.sjs?${JSON.stringify({
-        baseURL: gDataUrl,
+      url: `${gHttpURL}/sjs/engineMaker.sjs?${JSON.stringify({
+        baseURL: `${gHttpURL}/sjs/`,
         name: "engine two",
         method: "GET",
       })}`,

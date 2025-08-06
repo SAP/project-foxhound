@@ -351,8 +351,7 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   pref("media.peerconnection.dtls.version.min", 771);
   pref("media.peerconnection.dtls.version.max", 772);
 
-#if defined(XP_MACOSX) && defined(NIGHTLY_BUILD)
-  // Nightly only due to bug 1908539
+#if defined(XP_MACOSX)
   pref("media.getusermedia.audio.processing.platform.enabled", true);
 #else
   pref("media.getusermedia.audio.processing.platform.enabled", false);
@@ -456,6 +455,7 @@ pref("gfx.webrender.debug.echo-driver-messages", false);
 pref("gfx.webrender.debug.show-overdraw", false);
 pref("gfx.webrender.debug.slow-frame-indicator", false);
 pref("gfx.webrender.debug.picture-caching", false);
+pref("gfx.webrender.debug.picture-borders", false);
 pref("gfx.webrender.debug.force-picture-invalidation", false);
 pref("gfx.webrender.debug.primitives", false);
 pref("gfx.webrender.debug.small-screen", false);
@@ -565,7 +565,7 @@ pref("toolkit.scrollbox.scrollIncrement", 20);
 pref("toolkit.scrollbox.clickToScroll.scrollDelay", 150);
 
 pref("toolkit.shopping.ohttpConfigURL", "https://prod.ohttp-gateway.prod.webservices.mozgcp.net/ohttp-configs");
-pref("toolkit.shopping.ohttpRelayURL", "https://mozilla-ohttp-fakespot.fastly-edge.com/");
+pref("toolkit.shopping.ohttpRelayURL", "https://mozilla-ohttp.fastly-edge.com/");
 pref("toolkit.shopping.environment", "prod");
 
 // Controls logging for Sqlite.sys.mjs.
@@ -586,6 +586,7 @@ pref("toolkit.telemetry.unified", true);
 
 // DAP related preferences
 pref("toolkit.telemetry.dap_enabled", false);
+pref("toolkit.telemetry.dap.logLevel", "Warn");
 // Verification tasks
 pref("toolkit.telemetry.dap_task1_enabled", false);
 pref("toolkit.telemetry.dap_task1_taskid", "");
@@ -594,14 +595,14 @@ pref("toolkit.telemetry.dap_visit_counting_enabled", false);
 // Note: format of patterns is "<proto>://<host>/<path>"
 // See https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Match_patterns
 pref("toolkit.telemetry.dap_visit_counting_experiment_list", "[]");
-// Leader endpoint for the DAP protocol
-pref("toolkit.telemetry.dap_leader", "https://dap-09-3.api.divviup.org/");
-// Not used for anything. Just additional information.
-pref("toolkit.telemetry.dap_leader_owner", "ISRG");
-// Second DAP server. Only two are currently supported.
-pref("toolkit.telemetry.dap_helper", "https://dap.services.mozilla.com");
-pref("toolkit.telemetry.dap_helper_owner", "Mozilla");
-pref("toolkit.telemetry.dap.logLevel", "Warn");
+// DAP protocol Leader endpoint. Operated by DivviUp/ISRG.
+// - HPKE key is base64url-encoded response of the /hpke_config path on server.
+pref("toolkit.telemetry.dap.leader.url", "https://dap-09-3.api.divviup.org");
+pref("toolkit.telemetry.dap.leader.hpke", "ACkAACAAAQABACDk8wgwe2-TqHyaL74uqjVWMcF1zi9pxiwQhu4aPwncYw");
+// DAP protocol Helper endpoint. Operated by Mozilla.
+// - HPKE key is base64url-encoded response of the /hpke_config path on server.
+pref("toolkit.telemetry.dap.helper.url", "https://dap.services.mozilla.com");
+pref("toolkit.telemetry.dap.helper.hpke", "ACkAACAAAQABACAucqWdIQRN6BxumPBRXIlg2JsxcznwWX7vyqzM3cjuQA");
 
 // Controls telemetry logs for the Translations feature throughout Firefox.
 pref("toolkit.telemetry.translations.logLevel", "Error");
@@ -814,6 +815,10 @@ pref("dom.disable_window_move_resize",      false);
 
 pref("dom.allow_scripts_to_close_windows",          false);
 
+// List of urls for which mutation events are enabled even if mutation events
+// in general are disabled. See nsContentUtils::IsURIInPrefList.
+pref("dom.mutation_events.forceEnable", "");
+
 pref("dom.popup_allowed_events", "change click dblclick auxclick mousedown mouseup pointerdown pointerup notificationclick reset submit touchend contextmenu");
 
 pref("dom.serviceWorkers.disable_open_click_delay", 1000);
@@ -1011,9 +1016,6 @@ pref("javascript.options.mem.gc_urgent_threshold_mb", 16);
 
 // JSGC_MIN_EMPTY_CHUNK_COUNT
 pref("javascript.options.mem.gc_min_empty_chunk_count", 1);
-
-// JSGC_MAX_EMPTY_CHUNK_COUNT
-pref("javascript.options.mem.gc_max_empty_chunk_count", 30);
 
 // JSGC_HELPER_THREAD_RATIO
 pref("javascript.options.mem.gc_helper_thread_ratio", 50);
@@ -1347,10 +1349,6 @@ pref("network.websocket.timeout.ping.request", 0);
 // event is sent to the javascript websockets application
 pref("network.websocket.timeout.ping.response", 10);
 
-// Defines whether or not to try to negotiate the permessage compression
-// extension with the websocket server.
-pref("network.websocket.extensions.permessage-deflate", true);
-
 // the maximum number of concurrent websocket sessions. By specification there
 // is never more than one handshake oustanding to an individual host at
 // one time.
@@ -1365,38 +1363,6 @@ pref("network.websocket.allowInsecureFromHTTPS", false);
 pref("network.websocket.delay-failed-reconnects", true);
 
 // </ws>
-
-// Server-Sent Events
-// Equal to the DEFAULT_RECONNECTION_TIME_VALUE value in nsEventSource.cpp
-pref("dom.server-events.default-reconnection-time", 5000); // in milliseconds
-
-// TLDs are treated as IDN-unsafe and punycode will be used for displaying them
-// in the UI (e.g. URL bar), unless they conform to one of the profiles
-// specified in
-// https://www.unicode.org/reports/tr39/#Restriction_Level_Detection
-// If "network.IDN.restriction_profile" is "high", the Highly Restrictive
-// profile is used.
-// If "network.IDN.restriction_profile" is "moderate", the Moderately
-// Restrictive profile is used.
-// In all other cases, the ASCII-Only profile is used.
-// Note that these preferences are referred to ONLY when
-// "network.IDN_show_punycode" is false. In other words, all IDNs will be shown
-// in punycode if "network.IDN_show_punycode" is true.
-pref("network.IDN.restriction_profile", "high");
-
-// If a domain includes any of the blocklist characters, it may be a spoof
-// attempt and so we always display the domain name as punycode.
-// For a complete list of the blocked IDN characters see:
-//   netwerk/dns/IDNCharacterBlocklist.inc
-
-// This pref may contain characters that will override the hardcoded blocklist,
-// so their presence in a domain name will not cause it to be displayed as
-// punycode.
-// Note that this only removes the characters from the blocklist, but there may
-// be other rules in place that cause it to be displayed as punycode.
-pref("network.IDN.extra_allowed_chars", "");
-// This pref may contain additional blocklist characters
-pref("network.IDN.extra_blocked_chars", "");
 
 // This preference specifies a list of domains for which DNS lookups will be
 // IPv4 only. Works around broken DNS servers which can't handle IPv6 lookups
@@ -1543,17 +1509,6 @@ pref("network.http.throttle.max-time-ms", 500);
 // Give higher priority to requests resulting from a user interaction event
 // like click-to-play, image fancy-box zoom, navigation.
 pref("network.http.on_click_priority", true);
-
-// When the page load has not yet reached DOMContentLoaded point, tail requestes are delayed
-// by (non-tailed requests count + 1) * delay-quantum milliseconds.
-pref("network.http.tailing.delay-quantum", 600);
-// The same as above, but applied after the document load reached DOMContentLoaded event.
-pref("network.http.tailing.delay-quantum-after-domcontentloaded", 100);
-// Upper limit for the calculated delay, prevents long standing and comet-like requests
-// tail forever.  This is in milliseconds as well.
-pref("network.http.tailing.delay-max", 6000);
-// Total limit we delay tailed requests since a page load beginning.
-pref("network.http.tailing.total-max", 45000);
 
 pref("network.proxy.http",                  "");
 pref("network.proxy.http_port",             0);
@@ -1915,6 +1870,13 @@ pref("extensions.install_origins.enabled", false);
 pref("extensions.browser_style_mv3.supported", false);
 pref("extensions.browser_style_mv3.same_as_mv2", false);
 
+// Experimental Inference API
+#ifdef NIGHTLY_BUILD
+  pref("extensions.ml.enabled", true);
+#else
+  pref("extensions.ml.enabled", false);
+#endif
+
 // Middle-mouse handling
 pref("middlemouse.paste", false);
 pref("middlemouse.contentLoadURL", false);
@@ -1988,9 +1950,6 @@ pref("dom.use_watchdog", true);
 
 // Stop all scripts in a compartment when the "stop script" dialog is used.
 pref("dom.global_stop_script", true);
-
-// Support the input event queue on the main thread of content process
-pref("input_event_queue.supported", true);
 
 // Enable multi by default.
 #if !defined(MOZ_ASAN) && !defined(MOZ_TSAN)
@@ -2372,6 +2331,11 @@ pref("font.size.monospace.x-math", 13);
   pref("gfx.font_rendering.cleartype_params.pixel_structure", -1);
   pref("gfx.font_rendering.cleartype_params.rendering_mode", -1);
 
+#if defined(EARLY_BETA_OR_EARLIER)
+  // We no longer force "GDI Classic" mode on any fonts by default.
+  pref("gfx.font_rendering.cleartype_params.force_gdi_classic_for_families", "");
+  pref("gfx.font_rendering.cleartype_params.force_gdi_classic_max_size", 0);
+#else
   // A comma-separated list of font family names. Fonts in these families will
   // be forced to use "GDI Classic" ClearType mode, provided the value
   // of gfx.font_rendering.cleartype_params.rendering_mode is -1
@@ -2382,6 +2346,7 @@ pref("font.size.monospace.x-math", 13);
   // The maximum size at which we will force GDI classic mode using
   // force_gdi_classic_for_families.
   pref("gfx.font_rendering.cleartype_params.force_gdi_classic_max_size", 15);
+#endif
 
   // Switch the keyboard layout per window
   pref("intl.keyboard.per_window_layout", false);
@@ -3235,7 +3200,6 @@ pref("network.psl.onUpdate_notify", false);
 
 #ifdef MOZ_WIDGET_GTK
   pref("widget.disable-workspace-management", false);
-  pref("widget.titlebar-x11-use-shape-mask", false);
 #endif
 
 // All the Geolocation preferences are here.
@@ -3254,10 +3218,6 @@ pref("geo.provider.network.timeout", 60000);
 // Set to false if things are really broken.
 #ifdef XP_WIN
   pref("geo.provider.ms-windows-location", true);
-#endif
-
-#if defined(MOZ_WIDGET_GTK) && defined(MOZ_GPSD)
-  pref("geo.provider.use_gpsd", true);
 #endif
 
 // Region
@@ -3378,7 +3338,7 @@ pref("dom.push.maxQuotaPerSubscription", 16);
 
 // The maximum number of recent message IDs to store for each push
 // subscription, to avoid duplicates for unacknowledged messages.
-pref("dom.push.maxRecentMessageIDsPerSubscription", 10);
+pref("dom.push.maxRecentMessageIDsPerSubscription", 100);
 
 // The delay between receiving a push message and updating the quota for a
 // subscription.
@@ -3399,11 +3359,6 @@ pref("dom.push.pingInterval", 1800000); // 30 minutes
 
 // How long before we timeout
 pref("dom.push.requestTimeout", 10000);
-
-// WebPush prefs:
-pref("dom.push.http2.reset_retry_count_after_ms", 60000);
-pref("dom.push.http2.maxRetries", 2);
-pref("dom.push.http2.retryInterval", 5000);
 
 // How long must we wait before declaring that a window is a "ghost" (i.e., a
 // likely leak)?  This should be longer than it usually takes for an eligible
@@ -3574,11 +3529,7 @@ pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozil
 // Mozilla Safe Browsing provider (for tracking protection and plugin blocking)
 pref("browser.safebrowsing.provider.mozilla.pver", "2.2");
 pref("browser.safebrowsing.provider.mozilla.lists", "base-track-digest256,mozstd-trackwhite-digest256,google-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256");
-#ifdef NIGHTLY_BUILD
-  pref("browser.safebrowsing.provider.mozilla.updateURL", "moz-sbrs:://antitracking");
-#else
-  pref("browser.safebrowsing.provider.mozilla.updateURL", "https://shavar.services.mozilla.com/downloads?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
-#endif
+pref("browser.safebrowsing.provider.mozilla.updateURL", "moz-sbrs:://antitracking");
 pref("browser.safebrowsing.provider.mozilla.gethashURL", "https://shavar.services.mozilla.com/gethash?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
 // Set to a date in the past to force immediate download in new profiles.
 pref("browser.safebrowsing.provider.mozilla.nextupdatetime", "1");
@@ -3588,7 +3539,11 @@ pref("browser.safebrowsing.provider.mozilla.lists.base", "moz-std");
 pref("browser.safebrowsing.provider.mozilla.lists.content", "moz-full");
 
 // The table and global pref for blocking plugin content
-pref("urlclassifier.blockedTable", "moztest-block-simple,mozplugin-block-digest256");
+#ifdef NIGHTLY_BUILD
+  pref("urlclassifier.blockedTable", "moztest-block-simple,mozplugin-block-digest256");
+#else
+  pref("urlclassifier.blockedTable", "moztest-block-simple");
+#endif
 
 #ifdef XP_MACOSX
   #if !defined(RELEASE_OR_BETA) || defined(DEBUG)
@@ -3673,6 +3628,10 @@ pref("reader.parse-on-load.enabled", true);
 // because it'd slow things down too much
 pref("reader.parse-node-limit", 3000);
 
+// Whether or not debug mode is enabled in reader mode. If enabled, reader mode
+// will log what it's doing.
+pref("reader.debug", false);
+
 // Whether we include full URLs in browser console errors. This is disabled
 // by default because some platforms will persist these, leading to privacy issues.
 pref("reader.errors.includeURLs", false);
@@ -3756,6 +3715,12 @@ pref("webextensions.tests", false);
 // 16MB default non-parseable upload limit for requestBody.raw.bytes
 pref("webextensions.webRequest.requestBodyMaxRawBytes", 16777216);
 
+#ifdef NIGHTLY_BUILD
+  pref("webextensions.storage.session.enforceQuota", true);
+#else
+  pref("webextensions.storage.session.enforceQuota", false);
+#endif
+
 pref("webextensions.storage.sync.enabled", true);
 // Should we use the old kinto-based implementation of storage.sync? To be removed in bug 1637465.
 pref("webextensions.storage.sync.kinto", false);
@@ -3766,11 +3731,7 @@ pref("webextensions.storage.sync.serverURL", "https://webextensions.settings.ser
 pref("dom.input.fallbackUploadDir", "");
 
 // Turn rewriting of youtube embeds on/off
-#if defined(EARLY_BETA_OR_EARLIER)
-  pref("plugins.rewrite_youtube_embeds", false);
-#else
-  pref("plugins.rewrite_youtube_embeds", true);
-#endif
+pref("plugins.rewrite_youtube_embeds", true);
 
 // Default media volume
 pref("media.default_volume", "1.0");
@@ -3796,6 +3757,10 @@ pref("browser.translations.select.enable", false);
 // the application logic logs, and not all of the translated messages, which can be
 // slow and overwhelming.
 pref("browser.translations.logLevel", "Error");
+// The BCP-47 language tags of the most recently translated-into target language.
+// This preference is considered when offering a specific language to translate into,
+// but is not considered as a "known" language when deciding whether to offer Translations at all.
+pref("browser.translations.mostRecentTargetLanguages", "");
 // A comma-separated list of BCP-47 language tags that affect the behavior of translations.
 // Languages listed in the alwaysTranslateLanguages list will trigger auto-translate on page load.
 pref("browser.translations.alwaysTranslateLanguages", "");
@@ -3820,17 +3785,34 @@ pref("browser.translations.chaos.errors", false);
 pref("browser.translations.chaos.timeoutMS", 0);
 
 // Enable the experimental machine learning inference engine.
-pref("browser.ml.enable", false);
+#ifdef NIGHTLY_BUILD
+  pref("browser.ml.enable", true);
+#else
+  pref("browser.ml.enable", false);
+#endif
 // Set to "All" to see all logs, which are useful for debugging.
 pref("browser.ml.logLevel", "Error");
 // Model hub root URL used to download models.
 pref("browser.ml.modelHubRootUrl", "https://model-hub.mozilla.org/");
 // Model URL template
 pref("browser.ml.modelHubUrlTemplate", "{model}/{revision}");
-// Maximum disk size for ML model cache (in bytes)
-pref("browser.ml.modelCacheMaxSizeBytes", 1073741824);
+// Maximum disk size for ML model cache (in GiB)
+pref("browser.ml.modelCacheMaxSize", 4);
 // Model cache timeout in ms
 pref("browser.ml.modelCacheTimeout", 120000);
+// Minimal Physical RAM required in GiB
+pref("browser.ml.minimumPhysicalMemory", 4);
+// Default memory usage for a model in GiB
+pref("browser.ml.defaultModelMemoryUsage", 2);
+// Check for memory before running
+pref("browser.ml.checkForMemory", false);
+// Maximum memory pressure (%)
+pref("browser.ml.maximumMemoryPressure", 80);
+// Queue wait timeout in seconds
+pref("browser.ml.queueWaitTimeout", 60);
+// Queue wait checks interval in seconds
+pref("browser.ml.queueWaitInterval", 1);
+
 
 // When a user cancels this number of authentication dialogs coming from
 // a single web page in a row, all following authentication dialogs will
@@ -4019,6 +4001,9 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   // 3: WebDriver BiDi + CDP
   pref("remote.active-protocols", 1);
 
+  // Opt-in for async event processing (bug 1773393).
+  pref("remote.events.async.enabled", false);
+
   // Enable WebDriver BiDi experimental commands and events.
   #if defined(NIGHTLY_BUILD)
     pref("remote.experimental.enabled", true);
@@ -4040,6 +4025,10 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   // Sets recommended automation preferences when Remote Agent or Marionette is
   // started.
   pref("remote.prefs.recommended", true);
+
+  // Enable retrying to execute commands in the child process in case the
+  // JSWindowActor gets destroyed.
+  pref("remote.retry-on-abort", true);
 #endif
 
 // Enable the JSON View tool (an inspector for application/json documents).
@@ -4075,10 +4064,6 @@ pref("devtools.errorconsole.deprecation_warnings", true);
 
 // Disable service worker debugging on all channels (see Bug 1651605).
 pref("devtools.debugger.features.windowless-service-workers", false);
-
-// Bug 1824726 replaced client side throttling with server side throttling.
-// Use a preference in order to rollback in case of trouble.
-pref("devtools.client-side-throttling.enable", false);
 
 // Disable remote debugging protocol logging.
 pref("devtools.debugger.log", false);
@@ -4128,11 +4113,6 @@ pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false
 pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false, locked);
 #endif
 
-// Whether sites require the open-protocol-handler permission to open a
-//preferred external application for a protocol. If a site doesn't have
-// permission we will show a prompt.
-pref("security.external_protocol_requires_permission", true);
-
 // Preferences for the form autofill toolkit component.
 // The truthy values of "extensions.formautofill.addresses.available"
 // is "on" and "detect",
@@ -4180,6 +4160,12 @@ pref("extensions.formautofill.loglevel", "Warn");
 // Temporary prefs that we will be removed if the telemetry data (added in Fx123) does not show any problems with the new heuristics.
 pref("extensions.formautofill.heuristics.captureOnFormRemoval", true);
 pref("extensions.formautofill.heuristics.captureOnPageNavigation", true);
+
+pref("extensions.formautofill.heuristics.autofillSameOriginWithTop", true);
+
+#ifdef NIGHTLY_BUILD
+  pref("extensions.formautofill.ml.experiment.enabled", true);
+#endif
 
 pref("toolkit.osKeyStore.loglevel", "Warn");
 
@@ -4236,6 +4222,15 @@ pref("privacy.fingerprintingProtection.WebCompatService.logLevel", "Error");
 // To test strip on share site specific parameters by enabling a different list to be used
 pref("privacy.query_stripping.strip_on_share.enableTestMode", false);
 
+#if defined(MOZ_BACKGROUNDTASKS) && defined(ENABLE_TESTS)
+  // Test prefs to verify background tasks inheret and override gecko prefs
+  // correctly.
+  pref("toolkit.backgroundtasks.tests.geckoPrefsInherited", 17);
+  pref("toolkit.backgroundtasks.tests.geckoPrefsOverriden", 18);
+#endif
+
+// To disable the Strip on Share context menu option if nothing can be stripped
+pref("privacy.query_stripping.strip_on_share.canDisable", true);
 
 // Tainting Preferences
 // All preferences related to taint-tracking

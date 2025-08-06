@@ -31,6 +31,7 @@
 #include "mozilla/dom/Selection.h"
 #include "nsContentUtils.h"
 #include "nsElementTable.h"
+#include "nsMimeTypes.h"
 #include "nsUnicharUtils.h"
 #include "nsReadableUtils.h"
 #include "nsTArray.h"
@@ -1537,12 +1538,12 @@ nsDocumentEncoder::SetNodeFixup(nsIDocumentEncoderNodeFixup* aFixup) {
 }
 
 bool do_getDocumentTypeSupportedForEncoding(const char* aContentType) {
-  if (!nsCRT::strcmp(aContentType, "text/xml") ||
-      !nsCRT::strcmp(aContentType, "application/xml") ||
-      !nsCRT::strcmp(aContentType, "application/xhtml+xml") ||
-      !nsCRT::strcmp(aContentType, "image/svg+xml") ||
-      !nsCRT::strcmp(aContentType, "text/html") ||
-      !nsCRT::strcmp(aContentType, "text/plain")) {
+  if (!nsCRT::strcmp(aContentType, TEXT_XML) ||
+      !nsCRT::strcmp(aContentType, APPLICATION_XML) ||
+      !nsCRT::strcmp(aContentType, APPLICATION_XHTML_XML) ||
+      !nsCRT::strcmp(aContentType, IMAGE_SVG_XML) ||
+      !nsCRT::strcmp(aContentType, TEXT_HTML) ||
+      !nsCRT::strcmp(aContentType, TEXT_PLAIN)) {
     return true;
   }
   return false;
@@ -1591,9 +1592,8 @@ class nsHTMLCopyEncoder : public nsDocumentEncoder {
                             nsINode* aCommon);
   static nsCOMPtr<nsINode> GetChildAt(nsINode* aParent, int32_t aOffset);
   static bool IsMozBR(Element* aNode);
-  static nsresult GetNodeLocation(nsINode* inChild,
-                                  nsCOMPtr<nsINode>* outParent,
-                                  int32_t* outOffset);
+  nsresult GetNodeLocation(nsINode* inChild, nsCOMPtr<nsINode>* outParent,
+                           int32_t* outOffset);
   bool IsRoot(nsINode* aNode);
   static bool IsFirstNode(nsINode* aNode);
   static bool IsLastNode(nsINode* aNode);
@@ -1802,9 +1802,16 @@ nsHTMLCopyEncoder::EncodeToStringWithContext(nsAString& aContextString,
 
 bool nsHTMLCopyEncoder::RangeNodeContext::IncludeInContext(
     nsINode& aNode) const {
-  nsCOMPtr<nsIContent> content(nsIContent::FromNodeOrNull(&aNode));
+  const nsIContent* const content = nsIContent::FromNodeOrNull(&aNode);
+  if (!content) {
+    return false;
+  }
 
-  if (!content) return false;
+  // If it's an inline editing host, we should not treat it gives a context to
+  // avoid to duplicate its style.
+  if (content->IsEditingHost()) {
+    return false;
+  }
 
   return content->IsAnyOfHTMLElements(
       nsGkAtoms::b, nsGkAtoms::i, nsGkAtoms::u, nsGkAtoms::a, nsGkAtoms::tt,
@@ -2047,7 +2054,15 @@ nsresult nsHTMLCopyEncoder::GetPromotedPoint(Endpoint aWhere, nsINode* aNode,
         node = parent;
         rv = GetNodeLocation(node, address_of(parent), &offset);
         NS_ENSURE_SUCCESS(rv, rv);
-        if (offset == -1)  // we hit generated content; STOP
+
+        // When node is the shadow root and parent is the shadow host,
+        // the offset would also be -1, and we'd like to keep going.
+        const bool isGeneratedContent =
+            offset == -1 &&
+            ShadowDOMSelectionHelpers::GetShadowRoot(
+                parent,
+                mFlags & nsIDocumentEncoder::AllowCrossShadowBoundary) != node;
+        if (isGeneratedContent)  // we hit generated content; STOP
         {
           // back up a bit
           parent = node;
@@ -2099,7 +2114,9 @@ nsresult nsHTMLCopyEncoder::GetNodeLocation(nsINode* inChild,
       return NS_ERROR_NULL_POINTER;
     }
 
-    nsIContent* parent = child->GetParent();
+    nsINode* parent = mFlags & nsIDocumentEncoder::AllowCrossShadowBoundary
+                          ? child->GetParentOrShadowHostNode()
+                          : child->GetParent();
     if (!parent) {
       return NS_ERROR_NULL_POINTER;
     }

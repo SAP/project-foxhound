@@ -224,6 +224,7 @@
     name: StringTest
     type: Args_Int32_GeneralGeneral
   entry: Instance::stringTest
+  inline_op: StringTest
   export: test
   params:
     - 'externref'
@@ -236,6 +237,7 @@
     name: StringCast
     type: Args_General2
   entry: Instance::stringCast
+  inline_op: StringCast
   export: cast
   params:
     - 'externref'
@@ -336,6 +338,7 @@
     name: StringLength
     type: Args_Int32_GeneralGeneral
   entry: Instance::stringLength
+  inline_op: StringLength
   export: length
   params:
     - 'externref'
@@ -404,18 +407,6 @@
 
 #if defined(ENABLE_WASM_JSPI)
 
-- op: CheckSuspender
-  symbolic_address:
-    name: CheckSuspender
-    type: Args_General2
-  entry: CheckSuspender
-  export: suspenderCheck
-  params:
-    - 'externref'
-  result: 'externref'
-  fail_mode: FailOnNullPtr
-  uses_memory: false
-
 - op: CreateSuspender
   symbolic_address:
     name: CreateSuspender
@@ -455,10 +446,11 @@
 - op: GetSuspendingPromiseResult
   symbolic_address:
     name: GetSuspendingPromiseResult
-    type: Args_General2
+    type: Args_General3
   entry: GetSuspendingPromiseResult
   export: getSuspendingPromiseResult
   params:
+    - 'externref'
     - 'externref'
   result: 'anyref'
   fail_mode: FailOnNullPtr
@@ -467,14 +459,28 @@
 - op: AddPromiseReactions
   symbolic_address:
     name: AddPromiseReactions
-    type: Args_Int32_GeneralGeneralGeneralGeneral
+    type: Args_General4
   entry: AddPromiseReactions
   export: addPromiseReactions
   params:
     - 'externref'
     - 'externref'
     - 'funcref'
-  fail_mode: FailOnNegI32
+  result: 'anyref'
+  fail_mode: FailOnInvalidRef
+  uses_memory: false
+
+- op: ForwardExceptionToSuspended
+  symbolic_address:
+    name: ForwardExceptionToSuspended
+    type: Args_General3
+  entry: ForwardExceptionToSuspended
+  export: forwardExceptionToSuspended
+  params:
+    - 'externref'
+    - 'exnref'
+  result: 'anyref'
+  fail_mode: Infallible
   uses_memory: false
 
 - op: SetPromisingPromiseResults

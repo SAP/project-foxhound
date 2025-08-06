@@ -145,6 +145,30 @@ interface GleanTimingDistribution : GleanMetric {
   undefined cancel(unsigned long long aId);
 
   /**
+   * Accumulates the provided signed samples in the metric.
+   *
+   * Sample values must be in the unit declared declared by the instance of the metric type.
+   *
+   * @param aSamples - The vector holding the samples to be recorded by the metric.
+   *
+   * Notes: Discards any negative value in `samples`
+   * and report an `ErrorType::InvalidValue` for each of them.
+   */
+  undefined accumulateSamples(sequence<long long> aSamples);
+
+  /**
+   * Accumulates the provided single signed sample in the metric.
+   *
+   * Sample values must be in the unit declared declared by the instance of the metric type.
+   *
+   * @param aSample - The sample to be recorded by the metric.
+   *
+   * Notes: Discards any negative value of `sample` and reports an
+   * `ErrorType::InvalidValue`.
+   */
+  undefined accumulateSingleSample(long long aSample);
+
+  /**
    * **Test-only API**
    *
    * Gets the currently stored value.
@@ -434,7 +458,7 @@ interface GleanEvent : GleanMetric {
    *
    * @param aExtra An (optional) map of extra values.
    */
-  undefined _record(optional record<UTF8String, UTF8String?> aExtra);
+  undefined _record(optional record<UTF8String, UTF8String?>? aExtra);
 
   /**
    * **Test-only API**

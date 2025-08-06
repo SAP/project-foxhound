@@ -125,6 +125,8 @@ const OPEN_REQUEST_IN_TAB_URL = EXAMPLE_URL + "html_open-request-in-tab.html";
 const CSP_URL = EXAMPLE_URL + "html_csp-test-page.html";
 const CSP_RESEND_URL = EXAMPLE_URL + "html_csp-resend-test-page.html";
 const IMAGE_CACHE_URL = HTTPS_EXAMPLE_URL + "html_image-cache.html";
+const STYLESHEET_CACHE_URL = HTTPS_EXAMPLE_URL + "html_stylesheet-cache.html";
+const SCRIPT_CACHE_URL = HTTPS_EXAMPLE_URL + "html_script-cache.html";
 const SLOW_REQUESTS_URL = EXAMPLE_URL + "html_slow-requests-test-page.html";
 
 const SIMPLE_SJS = EXAMPLE_URL + "sjs_simple-test-server.sjs";
@@ -334,14 +336,6 @@ function initNetMonitor(
   }
 
   return (async function () {
-    await SpecialPowers.pushPrefEnv({
-      set: [
-        // Capture all stacks so that the timing of devtools opening
-        // doesn't affect the stack trace results.
-        ["javascript.options.asyncstack_capture_debuggee_only", false],
-      ],
-    });
-
     let tab = null;
     let privateWindow = null;
 
@@ -1575,4 +1569,22 @@ async function waitForEagerEvaluationResult(hud, text) {
     return false;
   });
   ok(true, `Got eager evaluation result ${text}`);
+}
+
+/**
+ * Assert the contents of the filter urls autocomplete box
+ *
+ * @param {Array} expected
+ * @param {Object} document
+ */
+function testAutocompleteContents(expected, document) {
+  expected.forEach(function (item, i) {
+    is(
+      document.querySelector(
+        `.devtools-autocomplete-listbox .autocomplete-item:nth-child(${i + 1})`
+      ).textContent,
+      item,
+      `${expected[i]} found`
+    );
+  });
 }

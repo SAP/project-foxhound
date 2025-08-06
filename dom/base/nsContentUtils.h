@@ -42,6 +42,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/CacheExpirationTime.h"
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/fallible.h"
@@ -230,6 +231,7 @@ enum EventNameType {
   EventNameType_SVGSVG = 0x0008,      // the svg element
   EventNameType_SMIL = 0x0010,        // smil elements
   EventNameType_HTMLBodyOrFramesetOnly = 0x0020,
+  EventNameType_HTMLMedia = 0x0040,
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
@@ -1095,28 +1097,6 @@ class nsContentUtils {
   static mozilla::PresShell* GetPresShellForContent(const nsIContent* aContent);
 
   /**
-   * Method to do security and content policy checks on the image URI
-   *
-   * @param aURI uri of the image to be loaded
-   * @param aNode, the context the image is loaded in (eg an element)
-   * @param aLoadingDocument the document we belong to
-   * @param aLoadingPrincipal the principal doing the load
-   * @param [aContentPolicyType=nsIContentPolicy::TYPE_INTERNAL_IMAGE]
-   * (Optional) The CP content type to use
-   * @param aImageBlockingStatus the nsIContentPolicy blocking status for this
-   *        image.  This will be set even if a security check fails for the
-   *        image, to some reasonable REJECT_* value.  This out param will only
-   *        be set if it's non-null.
-   * @return true if the load can proceed, or false if it is blocked.
-   *         Note that aImageBlockingStatus, if set will always be an ACCEPT
-   *         status if true is returned and always be a REJECT_* status if
-   *         false is returned.
-   */
-  static bool CanLoadImage(nsIURI* aURI, nsINode* aNode,
-                           Document* aLoadingDocument,
-                           nsIPrincipal* aLoadingPrincipal);
-
-  /**
    * Returns true if objects in aDocument shouldn't initiate image loads.
    */
   static bool DocumentInactiveForImageLoads(Document* aDocument);
@@ -1220,11 +1200,6 @@ class nsContentUtils {
   static void GetEventArgNames(int32_t aNameSpaceID, nsAtom* aEventName,
                                bool aIsForWindow, uint32_t* aArgCount,
                                const char*** aArgNames);
-
-  /**
-   * Returns true if this document is in a Private Browsing window.
-   */
-  static bool IsInPrivateBrowsing(const Document* aDoc);
 
   /**
    * Returns true if this loadGroup uses Private Browsing.
@@ -1343,6 +1318,7 @@ class nsContentUtils {
   static void LogMessageToConsole(const char* aMsg);
 
   static bool SpoofLocaleEnglish();
+  static bool SpoofLocaleEnglish(const Document* aDocument);
 
   /**
    * Get the localized string named |aKey| in properties file |aFile|.
@@ -2129,6 +2105,13 @@ class nsContentUtils {
   }
 
   /**
+   * Gets the about:fingerprintingprotection principal.
+   */
+  static nsIPrincipal* GetFingerprintingProtectionPrincipal() {
+    return sFingerprintingProtectionPrincipal;
+  }
+
+  /**
    * *aResourcePrincipal is a principal describing who may access the contents
    * of a resource. The resource can only be consumed by a principal that
    * subsumes *aResourcePrincipal. MAKE SURE THAT NOTHING EVER ACTS WITH THE
@@ -2156,12 +2139,9 @@ class nsContentUtils {
    * @param aTargetSpec the target (like target=, may be empty).
    * @param aClick whether this was a click or not (if false, this method
    *               assumes you just hovered over the link).
-   * @param aIsTrusted If false, JS Context will be pushed to stack
-   *                   when the link is triggered.
    */
   static void TriggerLink(nsIContent* aContent, nsIURI* aLinkURI,
-                          const nsString& aTargetSpec, bool aClick,
-                          bool aIsTrusted);
+                          const nsString& aTargetSpec, bool aClick);
 
   /**
    * Get the link location.
@@ -2743,6 +2723,12 @@ class nsContentUtils {
   static bool IsJavascriptMIMEType(const nsAString& aMIMEType);
   static bool IsJavascriptMIMEType(const nsACString& aMIMEType);
 
+  /**
+   * Returns true if the given MIME type string is a valid JSON MIME type,
+   * otherwise false.
+   */
+  static bool IsJsonMimeType(const nsAString& aMimeType);
+
   static void SplitMimeType(const nsAString& aValue, nsString& aType,
                             nsString& aParams);
 
@@ -3272,8 +3258,10 @@ class nsContentUtils {
    * take that into account.
    *
    * @param aMIMEType  The MIME type of the document being loaded.
+   * @param aIsSandboxed  If the document is loaded in an iframe sandbox.
    */
-  static uint32_t HtmlObjectContentTypeForMIMEType(const nsCString& aMIMEType);
+  static uint32_t HtmlObjectContentTypeForMIMEType(const nsCString& aMIMEType,
+                                                   bool aIsSandboxed);
 
   /**
    * Detect whether a string is a local-url.
@@ -3437,22 +3425,29 @@ class nsContentUtils {
    * Return safe area insets of window that defines as
    * https://drafts.csswg.org/css-env-1/#safe-area-insets.
    */
-  static mozilla::ScreenIntMargin GetWindowSafeAreaInsets(
-      nsIScreen* aScreen, const mozilla::ScreenIntMargin& aSafeareaInsets,
+  static mozilla::LayoutDeviceIntMargin GetWindowSafeAreaInsets(
+      nsIScreen* aScreen, const mozilla::LayoutDeviceIntMargin& aSafeareaInsets,
       const mozilla::LayoutDeviceIntRect& aWindowRect);
 
   struct SubresourceCacheValidationInfo {
     // The expiration time, in seconds, if known.
-    mozilla::Maybe<uint32_t> mExpirationTime;
+    mozilla::Maybe<CacheExpirationTime> mExpirationTime;
     bool mMustRevalidate = false;
   };
 
   /**
-   * Gets cache validation info for subresources such as images or CSS
-   * stylesheets.
+   * Gets cache validation info for subresources such as images, CSS
+   * stylesheets, or JS.
    */
   static SubresourceCacheValidationInfo GetSubresourceCacheValidationInfo(
       nsIRequest*, nsIURI*);
+
+  /**
+   * Gets cache expiration time for subresources such as images, CSS
+   * stylesheets, or JS.
+   */
+  static CacheExpirationTime GetSubresourceCacheExpirationTime(nsIRequest*,
+                                                               nsIURI*);
 
   /**
    * Returns true if the request associated with the document should bypass the
@@ -3593,8 +3588,6 @@ class nsContentUtils {
           aCallback);
 
   static nsINode* GetCommonAncestorHelper(nsINode* aNode1, nsINode* aNode2);
-  static nsINode* GetCommonShadowIncludingAncestorHelper(nsINode* aNode1,
-                                                         nsINode* aNode2);
   static nsIContent* GetCommonFlattenedTreeAncestorHelper(
       nsIContent* aContent1, nsIContent* aContent2);
 
@@ -3603,6 +3596,7 @@ class nsContentUtils {
   static nsIScriptSecurityManager* sSecurityManager;
   static nsIPrincipal* sSystemPrincipal;
   static nsIPrincipal* sNullSubjectPrincipal;
+  static nsIPrincipal* sFingerprintingProtectionPrincipal;
 
   static nsIConsoleService* sConsoleService;
 
@@ -3721,6 +3715,9 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
 
     case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
       return ExtContentPolicy::TYPE_FETCH;
+
+    case nsIContentPolicy::TYPE_INTERNAL_EXTERNAL_RESOURCE:
+      return ExtContentPolicy::TYPE_OTHER;
 
     case nsIContentPolicy::TYPE_INVALID:
     case nsIContentPolicy::TYPE_OTHER:

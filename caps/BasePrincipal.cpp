@@ -372,7 +372,7 @@ nsresult BasePrincipal::ToJSON(nsACString& aJSON) {
 }
 
 nsresult BasePrincipal::ToJSON(JSONWriter& aWriter) {
-  static_assert(eKindMax < ArrayLength(JSONEnumKeyStrings));
+  static_assert(eKindMax < std::size(JSONEnumKeyStrings));
 
   aWriter.Start(JSONWriter::CollectionStyle::SingleLineStyle);
 
@@ -794,18 +794,6 @@ BasePrincipal::IsL10nAllowed(nsIURI* aURI, bool* aRes) {
 }
 
 NS_IMETHODIMP
-BasePrincipal::AllowsRelaxStrictFileOriginPolicy(nsIURI* aURI, bool* aRes) {
-  *aRes = false;
-  nsCOMPtr<nsIURI> prinURI;
-  nsresult rv = GetURI(getter_AddRefs(prinURI));
-  if (NS_FAILED(rv) || !prinURI) {
-    return NS_OK;
-  }
-  *aRes = NS_RelaxStrictFileOriginPolicy(aURI, prinURI);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 BasePrincipal::GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
                                     const OriginAttributes& aOriginAttributes,
                                     nsACString& _retval) {
@@ -850,12 +838,24 @@ BasePrincipal::HasFirstpartyStorageAccess(mozIDOMWindow* aCheckWindow,
   *aRejectedReason = 0;
   *aOutAllowed = false;
 
+  if (IsSystemPrincipal()) {
+    // System principal is always considered to have first-party storage access.
+    *aOutAllowed = true;
+    return NS_OK;
+  }
+
   nsPIDOMWindowInner* win = nsPIDOMWindowInner::From(aCheckWindow);
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetURI(getter_AddRefs(uri));
   if (NS_FAILED(rv)) {
     return rv;
   }
+
+  // The uri could be null if the principal is an expanded principal.
+  if (!uri) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
   *aOutAllowed = ShouldAllowAccessFor(win, uri, aRejectedReason);
   return NS_OK;
 }

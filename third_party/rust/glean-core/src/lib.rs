@@ -64,12 +64,13 @@ pub use crate::error_recording::{test_get_num_recorded_errors, ErrorType};
 pub use crate::histogram::HistogramType;
 pub use crate::metrics::labeled::{
     AllowLabeled, LabeledBoolean, LabeledCounter, LabeledCustomDistribution,
-    LabeledMemoryDistribution, LabeledMetric, LabeledMetricData, LabeledString,
+    LabeledMemoryDistribution, LabeledMetric, LabeledMetricData, LabeledQuantity, LabeledString,
     LabeledTimingDistribution,
 };
 pub use crate::metrics::{
     BooleanMetric, CounterMetric, CustomDistributionMetric, Datetime, DatetimeMetric,
-    DenominatorMetric, DistributionData, EventMetric, MemoryDistributionMetric, MemoryUnit,
+    DenominatorMetric, DistributionData, EventMetric, LocalCustomDistribution,
+    LocalMemoryDistribution, LocalTimingDistribution, MemoryDistributionMetric, MemoryUnit,
     NumeratorMetric, ObjectMetric, PingType, QuantityMetric, Rate, RateMetric, RecordedEvent,
     RecordedExperiment, StringListMetric, StringMetric, TextMetric, TimeUnit, TimerId,
     TimespanMetric, TimingDistributionMetric, UrlMetric, UuidMetric,
@@ -143,6 +144,11 @@ pub struct InternalConfiguration {
     /// Maps a ping name to a list of pings to schedule along with it.
     /// Only used if the ping's own ping schedule list is empty.
     pub ping_schedule: HashMap<String, Vec<String>>,
+
+    /// Write count threshold when to auto-flush. `0` disables it.
+    pub ping_lifetime_threshold: u64,
+    /// After what time to auto-flush. 0 disables it.
+    pub ping_lifetime_max_time: u64,
 }
 
 /// How to specify the rate at which pings may be uploaded before they are throttled.
@@ -695,7 +701,9 @@ pub fn shutdown() {
     });
 }
 
-/// Asks the database to persist ping-lifetime data to disk. Probably expensive to call.
+/// Asks the database to persist ping-lifetime data to disk.
+///
+/// Probably expensive to call.
 /// Only has effect when Glean is configured with `delay_ping_lifetime_io: true`.
 /// If Glean hasn't been initialized this will dispatch and return Ok(()),
 /// otherwise it will block until the persist is done and return its Result.
@@ -1224,6 +1232,8 @@ pub fn glean_enable_logging_to_fd(_fd: u64) {
 }
 
 #[allow(missing_docs)]
+// uniffi-generated code should not be checked.
+#[allow(clippy::all)]
 mod ffi {
     use super::*;
     uniffi::include_scaffolding!("glean");

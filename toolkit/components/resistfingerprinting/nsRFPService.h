@@ -14,6 +14,8 @@
 #include "mozilla/ContentBlockingLog.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/TypedEnumBits.h"
+#include "mozilla/dom/MediaDeviceInfoBinding.h"
+#include "mozilla/dom/ScreenOrientationBinding.h"
 #include "js/RealmOptions.h"
 #include "nsHashtablesFwd.h"
 #include "nsICookieJarSettings.h"
@@ -33,24 +35,24 @@
 #  define SPOOFED_UA_OS "Windows NT 10.0; Win64; x64"
 #  define SPOOFED_APPVERSION "5.0 (Windows)"
 #  define SPOOFED_OSCPU "Windows NT 10.0; Win64; x64"
-#  define SPOOFED_PLATFORM "Win32"
+#  define SPOOFED_MAX_TOUCH_POINTS 10
 #elif defined(XP_MACOSX)
 #  define SPOOFED_UA_OS "Macintosh; Intel Mac OS X 10.15"
 #  define SPOOFED_APPVERSION "5.0 (Macintosh)"
 #  define SPOOFED_OSCPU "Intel Mac OS X 10.15"
-#  define SPOOFED_PLATFORM "MacIntel"
+#  define SPOOFED_MAX_TOUCH_POINTS 0
 #elif defined(MOZ_WIDGET_ANDROID)
 #  define SPOOFED_UA_OS "Android 10; Mobile"
 #  define SPOOFED_APPVERSION "5.0 (Android 10)"
 #  define SPOOFED_OSCPU "Linux armv81"
-#  define SPOOFED_PLATFORM "Linux armv81"
+#  define SPOOFED_MAX_TOUCH_POINTS 10
 #else
 // For Linux and other platforms, like BSDs, SunOS and etc, we will use Linux
 // platform.
 #  define SPOOFED_UA_OS "X11; Linux x86_64"
 #  define SPOOFED_APPVERSION "5.0 (X11)"
 #  define SPOOFED_OSCPU "Linux x86_64"
-#  define SPOOFED_PLATFORM "Linux x86_64"
+#  define SPOOFED_MAX_TOUCH_POINTS 10
 #endif
 
 #define LEGACY_BUILD_ID "20181001000000"
@@ -63,7 +65,7 @@
 #if defined(MOZ_WIDGET_ANDROID)
 #  define SPOOFED_HTTP_UA_OS "Android 10; Mobile"
 #else
-#  define SPOOFED_HTTP_UA_OS "Windows NT 10.0"
+#  define SPOOFED_HTTP_UA_OS "Windows NT 10.0; Win64; x64"
 #endif
 
 struct JSContext;
@@ -221,6 +223,9 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
       bool aIsPrivateMode, RFPTarget aTarget,
       const Maybe<RFPTarget>& aOverriddenFingerprintingSettings);
 
+  static bool IsSystemPrincipalOrAboutFingerprintingProtection(JSContext*,
+                                                               JSObject*);
+
   // --------------------------------------------------------------------------
   static double TimerResolution(RTPCallerType aRTPCallerType);
 
@@ -325,6 +330,9 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
   // The method to generate the key for randomization. It can return nothing if
   // the session key is not available due to the randomization is disabled.
   static Maybe<nsTArray<uint8_t>> GenerateKey(nsIChannel* aChannel);
+  static Maybe<nsTArray<uint8_t>> GenerateKeyForServiceWorker(
+      nsIURI* aFirstPartyURI, nsIPrincipal* aPrincipal,
+      bool aForeignByAncestorContext);
 
   // The method to add random noises to the image data based on the random key
   // of the given cookieJarSettings.
@@ -367,6 +375,32 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
   // detect suspicious fingerprinting activities.
   static bool CheckSuspiciousFingerprintingActivity(
       nsTArray<ContentBlockingLog::LogEntry>& aLogs);
+
+  // Generates a fake media device name with given kind and index.
+  // Example: Internal Microphone
+  static void GetMediaDeviceName(nsString& aName,
+                                 mozilla::dom::MediaDeviceKind aKind);
+
+  // Generates a fake media device group name with given kind and index.
+  // Example: Audio Group
+  static void GetMediaDeviceGroup(nsString& aGroup,
+                                  mozilla::dom::MediaDeviceKind aKind);
+
+  // Converts the viewport size to the angle.
+  static uint16_t ViewportSizeToAngle(int32_t aWidth, int32_t aHeight);
+
+  // Converts the viewport size to the orientation type.
+  static dom::OrientationType ViewportSizeToOrientationType(int32_t aWidth,
+                                                            int32_t aHeight);
+
+  // Returns the default orientation type for the given platform.
+  static dom::OrientationType GetDefaultOrientationType();
+
+  // Returns the default pixel density for RFP.
+  static float GetDefaultPixelDensity();
+
+  // Returns the device pixel ratio at the given zoom level.
+  static double GetDevicePixelRatioAtZoom(float aZoom);
 
  private:
   nsresult Init();

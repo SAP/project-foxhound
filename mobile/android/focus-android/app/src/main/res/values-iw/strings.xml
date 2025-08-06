@@ -85,8 +85,6 @@
 
     <string name="notification_erase_title_android_14">למחוק את היסטוריית הגלישה?</string>
 
-    <string name="notification_erase_text_android_14" moz:RemovedIn="124" tools:ignore="UnusedResources">יש להקיש או לנקות התרעה זו כדי למחוק בצורה מאובטחת את היסטוריית הגלישה שלך.</string>
-
     <!-- Text shown in the notification description that pops up to remind the user that a browsing session is active
     for Android 14+. -->
     <string name="notification_erase_text_android_14_1">יש להקיש או להחליק על התרעה זו כדי למחוק בצורה מאובטחת את היסטוריית הגלישה שלך.</string>
@@ -124,19 +122,19 @@
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
          Focus is hard coded since we can't use variables in this context.
          Do not translate or transliterate Focus.-->
-    <string name="text_selection_search_action_focus">חיפוש ב־Focus</string>
+    <string name="text_selection_search_action_focus" tools:ignore="BrandUsage">חיפוש ב־Focus</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
              Klar is hard coded since we can't use variables in this context.
              Do not translate or transliterate Klar.-->
-    <string name="text_selection_search_action_klar">חיפוש ב־Klar</string>
+    <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">חיפוש ב־Klar</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
             Focus Beta is hard coded since we can't use variables in this context.
             Do not translate or transliterate Focus Beta.-->
-    <string name="text_selection_search_action_focus_beta">חיפוש ב־Focus Beta</string>
+    <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">חיפוש ב־Focus Beta</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
           Focus Nightly is hard coded since we can't use variables in this context.
           Do not translate or transliterate Focus Nightly.-->
-    <string name="text_selection_search_action_focus_nightly">חיפוש ב־Focus Nightly</string>
+    <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">חיפוש ב־Focus Nightly</string>
 
     <!-- Header for the Privacy and Security settings menu -->
     <string name="preference_privacy_and_security_header">פרטיות ואבטחה</string>
@@ -280,9 +278,9 @@
     <string name="preference_privacy_block_ads">חסימת רכיבי מעקב</string>
     <string name="preference_privacy_block_ads_summary">חלק מהפרסומות עוקבות אחר הביקורים באתרים, אפילו אם לא לחצת על הפרסומות</string>
     <string name="preference_privacy_block_analytics">חסימת מעקב של כלי ניתוח</string>
-    <string name="preference_privacy_block_analytics_summary">משמשות לאיסוף ניתוח ומדידת פעילויות כגון לחיצה וגלילה</string>
+    <string name="preference_privacy_block_analytics_summary">משמש לאיסוף, ניתוח ומדידת פעילויות כמו לחיצה וגלילה</string>
     <string name="preference_privacy_block_social">חסימת רכיבי מעקב חברתיים</string>
-    <string name="preference_privacy_block_social_summary">מוטמעות באתרים לצורך מעקב אחר הביקורים שלך והצגת רכיבים כגון כפתורי שיתוף</string>
+    <string name="preference_privacy_block_social_summary">מוטמעים באתרים לצורך מעקב אחר הביקורים שלך ולצורך הצגת רכיבים כגון כפתורי שיתוף</string>
     <string name="preference_privacy_block_content">חסימת כלי מעקב אחרים</string>
     <string name="preference_privacy_block_content_summary2">הפעלת התכונה עשויה לגרום לחלק מהאתרים להתנהג שלא כצפוי</string>
     <string name="preference_privacy_category_cookies">חסימת עוגיות</string>
@@ -505,7 +503,7 @@
 
 
   <!-- Content description (not visible, for screen readers etc.): This is the description for the close button from the new onboarding flow screen one and two -->
-    <string name="onboarding_close_button_content_description">סגירה</string>
+    <string name="onboarding_close_button_content_description" moz:removedIn="133" tools:ignore="UnusedResources">סגירה</string>
 
     <!-- New Onboarding flow first screen title -->
     <!-- %1$s will be replaced by the app name and build variant(e.g. Firefox Focus, Firefox Klar Nightly) -->
@@ -538,7 +536,7 @@
     <!-- First run tour (Default browser): Title -->
     <string name="firstrun_defaultbrowser_title">חיזוק הפרטיות שלך</string>
     <!-- First run tour (Default browser): Text. -->
-    <string name="firstrun_defaultbrowser_text2">לקחת את הגלישה המאובטחת לרמה הבאה. ניתן לחסום פרסומות ותוכן אחר שעשוי לסייע במעקב אחריך בין אתרים שונים ולהפריע לזמני טעינת עמודים.</string>
+    <string name="firstrun_defaultbrowser_text2">לקחת את הגלישה המאובטחת לרמה הבאה. ניתן לחסום פרסומות ותוכן אחר שעשוי לעקוב אחריך בין אתרים שונים ולהפריע לזמני טעינת עמודים.</string>
 
     <!-- First run tour (Search): Title -->
     <string name="firstrun_search_title">החיפוש שלך, בדרך שלך</string>
@@ -548,7 +546,7 @@
     <!-- First run tour (Shortcut): Title -->
     <string name="firstrun_shortcut_title">הוספת קיצורי דרך למסך הבית שלך</string>
     <!-- First run tour (Shortcut): Text. %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-    <string name="firstrun_shortcut_text">ניתן לחזור לאתרים המועדפים עליך ב־%1$s בקלות. עליך פשוט לבחור באפשרות „הוספה למסך הבית” מהתפריט %1$s.</string>
+    <string name="firstrun_shortcut_text">ניתן לחזור לאתרים המועדפים עליך ב־%1$s בקלות. עליך פשוט לבחור באפשרות ״הוספה למסך הבית״ מהתפריט %1$s.</string>
 
     <!-- First run tour (Privacy): Title -->
     <string name="firstrun_privacy_title">להפוך את הפרטיות להרגל</string>
@@ -597,9 +595,12 @@
     <!-- Label for a button in the "tabs tray" to erase the browsing history (closes all tabs and removes associated data). -->
     <string name="tabs_tray_action_erase">מחיקת היסטורית גלישה</string>
 
+    <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
+    <string name="tabs_tray_action_erase_other">סגירת לשוניות אחרות</string>
+
     <!-- If the user decides to open the current page in another browser and if Firefox is not installed then we show this
       item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play). -->
-    <string name="download_firefox">הורדת Firefox</string>
+    <string name="download_firefox" tools:ignore="BrandUsage">הורדת Firefox</string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)-->
@@ -611,18 +612,23 @@
   <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/) -->
-    <string name="your_rights_content2"><![CDATA[%1$s זמין לשימוש תחת <a href="%2$s">תנאי הרשיון הציבורי של Mozilla</a> ורשיונות קוד פתוח אחרים.]]></string>
+    <string name="your_rights_content2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s זמין לשימוש תחת <a href="%2$s">תנאי הרשיון הציבורי של Mozilla</a> ורשיונות קוד פתוח אחרים.]]></string>
+
+    <!-- Text shown in the "Your rights" screen.
+    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
+    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/) -->
+    <string name="your_rights_content3" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[לא הוענקו לך זכויות או רישיונות כלשהם לסימנים המסחריים של קרן Mozilla או גורם כלשהו, לרבות השמות או סמלי הלוגו של Mozilla, ‏Firefox או %1$s. מידע נוסף ניתן למצוא <a href="%2$s">כאן</a>.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.-->
-    <string name="your_rights_content4"><![CDATA[קוד מקור נוסף עבור %1$s זמין תחת מגוון <a href="%2$s">רישיונות</a> קוד פתוח נוספים.]]></string>
+    <string name="your_rights_content4" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[קוד מקור נוסף עבור %1$s זמין תחת מגוון <a href="%2$s">רישיונות</a> קוד פתוח נוספים.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the GPL
     %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists) -->
-    <string name="your_rights_content5"><![CDATA[ב־%1$s נעשה גם שימוש ברשימות חסימה מאת Disconnect בע״מ כעבודות נפרדות ועצמאיות תחת <a href="%2$s">גרסה 3 של הרשיון הציבורי הכללי של GNU</a>, והוא זמין <a href="%3$s">כאן</a>.]]></string>
+    <string name="your_rights_content5" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[ב־%1$s נעשה גם שימוש ברשימות חסימה מאת Disconnect בע״מ כעבודות נפרדות ועצמאיות תחת <a href="%2$s">גרסה 3 של הרשיון הציבורי הכללי של GNU</a>, והוא זמין <a href="%3$s">כאן</a>.]]></string>
 
     <!-- Text shown in prompts for GeckoView -->
     <string name="gv_prompt_username_hint">שם משתמש</string>
@@ -804,7 +810,7 @@
     <string name="preference_studies">מחקרים</string>
 
     <!-- Preference for studies summary-->
-    <string name="preference_studies_summary">‏Firefox עשוי להתקין ולהריץ מחקרים מדי פעם בפעם.</string>
+    <string name="preference_studies_summary" tools:ignore="BrandUsage">‏Firefox עשוי להתקין ולהריץ מחקרים מדי פעם בפעם.</string>
 
     <!-- Learn more link for studies, links to an article for more information about studies. -->
     <string name="studies_learn_more">מידע נוסף</string>
@@ -901,9 +907,6 @@
     <!-- Label for the button in the snackbar that switches to the newly opened tab -->
     <string name="open_new_tab_snackbar">מעבר</string>
 
-    <!-- Text displayed in a notification when the user enters full screen mode -->
-    <string name="full_screen_notification" moz:removedIn="130" tools:ignore="UnusedResources">עברת למצב מסך מלא</string>
-
     <!-- Preference for switching to a new tab immediately after opening -->
     <string name="preference_open_new_tab">מעבר לקישור בלשונית החדשה מיידית</string>
 
@@ -946,7 +949,7 @@
 
 
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-    <string name="crash_report_send_crash_label">שליחת דוח קריסה אל Mozilla</string>
+    <string name="crash_report_send_crash_label">שליחת דיווח קריסה אל Mozilla</string>
 
     <!-- Tracking protection bottom sheet -->
 
@@ -1008,7 +1011,7 @@
 
      <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will get replaced with the name of the app (e.g. "Firefox Focus").
         Contains a button that will redirect the user to Privacy & Security Screen-->
-    <string name="errorpage_httpsonly_message2"><![CDATA[‏%1$s מנסה להשתמש בחיבור HTTPS במידת האפשר להגברת האבטחה.
+    <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[‏%1$s מנסה להשתמש בחיבור HTTPS במידת האפשר להגברת האבטחה.
      <a href="%2$s">מידע נוסף</a> <br/><br/>
      ניתן לשנות הגדרה זו בהגדרות > פרטיות ואבטחה > אבטחה.]]></string>
 
@@ -1092,8 +1095,10 @@
     <string name="promote_search_widget_snackbar_message">יישומון נוסף למסך הבית</string>
 
     <!-- Messages explaining how to exit fullscreen mode -->
-    <!-- Message shown to explain how to exit fullscreen mode when gesture navigation is enabled -->
-    <string name="exit_fullscreen_with_gesture">כדי לצאת ממסך מלא, יש לגרור מלמעלה ולהשתמש בתנועת אחורה</string>
-    <!-- Message shown to explain how to exit fullscreen mode when using back button navigation -->
-    <string name="exit_fullscreen_with_back_button">כדי לצאת ממסך מלא, יש לגרור מלמעלה וללחוץ על חזרה</string>
+    <!-- Message shown to explain how to exit fullscreen mode when gesture navigation is enabled. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_gesture_short">יש לגרור מלמעלה ולהשתמש בתנועת החזרה כדי לצאת</string>
+    <!-- Message shown to explain how to exit fullscreen mode when using back button navigation. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_back_button_short">יש לגרור מלמעלה וללחוץ על כפתור החזרה כדי לצאת</string>
 </resources>

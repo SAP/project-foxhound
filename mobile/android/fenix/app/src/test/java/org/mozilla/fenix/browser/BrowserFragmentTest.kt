@@ -47,6 +47,7 @@ import org.mozilla.fenix.components.toolbar.BrowserToolbarView
 import org.mozilla.fenix.components.toolbar.ToolbarIntegration
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.onboarding.FenixOnboarding
@@ -66,12 +67,14 @@ class BrowserFragmentTest {
     private lateinit var lifecycleOwner: MockedLifecycleOwner
     private lateinit var navController: NavController
     private lateinit var onboarding: FenixOnboarding
+    private lateinit var settings: Settings
 
     @get:Rule
     val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setup() {
+        mockkStatic("org.mozilla.fenix.ext.FragmentKt")
         context = mockk(relaxed = true)
         fenixApplication = mockk(relaxed = true)
         every { context.application } returns fenixApplication
@@ -81,6 +84,7 @@ class BrowserFragmentTest {
         lifecycleOwner = MockedLifecycleOwner(Lifecycle.State.STARTED)
         navController = mockk(relaxed = true)
         onboarding = mockk(relaxed = true)
+        settings = mockk(relaxed = true)
 
         browserFragment = spyk(BrowserFragment())
         every { browserFragment.view } returns view
@@ -90,11 +94,12 @@ class BrowserFragmentTest {
         every { browserFragment.activity } returns homeActivity
         every { browserFragment.lifecycle } returns lifecycleOwner.lifecycle
         every { context.components.fenixOnboarding } returns onboarding
+        every { context.components.settings } returns settings
 
         every { browserFragment.requireContext() } returns context
         every { browserFragment.initializeUI(any(), any()) } returns mockk()
         every { browserFragment.fullScreenChanged(any()) } returns Unit
-        every { browserFragment.resumeDownloadDialogState(any(), any(), any(), any()) } returns Unit
+        every { browserFragment.resumeDownloadDialogState(any(), any(), any()) } returns Unit
 
         testTab = createTab(url = "https://mozilla.org")
         store = BrowserStore()
@@ -106,6 +111,7 @@ class BrowserFragmentTest {
     @After
     fun tearDown() {
         unmockkObject(FeatureFlags)
+        unmockkStatic("org.mozilla.fenix.ext.FragmentKt")
     }
 
     @Test
@@ -166,7 +172,7 @@ class BrowserFragmentTest {
         val newSelectedTab = createTab("https://firefox.com")
         addAndSelectTab(newSelectedTab)
         verify(exactly = 1) {
-            browserFragment.resumeDownloadDialogState(newSelectedTab.id, store, context, any())
+            browserFragment.resumeDownloadDialogState(newSelectedTab.id, store, context)
         }
     }
 
@@ -329,11 +335,13 @@ class BrowserFragmentTest {
     @Test
     fun `WHEN toolbar is initialized THEN onConfigurationChanged sets toolbar actions for size in fragment`() {
         val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         browserFragment._browserToolbarView = null
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 0) { browserFragment.onUpdateToolbarForConfigurationChange(any()) }
         verify(exactly = 0) { browserFragment.updateTabletToolbarActions(any()) }
+        verify(exactly = 0) { browserFragment.reinitializeEngineView() }
 
         browserFragment._browserToolbarView = browserToolbarView
 
@@ -346,6 +354,7 @@ class BrowserFragmentTest {
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 1) { browserFragment.onUpdateToolbarForConfigurationChange(any()) }
         verify(exactly = 1) { browserFragment.updateTabletToolbarActions(any()) }
+        verify(exactly = 1) { browserFragment.reinitializeEngineView() }
 
         unmockkObject(ThemeManager.Companion)
         unmockkStatic(AppCompatResources::class)
@@ -355,6 +364,7 @@ class BrowserFragmentTest {
     fun `WHEN fragment configuration changed THEN menu is dismissed`() {
         val browserToolbarView: BrowserToolbarView = mockk(relaxed = true)
         every { browserFragment.context } returns null
+        every { browserFragment.reinitializeEngineView() } just Runs
         browserFragment._browserToolbarView = browserToolbarView
 
         mockkObject(ThemeManager.Companion)
@@ -380,6 +390,7 @@ class BrowserFragmentTest {
         browserFragment._browserToolbarView = browserToolbarView
         every { browserFragment.browserToolbarView.view } returns browserToolbar
         every { browserFragment.browserToolbarView.updateMenuVisibility(any()) } just Runs
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         mockkObject(ThemeManager.Companion)
         every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
@@ -387,11 +398,11 @@ class BrowserFragmentTest {
         mockkStatic(AppCompatResources::class)
         every { AppCompatResources.getDrawable(context, any()) } returns mockk()
 
-        every { browserFragment.resources.getBoolean(R.bool.tablet) } returns true
+        every { browserFragment.isLargeWindow() } returns true
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 3) { browserToolbar.addNavigationAction(any()) }
 
-        every { browserFragment.resources.getBoolean(R.bool.tablet) } returns false
+        every { browserFragment.isLargeWindow() } returns false
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 3) { browserToolbar.removeNavigationAction(any()) }
 
@@ -408,6 +419,7 @@ class BrowserFragmentTest {
         browserFragment._browserToolbarView = browserToolbarView
         every { browserFragment.browserToolbarView.view } returns browserToolbar
         every { browserFragment.browserToolbarView.updateMenuVisibility(any()) } just Runs
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         mockkObject(ThemeManager.Companion)
         every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
@@ -415,7 +427,7 @@ class BrowserFragmentTest {
         mockkStatic(AppCompatResources::class)
         every { AppCompatResources.getDrawable(context, any()) } returns mockk()
 
-        every { browserFragment.resources.getBoolean(R.bool.tablet) } returns true
+        every { browserFragment.isLargeWindow() } returns true
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 3) { browserToolbar.addNavigationAction(any()) }
 
@@ -435,6 +447,7 @@ class BrowserFragmentTest {
         browserFragment._browserToolbarView = browserToolbarView
         every { browserFragment.browserToolbarView.view } returns browserToolbar
         every { browserFragment.browserToolbarView.updateMenuVisibility(any()) } just Runs
+        every { browserFragment.reinitializeEngineView() } just Runs
 
         mockkObject(ThemeManager.Companion)
         every { ThemeManager.resolveAttribute(any(), context) } returns mockk(relaxed = true)
@@ -442,7 +455,7 @@ class BrowserFragmentTest {
         mockkStatic(AppCompatResources::class)
         every { AppCompatResources.getDrawable(context, any()) } returns mockk()
 
-        every { browserFragment.resources.getBoolean(R.bool.tablet) } returns false
+        every { browserFragment.isLargeWindow() } returns false
         browserFragment.onConfigurationChanged(mockk(relaxed = true))
         verify(exactly = 0) { browserToolbar.addNavigationAction(any()) }
         verify(exactly = 0) { browserToolbar.removeNavigationAction(any()) }
@@ -491,6 +504,7 @@ class BrowserFragmentTest {
             isTablet = false,
             isPrivate = false,
             feltPrivateBrowsingEnabled = false,
+            isWindowSizeSmall = true,
         )
 
         verify(exactly = 1) { browserFragment.addLeadingAction(any(), any(), any()) }
@@ -513,6 +527,7 @@ class BrowserFragmentTest {
             isTablet = false,
             isPrivate = false,
             feltPrivateBrowsingEnabled = false,
+            isWindowSizeSmall = false,
         )
 
         verify(exactly = 1) { browserFragment.addLeadingAction(any(), any(), any()) }
@@ -535,6 +550,7 @@ class BrowserFragmentTest {
             isTablet = false,
             isPrivate = false,
             feltPrivateBrowsingEnabled = false,
+            isWindowSizeSmall = true,
         )
 
         verify(exactly = 0) { browserFragment.addLeadingAction(any(), any(), any()) }
@@ -550,6 +566,7 @@ class BrowserFragmentTest {
 
         val redesignEnabled = true
         val isLandscape = true
+
         browserFragment.updateBrowserToolbarLeadingAndNavigationActions(
             context = context,
             redesignEnabled = redesignEnabled,
@@ -557,6 +574,7 @@ class BrowserFragmentTest {
             isTablet = false,
             isPrivate = false,
             feltPrivateBrowsingEnabled = false,
+            isWindowSizeSmall = false,
         )
 
         verify(exactly = 0) { browserFragment.addLeadingAction(any(), any(), any()) }
@@ -581,6 +599,7 @@ class BrowserFragmentTest {
             isTablet = isTablet,
             isPrivate = false,
             feltPrivateBrowsingEnabled = false,
+            isWindowSizeSmall = false,
         )
 
         verifyOrder {
@@ -606,6 +625,7 @@ class BrowserFragmentTest {
             isPrivate = false,
             isTablet = isTablet,
             feltPrivateBrowsingEnabled = false,
+            isWindowSizeSmall = true,
         )
 
         verify(exactly = 1) { browserFragment.removeLeadingAction() }
@@ -629,6 +649,7 @@ class BrowserFragmentTest {
             isPrivate = false,
             isTablet = isTablet,
             feltPrivateBrowsingEnabled = false,
+            isWindowSizeSmall = false,
         )
 
         verify(exactly = 0) { browserFragment.addLeadingAction(any(), any(), any()) }

@@ -102,7 +102,7 @@ add_task(async function toolbarButtons() {
     let tabClose = BrowserTestUtils.waitForTabClosing(newTab);
 
     let tabs = elem("tabbrowser-tabs");
-    if (!tabs.hasAttribute("overflow")) {
+    if (!tabs.overflowing) {
       tabs.setAttribute("overflow", "true");
       registerCleanupFunction(() => {
         tabs.removeAttribute("overflow");
@@ -143,7 +143,7 @@ add_task(async function toolbarButtons() {
       () => {
         return (
           bookmarksToolbar.getAttribute("collapsed") != "true" &&
-          bookmarksToolbar.getAttribute("initialized") == "true"
+          bookmarksToolbar.hasAttribute("initialized")
         );
       }
     );

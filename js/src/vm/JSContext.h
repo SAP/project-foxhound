@@ -9,6 +9,7 @@
 #ifndef vm_JSContext_h
 #define vm_JSContext_h
 
+#include "mozilla/BaseProfilerUtils.h"  // BaseProfilerThreadId
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 
@@ -46,6 +47,10 @@ class AutoAllocInAtomsZone;
 class AutoMaybeLeaveAtomsZone;
 class AutoRealm;
 struct PortableBaselineStack;
+
+#ifdef MOZ_EXECUTION_TRACING
+class ExecutionTracer;
+#endif
 
 namespace jit {
 class ICScript;
@@ -413,9 +418,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   JS::NativeStackBase nativeStackBase() const { return *nativeStackBase_; }
 
  public:
-  /* If non-null, report JavaScript entry points to this monitor. */
-  js::ContextData<JS::dbg::AutoEntryMonitor*> entryMonitor;
-
   // In brittle mode, any failure will produce a diagnostic assertion rather
   // than propagating an error or throwing an exception. This is used for
   // intermittent crash diagnostics: if an operation is failing for unknown
@@ -612,16 +614,29 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // exhaustion are generally not interesting.
   js::ContextData<bool> hadResourceExhaustion_;
 
+  // True if this context has ever thrown an uncatchable exception to terminate
+  // execution from the interrupt callback.
+  js::ContextData<bool> hadUncatchableException_;
+
  public:
   bool hadResourceExhaustion() const {
     return hadResourceExhaustion_ || js::oom::simulator.isThreadSimulatingAny();
   }
+  bool hadUncatchableException() const { return hadUncatchableException_; }
 #endif
 
  public:
   void reportResourceExhaustion() {
 #ifdef DEBUG
     hadResourceExhaustion_ = true;
+#endif
+  }
+  void reportUncatchableException() {
+    // Make sure the context has no pending exception. See also the comment for
+    // JS::ReportUncatchableException.
+    clearPendingException();
+#ifdef DEBUG
+    hadUncatchableException_ = true;
 #endif
   }
 
@@ -862,6 +877,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   void* addressOfInlinedICScript() { return &inlinedICScript_; }
 
+  const void* addressOfJitActivation() const { return &jitActivation; }
+
   // Futex state, used by Atomics.wait() and Atomics.wake() on the Atomics
   // object.
   js::FutexThread fx;
@@ -936,6 +953,45 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // has other references on the stack and does not need to be traced.
   js::ContextData<js::Debugger*> insideExclusiveDebuggerOnEval;
 
+#ifdef MOZ_EXECUTION_TRACING
+ private:
+  // This holds onto the JS execution tracer, a system which when turned on
+  // records function calls and other information about the JS which has been
+  // run under this context.
+  js::UniquePtr<js::ExecutionTracer> executionTracer_;
+
+  // See suspendExecutionTracing
+  bool executionTracerSuspended_ = false;
+
+  // Cleans up caches and realm flags associated with execution tracing, while
+  // leaving the underlying tracing buffers intact to be read from later.
+  void cleanUpExecutionTracingState();
+
+ public:
+  js::ExecutionTracer& getExecutionTracer() {
+    MOZ_ASSERT(hasExecutionTracer());
+    return *executionTracer_;
+  }
+
+  // See the latter clause of the comment over executionTracer_
+  [[nodiscard]] bool enableExecutionTracing();
+  void disableExecutionTracing();
+
+  // suspendExecutionTracing will turn off tracing, and clean up the relevant
+  // flags on this context's realms, but still leave the trace around to be
+  // collected. This currently is only called when an error occurs during
+  // tracing.
+  void suspendExecutionTracing();
+
+  // Returns true if there is currently an ExecutionTracer tracing this
+  // context's execution.
+  bool hasExecutionTracer() {
+    return !!executionTracer_ && !executionTracerSuspended_;
+  }
+#else
+  bool hasExecutionTracer() { return false; }
+#endif
+
 }; /* struct JSContext */
 
 inline JSContext* JSRuntime::mainContextFromOwnThread() {
@@ -947,11 +1003,8 @@ namespace js {
 
 struct MOZ_RAII AutoResolving {
  public:
-  enum Kind { LOOKUP, WATCH };
-
-  AutoResolving(JSContext* cx, HandleObject obj, HandleId id,
-                Kind kind = LOOKUP)
-      : context(cx), object(obj), id(id), kind(kind), link(cx->resolvingList) {
+  AutoResolving(JSContext* cx, HandleObject obj, HandleId id)
+      : context(cx), object(obj), id(id), link(cx->resolvingList) {
     MOZ_ASSERT(obj);
     cx->resolvingList = this;
   }
@@ -969,7 +1022,6 @@ struct MOZ_RAII AutoResolving {
   JSContext* const context;
   HandleObject object;
   HandleId id;
-  Kind const kind;
   AutoResolving* const link;
 };
 

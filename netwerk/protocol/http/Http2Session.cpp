@@ -27,6 +27,7 @@
 #include "Http2StreamTunnel.h"
 #include "LoadContextInfo.h"
 #include "mozilla/EndianUtils.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -240,7 +241,8 @@ Http2Session::~Http2Session() {
   Shutdown(NS_OK);
 
   if (mTrrStreams) {
-    Telemetry::Accumulate(Telemetry::DNS_TRR_REQUEST_PER_CONN, mTrrStreams);
+    mozilla::glean::networking::trr_request_count_per_conn.Get("h2"_ns).Add(
+        static_cast<int32_t>(mTrrStreams));
   }
   Telemetry::Accumulate(Telemetry::SPDY_PARALLEL_STREAMS, mConcurrentHighWater);
   Telemetry::Accumulate(Telemetry::SPDY_REQUEST_PER_CONN_3, mCntActivated);
@@ -269,10 +271,13 @@ inline nsresult Http2Session::SessionError(enum errorType reason) {
 void Http2Session::LogIO(Http2Session* self, Http2StreamBase* stream,
                          const char* label, const char* data,
                          uint32_t datalen) {
-  if (!LOG5_ENABLED()) return;
+  if (!MOZ_LOG_TEST(gHttpIOLog, LogLevel::Verbose)) {
+    return;
+  }
 
-  LOG5(("Http2Session::LogIO %p stream=%p id=0x%X [%s]", self, stream,
-        stream ? stream->StreamID() : 0, label));
+  MOZ_LOG(gHttpIOLog, LogLevel::Verbose,
+          ("Http2Session::LogIO %p stream=%p id=0x%X [%s]", self, stream,
+           stream ? stream->StreamID() : 0, label));
 
   // Max line is (16 * 3) + 10(prefix) + newline + null
   char linebuf[128];
@@ -285,7 +290,7 @@ void Http2Session::LogIO(Http2Session* self, Http2StreamBase* stream,
     if (!(index % 16)) {
       if (index) {
         *line = 0;
-        LOG5(("%s", linebuf));
+        MOZ_LOG(gHttpIOLog, LogLevel::Verbose, ("%s", linebuf));
       }
       line = linebuf;
       snprintf(line, 128, "%08X: ", index);
@@ -297,7 +302,7 @@ void Http2Session::LogIO(Http2Session* self, Http2StreamBase* stream,
   }
   if (index) {
     *line = 0;
-    LOG5(("%s", linebuf));
+    MOZ_LOG(gHttpIOLog, LogLevel::Verbose, ("%s", linebuf));
   }
 }
 
@@ -1035,11 +1040,13 @@ void Http2Session::SendHello() {
     // The value portion of the setting pair is already initialized to 0
     numberOfEntries++;
 
-    NetworkEndian::writeUint16(
-        packet + kFrameHeaderBytes + (6 * numberOfEntries),
-        SETTINGS_TYPE_MAX_CONCURRENT);
-    // The value portion of the setting pair is already initialized to 0
-    numberOfEntries++;
+    if (StaticPrefs::network_http_http2_send_push_max_concurrent_frame()) {
+      NetworkEndian::writeUint16(
+          packet + kFrameHeaderBytes + (6 * numberOfEntries),
+          SETTINGS_TYPE_MAX_CONCURRENT);
+      // The value portion of the setting pair is already initialized to 0
+      numberOfEntries++;
+    }
 
     mWaitingForSettingsAck = true;
   }
@@ -1065,7 +1072,8 @@ void Http2Session::SendHello() {
       !gHttpHandler->CriticalRequestPrioritization();
 
   // See bug 1909666. Sending this new setting could break some websites.
-  if (disableRFC7540Priorities) {
+  if (disableRFC7540Priorities &&
+      StaticPrefs::network_http_http2_send_NO_RFC7540_PRI()) {
     NetworkEndian::writeUint16(
         packet + kFrameHeaderBytes + (6 * numberOfEntries),
         SETTINGS_NO_RFC7540_PRIORITIES);
@@ -2207,11 +2215,11 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
     uint32_t priorityDependency = pushedWeak->PriorityDependency();
     uint8_t priorityWeight = pushedWeak->PriorityWeight();
     self->SendPriorityFrame(promisedID, priorityDependency, priorityWeight);
-  } else {
+  } else if (StaticPrefs::network_http_http2_push_priority_update()) {
     nsHttpTransaction* trans = associatedStream->HttpTransaction();
     if (trans) {
       uint8_t urgency = nsHttpHandler::UrgencyFromCoSFlags(
-          trans->GetClassOfService().Flags());
+          trans->GetClassOfService().Flags(), trans->Priority());
 
       // if the initial stream was kUrgentStartGroupID or kLeaderGroupID
       // which are equivalent to urgency 1 and 2 then set the pushed stream
@@ -3585,7 +3593,7 @@ nsresult Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter* writer,
   if (mInputFrameDataRead != mInputFrameDataSize) return NS_OK;
 
   MOZ_ASSERT(mInputFrameType != FRAME_TYPE_DATA);
-  if (mInputFrameType < ArrayLength(sControlFunctions)) {
+  if (mInputFrameType < std::size(sControlFunctions)) {
     rv = sControlFunctions[mInputFrameType](this);
   } else {
     // Section 4.1 requires this to be ignored; though protocol_error would
@@ -3672,6 +3680,15 @@ nsresult Http2Session::ProcessConnectedPush(
   mSegmentWriter = writer;
   nsresult rv = pushConnectedStream->WriteSegments(this, count, countWritten);
   mSegmentWriter = nullptr;
+
+  if (mNeedsCleanup) {
+    LOG3(
+        ("Http2Session::ProcessConnectedPush session=%p stream=%p 0x%X "
+         "cleanup stream based on mNeedsCleanup.\n",
+         this, mNeedsCleanup, mNeedsCleanup ? mNeedsCleanup->StreamID() : 0));
+    CleanupStream(mNeedsCleanup, NS_OK, CANCEL_ERROR);
+    mNeedsCleanup = nullptr;
+  }
 
   // The pipe in nsHttpTransaction rewrites CLOSED error codes into OK
   // so we need this check to determine the truth.

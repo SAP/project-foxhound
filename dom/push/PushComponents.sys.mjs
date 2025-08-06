@@ -130,8 +130,6 @@ Object.assign(PushServiceParent.prototype, {
     "Push:Registration",
     "Push:Unregister",
     "Push:Clear",
-    "Push:NotificationForOriginShown",
-    "Push:NotificationForOriginClosed",
     "Push:ReportError",
   ],
 
@@ -187,9 +185,25 @@ Object.assign(PushServiceParent.prototype, {
       .catch(console.error);
   },
 
-  clearForDomain(domain, callback) {
+  clearForDomain(domain, originAttributesPattern, callback) {
     return this._handleRequest("Push:Clear", null, {
       domain,
+      originAttributesPattern,
+    })
+      .then(
+        () => {
+          callback.onClear(Cr.NS_OK);
+        },
+        () => {
+          callback.onClear(Cr.NS_ERROR_FAILURE);
+        }
+      )
+      .catch(console.error);
+  },
+
+  clearForPrincipal(principal, callback) {
+    return this._handleRequest("Push:Clear", null, {
+      principal,
     })
       .then(
         () => {
@@ -223,14 +237,6 @@ Object.assign(PushServiceParent.prototype, {
       return;
     }
     let { name, target, data } = message;
-    if (name === "Push:NotificationForOriginShown") {
-      this.notificationForOriginShown(data);
-      return;
-    }
-    if (name === "Push:NotificationForOriginClosed") {
-      this.notificationForOriginClosed(data);
-      return;
-    }
     if (name === "Push:ReportError") {
       this.reportDeliveryError(data.messageId, data.reason);
       return;
@@ -411,16 +417,6 @@ Object.assign(PushServiceContent.prototype, {
       domain,
       requestID,
     });
-  },
-
-  // nsIPushQuotaManager methods
-
-  notificationForOriginShown(origin) {
-    this._mm.sendAsyncMessage("Push:NotificationForOriginShown", origin);
-  },
-
-  notificationForOriginClosed(origin) {
-    this._mm.sendAsyncMessage("Push:NotificationForOriginClosed", origin);
   },
 
   // nsIPushErrorReporter methods

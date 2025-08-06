@@ -99,20 +99,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1583366",
-    platform: "desktop",
-    domain: "Download prompt for files with no content-type",
-    bug: "1583366",
-    data: {
-      urls: ["https://ads-us.rd.linksynergy.com/as.php*"],
-      contentType: {
-        name: "content-type",
-        value: "text/html; charset=utf-8",
-      },
-    },
-    customFunc: "noSniffFix",
-  },
-  {
     id: "bug1575000",
     platform: "all",
     domain: "apply.lloydsbank.co.uk",
@@ -158,43 +144,31 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1651917",
-    platform: "android",
-    domain: "teletrader.com",
-    bug: "1651917",
-    contentScripts: {
-      matches: ["*://*.teletrader.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1651917-teletrader.com.body-transform-origin.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1653075",
+    id: "bug1886293",
     platform: "desktop",
-    domain: "livescience.com",
-    bug: "1653075",
+    domain: "Future PLC websites",
+    bug: "1886293",
     contentScripts: {
-      matches: ["*://*.livescience.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1653075-livescience.com-scrollbar-width.css",
-        },
+      matches: [
+        "*://*.androidcentral.com/*",
+        "*://*.creativebloq.com/*",
+        "*://*.cyclingnews.com/*",
+        "*://*.gamesradar.com/*",
+        "*://*.imore.com/*",
+        "*://*.itpro.com/*",
+        "*://*.laptopmag.com/*",
+        "*://*.livescience.com/*",
+        "*://*.loudersound.com/*",
+        "*://*.musicradar.com/*",
+        "*://*.pcgamer.com/*",
+        "*://*.space.com/*",
+        "*://*.techradar.com/*",
+        "*://*.tomshardware.com/*",
+        "*://*.windowscentral.com/*",
       ],
-    },
-  },
-  {
-    id: "bug1654907",
-    platform: "android",
-    domain: "reactine.ca",
-    bug: "1654907",
-    contentScripts: {
-      matches: ["*://*.reactine.ca/*"],
       css: [
         {
-          file: "injections/css/bug1654907-reactine.ca-hide-unsupported.css",
+          file: "injections/css/bug1886293-futurePLC-sites-trending_scrollbars.css",
         },
       ],
     },
@@ -284,6 +258,9 @@ const AVAILABLE_INJECTIONS = [
     platform: "desktop",
     domain: "Sites using draft.js",
     bug: "1739489",
+    checkIfNeeded() {
+      return !window.TextEvent;
+    },
     contentScripts: {
       matches: [
         "*://draftjs.org/*", // Bug 1739489
@@ -292,7 +269,6 @@ const AVAILABLE_INJECTIONS = [
         "*://mobile.twitter.com/*", // Bug 1776229
         "*://x.com/*", // Bug 1776229
         "*://mobile.x.com/*", // Bug 1776229
-        "*://*.reddit.com/*", // Bug 1829755
       ],
       js: [
         {
@@ -344,33 +320,16 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1774490",
-    platform: "all",
-    domain: "rainews.it",
-    bug: "1774490",
-    contentScripts: {
-      matches: ["*://www.rainews.it/*"],
-      css: [
-        {
-          file: "injections/css/bug1774490-rainews.it-gallery-fix.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1774005",
     platform: "all",
     domain: "Sites relying on window.InstallTrigger",
     bug: "1774005",
     contentScripts: {
       matches: [
-        "*://*.crunchyroll.com/*", // Bug 1777597
-        "*://*.ersthelfer.tv/*", // Bug 1817520
+        "*://*.ambrahealth.com/*", // Bug 1930429
         "*://*.webex.com/*", // Bug 1788934
         "*://ifcinema.institutfrancais.com/*", // Bug 1806423
         "*://islamionline.islamicbank.ps/*", // Bug 1821439
-        "*://*.itv.com/*", // Bug 1830203
-        "*://mobilevikings.be/*/registration/*", // Bug 1797400
         "*://www.schoolnutritionandfitness.com/*", // Bug 1793761
       ],
       js: [
@@ -399,92 +358,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1784141",
-    platform: "android",
-    domain: "aveeno.com and acuvue.com",
-    bug: "1784141",
-    contentScripts: {
-      matches: [
-        "*://*.aveeno.com/*",
-        "*://*.aveeno.ca/*",
-        "*://*.aveeno.com.au/*",
-        "*://*.aveeno.co.kr/*",
-        "*://*.aveeno.co.uk/*",
-        "*://*.aveeno.ie/*",
-        "*://*.acuvue.com/*", // 1804730
-        "*://*.acuvue.com.ar/*",
-        "*://*.acuvue.com.br/*",
-        "*://*.acuvue.ca/*",
-        "*://*.acuvue-fr.ca/*",
-        "*://*.acuvue.cl/*",
-        "*://*.acuvue.co.cr/*",
-        "*://*.acuvue.com.co/*",
-        "*://*.acuvue.com.do/*",
-        "*://*.acuvue.com.pe/*",
-        "*://*.acuvue.com.sv/*",
-        "*://*.acuvue.com.gt/*",
-        "*://*.acuvue.hn/*",
-        "*://*.acuvue.com.mx/*",
-        "*://*.acuvue.com.pa/*",
-        "*://*.acuvue.com.py/*",
-        "*://*.acuvue.com.pr/*",
-        "*://*.acuvue.com.uy/*",
-        "*://*.acuvue.com.au/*",
-        "*://*.acuvue.com.cn/*",
-        "*://*.acuvue.com.hk/*",
-        "*://*.acuvue.co.in/*",
-        "*://*.acuvue.co.id/*",
-        "*://acuvuevision.jp/*",
-        "*://*.acuvue.co.kr/*",
-        "*://*.acuvue.com.my/*",
-        "*://*.acuvue.co.nz/*",
-        "*://*.acuvue.com.sg/*",
-        "*://*.acuvue.com.tw/*",
-        "*://*.acuvue.co.th/*",
-        "*://*.acuvue.com.vn/*",
-        "*://*.acuvue.at/*",
-        "*://*.acuvue.be/*",
-        "*://*.fr.acuvue.be/*",
-        "*://*.acuvue-croatia.com/*",
-        "*://*.acuvue.cz/*",
-        "*://*.acuvue.dk/*",
-        "*://*.acuvue.fi/*",
-        "*://*.acuvue.fr/*",
-        "*://*.acuvue.de/*",
-        "*://*.acuvue.gr/*",
-        "*://*.acuvue.hu/*",
-        "*://*.acuvue.ie/*",
-        "*://*.acuvue.co.il/*",
-        "*://*.acuvue.it/*",
-        "*://*.acuvuekz.com/*",
-        "*://*.acuvue.lu/*",
-        "*://*.en.acuvuearabia.com/*",
-        "*://*.acuvuearabia.com/*",
-        "*://*.acuvue.nl/*",
-        "*://*.acuvue.no/*",
-        "*://*.acuvue.pl/*",
-        "*://*.acuvue.pt/*",
-        "*://*.acuvue.ro/*",
-        "*://*.acuvue.ru/*",
-        "*://*.acuvue.sk/*",
-        "*://*.acuvue.si/*",
-        "*://*.acuvue.co.za/*",
-        "*://*.jnjvision.com.tr/*",
-        "*://*.acuvue.co.uk/*",
-        "*://*.acuvue.ua/*",
-        "*://*.acuvue.com.pe/*",
-        "*://*.acuvue.es/*",
-        "*://*.acuvue.se/*",
-        "*://*.acuvue.ch/*",
-      ],
-      css: [
-        {
-          file: "injections/css/bug1784141-aveeno.com-acuvue.com-unsupported.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1784199",
     platform: "all",
     domain: "Sites based on Entrata Platform",
@@ -492,21 +365,24 @@ const AVAILABLE_INJECTIONS = [
     contentScripts: {
       matches: [
         "*://*.7streetbrownstones.com/*", // #129553
-        "*://*.aptsovation.com/*",
+        "*://*.aptsovation.com/*", // #100131
+        "*://*.arboretumapartments.com/*", // bugzilla 1894682
         "*://*.avanabayview.com/*", // #118617
         "*://*.breakpointeandcoronado.com/*", // #117735
         "*://*.courtsatspringmill.com/*", // #128404
         "*://*.fieldstoneamherst.com/*", // #132974
+        "*://*.flatsatshadowglen.com/*", // #121799
         "*://*.gslbriarcreek.com/*", // #126401
         "*://*.hpixeniatrails.com/*", // #131703
         "*://*.liveobserverpark.com/*", // #105244
         "*://*.liveupark.com/*", // #121083
         "*://*.midwayurban.com/*", // #116523
-        "*://*.nhcalaska.com/*",
+        "*://*.nhcalaska.com/*", // #107833
         "*://*.prospectportal.com/*", // #115206
-        "*://*.securityproperties.com/*",
+        "*://*.securityproperties.com/*", // #107969
         "*://*.thefoundryat41st.com/*", // #128994
-        "*://*.theloftsorlando.com/*",
+        "*://*.theloftsorlando.com/*", // #101496
+        "*://*.thepointatkingston.com/*", // #139030
         "*://*.vanallenapartments.com/*", // #120056
       ],
       css: [
@@ -570,23 +446,19 @@ const AVAILABLE_INJECTIONS = [
         "*://*.franmar.com/*", // 27273
         "*://*.themusiclab.org/*", // 49667
         "*://*.oregonfoodbank.org/*", // 53203
-        "*://*.fourbarrelcoffee.com/*", // 59427
-        "*://bluetokaicoffee.com/*", // 99867
         "*://bathpublishing.com/*", // 100145
         "*://dylantalkstone.com/*", // 101356
         "*://renewd.com.au/*", // 104998
         "*://*.lamudi.co.id/*", // 106767
-        "*://*.thehawksmoor.com/*", // 107549
         "*://weaversofireland.com/*", // 116816
         "*://*.iledefrance-mobilites.fr/*", // 117344
         "*://*.lawnmowerpartsworld.com/*", // 117577
         "*://*.discountcoffee.co.uk/*", // 118757
-        "*://torguard.net/*", // 120113
         "*://*.arcsivr.com/*", // 120716
         "*://drafthouse.com/*", // 126385
         "*://*.lafoodbank.org/*", // 127006
         "*://rutamayacoffee.com/*", // 129353
-        "*://ottoandspike.com.au/*", // bugzilla 1644602
+        "*://give.umrelief.org/give/*", // bugzilla 1916407
       ],
       js: [
         {
@@ -656,7 +528,7 @@ const AVAILABLE_INJECTIONS = [
   },
   {
     id: "bug1827678-webc119017",
-    platform: "desktop",
+    platform: "all",
     domain: "nppes.cms.hhs.gov",
     bug: "1827678",
     contentScripts: {
@@ -664,34 +536,6 @@ const AVAILABLE_INJECTIONS = [
       css: [
         {
           file: "injections/css/bug1819678-nppes.cms.hhs.gov-unsupported-banner.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1830776",
-    platform: "all",
-    domain: "blueshieldca.com",
-    bug: "1830776",
-    contentScripts: {
-      matches: ["*://*.blueshieldca.com/*"],
-      js: [
-        {
-          file: "injections/js/bug1830776-blueshieldca.com-unsupported.js",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1829949",
-    platform: "desktop",
-    domain: "tomshardware.com",
-    bug: "1829949",
-    contentScripts: {
-      matches: ["*://*.tomshardware.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1829949-tomshardware.com-scrollbar-width.css",
         },
       ],
     },
@@ -737,20 +581,6 @@ const AVAILABLE_INJECTIONS = [
         },
       ],
       allFrames: true,
-    },
-  },
-  {
-    id: "bug1830810",
-    platform: "all",
-    domain: "interceramic.com",
-    bug: "1830810",
-    contentScripts: {
-      matches: ["*://interceramic.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1830810-interceramic.com-hide-unsupported.css",
-        },
-      ],
     },
   },
   {
@@ -916,24 +746,23 @@ const AVAILABLE_INJECTIONS = [
     domain: "nicochannel.jp",
     bug: "1849058",
     contentScripts: {
-      matches: ["*://nicochannel.jp/*", "*://gs-ch.com/*"],
+      matches: [
+        "*://ado-dokidokihimitsukichi-daigakuimo.com/*",
+        "*://canan8181.com/*",
+        "*://gs-ch.com/*", // 124511
+        "*://keisuke-ueda.jp/*",
+        "*://kemomimirefle.net/*",
+        "*://nicochannel.jp/*", // 124463
+        "*://p-jinriki-fc.com/*",
+        "*://pizzaradio.jp/*",
+        "*://rnqq.jp/*",
+        "*://ryogomatsumaru.com/*",
+        "*://takahashifumiya.com/*",
+        "*://yamingfc.net/*",
+      ],
       js: [
         {
           file: "injections/js/bug1849058-nicochannel.jp-picture-in-picture-shim.js",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1849388",
-    platform: "android",
-    domain: "kucharkaprodceru.cz",
-    bug: "1849388",
-    contentScripts: {
-      matches: ["*://*.kucharkaprodceru.cz/*"],
-      css: [
-        {
-          file: "injections/css/bug1849388-kucharkaprodceru.cz-scroll-fix.css",
         },
       ],
     },
@@ -953,41 +782,8 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1855071",
-    platform: "android",
-    domain: "www.meteoam.it",
-    bug: "1855071",
-    contentScripts: {
-      matches: ["*://www.meteoam.it/*"],
-      js: [
-        {
-          file: "injections/js/bug1855071-www.meteoam.it.js",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1864564",
-    platform: "all",
-    domain: "Esri breakage",
-    bug: "1864564",
-    contentScripts: {
-      matches: [
-        "*://*.ncep.noaa.gov/*",
-        "*://*.northumberland.gov.uk/*",
-        "*://webmap.gis.gov.mo/*",
-      ],
-      js: [
-        {
-          file: "injections/js/bug1864564-esri-transfrom-names-shim.js",
-        },
-      ],
-      allFrames: true,
-    },
-  },
-  {
     id: "bug1868345",
-    platform: "desktop",
+    platform: "all",
     domain: "tvmovie.de",
     bug: "1868345",
     contentScripts: {
@@ -999,20 +795,6 @@ const AVAILABLE_INJECTIONS = [
       css: [
         {
           file: "injections/css/bug1868345-tvmovie.de-scroll-fix.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1884842",
-    platform: "android",
-    domain: "foodora.cz",
-    bug: "1884842",
-    contentScripts: {
-      matches: ["*://*.foodora.cz/*"],
-      css: [
-        {
-          file: "injections/css/bug1884842-foodora.cz-height-fix.css",
         },
       ],
     },
@@ -1030,20 +812,6 @@ const AVAILABLE_INJECTIONS = [
         },
       ],
       allFrames: true,
-    },
-  },
-  {
-    id: "1896383",
-    platform: "all",
-    domain: "unimarc.cl",
-    bug: "1896383",
-    contentScripts: {
-      matches: ["*://*.unimarc.cl/*"],
-      js: [
-        {
-          file: "injections/js/bug1896383-error-capturestacktrace-shim.js",
-        },
-      ],
     },
   },
   {
@@ -1168,6 +936,11 @@ const AVAILABLE_INJECTIONS = [
     bug: "1899937",
     contentScripts: {
       matches: ["*://plus.nhk.jp/*"],
+      css: [
+        {
+          file: "injections/css/bug1899937-plus.nhk.jp-hide-unsupported.css",
+        },
+      ],
       js: [
         {
           file: "injections/js/bug1899937-plus.nhk.jp-request-picture-in-picture.js",
@@ -1176,15 +949,281 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1905278",
+    id: "bug1886616",
     platform: "all",
-    domain: "personalizedplates.revenue.tn.gov",
-    bug: "1905278",
+    domain: "www.six-group.com",
+    bug: "1886616",
     contentScripts: {
-      matches: ["*://personalizedplates.revenue.tn.gov/*"],
+      matches: ["*://www.six-group.com/*/market-data/etf/etf-explorer.html*"],
       css: [
         {
-          file: "injections/css/bug1905278-personalizedplates.revenue.tn.gov-pointer-events.css",
+          file: "injections/css/bug1886616-www.six-group.com-select-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1896349",
+    platform: "all",
+    domain: "vivaldi.com",
+    bug: "1896349",
+    contentScripts: {
+      matches: ["*://vivaldi.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1896349-vivaldi.com-selected-text-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1836872",
+    platform: "desktop",
+    domain: "docs.google.com",
+    bug: "1836872",
+    contentScripts: {
+      matches: ["*://docs.google.com/document/*"],
+      css: [
+        {
+          file: "injections/css/bug1836872-docs.google.com-font-submenus-inaccessible.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1779908",
+    platform: "desktop",
+    domain: "play.google.com",
+    bug: "1779908",
+    contentScripts: {
+      matches: ["*://play.google.com/store/*"],
+      css: [
+        {
+          file: "injections/css/bug1779908-play.google.com-scrollbar-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1879879",
+    platform: "all",
+    domain: "developers.pinterest.com",
+    bug: "1879879",
+    contentScripts: {
+      matches: ["*://developers.pinterest.com/docs/*"],
+      css: [
+        {
+          file: "injections/css/bug1879879-developers.pinterest.com-list-alignment-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1856915",
+    platform: "android",
+    domain: "login.yahoo.com",
+    bug: "1856915",
+    contentScripts: {
+      matches: ["*://login.yahoo.com/account/*"],
+      css: [
+        {
+          file: "injections/css/bug1856915-login.yahoo.com-unhide-password-button-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1841730",
+    platform: "desktop",
+    domain: "www.korg.com",
+    bug: "1841730",
+    contentScripts: {
+      matches: ["*://www.korg.com/*/support/download/product/*"],
+      js: [
+        {
+          file: "injections/js/bug1841730-www.korg.com-fix-broken-page-loads.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1895051",
+    platform: "all",
+    domain: "www.zhihu.com",
+    bug: "1895051",
+    contentScripts: {
+      matches: ["*://www.zhihu.com/question/*"],
+      css: [
+        {
+          file: "injections/css/bug1895051-www.zhihu.com-broken-button-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1924500",
+    platform: "desktop",
+    domain: "www.tiktok.com",
+    bug: "1924500",
+    contentScripts: {
+      matches: ["*://www.tiktok.com/*"],
+      js: [
+        {
+          file: "injections/js/bug1924500-www.tiktok.com-fix-captcha-slider.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1901000",
+    platform: "desktop",
+    domain: "eyebuydirect.ca",
+    bug: "1901000",
+    contentScripts: {
+      matches: ["*://*.eyebuydirect.ca/*"],
+      css: [
+        {
+          file: "injections/css/bug1901000-eyebuydirect.ca-fix-paypal-button.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1889505",
+    platform: "android",
+    domain: "bankmandiri.co.id",
+    bug: "1889505",
+    contentScripts: {
+      matches: ["*://*.bankmandiri.co.id/*"],
+      js: [
+        {
+          file: "injections/js/bug1889505-bankmandiri.co.id-window.chrome.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1925508",
+    platform: "android",
+    domain: "developer.apple.com",
+    bug: "1925508",
+    contentScripts: {
+      matches: ["*://developer.apple.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1925508-developer-apple.com-transform-scale.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1928216",
+    platform: "desktop",
+    domain: "voice.google.com",
+    bug: "1928216",
+    contentScripts: {
+      matches: ["*://voice.google.com/*"],
+      js: [
+        {
+          file: "injections/js/bug1928216-voice.google.com-permissions.query.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1873166",
+    platform: "android",
+    domain: "nsandi.com",
+    bug: "1873166",
+    contentScripts: {
+      matches: ["*://*.nsandi.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1873166-nsandi.com-hide-unsupported-message.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "1875540",
+    platform: "all",
+    domain: "allstate.com",
+    bug: "1875540",
+    contentScripts: {
+      matches: ["*://*.allstate.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1875540-allstate.com-hide-unsupported-message.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "1886566",
+    platform: "all",
+    domain: "quezoncity.gov.ph",
+    bug: "1886566",
+    contentScripts: {
+      matches: ["*://qceservices.quezoncity.gov.ph/qcvaxeasy*"],
+      css: [
+        {
+          file: "injections/css/bug1886566-quezoncity.gov.ph-iframe-height.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "1846742",
+    platform: "desktop",
+    domain: "microsoft.com",
+    bug: "1846742",
+    contentScripts: {
+      matches: ["*://www.microsoft.com/*"],
+      js: [
+        {
+          file: "injections/js/bug1846742-microsoft.com-search-key-fix.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "1886591",
+    platform: "all",
+    domain: "la-vache-noire.com",
+    bug: "1886591",
+    contentScripts: {
+      matches: ["*://la-vache-noire.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1886591-la-vache-noire.com-cookie-banner-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "1923286",
+    platform: "desktop",
+    domain: "bing.com",
+    bug: "1923286",
+    contentScripts: {
+      matches: ["*://www.bing.com/images/search*"],
+      js: [
+        {
+          file: "injections/js/bug1923286-bing.com-image-click-fix.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "1930440",
+    platform: "all",
+    domain: "online.singaporepools.com",
+    bug: "1930440",
+    contentScripts: {
+      matches: ["*://online.singaporepools.com/*"],
+      js: [
+        {
+          file: "injections/js/bug1930440-online.singaporepools.com-prevent-unsupported-alert.js",
         },
       ],
     },

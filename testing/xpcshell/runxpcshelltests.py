@@ -7,10 +7,10 @@
 import copy
 import json
 import os
-import pipes
 import platform
 import random
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -372,11 +372,11 @@ class XPCShellTestThread(Thread):
         )
         self.log.info("%s | environment: %s" % (name, list(changedEnv)))
         shell_command_tokens = [
-            pipes.quote(tok) for tok in list(changedEnv) + completeCmd
+            shlex.quote(tok) for tok in list(changedEnv) + completeCmd
         ]
         self.log.info(
             "%s | as shell command: (cd %s; %s)"
-            % (name, pipes.quote(testdir), " ".join(shell_command_tokens))
+            % (name, shlex.quote(testdir), " ".join(shell_command_tokens))
         )
 
     def killTimeout(self, proc):
@@ -1133,6 +1133,7 @@ class XPCShellTests(object):
                     mp.active_tests(
                         filters=filters,
                         noDefaultFilters=noDefaultFilters,
+                        strictExpressions=True,
                         **mozinfo.info,
                     ),
                 )
@@ -1500,6 +1501,13 @@ class XPCShellTests(object):
                 http3ServerPath = os.path.join(
                     SCRIPT_DIR, "http3server", "http3server" + binSuffix
                 )
+
+        # Treat missing http3server as a non-fatal error, because tests that do not
+        # depend on http3server may work just fine.
+        if not os.path.exists(http3ServerPath):
+            self.log.error("Cannot find http3server at path %s" % (http3ServerPath))
+            return
+
         dbPath = os.path.join(SCRIPT_DIR, "http3server", "http3serverDB")
         if build:
             dbPath = os.path.join(build.topsrcdir, "netwerk", "test", "http3serverDB")
@@ -1570,8 +1578,6 @@ class XPCShellTests(object):
             "fission"
         ] or not prefs.get("fission.disableSessionHistoryInParent", False)
 
-        self.mozInfo["serviceworker_e10s"] = True
-
         self.mozInfo["verify"] = options.get("verify", False)
 
         self.mozInfo["socketprocess_networking"] = prefs.get(
@@ -1579,22 +1585,22 @@ class XPCShellTests(object):
         )
 
         self.mozInfo["condprof"] = options.get("conditionedProfile", False)
-
-        if options.get("variant", ""):
-            self.mozInfo["msix"] = options["variant"] == "msix"
+        self.mozInfo["msix"] = options.get("variant", "") == "msix"
 
         self.mozInfo["is_ubuntu"] = "Ubuntu" in platform.version()
-
-        mozinfo.update(self.mozInfo)
 
         # TODO: remove this when crashreporter is fixed on mac via bug 1910777
         if self.mozInfo["os"] == "mac":
             (release, versioninfo, machine) = platform.mac_ver()
             versionNums = release.split(".")[:2]
             os_version = "%s.%s" % (versionNums[0], versionNums[1].ljust(2, "0"))
-            if os_version == "14.40":
+            if os_version.split(".")[0] == "14":
                 self.mozInfo["crashreporter"] = False
 
+        # we default to false for e10s on xpcshell
+        self.mozInfo["e10s"] = self.mozInfo.get("e10s", False)
+
+        mozinfo.update(self.mozInfo)
         return True
 
     @property

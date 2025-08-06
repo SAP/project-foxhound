@@ -135,6 +135,10 @@ async function getMessageValidators(skipValidation) {
       "./content-src/templates/OnboardingMessage/Spotlight.schema.json",
       { common: true }
     ),
+    menu_message: await getValidator(
+      "./content-src/templates/OnboardingMessage/MenuMessage.schema.json",
+      { common: true }
+    ),
   };
 
   messageValidators.milestone_message = messageValidators.cfr_doorhanger;
@@ -216,17 +220,17 @@ async function main() {
       flags: {
         collection: {
           type: "string",
-          alias: "c",
+          shortFlag: "c",
           default: DEFAULT_COLLECTION_ID,
         },
         experiments: {
           type: "boolean",
-          alias: "e",
+          shortFlag: "e",
           default: false,
         },
         skipValidation: {
           type: "boolean",
-          alias: "s",
+          shortFlag: "s",
           default: false,
         },
       },

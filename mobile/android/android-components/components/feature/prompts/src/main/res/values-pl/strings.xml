@@ -118,8 +118,6 @@
     <!-- Content description for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
     <string name="mozac_feature_prompts_suggest_strong_password_content_description">Zaproponuj silne hasło</string>
     <!-- Header for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
-    <string name="mozac_feature_prompts_suggest_strong_password" moz:removedIn="128" tools:ignore="UnusedResources">Zaproponuj silne hasło</string>
-    <!-- Header for the suggest strong password prompt to allow users to fill a form with a suggested strong password -->
     <string name="mozac_feature_prompts_suggest_strong_password_2">Użyj silnego hasła</string>
     <!-- Title for using the suggest strong password confirmation dialog. %1$s will be replaced with the generated password -->
     <string name="mozac_feature_prompts_suggest_strong_password_message">Użyj silnego hasła: %1$s</string>
@@ -129,7 +127,13 @@
 
 
     <!-- Content description for the suggest strong password confirmation dialog -->
-    <string name="mozac_feature_prompts_suggest_strong_password_description">Chroń swoje konta za pomocą silnego, losowo wygenerowanego hasła. Miej szybki dostęp do haseł, zachowując je na swoim koncie.</string>
+    <string name="mozac_feature_prompts_suggest_strong_password_description" moz:removedIn="130" tools:ignore="UnusedResources">Chroń swoje konta za pomocą silnego, losowo wygenerowanego hasła. Miej szybki dostęp do haseł, zachowując je na swoim koncie.</string>
+    <!-- Content description for the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_description_2" moz:removedIn="133" tools:ignore="UnusedResources">Chroń swoje konta za pomocą silnego, losowo wygenerowanego hasła. Zostanie ono zachowane na Twoim koncie, aby zawsze mieć do niego dostęp.</string>
+
+    <!-- Content description for the suggest strong password confirmation dialog -->
+    <string name="mozac_feature_prompts_suggest_strong_password_description_3">Chroń swoje konto za pomocą silnego, losowo wygenerowanego hasła. Zostanie ono zachowane na Twoim koncie, aby zawsze mieć do niego dostęp.</string>
+
     <!-- Pressing this will use the suggested strong password -->
     <string name="mozac_feature_prompts_suggest_strong_password_use_password">Użyj hasła</string>
     <!-- Pressing this will dismiss the suggested strong password dialog -->
@@ -202,7 +206,7 @@
     <!-- Title of the Identity Credential privacy policy dialog title. The %1$s will be replaced with the name of the provider. -->
     <string name="mozac_feature_prompts_identity_credentials_privacy_policy_title">Używaj konta %1$s jako dostawcę logowania</string>
     <!-- Title of the Identity Credential privacy policy dialog description. The %1$s will be replaced with the name of the provider, %2$s will be replaced with the account, %3$s will be replaced with the privacy policy url and  %4$s will be replaced with the terms of service. -->
-    <string name="mozac_feature_prompts_identity_credentials_privacy_policy_description"><![CDATA[Logowanie na %1$s za pomocą konta %2$s podlega <a href="%3$s">zasadom ochrony prywatności</a> i <a href="%4$s">regulaminowi usługi</a> danego konta]]></string>
+    <string name="mozac_feature_prompts_identity_credentials_privacy_policy_description" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[Logowanie na %1$s za pomocą konta %2$s podlega <a href="%3$s">zasadom ochrony prywatności</a> i <a href="%4$s">regulaminowi usługi</a> danego konta]]></string>
     <!-- Text for the positive button of the Identity Credential dialogs. -->
     <string name="mozac_feature_prompts_identity_credentials_continue">Kontynuuj</string>
     <!-- Text for the cancel button of the Identity Credential dialogs. -->

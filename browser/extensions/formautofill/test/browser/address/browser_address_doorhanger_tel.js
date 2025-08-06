@@ -1,21 +1,5 @@
 "use strict";
 
-async function expectSavedAddresses(expectedAddresses) {
-  const addresses = await getAddresses();
-  is(
-    addresses.length,
-    expectedAddresses.length,
-    `${addresses.length} address in the storage`
-  );
-
-  for (let i = 0; i < expectedAddresses.length; i++) {
-    for (const [key, value] of Object.entries(expectedAddresses[i])) {
-      is(addresses[i][key] ?? "", value, `field ${key} should be equal`);
-    }
-  }
-  return addresses;
-}
-
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -76,7 +60,7 @@ add_task(async function test_save_doorhanger_tel_concatenated() {
     {
       "given-name": "John",
       "family-name": "Doe",
-      organization: "Mozilla",
+      "street-address": "123 Sesame Street",
       tel: "+15202486621",
     },
   ];
@@ -84,7 +68,7 @@ add_task(async function test_save_doorhanger_tel_concatenated() {
   const MARKUP = `<form id="form">
     <input id="given-name" autocomplete="given-name">
     <input id="family-name" autocomplete="family-name">
-    <input id="organization" autocomplete="organization">
+    <input id="street-address" autocomplete="street-address">
     <input id="tel-country-code" autocomplete="tel-country-code">
     <input id="tel-national" autocomplete="tel-national">
     <input type="submit">
@@ -106,7 +90,7 @@ add_task(async function test_save_doorhanger_tel_concatenated() {
         newValues: {
           "#given-name": "John",
           "#family-name": "Doe",
-          "#organization": "Mozilla",
+          "#street-address": "123 Sesame Street",
           "#tel-country-code": "+1",
           "#tel-national": "5202486621",
         },

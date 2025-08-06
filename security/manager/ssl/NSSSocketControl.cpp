@@ -39,7 +39,7 @@ NSSSocketControl::NSSSocketControl(
       mIsFullHandshake(false),
       mNotedTimeUntilReady(false),
       mEchExtensionStatus(EchExtensionStatus::kNotPresent),
-      mSentXyberShare(false),
+      mSentMlkemShare(false),
       mHasTls13HandshakeSecrets(false),
       mIsShortWritePending(false),
       mShortWritePendingByte(0),
@@ -203,7 +203,7 @@ NSSSocketControl::GetAlpnEarlySelection(nsACString& aAlpnSelected) {
   unsigned char chosenAlpn[MAX_ALPN_LENGTH];
   unsigned int chosenAlpnLen;
   rv = SSL_GetNextProto(mFd, &alpnState, chosenAlpn, &chosenAlpnLen,
-                        AssertedCast<unsigned int>(ArrayLength(chosenAlpn)));
+                        AssertedCast<unsigned int>(std::size(chosenAlpn)));
 
   if (rv != SECSuccess) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -491,8 +491,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
   bool sendingClientAuthCert = cert && key;
   if (sendingClientAuthCert) {
     mSentClientCert = true;
-    Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_CLIENT_AUTH_CERT_USAGE,
-                         u"sent"_ns, 1);
+    glean::security::client_auth_cert_usage.Get("sent"_ns).Add(1);
   }
 
   Unused << SSL_ClientCertCallbackComplete(

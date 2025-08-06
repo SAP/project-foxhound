@@ -10,7 +10,6 @@
 #include <stdint.h>
 
 #include "builtin/temporal/TemporalTypes.h"
-#include "builtin/temporal/Wrapped.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
@@ -74,11 +73,8 @@ inline Duration ToDuration(const DurationObject* duration) {
 }
 
 class Increment;
-class CalendarRecord;
-class PlainDateObject;
-class TimeZoneRecord;
-class ZonedDateTime;
-class ZonedDateTimeObject;
+class CalendarValue;
+class TimeZoneValue;
 enum class TemporalRoundingMode;
 enum class TemporalUnit;
 
@@ -86,19 +82,7 @@ enum class TemporalUnit;
  * DurationSign ( years, months, weeks, days, hours, minutes, seconds,
  * milliseconds, microseconds, nanoseconds )
  */
-int32_t DurationSign(const Duration& duration);
-
-/**
- * DurationSign ( years, months, weeks, days, hours, minutes, seconds,
- * milliseconds, microseconds, nanoseconds )
- */
 int32_t DurationSign(const DateDuration& duration);
-
-/**
- * DurationSign ( years, months, weeks, days, hours, minutes, seconds,
- * milliseconds, microseconds, nanoseconds )
- */
-int32_t DurationSign(const NormalizedDuration& duration);
 
 /**
  * IsValidDuration ( years, months, weeks, days, hours, minutes, seconds,
@@ -262,18 +246,6 @@ NormalizedTimeDuration NormalizedTimeDurationFromEpochNanosecondsDifference(
 DurationObject* CreateTemporalDuration(JSContext* cx, const Duration& duration);
 
 /**
- * ToTemporalDuration ( item )
- */
-Wrapped<DurationObject*> ToTemporalDuration(JSContext* cx,
-                                            JS::Handle<JS::Value> item);
-
-/**
- * ToTemporalDuration ( item )
- */
-bool ToTemporalDuration(JSContext* cx, JS::Handle<JS::Value> item,
-                        Duration* result);
-
-/**
  * ToTemporalDurationRecord ( temporalDurationLike )
  */
 bool ToTemporalDurationRecord(JSContext* cx,
@@ -305,13 +277,13 @@ struct RoundedRelativeDuration {
 };
 
 /**
- * RoundRelativeDuration ( duration, destEpochNs, dateTime, calendarRec,
- * timeZoneRec, largestUnit, increment, smallestUnit, roundingMode )
+ * RoundRelativeDuration ( duration, destEpochNs, dateTime, calendar, timeZone,
+ * largestUnit, increment, smallestUnit, roundingMode )
  */
 bool RoundRelativeDuration(
     JSContext* cx, const NormalizedDuration& duration,
     const Instant& destEpochNs, const PlainDateTime& dateTime,
-    JS::Handle<CalendarRecord> calendar, JS::Handle<TimeZoneRecord> timeZone,
+    JS::Handle<CalendarValue> calendar, JS::Handle<TimeZoneValue> timeZone,
     TemporalUnit largestUnit, Increment increment, TemporalUnit smallestUnit,
     TemporalRoundingMode roundingMode, RoundedRelativeDuration* result);
 
@@ -320,11 +292,6 @@ bool RoundRelativeDuration(
  */
 double DivideNormalizedTimeDuration(const NormalizedTimeDuration& duration,
                                     TemporalUnit unit);
-
-/**
- * DaysUntil ( earlier, later )
- */
-int32_t DaysUntil(const PlainDate& earlier, const PlainDate& later);
 
 } /* namespace js::temporal */
 

@@ -10,7 +10,22 @@
 
 use url::Url;
 
-use crate::Result;
+use crate::{ApiResult, Error, Result};
+
+/// Remote settings configuration
+///
+/// This is the version used in the new API, hence the `2` at the end.  The plan is to move
+/// consumers to the new API, remove the RemoteSettingsConfig struct, then remove the `2` from this
+/// name.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RemoteSettingsConfig2 {
+    /// The Remote Settings server to use. Defaults to [RemoteSettingsServer::Prod],
+    #[uniffi(default = None)]
+    pub server: Option<RemoteSettingsServer>,
+    /// Bucket name to use, defaults to "main".  Use "main-preview" for a preview bucket
+    #[uniffi(default = None)]
+    pub bucket_name: Option<String>,
+}
 
 /// Custom configuration for the client.
 /// Currently includes the following:
@@ -18,16 +33,19 @@ use crate::Result;
 /// - `server_url`: An optional custom Remote Settings server URL. Deprecated; please use `server` instead.
 /// - `bucket_name`: The optional name of the bucket containing the collection on the server. If not specified, the standard bucket will be used.
 /// - `collection_name`: The name of the collection for the settings server.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct RemoteSettingsConfig {
-    pub server: Option<RemoteSettingsServer>,
-    pub server_url: Option<String>,
-    pub bucket_name: Option<String>,
     pub collection_name: String,
+    #[uniffi(default = None)]
+    pub bucket_name: Option<String>,
+    #[uniffi(default = None)]
+    pub server_url: Option<String>,
+    #[uniffi(default = None)]
+    pub server: Option<RemoteSettingsServer>,
 }
 
 /// The Remote Settings server that the client should use.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, uniffi::Enum)]
 pub enum RemoteSettingsServer {
     Prod,
     Stage,
@@ -36,12 +54,33 @@ pub enum RemoteSettingsServer {
 }
 
 impl RemoteSettingsServer {
-    pub fn url(&self) -> Result<Url> {
+    /// Get the [url::Url] for this server
+    #[error_support::handle_error(Error)]
+    pub fn url(&self) -> ApiResult<Url> {
+        self.get_url()
+    }
+
+    /// Internal version of `url()`.
+    ///
+    /// The difference is that it uses `Error` instead of `ApiError`.  This is what we need to use
+    /// inside the crate.
+    pub fn get_url(&self) -> Result<Url> {
         Ok(match self {
-            Self::Prod => Url::parse("https://firefox.settings.services.mozilla.com").unwrap(),
-            Self::Stage => Url::parse("https://firefox.settings.services.allizom.org").unwrap(),
-            Self::Dev => Url::parse("https://remote-settings-dev.allizom.org").unwrap(),
-            Self::Custom { url } => Url::parse(url)?,
+            Self::Prod => Url::parse("https://firefox.settings.services.mozilla.com/v1")?,
+            Self::Stage => Url::parse("https://firefox.settings.services.allizom.org/v1")?,
+            Self::Dev => Url::parse("https://remote-settings-dev.allizom.org/v1")?,
+            Self::Custom { url } => {
+                let mut url = Url::parse(url)?;
+                // Custom URLs are weird and require a couple tricks for backwards compatibility.
+                // Normally we append `v1/` to match how this has historically worked.  However,
+                // don't do this for file:// schemes which normally don't make any sense, but it's
+                // what Nimbus uses to indicate they want to use the file-based client, rather than
+                // a remote-settings based one.
+                if url.scheme() != "file" {
+                    url = url.join("v1")?
+                }
+                url
+            }
         })
     }
 }

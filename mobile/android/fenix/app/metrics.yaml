@@ -22,12 +22,14 @@ events:
       - https://github.com/mozilla-mobile/fenix/issues/968
       - https://github.com/mozilla-mobile/fenix/issues/10616
       - https://github.com/mozilla-mobile/fenix/issues/19923
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1917939
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/1067#issuecomment-474598673
       - https://github.com/mozilla-mobile/fenix/pull/13958#issuecomment-676857877
       - https://github.com/mozilla-mobile/fenix/pull/18143
       - https://github.com/mozilla-mobile/fenix/pull/19924#issuecomment-861423789
       - https://github.com/mozilla-mobile/fenix/pull/21038#issuecomment-906757301
+      - https://phabricator.services.mozilla.com/D222046
     data_sensitivity:
       - interaction
     notification_emails:
@@ -135,12 +137,14 @@ events:
         description: |
           A string containing the name of the item the user tapped. These items
           include:
-          add_to_homescreen, add_to_top_sites, addons_manager, back, back_long_press,
-          bookmark, bookmarks, desktop_view_off, desktop_view_on, downloads,
-          find_in_page, forward, forward_long_press, history, new_tab, open_in_app,
-          open_in_fenix, quit, reader_mode_appearance, reload, remove_from_top_sites,
-          save_to_collection, set_default_browser, settings, share, stop,
-          sync_account, translate and print_content.
+          add_bookmark, add_to_homescreen, add_to_top_sites, addon_details, addons_manager,
+          back, back_long_press, bookmark, bookmarks, desktop_view_off, desktop_view_on,
+          discover_more_extensions, web_extension_browser_action_clicked,
+          downloads, edit_bookmark, extensions_learn_more, extensions_submenu,
+          find_in_page, forward, forward_long_press, history, install_addon, new_tab,
+          new_private_tab, open_in_app, open_in_fenix, quit, reader_mode_appearance, reload,
+          remove_from_top_sites, save_submenu, save_to_collection, set_default_browser,
+          settings, share, stop, sync_account, tools_submenu, translate and print_content.
         type: string
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/1024
@@ -333,9 +337,16 @@ events:
     type: event
     description: |
       A user opened the "what's new" page button
+    extra_keys:
+        source:
+          description: |
+            The view the user was on when they tapped on "what's new" page button (For example:
+            `HOME`, `ABOUT` or `MENU`)
+          type: string
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/5021
       - https://github.com/mozilla-mobile/fenix/issues/19923
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1809328
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/5090
       - https://github.com/mozilla-mobile/fenix/pull/13958#issuecomment-676857877
@@ -344,6 +355,7 @@ events:
       - https://github.com/mozilla-mobile/fenix/pull/21316#issuecomment-944615938
       - https://github.com/mozilla-mobile/fenix/pull/27295
       - https://github.com/mozilla-mobile/firefox-android/pull/4039
+      - https://phabricator.services.mozilla.com/D227615
     data_sensitivity:
       - interaction
     notification_emails:
@@ -1308,6 +1320,95 @@ onboarding:
     metadata:
       tags:
         - Onboarding
+  add_ons_card:
+    type: event
+    description: |
+      User viewed the add-on onboarding card.
+    extra_keys:
+      element_type:
+        type: string
+        description: |
+          Type of element that was viewed.
+      action:
+        type: string
+        description: |
+          Type of action taken by the user.
+      sequence_position:
+        type: string
+        description: |
+          Position of the onboarding card in the onboarding flow.
+      sequence_id:
+        type: string
+        description: |
+          Identifier for the sequence.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1915873
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D224615
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+    metadata:
+      tags:
+        - Onboarding
+  add_on_installed:
+    type: event
+    description: |
+      User installed an add-on from the onboarding card.
+    extra_keys:
+      add_on_id:
+        type: string
+        description: |
+          The id of add-on that was installed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925327
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D226033
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+    metadata:
+      tags:
+        - Onboarding
+  add_ons_card_button_pressed:
+    type: event
+    description:
+      The user pressed the "start browsing" button from the add-ons onboarding card.
+    extra_keys:
+      element_type:
+        type: string
+        description: |
+          Type of element that was viewed.
+      action:
+        type: string
+        description: |
+          Type of action taken by the user.
+      sequence_position:
+        type: string
+        description: |
+          Position of the onboarding card in the onboarding flow.
+      sequence_id:
+        type: string
+        description: |
+          Identifier for the sequence.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1926243
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1926296
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D226469
+      - https://phabricator.services.mozilla.com/D226633
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+    metadata:
+      tags:
+        - Onboarding
   set_to_default:
     type: event
     description: |
@@ -1954,6 +2055,7 @@ metrics:
       - metrics
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/960
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923842
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/1067#issuecomment-474598673
       - https://github.com/mozilla-mobile/fenix/pull/15713#issuecomment-703972068
@@ -1968,15 +2070,51 @@ metrics:
     metadata:
       tags:
         - Settings
+  set_as_default_browser_native_prompt_shown:
+    type: event
+    description: >
+      This event records an attempt to show the Set as Default Browser native prompt.
+    send_in_pings:
+      - metrics
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923744
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D226735
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+    metadata:
+      tags:
+        - Settings
+  default_browser_changed_via_native_system_prompt:
+    type: event
+    description: |
+      Indicates the default browser was changed via the native OS prompt
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923744
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D226735
+    data_sensitivity:
+    - interaction
+    notification_emails:
+    - android-probes@mozilla.com
+    expires: never
+    metadata:
+      tags:
+        - Settings
   distribution_id:
     type: string
     lifetime: application
     description: |
-      A string containing the distribution identifier. This is currently used
-      to identify installs from Mozilla Online.
+      A string containing the distribution identifier. This was used
+      to identify installs from Mozilla Online, but now also identifies
+      partnership deal distributions
     send_in_pings:
       - metrics
       - baseline
+      - usage-reporting
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/16075
     data_reviews:
@@ -2315,6 +2453,7 @@ metrics:
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/1158
       - https://github.com/mozilla-mobile/fenix/issues/6556
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923842
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/1677
       - https://github.com/mozilla-mobile/fenix/pull/5216
@@ -3502,6 +3641,7 @@ search.default_engine:
       - baseline
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/800
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923842
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/1606
       - https://github.com/mozilla-mobile/fenix/pull/5216
@@ -3530,6 +3670,7 @@ search.default_engine:
       - baseline
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/800
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923842
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/1606
       - https://github.com/mozilla-mobile/fenix/pull/5216
@@ -6173,23 +6314,6 @@ tracking_protection:
     metadata:
       tags:
         - TrackingProtection
-  tcp_cfr_shown:
-    type: event
-    description: |
-      The Total Cookie Protection CFR was shown to the user.
-    bugs:
-      - https://github.com/mozilla-mobile/fenix/issues/26224
-    data_reviews:
-      - https://github.com/mozilla-mobile/fenix/pull/26226#issuecomment-1204007332
-      - https://github.com/mozilla-mobile/firefox-android/pull/3319
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
-    metadata:
-      tags:
-        - TrackingProtection
   tcp_cfr_implicit_dismissal:
     type: event
     description: |
@@ -6213,24 +6337,6 @@ tracking_protection:
     description: |
       The Total Cookie Protection CFR was dismissed by the user by clicking on
       the "X" button to close the popup.
-    bugs:
-      - https://github.com/mozilla-mobile/fenix/issues/26224
-    data_reviews:
-      - https://github.com/mozilla-mobile/fenix/pull/26226#issuecomment-1204007332
-      - https://github.com/mozilla-mobile/firefox-android/pull/3319
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
-    metadata:
-      tags:
-        - TrackingProtection
-  tcp_sumo_link_clicked:
-    type: event
-    description: |
-      A user clicked the link in the Total Cookie Protection CFR to open a new
-      SUMO tab detailing the Total Cookie Protection feature.
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/26224
     data_reviews:
@@ -7691,8 +7797,9 @@ first_session:
     type: string
     lifetime: application
     description: |
-      A string containing the distribution identifier. This is currently used
-      to identify installs from Mozilla Online.
+      A string containing the distribution identifier. This was used
+      to identify installs from Mozilla Online, but now also identifies
+      partnership deal distributions
     send_in_pings:
       - first-session
     bugs:
@@ -8035,6 +8142,7 @@ browser.search:
       - https://github.com/mozilla-mobile/fenix/issues/6558
       - https://github.com/mozilla-mobile/fenix/issues/28010
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1799049
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923842
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/10112
       - https://github.com/mozilla-mobile/fenix/pull/15713#issuecomment-703972068
@@ -8067,6 +8175,7 @@ browser.search:
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/6558
       - https://github.com/mozilla-mobile/fenix/issues/28010
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923842
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/10112
       - https://github.com/mozilla-mobile/fenix/pull/15713#issuecomment-703972068
@@ -8090,6 +8199,7 @@ browser.search:
       - baseline
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/6557
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923842
     data_reviews:
       - https://github.com/mozilla-mobile/fenix/pull/10167
       - https://github.com/mozilla-mobile/fenix/pull/15713#issuecomment-703972068
@@ -9281,6 +9391,10 @@ app_exit_info:
         description: |
           The reason why process has exited.
           See ApplicationExitInfo for the reason values.
+      death_description:
+        type: string
+        description: |
+          The human readable description of process' death.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836795
     data_reviews:
@@ -9540,6 +9654,8 @@ awesomebar:
     metadata:
       tags:
         - Search
+
+urlbar:
   engagement:
     type: event
     description: |
@@ -9547,6 +9663,7 @@ awesomebar:
       or entering a URL or a search term.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1878434
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1926723
     data_reviews:
       - https://github.com/mozilla-mobile/firefox-android/pull/5438#issuecomment-1930970336
     data_sensitivity:
@@ -9566,6 +9683,7 @@ awesomebar:
       The user dismissed the awesomebar without completing their search.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1878434
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1926723
     data_reviews:
       - https://github.com/mozilla-mobile/firefox-android/pull/5438#issuecomment-1930970336
     data_sensitivity:
@@ -9789,6 +9907,34 @@ home_menu:
         - Settings
         - MainMenu
 
+menu:
+  show_cfr:
+    type: event
+    description: |
+      Menu CFR was shown to the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1885640
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D216600
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+  dismiss_cfr:
+    type: event
+    description: |
+      A user has dismissed the Menu CFR.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1885640
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D216600
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+
 home_screen:
   home_screen_displayed:
     type: event
@@ -9962,48 +10108,6 @@ recent_tabs:
       - https://github.com/mozilla-mobile/fenix/pull/27068#issuecomment-1251509973
       - https://github.com/mozilla-mobile/firefox-android/pull/3319
       - https://github.com/mozilla-mobile/firefox-android/pull/4039
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
-  jump_back_in_cfr_shown:
-    type: event
-    description: |
-      Jump back in CFR has been displayed to the user.
-    bugs:
-      - https://github.com/mozilla-mobile/fenix/issues/26191
-    data_reviews:
-      - https://github.com/mozilla-mobile/fenix/pull/26202
-      - https://github.com/mozilla-mobile/firefox-android/pull/3319
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
-  jump_back_in_cfr_dismissed:
-    type: event
-    description: |
-      Jump back in CFR has been dismissed clicking the X button.
-    bugs:
-      - https://github.com/mozilla-mobile/fenix/issues/26191
-    data_reviews:
-      - https://github.com/mozilla-mobile/fenix/pull/26202
-      - https://github.com/mozilla-mobile/firefox-android/pull/3319
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
-  jump_back_in_cfr_cancelled:
-    type: event
-    description: |
-      Jump back in CFR has been cancelled clicking the outside the CFR.
-    bugs:
-      - https://github.com/mozilla-mobile/fenix/issues/26191
-    data_reviews:
-      - https://github.com/mozilla-mobile/fenix/pull/26202
-      - https://github.com/mozilla-mobile/firefox-android/pull/3319
     data_sensitivity:
       - interaction
     notification_emails:
@@ -10981,25 +11085,6 @@ shopping:
     metadata:
       tags:
         - Shopping
-  address_bar_feature_callout_displayed:
-    type: event
-    description: |
-      The shopping CFR was displayed to the user.
-    send_in_pings:
-      - events
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1843508
-    data_reviews:
-      - https://github.com/mozilla-mobile/firefox-android/pull/3619
-      - https://github.com/mozilla-mobile/firefox-android/pull/4039
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
-    metadata:
-      tags:
-        - Shopping
   surface_closed:
     type: event
     description: |
@@ -11945,6 +12030,101 @@ navigation_bar:
     notification_emails:
       - android-probes@mozilla.com
     expires: never
+  custom_back_tapped:
+    type: event
+    description: |
+      When custom tab's navigation bar's back button is tapped by the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1886270
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1889484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+  custom_back_long_tapped:
+    type: event
+    description: |
+      When custom tab's navigation bar's back button is long tapped by the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1886270
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1889484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+  custom_forward_tapped:
+    type: event
+    description: |
+      When custom tab's navigation bar's forward button is tapped by the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1886270
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1889484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+  custom_forward_long_tapped:
+    type: event
+    description: |
+      When custom tab's navigation bar's forward button is long tapped by the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1886270
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1889484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+  custom_menu_tapped:
+    type: event
+    description: |
+      When custom tab's navigation bar's menu button is tapped by the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1886270
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1889484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+  custom_open_in_fenix_tapped:
+    type: event
+    description: |
+      When custom tab's navigation bar's open in fenix button is tapped by the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1886270
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1889484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+
+  os_navigation_uses_gestures:
+    type: boolean
+    lifetime: application
+    description: |
+      Whether gesture navigation is used instead of the traditional navigation bar.
+    send_in_pings:
+      - metrics
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1917757
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1917757
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
 
 address_toolbar:
   share_tapped:
@@ -11986,6 +12166,53 @@ address_toolbar:
     notification_emails:
       - android-probes@mozilla.com
     expires: never
+  swipe_cfr_shown:
+    type: event
+    description: |
+      Address bar swipe CFR was shown to the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935696
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935696
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+  swipe_cfr_dismissed:
+    type: event
+    description: |
+      Address bar swipe CFR was dismissed by the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935696
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935696
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+
+customization_settings:
+  dynamic_toolbar:
+    type: boolean
+    lifetime: application
+    description: |
+      True if the user has dynamic toolbar enabled, false if the user has dynamic toolbar disabled.
+    send_in_pings:
+      - metrics
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1908769
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D218789
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+    expires: never
+    metadata:
+      tags:
+        - Settings
 
 nimbus_system:
   recorded_nimbus_context:
@@ -11995,6 +12222,26 @@ nimbus_system:
       properties:
         is_first_run:
           type: boolean
+        event_query_values:
+          type: object
+          properties:
+            days_opened_in_last_28:
+              type: number
+        # Campaign source of the install referrer response
+        install_referrer_response_utm_source:
+          type: string
+        # Campaign medium of the install referrer response
+        install_referrer_response_utm_medium:
+          type: string
+        # Campaign name of the install referrer response
+        install_referrer_response_utm_campaign:
+          type: string
+        # Campaign term of the install referrer response
+        install_referrer_response_utm_term:
+          type: string
+        # Campaign content of the install referrer response
+        install_referrer_response_utm_content:
+          type: string
     description: |
       The Nimbus context object that is recorded to Glean
     bugs:
@@ -12006,4 +12253,19 @@ nimbus_system:
     notification_emails:
       - chumphreys@mozilla.com
       - project-nimbus@mozilla.com
+    expires: never
+
+partnerships:
+  vivo_file_check_error:
+    type: event
+    description: |
+      When there is an error checking if the vivo firefox file exists
+    data_sensitivity:
+      - technical
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1912325
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D218866
+    notification_emails:
+      - android-probes@mozilla.com
     expires: never

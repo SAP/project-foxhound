@@ -83,7 +83,8 @@ class MediaSource final : public DOMEventTargetHelper,
   // Throws on aRv if not supported.
   static void IsTypeSupported(const nsAString& aType,
                               DecoderDoctorDiagnostics* aDiagnostics,
-                              ErrorResult& aRv);
+                              ErrorResult& aRv,
+                              Maybe<bool> aShouldResistFingerprinting);
 
   IMPL_EVENT_HANDLER(sourceopen);
   IMPL_EVENT_HANDLER(sourceended);
@@ -139,7 +140,7 @@ class MediaSource final : public DOMEventTargetHelper,
   void DispatchSimpleEvent(const char* aName);
   void QueueAsyncSimpleEvent(const char* aName);
 
-  void DurationChange(const media::TimeUnit& aNewDuration, ErrorResult& aRv);
+  void DurationChangeOnEndOfStream();
   void DurationChange(double aNewDuration, ErrorResult& aRv);
 
   // SetDuration with no checks.

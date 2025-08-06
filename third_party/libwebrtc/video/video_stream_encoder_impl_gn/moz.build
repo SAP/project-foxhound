@@ -25,8 +25,8 @@ LOCAL_INCLUDES += [
     "!/ipc/ipdl/_ipdlheaders",
     "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
+    "/third_party/abseil-cpp/",
     "/third_party/libwebrtc/",
-    "/third_party/libwebrtc/third_party/abseil-cpp/",
     "/tools/profiler/public"
 ]
 
@@ -35,6 +35,9 @@ UNIFIED_SOURCES += [
     "/third_party/libwebrtc/video/encoder_bitrate_adjuster.cc",
     "/third_party/libwebrtc/video/encoder_overshoot_detector.cc",
     "/third_party/libwebrtc/video/frame_encode_metadata_writer.cc",
+    "/third_party/libwebrtc/video/quality_convergence_controller.cc",
+    "/third_party/libwebrtc/video/quality_convergence_monitor.cc",
+    "/third_party/libwebrtc/video/rate_utilization_tracker.cc",
     "/third_party/libwebrtc/video/video_source_sink_controller.cc",
     "/third_party/libwebrtc/video/video_stream_encoder.cc"
 ]

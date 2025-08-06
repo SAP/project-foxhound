@@ -63,11 +63,8 @@ Request::Request(nsIGlobalObject* aOwner, SafeRefPtr<InternalRequest> aRequest,
   if (aSignal) {
     // If we don't have a signal as argument, we will create it when required by
     // content, otherwise the Request's signal must follow what has been passed.
-    JS::Rooted<JS::Value> reason(RootingCx(), aSignal->RawReason());
-    mSignal = new AbortSignal(aOwner, aSignal->Aborted(), reason);
-    if (!mSignal->Aborted()) {
-      mSignal->Follow(aSignal);
-    }
+    AutoTArray<OwningNonNull<AbortSignal>, 1> array{OwningNonNull(*aSignal)};
+    mSignal = AbortSignal::Any(aOwner, mozilla::Span{array});
   }
 }
 
@@ -351,6 +348,11 @@ SafeRefPtr<Request> Request::Constructor(
 
   if (aInit.mMozErrors.WasPassed() && aInit.mMozErrors.Value()) {
     request->SetMozErrors();
+  }
+
+  if (aInit.mTriggeringPrincipal.WasPassed() &&
+      aInit.mTriggeringPrincipal.Value()) {
+    request->SetTriggeringPrincipal(aInit.mTriggeringPrincipal.Value());
   }
 
   // Request constructor step 14.

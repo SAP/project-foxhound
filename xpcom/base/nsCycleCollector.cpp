@@ -1327,7 +1327,7 @@ struct CCIntervalMarker : public mozilla::BaseMarkerType<CCIntervalMarker> {
        "Refcounted Objects Visited", MS::Format::Integer},
       {"mVisitedGCed", MS::InputType::Uint32, "GC Objects Visited",
        MS::Format::Integer},
-      {"mFreedRefCounted", MS::InputType::Uint32, "GC Objects Freed",
+      {"mFreedRefCounted", MS::InputType::Uint32, "Refcounted Objects Freed",
        MS::Format::Integer},
       {"mFreedGCed", MS::InputType::Uint32, "GC Objects Freed",
        MS::Format::Integer},
@@ -1624,7 +1624,7 @@ class nsCycleCollectorLogSinkToFile final : public nsICycleCollectorLogSink {
     // wouldn't work.
     nsIFile* logFile = nullptr;
     if (char* env = PR_GetEnv("MOZ_CC_LOG_DIRECTORY")) {
-      NS_NewNativeLocalFile(nsCString(env), /* followLinks = */ true, &logFile);
+      NS_NewNativeLocalFile(nsCString(env), &logFile);
     }
 
     // On Android or B2G, this function will open a file named
@@ -3511,6 +3511,9 @@ void nsCycleCollector::CleanupAfterCollection() {
   mGraph.Clear();
   timeLog.Checkpoint("CleanupAfterCollection::mGraph.Clear()");
 
+  FreeSnowWhite(true);
+  timeLog.Checkpoint("Collect::FreeSnowWhite");
+
   TimeStamp endTime = TimeStamp::Now();
   uint32_t interval = (uint32_t)((endTime - mCollectionStart).ToMilliseconds());
 #ifdef COLLECT_TIME_DEBUG
@@ -3606,7 +3609,11 @@ bool nsCycleCollector::Collect(CCReason aReason, ccIsManual aIsManual,
 
   // If the CC started idle, it will call BeginCollection, which
   // will do FreeSnowWhite, so it doesn't need to be done here.
-  if (!startedIdle) {
+  //
+  // If we're in CleanupPhase, we want to clear the graph before
+  // FreeSnowWhite runs, so that we don't need to remove objects from the graph
+  // one by one. CleanupAfterCollection will call FreeSnowWhite.
+  if (!startedIdle && mIncrementalPhase != CleanupPhase) {
     TimeLog timeLog;
     FreeSnowWhite(true);
     timeLog.Checkpoint("Collect::FreeSnowWhite");

@@ -85,6 +85,7 @@ class TimelineManager;
 struct MediaFeatureChange;
 enum class MediaFeatureChangePropagation : uint8_t;
 enum class ColorScheme : uint8_t;
+enum class StyleForcedColors : uint8_t;
 namespace layers {
 class ContainerLayer;
 class LayerManager;
@@ -377,10 +378,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return mozilla::PreferenceSheet::PrefsFor(*mDocument);
   }
 
-  bool ForcingColors() const {
-    return mozilla::PreferenceSheet::MayForceColors() &&
-           !PrefSheetPrefs().mUseDocumentColors;
-  }
+  bool ForcingColors() const;
 
   mozilla::ColorScheme DefaultBackgroundColorScheme() const;
   nscolor DefaultBackgroundColor() const;
@@ -401,7 +399,14 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * Set the currently visible area. The units for r are standard
    * nscoord units (as scaled by the device context).
    */
-  void SetVisibleArea(const nsRect& r);
+  void SetVisibleArea(const nsRect& aRect);
+
+  /**
+   * Set the initial visible area. This should be called only from
+   * nsDocumentViewer when initializing this pres context visible area with
+   * the document viewer bounds.
+   */
+  void SetInitialVisibleArea(const nsRect& aRect);
 
   nsSize GetSizeForViewportUnits() const { return mSizeForViewportUnits; }
 
@@ -434,6 +439,16 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
                   IsRootContentDocumentCrossProcess());
     return mDynamicToolbarHeight;
   }
+
+  void UpdateKeyboardHeight(mozilla::ScreenIntCoord aHeight);
+
+  mozilla::ScreenIntCoord GetKeyboardHeight() const { return mKeyboardHeight; }
+
+  /**
+   * Returns true if the software keyboard is hidden or
+   * the document is `interactive-widget=resizes-content` mode.
+   */
+  bool IsKeyboardHiddenOrResizesContentMode() const;
 
   /**
    * Returns the maximum height of the dynamic toolbar if the toolbar state is
@@ -529,9 +544,11 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   /**
    * Notify the pres context that the safe area insets have changed.
    */
-  void SetSafeAreaInsets(const mozilla::ScreenIntMargin& aInsets);
+  void SetSafeAreaInsets(const mozilla::LayoutDeviceIntMargin& aInsets);
 
-  mozilla::ScreenIntMargin GetSafeAreaInsets() const { return mSafeAreaInsets; }
+  const mozilla::LayoutDeviceIntMargin& GetSafeAreaInsets() const {
+    return mSafeAreaInsets;
+  }
 
   void RegisterManagedPostRefreshObserver(mozilla::ManagedPostRefreshObserver*);
   void UnregisterManagedPostRefreshObserver(
@@ -548,6 +565,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void SetFullZoom(float aZoom);
   void SetOverrideDPPX(float);
   void SetInRDMPane(bool aInRDMPane);
+  void UpdateTopInnerSizeForRFP();
+  void UpdateForcedColors(bool aNotify = true);
 
  public:
   float GetFullZoom() { return mFullZoom; }
@@ -874,8 +893,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     // to actual nscoord values.
     static const nscoord kBorderWidths[] = {
         CSSPixelsToAppUnits(1), CSSPixelsToAppUnits(3), CSSPixelsToAppUnits(5)};
-    MOZ_ASSERT(size_t(aBorderWidthKeyword) <
-               mozilla::ArrayLength(kBorderWidths));
+    MOZ_ASSERT(size_t(aBorderWidthKeyword) < std::size(kBorderWidths));
 
     return kBorderWidths[aBorderWidthKeyword];
   }
@@ -998,7 +1016,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * Returns true if CheckForInterrupt has returned true since the last
    * ReflowStarted call. Cannot itself trigger an interrupt check.
    */
-  bool HasPendingInterrupt() { return mHasPendingInterrupt; }
+  bool HasPendingInterrupt() const { return mHasPendingInterrupt; }
   /**
    * Sets a flag that will trip a reflow interrupt. This only bypasses the
    * interrupt timeout and the pending event check; other checks such as whether
@@ -1040,7 +1058,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void NotifyNonBlankPaint();
   void NotifyContentfulPaint();
   void NotifyPaintStatusReset();
-  void NotifyDOMContentFlushed();
 
   bool HasEverBuiltInvisibleText() const { return mHasEverBuiltInvisibleText; }
   void SetBuiltInvisibleText() { mHasEverBuiltInvisibleText = true; }
@@ -1227,8 +1244,10 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // The maximum height of the dynamic toolbar on mobile.
   mozilla::ScreenIntCoord mDynamicToolbarMaxHeight;
   mozilla::ScreenIntCoord mDynamicToolbarHeight;
+  // The software keyboard height.
+  mozilla::ScreenIntCoord mKeyboardHeight;
   // Safe area insets support
-  mozilla::ScreenIntMargin mSafeAreaInsets;
+  mozilla::LayoutDeviceIntMargin mSafeAreaInsets;
   nsSize mPageSize;
 
   // The computed page margins from the print settings.
@@ -1389,6 +1408,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // that breaks bindgen in win32.
   FontVisibility mFontVisibility = FontVisibility::Unknown;
   mozilla::dom::PrefersColorSchemeOverride mOverriddenOrEmbedderColorScheme;
+  mozilla::StyleForcedColors mForcedColors;
 
  protected:
   virtual ~nsPresContext();

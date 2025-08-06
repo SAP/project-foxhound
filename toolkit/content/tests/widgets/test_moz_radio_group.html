@@ -2,40 +2,37 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>MozRadio and MozRadioGroup Tests</title>
+  <title>MozRadioGroup Tests</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
-  <script type="module" src="chrome://global/content/elements/moz-radio-group.mjs"></script>
+  <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
   <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+  <script src="input-test-helpers.js"></script>
   <script>
-    let html, render, renderTarget, defaultTemplate;
+    let testHelpers = new InputTestHelpers();
+    let html;
+    let defaultTemplate;
 
     add_setup(async function setup() {
-      ({ html, render } = await import(
-        "chrome://global/content/vendor/lit.all.mjs"
-      ));
-      renderTarget = document.getElementById("render");
-      defaultTemplate = html`
-        <moz-radio-group name="test-name" label="Radio group label">
+      ({ html } = await testHelpers.setupLit());
+      let templateFn = attrs => html`
+        <moz-radio-group ${attrs}>
           <moz-radio checked value="first" label="First"></moz-radio>
           <moz-radio value="second" label="Second"></moz-radio>
           <moz-radio value="third" label="Third"></moz-radio>
         </moz-radio-group>
       `;
+      defaultTemplate = templateFn(
+        testHelpers.spread({ label: "Radio group label", name: "test-name" })
+      );
+      await testHelpers.setupInputTests({ templateFn });
     });
 
-    async function renderRadioElements(template = defaultTemplate) {
-      render(template, renderTarget);
-      let radioGroup = renderTarget.querySelector("moz-radio-group");
-      let radioButtons = renderTarget.querySelectorAll("moz-radio");
-      await radioGroup.updateComplete;
-      return { radioGroup, radioButtons: [...radioButtons] };
-    }
-
-    // Verify label text.
-    add_task(async function testRadioLabels() {
+    // Verify the radio group label.
+    add_task(async function testRadioGroupLabel() {
       const TEST_LABEL = "Testing...";
-      let { radioGroup, radioButtons } = await renderRadioElements();
+      let renderTarget = await testHelpers.renderInputElements(defaultTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
 
       is(
         radioGroup.fieldset.label,
@@ -49,20 +46,6 @@
         TEST_LABEL,
         "Radio group label text is updated."
       );
-
-      let firstRadioButton = radioButtons[0];
-      is(
-        firstRadioButton.labelEl.innerText,
-        "First",
-        "Radio button label text is set."
-      );
-      firstRadioButton.label = TEST_LABEL;
-      await firstRadioButton.updateComplete;
-      is(
-        firstRadioButton.labelEl.innerText,
-        TEST_LABEL,
-        "Radio button label text is updated."
-      );
     });
 
     // Verify that each radio button is given the name of the radio group.
@@ -70,7 +53,10 @@
       const FIRST_NAME = "test-name";
       const SECOND_NAME = "test-name-two";
 
-      let { radioGroup, radioButtons } = await renderRadioElements();
+      let renderTarget = await testHelpers.renderInputElements(defaultTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let radioButtons = renderTarget.querySelectorAll("moz-radio");
+
       is(radioGroup.name, FIRST_NAME, "Radio group has the expected name.");
       radioButtons.forEach(button => {
         is(button.name, FIRST_NAME, "Group name propagates to each button.");
@@ -86,18 +72,20 @@
 
     // Verify effects and methods of changing radio button checked state.
     add_task(async function testChangeRadioButtonChecked() {
-      let { radioGroup, radioButtons } = await renderRadioElements();
+      let renderTarget = await testHelpers.renderInputElements(defaultTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let radioButtons = [...renderTarget.querySelectorAll("moz-radio")];
       let [firstButton, secondButton, thirdButton] = radioButtons;
 
       function verifyCheckedState(selectedButton) {
         ok(selectedButton.checked, "The expected radio button is checked.");
         is(
-          selectedButton.radioButton.getAttribute("aria-checked"),
+          selectedButton.inputEl.getAttribute("aria-checked"),
           "true",
           "The checked radio button has the correct aria-checked value."
         );
         is(
-          selectedButton.radioButton.tabIndex,
+          selectedButton.inputEl.tabIndex,
           0,
           "The checked radio button is focusable."
         );
@@ -106,15 +94,11 @@
           .forEach(button => {
             ok(!button.checked, "All other buttons are unchecked.");
             is(
-              button.radioButton.getAttribute("aria-checked"),
+              button.inputEl.getAttribute("aria-checked"),
               "false",
               "All other buttons have the correct aria-checked value."
             );
-            is(
-              button.radioButton.tabIndex,
-              -1,
-              "All other buttons are not focusable."
-            );
+            is(button.inputEl.tabIndex, -1, "All other buttons are not focusable.");
           });
         is(
           radioGroup.value,
@@ -140,8 +124,9 @@
     // Verify that changing the radio group's value updates the checked state of
     // its moz-radio children.
     add_task(async function testChangeRadioGroupValue() {
-      let { radioGroup, radioButtons } = await renderRadioElements();
-      let [firstButton, , thirdButton] = radioButtons;
+      let renderTarget = await testHelpers.renderInputElements(defaultTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let [firstButton, , thirdButton] = renderTarget.querySelectorAll("moz-radio");
 
       synthesizeMouseAtCenter(firstButton, {});
       await radioGroup.updateComplete;
@@ -175,8 +160,9 @@
         is(radioGroup.value, button.value, "Radio group value is updated.");
       }
 
-      let { radioGroup, radioButtons } = await renderRadioElements();
-      let [firstButton, secondButton, thirdButton] = radioButtons;
+      let renderTarget = await testHelpers.renderInputElements(defaultTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let [firstButton, secondButton, thirdButton] = renderTarget.querySelectorAll("moz-radio");
       firstButton.click();
       is(
         document.activeElement,
@@ -238,6 +224,8 @@
 
       await keyboardNavigate("right");
       validateActiveElement(secondButton);
+
+      await SpecialPowers.popPrefEnv();
     });
 
     // Verify first radio buttons is focusable when all radio buttons are un-checked.
@@ -251,8 +239,9 @@
         </moz-radio-group>
         <button tabindex="0" id="after">After group/button></button>
       `;
-      let { radioGroup, radioButtons } = await renderRadioElements(template);
-      let [firstRadioButton, secondRadioButton, thirdRadioButton] = radioButtons;
+      let renderTarget = await testHelpers.renderInputElements(template);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let [firstButton, secondButton, thirdButton] = renderTarget.querySelectorAll("moz-radio");
       let [beforeButton, afterButton] = renderTarget.querySelectorAll("button");
 
       ok(
@@ -264,12 +253,12 @@
       synthesizeKey("KEY_Tab", {});
       is(
         document.activeElement,
-        firstRadioButton,
+        firstButton,
         "First radio button is tab focusable when all buttons un-checked."
       );
-      [secondRadioButton, thirdRadioButton].forEach(button =>
+      [secondButton, thirdButton].forEach(button =>
         is(
-          button.radioButton.getAttribute("tabindex"),
+          button.inputEl.getAttribute("tabindex"),
           "-1",
           "All other buttons are not tab focusable."
         )
@@ -285,23 +274,23 @@
       synthesizeKey("KEY_Tab", { shiftKey: true });
       is(
         document.activeElement,
-        firstRadioButton,
+        firstButton,
         "Focus moves back to the first radio button."
       );
 
       synthesizeKey("KEY_ArrowDown", {});
       is(
         document.activeElement,
-        secondRadioButton,
+        secondButton,
         "Focus moves to the second radio button with down arrow keypress."
       );
       is(
         radioGroup.value,
-        secondRadioButton.value,
+        secondButton.value,
         "Radio group value updates to second radio button value."
       );
 
-      secondRadioButton.checked = false;
+      secondButton.checked = false;
       await radioGroup.updateComplete;
       synthesizeKey("KEY_Tab", { shiftKey: true });
       ok(
@@ -310,18 +299,18 @@
       );
       is(
         document.activeElement,
-        firstRadioButton,
+        firstButton,
         "First radio button becomes focusable again."
       );
 
       synthesizeKey("KEY_Tab", { shiftKey: true });
-      firstRadioButton.disabled = true;
-      secondRadioButton.disabled = true;
+      firstButton.disabled = true;
+      secondButton.disabled = true;
       await radioGroup.updateComplete;
       synthesizeKey("KEY_Tab");
       is(
         document.activeElement,
-        thirdRadioButton,
+        thirdButton,
         "First non-disabled radio button is focusable when all buttons are un-checked."
       );
     });
@@ -337,8 +326,9 @@
         </moz-radio-group>
         <button id="after">after group</button>
       `;
-      let { radioGroup, radioButtons } = await renderRadioElements(disabledTemplate);
-      let [firstRadioButton, secondRadioButton, thirdRadioButton] = radioButtons;
+      let renderTarget = await testHelpers.renderInputElements(disabledTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let [firstButton, secondButton, thirdButton] = renderTarget.querySelectorAll("moz-radio");
 
       let afterButton = document.getElementById("after");
       let beforeButton = document.getElementById("before");
@@ -346,11 +336,11 @@
       synthesizeKey("KEY_Tab", {});
       is(
         document.activeElement,
-        secondRadioButton,
+        secondButton,
         "The second radio button should receive focus when the first radio button is disabled"
       );
       is(
-        firstRadioButton.disabled,
+        firstButton.disabled,
         true,
         "First radio button should still be disabled"
       );
@@ -358,12 +348,12 @@
       synthesizeKey("KEY_ArrowDown", {});
       is(
         document.activeElement,
-        thirdRadioButton,
+        thirdButton,
         "Focus should move to the third radio button"
       );
       await radioGroup.updateComplete;
-      ok(thirdRadioButton.checked, "Third radio button gets checked");
-      is(radioGroup.value, thirdRadioButton.value, "Radio group value is updated");
+      ok(thirdButton.checked, "Third radio button gets checked");
+      is(radioGroup.value, thirdButton.value, "Radio group value is updated");
 
       synthesizeKey("KEY_Tab", {});
       is(
@@ -375,55 +365,18 @@
       synthesizeKey("KEY_Tab", { shiftKey: true });
       is(
         document.activeElement,
-        thirdRadioButton,
+        thirdButton,
         "Focus should move back to the checked radio button"
       );
     });
 
     // Verify expected events emitted in the correct order.
     add_task(async function testRadioEvents() {
-      let { radioGroup, radioButtons } = await renderRadioElements();
+      let renderTarget = await testHelpers.renderInputElements(defaultTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let radioButtons = renderTarget.querySelectorAll("moz-radio");
       let [firstButton, secondButton, thirdButton] = radioButtons;
-
-      let seenEvents = [];
-
-      function trackEvent(event) {
-        seenEvents.push({
-          type: event.type,
-          value: event.target.value,
-          checked: event.target.checked,
-          localName: event.currentTarget.localName,
-        });
-      }
-
-      function verifyEvents(expectedEvents) {
-        is(
-          seenEvents.length,
-          expectedEvents.length,
-          "Radio elements emit the expected number of events."
-        );
-        expectedEvents.forEach((eventInfo, index) => {
-          let seenEventInfo = seenEvents[index];
-          is(seenEventInfo.type, eventInfo.type, "Event type is correct.");
-          is(
-            seenEventInfo.value,
-            eventInfo.value,
-            "Event target value is correct."
-          );
-          is(
-            seenEventInfo.localName,
-            eventInfo.localName,
-            "Event is emitted from the correct element."
-          );
-          if (eventInfo.hasOwnProperty("checked")) {
-            is(
-              seenEventInfo.checked,
-              eventInfo.checked,
-              "Event checked state is correct."
-            );
-          }
-        });
-      }
+      let { trackEvent, verifyEvents } = testHelpers.getInputEventHelpers();
 
       radioButtons.forEach(button => {
         button.addEventListener("click", trackEvent);
@@ -434,8 +387,8 @@
       radioGroup.addEventListener("input", trackEvent);
 
       // Verify that clicking on a radio button emits the right events in the correct order.
-      synthesizeMouseAtCenter(thirdButton.radioButton, {});
-      await new Promise(r => setTimeout(r, 0));
+      synthesizeMouseAtCenter(thirdButton.inputEl, {});
+      await TestUtils.waitForTick();
 
       verifyEvents([
         { type: "click", value: "third", localName: "moz-radio", checked: true },
@@ -445,14 +398,11 @@
         { type: "change", value: "third", localName: "moz-radio-group" },
       ]);
 
-      // Reset seen events.
-      seenEvents = [];
-
       // Verify that keyboard navigation emits the right events in the correct order.
       synthesizeKey("KEY_ArrowUp", {});
       await radioGroup.updateComplete;
       is(radioGroup.value, secondButton.value, "Radiogroup value is updated.");
-      await new Promise(r => setTimeout(r, 0));
+      await TestUtils.waitForTick();
 
       verifyEvents([
         { type: "click", value: "second", localName: "moz-radio", checked: true },
@@ -462,72 +412,46 @@
         { type: "change", value: "second", localName: "moz-radio-group" },
       ]);
 
-      // Reset seen events.
-      seenEvents = [];
-
       // Verify that changing the group's value directly doesn't emit any events.
       radioGroup.value = firstButton.value;
       await radioGroup.updateComplete;
       ok(firstButton.checked, "Expected radio button is checked.");
-      await new Promise(r => setTimeout(r, 0));
+      await TestUtils.waitForTick();
       verifyEvents([]);
-
-      // Reset seen events.
-      seenEvents = [];
 
       // Verify that changing a radio button's checked state directly doesn't emit any events.
       secondButton.checked = true;
       await radioGroup.updateComplete;
       is(radioGroup.value, secondButton.value, "Radiogroup value is updated.");
-      await new Promise(r => setTimeout(r, 0));
+      await TestUtils.waitForTick();
       verifyEvents([]);
 
-      // Reset seen events.
-      seenEvents = [];
-
-      // Verify we don't get any events from disabled radio groups or buttons.
+      // Verify we don't get any events from disabled radio groups.
       radioGroup.disabled = true;
       await radioGroup.updateComplete;
-      synthesizeMouseAtCenter(firstButton.radioButton, {});
-      await new Promise(r => setTimeout(r, 0));
+      synthesizeMouseAtCenter(firstButton.inputEl, {});
+      await TestUtils.waitForTick();
       verifyEvents([]);
       radioGroup.disabled = false;
       await radioGroup.updateComplete;
 
-      // Reset seen events.
-      seenEvents = [];
-
+      // Verify we don't get any events from disabled radio buttons.
       thirdButton.disabled = true;
       await radioGroup.updateComplete;
       thirdButton.click();
-      await new Promise(r => setTimeout(r, 0));
+      await TestUtils.waitForTick();
       verifyEvents([]);
       thirdButton.disabled = false;
       await radioGroup.updateComplete;
     });
 
-    // Verify setting iconSrc displays an icon in the radio button.
-    add_task(async function testRadioButtonIcon() {
-      const ICON_SRC = "chrome://global/skin/icons/edit-copy.svg";
-      let { radioButtons } = await renderRadioElements();
-      let [firstRadioButton] = radioButtons;
-
-      ok(!firstRadioButton.icon, "No icon element present if iconSrc isn't set.");
-      firstRadioButton.iconSrc = ICON_SRC;
-      await firstRadioButton.updateComplete;
-      ok(firstRadioButton.icon, "Radio button displays an icon.");
-      is(
-        firstRadioButton.icon.getAttribute("src"),
-        ICON_SRC,
-        "Radio button icon uses the expected source."
-      );
-    });
-
     // Verify disabling the group disables all buttons in the group as well as
     // the ways it's possible to disable/enable individual buttons.
     add_task(async function testDisablingRadioElements() {
-      let { radioGroup, radioButtons } = await renderRadioElements();
-      let [firstRadioButton, ...otherButtons] = radioButtons;
+      let renderTarget = await testHelpers.renderInputElements(defaultTemplate);
+      let radioGroup = renderTarget.querySelector("moz-radio-group");
+      let radioButtons = renderTarget.querySelectorAll("moz-radio");
+      let [firstButton, ...otherButtons] = radioButtons;
 
       function verifyElementStates(state) {
         let checkElementState = element =>
@@ -539,7 +463,7 @@
           `Radio group fieldset is ${state}.`
         );
         radioButtons.forEach(button =>
-          ok(checkElementState(button.radioButton), `All radio buttons are ${state}.`)
+          ok(checkElementState(button.inputEl), `All radio buttons are ${state}.`)
         );
       }
 
@@ -547,15 +471,15 @@
       verifyElementStates("enabled");
 
       // Verify it's possible to disable a single radio button independently.
-      firstRadioButton.disabled = true;
-      await firstRadioButton.updateComplete;
+      firstButton.disabled = true;
+      await firstButton.updateComplete;
       ok(
-        firstRadioButton.radioButton.hasAttribute("disabled"),
+        firstButton.inputEl.hasAttribute("disabled"),
         "The first radio button is now disabled."
       );
       otherButtons.forEach(button =>
         ok(
-          !button.radioButton.hasAttribute("disabled"),
+          !button.inputEl.hasAttribute("disabled"),
           "All other buttons are still enabled."
         )
       );
@@ -567,8 +491,8 @@
 
       // Verify it's not possible to enable a single radio button when the
       // parent group is disabled.
-      firstRadioButton.disabled = false;
-      await firstRadioButton.updateComplete;
+      firstButton.disabled = false;
+      await firstButton.updateComplete;
       verifyElementStates("disabled");
 
       // Re-enable the radio group. The independently disabled radio button
@@ -576,24 +500,23 @@
       radioGroup.disabled = false;
       await radioGroup.updateComplete;
       ok(
-        firstRadioButton.radioButton.hasAttribute("disabled"),
+        firstButton.inputEl.hasAttribute("disabled"),
         "The first radio button is still disabled."
       );
       otherButtons.forEach(button =>
         ok(
-          !button.radioButton.hasAttribute("disabled"),
+          !button.inputEl.hasAttribute("disabled"),
           "All other buttons are now enabled."
         )
       );
 
       // Verify it's possible to enable a single radio button independently.
-      firstRadioButton.disabled = false;
-      await firstRadioButton.updateComplete;
+      firstButton.disabled = false;
+      await firstButton.updateComplete;
       verifyElementStates("enabled");
     });
   </script>
 </head>
 <body>
-  <div id="render"></div>
 </body>
 </html>

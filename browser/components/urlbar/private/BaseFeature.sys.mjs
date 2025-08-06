@@ -57,8 +57,8 @@ export class BaseFeature {
    *   If the subclass's `shouldEnable` implementation depends on any prefs that
    *   are not fallbacks for Nimbus variables, the subclass should override this
    *   getter and return their names in this array so that `update()` can be
-   *   called when they change. Names should be relative to `browser.urlbar.`.
-   *   It doesn't hurt to include prefs that are fallbacks for Nimbus variables,
+   *   called when they change. Names should be recognized by `UrlbarPrefs`. It
+   *   doesn't hurt to include prefs that are fallbacks for Nimbus variables,
    *   it's just not necessary because `QuickSuggest` will update all features
    *   whenever a `urlbar` Nimbus variable or its fallback pref changes.
    */
@@ -80,10 +80,31 @@ export class BaseFeature {
    * @returns {Array}
    *   If the feature manages one or more types of suggestions served by the
    *   Suggest Rust component, the subclass should override this getter and
-   *   return an array of the type names as defined in `suggest.udl`.
+   *   return an array of the type names as defined in `suggest.udl`. e.g.,
+   *   "Amp", "Wikipedia", "Mdn", etc.
    */
   get rustSuggestionTypes() {
     return [];
+  }
+
+  /**
+   * @returns {string}
+   *   If the feature manages a suggestion type served by the Suggest ML
+   *   backend, the subclass should override this getter and return the ML
+   *   intent name as returned by `MLSuggest`. e.g., "yelp_intent"
+   */
+  get mlIntent() {
+    return "";
+  }
+
+  /**
+   * @returns {boolean}
+   *   If the feature manages a suggestion type served by the Suggest ML
+   *   backend, the subclass should override this getter and return true if the
+   *   ML suggestion type is enabled and false otherwise.
+   */
+  get isMlIntentEnabled() {
+    return false;
   }
 
   /**
@@ -137,16 +158,20 @@ export class BaseFeature {
   }
 
   /**
-   * If the feature manages more than one type of suggestion served by the
-   * Suggest Rust component, the subclass should override this method and return
-   * true if the given suggestion type is enabled and false otherwise. Ideally a
-   * feature manages at most one type of Rust suggestion, and in that case it's
-   * fine to rely on the default implementation here because the suggestion type
-   * will be enabled iff the feature itself is enabled.
+   * If the feature manages one or more suggestion types served by the Suggest
+   * Rust component, this method should return true if the given suggestion type
+   * is enabled and false otherwise. Many features do nothing but manage a
+   * single Rust suggestion type, and the suggestion type should be enabled iff
+   * the feature itself is enabled. Those features can rely on the default
+   * implementation here since a feature's Rust suggestions will not be fetched
+   * if the feature is disabled. Other features either manage multiple
+   * suggestion types or have functionality beyond their Rust suggestions and
+   * need to remain enabled even when their suggestions are not. Those features
+   * should override this method.
    *
    * @param {string} _type
-   *   A Rust suggestion type name as defined in `suggest.udl`. See also
-   *   `rustSuggestionTypes`.
+   *   A Rust suggestion type name as defined in `suggest.udl`, e.g., "Amp",
+   *   "Wikipedia", "Mdn", etc. See also `BaseFeature.rustSuggestionTypes`.
    * @returns {boolean}
    *   Whether the suggestion type is enabled.
    */
@@ -155,9 +180,67 @@ export class BaseFeature {
   }
 
   /**
+   * If the feature manages suggestions served by the Suggest Rust component and
+   * at least one of its suggestion providers requires constraints, the subclass
+   * should override this method and return a plain JS object that can be passed
+   * to `SuggestionProviderConstraints()`. This method will only be called if
+   * the feature and suggestion type are enabled.
+   *
+   * @param {string} _type
+   *   A Rust suggestion type name as defined in `suggest.udl`, e.g., "Amp",
+   *   "Wikipedia", "Mdn", etc. See also `BaseFeature.rustSuggestionTypes`.
+   * @returns {object|null}
+   *   If the given type's provider requires constraints, this should return a
+   *   plain JS object that can be passed to `SuggestionProviderConstraints()`.
+   *   Otherwise it should return null.
+   */
+  getRustProviderConstraints(_type) {
+    return null;
+  }
+
+  /**
+   * If the feature corresponds to a type of suggestion, the subclass may
+   * override this method as necessary. It should return true if the given
+   * suggestion should be considered sponsored.
+   *
+   * @param {object} _suggestion
+   *   A suggestion from one of the Suggest sources (Rust, Merino, etc.).
+   *   Subclasses should not assume which source the suggestion is from, and
+   *   they should handle all possible sources as necessary.
+   * @returns {boolean}
+   *   Whether the suggestion should be considered sponsored.
+   */
+  isSuggestionSponsored(_suggestion) {
+    return false;
+  }
+
+  /**
+   * If the feature corresponds to a type of suggestion, the subclass may
+   * override this method as necessary. It will be called once per query with
+   * all of the feature's suggestions that matched the query. It should return
+   * the subset that should be shown to the user. This is useful in cases where
+   * a source (Rust, Merino) may return many suggestions for the feature but
+   * only some of them should be shown, and the criteria for determining which
+   * to show are external to the source.
+   *
+   * `makeResult()` can also be used to filter suggestions by returning null for
+   * suggestions that should be discarded. Use `filterSuggestions()` when you
+   * need to know all matching suggestions in order to decide which to show.
+   *
+   * @param {Array} suggestions
+   *   The suggestions that matched a query.
+   * @returns {Array}
+   *   The subset of `suggestions` that should be shown (typically all).
+   */
+  async filterSuggestions(suggestions) {
+    return suggestions;
+  }
+
+  /**
    * If the feature corresponds to a type of suggestion, the subclass should
    * override this method. It should return a new `UrlbarResult` for a given
-   * suggestion, which can come from either remote settings or Merino.
+   * suggestion, which can come from either remote settings or Merino, or null
+   * if no result should be shown for the suggestion.
    *
    * @param {UrlbarQueryContext} _queryContext
    *   The query context.
@@ -167,8 +250,8 @@ export class BaseFeature {
    *   The search string that was used to fetch the suggestion. It may be
    *   different from `queryContext.searchString` due to trimming, lower-casing,
    *   etc. This is included as a param in case it's useful.
-   * @returns {UrlbarResult}
-   *   A new result for the suggestion.
+   * @returns {UrlbarResult|null}
+   *   A new result for the suggestion or null if a result should not be shown.
    */
   async makeResult(_queryContext, _suggestion, _searchString) {
     return null;
@@ -214,39 +297,17 @@ export class BaseFeature {
    * enabled as a result, they will be ingested.
    */
   update() {
-    // Collect the feature's Rust suggestion types that are currently enabled.
-    // Features can manage multiple types. Some may be enabled while others are
-    // disabled. As long as one is enabled, the feature itself will be enabled.
-    let { rustBackend } = lazy.QuickSuggest;
-    let oldEnabledRustSuggestionTypes =
-      rustBackend.isEnabled && this.isEnabled
-        ? this.rustSuggestionTypes.filter(type =>
-            this.isRustSuggestionTypeEnabled(type)
-          )
-        : [];
-
-    // Update the feature's enabled status.
     let enable =
       lazy.UrlbarPrefs.get("quickSuggestEnabled") && this.shouldEnable;
     if (enable != this.isEnabled) {
-      this.logger.info(`Setting enabled = ${enable}`);
-      this.enable(enable);
+      this.logger.info("Feature enabled status changed", {
+        nowEnabled: enable,
+      });
       this.#isEnabled = enable;
+      this.enable(enable);
     }
 
-    // Ingest all the feature's Rust suggestion types that just became enabled.
-    // This will be their initial ingests. After that, their ingests will occur
-    // according to the ingest timer in the backend.
-    if (rustBackend.isEnabled && enable) {
-      for (let type of this.rustSuggestionTypes) {
-        if (
-          this.isRustSuggestionTypeEnabled(type) &&
-          !oldEnabledRustSuggestionTypes.includes(type)
-        ) {
-          rustBackend.ingestSuggestionType(type);
-        }
-      }
-    }
+    lazy.QuickSuggest.rustBackend?.ingestEnabledSuggestions(this);
   }
 
   #isEnabled = false;

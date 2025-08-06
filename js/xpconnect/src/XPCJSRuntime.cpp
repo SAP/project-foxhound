@@ -137,6 +137,11 @@ const char* const XPCJSRuntime::mStrings[] = {
     "crypto",           // IDX_CRYPTO
     "indexedDB",        // IDX_INDEXEDDB
     "structuredClone",  // IDX_STRUCTUREDCLONE
+    "locks",            // IDX_LOCKS
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    "suppressed",  // IDX_SUPPRESSED
+    "error",       // IDX_ERROR
+#endif
 };
 
 /***************************************************************************/
@@ -2563,11 +2568,11 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       Telemetry::Accumulate(Telemetry::NAME, sample); \
       break;
 
-    FOR_EACH_JS_METRIC(CASE_ACCUMULATE)
+    FOR_EACH_JS_LEGACY_METRIC(CASE_ACCUMULATE)
 #undef CASE_ACCUMULATE
 
     default:
-      MOZ_CRASH("Bad metric id");
+      break;
   }
   // clang-format on
 
@@ -2618,6 +2623,10 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       glean::javascript_gc::slice_time.AccumulateRawDuration(
           TimeDuration::FromMilliseconds(sample));
       break;
+    case JSMetric::ION_COMPILE_TIME:
+      glean::javascript_ion::compile_time.AccumulateRawDuration(
+          TimeDuration::FromMicroseconds(sample));
+      break;
     default:
       // The rest aren't relayed to Glean.
       break;
@@ -2635,46 +2644,11 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
     case JSUseCounter::WASM_LEGACY_EXCEPTIONS:
       SetUseCounter(obj, eUseCounter_custom_JS_wasm_legacy_exceptions);
       return;
-    case JSUseCounter::SUBCLASSING_ARRAY_TYPE_II:
-      SetUseCounter(obj,
-                    mozilla::eUseCounter_custom_JS_subclassing_array_type_2);
+    case JSUseCounter::ISHTMLDDA_FUSE:
+      SetUseCounter(obj, eUseCounter_custom_JS_isHTMLDDA_fuse);
       return;
-    case JSUseCounter::SUBCLASSING_ARRAY_TYPE_III:
-      SetUseCounter(obj,
-                    mozilla::eUseCounter_custom_JS_subclassing_array_type_3);
-      return;
-    case JSUseCounter::SUBCLASSING_PROMISE_TYPE_II:
-      SetUseCounter(obj,
-                    mozilla::eUseCounter_custom_JS_subclassing_promise_type_2);
-      return;
-    case JSUseCounter::SUBCLASSING_PROMISE_TYPE_III:
-      SetUseCounter(obj,
-                    mozilla::eUseCounter_custom_JS_subclassing_promise_type_3);
-      return;
-    case JSUseCounter::SUBCLASSING_TYPEDARRAY_TYPE_II:
-      SetUseCounter(
-          obj, mozilla::eUseCounter_custom_JS_subclassing_typedarray_type_2);
-      return;
-    case JSUseCounter::SUBCLASSING_TYPEDARRAY_TYPE_III:
-      SetUseCounter(
-          obj, mozilla::eUseCounter_custom_JS_subclassing_typedarray_type_3);
-      return;
-    case JSUseCounter::SUBCLASSING_ARRAYBUFFER_TYPE_III:
-      SetUseCounter(
-          obj, mozilla::eUseCounter_custom_JS_subclassing_arraybuffer_type_3);
-      return;
-    case JSUseCounter::SUBCLASSING_SHAREDARRAYBUFFER_TYPE_III:
-      SetUseCounter(
-          obj,
-          mozilla::eUseCounter_custom_JS_subclassing_sharedarraybuffer_type_3);
-      return;
-    case JSUseCounter::SUBCLASSING_REGEXP_TYPE_III:
-      SetUseCounter(obj,
-                    mozilla::eUseCounter_custom_JS_subclassing_regexp_type_3);
-      return;
-    case JSUseCounter::SUBCLASSING_REGEXP_TYPE_IV:
-      SetUseCounter(obj,
-                    mozilla::eUseCounter_custom_JS_subclassing_regexp_type_4);
+    case JSUseCounter::OPTIMIZE_GET_ITERATOR_FUSE:
+      SetUseCounter(obj, eUseCounter_custom_JS_OptimizeGetIterator_fuse);
       return;
     case JSUseCounter::COUNT:
       break;

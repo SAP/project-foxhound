@@ -4442,6 +4442,27 @@ void MacroAssembler::patchCallToNop(uint8_t* call) {
   new (inst) InstNOP();
 }
 
+CodeOffset MacroAssembler::move32WithPatch(Register dest) {
+  return movWithPatch(ImmWord(uintptr_t(-1)), dest);
+}
+
+void MacroAssembler::patchMove32(CodeOffset offset, Imm32 n) {
+  Register dest;
+  Assembler::RelocStyle rs;
+
+  {
+    BufferInstructionIterator iter(BufferOffset(offset.offset()), &m_buffer);
+    DebugOnly<const uint32_t*> val = GetPtr32Target(iter, &dest, &rs);
+    MOZ_ASSERT(uint32_t((const uint32_t*)val) == uint32_t(-1));
+  }
+
+  // Patch over actual instructions.
+  {
+    BufferInstructionIterator iter(BufferOffset(offset.offset()), &m_buffer);
+    MacroAssembler::ma_mov_patch(n, dest, Always, rs, iter);
+  }
+}
+
 void MacroAssembler::pushReturnAddress() { push(lr); }
 
 void MacroAssembler::popReturnAddress() { pop(lr); }
@@ -4585,6 +4606,44 @@ uint32_t MacroAssembler::pushFakeReturnAddress(Register scratch) {
 void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
                                                ExitFrameType type) {
   enterFakeExitFrame(cxreg, scratch, type);
+}
+
+CodeOffset MacroAssembler::sub32FromMemAndBranchIfNegativeWithPatch(
+    Address address, Label* label) {
+  ScratchRegisterScope value32(*this);
+  SecondScratchRegisterScope scratch(*this);
+  MOZ_ASSERT(scratch != address.base);
+  ma_ldr(address, value32, scratch);
+  // -128 is arbitrary, but makes `*address` count upwards, which may help
+  // to identify cases where the subsequent ::patch..() call was forgotten.
+  ma_sub(Imm32(-128), value32, scratch, SetCC);
+  // Points immediately after the insn to patch
+  CodeOffset patchPoint = CodeOffset(currentOffset());
+  // This assumes that ma_str does not change the condition codes.
+  ma_str(value32, address, scratch);
+  ma_b(label, Assembler::Signed);
+  return patchPoint;
+}
+
+void MacroAssembler::patchSub32FromMemAndBranchIfNegative(CodeOffset offset,
+                                                          Imm32 imm) {
+  int32_t val = imm.value;
+  // Patching it to zero would make the insn pointless
+  MOZ_RELEASE_ASSERT(val >= 1 && val <= 127);
+  BufferInstructionIterator iter(BufferOffset(offset.offset() - 4), &m_buffer);
+  uint32_t* instrPtr = const_cast<uint32_t*>(iter.cur()->raw());
+  // 31   27   23   19 15 11
+  // |    |    |    |  |  |
+  // 1110 0010 1001 Rn Rd imm12 = ADDS Rd, Rn, #imm12 // (expected)
+  // 1110 0010 0101 Rn Rd imm12 = SUBS Rd, Rn, #imm12 // (replacement)
+  uint32_t oldInstr = *instrPtr;
+  // Check opcode bits and imm field are as expected
+  MOZ_ASSERT((oldInstr >> 20) == 0b1110'0010'1001U);
+  MOZ_ASSERT((oldInstr & 0xFFF) == 128);           // as created above
+  uint32_t newInstr = (0b1110'0010'0101U << 20) |  // opcode bits
+                      (oldInstr & 0x000FF000U) |   // existing register fields
+                      (val & 0xFFF);               // #val
+  *instrPtr = newInstr;
 }
 
 // ===============================================================
@@ -5801,6 +5860,8 @@ void MacroAssembler::atomicEffectOpJS(Scalar::Type arrayType,
   AtomicEffectOp(*this, nullptr, arrayType, sync, op, value, mem, temp);
 }
 
+void MacroAssembler::atomicPause() { as_yield(); }
+
 // ========================================================================
 // Primitive atomic operations.
 
@@ -5922,11 +5983,23 @@ void MacroAssembler::flexibleQuotient32(
                           volatileLiveRegs);
 }
 
+void MacroAssembler::flexibleQuotientPtr(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  flexibleQuotient32(rhs, srcDest, isUnsigned, volatileLiveRegs);
+}
+
 void MacroAssembler::flexibleRemainder32(
     Register rhs, Register srcDest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
   EmitRemainderOrQuotient(true, *this, rhs, srcDest, isUnsigned,
                           volatileLiveRegs);
+}
+
+void MacroAssembler::flexibleRemainderPtr(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  flexibleRemainder32(rhs, srcDest, isUnsigned, volatileLiveRegs);
 }
 
 void MacroAssembler::flexibleDivMod32(Register rhs, Register lhsOutput,
@@ -6054,8 +6127,7 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
   addPtr(indexTemp32, pointer);
 }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
-void MacroAssembler::wasmMarkSlowCall() { ma_and(lr, lr, lr); }
+void MacroAssembler::wasmMarkCallAsSlow() { ma_and(lr, lr, lr); }
 
 const int32_t SlowCallMarker = 0xe00ee00e;
 
@@ -6068,7 +6140,14 @@ void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
   ma_cmp(temp2, temp1);
   j(Assembler::NotEqual, notSlow);
 }
-#endif  // ENABLE_WASM_TAIL_CALLS
+
+CodeOffset MacroAssembler::wasmMarkedSlowCall(const wasm::CallSiteDesc& desc,
+                                              const Register reg) {
+  AutoForbidPoolsAndNops afp(this, 2);
+  CodeOffset offset = call(desc, reg);
+  wasmMarkCallAsSlow();
+  return offset;
+}
 
 //}}} check_macroassembler_style
 
@@ -6241,7 +6320,7 @@ void MacroAssemblerARM::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
   MOZ_ASSERT(!access.isWidenSimd128Load());
 
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
 
   Scalar::Type type = access.type();
 
@@ -6362,7 +6441,7 @@ void MacroAssemblerARM::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
   MOZ_ASSERT(ptr == ptrScratch);
 
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   unsigned byteSize = access.byteSize();
   Scalar::Type type = access.type();
 

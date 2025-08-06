@@ -13,13 +13,12 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 #include <tuple>
 
-#include "absl/types/optional.h"
 #include "api/audio/audio_processing.h"
 #include "api/make_ref_counted.h"
 #include "api/scoped_refptr.h"
-#include "modules/audio_processing/optionally_built_submodule_creators.h"
 #include "modules/audio_processing/test/audio_processing_builder_for_testing.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
 #include "modules/audio_processing/test/echo_control_mock.h"
@@ -520,64 +519,6 @@ TEST(AudioProcessingImplTest,
   apm->ProcessStream(frame.data(), stream_config, stream_config, frame.data());
 }
 
-TEST(AudioProcessingImplTest,
-     ProcessWithAgc2AndTransientSuppressorVadModeDefault) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Disabled/");
-  auto apm = AudioProcessingBuilder()
-                 .SetConfig({.gain_controller1{.enabled = false}})
-                 .Create();
-  ASSERT_EQ(apm->Initialize(), AudioProcessing::kNoError);
-  webrtc::AudioProcessing::Config apm_config;
-  apm_config.gain_controller1.enabled = false;
-  apm_config.gain_controller2.enabled = true;
-  apm_config.gain_controller2.adaptive_digital.enabled = true;
-  apm_config.transient_suppression.enabled = true;
-  apm->ApplyConfig(apm_config);
-  constexpr int kSampleRateHz = 48000;
-  constexpr int kNumChannels = 1;
-  std::array<float, kSampleRateHz / 100> buffer;
-  float* channel_pointers[] = {buffer.data()};
-  StreamConfig stream_config(/*sample_rate_hz=*/kSampleRateHz,
-                             /*num_channels=*/kNumChannels);
-  Random random_generator(2341U);
-  constexpr int kFramesToProcess = 10;
-  for (int i = 0; i < kFramesToProcess; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    ASSERT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-  }
-}
-
-TEST(AudioProcessingImplTest,
-     ProcessWithAgc2AndTransientSuppressorVadModeRnnVad) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,switch_to_agc2:true/");
-  rtc::scoped_refptr<AudioProcessing> apm = AudioProcessingBuilder().Create();
-  ASSERT_EQ(apm->Initialize(), AudioProcessing::kNoError);
-  webrtc::AudioProcessing::Config apm_config;
-  apm_config.gain_controller1.enabled = false;
-  apm_config.gain_controller2.enabled = true;
-  apm_config.gain_controller2.adaptive_digital.enabled = true;
-  apm_config.transient_suppression.enabled = true;
-  apm->ApplyConfig(apm_config);
-  constexpr int kSampleRateHz = 48000;
-  constexpr int kNumChannels = 1;
-  std::array<float, kSampleRateHz / 100> buffer;
-  float* channel_pointers[] = {buffer.data()};
-  StreamConfig stream_config(/*sample_rate_hz=*/kSampleRateHz,
-                             /*num_channels=*/kNumChannels);
-  Random random_generator(2341U);
-  constexpr int kFramesToProcess = 10;
-  for (int i = 0; i < kFramesToProcess; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    ASSERT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-  }
-}
-
 TEST(AudioProcessingImplTest, EchoControllerObservesPlayoutVolumeChange) {
   // Tests that the echo controller observes an echo path gain change when a
   // playout volume change is reported.
@@ -689,151 +630,6 @@ TEST(AudioProcessingImplTest, RenderPreProcessorBeforeEchoDetector) {
   // produced by the render pre-processor.
   EXPECT_EQ(kExpectedPreprocessedAudioLevel,
             test_echo_detector->last_render_audio_first_sample());
-}
-
-// Disabling build-optional submodules and trying to enable them via the APM
-// config should be bit-exact with running APM with said submodules disabled.
-// This mainly tests that SetCreateOptionalSubmodulesForTesting has an effect.
-TEST(ApmWithSubmodulesExcludedTest, BitexactWithDisabledModules) {
-  auto apm = rtc::make_ref_counted<AudioProcessingImpl>();
-  ASSERT_EQ(apm->Initialize(), AudioProcessing::kNoError);
-
-  ApmSubmoduleCreationOverrides overrides;
-  overrides.transient_suppression = true;
-  apm->OverrideSubmoduleCreationForTesting(overrides);
-
-  AudioProcessing::Config apm_config = apm->GetConfig();
-  apm_config.transient_suppression.enabled = true;
-  apm->ApplyConfig(apm_config);
-
-  rtc::scoped_refptr<AudioProcessing> apm_reference =
-      AudioProcessingBuilder().Create();
-  apm_config = apm_reference->GetConfig();
-  apm_config.transient_suppression.enabled = false;
-  apm_reference->ApplyConfig(apm_config);
-
-  constexpr int kSampleRateHz = 16000;
-  constexpr int kNumChannels = 1;
-  std::array<float, kSampleRateHz / 100> buffer;
-  std::array<float, kSampleRateHz / 100> buffer_reference;
-  float* channel_pointers[] = {buffer.data()};
-  float* channel_pointers_reference[] = {buffer_reference.data()};
-  StreamConfig stream_config(/*sample_rate_hz=*/kSampleRateHz,
-                             /*num_channels=*/kNumChannels);
-  Random random_generator(2341U);
-  constexpr int kFramesToProcessPerConfiguration = 10;
-
-  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    std::copy(buffer.begin(), buffer.end(), buffer_reference.begin());
-    ASSERT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-    ASSERT_EQ(
-        apm_reference->ProcessStream(channel_pointers_reference, stream_config,
-                                     stream_config, channel_pointers_reference),
-        kNoErr);
-    for (int j = 0; j < kSampleRateHz / 100; ++j) {
-      EXPECT_EQ(buffer[j], buffer_reference[j]);
-    }
-  }
-}
-
-// Disable transient suppressor creation and run APM in ways that should trigger
-// calls to the transient suppressor API.
-TEST(ApmWithSubmodulesExcludedTest, ReinitializeTransientSuppressor) {
-  auto apm = rtc::make_ref_counted<AudioProcessingImpl>();
-  ASSERT_EQ(apm->Initialize(), kNoErr);
-
-  ApmSubmoduleCreationOverrides overrides;
-  overrides.transient_suppression = true;
-  apm->OverrideSubmoduleCreationForTesting(overrides);
-
-  AudioProcessing::Config config = apm->GetConfig();
-  config.transient_suppression.enabled = true;
-  apm->ApplyConfig(config);
-  // 960 samples per frame: 10 ms of <= 48 kHz audio with <= 2 channels.
-  float buffer[960];
-  float* channel_pointers[] = {&buffer[0], &buffer[480]};
-  Random random_generator(2341U);
-  constexpr int kFramesToProcessPerConfiguration = 3;
-
-  StreamConfig initial_stream_config(/*sample_rate_hz=*/16000,
-                                     /*num_channels=*/1);
-  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    EXPECT_EQ(apm->ProcessStream(channel_pointers, initial_stream_config,
-                                 initial_stream_config, channel_pointers),
-              kNoErr);
-  }
-
-  StreamConfig stereo_stream_config(/*sample_rate_hz=*/16000,
-                                    /*num_channels=*/2);
-  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    EXPECT_EQ(apm->ProcessStream(channel_pointers, stereo_stream_config,
-                                 stereo_stream_config, channel_pointers),
-              kNoErr);
-  }
-
-  StreamConfig high_sample_rate_stream_config(/*sample_rate_hz=*/48000,
-                                              /*num_channels=*/2);
-  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    EXPECT_EQ(
-        apm->ProcessStream(channel_pointers, high_sample_rate_stream_config,
-                           high_sample_rate_stream_config, channel_pointers),
-        kNoErr);
-  }
-}
-
-// Disable transient suppressor creation and run APM in ways that should trigger
-// calls to the transient suppressor API.
-TEST(ApmWithSubmodulesExcludedTest, ToggleTransientSuppressor) {
-  auto apm = rtc::make_ref_counted<AudioProcessingImpl>();
-  ASSERT_EQ(apm->Initialize(), AudioProcessing::kNoError);
-
-  ApmSubmoduleCreationOverrides overrides;
-  overrides.transient_suppression = true;
-  apm->OverrideSubmoduleCreationForTesting(overrides);
-
-  //  960 samples per frame: 10 ms of <= 48 kHz audio with <= 2 channels.
-  float buffer[960];
-  float* channel_pointers[] = {&buffer[0], &buffer[480]};
-  Random random_generator(2341U);
-  constexpr int kFramesToProcessPerConfiguration = 3;
-  StreamConfig stream_config(/*sample_rate_hz=*/16000,
-                             /*num_channels=*/1);
-
-  AudioProcessing::Config config = apm->GetConfig();
-  config.transient_suppression.enabled = true;
-  apm->ApplyConfig(config);
-  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    EXPECT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-  }
-
-  config = apm->GetConfig();
-  config.transient_suppression.enabled = false;
-  apm->ApplyConfig(config);
-  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    EXPECT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-  }
-
-  config = apm->GetConfig();
-  config.transient_suppression.enabled = true;
-  apm->ApplyConfig(config);
-  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
-    RandomizeSampleVector(&random_generator, buffer);
-    EXPECT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-  }
 }
 
 class StartupInputVolumeParameterizedTest
@@ -1060,261 +856,11 @@ TEST(AudioProcessingImplTest,
   EXPECT_EQ(ProcessInputVolume(*apm, kOneFrame, /*initial_volume=*/135), 135);
 }
 
-TEST(AudioProcessingImplTest,
-     Agc2FieldTrialDoNotSwitchToFullAgc2WhenNoAgcIsActive) {
-  constexpr AudioProcessing::Config kOriginal{
-      .gain_controller1{.enabled = false},
-      .gain_controller2{.enabled = false},
-  };
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,switch_to_agc2:true/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, kOriginal.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, kOriginal.gain_controller2);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, kOriginal.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, kOriginal.gain_controller2);
-}
-
-TEST(AudioProcessingImplTest,
-     Agc2FieldTrialDoNotSwitchToFullAgc2WithAgc1Agc2InputVolumeControllers) {
-  constexpr AudioProcessing::Config kOriginal{
-      .gain_controller1{.enabled = true,
-                        .analog_gain_controller{.enabled = true}},
-      .gain_controller2{.enabled = true,
-                        .input_volume_controller{.enabled = true}},
-  };
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,switch_to_agc2:true/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, kOriginal.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, kOriginal.gain_controller2);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, kOriginal.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, kOriginal.gain_controller2);
-}
-
-class Agc2FieldTrialParametrizedTest
+class Agc2ParametrizedTest
     : public ::testing::TestWithParam<AudioProcessing::Config> {};
 
-TEST_P(Agc2FieldTrialParametrizedTest, DoNotChangeConfigIfDisabled) {
-  const AudioProcessing::Config original = GetParam();
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Disabled/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(original).Create()->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, original.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, original.gain_controller2);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(original);
-  adjusted = apm->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, original.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, original.gain_controller2);
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest, DoNotChangeConfigIfNoOverride) {
-  const AudioProcessing::Config original = GetParam();
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,"
-      "switch_to_agc2:false,"
-      "disallow_transient_suppressor_usage:false/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(original).Create()->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, original.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, original.gain_controller2);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(original);
-  adjusted = apm->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, original.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, original.gain_controller2);
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest, DoNotSwitchToFullAgc2) {
-  const AudioProcessing::Config original = GetParam();
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,switch_to_agc2:false/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(original).Create()->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, original.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, original.gain_controller2);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(original);
-  adjusted = apm->GetConfig();
-  EXPECT_EQ(adjusted.gain_controller1, original.gain_controller1);
-  EXPECT_EQ(adjusted.gain_controller2, original.gain_controller2);
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest, SwitchToFullAgc2) {
-  const AudioProcessing::Config original = GetParam();
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,switch_to_agc2:true/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(original).Create()->GetConfig();
-  EXPECT_FALSE(adjusted.gain_controller1.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.input_volume_controller.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.adaptive_digital.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(original);
-  adjusted = apm->GetConfig();
-  EXPECT_FALSE(adjusted.gain_controller1.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.input_volume_controller.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.adaptive_digital.enabled);
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest,
-       SwitchToFullAgc2AndOverrideInputVolumeControllerParameters) {
-  const AudioProcessing::Config original = GetParam();
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,switch_to_agc2:true,"
-      "min_input_volume:123,"
-      "clipped_level_min:20,"
-      "clipped_level_step:30,"
-      "clipped_ratio_threshold:0.4,"
-      "clipped_wait_frames:50,"
-      "enable_clipping_predictor:true,"
-      "target_range_max_dbfs:-6,"
-      "target_range_min_dbfs:-70,"
-      "update_input_volume_wait_frames:80,"
-      "speech_probability_threshold:0.9,"
-      "speech_ratio_threshold:1.0/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(original).Create()->GetConfig();
-  EXPECT_FALSE(adjusted.gain_controller1.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.input_volume_controller.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.adaptive_digital.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(original);
-  adjusted = apm->GetConfig();
-  EXPECT_FALSE(adjusted.gain_controller1.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.input_volume_controller.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.adaptive_digital.enabled);
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest,
-       SwitchToFullAgc2AndOverrideAdaptiveDigitalControllerParameters) {
-  const AudioProcessing::Config original = GetParam();
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,switch_to_agc2:true,"
-      "headroom_db:10,"
-      "max_gain_db:20,"
-      "initial_gain_db:7,"
-      "max_gain_change_db_per_second:5,"
-      "max_output_noise_level_dbfs:-40/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(original).Create()->GetConfig();
-  EXPECT_FALSE(adjusted.gain_controller1.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.input_volume_controller.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.adaptive_digital.enabled);
-  ASSERT_NE(adjusted.gain_controller2.adaptive_digital,
-            original.gain_controller2.adaptive_digital);
-  EXPECT_EQ(adjusted.gain_controller2.adaptive_digital.headroom_db, 10);
-  EXPECT_EQ(adjusted.gain_controller2.adaptive_digital.max_gain_db, 20);
-  EXPECT_EQ(adjusted.gain_controller2.adaptive_digital.initial_gain_db, 7);
-  EXPECT_EQ(
-      adjusted.gain_controller2.adaptive_digital.max_gain_change_db_per_second,
-      5);
-  EXPECT_EQ(
-      adjusted.gain_controller2.adaptive_digital.max_output_noise_level_dbfs,
-      -40);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(original);
-  adjusted = apm->GetConfig();
-  EXPECT_FALSE(adjusted.gain_controller1.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.input_volume_controller.enabled);
-  EXPECT_TRUE(adjusted.gain_controller2.adaptive_digital.enabled);
-  ASSERT_NE(adjusted.gain_controller2.adaptive_digital,
-            original.gain_controller2.adaptive_digital);
-  EXPECT_EQ(adjusted.gain_controller2.adaptive_digital.headroom_db, 10);
-  EXPECT_EQ(adjusted.gain_controller2.adaptive_digital.max_gain_db, 20);
-  EXPECT_EQ(adjusted.gain_controller2.adaptive_digital.initial_gain_db, 7);
-  EXPECT_EQ(
-      adjusted.gain_controller2.adaptive_digital.max_gain_change_db_per_second,
-      5);
-  EXPECT_EQ(
-      adjusted.gain_controller2.adaptive_digital.max_output_noise_level_dbfs,
-      -40);
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest, ProcessSucceedsWithTs) {
-  AudioProcessing::Config config = GetParam();
-  if (!config.transient_suppression.enabled) {
-    GTEST_SKIP() << "TS is disabled, skip.";
-  }
-
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Disabled/");
-  auto apm = AudioProcessingBuilder().SetConfig(config).Create();
-
-  constexpr int kSampleRateHz = 48000;
-  constexpr int kNumChannels = 1;
-  std::array<float, kSampleRateHz / 100> buffer;
-  float* channel_pointers[] = {buffer.data()};
-  StreamConfig stream_config(kSampleRateHz, kNumChannels);
-  Random random_generator(2341U);
-  constexpr int kFramesToProcess = 10;
-  int volume = 100;
-  for (int i = 0; i < kFramesToProcess; ++i) {
-    SCOPED_TRACE(i);
-    RandomizeSampleVector(&random_generator, buffer);
-    apm->set_stream_analog_level(volume);
-    ASSERT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-    volume = apm->recommended_stream_analog_level();
-  }
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest, ProcessSucceedsWithoutTs) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,"
-      "switch_to_agc2:false,"
-      "disallow_transient_suppressor_usage:true/");
+TEST_P(Agc2ParametrizedTest, ProcessSucceedsWhenOneAgcEnabled) {
   auto apm = AudioProcessingBuilder().SetConfig(GetParam()).Create();
-
   constexpr int kSampleRateHz = 48000;
   constexpr int kNumChannels = 1;
   std::array<float, kSampleRateHz / 100> buffer;
@@ -1334,80 +880,60 @@ TEST_P(Agc2FieldTrialParametrizedTest, ProcessSucceedsWithoutTs) {
   }
 }
 
-TEST_P(Agc2FieldTrialParametrizedTest,
-       ProcessSucceedsWhenSwitchToFullAgc2WithTs) {
-  AudioProcessing::Config config = GetParam();
-  if (!config.transient_suppression.enabled) {
-    GTEST_SKIP() << "TS is disabled, skip.";
-  }
-
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,"
-      "switch_to_agc2:true,"
-      "disallow_transient_suppressor_usage:false/");
+TEST_P(Agc2ParametrizedTest,
+       BitExactWithAndWithoutTransientSuppressionEnabledInConfig) {
+  // Enable transient suppression in the config (expect no effect).
+  auto config = GetParam();
+  config.transient_suppression.enabled = true;
   auto apm = AudioProcessingBuilder().SetConfig(config).Create();
+  ASSERT_EQ(apm->Initialize(), AudioProcessing::kNoError);
+  // Disable transient suppression in the config.
+  auto config_reference = GetParam();
+  config_reference.transient_suppression.enabled = false;
+  auto apm_reference =
+      AudioProcessingBuilder().SetConfig(config_reference).Create();
+  ASSERT_EQ(apm_reference->Initialize(), AudioProcessing::kNoError);
 
-  constexpr int kSampleRateHz = 48000;
+  constexpr int kSampleRateHz = 16000;
   constexpr int kNumChannels = 1;
   std::array<float, kSampleRateHz / 100> buffer;
+  std::array<float, kSampleRateHz / 100> buffer_reference;
   float* channel_pointers[] = {buffer.data()};
-  StreamConfig stream_config(kSampleRateHz, kNumChannels);
+  float* channel_pointers_reference[] = {buffer_reference.data()};
+  StreamConfig stream_config(/*sample_rate_hz=*/kSampleRateHz,
+                             /*num_channels=*/kNumChannels);
   Random random_generator(2341U);
-  constexpr int kFramesToProcess = 10;
+  constexpr int kFramesToProcessPerConfiguration = 100;
   int volume = 100;
-  for (int i = 0; i < kFramesToProcess; ++i) {
-    SCOPED_TRACE(i);
+  int volume_reference = 100;
+  for (int i = 0; i < kFramesToProcessPerConfiguration; ++i) {
     RandomizeSampleVector(&random_generator, buffer);
+    std::copy(buffer.begin(), buffer.end(), buffer_reference.begin());
     apm->set_stream_analog_level(volume);
+    apm_reference->set_stream_analog_level(volume_reference);
     ASSERT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
                                  channel_pointers),
               kNoErr);
+    ASSERT_EQ(
+        apm_reference->ProcessStream(channel_pointers_reference, stream_config,
+                                     stream_config, channel_pointers_reference),
+        kNoErr);
     volume = apm->recommended_stream_analog_level();
-  }
-}
-
-TEST_P(Agc2FieldTrialParametrizedTest,
-       ProcessSucceedsWhenSwitchToFullAgc2WithoutTs) {
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,"
-      "switch_to_agc2:true,"
-      "disallow_transient_suppressor_usage:true/");
-  auto apm = AudioProcessingBuilder().SetConfig(GetParam()).Create();
-
-  constexpr int kSampleRateHz = 48000;
-  constexpr int kNumChannels = 1;
-  std::array<float, kSampleRateHz / 100> buffer;
-  float* channel_pointers[] = {buffer.data()};
-  StreamConfig stream_config(kSampleRateHz, kNumChannels);
-  Random random_generator(2341U);
-  constexpr int kFramesToProcess = 10;
-  int volume = 100;
-  for (int i = 0; i < kFramesToProcess; ++i) {
-    SCOPED_TRACE(i);
-    RandomizeSampleVector(&random_generator, buffer);
-    apm->set_stream_analog_level(volume);
-    ASSERT_EQ(apm->ProcessStream(channel_pointers, stream_config, stream_config,
-                                 channel_pointers),
-              kNoErr);
-    volume = apm->recommended_stream_analog_level();
+    volume_reference = apm_reference->recommended_stream_analog_level();
+    for (int j = 0; j < kSampleRateHz / 100; ++j) {
+      // Expect no effect from transient suppression.
+      EXPECT_EQ(buffer[j], buffer_reference[j]);
+    }
   }
 }
 
 INSTANTIATE_TEST_SUITE_P(
     AudioProcessingImplTest,
-    Agc2FieldTrialParametrizedTest,
+    Agc2ParametrizedTest,
     ::testing::Values(
         // Full AGC1, TS disabled.
         AudioProcessing::Config{
             .transient_suppression = {.enabled = false},
-            .gain_controller1 =
-                {.enabled = true,
-                 .analog_gain_controller = {.enabled = true,
-                                            .enable_digital_adaptive = true}},
-            .gain_controller2 = {.enabled = false}},
-        // Full AGC1, TS enabled.
-        AudioProcessing::Config{
-            .transient_suppression = {.enabled = true},
             .gain_controller1 =
                 {.enabled = true,
                  .analog_gain_controller = {.enabled = true,
@@ -1422,142 +948,15 @@ INSTANTIATE_TEST_SUITE_P(
                                             .enable_digital_adaptive = false}},
             .gain_controller2 = {.enabled = true,
                                  .adaptive_digital = {.enabled = true}}},
-        // Hybrid AGC, TS enabled.
+        // Full AGC2, TS disabled.
         AudioProcessing::Config{
-            .transient_suppression = {.enabled = true},
+            .transient_suppression = {.enabled = false},
             .gain_controller1 =
-                {.enabled = true,
-                 .analog_gain_controller = {.enabled = true,
+                {.enabled = false,
+                 .analog_gain_controller = {.enabled = false,
                                             .enable_digital_adaptive = false}},
             .gain_controller2 = {.enabled = true,
+                                 .input_volume_controller = {.enabled = true},
                                  .adaptive_digital = {.enabled = true}}}));
-
-TEST(AudioProcessingImplTest, CanDisableTransientSuppressor) {
-  constexpr AudioProcessing::Config kOriginal = {
-      .transient_suppression = {.enabled = false}};
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_FALSE(adjusted.transient_suppression.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_FALSE(apm->GetConfig().transient_suppression.enabled);
-}
-
-TEST(AudioProcessingImplTest, CanEnableTs) {
-  constexpr AudioProcessing::Config kOriginal = {
-      .transient_suppression = {.enabled = true}};
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_TRUE(adjusted.transient_suppression.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_TRUE(adjusted.transient_suppression.enabled);
-}
-
-TEST(AudioProcessingImplTest, CanDisableTsWithAgc2FieldTrialDisabled) {
-  constexpr AudioProcessing::Config kOriginal = {
-      .transient_suppression = {.enabled = false}};
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Disabled/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_FALSE(adjusted.transient_suppression.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_FALSE(apm->GetConfig().transient_suppression.enabled);
-}
-
-TEST(AudioProcessingImplTest, CanEnableTsWithAgc2FieldTrialDisabled) {
-  constexpr AudioProcessing::Config kOriginal = {
-      .transient_suppression = {.enabled = true}};
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Disabled/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_TRUE(adjusted.transient_suppression.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_TRUE(adjusted.transient_suppression.enabled);
-}
-
-TEST(AudioProcessingImplTest,
-     CanDisableTsWithAgc2FieldTrialEnabledAndUsageAllowed) {
-  constexpr AudioProcessing::Config kOriginal = {
-      .transient_suppression = {.enabled = false}};
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,"
-      "disallow_transient_suppressor_usage:false/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_FALSE(adjusted.transient_suppression.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_FALSE(adjusted.transient_suppression.enabled);
-}
-
-TEST(AudioProcessingImplTest,
-     CanEnableTsWithAgc2FieldTrialEnabledAndUsageAllowed) {
-  constexpr AudioProcessing::Config kOriginal = {
-      .transient_suppression = {.enabled = true}};
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,"
-      "disallow_transient_suppressor_usage:false/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_TRUE(adjusted.transient_suppression.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_TRUE(adjusted.transient_suppression.enabled);
-}
-
-TEST(AudioProcessingImplTest,
-     CannotEnableTsWithAgc2FieldTrialEnabledAndUsageDisallowed) {
-  constexpr AudioProcessing::Config kOriginal = {
-      .transient_suppression = {.enabled = true}};
-  webrtc::test::ScopedFieldTrials field_trials(
-      "WebRTC-Audio-GainController2/Enabled,"
-      "disallow_transient_suppressor_usage:true/");
-
-  // Test config application via `AudioProcessing` ctor.
-  auto adjusted =
-      AudioProcessingBuilder().SetConfig(kOriginal).Create()->GetConfig();
-  EXPECT_FALSE(adjusted.transient_suppression.enabled);
-
-  // Test config application via `AudioProcessing::ApplyConfig()`.
-  auto apm = AudioProcessingBuilder().Create();
-  apm->ApplyConfig(kOriginal);
-  adjusted = apm->GetConfig();
-  EXPECT_FALSE(apm->GetConfig().transient_suppression.enabled);
-}
 
 }  // namespace webrtc

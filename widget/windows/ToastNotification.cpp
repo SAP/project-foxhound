@@ -180,8 +180,11 @@ bool ToastNotification::RegisterRuntimeAumid(nsAutoString& aInstallHash,
   rv = appdir->Clone(getter_AddRefs(icon));
   NS_ENSURE_SUCCESS(rv, false);
 
+  // Add  browser subdirectory only for Firefox
+#ifdef MOZ_BUILD_APP_IS_BROWSER
   rv = icon->Append(u"browser"_ns);
   NS_ENSURE_SUCCESS(rv, false);
+#endif
 
   rv = icon->Append(u"VisualElements"_ns);
   NS_ENSURE_SUCCESS(rv, false);
@@ -389,13 +392,6 @@ ToastNotification::ShowAlertNotification(
     return rv;
   }
   return ShowAlert(alert, aAlertListener);
-}
-
-NS_IMETHODIMP
-ToastNotification::ShowPersistentNotification(const nsAString& aPersistentData,
-                                              nsIAlertNotification* aAlert,
-                                              nsIObserver* aAlertListener) {
-  return ShowAlert(aAlert, aAlertListener);
 }
 
 NS_IMETHODIMP
@@ -727,7 +723,7 @@ ToastNotification::HandleWindowsTag(const nsAString& aWindowsTag,
   ErrorResult rv;
   RefPtr<dom::Promise> promise =
       dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
-  ENSURE_SUCCESS(rv, rv.StealNSResult());
+  RETURN_NSRESULT_ON_FAILURE(rv);
 
   this->VerifyTagPresentOrFallback(aWindowsTag)
       ->Then(

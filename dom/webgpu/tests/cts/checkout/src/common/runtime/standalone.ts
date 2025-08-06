@@ -1,4 +1,5 @@
 // Implements the standalone test runner (see also: /standalone/index.html).
+
 /* eslint no-console: "off" */
 
 import { dataCache } from '../framework/data_cache.js';
@@ -368,6 +369,9 @@ function makeSubtreeChildrenHTML(
   const runMySubtree = async () => {
     const results: SubtreeResult[] = [];
     for (const { runSubtree } of childFns) {
+      if (stopRequested) {
+        break;
+      }
       results.push(await runSubtree());
     }
     return mergeSubtreeResults(...results);
@@ -490,6 +494,7 @@ function makeTreeNodeHeaderHTML(
   {
     $('<input>')
       .attr('type', 'text')
+      .attr('title', n.query.toString())
       .prop('readonly', true)
       .addClass('nodequery')
       .on('click', event => {
@@ -674,6 +679,8 @@ void (async () => {
     showInfo((err as Error).toString());
     return;
   }
+
+  document.title = `${document.title} ${compatibility ? '(compat)' : ''} - ${rootQuery.toString()}`;
 
   tree.dissolveSingleChildTrees();
 

@@ -11,9 +11,9 @@ from logger.logger import RaptorLogger
 from manifestparser import TestManifest
 from perftest import GECKO_PROFILER_APPS, TRACE_APPS
 from six.moves.urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
+from support_class_utils import import_support_class
 from utils import (
     bool_from_str,
-    import_support_class,
     transform_platform,
     transform_subtest,
 )
@@ -42,7 +42,7 @@ playback_settings = [
 ]
 
 
-def filter_app(tests, values):
+def filter_app(tests, values, strict=False):
     for test in tests:
         if values["app"] in [app.strip() for app in test["apps"].split(",")]:
             yield test

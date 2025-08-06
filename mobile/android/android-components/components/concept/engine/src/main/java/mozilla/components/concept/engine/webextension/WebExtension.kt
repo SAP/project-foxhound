@@ -520,6 +520,15 @@ enum class EnableSource(val id: Int) {
 }
 
 /**
+ * Holds all the information which the user has submitted
+ * as part of a confirmation of a permissions prompt request.
+ */
+data class PermissionPromptResponse(
+    val isPermissionsGranted: Boolean,
+    val isPrivateModeGranted: Boolean = false,
+)
+
+/**
  * Flags to check for different reasons why an extension is disabled.
  */
 class DisabledFlags internal constructor(val value: Int) {
@@ -529,6 +538,7 @@ class DisabledFlags internal constructor(val value: Int) {
         const val APP_SUPPORT: Int = 1 shl 3
         const val SIGNATURE: Int = 1 shl 4
         const val APP_VERSION: Int = 1 shl 5
+        const val SOFT_BLOCKLIST: Int = 1 shl 6
 
         /**
          * Selects a combination of flags.
@@ -598,6 +608,14 @@ fun WebExtension.isBlockListed(): Boolean {
 }
 
 /**
+ * Returns whether the extension is soft-blocked.
+ */
+fun WebExtension.isSoftBlocked(): Boolean {
+    val flags = getMetadata()?.disabledFlags
+    return flags?.contains(DisabledFlags.SOFT_BLOCKLIST) == true
+}
+
+/**
  * Returns whether the extension is disabled because it isn't correctly signed.
  */
 fun WebExtension.isDisabledUnsigned(): Boolean {
@@ -623,7 +641,9 @@ open class WebExtensionException(throwable: Throwable, open val isRecoverable: B
  * An unexpected event that occurs when installing an extension.
  */
 sealed class WebExtensionInstallException(
+    open val extensionId: String? = null,
     open val extensionName: String? = null,
+    open val extensionVersion: String? = null,
     throwable: Throwable,
     override val isRecoverable: Boolean = true,
 ) : WebExtensionException(throwable) {
@@ -636,7 +656,12 @@ sealed class WebExtensionInstallException(
     /**
      * The extension install was cancelled because the extension is blocklisted.
      */
-    class Blocklisted(override val extensionName: String? = null, throwable: Throwable) :
+    class Blocklisted(
+        override val extensionId: String? = null,
+        override val extensionName: String? = null,
+        override val extensionVersion: String? = null,
+        throwable: Throwable,
+    ) :
         WebExtensionInstallException(throwable = throwable)
 
     /**
@@ -680,5 +705,16 @@ sealed class WebExtensionInstallException(
      * The extension can only be installed via Enterprise Policies.
      */
     class AdminInstallOnly(override val extensionName: String? = null, throwable: Throwable) :
+        WebExtensionInstallException(throwable = throwable)
+
+    /**
+     * The extension install was cancelled because the extension is soft-blocked.
+     */
+    class SoftBlocked(
+        override val extensionId: String? = null,
+        override val extensionName: String? = null,
+        override val extensionVersion: String? = null,
+        throwable: Throwable,
+    ) :
         WebExtensionInstallException(throwable = throwable)
 }

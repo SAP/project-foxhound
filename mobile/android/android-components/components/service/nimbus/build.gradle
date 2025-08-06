@@ -95,7 +95,7 @@ dependencies {
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)
 
 
 apply plugin: "org.mozilla.appservices.nimbus-gradle-plugin"
@@ -119,5 +119,8 @@ nimbus {
             ? gradle.getProperty('localProperties.autoPublish.application-services.dir') : null
 }
 
-ext.gleanNamespace = "mozilla.telemetry.glean"
+ext {
+    gleanNamespace = "mozilla.telemetry.glean"
+    gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
+}
 apply plugin: "org.mozilla.telemetry.glean-gradle-plugin"

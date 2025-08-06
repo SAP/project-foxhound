@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RetryTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
@@ -158,47 +159,12 @@ class HomeScreenTest : TestSetup() {
             verifyNoThanksPrivateBrowsingShortcutButton(activityTestRule)
             verifyAddPrivateBrowsingShortcutButton(activityTestRule)
             clickAddPrivateBrowsingShortcutButton(activityTestRule)
-            clickAddAutomaticallyButton()
+            clickSystemHomeScreenShortcutAddButton()
         }.openHomeScreenShortcut("Private ${TestHelper.appName}") {}
         searchScreen {
             verifySearchView()
         }.dismissSearchBar {
             verifyCommonMythsLink()
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1569867
-    @Test
-    fun verifyJumpBackInContextualHintTest() {
-        activityTestRule.activityRule.applySettingsExceptions {
-            it.isJumpBackInCFREnabled = true
-            it.isNavigationBarCFREnabled = false
-        }
-
-        val genericPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericPage.url) {
-        }.goToHomescreen {
-            verifyJumpBackInMessage(activityTestRule, exists = true)
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2651349
-    @Test
-    fun verifyJumpBackCFRIsNotDisplayedWhileSearchFragmentIsEnableTest() {
-        activityTestRule.activityRule.applySettingsExceptions {
-            it.isJumpBackInCFREnabled = true
-        }
-
-        val genericPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericPage.url) {
-        }.openNavigationToolbar {
-        }
-        homeScreen {
-            verifyJumpBackInMessage(activityTestRule, exists = false)
         }
     }
 }

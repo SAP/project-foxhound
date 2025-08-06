@@ -6,7 +6,7 @@ use api::{ColorF, DebugFlags, PrimitiveFlags, QualitySettings, RasterSpace, Clip
 use api::units::*;
 use crate::clip::{ClipNodeKind, ClipLeafId, ClipNodeId, ClipTreeBuilder};
 use crate::frame_builder::FrameBuilderConfig;
-use crate::internal_types::{FastHashMap};
+use crate::internal_types::FastHashMap;
 use crate::picture::{PrimitiveList, PictureCompositeMode, PicturePrimitive, SliceId};
 use crate::picture::{Picture3DContext, TileCacheParams, TileOffset, PictureFlags};
 use crate::prim_store::{PrimitiveInstance, PrimitiveStore, PictureIndex};
@@ -638,6 +638,7 @@ fn create_tile_cache(
         scroll_root,
         RasterSpace::Screen,
         PictureFlags::empty(),
+        None,
     ));
 
     tile_cache_pictures.push(PictureIndex(pic_index));

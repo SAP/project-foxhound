@@ -7,16 +7,18 @@ package org.mozilla.fenix.components.menu.compose
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.unit.dp
+import org.mozilla.fenix.compose.Divider
+import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
  * A scaffold for a menu UI that implements the basic layout structure with [header] and [content].
@@ -31,16 +33,26 @@ internal fun MenuScaffold(
     header: @Composable ColumnScope.() -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier = modifier.nestedScroll(rememberNestedScrollInteropConnection()),
-    ) {
+    Column(modifier = modifier) {
         header()
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .fillMaxWidth(),
+        ) {
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        val scrollState = rememberScrollState()
+
+        if (scrollState.value != 0) {
+            Divider(color = FirefoxTheme.colors.borderPrimary)
+        }
 
         Column(
             modifier = Modifier
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(
                     start = 16.dp,
                     top = 12.dp,

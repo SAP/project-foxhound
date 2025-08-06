@@ -53,6 +53,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/media/MediaUtils.h"
 
 #ifdef XP_WIN
 // We need to undef the MS macro for Document::CreateEvent
@@ -396,9 +397,9 @@ PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
                                              mEffectiveTLDPlus1);
       }
 
-      mRtxIsAllowed = !HostnameInPref(
+      mRtxIsAllowed = !media::HostnameInPref(
           "media.peerconnection.video.use_rtx.blocklist", mHostname);
-      mDuplicateFingerprintQuirk = HostnameInPref(
+      mDuplicateFingerprintQuirk = media::HostnameInPref(
           "media.peerconnection.sdp.quirk.duplicate_fingerprint.allowlist",
           mHostname);
     }
@@ -602,31 +603,30 @@ RefPtr<DtlsIdentity> PeerConnectionImpl::Identity() const {
 
 class CompareCodecPriority {
  public:
-  void SetPreferredCodec(int32_t preferredCodec) {
-    // This pref really ought to be a string, preferably something like
-    // "H264" or "VP8" instead of a payload type.
-    // Bug 1101259.
-    std::ostringstream os;
-    os << preferredCodec;
-    mPreferredCodec = os.str();
+  void SetPreferredCodec(const nsCString& preferredCodec) {
+    mPreferredCodec = preferredCodec;
   }
 
   bool operator()(const UniquePtr<JsepCodecDescription>& lhs,
                   const UniquePtr<JsepCodecDescription>& rhs) const {
-    if (!mPreferredCodec.empty() && lhs->mDefaultPt == mPreferredCodec &&
-        rhs->mDefaultPt != mPreferredCodec) {
-      return true;
+    // Do we have a preferred codec?
+    if (!mPreferredCodec.IsEmpty()) {
+      const bool lhsMatches = mPreferredCodec.EqualsIgnoreCase(lhs->mName) ||
+                              mPreferredCodec.EqualsIgnoreCase(lhs->mDefaultPt);
+      const bool rhsMatches = mPreferredCodec.EqualsIgnoreCase(rhs->mName) ||
+                              mPreferredCodec.EqualsIgnoreCase(rhs->mDefaultPt);
+      // If the only the left side matches, prefer it
+      if (lhsMatches && !rhsMatches) {
+        return true;
+      }
     }
-
-    if (lhs->mStronglyPreferred && !rhs->mStronglyPreferred) {
-      return true;
-    }
-
-    return false;
+    // If only the left side is strongly preferred, prefer it
+    return (lhs->mStronglyPreferred && !rhs->mStronglyPreferred);
   }
 
  private:
-  std::string mPreferredCodec;
+  // The preferred codec name or PT number
+  nsCString mPreferredCodec;
 };
 
 class ConfigureCodec {
@@ -810,15 +810,7 @@ nsresult PeerConnectionImpl::ConfigureJsepSessionCodecs() {
 
   // We use this to sort the list of codecs once everything is configured
   CompareCodecPriority comparator;
-
   // Sort by priority
-  int32_t preferredCodec = 0;
-  branch->GetIntPref("media.navigator.video.preferred_codec", &preferredCodec);
-
-  if (preferredCodec) {
-    comparator.SetPreferredCodec(preferredCodec);
-  }
-
   mJsepSession->SortCodecs(comparator);
   return NS_OK;
 }
@@ -2160,60 +2152,6 @@ void PeerConnectionImpl::DumpPacket_m(size_t level, dom::mozPacketDumpType type,
   mPCObserver->OnPacket(level, type, sending, arrayBuffer, jrv);
 }
 
-bool PeerConnectionImpl::HostnameInPref(const char* aPref,
-                                        const nsCString& aHostName) {
-  auto HostInDomain = [](const nsCString& aHost, const nsCString& aPattern) {
-    int32_t patternOffset = 0;
-    int32_t hostOffset = 0;
-
-    // Act on '*.' wildcard in the left-most position in a domain pattern.
-    if (StringBeginsWith(aPattern, nsCString("*."))) {
-      patternOffset = 2;
-
-      // Ignore the lowest level sub-domain for the hostname.
-      hostOffset = aHost.FindChar('.') + 1;
-
-      if (hostOffset <= 1) {
-        // Reject a match between a wildcard and a TLD or '.foo' form.
-        return false;
-      }
-    }
-
-    nsDependentCString hostRoot(aHost, hostOffset);
-    return hostRoot.EqualsIgnoreCase(aPattern.BeginReading() + patternOffset);
-  };
-
-  nsCString domainList;
-  nsresult rv = Preferences::GetCString(aPref, domainList);
-
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-
-  domainList.StripWhitespace();
-
-  if (domainList.IsEmpty() || aHostName.IsEmpty()) {
-    return false;
-  }
-
-  // Test each domain name in the comma separated list
-  // after converting from UTF8 to ASCII. Each domain
-  // must match exactly or have a single leading '*.' wildcard.
-  for (const nsACString& each : domainList.Split(',')) {
-    nsCString domainPattern;
-    rv = NS_DomainToASCIIAllowAnyGlyphfulASCII(each, domainPattern);
-    if (NS_SUCCEEDED(rv)) {
-      if (HostInDomain(aHostName, domainPattern)) {
-        return true;
-      }
-    } else {
-      NS_WARNING("Failed to convert UTF-8 host to ASCII");
-    }
-  }
-
-  return false;
-}
-
 nsresult PeerConnectionImpl::EnablePacketDump(unsigned long level,
                                               dom::mozPacketDumpType type,
                                               bool sending) {
@@ -3488,6 +3426,10 @@ bool PeerConnectionImpl::UpdateIceConnectionState() {
                static_cast<int>(mIceConnectionState),
                static_cast<int>(newState), this);
     mIceConnectionState = newState;
+    // Start call telemtry logging on connected.
+    if (mIceConnectionState == RTCIceConnectionState::Connected) {
+      StartCallTelem();
+    }
     if (mIceConnectionState != RTCIceConnectionState::Closed) {
       return true;
     }
@@ -4452,7 +4394,7 @@ bool PeerConnectionImpl::GetPrefObfuscateHostAddresses() const {
       "media.peerconnection.ice.obfuscate_host_addresses", false);
   obfuscate_host_addresses &=
       !MediaManager::Get()->IsActivelyCapturingOrHasAPermission(winId);
-  obfuscate_host_addresses &= !PeerConnectionImpl::HostnameInPref(
+  obfuscate_host_addresses &= !media::HostnameInPref(
       "media.peerconnection.ice.obfuscate_host_addresses.blocklist", mHostname);
   obfuscate_host_addresses &= XRE_IsContentProcess();
 
@@ -4908,6 +4850,6 @@ std::unique_ptr<NrSocketProxyConfig> PeerConnectionImpl::GetProxyConfig()
       net::WebrtcProxyConfig(id, alpn, loadInfoArgs, mForceProxy)));
 }
 
-std::map<uint64_t, PeerConnectionAutoTimer>
+MOZ_RUNINIT std::map<uint64_t, PeerConnectionAutoTimer>
     PeerConnectionImpl::sCallDurationTimers;
 }  // namespace mozilla

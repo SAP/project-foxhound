@@ -171,9 +171,9 @@ void HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML,
   MarkTaintSourceElement(aInnerHTML, "script.innerHTML", this);
 }
 
-void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
-                                     nsIPrincipal* aScriptedPrincipal,
-                                     ErrorResult& aError) {
+void HTMLScriptElement::SetInnerHTMLTrusted(const nsAString& aInnerHTML,
+                                            nsIPrincipal* aSubjectPrincipal,
+                                            ErrorResult& aError) {
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
   // Foxhound: script.innerHTML sink
   ReportTaintSink(aInnerHTML, "script.innerHTML", this); 

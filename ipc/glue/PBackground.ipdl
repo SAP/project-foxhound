@@ -6,7 +6,6 @@ include protocol PBackgroundDataBridge;
 include protocol PBackgroundIDBFactory;
 include protocol PBackgroundIndexedDBUtils;
 include protocol PBackgroundSDBConnection;
-include protocol PBackgroundLSDatabase;
 include protocol PBackgroundLSObserver;
 include protocol PBackgroundLSRequest;
 include protocol PBackgroundLSSimpleRequest;
@@ -20,6 +19,7 @@ include protocol PCache;
 include protocol PCacheStorage;
 include protocol PCacheStreamControl;
 include protocol PClientManager;
+include protocol PCookieStore;
 include protocol PEndpointForReport;
 include protocol PFileSystemManager;
 include protocol PFileSystemRequest;
@@ -48,6 +48,7 @@ include protocol PVsync;
 include protocol PRemoteDecoderManager;
 include protocol PWebTransport;
 include protocol PFetch;
+include protocol PNotification;
 
 include ClientIPCTypes;
 include DOMTypes;
@@ -85,7 +86,6 @@ sync protocol PBackground
   manages PBackgroundIDBFactory;
   manages PBackgroundIndexedDBUtils;
   manages PBackgroundSDBConnection;
-  manages PBackgroundLSDatabase;
   manages PBackgroundLSObserver;
   manages PBackgroundLSRequest;
   manages PBackgroundLSSimpleRequest;
@@ -99,6 +99,7 @@ sync protocol PBackground
   manages PCacheStorage;
   manages PCacheStreamControl;
   manages PClientManager;
+  manages PCookieStore;
   manages PEndpointForReport;
   manages PFileSystemRequest;
   manages PGamepadEventChannel;
@@ -136,10 +137,6 @@ parent:
 
   async PBackgroundSDBConnection(PersistenceType persistenceType,
                                  PrincipalInfo principalInfo);
-
-  async PBackgroundLSDatabase(PrincipalInfo principalInfo,
-                              uint32_t privateBrowsingId,
-                              uint64_t datastoreId);
 
   async PBackgroundLSObserver(uint64_t observerId);
 
@@ -190,12 +187,29 @@ parent:
       Endpoint<PWebTransportParent> aParentEndpoint)
       returns(nsresult rv, uint8_t aReliability); // Actually WebTransportReliabityMode enum
 
+
+  // XXX(krosylight): This should ultimately use nsID instead of scope, see bug 1881812.
+  /**
+   * Finish the setup of a new PNotification top level protocol.
+   */
+  async CreateNotificationParent(
+    Endpoint<PNotificationParent> aParentEndpoint,
+    nsIPrincipal aPrincipal,
+    nsIPrincipal aEffectiveStoragePrincipal,
+    bool aIsSecureContext,
+    nsString aId,
+    nsString aScope,
+    IPCNotificationOptions aOptions
+  ) returns (bool rv);
+
   async PVsync();
 
   async PCameras();
 
   async PUDPSocket(PrincipalInfo? pInfo, nsCString filter);
   async PBroadcastChannel(PrincipalInfo pInfo, nsCString origin, nsString channel);
+
+  async PCookieStore();
 
   async PServiceWorkerManager();
 
@@ -260,7 +274,12 @@ parent:
 
   async PServiceWorkerContainer();
 
-  async PServiceWorkerRegistration(IPCServiceWorkerRegistrationDescriptor aDescriptor);
+  // Allows a global to listen for updates to a ServiceWorkerRegistration given
+  // receipt of a (static) snapshot via the descriptor.  `aForClient` identifies
+  // the global subscribing; in the future this will be mooted by Bug 1853706
+  // having this actor managed by an actor explicitly tied to a global.
+  async PServiceWorkerRegistration(IPCServiceWorkerRegistrationDescriptor aDescriptor,
+                                   IPCClientInfo aForClient);
 
   async PEndpointForReport(nsString aGroupName, PrincipalInfo aPrincipalInfo);
 

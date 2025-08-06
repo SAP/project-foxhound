@@ -7,7 +7,10 @@ const DOMAIN = "https://example.com/";
 const PATH = "browser/browser/components/privatebrowsing/test/browser/";
 const TOP_PAGE = DOMAIN + PATH + "empty_file.html";
 
-add_task(async function test_sidebar_hidden_on_popup() {
+async function test_sidebar_hidden_on_popup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.verticalTabs", true]],
+  });
   const win = await BrowserTestUtils.openNewBrowserWindow();
   const { document } = win;
 
@@ -30,6 +33,9 @@ add_task(async function test_sidebar_hidden_on_popup() {
   popup = await popup;
   ok(!!popup, "Popup shown");
 
+  // Give popup window a chance to display the sidebar (which it shouldn't).
+  await new Promise(resolve => ChromeUtils.idleDispatch(resolve));
+
   const popupSidebar = popup.document.getElementById("sidebar-main");
   ok(popupSidebar.hidden, "Sidebar is hidden on popup window");
 
@@ -41,6 +47,28 @@ add_task(async function test_sidebar_hidden_on_popup() {
     "All View > Sidebar menu items are disabled on popup"
   );
 
+  // Bug 1925451 - Check that vertical tabs are visible in new window after opening popup
+  await BrowserTestUtils.closeWindow(popup);
+  const win2 = await BrowserTestUtils.openNewBrowserWindow();
+  let win2VerticalTabsContainer = win2.document.getElementById("vertical-tabs");
+  ok(
+    win2VerticalTabsContainer.children.length,
+    "The #vertical-tabs container element has been popuplated with vertical tabs"
+  );
+
   await BrowserTestUtils.closeWindow(win);
-  popup.close();
+  await BrowserTestUtils.closeWindow(win2);
+  await SpecialPowers.popPrefEnv();
+}
+
+add_task(async function test_sidebar_hidden_on_popup_no_backup_state() {
+  await test_sidebar_hidden_on_popup();
+});
+
+add_task(async function test_sidebar_hidden_on_popup_with_backup_state() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.backupState", `{"hidden": false}`]],
+  });
+  await test_sidebar_hidden_on_popup();
+  await SpecialPowers.popPrefEnv();
 });

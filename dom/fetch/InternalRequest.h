@@ -262,6 +262,14 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   void SetMozErrors() { mMozErrors = true; }
 
+  void SetTriggeringPrincipal(nsIPrincipal* aPrincipal) {
+    mTriggeringPrincipalOverride = aPrincipal;
+  }
+
+  nsIPrincipal* GetTriggeringPrincipalOverride() {
+    return mTriggeringPrincipalOverride;
+  }
+
   const nsCString& GetFragment() const { return mFragment; }
 
   nsContentPolicyType ContentPolicyType() const { return mContentPolicyType; }
@@ -407,7 +415,6 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   // Does not copy mBodyStream.  Use fallible Clone() for complete copy.
   InternalRequest(const InternalRequest& aOther, ConstructorGuard);
 
- private:
   // Map the content policy type to the associated fetch destination, as defined
   // by the spec at https://fetch.spec.whatwg.org/#concept-request-destination.
   // Note that while the HTML spec for the "Link" element and its "as" attribute
@@ -416,6 +423,7 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   static RequestDestination MapContentPolicyTypeToRequestDestination(
       nsContentPolicyType aContentPolicyType);
 
+ private:
   static bool IsNavigationContentPolicy(nsContentPolicyType aContentPolicyType);
 
   static bool IsWorkerContentPolicy(nsContentPolicyType aContentPolicyType);
@@ -437,6 +445,8 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   nsCString mBodyBlobURISpec;
   nsString mBodyLocalPath;
   nsCOMPtr<nsIInputStream> mBodyStream;
+
+  nsCOMPtr<nsIPrincipal> mTriggeringPrincipalOverride;
   int64_t mBodyLength{InternalResponse::UNKNOWN_BODY_SIZE};
 
   nsCString mPreferredAlternativeDataType;

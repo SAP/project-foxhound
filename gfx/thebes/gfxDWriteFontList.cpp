@@ -1162,9 +1162,9 @@ nsTArray<std::pair<const char**, uint32_t>>
 gfxDWriteFontList::GetFilteredPlatformFontLists() {
   nsTArray<std::pair<const char**, uint32_t>> fontLists;
 
-  fontLists.AppendElement(std::make_pair(kBaseFonts, ArrayLength(kBaseFonts)));
+  fontLists.AppendElement(std::make_pair(kBaseFonts, std::size(kBaseFonts)));
   fontLists.AppendElement(
-      std::make_pair(kLangPackFonts, ArrayLength(kLangPackFonts)));
+      std::make_pair(kLangPackFonts, std::size(kLangPackFonts)));
 
   return fontLists;
 }
@@ -1539,16 +1539,16 @@ void gfxDWriteFontList::ReadFaceNamesForFamily(
         if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
                 data, size, gfxFontUtils::NAME_ID_POSTSCRIPT, psname))) {
           ToLowerCase(psname);
-          mLocalNameTable.InsertOrUpdate(
-              psname, fontlist::LocalFaceRec::InitData(key, i));
+          MaybeAddToLocalNameTable(psname,
+                                   fontlist::LocalFaceRec::InitData(key, i));
         }
       }
       if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
               data, size, gfxFontUtils::NAME_ID_FULL, fullname))) {
         ToLowerCase(fullname);
         if (fullname != psname) {
-          mLocalNameTable.InsertOrUpdate(
-              fullname, fontlist::LocalFaceRec::InitData(key, i));
+          MaybeAddToLocalNameTable(fullname,
+                                   fontlist::LocalFaceRec::InitData(key, i));
         }
       }
 
@@ -1966,7 +1966,7 @@ nsresult gfxDWriteFontList::GetFontSubstitutes() {
 
   for (i = 0, rv = ERROR_SUCCESS; rv != ERROR_NO_MORE_ITEMS; i++) {
     aliasName[0] = 0;
-    lenAlias = ArrayLength(aliasName);
+    lenAlias = std::size(aliasName);
     actualName[0] = 0;
     lenActual = sizeof(actualName);
     rv = RegEnumValueW(hKey, i, aliasName, &lenAlias, nullptr, &valueType,
@@ -2035,7 +2035,7 @@ static const FontSubstitution sDirectWriteSubs[] = {
     {"Script", "Mistral"}};
 
 void gfxDWriteFontList::GetDirectWriteSubstitutes() {
-  for (uint32_t i = 0; i < ArrayLength(sDirectWriteSubs); ++i) {
+  for (uint32_t i = 0; i < std::size(sDirectWriteSubs); ++i) {
     const FontSubstitution& sub(sDirectWriteSubs[i]);
     nsAutoCString substituteName(sub.aliasName);
     BuildKeyNameFromFontName(substituteName);

@@ -296,7 +296,10 @@ export const CustomizableWidgets = [
       }
     },
     onCreated(aNode) {
-      if (!lazy.sidebarRevampEnabled) {
+      if (lazy.sidebarRevampEnabled) {
+        const { SidebarController } = aNode.ownerGlobal;
+        SidebarController.updateToolbarButton(aNode);
+      } else {
         // Add an observer so the button is checked while the sidebar is open
         let doc = aNode.ownerDocument;
         let obChecked = doc.createXULElement("observes");
@@ -305,7 +308,6 @@ export const CustomizableWidgets = [
         let obPosition = doc.createXULElement("observes");
         obPosition.setAttribute("element", "sidebar-box");
         obPosition.setAttribute("attribute", "positionend");
-
         aNode.appendChild(obChecked);
         aNode.appendChild(obPosition);
       }
@@ -470,7 +472,7 @@ export const CustomizableWidgets = [
     l10nId: "toolbar-button-logins",
     onCommand(aEvent) {
       let window = aEvent.view;
-      lazy.LoginHelper.openPasswordManager(window, { entryPoint: "toolbar" });
+      lazy.LoginHelper.openPasswordManager(window, { entryPoint: "Toolbar" });
     },
   },
 ];
@@ -559,7 +561,7 @@ if (!lazy.screenshotsDisabled) {
         Services.obs.notifyObservers(
           aEvent.currentTarget.ownerGlobal,
           "menuitem-screenshot",
-          "toolbar_button"
+          "ToolbarButton"
         );
       } else {
         Services.obs.notifyObservers(

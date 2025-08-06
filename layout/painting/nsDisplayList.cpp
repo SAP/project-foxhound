@@ -137,7 +137,7 @@ void AssertUniqueItem(nsDisplayItem* aItem) {
       if (i->IsPreProcessedItem() || i->IsPreProcessed()) {
         continue;
       }
-      MOZ_DIAGNOSTIC_ASSERT(false, "Duplicate display item!");
+      MOZ_DIAGNOSTIC_CRASH("Duplicate display item!");
     }
   }
 }
@@ -505,9 +505,9 @@ nsRect nsDisplayListBuilder::OutOfFlowDisplayData::ComputeVisibleRectForFrame(
 
   bool inPartialUpdate =
       aBuilder->IsRetainingDisplayList() && aBuilder->IsPartialUpdate();
-  if (StaticPrefs::apz_allow_zooming() &&
-      DisplayPortUtils::IsFixedPosFrameInDisplayPort(aFrame) &&
-      aBuilder->IsPaintingToWindow() && !inPartialUpdate) {
+  if (MOZ_LIKELY(StaticPrefs::apz_allow_zooming()) &&
+      aBuilder->IsPaintingToWindow() && !inPartialUpdate &&
+      DisplayPortUtils::IsFixedPosFrameInDisplayPort(aFrame)) {
     dirtyRectRelativeToDirtyFrame =
         nsRect(nsPoint(0, 0), aFrame->GetParent()->GetSize());
 
@@ -763,40 +763,11 @@ void nsDisplayListBuilder::BeginFrame() {
   mSyncDecodeImages = false;
 }
 
-void nsDisplayListBuilder::AddEffectUpdate(dom::RemoteBrowser* aBrowser,
-                                           const dom::EffectsInfo& aUpdate) {
-  dom::EffectsInfo update = aUpdate;
-  // For printing we create one display item for each page that an iframe
-  // appears on, the proper visible rect is the union of all the visible rects
-  // we get from each display item.
-  nsPresContext* pc =
-      mReferenceFrame ? mReferenceFrame->PresContext() : nullptr;
-  if (pc && pc->Type() != nsPresContext::eContext_Galley) {
-    Maybe<dom::EffectsInfo> existing = mEffectsUpdates.MaybeGet(aBrowser);
-    if (existing) {
-      // Only the visible rect should differ, the scales should match.
-      MOZ_ASSERT(existing->mRasterScale == aUpdate.mRasterScale &&
-                 existing->mTransformToAncestorScale ==
-                     aUpdate.mTransformToAncestorScale);
-      if (existing->mVisibleRect) {
-        if (update.mVisibleRect) {
-          update.mVisibleRect =
-              Some(update.mVisibleRect->Union(*existing->mVisibleRect));
-        } else {
-          update.mVisibleRect = existing->mVisibleRect;
-        }
-      }
-    }
-  }
-  mEffectsUpdates.InsertOrUpdate(aBrowser, update);
-}
-
 void nsDisplayListBuilder::EndFrame() {
   NS_ASSERTION(!mInInvalidSubtree,
                "Someone forgot to cleanup mInInvalidSubtree!");
   mCurrentContainerASR = nullptr;
   mActiveScrolledRoots.Clear();
-  mEffectsUpdates.Clear();
   FreeClipChains();
   FreeTemporaryItems();
   nsCSSRendering::EndFrameTreesLocked();
@@ -876,6 +847,17 @@ void nsDisplayListBuilder::UpdateShouldBuildAsyncZoomContainer() {
   mBuildAsyncZoomContainer = !mIsRelativeToLayoutViewport &&
                              !document->Fullscreen() &&
                              nsLayoutUtils::AllowZoomingForDocument(document);
+
+  // If mIsRelativeToLayoutViewport == false, hit-testing on this
+  // display list will take into account the pres shell resolution.
+  // If we're not building an async zoom container (meaning, the
+  // resolution will not take effect visually), the resolution better
+  // be 1.0, otherwise rendering and hit-testing are out of sync.
+#ifdef DEBUG
+  if (!mIsRelativeToLayoutViewport && !mBuildAsyncZoomContainer) {
+    MOZ_ASSERT(document->GetPresShell()->GetResolution() == 1.0f);
+  }
+#endif
 }
 
 // Certain prefs may cause display list items to be added or removed when they
@@ -1046,23 +1028,6 @@ uint32_t nsDisplayListBuilder::GetImageDecodeFlags() const {
   return flags;
 }
 
-void nsDisplayListBuilder::SubtractFromVisibleRegion(nsRegion* aVisibleRegion,
-                                                     const nsRegion& aRegion) {
-  if (aRegion.IsEmpty()) {
-    return;
-  }
-
-  nsRegion tmp;
-  tmp.Sub(*aVisibleRegion, aRegion);
-  // Don't let *aVisibleRegion get too complex, but don't let it fluff out
-  // to its bounds either, which can be very bad (see bug 516740).
-  // Do let aVisibleRegion get more complex if by doing so we reduce its
-  // area by at least half.
-  if (tmp.GetNumRects() <= 15 || tmp.Area() <= aVisibleRegion->Area() / 2) {
-    *aVisibleRegion = tmp;
-  }
-}
-
 nsCaret* nsDisplayListBuilder::GetCaret() {
   RefPtr<nsCaret> caret = CurrentPresShellState()->mPresShell->GetCaret();
   return caret;
@@ -1103,7 +1068,9 @@ void nsDisplayListBuilder::EnterPresShell(const nsIFrame* aReferenceFrame,
                                   nsLayoutPhase::DisplayListBuilding);
 #endif
 
-  state->mPresShell->UpdateCanvasBackground();
+  if (!IsForEventDelivery()) {
+    state->mPresShell->UpdateCanvasBackground();
+  }
 
   bool buildCaret = mBuildCaret;
   if (mIgnoreSuppression || !state->mPresShell->IsPaintingSuppressed()) {
@@ -1812,7 +1779,6 @@ void nsDisplayListBuilder::AddSizeOfExcludingThis(nsWindowSizes& aSizes) const {
   MallocSizeOf mallocSizeOf = aSizes.mState.mMallocSizeOf;
   n += mDocumentWillChangeBudgets.ShallowSizeOfExcludingThis(mallocSizeOf);
   n += mFrameWillChangeBudgets.ShallowSizeOfExcludingThis(mallocSizeOf);
-  n += mEffectsUpdates.ShallowSizeOfExcludingThis(mallocSizeOf);
   n += mRetainedWindowDraggingRegion.SizeOfExcludingThis(mallocSizeOf);
   n += mRetainedWindowNoDraggingRegion.SizeOfExcludingThis(mallocSizeOf);
   n += mRetainedWindowOpaqueRegion.SizeOfExcludingThis(mallocSizeOf);
@@ -4759,17 +4725,21 @@ void nsDisplayOpacity::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
     return;
   }
 
+  int32_t apd = mFrame->PresContext()->AppUnitsPerDevPixel();
+
   if (GetOpacity() == 1.0f) {
-    GetChildren()->Paint(aBuilder, aCtx,
-                         mFrame->PresContext()->AppUnitsPerDevPixel());
+    GetChildren()->Paint(aBuilder, aCtx, apd);
     return;
   }
 
-  // TODO: Compute a bounds rect to pass to PushLayer for a smaller
-  // allocation.
-  aCtx->GetDrawTarget()->PushLayer(false, GetOpacity(), nullptr, gfx::Matrix());
-  GetChildren()->Paint(aBuilder, aCtx,
-                       mFrame->PresContext()->AppUnitsPerDevPixel());
+  bool unusedSnap = false;
+  auto deviceSpaceBounds = IntRect::FromUnknownRect(
+      RoundedOut(ToRect(aCtx->UserToDevice(nsLayoutUtils::RectToGfxRect(
+          GetBounds(aBuilder, &unusedSnap), apd)))));
+
+  aCtx->GetDrawTarget()->PushLayer(false, GetOpacity(), nullptr, gfx::Matrix(),
+                                   deviceSpaceBounds);
+  GetChildren()->Paint(aBuilder, aCtx, apd);
   aCtx->GetDrawTarget()->PopLayer();
 }
 
@@ -5337,7 +5307,8 @@ nsDisplaySubDocument::nsDisplaySubDocument(nsDisplayListBuilder* aBuilder,
       mSubDocFrame(aSubDocFrame) {
   MOZ_COUNT_CTOR(nsDisplaySubDocument);
 
-  if (mSubDocFrame && mSubDocFrame != mFrame) {
+  if (aBuilder->IsRetainingDisplayList() && mSubDocFrame &&
+      mSubDocFrame != mFrame) {
     mSubDocFrame->AddDisplayItem(this);
   }
 }
@@ -6248,13 +6219,14 @@ Matrix4x4 nsDisplayTransform::GetResultingTransformMatrixInternal(
 
   /* Get the matrix, then change its basis to factor in the origin. */
   Matrix4x4 result;
-  // Call IsSVGTransformed() regardless of the value of
-  // aProperties.HasTransform(), since we still need any
-  // potential parentsChildrenOnlyTransform.
-  Matrix svgTransform, parentsChildrenOnlyTransform;
-  const bool hasSVGTransforms =
+
+  // See the comment for SVGContainerFrame::HasChildrenOnlyTransform for
+  // an explanation of what children-only transforms are.
+  Matrix parentsChildrenOnlyTransform;
+  const bool parentHasChildrenOnlyTransform =
       frame && frame->HasAnyStateBits(NS_FRAME_MAY_BE_TRANSFORMED) &&
-      frame->IsSVGTransformed(&svgTransform, &parentsChildrenOnlyTransform);
+      frame->GetParentSVGTransforms(&parentsChildrenOnlyTransform) &&
+      !parentsChildrenOnlyTransform.IsIdentity();
   bool shouldRound = nsLayoutUtils::ShouldSnapToGrid(frame);
 
   /* Transformed frames always have a transform, or are preserving 3d (and might
@@ -6264,33 +6236,30 @@ Matrix4x4 nsDisplayTransform::GetResultingTransformMatrixInternal(
         aProperties.mTranslate, aProperties.mRotate, aProperties.mScale,
         aProperties.mMotion.ptrOr(nullptr), aProperties.mTransform, aRefBox,
         aAppUnitsPerPixel);
-  } else if (hasSVGTransforms) {
-    // Correct the translation components for zoom:
-    float pixelsPerCSSPx = AppUnitsPerCSSPixel() / aAppUnitsPerPixel;
-    svgTransform._31 *= pixelsPerCSSPx;
-    svgTransform._32 *= pixelsPerCSSPx;
-    result = Matrix4x4::From2D(svgTransform);
   }
 
   // Apply any translation due to 'transform-origin' and/or 'transform-box':
-  result.ChangeBasis(aProperties.mToTransformOrigin);
-
-  // See the comment for SVGContainerFrame::HasChildrenOnlyTransform for
-  // an explanation of what children-only transforms are.
-  const bool parentHasChildrenOnlyTransform =
-      hasSVGTransforms && !parentsChildrenOnlyTransform.IsIdentity();
+  if (aProperties.mToTransformOrigin != gfx::Point3D()) {
+    result.ChangeBasis(aProperties.mToTransformOrigin);
+  }
 
   if (parentHasChildrenOnlyTransform) {
     float pixelsPerCSSPx = AppUnitsPerCSSPixel() / aAppUnitsPerPixel;
     parentsChildrenOnlyTransform._31 *= pixelsPerCSSPx;
     parentsChildrenOnlyTransform._32 *= pixelsPerCSSPx;
-
-    Point3D frameOffset(
-        NSAppUnitsToFloatPixels(-frame->GetPosition().x, aAppUnitsPerPixel),
-        NSAppUnitsToFloatPixels(-frame->GetPosition().y, aAppUnitsPerPixel), 0);
-    Matrix4x4 parentsChildrenOnlyTransform3D =
-        Matrix4x4::From2D(parentsChildrenOnlyTransform)
-            .ChangeBasis(frameOffset);
+    auto parentsChildrenOnlyTransform3D =
+        Matrix4x4::From2D(parentsChildrenOnlyTransform);
+    // <svg> outer anon child frame doesn't need the extra basis change because
+    // it is the root of the svg rendering (and thus its offset with respect to
+    // its parent, like border / padding shouldn't be accounted for).
+    if (frame->GetPosition() != nsPoint() &&
+        !frame->IsSVGOuterSVGAnonChildFrame()) {
+      const Point3D frameOffset(
+          NSAppUnitsToFloatPixels(-frame->GetPosition().x, aAppUnitsPerPixel),
+          NSAppUnitsToFloatPixels(-frame->GetPosition().y, aAppUnitsPerPixel),
+          0);
+      parentsChildrenOnlyTransform3D.ChangeBasis(frameOffset);
+    }
 
     result *= parentsChildrenOnlyTransform3D;
   }
@@ -6314,8 +6283,9 @@ Matrix4x4 nsDisplayTransform::GetResultingTransformMatrixInternal(
     TransformReferenceBox refBox(parentFrame);
     FrameTransformProperties props(parentFrame, refBox, aAppUnitsPerPixel);
 
-    uint32_t flags =
-        aFlags & (INCLUDE_PRESERVE3D_ANCESTORS | INCLUDE_PERSPECTIVE);
+    // Whenever we are including preserve3d we want to also include perspective
+    // (if it exists).
+    uint32_t flags = (INCLUDE_PRESERVE3D_ANCESTORS | INCLUDE_PERSPECTIVE);
 
     // If this frame isn't transformed (but we exist for backface-visibility),
     // then we're not a reference frame so no offset to origin will be added.
@@ -6330,7 +6300,8 @@ Matrix4x4 nsDisplayTransform::GetResultingTransformMatrixInternal(
     result = result * parent;
   }
 
-  if (aFlags & OFFSET_BY_ORIGIN) {
+  MOZ_ASSERT((aOrigin == nsPoint()) || (aFlags & OFFSET_BY_ORIGIN));
+  if ((aFlags & OFFSET_BY_ORIGIN) && (aOrigin != nsPoint())) {
     nsLayoutUtils::PostTranslate(result, aOrigin, aAppUnitsPerPixel,
                                  shouldRound);
   }
@@ -6383,6 +6354,16 @@ auto nsDisplayTransform::ShouldPrerenderTransformedContent(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
     nsRect* aDirtyRect) -> PrerenderInfo {
   PrerenderInfo result;
+
+  // Prerendering only makes sense if we are painting to the window so that the
+  // extra prerendered content can be animated into view by the compositor.
+  // GenerateGlyphMask (for background-clip: text) uses a nested builder, so it
+  // can be inside a builder that is painting to window, and it's buggy, so just
+  // allow it to minimize bugs.
+  if (!aBuilder->IsPaintingToWindow() && !aBuilder->IsForGenerateGlyphMask()) {
+    return result;
+  }
+
   // If we are in a preserve-3d tree, and we've disallowed async animations, we
   // return No prerender decision directly.
   if ((aFrame->Extend3DContext() ||
@@ -6614,7 +6595,7 @@ Matrix4x4 nsDisplayTransform::GetTransformForRendering(
   float scale = mFrame->PresContext()->AppUnitsPerDevPixel();
   // Don't include perspective transform, or the offset to origin, since
   // nsDisplayPerspective will handle both of those.
-  return GetResultingTransformMatrix(mFrame, ToReferenceFrame(), scale, 0);
+  return GetResultingTransformMatrix(mFrame, nsPoint(), scale, 0);
 }
 
 const Matrix4x4& nsDisplayTransform::GetAccumulatedPreserved3DTransform(
@@ -7262,8 +7243,9 @@ nsRect nsDisplayTransform::TransformRect(const nsRect& aUntransformedBounds,
   FrameTransformProperties props(aFrame, aRefBox, factor);
   return nsLayoutUtils::MatrixTransformRect(
       aUntransformedBounds,
-      GetResultingTransformMatrixInternal(props, aRefBox, nsPoint(), factor,
-                                          kTransformRectFlags),
+      GetResultingTransformMatrixInternal(
+          props, aRefBox, nsPoint(), factor,
+          kTransformRectFlags & ~OFFSET_BY_ORIGIN),
       factor);
 }
 
@@ -7274,8 +7256,8 @@ bool nsDisplayTransform::UntransformRect(const nsRect& aTransformedBounds,
   MOZ_ASSERT(aFrame, "Can't take the transform based on a null frame!");
 
   float factor = aFrame->PresContext()->AppUnitsPerDevPixel();
-  Matrix4x4 transform = GetResultingTransformMatrix(aFrame, nsPoint(), factor,
-                                                    kTransformRectFlags);
+  Matrix4x4 transform = GetResultingTransformMatrix(
+      aFrame, nsPoint(), factor, kTransformRectFlags & ~OFFSET_BY_ORIGIN);
   return UntransformRect(aTransformedBounds, aChildBounds, transform, factor,
                          aOutRect);
 }
@@ -7285,7 +7267,8 @@ bool nsDisplayTransform::UntransformRect(const nsRect& aTransformedBounds,
                                          const Matrix4x4& aMatrix,
                                          float aAppUnitsPerPixel,
                                          nsRect* aOutRect) {
-  if (aMatrix.IsSingular()) {
+  Maybe<Matrix4x4> inverse = aMatrix.MaybeInverse();
+  if (inverse.isNothing()) {
     return false;
   }
 
@@ -7301,7 +7284,7 @@ bool nsDisplayTransform::UntransformRect(const nsRect& aTransformedBounds,
       NSAppUnitsToFloatPixels(aChildBounds.width, aAppUnitsPerPixel),
       NSAppUnitsToFloatPixels(aChildBounds.height, aAppUnitsPerPixel));
 
-  result = aMatrix.Inverse().ProjectRectBounds(result, childGfxBounds);
+  result = inverse->ProjectRectBounds(result, childGfxBounds);
   *aOutRect = nsLayoutUtils::RoundGfxRectToAppRect(ThebesRect(result),
                                                    aAppUnitsPerPixel);
   return true;
@@ -8703,15 +8686,21 @@ nsDisplayListBuilder::AutoBuildingDisplayList::AutoBuildingDisplayList(
           aBuilder->mAncestorHasApzAwareEventHandler),
       mPrevBuildingInvisibleItems(aBuilder->mBuildingInvisibleItems),
       mPrevInInvalidSubtree(aBuilder->mInInvalidSubtree) {
-  if (aIsTransformed) {
-    aBuilder->mCurrentOffsetToReferenceFrame =
-        aBuilder->AdditionalOffset().refOr(nsPoint());
-    aBuilder->mCurrentReferenceFrame = aForChild;
-  } else if (aBuilder->mCurrentFrame == aForChild->GetParent()) {
-    aBuilder->mCurrentOffsetToReferenceFrame += aForChild->GetPosition();
-  } else {
-    aBuilder->mCurrentReferenceFrame = aBuilder->FindReferenceFrameFor(
-        aForChild, &aBuilder->mCurrentOffsetToReferenceFrame);
+  // If the last AutoBuildingDisplayList on the stack that we created was for
+  // this same frame then we are already up to date and can skip this work (this
+  // happens eg when BuildDisplayListForChild calls
+  // BuildDisplayListForStackingContext).
+  if (aForChild != mPrevFrame) {
+    if (aIsTransformed) {
+      aBuilder->mCurrentOffsetToReferenceFrame =
+          aBuilder->AdditionalOffset().refOr(nsPoint());
+      aBuilder->mCurrentReferenceFrame = aForChild;
+    } else if (aBuilder->mCurrentFrame == aForChild->GetParent()) {
+      aBuilder->mCurrentOffsetToReferenceFrame += aForChild->GetPosition();
+    } else {
+      aBuilder->mCurrentReferenceFrame = aBuilder->FindReferenceFrameFor(
+          aForChild, &aBuilder->mCurrentOffsetToReferenceFrame);
+    }
   }
 
   // If aForChild is being visited from a frame other than it's ancestor frame,

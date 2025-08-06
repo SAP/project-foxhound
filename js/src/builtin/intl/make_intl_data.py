@@ -172,7 +172,7 @@ def writeMappingsBinarySearchBody(
     # Sort the subtags by length. That enables using an optimized comparator
     # for the binary search, which only performs a single |memcmp| for multiple
     # of two subtag lengths.
-    mappings_keys = mappings.keys() if type(mappings) == dict else mappings
+    mappings_keys = mappings.keys() if type(mappings) is dict else mappings
     for length, subtags in groupby(sorted(mappings_keys, key=len), len):
         # Omit the length check if the current length is the maximum length.
         if length != tag_maxlength:
@@ -203,7 +203,7 @@ def writeMappingsBinarySearchBody(
 
         # Don't emit a binary search for short lists.
         if len(subtags) == 1:
-            if type(mappings) == dict:
+            if type(mappings) is dict:
                 println(
                     """
     if ({}) {{
@@ -228,7 +228,7 @@ def writeMappingsBinarySearchBody(
                     )
                 )
         elif len(subtags) <= 4:
-            if type(mappings) == dict:
+            if type(mappings) is dict:
                 for subtag in subtags:
                     println(
                         """
@@ -265,7 +265,7 @@ def writeMappingsBinarySearchBody(
         else:
             write_array(subtags, source_name + "s", length, True)
 
-            if type(mappings) == dict:
+            if type(mappings) is dict:
                 write_array([mappings[k] for k in subtags], "aliases", length, False)
 
                 println(
@@ -1928,10 +1928,9 @@ def writeCLDRLanguageTagLikelySubtagsTest(println, data, url):
         # Step 2: Lookup.
         searches = (
             (language, script, region),
-            (language, None, region),
             (language, script, None),
+            (language, None, region),
             (language, None, None),
-            ("und", script, None),
         )
         search = next(search for search in searches if search in likely_subtags)
 
@@ -3915,9 +3914,11 @@ def readICUNumberingSystemsResourceFile(filepath):
 
     # Return the numbering systems.
     return {
-        key: {"digits": value["desc"], "algorithmic": False}
-        if not bool(value["algorithmic"])
-        else {"algorithmic": True}
+        key: (
+            {"digits": value["desc"], "algorithmic": False}
+            if not bool(value["algorithmic"])
+            else {"algorithmic": True}
+        )
         for (key, value) in numbering_systems.items()
     }
 

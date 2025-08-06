@@ -142,6 +142,7 @@ class PopoverData;
 class Promise;
 class Sanitizer;
 class ShadowRoot;
+class TrustedHTMLOrString;
 class UnrestrictedDoubleOrKeyframeAnimationOptions;
 template <typename T>
 class Optional;
@@ -217,6 +218,13 @@ class EventChainVisitor;
 class EventListenerManager;
 class EventStateManager;
 
+enum class ContentEditableState {
+  Inherit,
+  False,
+  True,
+  PlainTextOnly,
+};
+
 namespace dom {
 
 struct CustomElementDefinition;
@@ -227,6 +235,9 @@ class DOMRect;
 class DOMRectList;
 class Flex;
 class Grid;
+class OwningTrustedHTMLOrNullIsEmptyString;
+class TrustedHTML;
+class TrustedHTMLOrNullIsEmptyString;
 
 // IID for the dom::Element interface
 #define NS_ELEMENT_IID                               \
@@ -314,6 +325,11 @@ class Element : public FragmentOrElement {
     return State().HasAtLeastOneOfStates(ElementState::DISABLED |
                                          ElementState::READONLY);
   }
+
+  /**
+   * Return true if this element has contenteditable="plaintext-only".
+   */
+  [[nodiscard]] inline bool IsContentEditablePlainTextOnly() const;
 
   virtual int32_t TabIndexDefault() { return -1; }
 
@@ -1208,6 +1224,9 @@ class Element : public FragmentOrElement {
     return false;
   }
 
+  // Note, this does not notify about the removal.
+  void ClearAttributes() { mAttrs.Clear(); }
+
   void GetTagName(nsAString& aTagName) const { aTagName = NodeName(); }
   void GetId(nsAString& aId) const { GetAttr(nsGkAtoms::id, aId); }
   void GetId(DOMString& aId) const { GetAttr(nsGkAtoms::id, aId); }
@@ -1587,13 +1606,30 @@ class Element : public FragmentOrElement {
   void CloneAnimationsFrom(const Element& aOther);
 
   virtual void GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError);
-  virtual void SetInnerHTML(const nsAString& aInnerHTML,
-                            nsIPrincipal* aSubjectPrincipal,
-                            ErrorResult& aError);
+
+  // https://html.spec.whatwg.org/#dom-parsing-and-serialization:dom-element-innerhtml
+  // @param aInnerHTML will always be of type `NullIsEmptyString`.
+  void GetInnerHTML(OwningTrustedHTMLOrNullIsEmptyString& aInnerHTML,
+                    OOMReporter& aError);
+
+  // https://html.spec.whatwg.org/#dom-parsing-and-serialization:dom-element-innerhtml
+  //
+  // May only run script if aInnerHTML is a string. If this behavior changes,
+  // callees might need adjusting.
+  MOZ_CAN_RUN_SCRIPT void SetInnerHTML(
+      const TrustedHTMLOrNullIsEmptyString& aInnerHTML,
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aError);
+
+  // Call this method only with trusted, i.e. non-attacker-controlled, strings.
+  virtual void SetInnerHTMLTrusted(const nsAString& aInnerHTML,
+                                   nsIPrincipal* aSubjectPrincipal,
+                                   ErrorResult& aError);
+
   void GetOuterHTML(nsAString& aOuterHTML);
   void SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError);
-  void InsertAdjacentHTML(const nsAString& aPosition, const nsAString& aText,
-                          ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT void InsertAdjacentHTML(
+      const nsAString& aPosition,
+      const TrustedHTMLOrString& aTrustedHTMLOrString, ErrorResult& aError);
 
   void SetHTML(const nsAString& aInnerHTML, const SetHTMLOptions& aOptions,
                ErrorResult& aError);
@@ -1727,6 +1763,8 @@ class Element : public FragmentOrElement {
 
   nsINode* GetScopeChainParent() const override;
 
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
+
   /**
    * Locate a TextEditor rooted at this content node, if there is one.
    */
@@ -1832,6 +1870,12 @@ class Element : public FragmentOrElement {
   float FontSizeInflation();
 
   void GetImplementedPseudoElement(nsAString&) const;
+
+  /**
+   * Get the pseudo element for this pseudo request (i.e. PseudoStyleType and
+   * its function parameter, if any).
+   */
+  const Element* GetPseudoElement(const PseudoStyleRequest&) const;
 
   ReferrerPolicy GetReferrerPolicyAsEnum() const;
   ReferrerPolicy ReferrerPolicyFromAttr(const nsAttrValue* aValue) const;
@@ -2363,45 +2407,37 @@ inline mozilla::dom::Element* nsINode::GetNextElementSibling() const {
  * Macros to implement Clone(). _elementName is the class for which to implement
  * Clone.
  */
-#define NS_IMPL_ELEMENT_CLONE(_elementName)                         \
+#define NS_IMPL_ELEMENT_CLONE(_elementName, ...)                    \
   nsresult _elementName::Clone(mozilla::dom::NodeInfo* aNodeInfo,   \
                                nsINode** aResult) const {           \
     *aResult = nullptr;                                             \
-    RefPtr<mozilla::dom::NodeInfo> ni(aNodeInfo);                   \
-    auto* nim = ni->NodeInfoManager();                              \
-    RefPtr<_elementName> it = new (nim) _elementName(ni.forget());  \
+    RefPtr<_elementName> it = new (aNodeInfo->NodeInfoManager())    \
+        _elementName(do_AddRef(aNodeInfo), ##__VA_ARGS__);          \
     nsresult rv = const_cast<_elementName*>(this)->CopyInnerTo(it); \
     if (NS_SUCCEEDED(rv)) {                                         \
       it.forget(aResult);                                           \
     }                                                               \
-                                                                    \
     return rv;                                                      \
   }
 
-#define EXPAND(...) __VA_ARGS__
-#define NS_IMPL_ELEMENT_CLONE_WITH_INIT_HELPER(_elementName, extra_args_) \
-  nsresult _elementName::Clone(mozilla::dom::NodeInfo* aNodeInfo,         \
-                               nsINode** aResult) const {                 \
-    *aResult = nullptr;                                                   \
-    RefPtr<mozilla::dom::NodeInfo> ni(aNodeInfo);                         \
-    auto* nim = ni->NodeInfoManager();                                    \
-    RefPtr<_elementName> it =                                             \
-        new (nim) _elementName(ni.forget() EXPAND extra_args_);           \
-    nsresult rv = it->Init();                                             \
-    nsresult rv2 = const_cast<_elementName*>(this)->CopyInnerTo(it);      \
-    if (NS_FAILED(rv2)) {                                                 \
-      rv = rv2;                                                           \
-    }                                                                     \
-    if (NS_SUCCEEDED(rv)) {                                               \
-      it.forget(aResult);                                                 \
-    }                                                                     \
-                                                                          \
-    return rv;                                                            \
+#define NS_IMPL_ELEMENT_CLONE_WITH_INIT(_elementName, ...)           \
+  nsresult _elementName::Clone(mozilla::dom::NodeInfo* aNodeInfo,    \
+                               nsINode** aResult) const {            \
+    *aResult = nullptr;                                              \
+    RefPtr<_elementName> it = new (aNodeInfo->NodeInfoManager())     \
+        _elementName(do_AddRef(aNodeInfo), ##__VA_ARGS__);           \
+    nsresult rv = it->Init();                                        \
+    nsresult rv2 = const_cast<_elementName*>(this)->CopyInnerTo(it); \
+    if (NS_FAILED(rv2)) {                                            \
+      rv = rv2;                                                      \
+    }                                                                \
+    if (NS_SUCCEEDED(rv)) {                                          \
+      it.forget(aResult);                                            \
+    }                                                                \
+    return rv;                                                       \
   }
 
-#define NS_IMPL_ELEMENT_CLONE_WITH_INIT(_elementName) \
-  NS_IMPL_ELEMENT_CLONE_WITH_INIT_HELPER(_elementName, ())
 #define NS_IMPL_ELEMENT_CLONE_WITH_INIT_AND_PARSER(_elementName) \
-  NS_IMPL_ELEMENT_CLONE_WITH_INIT_HELPER(_elementName, (, NOT_FROM_PARSER))
+  NS_IMPL_ELEMENT_CLONE_WITH_INIT(_elementName, NOT_FROM_PARSER)
 
 #endif  // mozilla_dom_Element_h__

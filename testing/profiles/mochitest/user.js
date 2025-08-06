@@ -23,6 +23,11 @@ user_pref("general.smoothScroll", true);
 // storage access API spec for secure contexts.
 user_pref("dom.storage_access.dont_grant_insecure_contexts", false);
 
+// Many mochitests rely upon this behavior (which is being deprecated)
+// while testing other behaviors. We plan to update all tests to not
+// rely upon it, remove this pref, then roll out to release.
+user_pref("privacy.restrict3rdpartystorage.heuristic.window_open", true);
+
 // Turn off update
 user_pref("app.update.disabledForTesting", true);
 
@@ -31,3 +36,8 @@ user_pref("app.update.disabledForTesting", true);
 // Therefore, in the mochitest, as the frequently in common browser tests can be
 // super higher than the real user, we disable this feature.
 user_pref("places.history.floodingPrevention.enabled", false);
+
+// If we are on a platform where we can detect that we don't have OS geolocation
+// permission, and we can open it and wait for the user to give permission, then
+// don't do that.
+user_pref("geo.prompt.open_system_prefs", false);

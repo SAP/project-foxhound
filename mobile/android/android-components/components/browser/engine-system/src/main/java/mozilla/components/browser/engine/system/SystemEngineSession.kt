@@ -28,6 +28,7 @@ import mozilla.components.concept.engine.shopping.ProductAnalysis
 import mozilla.components.concept.engine.shopping.ProductAnalysisStatus
 import mozilla.components.concept.engine.shopping.ProductRecommendation
 import mozilla.components.concept.engine.translate.TranslationOptions
+import org.json.JSONObject
 import kotlin.reflect.KProperty
 
 internal val xRequestHeader = mapOf(
@@ -163,8 +164,8 @@ class SystemEngineSession(
      * See [EngineSession.restoreState]
      */
     override fun restoreState(state: EngineSessionState): Boolean {
-        if (state !is SystemEngineSessionState) {
-            throw IllegalArgumentException("Can only restore from SystemEngineSessionState")
+        require(state is SystemEngineSessionState) {
+            "Can only restore from SystemEngineSessionState"
         }
 
         return state.bundle?.let { webView.restoreState(it) } != null
@@ -282,7 +283,6 @@ class SystemEngineSession(
             // Explicitly set global defaults.
 
             cacheMode = LOAD_NO_CACHE
-            databaseEnabled = false
 
             setDeprecatedWebSettings(this)
 
@@ -305,6 +305,8 @@ class SystemEngineSession(
         webSettings.saveFormData = false
         // Deprecated in API18.
         webSettings.savePassword = false
+        // Deprecated in API35; default value is false.
+        webSettings.databaseEnabled = false
     }
 
     private fun setUseWideViewPort(settings: WebSettings, useWideViewPort: Boolean?) {
@@ -422,6 +424,16 @@ class SystemEngineSession(
         onException: (Throwable) -> Unit,
     ) {
         throw UnsupportedOperationException("Checking for PDF viewer is not available in this engine")
+    }
+
+    /**
+     * See [EngineSession.getWebCompatInfo]
+     */
+    override fun getWebCompatInfo(
+        onResult: (JSONObject) -> Unit,
+        onException: (Throwable) -> Unit,
+    ) {
+        throw UnsupportedOperationException("Getting web compat info is not available in this engine")
     }
 
     /**

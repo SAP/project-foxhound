@@ -54,6 +54,7 @@ import org.mozilla.fenix.browser.browsingmode.SimpleBrowsingModeManager
 import org.mozilla.fenix.browser.readermode.ReaderModeController
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
@@ -391,71 +392,6 @@ class DefaultBrowserToolbarControllerTest {
     }
 
     @Test
-    fun handleShoppingCfrActionClick() {
-        val controller = createController()
-
-        controller.handleShoppingCfrActionClick()
-
-        verify {
-            navController.navigate(BrowserFragmentDirections.actionBrowserFragmentToReviewQualityCheckDialogFragment())
-        }
-    }
-
-    @Test
-    fun handleShoppingCfrDisplayedOnce() {
-        val controller = createController()
-        val mockSettings = mockk<Settings> {
-            every { reviewQualityCheckCfrDisplayTimeInMillis } returns System.currentTimeMillis()
-            every { reviewQualityCheckCfrDisplayTimeInMillis = any() } just Runs
-            every { reviewQualityCheckCFRClosedCounter } returns 1
-            every { reviewQualityCheckCFRClosedCounter = 2 } just Runs
-            every { shouldShowReviewQualityCheckCFR } returns true
-        }
-        every { activity.settings() } returns mockSettings
-
-        controller.handleShoppingCfrDisplayed()
-
-        verify(exactly = 0) { mockSettings.shouldShowReviewQualityCheckCFR = false }
-        verify { mockSettings.reviewQualityCheckCfrDisplayTimeInMillis = any() }
-    }
-
-    @Test
-    fun handleShoppingCfrDisplayedTwice() {
-        val controller = createController()
-        val mockSettings = mockk<Settings> {
-            every { reviewQualityCheckCfrDisplayTimeInMillis } returns System.currentTimeMillis()
-            every { reviewQualityCheckCfrDisplayTimeInMillis = any() } just Runs
-            every { reviewQualityCheckCFRClosedCounter } returns 2
-            every { reviewQualityCheckCFRClosedCounter = 3 } just Runs
-            every { shouldShowReviewQualityCheckCFR } returns true
-        }
-        every { activity.settings() } returns mockSettings
-
-        controller.handleShoppingCfrDisplayed()
-
-        verify(exactly = 0) { mockSettings.shouldShowReviewQualityCheckCFR = false }
-        verify { mockSettings.reviewQualityCheckCfrDisplayTimeInMillis = any() }
-    }
-
-    @Test
-    fun handleShoppingCfrDisplayedThreeTimes() {
-        val controller = createController()
-        val mockSettings = mockk<Settings> {
-            every { reviewQualityCheckCfrDisplayTimeInMillis } returns System.currentTimeMillis()
-            every { reviewQualityCheckCFRClosedCounter } returns 3
-            every { reviewQualityCheckCFRClosedCounter = 4 } just Runs
-            every { shouldShowReviewQualityCheckCFR } returns true
-            every { shouldShowReviewQualityCheckCFR = any() } just Runs
-        }
-        every { activity.settings() } returns mockSettings
-
-        controller.handleShoppingCfrDisplayed()
-
-        verify { mockSettings.shouldShowReviewQualityCheckCFR = false }
-        verify(exactly = 0) { mockSettings.reviewQualityCheckCfrDisplayTimeInMillis = any() }
-    }
-
-    @Test
     fun handleTranslationsButtonClick() {
         val controller = createController()
         controller.handleTranslationsButtonClick()
@@ -517,6 +453,40 @@ class DefaultBrowserToolbarControllerTest {
         val recordedEvents = NavigationBar.browserNewTabLongTapped.testGetValue()!!
         assertEquals(1, recordedEvents.size)
         assertEquals(null, recordedEvents.single().extra)
+    }
+
+    @Test
+    fun `GIVEN that the menu access point is not a custom tab WHEN menu button is clicked THEN handle menu navigation`() {
+        val controller = createController()
+        val accessPoint = MenuAccessPoint.Browser
+
+        controller.handleMenuButtonClicked(accessPoint)
+
+        verify {
+            navController.navigate(
+                BrowserFragmentDirections.actionGlobalMenuDialogFragment(
+                    accesspoint = accessPoint,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN that the menu access point is a custom tab WHEN menu button is clicked THEN handle menu navigation`() {
+        val controller = createController()
+        val accessPoint = MenuAccessPoint.External
+        val customTabSessionId = "1"
+
+        controller.handleMenuButtonClicked(accessPoint, customTabSessionId)
+
+        verify {
+            navController.navigate(
+                BrowserFragmentDirections.actionGlobalMenuDialogFragment(
+                    accesspoint = accessPoint,
+                    customTabSessionId = customTabSessionId,
+                ),
+            )
+        }
     }
 
     private fun createController(

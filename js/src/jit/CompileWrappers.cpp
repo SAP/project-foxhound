@@ -34,7 +34,7 @@ const JitRuntime* CompileRuntime::jitRuntime() {
   return runtime()->jitRuntime();
 }
 
-GeckoProfilerRuntime& CompileRuntime::geckoProfiler() {
+const GeckoProfilerRuntime& CompileRuntime::geckoProfiler() {
   return runtime()->geckoProfiler();
 }
 
@@ -64,12 +64,24 @@ const void* CompileRuntime::mainContextPtr() {
   return runtime()->mainContextFromAnyThread();
 }
 
+const void* CompileRuntime::addressOfJitActivation() {
+  return runtime()->mainContextFromAnyThread()->addressOfJitActivation();
+}
+
 const void* CompileRuntime::addressOfJitStackLimit() {
   return runtime()->mainContextFromAnyThread()->addressOfJitStackLimit();
 }
 
 const void* CompileRuntime::addressOfInterruptBits() {
   return runtime()->mainContextFromAnyThread()->addressOfInterruptBits();
+}
+
+const void* CompileRuntime::addressOfInlinedICScript() {
+  return runtime()->mainContextFromAnyThread()->addressOfInlinedICScript();
+}
+
+const void* CompileRuntime::addressOfRealm() {
+  return runtime()->mainContextFromAnyThread()->addressOfRealm();
 }
 
 const void* CompileRuntime::addressOfZone() {
@@ -183,6 +195,10 @@ gc::AllocSite* CompileZone::catchAllAllocSite(JS::TraceKind traceKind,
     return zone()->optimizedAllocSite();
   }
   return zone()->unknownAllocSite(traceKind);
+}
+
+gc::AllocSite* CompileZone::tenuringAllocSite() {
+  return zone()->tenuringAllocSite();
 }
 
 JS::Realm* CompileRealm::realm() { return reinterpret_cast<JS::Realm*>(this); }

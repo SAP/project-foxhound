@@ -41,6 +41,7 @@ using mozilla::dom::RequestMode from "mozilla/dom/RequestBinding.h";
 using mozilla::net::LinkHeader from "nsNetUtil.h";
 using mozilla::dom::FeaturePolicyInfo from "mozilla/dom/FeaturePolicy.h";
 using nsILoadInfo::HTTPSUpgradeTelemetryType from "nsILoadInfo.h";
+using nsILoadInfo::SchemelessInputType from "nsILoadInfo.h";
 
 namespace mozilla {
 namespace net {
@@ -133,12 +134,13 @@ struct LoadInfoArgs
   bool                        isInThirdPartyContext;
   bool?                       isThirdPartyContextToTopWindow;
   bool                        isFormSubmission;
+  bool                        isGETRequest;
   bool                        sendCSPViolationEvents;
   OriginAttributes            originAttributes;
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
   RedirectHistoryEntryInfo[]  redirectChain;
   bool                        hasInjectedCookieForCookieBannerHandling;
-  bool                        wasSchemelessInput;
+  SchemelessInputType         schemelessInput;
   HTTPSUpgradeTelemetryType   httpsUpgradeTelemetry;
 
   /**
@@ -196,6 +198,7 @@ struct LoadInfoArgs
   bool                        originTrialCoepCredentiallessEnabledForTopLevel;
   nullable nsIURI             unstrippedURI;
   InterceptionInfoArg?        interceptionInfo;
+  bool                        isNewWindowTarget;
 };
 
 /**
@@ -227,7 +230,7 @@ struct ParentLoadInfoForwarderArgs
 
   uint32_t httpsOnlyStatus;
 
-  bool wasSchemelessInput;
+  SchemelessInputType schemelessInput;
 
   HTTPSUpgradeTelemetryType httpsUpgradeTelemetry;
 
@@ -384,6 +387,7 @@ struct HttpChannelOpenArgs
   nsString                    classicScriptHintCharset;
   nsString                    documentCharacterSet;
   bool                        isUserAgentHeaderModified;
+  nsString                    initiatorType;
 };
 
 struct HttpChannelConnectArgs
@@ -480,13 +484,14 @@ struct CookieStructTable
 };
 
 struct DocumentCreationArgs {
+  uint32_t loadFlags;
   bool uriModified;
   bool isEmbeddingBlockedError;
 };
 
 struct ObjectCreationArgs {
-  uint64_t embedderInnerWindowId;
   uint32_t loadFlags;
+  uint64_t embedderInnerWindowId;
   nsContentPolicyType contentPolicyType;
   bool isUrgentStart;
 };

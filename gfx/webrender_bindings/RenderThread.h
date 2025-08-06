@@ -128,8 +128,12 @@ class WebRenderPipelineInfo final {
 /// messages to preserve ordering.
 class RendererEvent {
  public:
+  RendererEvent() : mCreationTimeStamp(TimeStamp::Now()) {}
   virtual ~RendererEvent() = default;
   virtual void Run(RenderThread& aRenderThread, wr::WindowId aWindow) = 0;
+  virtual const char* Name() = 0;
+
+  const TimeStamp mCreationTimeStamp;
 };
 
 /// The render thread is where WebRender issues all of its GPU work, and as much
@@ -209,6 +213,7 @@ class RenderThread final {
 
   void Pause(wr::WindowId aWindowId);
   bool Resume(wr::WindowId aWindowId);
+  void NotifyIdle();
 
   /// Can be called from any thread.
   void RegisterExternalImage(const wr::ExternalImageId& aExternalImageId,
@@ -275,6 +280,9 @@ class RenderThread final {
   /// Thread pool for low priority scene building
   /// Can be called from any thread.
   WebRenderThreadPool& ThreadPoolLP() { return mThreadPoolLP; }
+
+  /// A pool of large memory chunks used by the per-frame allocators.
+  WrChunkPool* MemoryChunkPool() { return mChunkPool; }
 
   /// Optional global glyph raster thread.
   /// Can be called from any thread.
@@ -429,7 +437,8 @@ class RenderThread final {
   void InitDeviceTask();
   void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender,
                          bool aTrackedFrame, Maybe<FramePublishId> aPublishId);
-  void RunEvent(wr::WindowId aWindowId, UniquePtr<RendererEvent> aEvent);
+  void RunEvent(wr::WindowId aWindowId, UniquePtr<RendererEvent> aEvent,
+                bool aViaWebRender);
   void PostRunnable(already_AddRefed<nsIRunnable> aRunnable);
 
   void DoAccumulateMemoryReport(MemoryReport,
@@ -461,6 +470,7 @@ class RenderThread final {
 
   WebRenderThreadPool mThreadPool;
   WebRenderThreadPool mThreadPoolLP;
+  WrChunkPool* mChunkPool;
   MaybeWebRenderGlyphRasterThread mGlyphRasterThread;
 
   UniquePtr<WebRenderProgramCache> mProgramCache;

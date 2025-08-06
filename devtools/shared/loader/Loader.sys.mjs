@@ -124,6 +124,7 @@ export function DevToolsLoader({
     DOMQuad,
     DOMRect,
     fetch,
+    Glean,
     HeapSnapshot,
     IOUtils,
     L10nRegistry,
@@ -135,6 +136,7 @@ export function DevToolsLoader({
     StructuredCloneHolder,
     TelemetryStopwatch,
     WebExtensionPolicy,
+    WebSocket,
     WindowGlobalParent,
     WindowGlobalChild,
   };

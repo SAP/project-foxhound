@@ -35,13 +35,6 @@ import:
             }
 
 features:
-  toolbar:
-    description: The searchbar/awesomebar that user uses to search.
-    variables:
-      toolbar-position-top:
-        description: If true, toolbar appears at top of the screen.
-        type: Boolean
-        default: false
   homescreen:
     description: The homescreen that the user goes to when they press home or new tab.
     variables:
@@ -205,13 +198,6 @@ features:
             "feature-setting-global-rules-sub-frames": 1,
           }
         }
-  unified-search:
-    description: A feature allowing user to easily search for specified results directly in the search bar.
-    variables:
-      enabled:
-        description: If true, the feature shows up in the search bar.
-        type: Boolean
-        default: true
 
   growth-data:
     description: A feature measuring campaign growth data
@@ -246,6 +232,14 @@ features:
         type: List<OnboardingPanel>
         default: ["themes", "toolbar-placement", "sync", "tcp", "privacy-notice"]
 
+  one-click-search:
+    description: Enable/disable the one click search feature.
+    variables:
+      enabled:
+        description: If true, the one click search will be enabled.
+        type: Boolean
+        default: false
+
   glean:
     description: "A feature that provides server-side configurations for Glean metrics (aka Server Knobs)."
     allow-coenrollment: true
@@ -257,11 +251,19 @@ features:
       enable-event-timestamps:
         description: "Enables precise event timestamps for Glean events"
         type: Boolean
-        default: false
+        default: true
       delay-ping-lifetime-io:
         description: "Glean will delay io for ping lifetime metrics"
         type: Boolean
         default: true
+      ping-lifetime-threshold:
+        description: "Write count threshold when to auto-flush"
+        type: Int
+        default: 1000
+      ping-lifetime-max-time:
+        description: "After what time to auto-flush"
+        type: Int
+        default: 2000
 
   splash-screen:
     description: "A feature that extends splash screen duration, allowing additional data fetching time for the app's initial run."
@@ -274,6 +276,20 @@ features:
         description: The maximum amount of time in milliseconds the splashscreen will be visible while waiting for initialization calls to complete.
         type: Int
         default: 0
+
+  alternative-app-launcher-icon:
+    description: A feature that changes the app launcher icon background color.
+    variables:
+      enabled:
+        description: If true, the feature is active.
+        type: Boolean
+        default: false
+      reset-to-default:
+        description: >
+          If true use the default icon, if false use the alternative icon.
+          This is required to 'reset' the icon for enrolled users once the initial experiment is complete.
+        type: Boolean
+        default: false
 
   shopping-experience:
     description: A feature that shows product review quality information.
@@ -342,10 +358,16 @@ features:
           additional Search settings.
         type: Boolean
         default: false
+      boost-amp-wiki:
+        description: >
+          The feature boost wiki and AMP suggestions to the top of its group.
+        type: Boolean
+        default: false
     defaults:
       - channel: developer
         value:
           enabled: true
+          boost-amp-wiki: true
       - channel: nightly
         value:
           enabled: true
@@ -434,6 +456,26 @@ features:
         type: Boolean
         default: true
 
+  ship:
+    description: The feature that controls Session History in Parent (SHIP) in Gecko.
+    variables:
+      disabled:
+        description: >
+          Whether or not to disable SHIP. SHIP is enabled when set to false. SHIP is disabled when
+          set to true.
+        type: Boolean
+        default: true
+
+  fission:
+    description: The feature that controls whether fission is enabled or not in Gecko.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable fission. Fission is enabled when set to true. Fission is disabled when
+          set to false.
+        type: Boolean
+        default: false
+
   suggest-shipped-domains:
     description: Feature that suggests domains from the shipped domain list.
     variables:
@@ -480,6 +522,24 @@ features:
         type: Boolean
         default: false
 
+  third-party-cookie-blocking:
+    description: Control third-party cookie blocking.
+    variables:
+      enabled:
+        description: If true, the feature is active.
+        type: Boolean
+        default: false
+      enabled-normal:
+        description: >
+          Enables / disables third-party cookie blocking in normal browsing mode.
+        type: Boolean
+        default: false
+      enabled-private:
+        description: >
+          Enables / disables third-party cookie blocking in private browsing mode.
+        type: Boolean
+        default: true
+
   menu-redesign:
     description: Control the new menu redesign.
     variables:
@@ -487,6 +547,14 @@ features:
         description: If true, the new menu redesign is available.
         type: Boolean
         default: false
+      report-site-issue:
+        description: If true, report site issue menu item and preview is available.
+        type: Boolean
+        default: true
+    defaults:
+      - channel: release
+        value:
+          report-site-issue: false
 
   microsurveys:
     description: Feature for microsurveys.
@@ -496,6 +564,67 @@ features:
           When the feature is enabled then microsurveys can be used.
         type: Boolean
         default: true
+
+  set-as-default-prompt:
+    description: >
+      Displays native default browser prompt to existing users.
+    variables:
+      enabled:
+        description: >
+          When the feature is enabled then the Set as default prompt can be triggered for
+          existing users.
+        type: Boolean
+        default: true
+      app-cold-starts-between-prompts:
+        description: >
+          Minimum number of app cold starts before the next prompt should be displayed to
+          the user.
+        type: Int
+        default: 4
+      days-between-prompts:
+        description: >
+          Minimum number of days between displays of Set as default prompt.
+        type: Int
+        default: 14
+      max-number-of-times-to-display:
+        description: >
+          Maximum number of time the prompt should be displayed.
+        type: Int
+        default: 3
+
+  user-characteristics:
+    description: A feature for control user characteristic data collection
+    variables:
+      currentVersion:
+        description: The current collection version of the user characteristics.
+        type: Int
+        default: 0
+
+  bookmarks:
+    description: Feature for Bookmarks
+    variables:
+      new-compose-ui:
+        description: if true, enable new compose based UI
+        type: Boolean
+        default: false
+
+  networking:
+    description: Enables networking features
+    variables:
+      fetchPriorityEnabled:
+        description: >
+          Enables or disables network.fetchpriority.enabled preference.
+        type: Boolean
+        default: true
+
+  javascript:
+    description: Enables Javascript Engine (Spidermonkey) features
+    variables:
+      parallelMarkingEnabled:
+        description: >
+          Enables or disables javascript.options.mem.gc_parallel_marking preference.
+        type: Boolean
+        default: false
 
 types:
   objects: {}

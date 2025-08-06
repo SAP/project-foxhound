@@ -63,9 +63,32 @@ def cache_key(attr, params, disable_target_task_filter):
     return key
 
 
+def add_chunk_patterns(tg):
+    for task_name, task in tg.tasks.items():
+        chunk_index = -1
+        if task_name.endswith("-cf"):
+            chunk_index = -2
+
+        chunks = task.task.get("extra", {}).get("chunks", {})
+        if isinstance(chunks, int):
+            task.chunk_pattern = "{}-*/{}".format(
+                "-".join(task_name.split("-")[:chunk_index]), chunks
+            )
+        else:
+            assert isinstance(chunks, dict)
+            if chunks.get("total", 1) == 1:
+                task.chunk_pattern = task_name
+            else:
+                task.chunk_pattern = "{}-*".format(
+                    "-".join(task_name.split("-")[:chunk_index])
+                )
+    return tg
+
+
 def generate_tasks(params=None, full=False, disable_target_task_filter=False):
     attr = "full_task_set" if full else "target_task_set"
-    target_tasks_method = (
+
+    filter_fn = (
         "try_select_tasks"
         if not disable_target_task_filter
         else "try_select_tasks_uncommon"
@@ -75,33 +98,12 @@ def generate_tasks(params=None, full=False, disable_target_task_filter=False):
         strict=False,
         overrides={
             "try_mode": "try_select",
-            "target_tasks_method": target_tasks_method,
+            "filters": [filter_fn],
         },
     )
     root = os.path.join(build.topsrcdir, "taskcluster")
     taskgraph.fast = True
     generator = TaskGraphGenerator(root_dir=root, parameters=params)
-
-    def add_chunk_patterns(tg):
-        for task_name, task in tg.tasks.items():
-            chunk_index = -1
-            if task_name.endswith("-cf"):
-                chunk_index = -2
-
-            chunks = task.task.get("extra", {}).get("chunks", {})
-            if isinstance(chunks, int):
-                task.chunk_pattern = "{}-*/{}".format(
-                    "-".join(task_name.split("-")[:chunk_index]), chunks
-                )
-            else:
-                assert isinstance(chunks, dict)
-                if chunks.get("total", 1) == 1:
-                    task.chunk_pattern = task_name
-                else:
-                    task.chunk_pattern = "{}-*".format(
-                        "-".join(task_name.split("-")[:chunk_index])
-                    )
-        return tg
 
     cache_dir = os.path.join(
         get_state_dir(specific_to_topsrcdir=True), "cache", "taskgraph"

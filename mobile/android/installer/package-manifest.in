@@ -79,6 +79,10 @@
 @BINPATH@/@DLL_PREFIX@gvr@DLL_SUFFIX@
 #endif
 
+#ifdef MOZ_CRASHREPORTER
+@BINPATH@/@DLL_PREFIX@minidump_analyzer@DLL_SUFFIX@
+#endif
+
 [xpcom]
 @BINPATH@/package-name.txt
 
@@ -140,7 +144,6 @@
 ; Style Sheets, Graphics and other Resources used by the layout engine.
 @BINPATH@/res/EditorOverride.css
 @BINPATH@/res/contenteditable.css
-@BINPATH@/res/designmode.css
 @BINPATH@/res/table-add-column-after-active.gif
 @BINPATH@/res/table-add-column-after-hover.gif
 @BINPATH@/res/table-add-column-after.gif

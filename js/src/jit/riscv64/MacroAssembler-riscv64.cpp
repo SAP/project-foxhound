@@ -1111,7 +1111,7 @@ void MacroAssemblerRiscv64Compat::wasmLoadI64Impl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, Register64 output, Register tmp) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -1174,7 +1174,7 @@ void MacroAssemblerRiscv64Compat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -1770,7 +1770,7 @@ void MacroAssemblerRiscv64Compat::storeValue(JSValueType type, Register reg,
   if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
     store32(reg, dest);
     JSValueShiftedTag tag = (JSValueShiftedTag)JSVAL_TYPE_TO_SHIFTED_TAG(type);
-    store32(((Imm64(tag)).secondHalf()), Address(dest.base, dest.offset + 4));
+    store32(((Imm64(tag)).hi()), Address(dest.base, dest.offset + 4));
   } else {
     ScratchRegisterScope SecondScratchReg(asMasm());
     MOZ_ASSERT(dest.base != SecondScratchReg);
@@ -2811,6 +2811,9 @@ void MacroAssembler::atomicFetchOp(Scalar::Type type, Synchronization sync,
   AtomicFetchOp(*this, nullptr, type, sync, op, mem, value, valueTemp,
                 offsetTemp, maskTemp, output);
 }
+
+void MacroAssembler::atomicPause() { MOZ_CRASH("NYI"); }
+
 void MacroAssembler::branchPtrInNurseryChunk(Condition cond, Register ptr,
                                              Register temp, Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
@@ -3094,6 +3097,14 @@ void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
                                                ExitFrameType type) {
   enterFakeExitFrame(cxreg, scratch, type);
 }
+CodeOffset MacroAssembler::sub32FromMemAndBranchIfNegativeWithPatch(
+    Address address, Label* label) {
+  MOZ_CRASH("needs to be implemented on this platform");
+}
+void MacroAssembler::patchSub32FromMemAndBranchIfNegative(CodeOffset offset,
+                                                          Imm32 imm) {
+  MOZ_CRASH("needs to be implemented on this platform");
+}
 void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
                                       Register remOutput, bool isUnsigned,
                                       const LiveRegisterSet&) {
@@ -3111,10 +3122,22 @@ void MacroAssembler::flexibleQuotient32(Register rhs, Register srcDest,
   quotient32(rhs, srcDest, isUnsigned);
 }
 
+void MacroAssembler::flexibleQuotientPtr(Register rhs, Register srcDest,
+                                         bool isUnsigned,
+                                         const LiveRegisterSet&) {
+  quotient64(rhs, srcDest, isUnsigned);
+}
+
 void MacroAssembler::flexibleRemainder32(Register rhs, Register srcDest,
                                          bool isUnsigned,
                                          const LiveRegisterSet&) {
   remainder32(rhs, srcDest, isUnsigned);
+}
+
+void MacroAssembler::flexibleRemainderPtr(Register rhs, Register srcDest,
+                                          bool isUnsigned,
+                                          const LiveRegisterSet&) {
+  remainder64(rhs, srcDest, isUnsigned);
 }
 
 void MacroAssembler::floorDoubleToInt32(FloatRegister src, Register dest,
@@ -4284,8 +4307,7 @@ void MacroAssembler::widenInt32(Register r) {
   move32To64SignExtend(r, Register64(r));
 }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
-void MacroAssembler::wasmMarkSlowCall() { mv(ra, ra); }
+void MacroAssembler::wasmMarkCallAsSlow() { mv(ra, ra); }
 
 const int32_t SlowCallMarker = 0x8093;  // addi ra, ra, 0
 
@@ -4295,7 +4317,14 @@ void MacroAssembler::wasmCheckSlowCallsite(Register ra_, Label* notSlow,
   load32(Address(ra_, 0), temp2);
   branch32(Assembler::NotEqual, temp2, Imm32(SlowCallMarker), notSlow);
 }
-#endif  // ENABLE_WASM_TAIL_CALLS
+
+CodeOffset MacroAssembler::wasmMarkedSlowCall(const wasm::CallSiteDesc& desc,
+                                              const Register reg) {
+  BlockTrampolinePoolScope block_trampoline_pool(this, 2);
+  CodeOffset offset = call(desc, reg);
+  wasmMarkCallAsSlow();
+  return offset;
+}
 //}}} check_macroassembler_style
 
 // This method generates lui, dsll and ori instruction block that can be
@@ -6385,7 +6414,7 @@ void MacroAssemblerRiscv64::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                          Register ptrScratch,
                                          AnyRegister output, Register tmp) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -6453,7 +6482,7 @@ void MacroAssemblerRiscv64::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                           Register memoryBase, Register ptr,
                                           Register ptrScratch, Register tmp) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.

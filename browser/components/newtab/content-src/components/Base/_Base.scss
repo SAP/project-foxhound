@@ -84,6 +84,87 @@ main {
   }
 }
 
+// Bug 1931979: Note that .ds-card-grid has an exception for
+// the card section experiment layout
+.layout-variant-a,
+.layout-variant-b {
+  .ds-outer-wrapper-breakpoint-override main {
+    width: auto;
+
+    .ds-card {
+      width: 296px;
+    }
+
+    .ds-card-grid:not(.ds-section-grid) {
+      grid-gap: var(--space-large);
+
+      &.empty {
+        grid-template-columns: auto;
+      }
+    }
+
+    .body-wrapper {
+      width: 346px;
+      margin: 0 auto;
+    }
+
+    @media (min-width: $break-point-medium) {
+      width: auto;
+
+      .ds-card-grid:not(.ds-section-grid) {
+        grid-template-columns: repeat(1, 1fr);
+      }
+
+      .body-wrapper {
+        width: 346px;
+      }
+    }
+
+    @media (min-width: $break-point-layout-variant) {
+      width: auto;
+
+      .ds-card-grid:not(.ds-section-grid) {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .body-wrapper {
+        width: 659px;
+      }
+    }
+
+    @media (min-width: $break-point-widest) {
+      width: auto;
+
+      .ds-card-grid:not(.ds-section-grid) {
+        grid-template-columns: repeat(3, 1fr);
+        grid-gap: var(--space-xlarge);
+      }
+
+      .body-wrapper {
+        width: 989px;
+      }
+    }
+
+    @media (min-width: $break-point-ultra-wide) {
+      width: auto;
+
+      .body-wrapper {
+        display: flex;
+        flex-direction: column;
+        width: 1311px;
+      }
+
+      .ds-highlights .card-outer {
+        min-width: 216px;
+      }
+
+      .ds-card-grid:not(.ds-section-grid) {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+  }
+}
+
 .base-content-fallback {
   // Make the error message be centered against the viewport
   height: 100vh;
@@ -107,6 +188,12 @@ main {
 
 .non-collapsible-section {
   padding: 0 $section-horizontal-padding;
+
+  // Bug 1914053 - Layout experiment: search bar width
+  .layout-variant-a &,
+  .layout-variant-b & {
+    padding: 0;
+  }
 }
 
 .prefs-button {
@@ -144,7 +231,7 @@ main {
   .only-search  &,
   .only-topsites  & {
     @media (min-width: $break-point-large) {
-      position: fixed;
+      position: absolute;
       inset-block-end: var(--space-large);
       inset-inline-start: 0;
     }

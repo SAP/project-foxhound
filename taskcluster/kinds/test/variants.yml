@@ -36,7 +36,7 @@ headless:
 a11y-checks:
     description: "{description} with accessibility checks enabled"
     component: "Core::Disability Access APIs"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "a11y-checks"
     mozinfo: "a11y_checks"
     replace:
@@ -62,7 +62,7 @@ a11y-checks:
 aab:
     description: "{description} with aab test_runner"
     component: "GeckoView::General"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     when: &gv_e10s_filter
         $eval: '"android" in task["test-platform"]'
     suffix: "aab"
@@ -83,8 +83,8 @@ aab:
 
 geckoview-no-fission:
     description: "{description} without fission enabled"
-    component: "GeckoView::Sandboxing"
-    expiration: "2024-09-01"
+    component: "GeckoView::General"
+    expiration: "2025-03-01"
     when:
         <<: *gv_e10s_filter
     suffix: "nofis"
@@ -96,8 +96,8 @@ geckoview-no-fission:
 
 geckoview-fission:
     description: "{description} with fission enabled and default isolation strategy"
-    component: "GeckoView::Sandboxing"
-    expiration: "2024-09-01"
+    component: "GeckoView::General"
+    expiration: "2025-03-01"
     when:
         <<: *gv_e10s_filter
     suffix: "fis"
@@ -105,8 +105,8 @@ geckoview-fission:
 
 geckoview-fission-isolate-high-value:
     description: "{description} with fission enabled and isolation strategy isolateHighValue"
-    component: "GeckoView::Sandboxing"
-    expiration: "2024-09-01"
+    component: "GeckoView::General"
+    expiration: "2025-03-01"
     when:
         <<: *gv_e10s_filter
     suffix: "fis-hv"
@@ -119,7 +119,7 @@ geckoview-fission-isolate-high-value:
 no-fission:
     description: "{description} without fission enabled"
     component: "Core::DOM: Content Processes"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "nofis"
     mozinfo: "fission"
     when:
@@ -134,8 +134,8 @@ no-fission:
 
 geckoview-no-fission-ship:
     description: "{description} with fission disabled and ship enabled"
-    component: "GeckoView::Sandboxing"
-    expiration: "2024-09-01"
+    component: "GeckoView::General"
+    expiration: "2025-03-01"
     suffix: "nofis-ship"
     when:
         <<: *gv_e10s_filter
@@ -164,7 +164,7 @@ xorigin:
 conditioned_profile:
     description: "{description} with conditioned profile"
     component: "Testing::General"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "condprof"
     mozinfo: "condprof"
     when:
@@ -194,10 +194,25 @@ conditioned_profile:
     replace:
         chunks: 8
 
+cm6:
+    description: "{description} with codemirror 6 enabled"
+    component: "DevTools::Framework"
+    expiration: "2025-03-01"
+    suffix: "cm6"
+    mozinfo: "cm6"
+    replace:
+        tier: 3
+    when:
+        $eval: '"mochitest-devtools-chrome" == task["try-name"]'
+    merge:
+        mozharness:
+            extra-options:
+                - "--setpref=devtools.debugger.features.codemirror-next=true"
+
 socketprocess:
     description: "{description} with socket process enabled"
     component: "Core::Networking"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "spi"
     mozinfo: "socketprocess_e10s"
     when:
@@ -211,7 +226,7 @@ socketprocess:
 socketprocess_networking:
     description: "{description} with networking on socket process enabled"
     component: "Core::Networking"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "spi-nw"
     mozinfo: "socketprocess_networking"
     when:
@@ -236,7 +251,7 @@ socketprocess_networking:
 webrender-dcomp-disabled:
     description: "{description} with dcomp disabled"
     component: "Core::Graphics: WebRender"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "wr-dc0"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -252,7 +267,7 @@ webrender-dcomp-disabled:
 webrender-dcomp-present:  # Default variant ends up like this.
     description: "{description} with dcomp present but not overlays"
     component: "Core::Graphics: WebRender"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "wr-dc1-p"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -268,7 +283,7 @@ webrender-dcomp-present:  # Default variant ends up like this.
 webrender-dcomp-overlays:
     description: "{description} with dcomp overlays but not compositing"
     component: "Core::Graphics: WebRender"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "wr-dc2-o"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -284,7 +299,7 @@ webrender-dcomp-overlays:
 webrender-dcomp-compositing:
     description: "{description} with dcomp compositing"
     component: "Core::Graphics: WebRender"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "wr-dc3-c"
     when:
         $eval: '"windows1" in task["test-platform"]'
@@ -311,21 +326,10 @@ webrender-sw:
             extra-options:
                 - "--setpref=gfx.webrender.software=true"
 
-webgl-ipc:
-    description: "{description} with WebGL IPC process enabled"
-    component: "Core::Graphics: CanvasWebGL"
-    expiration: "2024-09-01"
-    suffix: "gli"
-    merge:
-        mozharness:
-            extra-options:
-                - "--setpref=webgl.out-of-process=true"
-                - "--setpref=security.sandbox.content.headless=true"
-
 wmf-media-engine:
     description: "{description} with Windows Media Foundation media engine enabled"
     component: "Core::Audio/Video: Playback"
-    expiration: "2024-10-10"
+    expiration: "never"
     when:
         $eval: '"windows1" in task["test-platform"]'
     suffix: "wmfme"
@@ -372,12 +376,15 @@ eme-wmf:
 media-gpu:
     description: "{description} for running media tests on the GPU worker"
     component: "Core::Audio/Video: Playback"
-    expiration: "2024-11-15"
+    expiration: "never"
     suffix: "mda-gpu"
     mozinfo: "mda_gpu"
     when:
         $eval: '
-                    "windows" in task["test-platform"]
+                    (
+                        "windows" in task["test-platform"]
+                        && "hw" in task["test-platform"]
+                    )
                     || "macosx" in task["test-platform"]
                 '
     merge:
@@ -390,6 +397,28 @@ media-gpu:
         mozharness:
             extra-options:
                 - "--setpref=media.hardware-video-decoding.force-enabled=true"
+
+no-gpu-process:
+    description: "{description} without a dedicated GPU process"
+    component: "Core::Graphics"
+    expiration: "2025-03-01"
+    suffix: "nogpu"
+    mozinfo: "nogpu"
+    when:
+        $eval: '
+                    "windows" in task["test-platform"]
+                    || "android" in task["test-platform"]
+                    || "linux" in task["test-platform"]
+                '
+    replace:
+        virtualization: virtual
+
+    merge:
+        mozharness:
+            extra-options:
+                - "--setpref=layers.gpu-process.enabled=false"
+                - "--setpref=layers.gpu-process.force-enabled=false"
+                - "--setpref=webgl.force-enabled=true"  # Bug 1922686
 
 msix:
     description: "{description} from msix packages"
@@ -419,7 +448,7 @@ msix:
 http3:
     description: "{description} with http3 server"
     component: "Core::Networking"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "http3"
     mozinfo: "http3"
     when:
@@ -438,7 +467,7 @@ http3:
 http2:
     description: "{description} with http2 server"
     component: "Core::Networking"
-    expiration: "2024-09-01"
+    expiration: "2025-03-01"
     suffix: "http2"
     mozinfo: "http2"
     when:
@@ -471,3 +500,31 @@ draw-snapshot:
         mozharness:
             extra-options:
                 - "--setpref=reftest.use-draw-snapshot=true"
+
+os-integration:
+    description: >-
+        {description} limited to tests identified as good candidates for validating the test environment.
+    component: Release Engineering::Firefox-CI Administration
+    expiration: never
+    suffix: osint
+    when:
+        $eval: >-
+            "debug" in task["test-platform"]
+            && !("macosx" in task["test-platform"])
+    merge:
+        worker:
+            env:
+                MOZHARNESS_TEST_TAG: ["os_integration"]
+
+async-event-dispatching:
+    description: "{description} with async parent process event dispatching"
+    component: "Remote Protocol::Agent"
+    expiration: "2025-04-01"
+    suffix: "async"
+    mozinfo: "remote_async"
+    replace:
+        tier: 3
+    merge:
+        mozharness:
+            extra-options:
+                - "--setpref=remote.events.async.enabled=true"

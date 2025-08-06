@@ -34,8 +34,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/NullPrincipal.h"
-#include "mozilla/Telemetry.h"
-#include "mozilla/TelemetryComms.h"
+#include "mozilla/glean/GleanMetrics.h"
 
 #include "nsThreadUtils.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -828,8 +827,8 @@ int nsExpatDriver::HandleExternalEntityRef(const char16_t* openEntityNames,
         RLBOX_EXPAT_MCALL(MOZ_XML_ExternalEntityParserCreate, nullptr, *utf16);
     if (entParser) {
       auto baseURI = GetExpatBaseURI(absURI);
-      auto url = TransferBuffer<XML_Char>(Sandbox(), &baseURI[0],
-                                          ArrayLength(baseURI));
+      auto url =
+          TransferBuffer<XML_Char>(Sandbox(), &baseURI[0], std::size(baseURI));
       NS_ENSURE_TRUE(*url, 1);
       Sandbox()->invoke_sandbox_function(MOZ_XML_SetBase, entParser, *url);
 
@@ -1109,30 +1108,18 @@ nsresult nsExpatDriver::HandleError() {
       docShellDestroyed.Assign(destroyed ? "true"_ns : "false"_ns);
     }
 
-    mozilla::Maybe<nsTArray<mozilla::Telemetry::EventExtraEntry>> extra =
-        mozilla::Some<nsTArray<mozilla::Telemetry::EventExtraEntry>>({
-            mozilla::Telemetry::EventExtraEntry{"error_code"_ns,
-                                                nsPrintfCString("%u", code)},
-            mozilla::Telemetry::EventExtraEntry{
-                "location"_ns,
-                nsPrintfCString(
-                    "%lu:%lu",
-                    lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
-                    colNumber.unverified_safe_because(RLBOX_SAFE_PRINT))},
-            mozilla::Telemetry::EventExtraEntry{
-                "last_line"_ns, NS_ConvertUTF16toUTF8(mLastLine)},
-            mozilla::Telemetry::EventExtraEntry{
-                "last_line_len"_ns, nsPrintfCString("%zu", mLastLine.Length())},
-            mozilla::Telemetry::EventExtraEntry{
-                "hidden"_ns, doc->Hidden() ? "true"_ns : "false"_ns},
-            mozilla::Telemetry::EventExtraEntry{"destroyed"_ns,
-                                                docShellDestroyed},
-        });
-
-    mozilla::Telemetry::SetEventRecordingEnabled("ysod"_ns, true);
-    mozilla::Telemetry::RecordEvent(
-        mozilla::Telemetry::EventID::Ysod_Shown_Ysod, mozilla::Some(path),
-        extra);
+    mozilla::glean::ysod::ShownYsodExtra extra = {
+        .destroyed = mozilla::Some(docShellDestroyed),
+        .errorCode = mozilla::Some(code),
+        .hidden = mozilla::Some(doc->Hidden()),
+        .lastLine = mozilla::Some(NS_ConvertUTF16toUTF8(mLastLine)),
+        .lastLineLen = mozilla::Some(mLastLine.Length()),
+        .location = mozilla::Some(nsPrintfCString(
+            "%lu:%lu", lineNumber.unverified_safe_because(RLBOX_SAFE_PRINT),
+            colNumber.unverified_safe_because(RLBOX_SAFE_PRINT))),
+        .value = mozilla::Some(path),
+    };
+    mozilla::glean::ysod::shown_ysod.Record(mozilla::Some(extra));
   }
 
   // Try to create and initialize the script error.
@@ -1631,7 +1618,7 @@ nsresult nsExpatDriver::Initialize(nsIURI* aURI, nsIContentSink* aSink) {
 
   auto baseURI = GetExpatBaseURI(aURI);
   auto uri =
-      TransferBuffer<XML_Char>(Sandbox(), &baseURI[0], ArrayLength(baseURI));
+      TransferBuffer<XML_Char>(Sandbox(), &baseURI[0], std::size(baseURI));
   RLBOX_EXPAT_MCALL(MOZ_XML_SetBase, *uri);
 
   // Set up the callbacks

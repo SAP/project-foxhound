@@ -77,9 +77,8 @@ class Theme : protected nsNativeTheme, public nsITheme {
   LayoutDeviceIntSize GetMinimumWidgetSize(nsPresContext*, nsIFrame*,
                                            StyleAppearance) override;
   Transparency GetWidgetTransparency(nsIFrame*, StyleAppearance) override;
-  NS_IMETHOD WidgetStateChanged(nsIFrame*, StyleAppearance, nsAtom* aAttribute,
-                                bool* aShouldRepaint,
-                                const nsAttrValue* aOldValue) override;
+  bool WidgetAttributeChangeRequiresRepaint(StyleAppearance,
+                                            nsAtom* aAttribute) override;
   NS_IMETHOD ThemeChanged() override;
   bool WidgetAppearanceDependsOnWindowFocus(StyleAppearance) override;
   /*bool NeedToClearBackgroundBehindWidget(
@@ -94,14 +93,13 @@ class Theme : protected nsNativeTheme, public nsITheme {
   LayoutDeviceIntCoord GetScrollbarSize(const nsPresContext*,
                                         StyleScrollbarWidth, Overlay) final;
 
-  nscoord GetCheckboxRadioPrefSize() override;
+  CSSCoord GetCheckboxRadioPrefSize() override;
 
   static UniquePtr<ScrollbarDrawing> ScrollbarStyle();
 
  protected:
   virtual ~Theme() = default;
 
-  DPIRatio GetDPIRatio(nsPresContext*, StyleAppearance);
   DPIRatio GetDPIRatio(nsIFrame*, StyleAppearance);
 
   std::tuple<sRGBColor, sRGBColor, sRGBColor> ComputeCheckboxColors(

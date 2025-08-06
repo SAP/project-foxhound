@@ -14,6 +14,7 @@ import mozilla.components.browser.state.action.CopyInternetResourceAction
 import mozilla.components.browser.state.action.CrashAction
 import mozilla.components.browser.state.action.CustomTabListAction
 import mozilla.components.browser.state.action.DebugAction
+import mozilla.components.browser.state.action.DefaultDesktopModeAction
 import mozilla.components.browser.state.action.DownloadAction
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.ExtensionsProcessAction
@@ -33,6 +34,7 @@ import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.action.TrackingProtectionAction
 import mozilla.components.browser.state.action.TranslationsAction
 import mozilla.components.browser.state.action.UndoAction
+import mozilla.components.browser.state.action.UpdateDistribution
 import mozilla.components.browser.state.action.WebExtensionAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.CustomTabSessionState
@@ -79,6 +81,8 @@ internal object BrowserStateReducer {
             is DebugAction -> DebugReducer.reduce(state, action)
             is ExtensionsProcessAction -> ExtensionsProcessStateReducer.reduce(state, action)
             is AwesomeBarAction -> AwesomeBarStateReducer.reduce(state, action)
+            is UpdateDistribution -> state.copy(distributionId = action.distributionId)
+            is DefaultDesktopModeAction -> DesktopModeReducer.reduce(state = state, action = action)
         }
     }
 }

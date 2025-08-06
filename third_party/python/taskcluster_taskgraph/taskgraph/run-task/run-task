@@ -39,7 +39,7 @@ from pathlib import Path
 from threading import Thread
 from typing import Optional
 
-SECRET_BASEURL_TPL = "http://taskcluster/secrets/v1/secret/{}"
+SECRET_BASEURL_TPL = "{}/secrets/v1/secret/{{}}".format(os.environ.get("TASKCLUSTER_PROXY_URL", "http://taskcluster").rstrip('/'))
 
 GITHUB_SSH_FINGERPRINT = (
     b"github.com ssh-ed25519 "
@@ -1011,7 +1011,12 @@ def install_pip_requirements(repositories):
         return
 
     # TODO: Stop using system Python (#381)
-    cmd = [sys.executable, "-mpip", "install", "--break-system-packages"]
+    if shutil.which("uv"):
+        user_site_dir = subprocess.run([sys.executable, "-msite", "--user-site"], capture_output=True, text=True).stdout.strip()
+        cmd = ["uv", "pip", "install", "--python", sys.executable, "--target", user_site_dir]
+    else:
+        cmd = [sys.executable, "-mpip", "install", "--user", "--break-system-packages"]
+
     if os.environ.get("PIP_DISABLE_REQUIRE_HASHES") != "1":
         cmd.append("--require-hashes")
 
@@ -1144,7 +1149,10 @@ def main(args):
     if running_as_root and os.path.exists("/dev/kvm"):
         # Ensure kvm permissions for worker, required for Android x86
         st = os.stat("/dev/kvm")
-        os.chmod("/dev/kvm", st.st_mode | 0o666)
+
+        # Podman mounts `/dev/kvm` as 0o666 already and doesn't allow chmoding it
+        if stat.S_IMODE(st.st_mode) != 0o666:
+            os.chmod("/dev/kvm", st.st_mode | 0o666)
 
     # Validate caches.
     #

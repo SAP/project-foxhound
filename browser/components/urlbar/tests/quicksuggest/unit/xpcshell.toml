@@ -13,6 +13,10 @@ firefox-appdir = "browser"
 
 ["test_quicksuggest_dynamicWikipedia.js"]
 
+["test_quicksuggest_exposures.js"]
+
+["test_quicksuggest_exposures_locales.js"]
+
 ["test_quicksuggest_fakespot.js"]
 
 ["test_quicksuggest_impressionCaps.js"]
@@ -38,11 +42,15 @@ skip-if = ["true"] # Bug 1880214
 ["test_quicksuggest_positionInSuggestions.js"]
 skip-if = ["true"] # Bug 1880214
 
+["test_quicksuggest_relevanceRanking.js"]
+
 ["test_quicksuggest_scoreMap.js"]
 
 ["test_quicksuggest_topPicks.js"]
 
 ["test_quicksuggest_yelp.js"]
+
+["test_quicksuggest_yelp_ml.js"]
 
 ["test_rust_ingest.js"]
 
@@ -51,4 +59,3 @@ skip-if = ["true"] # Bug 1880214
 ["test_weather.js"]
 
 ["test_weather_keywords.js"]
-skip-if = ["verify"] # Bug 1880214 - Takes a very long time due to add_tasks_with_rust()

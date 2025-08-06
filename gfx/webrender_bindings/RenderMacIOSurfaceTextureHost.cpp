@@ -32,10 +32,10 @@ static bool CreateTextureForPlane(uint8_t aPlaneID, gl::GLContext* aGL,
 
   gfx::SurfaceFormat readFormat = gfx::SurfaceFormat::UNKNOWN;
   bool result = aSurface->BindTexImage(aGL, aPlaneID, &readFormat);
-  // If this is a yuv format, the Webrender only supports YUV422 interleaving
+  // If this is a yuv format, the Webrender only supports YUY2 interleaving
   // format.
-  MOZ_ASSERT(aSurface->GetFormat() != gfx::SurfaceFormat::YUV422 ||
-             readFormat == gfx::SurfaceFormat::YUV422);
+  MOZ_ASSERT(aSurface->GetFormat() != gfx::SurfaceFormat::YUY2 ||
+             readFormat == gfx::SurfaceFormat::YUY2);
 
   return result;
 }
@@ -105,10 +105,10 @@ wr::WrExternalImage RenderMacIOSurfaceTextureHost::Lock(uint8_t aChannelIndex,
     }
   }
 
-  const auto uvs = GetUvCoords(GetSize(aChannelIndex));
-  return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), uvs.first.x,
-                                        uvs.first.y, uvs.second.x,
-                                        uvs.second.y);
+  const auto size = GetSize(aChannelIndex);
+  return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), 0.0, 0.0,
+                                        static_cast<float>(size.width),
+                                        static_cast<float>(size.height));
 }
 
 void RenderMacIOSurfaceTextureHost::Unlock() {}
@@ -147,7 +147,9 @@ bool RenderMacIOSurfaceTextureHost::MapPlane(RenderCompositor* aCompositor,
                                              uint8_t aChannelIndex,
                                              PlaneInfo& aPlaneInfo) {
   if (!aChannelIndex) {
-    mSurface->Lock();
+    if (NS_WARN_IF(!mSurface->Lock())) {
+      return false;
+    }
   }
   aPlaneInfo.mData = mSurface->GetBaseAddressOfPlane(aChannelIndex);
   aPlaneInfo.mStride = mSurface->GetBytesPerRow(aChannelIndex);

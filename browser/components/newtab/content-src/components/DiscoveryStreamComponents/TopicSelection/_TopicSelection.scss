@@ -64,6 +64,22 @@
     justify-content: space-between;
     align-items: center;
 
+    > a {
+      color: var(--link-color);
+
+      &:hover {
+        color: var(--link-color-hover);
+      }
+
+      &:hover:active {
+        color: var(--link-color-active);
+      }
+
+      &:visited {
+        color: var(--link-color-visited);
+      }
+    }
+
     .button-group {
       gap: var(--space-medium);
       display: flex;
@@ -83,7 +99,7 @@
   .topic-item {
     align-items: center;
     border-radius: 40px;
-    border: 1px solid var(--color-gray-60);
+    border: var(--border-width) solid var(--border-color-interactive);
     display: flex;
     justify-self: center;
     max-width: fit-content;

@@ -2,6 +2,7 @@ package org.mozilla.fenix.ui
 
 import android.os.Build
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.test.filters.SdkSuppress
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -58,6 +59,9 @@ class OnboardingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2122343
     @Test
     fun verifySecondOnboardingCardItemsTest() {
+        activityTestRule.activityRule.applySettingsExceptions {
+            it.isSetAsDefaultBrowserPromptEnabled = true
+        }
         runWithLauncherIntent(activityTestRule) {
             homeScreen {
                 // Check if the device is running on Android version lower than 10
@@ -75,6 +79,9 @@ class OnboardingTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyThirdOnboardingCardSignInFunctionalityTest() {
+        activityTestRule.activityRule.applySettingsExceptions {
+            it.isSetAsDefaultBrowserPromptEnabled = true
+        }
         runWithLauncherIntent(activityTestRule) {
             homeScreen {
                 // Check if the device is running on Android version lower than 10
@@ -88,6 +95,20 @@ class OnboardingTest : TestSetup() {
                 verifyThirdOnboardingCard(activityTestRule)
             }.clickSignInOnboardingButton(activityTestRule) {
                 verifyTurnOnSyncMenu()
+            }
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2609732
+    @SdkSuppress(minSdkVersion = 29)
+    @Test
+    fun verifySetAsDefaultBrowserDialogWhileFirefoxIsNotSetAsDefaultBrowserTest() {
+        activityTestRule.activityRule.applySettingsExceptions {
+            it.isSetAsDefaultBrowserPromptEnabled = true
+        }
+        runWithLauncherIntent(activityTestRule) {
+            homeScreen {
+                verifySetAsDefaultBrowserDialogWhileFirefoxIsNotSetAsDefaultBrowser()
             }
         }
     }

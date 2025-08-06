@@ -63,8 +63,10 @@ mochitest-plain:
         - http2
         - geckoview-fission-isolate-high-value
         - geckoview-no-fission-ship
+        - os-integration
     run-on-projects:
         by-variant:
+            os-integration: []  # this variant only runs as a cron task
             conditioned_profile:
                 by-test-platform:
                     .*(asan|ccov|wayland).*: []
@@ -126,14 +128,17 @@ mochitest-plain:
                     android.*: built-projects
                     default: built-projects
     chunks:
-        by-test-platform:
-            android.*/debug: 10
-            linux.*/debug: 16
-            linux.*64-tsan-qr/opt: 20
-            .*(asan|ccov).*: 10
-            linux.*/opt: 8
-            windows.*/debug: 8
-            default: 5
+        by-variant:
+            os-integration: dynamic
+            default:
+                by-test-platform:
+                    android.*/debug: 10
+                    linux.*/debug: 16
+                    linux.*64-tsan-qr/opt: 20
+                    .*(asan|ccov).*: 10
+                    linux.*/opt: 8
+                    windows.*/debug: 8
+                    default: 5
     tier:
         by-variant:
             no-fission:
@@ -227,8 +232,10 @@ mochitest-browser-chrome:
         - webrender-sw+a11y-checks
         - socketprocess_networking
         - msix
+        - os-integration
     run-on-projects:
         by-variant:
+            os-integration: []  # this variant only runs as a cron task
             webrender-sw:
                 by-test-platform:
                     linux.*64(-asan)?-qr/(opt|debug): ['all']
@@ -267,6 +274,7 @@ mochitest-browser-chrome:
             default: default
     chunks:
         by-variant:
+            os-integration: dynamic
             msix:
                 by-test-platform:
                     .*/debug: 16
@@ -307,6 +315,11 @@ mochitest-browser-chrome:
             linux.*64-asan-qr/opt: xlarge-noscratch  # runs out of memory frequently
             default: default
     allow-software-gl-layers: false
+    fetches:
+        fetch:
+            - ort.wasm
+            - ort.jsep.wasm
+            - ort-training.wasm
 
 mochitest-browser-chrome-failures:
     description: "Mochitest browser-chrome failures run"
@@ -423,6 +436,36 @@ mochitest-browser-screenshots:
         mochitest-flavor: browser
     allow-software-gl-layers: false
 
+mochitest-browser-translations:
+    description: "Mochitest browser translations"
+    suite:
+        name: mochitest-browser-translations
+    treeherder-symbol: M(tr8ns)
+    schedules-component: mochitest-browser-translations
+    loopback-video: true
+    test-manifest-loader: null
+    run-on-projects:
+        by-test-platform:
+            android.*: []
+            default: built-projects
+    tier: default
+    max-run-time:
+        by-test-platform:
+            .*asan.*: 1800
+            .*tsan.*: 2400
+            default: 1200
+    mozharness:
+        mochitest-flavor: browser
+    instance-size: default
+    allow-software-gl-layers: false
+    virtualization: virtual
+    fetches:
+        fetch:
+            - translations.inference
+            - translations.esen.lex
+            - translations.esen.model
+            - translations.esen.vocab
+
 mochitest-chrome:
     description: "Mochitest chrome run"
     treeherder-symbol: M(c)
@@ -433,8 +476,10 @@ mochitest-chrome:
         - 1proc
         - socketprocess_networking+1proc
         - webrender-sw+1proc
+        - os-integration
     run-on-projects:
         by-variant:
+            os-integration: []  # this variant only runs as a cron task
             socketprocess_networking+1proc:
                 by-test-platform:
                     .*asan.*: []
@@ -451,9 +496,12 @@ mochitest-chrome:
                     .*wayland.*: []
                     default: built-projects
     chunks:
-        by-test-platform:
-            .*tsan.*/opt: 6
-            default: 3
+        by-variant:
+            os-integration: dynamic
+            default:
+                by-test-platform:
+                    .*tsan.*/opt: 6
+                    default: 3
     max-run-time: 3600
     mozharness:
         mochitest-flavor: chrome
@@ -474,6 +522,7 @@ mochitest-devtools-chrome:
         - a11y-checks
         - socketprocess_networking
         - http3
+        - cm6
     run-on-projects:
         by-variant:
             a11y-checks:
@@ -489,6 +538,10 @@ mochitest-devtools-chrome:
                     .*asan.*: []
                     .*ccov.*: []
                     linux.*64.*(-shippable)?-qr/debug: ['autoland', 'mozilla-central']
+                    default: []
+            cm6:
+                by-test-platform:
+                    linux.*64(-shippable)?-qr/opt: ['trunk']
                     default: []
             default:
                 by-test-platform:
@@ -698,25 +751,17 @@ mochitest-media:
     variants:
         - media-gpu
         - no-fission
+        - no-gpu-process
         - socketprocess+no-fission
         - socketprocess
-        - webgl-ipc
         - webrender-sw+no-fission
         - webrender-sw
         - wmf-media-engine
         - msix
+        - os-integration
     run-on-projects:
         by-variant:
-            webgl-ipc:
-                by-test-platform:
-                    android.*: []
-                    windows.*ccov.*: []
-                    .*hw-ref.*: []
-                    linux.*64(-shippable|-asan|-tsan)?-qr/opt: ['autoland', 'mozilla-central']
-                    macosx.*-64(-shippable)?-qr/(opt|debug): ['autoland', 'mozilla-central']
-                    windows1.*(-shippable)?-qr/(opt|debug): ['autoland', 'mozilla-central']
-                    windows.*-asan-qr/opt: ['autoland', 'mozilla-central']
-                    default: []
+            os-integration: []  # this variant only runs as a cron task
             socketprocess+no-fission:
                 by-test-platform:
                     .*hw-ref.*: []
@@ -792,6 +837,7 @@ mochitest-media:
     loopback-video: true
     chunks:
         by-variant:
+            os-integration: dynamic
             wmf-media-engine: 1
             media-gpu: 1
             default:
@@ -812,12 +858,8 @@ mochitest-media:
         extra-options:
             by-test-platform:
                 android-em-7.*:
-                    - --setpref=webgl.out-of-process=false
-                    - --setpref=security.sandbox.content.headless=false
                     - --setpref=gfx.canvas.accelerated=false
-                default:
-                    - --setpref=webgl.out-of-process=false
-                    - --setpref=security.sandbox.content.headless=false
+                default: []
     tier:
         by-variant:
             no-fission:
@@ -871,18 +913,10 @@ mochitest-webgl1-core:
             default: 1800
     variants:
         - no-fission
-        - webgl-ipc
         - webrender-sw+no-fission
         - webrender-sw
     run-on-projects:
         by-variant:
-            webgl-ipc:
-                by-test-platform:
-                    .*-(ccov|tsan|wayland).*: []
-                    linux.*-64.*: ["trunk"]
-                    mac.*: ["trunk"]
-                    win.*: ["trunk"]
-                    default: []
             webrender-sw+no-fission:
                 by-test-platform:
                     linux.*64-qr/debug: ['trunk']
@@ -908,9 +942,6 @@ mochitest-webgl1-core:
     allow-software-gl-layers: false
     mozharness:
         mochitest-flavor: plain
-        extra-options:
-            - --setpref=webgl.out-of-process=false
-            - --setpref=security.sandbox.content.headless=false
 
 mochitest-webgl1-ext:
     description: "Mochitest webgl1-ext run"
@@ -922,18 +953,10 @@ mochitest-webgl1-ext:
     max-run-time: 2700
     variants:
         - no-fission
-        - webgl-ipc
         - webrender-sw+no-fission
         - webrender-sw
     run-on-projects:
         by-variant:
-            webgl-ipc:
-                by-test-platform:
-                    .*-(ccov|tsan|wayland).*/.*: []
-                    linux.*-64.*: ["trunk"]
-                    mac.*: ["trunk"]
-                    win.*: ["trunk"]
-                    default: []
             webrender-sw+no-fission:
                 by-test-platform:
                     linux.*64-qr/debug: ['trunk']
@@ -959,9 +982,6 @@ mochitest-webgl1-ext:
     allow-software-gl-layers: false
     mozharness:
         mochitest-flavor: plain
-        extra-options:
-            - --setpref=webgl.out-of-process=false
-            - --setpref=security.sandbox.content.headless=false
 
 mochitest-webgl2-core:
     description: "Mochitest webgl2-core run"
@@ -977,19 +997,10 @@ mochitest-webgl2-core:
     max-run-time: 1800
     variants:
         - no-fission
-        - webgl-ipc
         - webrender-sw+no-fission
         - webrender-sw
     run-on-projects:
         by-variant:
-            webgl-ipc:
-                by-test-platform:
-                    .*-(ccov|tsan|wayland).*/.*: []
-                    android.*: []
-                    linux.*-64.*: ["trunk"]
-                    mac.*: ["trunk"]
-                    win.*: ["trunk"]
-                    default: []
             webrender-sw+no-fission:
                 by-test-platform:
                     linux.*64-qr/debug: ['trunk']
@@ -1024,18 +1035,10 @@ mochitest-webgl2-ext:
     virtualization: virtual-with-gpu
     variants:
         - no-fission
-        - webgl-ipc
         - webrender-sw+no-fission
         - webrender-sw
     run-on-projects:
         by-variant:
-            webgl-ipc:
-                by-test-platform:
-                    .*(ccov|tsan|wayland).*/.*: []
-                    linux.*-64.*: ["trunk"]
-                    mac.*: ["trunk"]
-                    win.*: ["trunk"]
-                    default: []
             webrender-sw+no-fission:
                 by-test-platform:
                     linux.*64-qr/debug: ["trunk"]
@@ -1064,9 +1067,6 @@ mochitest-webgl2-ext:
     mozharness:
         mochitest-flavor: plain
         chunked: true
-        extra-options:
-            - --setpref=webgl.out-of-process=false
-            - --setpref=security.sandbox.content.headless=false
 
 mochitest-webgl2-deqp:
     description: "Mochitest webgl2-deqp run"
@@ -1074,7 +1074,6 @@ mochitest-webgl2-deqp:
     schedules-component: mochitest-plain
     virtualization: virtual-with-gpu
     variants:
-        - webgl-ipc
         - webrender-sw
     run-on-projects: []  # Don't run this for now.
     chunks: 4
@@ -1085,9 +1084,6 @@ mochitest-webgl2-deqp:
     mozharness:
         mochitest-flavor: plain
         chunked: true
-        extra-options:
-            - --setpref=webgl.out-of-process=false
-            - --setpref=security.sandbox.content.headless=false
 
 mochitest-webgpu:
     description: "Mochitest webgpu run"
@@ -1122,11 +1118,6 @@ mochitest-webgpu:
             default: 1800
     mozharness:
         mochitest-flavor: plain
-        extra-options:
-            by-test-platform:
-                macos.*:
-                    - --setpref=gfx.webgpu.ignore-blocklist=true
-                default: []
 
 mochitest-remote:
     description: "Mochitest for the remote agent (/remote folder)"

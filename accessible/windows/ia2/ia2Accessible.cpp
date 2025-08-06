@@ -12,12 +12,14 @@
 #include "AccessibleStates.h"
 
 #include "AccAttributes.h"
+#include "ApplicationAccessible.h"
 #include "Compatibility.h"
 #include "ia2AccessibleRelation.h"
 #include "IUnknownImpl.h"
 #include "nsCoreUtils.h"
 #include "nsIAccessibleTypes.h"
 #include "mozilla/a11y/PDocAccessible.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "Relation.h"
 #include "TextRange-inl.h"
 #include "nsAccessibilityService.h"
@@ -77,7 +79,7 @@ ia2Accessible::get_nRelations(long* aNRelations) {
     return CO_E_OBJNOTCONNECTED;
   }
 
-  for (uint32_t idx = 0; idx < ArrayLength(sRelationTypePairs); idx++) {
+  for (uint32_t idx = 0; idx < std::size(sRelationTypePairs); idx++) {
     if (sRelationTypePairs[idx].second == IA2_RELATION_NULL) continue;
 
     Relation rel = acc->RelationByType(sRelationTypePairs[idx].first);
@@ -98,7 +100,7 @@ ia2Accessible::get_relation(long aRelationIndex,
   }
 
   long relIdx = 0;
-  for (uint32_t idx = 0; idx < ArrayLength(sRelationTypePairs); idx++) {
+  for (uint32_t idx = 0; idx < std::size(sRelationTypePairs); idx++) {
     if (sRelationTypePairs[idx].second == IA2_RELATION_NULL) continue;
 
     RelationType relationType = sRelationTypePairs[idx].first;
@@ -131,7 +133,7 @@ ia2Accessible::get_relations(long aMaxRelations,
   }
 
   for (uint32_t idx = 0;
-       idx < ArrayLength(sRelationTypePairs) && *aNRelations < aMaxRelations;
+       idx < std::size(sRelationTypePairs) && *aNRelations < aMaxRelations;
        idx++) {
     if (sRelationTypePairs[idx].second == IA2_RELATION_NULL) continue;
 
@@ -352,6 +354,22 @@ ia2Accessible::get_windowHandle(HWND* aWindowHandle) {
   if (!acc) return CO_E_OBJNOTCONNECTED;
 
   *aWindowHandle = MsaaAccessible::GetHWNDFor(acc);
+  if (!*aWindowHandle && !StaticPrefs::accessibility_uia_enable()) {
+    // Bug 1890155: This can happen if a document is detached from its embedder.
+    // The document might be about to die or it might be moving to a different
+    // embedder; e.g. a tab in a different window. The IA2 -> UIA proxy may
+    // crash if we return a null HWND. For now, pick an arbitrary top level
+    // Gecko HWND. This might be wrong, but only briefly, since the document
+    // will either die or move very soon, at which point this method will
+    // return the correct answer.
+    // TODO This hack should be removed once we only use our native UIA
+    // implementation.
+    if (ApplicationAccessible* app = ApplicationAcc()) {
+      if (LocalAccessible* firstRoot = app->LocalFirstChild()) {
+        *aWindowHandle = MsaaAccessible::GetHWNDFor(firstRoot);
+      }
+    }
+  }
   return S_OK;
 }
 
@@ -484,7 +502,7 @@ ia2Accessible::get_relationTargetsOfType(BSTR aType, long aMaxTargets,
   *aNTargets = 0;
 
   Maybe<RelationType> relationType;
-  for (uint32_t idx = 0; idx < ArrayLength(sRelationTypePairs); idx++) {
+  for (uint32_t idx = 0; idx < std::size(sRelationTypePairs); idx++) {
     if (wcscmp(aType, sRelationTypePairs[idx].second) == 0) {
       relationType.emplace(sRelationTypePairs[idx].first);
       break;

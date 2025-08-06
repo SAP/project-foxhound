@@ -95,6 +95,7 @@ include = [
   "AnimationFillMode",
   "AnimationPlayState",
   "AnimationComposition",
+  "AnimationDuration",
   "Appearance",
   "Au",
   "BreakBetween",
@@ -104,14 +105,13 @@ include = [
   "BoolInteger",
   "OutlineStyle",
   "CaptionSide",
+  "ColorGamut",
   "FontSizeAdjust",
   "FontPalette",
   "FontLanguageOverride",
   "FontVariantEastAsian",
   "FontVariantLigatures",
   "FontVariantNumeric",
-  "InsetArea",
-  "InsetAreaKeyword",
   "ComputedFontStretchRange",
   "ComputedFontStyleDescriptor",
   "ComputedFontWeightRange",
@@ -124,6 +124,8 @@ include = [
   "DisplayMode",
   "Platform",
   "PositionAnchor",
+  "PositionArea",
+  "PositionAreaKeyword",
   "PositionTryFallbacks",
   "PositionTryOrder",
   "PositionVisibility",
@@ -149,7 +151,11 @@ include = [
   "OffsetRotate",
   "RayFunction",
   "UnicodeRange",
+  "UserInput",
+  "UserFocus",
   "UserSelect",
+  "PointerEvents",
+  "Inert",
   "Float",
   "Clear",
   "OverscrollBehavior",
@@ -188,6 +194,8 @@ include = [
   "BackgroundSize",
   "BaselineSource",
   "BorderImageSlice",
+  "BorderImageRepeat",
+  "BorderImageRepeatKeyword",
   "BorderSpacing",
   "BorderRadius",
   "ColorScheme",
@@ -302,6 +310,7 @@ include = [
   "ImageRendering",
   "PrintColorAdjust",
   "ForcedColorAdjust",
+  "ForcedColors",
   "ScrollbarGutter",
   "ScrollDirection",
   "HyphenateCharacter",
@@ -312,8 +321,20 @@ include = [
   "XTextScale",
   "Zoom",
   "TransitionProperty",
+  "ViewTransitionName",
+  "Inset",
+  "AnchorFunction",
+  "AnchorSizeFunction",
+  "Margin",
 ]
-item_types = ["enums", "structs", "unions", "typedefs", "functions", "constants"]
+item_types = [
+  "enums",
+  "structs",
+  "unions",
+  "typedefs",
+  "functions",
+  "constants",
+]
 renaming_overrides_prefixing = true
 
 # Prevent some renaming for Gecko types that cbindgen doesn't otherwise understand.
@@ -1026,6 +1047,11 @@ renaming_overrides_prefixing = true
   inline StyleGenericViewTimelineInset();
 """
 
+"ViewTransitionName" = """
+ public:
+  StyleViewTransitionName() : _0(nsGkAtoms::_empty) {}
+"""
+
 "Time" = """
  float ToSeconds() const { return seconds; }
  float ToMilliseconds() const { return seconds * 1000.0f; }
@@ -1113,4 +1139,23 @@ renaming_overrides_prefixing = true
     return IsNonCustom() &&
            nsCSSPropertyID(AsNonCustom()._0) == eCSSProperty_all;
   }
+"""
+
+"GenericInset" = """
+  inline bool HasPercent() const;
+  inline bool ConvertsToLength() const;
+  inline bool HasLengthAndPercentage() const;
+  inline bool IsAnchorPositioningFunction() const;
+  inline nscoord ToLength() const;
+  inline bool ConvertsToPercentage() const;
+  inline float ToPercentage() const;
+"""
+
+"GenericMargin" = """
+  inline bool HasPercent() const;
+  inline bool ConvertsToLength() const;
+  inline bool HasLengthAndPercentage() const;
+  inline nscoord ToLength() const;
+  inline bool ConvertsToPercentage() const;
+  inline float ToPercentage() const;
 """

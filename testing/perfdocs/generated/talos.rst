@@ -1093,11 +1093,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -1119,17 +1114,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -1155,76 +1140,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -1241,11 +1164,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -1269,17 +1187,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -2319,11 +2227,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -2345,17 +2248,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -2381,76 +2274,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -2467,11 +2298,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -2495,17 +2321,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -2577,11 +2393,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -2603,17 +2414,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -2639,76 +2440,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -2725,11 +2464,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -2753,17 +2487,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3093,11 +2817,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -3119,17 +2838,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3155,76 +2864,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -3241,11 +2888,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -3269,17 +2911,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3326,7 +2958,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -3352,11 +2983,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -3378,17 +3004,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3414,76 +3030,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -3500,11 +3054,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -3528,17 +3077,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3585,7 +3124,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -3611,11 +3149,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -3637,17 +3170,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3673,76 +3196,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -3759,11 +3220,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -3787,17 +3243,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3844,7 +3290,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -3870,11 +3315,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -3896,17 +3336,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -3932,76 +3362,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -4018,11 +3386,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -4046,17 +3409,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4103,7 +3456,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -4129,11 +3481,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -4155,17 +3502,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4191,76 +3528,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -4277,11 +3552,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -4305,17 +3575,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4362,7 +3622,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -4388,11 +3647,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -4414,17 +3668,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4450,76 +3694,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -4536,11 +3718,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -4564,17 +3741,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4621,7 +3788,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -4647,11 +3813,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -4673,17 +3834,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4709,76 +3860,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -4795,11 +3884,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -4823,17 +3907,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4880,7 +3954,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -4906,11 +3979,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -4932,17 +4000,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -4968,76 +4026,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -5054,11 +4050,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -5082,17 +4073,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -5139,7 +4120,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -5165,11 +4145,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -5191,17 +4166,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -5227,76 +4192,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -5313,11 +4216,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -5341,17 +4239,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -5398,7 +4286,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -5424,11 +4311,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -5450,17 +4332,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -5486,76 +4358,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -5572,11 +4382,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -5600,17 +4405,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -5657,7 +4452,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -5683,11 +4477,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -5709,17 +4498,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -5745,76 +4524,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -5831,11 +4548,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -5859,17 +4571,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -5916,7 +4618,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -5942,11 +4643,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -5968,17 +4664,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -6004,76 +4690,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -6090,11 +4714,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -6118,17 +4737,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -6175,7 +4784,6 @@ For the sample commands found below, note that the capitalization used is import
    * gecko_profile_interval: 2
    * linux_counters: None
    * mac_counters: None
-   * preferences: {'dom.media.webcodecs.enabled': True, 'dom.media.webcodecs.force-osx-h264-enabled': True}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1
@@ -6201,11 +4809,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ❌
         - ❌
@@ -6227,17 +4830,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -6263,76 +4856,14 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-webgl-profiling-gli**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
       * - **talos-webgl-swr**
         - ✅
         - ✅
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref-shippable/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows11-64-2009-hw-ref/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
         - ❌
         - ❌
 
@@ -6349,11 +4880,6 @@ For the sample commands found below, note that the capitalization used is import
       * - **talos-webgl**
         - ❌
         - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
         - ❌
         - ❌
       * - **talos-webgl-swr**
@@ -6377,17 +4903,7 @@ For the sample commands found below, note that the capitalization used is import
         - ✅
         - ❌
         - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
       * - **talos-webgl-profiling**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-profiling-gli**
         - ❌
         - ❌
         - ❌
@@ -9305,7 +7821,6 @@ For the sample commands found below, note that the capitalization used is import
    * mac_counters: []
    * mainthread: False
    * multidomain: True
-   * responsiveness: True
    * timeout: 1800
    * tpcycles: 1
    * tpmanifest: ${talos}/fis/tp5n/tp5o.manifest
@@ -10000,7 +8515,6 @@ For the sample commands found below, note that the capitalization used is import
    * cycles: 20
    * gecko_profile_startup: True
    * mainthread: False
-   * responsiveness: False
    * timeout: 150
    * tpmozafterpaint: True
    * unit: ms
@@ -11169,13 +9683,13 @@ Extra Talos Tests
     :local:
 
 File IO
--------
+=======
 
 File IO is tested using the tp5 test set in the `xperf`_
 test.
 
 Possible regression causes
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+--------------------------
 
 -  **nonmain_startup_fileio opt (with or without e10s) windows7-32** –
    `bug
@@ -11189,7 +9703,7 @@ Possible regression causes
    `e10s <https://treeherder.mozilla.org/perf.html#/graphs?series=%5B%22mozilla-central%22,%222f3af3833d55ff371ecf01c41aeee1939ef3a782%22,1,1%5D&series=%5B%22try%22,%222f3af3833d55ff371ecf01c41aeee1939ef3a782%22,1,1%5D&timerange=604800>`__
 
 Xres (X Resource Monitoring)
-----------------------------
+============================
 
 A memory metric tracked during tp5 test runs. This metric is sampled
 every 20 seconds. This metric is collected on linux only.
@@ -11197,32 +9711,10 @@ every 20 seconds. This metric is collected on linux only.
 `xres man page <https://linux.die.net/man/3/xres>`__.
 
 % CPU
------
+=====
 
 Cpu usage tracked during tp5 test runs. This metric is sampled every 20
 seconds. This metric is collected on windows only.
-
-Responsiveness
---------------
-
-contact: :jimm, :overholt
-
-Measures the delay for the event loop to process a `tracer
-event <https://wiki.mozilla.org/Performance/Snappy#Current_Infrastructure>`__.
-For more details, see `bug
-631571 <https://bugzilla.mozilla.org/show_bug.cgi?id=631571>`__.
-
-The score on this benchmark is proportional to the sum of squares of all
-event delays that exceed a 20ms threshold. Lower is better.
-
-We collect 8000+ data points from the browser during the test and apply
-`this
-formula <https://dxr.mozilla.org/mozilla-central/source/testing/talos/talos/output.py#l95>`__
-to the results:
-
-.. code-block:: python
-
-   return sum([float(x)*float(x) / 1000000.0 for x in val_list])
 
 tpaint
 ======

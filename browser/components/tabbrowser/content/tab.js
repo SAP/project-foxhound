@@ -13,6 +13,7 @@
         <vbox class="tab-background">
           <hbox class="tab-context-line"/>
           <hbox class="tab-loading-burst" flex="1"/>
+          <hbox class="tab-group-line"/>
         </vbox>
         <hbox class="tab-content" align="center">
           <stack class="tab-icon-stack">
@@ -37,7 +38,7 @@
               <label class="tab-icon-sound-label tab-icon-sound-tooltip-label" role="presentation"/>
             </hbox>
           </vbox>
-          <image class="tab-close-button close-icon" role="presentation"/>
+          <image class="tab-close-button close-icon" role="button" data-l10n-id="tabbrowser-close-tabs-button" data-l10n-args='{"tabCount": 1}' keyNav="false"/>
         </hbox>
       </stack>
       `;
@@ -79,8 +80,9 @@
 
     static get inheritedAttributes() {
       return {
-        ".tab-background": "selected=visuallyselected,fadein,multiselected",
-        ".tab-line": "selected=visuallyselected,multiselected",
+        ".tab-background":
+          "selected=visuallyselected,fadein,multiselected,dragover-createGroup",
+        ".tab-group-line": "selected=visuallyselected,multiselected",
         ".tab-loading-burst": "pinned,bursting,notselectedsinceload",
         ".tab-content":
           "pinned,selected=visuallyselected,titlechanged,attention",
@@ -191,6 +193,15 @@
 
     get pinned() {
       return this.hasAttribute("pinned");
+    }
+
+    get visible() {
+      return (
+        this.isConnected &&
+        !this.hidden &&
+        !this.closing &&
+        !this.group?.collapsed
+      );
     }
 
     get hidden() {
@@ -320,6 +331,13 @@
       return this.querySelector(".tab-close-button");
     }
 
+    get group() {
+      if (this.parentElement?.tagName == "tab-group") {
+        return this.parentElement;
+      }
+      return null;
+    }
+
     updateLastAccessed(aDate) {
       this._lastAccessed = this.selected ? Infinity : aDate || Date.now();
     }
@@ -330,7 +348,7 @@
 
     updateLastUnloadedByTabUnloader() {
       this._lastUnloaded = Date.now();
-      Services.telemetry.scalarAdd("browser.engagement.tab_unload_count", 1);
+      Glean.browserEngagement.tabUnloadCount.add(1);
     }
 
     recordTimeFromUnloadToReload() {
@@ -342,7 +360,7 @@
       Services.telemetry
         .getHistogramById("TAB_UNLOAD_TO_RELOAD")
         .add(diff_in_msec / 1000);
-      Services.telemetry.scalarAdd("browser.engagement.tab_reload_count", 1);
+      Glean.browserEngagement.tabReloadCount.add(1);
       delete this._lastUnloaded;
     }
 
@@ -369,7 +387,7 @@
         });
       }
 
-      if (this.hidden || this.closing) {
+      if (!this.visible) {
         return;
       }
 
@@ -571,7 +589,6 @@
         this.container._handleTabSelect();
       } else if (this.linkedPanel) {
         this.linkedBrowser.unselectedTabHover(true);
-        this.startUnselectedTabHoverTimer();
       }
 
       // Prepare connection to host beforehand.
@@ -587,7 +604,6 @@
       this._hover = false;
       if (this.linkedPanel && !this.selected) {
         this.linkedBrowser.unselectedTabHover(false);
-        this.cancelUnselectedTabHoverTimer();
       }
       this.dispatchEvent(new CustomEvent("TabHoverEnd", { bubbles: true }));
     }
@@ -613,56 +629,8 @@
       // TODO(Itiel): Maybe simplify this when bug 1830989 lands
     }
 
-    startUnselectedTabHoverTimer() {
-      // Only record data when we need to.
-      if (!this.linkedBrowser.shouldHandleUnselectedTabHover) {
-        return;
-      }
-
-      if (
-        !TelemetryStopwatch.running("HOVER_UNTIL_UNSELECTED_TAB_OPENED", this)
-      ) {
-        TelemetryStopwatch.start("HOVER_UNTIL_UNSELECTED_TAB_OPENED", this);
-      }
-
-      if (this._hoverTabTimer) {
-        clearTimeout(this._hoverTabTimer);
-        this._hoverTabTimer = null;
-      }
-    }
-
-    cancelUnselectedTabHoverTimer() {
-      // Since we're listening "mouseout" event, instead of "mouseleave".
-      // Every time the cursor is moving from the tab to its child node (icon),
-      // it would dispatch "mouseout"(for tab) first and then dispatch
-      // "mouseover" (for icon, eg: close button, speaker icon) soon.
-      // It causes we would cancel present TelemetryStopwatch immediately
-      // when cursor is moving on the icon, and then start a new one.
-      // In order to avoid this situation, we could delay cancellation and
-      // remove it if we get "mouseover" within very short period.
-      this._hoverTabTimer = setTimeout(() => {
-        if (
-          TelemetryStopwatch.running("HOVER_UNTIL_UNSELECTED_TAB_OPENED", this)
-        ) {
-          TelemetryStopwatch.cancel("HOVER_UNTIL_UNSELECTED_TAB_OPENED", this);
-        }
-      }, 100);
-    }
-
-    finishUnselectedTabHoverTimer() {
-      // Stop timer when the tab is opened.
-      if (
-        TelemetryStopwatch.running("HOVER_UNTIL_UNSELECTED_TAB_OPENED", this)
-      ) {
-        TelemetryStopwatch.finish("HOVER_UNTIL_UNSELECTED_TAB_OPENED", this);
-      }
-    }
-
     resumeDelayedMedia() {
       if (this.activeMediaBlocked) {
-        Services.telemetry
-          .getHistogramById("TAB_AUDIO_INDICATOR_USED")
-          .add(3 /* unblockByClickingIcon */);
         this.removeAttribute("activemedia-blocked");
         this.linkedBrowser.resumeMedia();
         gBrowser._tabAttrModified(this, ["activemedia-blocked"]);
@@ -671,24 +639,18 @@
 
     toggleMuteAudio(aMuteReason) {
       let browser = this.linkedBrowser;
-      let hist = Services.telemetry.getHistogramById(
-        "TAB_AUDIO_INDICATOR_USED"
-      );
-
       if (browser.audioMuted) {
         if (this.linkedPanel) {
           // "Lazy Browser" should not invoke its unmute method
           browser.unmute();
         }
         this.removeAttribute("muted");
-        hist.add(1 /* unmute */);
       } else {
         if (this.linkedPanel) {
           // "Lazy Browser" should not invoke its mute method
           browser.mute();
         }
         this.toggleAttribute("muted", true);
-        hist.add(0 /* mute */);
       }
       this.muteReason = aMuteReason || null;
 

@@ -13,6 +13,8 @@
     <string name="content_description_private_browsing_button">Privát böngészés engedélyezése</string>
     <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
     <string name="content_description_disable_private_browsing_button">Privát böngészés letiltása</string>
+    <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
+    <string name="content_description_private_browsing">Privát böngészés</string>
     <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
     <string name="search_hint">Keressen, vagy adjon meg címet</string>
     <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
@@ -94,16 +96,24 @@
     <!-- Text for the negative action button -->
     <string name="open_in_app_cfr_negative_button_text">Eltüntetés</string>
 
-    <!-- Total cookie protection "contextual feature recommendation" (CFR) -->
-    <!-- Text for the message displayed in the contextual feature recommendation popup promoting the total cookie protection feature. -->
-    <string name="tcp_cfr_message">Az eddigi leghatékonyabb adatvédelmi funkciónk, amely elkülöníti a webhelyek közötti nyomkövetőket.</string>
-    <!-- Text displayed that links to website containing documentation about the "Total cookie protection" feature. -->
-    <string name="tcp_cfr_learn_more">További információk a Teljes sütivédelemről</string>
-
     <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
     <!-- Text for the message displayed in the contextual feature recommendation popup promoting the erase private browsing feature. -->
     <string name="erase_action_cfr_message">Koppintson ide egy új privát munkamenet indításához. Törli az előzményeket, sütiket – mindent.</string>
 
+
+    <!-- Toolbar "contextual feature recommendation" (CFR) -->
+    <!-- Text for the title displayed in the contextual feature recommendation popup promoting the navigation bar. -->
+    <string name="navbar_cfr_title">Böngésszen gyorsabban az új navigációval</string>
+    <!-- Text for the message displayed in the contextual feature recommendation popup promoting the navigation bar. -->
+    <string name="navbar_cfr_message_2">Ezen a webhelyen a sáv eltűnik, ha lefelé görget, további teret adva a böngészésnek.</string>
+    <!-- Text for the message displayed for the popup promoting the long press of navigation in the navigation bar. -->
+    <string name="navbar_navigation_buttons_cfr_message">Koppintson és tartsa lenyomva a nyilakat, hogy az oldalak között ugorjon ennek a lapnak az előzményeiben.</string>
+
+    <!-- Address bar swipe "contextual feature recommendation" (CFR) -->
+    <!-- Text for the title displayed in the contextual feature recommendation popup promoting swipe of address bar. -->
+    <string name="address_bar_swipe_cfr_title">Csúsztassa oldalra az eszköztárat a lapok közti váltáshoz.</string>
+    <!-- Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar. -->
+    <string name="address_bar_swipe_cfr_message">Csúsztassa balra vagy jobbra a váltáshoz. Új lap megnyitásához csúsztassa balra az utolsó lapon.</string>
 
     <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
     <string name="camera_permissions_needed_message">Kamera-hozzáférés szükséges. Ugorjon az Android beállításokhoz, koppintson az engedélyekre, majd az engedélyezésre.</string>
@@ -186,10 +196,32 @@
     <string name="browser_menu_stop">Leállítás</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_extensions">Kiegészítők</string>
+    <!-- Browser menu banner header text for extensions onboarding.
+        The first parameter is the name of the app defined in app_name (for example: Fenix). -->
+    <string name="browser_menu_extensions_banner_onboarding_header">Tegye sajátjává a %s böngészőt</string>
+    <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
+    <string name="browser_menu_disabled_extensions_banner_onboarding_header">Vannak olyan kiegészítői, amelyek telepítve vannak, de nincsenek engedélyezve</string>
+    <!-- Browser menu banner body text for extensions onboarding.
+        The first parameter is the name of the app defined in app_name (for example: Fenix). -->
+    <string name="browser_menu_extensions_banner_onboarding_body">A kiegészítők magasabb szintre emelik a böngészést, a %s kinézetének és teljesítményének módosításától az adatvédelem és a biztonság megerősítéséig.</string>
+    <!-- Browser menu banner body text for extensions onboarding when all installed extensions have been disabled.
+     The first parameter is the name of the button that opens extension manager (for example "Manage extensions"). -->
+    <string name="browser_menu_disabled_extensions_banner_onboarding_body">A kiegészítők használatához engedélyezze őket a beállításokban, vagy lent a „%s” kiválasztásával.</string>
+    <!-- Browser menu banner link text for learning more about extensions -->
+    <string name="browser_menu_extensions_banner_learn_more">További tudnivalók</string>
     <!-- Browser menu button that opens the extensions manager -->
     <string name="browser_menu_manage_extensions">Kiegészítők kezelése</string>
+    <!-- Content description (not visible, for screen readers etc.): Section heading for recommended extensions.-->
+    <string name="browser_menu_recommended_section_content_description">Ajánlott kiegészítők</string>
+    <!-- Content description (not visible, for screen readers etc.): Label for plus icon used to add extension.
+      The first parameter is the name of the extension (for example: ClearURLs). -->
+    <string name="browser_menu_extension_plus_icon_content_description_2">A(z) %1$s hozzáadása</string>
     <!-- Browser menu button that opens AMO in a tab -->
     <string name="browser_menu_discover_more_extensions">További kiegészítők felfedezése</string>
+    <!-- Browser menu description that is shown when one or more extensions are disabled due to extension errors -->
+    <string name="browser_menu_extensions_disabled_description">Ideiglenesen letiltva</string>
+    <!-- The description of the browser menu appears when the user hasn't installed any extensions. -->
+    <string name="browser_menu_no_extensions_installed_description">Nincs kiegészítő engedélyezve</string>
     <!-- Browser menu button that opens account settings -->
     <string name="browser_menu_account_settings">Fiókinformáció</string>
     <!-- Browser menu button that sends a user to help articles -->
@@ -206,8 +238,14 @@
     <string name="browser_menu_open_in_regular_tab">Megnyitás szokásos lapon</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen">Kezdőképernyőhöz adás</string>
+    <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
+    <string name="browser_menu_add_app_to_homescreen">Alkalmazás hozzáadása a kezdőképernyőhöz</string>
     <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
     <string name="browser_menu_add_to_homescreen_2">Hozzáadás a kezdőképernyőhöz…</string>
+    <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
+    <string name="browser_menu_add_app_to_homescreen_2">Alkalmazás hozzáadása a kezdőképernyőhöz…</string>
+    <!-- Text for notifying users that Xiaomi devices require additional permissions to add to home screen -->
+    <string name="browser_menu_add_to_homescreen_xiaomi">A Xiaomi eszközöknek további engedélyekre lehet szükségük ahhoz, hogy indítóikonokat adjanak a kezdőképernyőhöz. Ellenőrizze a beállításait.</string>
     <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
     <string name="resync_button_content_description">Újraszinkronizálás</string>
     <!-- Browser menu button that opens the find in page menu -->
@@ -244,6 +282,8 @@
 
     <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
     <string name="browser_menu_customize_reader_view">Olvasó nézet testreszabása</string>
+    <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
+    <string name="browser_menu_customize_reader_view_2">Olvasó nézet testreszabása</string>
     <!-- Browser menu label for adding a bookmark -->
     <string name="browser_menu_add">Hozzáadás</string>
     <!-- Browser menu label for editing a bookmark -->
@@ -272,12 +312,50 @@
 
     <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
     <string name="browser_menu_switch_to_desktop_site">Váltás az asztali oldalra</string>
+    <!-- Browser menu label that toggles the request for the mobile site of the currently visited page -->
+    <string name="browser_menu_switch_to_mobile_site">Váltás a mobilos verzióra</string>
     <!-- Browser menu label that navigates to the page tools sub-menu -->
     <string name="browser_menu_tools">Eszközök</string>
+    <!-- Content description (not visible, for screen readers etc.): Back button for all menu redesign sub-menu -->
+    <string name="browser_menu_back_button_content_description">Vissza a főmenübe</string>
+    <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar main menu. -->
+    <string name="browser_main_menu_handlebar_content_description">Fő menülap bezárása</string>
+    <!-- Content description (not visible, for screen readers etc.) for main menu help button. -->
+    <string name="browser_main_menu_content_description_help_button">Súgó</string>
+    <!-- Content description (not visible, for screen readers etc.) for main menu settings button. -->
+    <string name="browser_main_menu_content_description_settings_button">Beállítások</string>
+    <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar extensions menu. -->
+    <string name="browser_extensions_menu_handlebar_content_description">Kiegészítők menülap bezárása</string>
+    <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar save menu. -->
+    <string name="browser_save_menu_handlebar_content_description">Mentés menülap bezárása</string>
+    <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar tools menu. -->
+    <string name="browser_tools_menu_handlebar_content_description">Eszközök menülap bezárása</string>
+    <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
+    <string name="browser_custom_tab_menu_handlebar_content_description">Egyéni lap menülap bezárása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
+    <string name="browser_menu_tools_description_with_translate" moz:removedIn="134" tools:ignore="UnusedResources">Olvasó nézet, fordítás, nyomtatás, megosztás, alkalmazás megnyitása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
+    <string name="browser_menu_tools_description" moz:removedIn="134" tools:ignore="UnusedResources">Olvasó nézet, nyomtatás, megosztás, alkalmazás megnyitása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu
+         The first parameter is the label of the report site issue (for example: Report Site issue) -->
+    <string name="browser_menu_tools_description_with_translate_with_report_site" moz:removedIn="135" tools:ignore="UnusedResources">Olvasó nézet, fordítás, %s, nyomtatás, megosztás, alkalmazás megnyitása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu when the "Report broken site" feature is available-->
+    <string name="browser_menu_tools_description_with_translate_with_report_site_2">Olvasó nézet, fordítás, hibás webhely jelentése, nyomtatás, megosztás, alkalmazás megnyitása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
+    <string name="browser_menu_tools_description_with_translate_without_report_site">Olvasó nézet, fordítás, nyomtatás, megosztás, alkalmazás megnyitása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu
+         The first parameter is the label of the report site issue (for example: Report Site issue) -->
+    <string name="browser_menu_tools_description_with_report_site" moz:removedIn="135" tools:ignore="UnusedResources">Olvasó nézet, %s, nyomtatás, megosztás, alkalmazás megnyitása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu when the "Report broken site" feature is available-->
+    <string name="browser_menu_tools_description_with_report_site_2">Olvasó nézet, hibás webhely jelentése, nyomtatás, megosztás, alkalmazás megnyitása</string>
+    <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
+    <string name="browser_menu_tools_description_without_report_site">Olvasó nézet, nyomtatás, megosztás, alkalmazás megnyitása</string>
     <!-- Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
          bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen -->
     <string name="browser_menu_save">Mentés</string>
 
+    <!-- Browser menu description that describes the various save related menu items inside of the save sub-menu -->
+    <string name="browser_menu_save_description">Könyvjelző hozzáadása, indító, kezdőlap, gyűjtemény, PDF</string>
     <!-- Browser menu label that bookmarks the currently visited page -->
     <string name="browser_menu_bookmark_this_page">Oldal könyvjelzőzése</string>
     <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
@@ -288,13 +366,28 @@
     <string name="browser_menu_turn_on_reader_view">Olvasó nézetet bekapcsolása</string>
     <!-- Browser menu label for turning OFF reader view of the current visited page -->
     <string name="browser_menu_turn_off_reader_view">Olvasó nézet kikapcsolása</string>
+    <!-- Browser menu button that reopens a private tab as a regular tab -->
+    <string name="browser_menu_open_in_normal_tab">Áthelyezés egy nem privát lapra</string>dsa
     <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
     <string name="browser_menu_translate_page">Oldal fordítása…</string>
+    <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
+    <string name="browser_menu_webcompat_reporter">Hibás oldal bejelentése…</string>
     <!-- Browser menu label that is displayed when the current page has been translated by the translation feature.
          The first parameter is the name of the language that page was translated to (e.g. English). -->
     <string name="browser_menu_translated_to">Lefordítva erre: %1$s</string>
     <!-- Browser menu label for the print feature -->
     <string name="browser_menu_print">Nyomtatás…</string>
+
+    <!-- Browser menu label for the Delete browsing data on quit feature.
+        The first parameter is the name of the app defined in app_name (for example: Fenix). -->
+    <string name="browser_menu_delete_browsing_data_on_quit">Kilépés ebből: %1$s</string>
+
+    <!-- Menu "contextual feature recommendation" (CFR) -->
+    <!-- Text for the title in the contextual feature recommendation popup promoting the menu feature. -->
+    <string name="menu_cfr_title">Új: letisztultabb menü</string>
+
+    <!-- Text for the message in the contextual feature recommendation popup promoting the menu feature. -->
+    <string name="menu_cfr_body">Találja meg gyorsabban amire szüksége van, a privát böngészéstől a mentési műveletekig.</string>
 
     <!-- Extensions management fragment -->
     <!-- Text displayed when there are no extensions to be shown -->
@@ -325,7 +418,9 @@
 
     <!-- Search Fragment -->
     <!-- Button in the search view that lets a user search by scanning a QR code -->
-    <string name="search_scan_button">Beolvasás</string>
+    <string name="search_scan_button" moz:removedIn="133" tools:ignore="UnusedResources">Beolvasás</string>
+    <!-- Button in the search view that lets a user search by scanning a QR code -->
+    <string name="search_scan_button_2">QR-kód leolvasása</string>
     <!-- Button in the search view when shortcuts are displayed that takes a user to the search engine settings -->
     <string name="search_shortcuts_engine_settings">Keresőszolgáltatás-beállítások</string>
     <!-- Button in the search view that lets a user navigate to the site in their clipboard -->
@@ -352,11 +447,13 @@
     <string name="search_header_menu_item_2">Ezúttal keresés ebben:</string>
 
     <!-- Content description (not visible, for screen readers etc.): Search engine icon. The first parameter is the search engine name (for example: DuckDuckGo). -->
-    <string name="search_engine_icon_content_description" tools:ignore="UnusedResources">%s keresőszolgáltatás</string>
+    <string name="search_engine_icon_content_description" tools:ignore="UnusedResources" moz:removedIn="133">%s keresőszolgáltatás</string>
+
+    <!-- Content description (not visible, for screen readers etc.): Search engine icon.
+    The parameter is the search engine name (for example: DuckDuckGo). -->
+    <string name="search_engine_icon_content_description_1">Keresőszolgáltatás: %s</string>
 
     <!-- Home onboarding -->
-    <!-- Onboarding home screen popup dialog, shown on top of the Jump back in section. -->
-    <string name="onboarding_home_screen_jump_back_contextual_hint_2">Ismerje meg személyre szabott kezdőlapját. Itt jelennek meg a legutóbbi lapok, könyvjelzők és keresési találatok.</string>
     <!-- Home onboarding dialog welcome screen title text. -->
     <string name="onboarding_home_welcome_title_2">Üdvözöljük egy személyesebb interneten</string>
     <!-- Home onboarding dialog welcome screen description text. -->
@@ -378,26 +475,14 @@
     <!-- Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog -->
     <string name="onboarding_home_content_description_close_button">Bezárás</string>
 
-    <!-- Notification pre-permission dialog -->
-    <!-- Enable notification pre permission dialog title
-        The first parameter is the name of the app defined in app_name (for example: Fenix) -->
-    <string name="onboarding_home_enable_notifications_title" moz:removedIn="124" tools:ignore="UnusedResources">Az értesítések segítségével még többet tehet a %s alkalmazással</string>
-    <!-- Enable notification pre permission dialog description with rationale
-        The first parameter is the name of the app defined in app_name (for example: Fenix) -->
-    <string name="onboarding_home_enable_notifications_description" moz:removedIn="124" tools:ignore="UnusedResources">Szinkronizálhatja lapjait az eszközök között, kezelheti a letöltéseket, tippeket kaphat a %s adatvédelmi funkcióinak maximális kihasználásához stb.</string>
-    <!-- Text for the button to request notification permission on the device -->
-    <string name="onboarding_home_enable_notifications_positive_button" moz:removedIn="124" tools:ignore="UnusedResources">Folytatás</string>
-    <!-- Text for the button to not request notification permission on the device and dismiss the dialog -->
-    <string name="onboarding_home_enable_notifications_negative_button" moz:removedIn="124" tools:ignore="UnusedResources">Most nem</string>
-
     <!-- Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments. -->
     <!-- Description for learning more about our privacy notice. -->
-    <string name="juno_onboarding_privacy_notice_text">Firefox adatvédelmi nyilatkozat</string>
+    <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Firefox adatvédelmi nyilatkozat</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_title_nimbus_2">Szeretjük biztonságban tartani Önt</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments.
         Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="UnusedResources">Tudja meg, hogy miért szeretik milliók a Firefoxot</string>
+    <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="BrandUsage,UnusedResources">Tudja meg, hogy miért szeretik milliók a Firefoxot</string>
     <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_title_nimbus_4" tools:ignore="UnusedResources">Biztonságos böngészés, több választási lehetőséggel</string>
     <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
@@ -406,11 +491,6 @@
     <string name="juno_onboarding_default_browser_description_nimbus_4" tools:ignore="UnusedResources">Több mint 100 millió ember védi a magánszféráját azzal, hogy egy nonprofit szervezet által támogatott böngészőt választ.</string>
     <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
     <string name="juno_onboarding_default_browser_description_nimbus_5" tools:ignore="UnusedResources">Ismert követők? Automatikusan blokkolva. Kiegészítők? Próbálja ki mind a 700-at. PDF-ek? A beépített olvasónk megkönnyíti a kezelésüket.</string>
-    <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-    <string name="juno_onboarding_default_browser_description_nimbus_2" moz:RemovedIn="124" tools:ignore="UnusedResources">A nonprofit szervezet által támogatott böngészőnk segít megakadályozni, hogy a cégek titokban nyomon kövessék Önt az interneten.\n\nTovábbi információk az adatvédelmi nyilatkozatban találhatók.</string>
-    <!-- Text for the link to the privacy notice webpage for set as firefox default browser screen.
-    This is part of the string with the key "juno_onboarding_default_browser_description". -->
-    <string name="juno_onboarding_default_browser_description_link_text" moz:RemovedIn="124" tools:ignore="UnusedResources">adatvédelmi nyilatkozatban</string>
     <!-- Text for the button to set firefox as default browser on the device -->
     <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Beállítás alapértelmezett böngészőként</string>
     <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -419,17 +499,17 @@
     <string name="juno_onboarding_sign_in_title_2">Maradjon titkosítva, amikor az eszközök között vált</string>
     <!-- Description for sign in to sync screen. Nimbus experiments do not support string placeholders.
      Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_sign_in_description_2">Ha be van jelentkezve és szinkronizálva van, akkor nagyobb biztonságban van. A Firefox titkosítja a jelszavait, könyvjelzőit és egyebeit.</string>
+    <string name="juno_onboarding_sign_in_description_3" tools:ignore="BrandUsage">Ha szinkronizálva van, akkor a Firefox titkosítja a jelszavait, könyvjelzőit és egyebeket.</string>
     <!-- Text for the button to sign in to sync on the device -->
     <string name="juno_onboarding_sign_in_positive_button" tools:ignore="UnusedResources">Bejelentkezés</string>
     <!-- Text for the button dismiss the screen and move on with the flow -->
     <string name="juno_onboarding_sign_in_negative_button" tools:ignore="UnusedResources">Most nem</string>
     <!-- Title for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
         Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_enable_notifications_title_nimbus_2">Az értesítések segítségével nagyobb biztonságban lehet a Firefoxszal</string>
+    <string name="juno_onboarding_enable_notifications_title_nimbus_2" tools:ignore="BrandUsage">Az értesítések segítségével nagyobb biztonságban lehet a Firefoxszal</string>
     <!-- Description for enable notification permission screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
        Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_enable_notifications_description_nimbus_2">Küldjön biztonságosan lapokat eszközei között, és fedezzen fel más adatvédelmi funkciókat a Firefoxban.</string>
+    <string name="juno_onboarding_enable_notifications_description_nimbus_2" tools:ignore="BrandUsage">Küldjön biztonságosan lapokat eszközei között, és fedezzen fel más adatvédelmi funkciókat a Firefoxban.</string>
     <!-- Text for the button to request notification permission on the device -->
     <string name="juno_onboarding_enable_notifications_positive_button" tools:ignore="UnusedResources">Értesítések bekapcsolása</string>
     <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -437,15 +517,135 @@
 
     <!-- Title for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
         Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_add_search_widget_title" tools:ignore="UnusedResources">Próbálja ki a Firefox keresőmodult</string>
+    <string name="juno_onboarding_add_search_widget_title" tools:ignore="BrandUsage,UnusedResources">Próbálja ki a Firefox keresőmodult</string>
     <!-- Description for add search widget screen used by Nimbus experiments. Nimbus experiments do not support string placeholders.
         Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_add_search_widget_description" tools:ignore="UnusedResources">Ha a Firefox a kezdőképernyőn van, akkor könnyen hozzáférhet az adatvédelmet előtérbe helyező böngészőhöz, amely blokkolja a webhelyek közötti követőket.</string>
+    <string name="juno_onboarding_add_search_widget_description" tools:ignore="BrandUsage,UnusedResources">Ha a Firefox a kezdőképernyőn van, akkor könnyen hozzáférhet az adatvédelmet előtérbe helyező böngészőhöz, amely blokkolja a webhelyek közötti követőket.</string>
     <!-- Text for the button to add search widget on the device used by Nimbus experiments. Nimbus experiments do not support string placeholders.
         Note: The word "Firefox" should NOT be translated -->
-    <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="UnusedResources">Firefox modul hozzáadása</string>
+    <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Firefox modul hozzáadása</string>
     <!-- Text for the button to dismiss the screen and move on with the flow -->
     <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">Most nem</string>
+
+    <!-- Onboarding header for the add-ons card used by Nimbus experiments. Nimbus experiments do not support string placeholders.
+    Note: The word "Firefox" should NOT be translated -->
+    <string name="onboarding_add_on_header" tools:ignore="BrandUsage,UnusedResources">Szabja személyre a Firefoxot kiegészítőkkel</string>
+    <!-- Onboarding sub header for the add-ons card, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_sub_header" tools:ignore="UnusedResources">Adjon hozzá olyan harmadik felektől származó kiegészítőket, melyek növelik a biztonságát, a hatékonyságát, vagy másként hasznosak.</string>
+    <!-- Onboarding add-ons card, for checking more add-ons on, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_explore_more_extensions" tools:ignore="UnusedResources" moz:removedIn="133">Fedezzen fel több kiegészítőt.</string>
+    <!-- Onboarding add-ons card, button for start browsing, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_start_browsing_button" tools:ignore="UnusedResources" moz:removedIn="133">Kezdje el a böngészést.</string>
+    <!-- Onboarding add-ons card, for checking more add-ons on, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_explore_more_extensions_2">Fedezzen fel több kiegészítőt</string>
+    <!-- Onboarding add-ons card, button for start browsing, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_start_browsing_button_2">Böngészés megkezdése</string>
+    <!-- Ublock name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Ublock Origin" is a brand name should NOT be translated -->
+    <string name="onboarding_add_on_ublock_name" tools:ignore="UnusedResources">uBlock Origin</string>
+    <!-- Ublock description for the onboarding add-ons card, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_ublock_description" tools:ignore="UnusedResources">Hatásosan és hatékonyan blokkolja a hirdetéseket.</string>
+    <!-- Privacy Badger name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Privacy Badger" is a brand name should NOT be translated -->
+    <string name="onboarding_add_on_privacy_badger_name" tools:ignore="UnusedResources">Privacy Badger</string>
+    <!-- Privacy Badger description for the onboarding add-ons card, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_privacy_badger_description" tools:ignore="UnusedResources">Követés elleni gyöngyszem. Megállítja a láthatatlan követőket és a kémkedő hirdetéseket.</string>
+    <!-- Search by Image name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Search by Image" is a brand name should NOT be translated -->
+    <string name="onboarding_add_on_search_by_image_name" tools:ignore="UnusedResources">Kép szerinti keresés</string>
+    <!-- Search by Image description for the onboarding add-ons card, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_search_by_image_description" tools:ignore="UnusedResources">Ha talál egy érdekes képet, tudjon meg róla többet.</string>
+    <!-- Dark Reader name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Dark Reader" is a brand name should NOT be translated -->
+    <string name="onboarding_add_on_dark_reader_name" tools:ignore="UnusedResources">Dark Reader</string>
+
+    <!-- Privacy Badger description for the onboarding add-ons card, used by Nimbus experiments. -->
+    <string name="onboarding_add_on_dark_reader_description" tools:ignore="UnusedResources">Egyéni sötét mód a mobilwebhez.</string>
+
+    <!-- Label for the number of reviews for an add-on. The parameter is for the formatted number of reviews e.g. "1,234", "12,345", "123,456". -->
+    <string name="onboarding_add_on_reviews_label">Értékelések: %1$s</string>
+    <!-- Content description for the add-on icon. -->
+    <string name="onboarding_add_on_icon_content_description">Kiegészítő ikonja</string>
+    <!-- Content description for the an installed add-on icon. -->
+    <string name="onboarding_installed_add_on_icon_content_description">Telepített kiegészítő ikon</string>
+    <!-- Content description for the an installing add-on icon. -->
+    <string name="onboarding_installing_add_on_icon_content_description">Kiegészítő telepítése ikon</string>
+    <!-- Content description for the add add-on button. -->
+    <string name="onboarding_add_on_add_button_content_description">Kiegészítőikon hozzáadása</string>
+    <!-- Content description for the star rating group. -->
+    <string name="onboarding_add_on_star_rating_content_description">%1$s csillagra értékelve az 5-ből</string>
+
+    <!-- Title for the privacy preferences dialog shown during onboarding. Note: The word "Firefox" should NOT be translated. -->
+    <string name="onboarding_preferences_dialog_title" tools:ignore="BrandUsage,UnusedResources">Segítsen jobbá tenni a Firefoxot</string>
+    <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
+    <string name="onboarding_preferences_dialog_crash_reporting_title" tools:ignore="UnusedResources">Összeomlás-jelentések automatikus elküldése</string>
+
+    <!-- Description for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
+    <string name="onboarding_preferences_dialog_crash_reporting_description" tools:ignore="UnusedResources">Az összeomlás-jelentések lehetővé teszik számunkra, hogy diagnosztizáljuk és megoldjuk a böngészőhibákat. A jelentések személyes vagy bizalmas adatokat tartalmazhatnak.</string>
+    <!-- Learn more link for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
+    <string name="onboarding_preferences_dialog_crash_reporting_learn_more" tools:ignore="UnusedResources">Tudjon meg többet a összeomlás-jelentésekről</string>
+    <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
+    <string name="onboarding_preferences_dialog_usage_data_title" tools:ignore="UnusedResources">Műszaki és interakciós adatok küldése a Mozillának</string>
+    <!-- Description for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Firefox" should NOT be translated. -->
+    <string name="onboarding_preferences_dialog_usage_data_description" tools:ignore="BrandUsage,UnusedResources">Az eszközre, a hardverbeállításokra és a Firefox használatára vonatkozó adatok segítenek abban, hogy a funkciók, a teljesítmény és a stabilitás minden felhasználó számára jobb legyen.</string>
+    <!-- Learn more link for the usage data option in the privacy preferences dialog shown during onboarding. -->
+    <string name="onboarding_preferences_dialog_usage_data_learn_more" tools:ignore="UnusedResources">Tudjon meg többet a használati adatokról</string>
+    <!-- Positive button label for the privacy preferences dialog shown during onboarding. -->
+    <string name="onboarding_preferences_dialog_positive_button" tools:ignore="UnusedResources">Kész</string>
+    <!-- Negative button label for the privacy preferences dialog shown during onboarding. -->
+    <string name="onboarding_preferences_dialog_negative_button" tools:ignore="UnusedResources">Mégse</string>
+    <!-- Terms of service onboarding title card label. 'Firefox' intentionally hardcoded here-->
+    <string name="onboarding_welcome_to_firefox" tools:ignore="UnusedResources,BrandUsage">Üdvözli a Firefox</string>
+    <!-- Terms of service onboarding page continue button label. -->
+    <string name="onboarding_term_of_service_agree_and_continue_button_label" tools:ignore="UnusedResources">Elfogadás és folytatás</string>
+    <!-- Line one of the terms of service onboarding page. 'Firefox' is intentionally hardcoded. %1$s is replaced by an active link, using onboarding_term_of_service_line_one_link_text as text (“Terms of Service”). -->
+    <string name="onboarding_term_of_service_line_one" tools:ignore="UnusedResources,BrandUsage">A folytatással elfogadja a Firefox ezen dokumentumát: %1$s.</string>
+    <!-- Used as text for the link in onboarding_term_of_service_line_one. -->
+    <string name="onboarding_term_of_service_line_one_link_text" tools:ignore="UnusedResources,BrandUsage">Szolgáltatás feltételei</string>
+    <!-- Line two of the terms of service onboarding page. 'Firefox' is intentionally hardcoded. %1$s is replaced by an active link, using onboarding_term_of_service_line_two_link_text as text (Privacy Notice”). -->
+    <string name="onboarding_term_of_service_line_two" tools:ignore="UnusedResources,BrandUsage">A Firefox vigyáz az Ön adatvédelmére. További információk az %1$sban.</string>
+    <!-- Used as text for the link in onboarding_term_of_service_line_two. -->
+    <string name="onboarding_term_of_service_line_two_link_text" tools:ignore="UnusedResources,BrandUsage">Adatvédelmi nyilatkozat</string>
+    <!-- Line three of the terms of service onboarding page. 'Firefox' and 'Mozilla' are intentionally hardcoded. %1$S is replaced by an active link, using onboarding_term_of_service_line_three_link_text as text (Manage”). -->
+    <string name="onboarding_term_of_service_line_three" tools:ignore="UnusedResources,BrandUsage">A böngésző fejlesztése érdekében, a Firefox diagnosztikai és interakciós adatokat küld a Mozillának. %1$s</string>
+    <!-- Used as text for the link in onboarding_term_of_service_line_three. -->
+    <string name="onboarding_term_of_service_line_three_link_text" tools:ignore="UnusedResources,BrandUsage">Kezelés</string>
+    <!-- Onboarding header for the toolbar selection card, used by Nimbus experiments. -->
+    <string name="onboarding_customize_toolbar_title" tools:ignore="UnusedResources">Válassza ki az eszköztár elhelyezését</string>
+    <!-- Onboarding sub header for toolbar selection card, used by Nimbus experiments. -->
+    <string name="onboarding_customize_toolbar_description" tools:ignore="UnusedResources">Tartsa kéznél a kereséseket.</string>
+    <!-- Onboarding label for 'Save and continue' button, used by Nimbus experiments. -->
+    <string name="onboarding_save_and_continue_button">Mentés és folytatás</string>
+    <!-- Onboarding toolbar selection card label for 'skip' button, used by Nimbus experiments. -->
+    <string name="onboarding_customize_toolbar_skip_button">Kihagyás</string>
+    <!-- Onboarding toolbar selection card label for 'top' option, used by Nimbus experiments. -->
+    <string name="onboarding_customize_toolbar_top_option">Felső</string>
+    <!-- Onboarding toolbar selection card label for 'bottom' option, used by Nimbus experiments. -->
+    <string name="onboarding_customize_toolbar_bottom_option">Alsó</string>
+
+    <!-- Onboarding toolbar selection card content description for the main image. -->
+    <string name="onboarding_customize_toolbar_main_image_content_description">Nagy fejléckép az eszköztár-kiválasztó nézetről, amely egy illusztrált eszköztárat mutat.</string>
+    <!-- Onboarding toolbar selection card content description for the toolbar placement image. %1$s is placeholder for either 'top' or 'bottom'. -->
+    <string name="onboarding_customize_toolbar_placement_content_description" moz:removedIn="135" tools:ignore="UnusedResources">A(z) %1$s eszköztár képe</string>
+
+    <!-- Onboarding toolbar selection card content description for the toolbar placement image. -->
+    <string name="onboarding_customize_toolbar_placement_bottom_content_description">Az alsó eszköztár képe</string>
+    <string name="onboarding_customize_toolbar_placement_top_content_description">A felső eszköztár képe</string>
+
+    <!-- Onboarding header for the theme selection card, used by Nimbus experiments. -->
+    <string name="onboarding_customize_theme_title" tools:ignore="UnusedResources">Válasszon témát</string>
+    <!-- Onboarding sub header for theme selection card, used by Nimbus experiments. -->
+    <string name="onboarding_customize_theme_description" tools:ignore="UnusedResources">Lássa a webet a legjobb megvilágításban.</string>
+    <!-- Onboarding label for 'Save and start browsing' button, used by Nimbus experiments. -->
+    <string name="onboarding_save_and_start_button">Mentés, és a böngészés megkezdése</string>
+    <!-- Onboarding theme selection card label for 'skip' button, used by Nimbus experiments. -->
+    <string name="onboarding_customize_theme_skip_button">Kihagyás</string>
+    <!-- Onboarding theme selection card label for 'dark' option, used by Nimbus experiments. -->
+    <string name="onboarding_customize_theme_dark_option">Sötét</string>
+    <!-- Onboarding theme selection card label for 'light' option, used by Nimbus experiments. -->
+    <string name="onboarding_customize_theme_light_option">Világos</string>
+    <!-- Onboarding theme selection card label for 'System auto' option, used by Nimbus experiments. -->
+    <string name="onboarding_customize_theme_system_option">Rendszer alapértelmezése</string>
+    <!-- Onboarding theme selection card content description for the main image. -->
+    <string name="onboarding_customize_theme_main_image_content_description">Nagy fejléckép a témaválasztó nézetről, amely illusztrált művész- és építőeszközöket mutat.</string>
+    <!-- Onboarding theme selection card content description for the theme selection image. %1$s is placeholder for either 'system', 'light' or 'dark'. -->
+    <string name="onboarding_customize_theme_content_description">A %1$s téma képe</string>
 
     <!-- Search Widget -->
     <!-- Content description for searching with a widget. The first parameter is the name of the application.-->
@@ -484,9 +684,9 @@
     <!-- Preference Category for settings related to Search address bar -->
     <string name="preferences_settings_address_bar">Címsáv beállításai</string>
     <!-- Preference Category for settings to Firefox Suggest -->
-    <string name="preference_search_address_bar_fx_suggest">Címsáv – Firefox Suggest</string>
+    <string name="preference_search_address_bar_fx_suggest" tools:ignore="BrandUsage">Címsáv – Firefox Suggest</string>
     <!-- Preference link to Learn more about Firefox Suggest -->
-    <string name="preference_search_learn_about_fx_suggest">Ismerje meg a Firefox Suggestet</string>
+    <string name="preference_search_learn_about_fx_suggest" tools:ignore="BrandUsage">Ismerje meg a Firefox Suggestet</string>
     <!-- Preference link to rating Fenix on the Play Store -->
     <string name="preferences_rate">Értékelés a Google Playen</string>
     <!-- Preference linking to about page for Fenix
@@ -499,7 +699,9 @@
     <!-- Preference category for privacy and security settings -->
     <string name="preferences_category_privacy_security">Adatvédelem és biztonság</string>
     <!-- Preference for advanced site permissions -->
-    <string name="preferences_site_permissions">Webhely engedélyek</string>
+    <string name="preferences_site_permissions" moz:removedIn="133" tools:ignore="UnusedResources">Webhely engedélyek</string>
+    <!-- Preference for advanced site settings -->
+    <string name="preferences_site_settings">Oldalbeállítások</string>
     <!-- Preference for private browsing options -->
     <string name="preferences_private_browsing_options">Privát böngészés</string>
     <!-- Preference for opening links in a private tab-->
@@ -581,8 +783,6 @@
     <string name="toast_override_account_sync_server_done">A Mozilla-fiók/Sync-kiszolgáló módosítva. Kilépés az alkalmazásból a változások érvényesítéséhez…</string>
     <!-- Preference category for account information -->
     <string name="preferences_category_account">Fiók</string>
-    <!-- Preference for changing where the toolbar is positioned -->
-    <string name="preferences_toolbar" moz:removedIn="129" tools:ignore="UnusedResources">Eszköztár</string>
     <!-- Preference for changing where the AddressBar is positioned -->
     <string name="preferences_toolbar_2">Címsáv helye</string>
     <!-- Preference for changing default theme to dark or light mode -->
@@ -627,7 +827,7 @@
     <string name="preferences_account_settings">Fiókbeállítások</string>
 
     <!-- Preference for enabling url autocomplete-->
-    <string name="preferences_enable_autocomplete_urls">Automatikus URL-kiegészítés</string>
+    <string name="preferences_enable_autocomplete_urls">Automatikus webcím-kiegészítés</string>
     <!-- Preference title for switch preference to show sponsored Firefox Suggest search suggestions -->
     <string name="preferences_show_sponsored_suggestions">Szponzorált javaslatok</string>
     <!-- Summary for preference to show sponsored Firefox Suggest search suggestions.
@@ -752,7 +952,7 @@
     <!-- Title of the Nimbus message for extension general availability-->
     <string name="addon_ga_message_title_2" tools:ignore="UnusedResources">Új kiegészítők érhetők el</string>
     <!-- Body of the Nimbus message for add-ons general availability. 'Firefox' intentionally hardcoded here-->
-    <string name="addon_ga_message_body" tools:ignore="UnusedResources">Nézzen meg több mint 100 új kiegészítőt, amellyel a sajátjává teheti a Firefoxot.</string>
+    <string name="addon_ga_message_body" tools:ignore="BrandUsage,UnusedResources">Nézzen meg több mint 100 új kiegészítőt, amellyel a sajátjává teheti a Firefoxot.</string>
 
     <!-- Button text of the Nimbus message for extensions general availability. -->
     <string name="addon_ga_message_button_2" tools:ignore="UnusedResources">Kiegészítők felfedezése</string>
@@ -818,7 +1018,7 @@
     <!-- Name of the "receive tabs" notification channel. Displayed in the "App notifications" system settings for the app -->
     <string name="fxa_received_tab_channel_name">Fogadott lapok</string>
     <!-- Description of the "receive tabs" notification channel. Displayed in the "App notifications" system settings for the app -->
-    <string name="fxa_received_tab_channel_description">Értesítések a más firefoxos eszközökről fogadott lapokról.</string>
+    <string name="fxa_received_tab_channel_description" tools:ignore="BrandUsage">Értesítések a más firefoxos eszközökről fogadott lapokról.</string>
     <!--  The body for these is the URL of the tab received  -->
     <string name="fxa_tab_received_notification_name">Lap fogadva</string>
     <!-- %s is the device name -->
@@ -843,13 +1043,30 @@
     <string name="exceptions_empty_message_learn_more_link">További tudnivalók</string>
 
     <!-- Preference switch for usage and technical data collection -->
-    <string name="preference_usage_data">Használati és műszaki adatok</string>
+    <string name="preference_usage_data" moz:removedIn="134" tools:ignore="UnusedResources">Használati és műszaki adatok</string>
+    <!-- Preference switch for usage and technical data collection -->
+    <string name="preference_usage_data_1">Műszaki és interakciós adatok</string>
+    <!-- Preference switch for usage and technical learn more link -->
+    <string name="preference_usage_data_learn_more" tools:ignore="UnusedResources">További tudnivalók</string>
     <!-- Preference description for usage and technical data collection -->
     <string name="preferences_usage_data_description">Adatokat küld a Mozillának a böngésző teljesítményéről, a hardverről, a felhasználásról és az egyéni beállításokról, hogy a %1$s jobb lehessen</string>
     <!-- Preference switch for marketing data collection -->
     <string name="preferences_marketing_data">Marketing adatok</string>
     <!-- Preference description for marketing data collection -->
-    <string name="preferences_marketing_data_description2">Megosztja az alapvető használati adatokat az Adjusttal, a mobilos marketing szolgáltatónkkal</string>
+    <string name="preferences_marketing_data_description2" moz:removedIn="134" tools:ignore="UnusedResources">Megosztja az alapvető használati adatokat az Adjusttal, a mobilos marketing szolgáltatónkkal</string>
+    <!-- Preference description for marketing data collection. Note: The words "Firefox" and "Mozilla" should NOT be translated -->
+    <string name="preferences_marketing_data_description_3" tools:ignore="BrandUsage">Osszon meg információkat a Mozilla marketinges partnereivel arról, hogyan fedezte fel a Firefoxot. Ez segít a Firefox fejlesztésében és egy jobb internet építésében</string>
+    <!-- Learn more link for marketing data preference -->
+    <string name="preferences_marketing_data_learn_more">Tudjon meg többet a marketingadatokról</string>
+
+    <!-- Preference switch title for automatically submitting crash reports -->
+    <string name="preferences_automatically_send_crashes_title">Összeomlás-jelentések automatikus elküldése</string>
+    <string name="preferences_automatically_submit_crashes_title" moz:removedIn="136" tools:ignore="UnusedResources">Összeomlás-jelentések automatikus elküldése</string>
+
+    <!-- Preference switch description for automatically submitting crash reports -->
+    <string name="preferences_automatically_send_crashes_description">Ez segít diagnosztizálni és megoldani a böngésző problémáit. A jelentések személyes vagy bizalmas adatokat tartalmazhatnak.</string>
+    <string name="preferences_automatically_submit_crashes_description" moz:removedIn="136" tools:ignore="UnusedResources">Összeomlás után indításkor automatikusan megosztja az összeomlási adatokat a Mozillával</string>
+
     <!-- Title for studies preferences -->
     <string name="preference_experiments_2">Tanulmányok</string>
     <!-- Summary for studies preferences -->
@@ -892,8 +1109,6 @@
     <!-- Preference for using the dynamic toolbar -->
     <string name="preference_gestures_dynamic_toolbar">Görgetés az eszköztár elrejtéséhez</string>
 
-    <!-- Preference for switching tabs by swiping horizontally on the toolbar -->
-    <string name="preference_gestures_swipe_toolbar_switch_tabs" moz:removedIn="129" tools:ignore="UnusedResources">Eszköztár oldalra csúsztatása a lapok közti váltáshoz</string>
     <!-- Preference for showing the opened tabs by swiping up on the toolbar-->
     <string name="preference_gestures_swipe_toolbar_show_tabs">Eszköztár felfelé csúsztatása a lapok megnyitásához</string>
 
@@ -1021,14 +1236,14 @@
     <string name="studies_learn_more">További tudnivalók</string>
 
     <!-- Dialog message shown after removing a study -->
-    <string name="studies_restart_app">Az alkalmazás kilép a módosítások alkalmazásához</string>
+    <string name="studies_restart_app" moz:removedIn="135">Az alkalmazás kilép a módosítások alkalmazásához</string>
     <!-- Dialog button to confirm the removing a study. -->
-    <string name="studies_restart_dialog_ok">Rendben</string>
+    <string name="studies_restart_dialog_ok" moz:removedIn="135">Rendben</string>
     <!-- Dialog button text for canceling removing a study. -->
-    <string name="studies_restart_dialog_cancel">Mégse</string>
+    <string name="studies_restart_dialog_cancel" moz:removedIn="135">Mégse</string>
 
     <!-- Toast shown after turning on/off studies preferences -->
-    <string name="studies_toast_quit_application" tools:ignore="UnusedResources">Kilépés az alkalmazásból a módosítások alkalmazásához…</string>
+    <string name="studies_toast_quit_application" moz:removedIn="135" tools:ignore="UnusedResources">Kilépés az alkalmazásból a módosítások alkalmazásához…</string>
 
     <!-- Sessions -->
     <!-- Title for the list of tabs -->
@@ -1087,8 +1302,6 @@
 
     <!-- Hint for adding name of a collection -->
     <string name="collection_name_hint">Gyűjtemény neve</string>
-    <!-- Text for the menu button to rename a top site -->
-    <string name="rename_top_site">Átnevezés</string>
     <!-- Text for the menu button to remove a top site -->
     <string name="remove_top_site">Eltávolítás</string>
 
@@ -1140,6 +1353,45 @@
     <string name="download_delete_item_1">Eltávolítás</string>
 
 
+    <!-- WebCompat Reporter -->
+
+    <!-- WebCompat Reporter -->
+    <!-- The title of the Web Compat Reporter feature. This is displayed in the top app bar. -->
+    <string name="webcompat_reporter_screen_title">Hibás webhely bejelentése</string>
+    <!-- The description of the Web Compat Reporter feature. This first parameter is the name of the application (For example: Fenix) -->
+    <string name="webcompat_reporter_description">Segítsen abban, hogy a %1$s mindenki számára jobb legyen. A Mozilla alkalmazottai a küldött információkat a webhely problémáinak javítására használják.</string>
+    <!-- The text field label of the URL text field. This is displayed above the user-inputted URL. -->
+    <string name="webcompat_reporter_label_url">Webcím</string>
+    <!-- The error message of the URL text field when an invalid URL has been entered. -->
+    <string name="webcompat_reporter_url_error_invalid">Adjon meg egy érvényes webcímet</string>
+    <!-- The label/title of an optional field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
+    <string name="webcompat_reporter_label_whats_broken">Mi hibás? (nem kötelező)</string>
+    <!-- The placeholder text for the dropdown where a user can select a high-level reason why the site is broken. -->
+    <string name="webcompat_reporter_choose_reason">Válasszon okot</string>
+    <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
+    <string name="webcompat_reporter_label_description">Írja le a problémát (nem kötelező)</string>
+    <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
+    <string name="webcompat_reporter_send_more_info">További információk küldése</string>
+    <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
+    <string name="webcompat_reporter_cancel">Mégse</string>
+    <!-- The button text for the send button to submit the provided form data. -->
+    <string name="webcompat_reporter_send">Küldés</string>
+
+
+    <!-- These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site. -->
+    <!-- Broken site reason text for site slow or not working -->
+    <string name="webcompat_reporter_reason_slow">A webhely lassú vagy nem működik</string>
+    <!-- Broken site reason text for images or videos -->
+    <string name="webcompat_reporter_reason_media">Képek vagy videók</string>
+    <!-- Broken site reason text for buttons, links, and other content -->
+    <string name="webcompat_reporter_reason_content">Gombok, hivatkozások és más tartalmak</string>
+    <!-- Broken site reason text for sign in or sign out -->
+    <string name="webcompat_reporter_reason_account">Be- vagy kijelentkezés</string>
+    <!-- Broken site reason text for ad blocker -->
+    <string name="webcompat_reporter_reason_ad_blocker">Reklámblokkoló</string>
+    <!-- Broken site reason text for something else -->
+    <string name="webcompat_reporter_reason_other">Valami más</string>
+
     <!-- Crashes -->
     <!-- Title text displayed on the tab crash page. This first parameter is the name of the application (For example: Fenix) -->
     <string name="tab_crash_title_2">Sajnáljuk. A %1$s nem tudja betölteni az oldalt.</string>
@@ -1150,19 +1402,32 @@
     <!-- Restore tab button text on the tab crash page -->
     <string name="tab_crash_restore">Lap visszaállítása</string>
 
+    <!-- Unsubmitted crash dialog title, The first parameter is the name of the app (e.g. Firefox)  -->
+    <string name="unsubmitted_crash_dialog_title">A %s újraindítása szükséges</string>
+    <!-- Unsubmitted crash dialog checkbox label for automatically sending reports in the future -->
+    <string name="unsubmitted_crash_dialog_checkbox_label">Összeomlás-jelentések automatikus elküldése</string>
+    <!-- Unsubmitted crash dialog negative button to dismiss the dialog -->
+    <string name="unsubmitted_crash_dialog_negative_button">Bezárás</string>
+    <!-- Unsubmitted crash dialog positive button to submit crash report -->
+    <string name="unsubmitted_crash_dialog_positive_button">Összeomlás-jelentés küldése</string>
+
     <!-- Bookmarks -->
     <!-- Confirmation message for a dialog confirming if the user wants to delete the selected folder -->
     <string name="bookmark_delete_folder_confirmation_dialog">Biztos, hogy törölni szeretné ezt a mappát?</string>
+    <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items. -->
+    <string name="bookmark_delete_folders_confirmation_dialog">Biztos, hogy törli a kiválasztott elemeket?</string>
     <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items including folders. Parameter will be replaced by app name. -->
     <string name="bookmark_delete_multiple_folders_confirmation_dialog">A(z) %s törölni fogja a kiválasztott elemeket.</string>
     <!-- Text for the cancel button on delete bookmark dialog -->
     <string name="bookmark_delete_negative">Mégse</string>
     <!-- Screen title for adding a bookmarks folder -->
     <string name="bookmark_add_folder">Mappa hozzáadása</string>
-    <!-- Snackbar title shown after a bookmark has been created. -->
-    <string name="bookmark_saved_snackbar">Könyvjelző mentve.</string>
+    <!-- Snackbar title that confirms a bookmark was saved into a folder. Parameter will be replaced by the name of the folder the bookmark was saved into. -->
+    <string name="bookmark_saved_in_folder_snackbar">Mentve itt: „%s”</string>
     <!-- Snackbar edit button shown after a bookmark has been created. -->
     <string name="edit_bookmark_snackbar_action">SZERKESZTÉS</string>
+    <!-- Bookmark menu move button -->
+    <string name="bookmark_menu_move_button">Áthelyezés</string>
     <!-- Bookmark overflow menu edit button -->
     <string name="bookmark_menu_edit_button">Szerkesztés</string>
     <!-- Bookmark overflow menu copy button -->
@@ -1191,11 +1456,15 @@
     <!-- Bookmark sign in button message -->
     <string name="bookmark_sign_in_button">Jelentkezzen be a szinkronizált könyvjelzők megtekintéséhez</string>
     <!-- Bookmark URL editing field label -->
-    <string name="bookmark_url_label">URL</string>
+    <string name="bookmark_url_label">Webcím</string>
     <!-- Bookmark FOLDER editing field label -->
     <string name="bookmark_folder_label">MAPPA</string>
+    <!-- Text indicating which folder a bookmark or folder will be saved in -->
+    <string name="bookmark_save_in_label">Mentés máshová…</string>
     <!-- Bookmark NAME editing field label -->
     <string name="bookmark_name_label">NÉV</string>
+    <!-- Label for a text input field for a bookmark or folder name -->
+    <string name="bookmark_name_label_normal_case">Név</string>
     <!-- Bookmark add folder screen title -->
     <string name="bookmark_add_folder_fragment_label">Mappa hozzáadása</string>
     <!-- Bookmark select folder screen title -->
@@ -1203,7 +1472,7 @@
     <!-- Bookmark editing error missing title -->
     <string name="bookmark_empty_title_error">Címmel kell rendelkeznie</string>
     <!-- Bookmark editing error missing or improper URL -->
-    <string name="bookmark_invalid_url_error">Érvénytelen URL</string>
+    <string name="bookmark_invalid_url_error">Érvénytelen webcím</string>
 
     <!-- Bookmark screen message for empty bookmarks folder -->
     <string name="bookmarks_empty_message">Itt nincsenek könyvjelzők</string>
@@ -1217,8 +1486,40 @@
     <!-- Bookmark undo button for deletion snackbar action -->
     <string name="bookmark_undo_deletion">VISSZAVONÁS</string>
 
+    <!-- Bookmark snackbar message for deleting a single item. Parameter is the title of the item being deleted -->
+    <string name="bookmark_delete_single_item">A(z) „%s” törölve</string>
+    <!-- Bookmark snackbar message for deleting multiple items. Parameter is the number of items being deleted -->
+    <string name="bookmark_delete_multiple_items">Elemek törölve: %s</string>
     <!-- Text for the button to search all bookmarks -->
     <string name="bookmark_search">Adja meg a keresési kifejezéseket</string>
+
+    <!-- Content description for the bookmark navigation bar back button -->
+    <string name="bookmark_navigate_back_button_content_description">Navigálás visszafelé</string>
+    <!-- Content description for the bookmark list new folder navigation bar button -->
+    <string name="bookmark_add_new_folder_button_content_description">Új mappa hozzáadása</string>
+    <!-- Content description for the bookmark screen delete bookmark navigation bar button -->
+    <string name="bookmark_delete_bookmark_content_description">Könyvjelző törlése</string>
+    <!-- Content description for the bookmark screen delete bookmark folder navigation bar button -->
+    <string name="bookmark_delete_folder_content_description">Mappa törlése</string>
+    <!-- Content description for bookmark search floating action button -->
+    <string name="bookmark_search_button_content_description">Könyvjelzők keresése</string>
+    <!-- Content description for the overflow menu for a bookmark item. Paramter will a folder name or bookmark title. -->
+    <string name="bookmark_item_menu_button_content_description">Elemmenü ehhez: %s</string>
+
+    <!-- Title for the bookmark list empty state-->
+    <string name="bookmark_empty_list_title">Még nincsenek könyvjelzők</string>
+
+    <!-- Description for the bookmark list empty state when you're not signed into sync. -->
+    <string name="bookmark_empty_list_guest_description">Mentse a webhelyeket böngészés közben. Jelentkezzen be, és vegye át a könyvjelzőket a többi szinkronizált eszközről.</string>
+    <!-- Text for the button to navigate to sync authentication -->
+    <string name="bookmark_empty_list_guest_cta">Bejelentkezés a Syncbe</string>
+    <!-- Description for the bookmark list empty state when you're signed into sync. -->
+    <string name="bookmark_empty_list_authenticated_description">Mentse a webhelyeket böngészés közben. A többi szinkronizált eszközről is lekérjük a könyvjelzőket.</string>
+    <!-- Description for the bookmark list empty state when you're in an empty folder. -->
+    <string name="bookmark_empty_list_folder_description">Adjon hozzá könyvjelzőket böngészés közben, hogy később is megtalálja a kedvenc oldalait.</string>
+
+    <!-- Description for the add new folder button when selecting a folder. -->
+    <string name="bookmark_select_folder_new_folder_button_title">Új mappa</string>
 
     <!-- Site Permissions -->
     <!-- Button label that take the user to the Android App setting -->
@@ -1303,6 +1604,13 @@
     <string name="studies_on">Be</string>
     <!-- Summary of studies data on quit preference if it is set to off -->
     <string name="studies_off">Ki</string>
+
+    <!-- Category header of a preference that allows a user to alter settings related to web permissions. -->
+    <string name="preferences_category_permissions">Engedélyek</string>
+    <!-- Category header of a preference that allows a user to alter settings related to web content. -->
+    <string name="preferences_category_content">Tartalom</string>
+    <!-- Preference for altering the default browsing mode. When enabled, the desktop site will always be requested. -->
+    <string name="preference_feature_desktop_mode_default">Asztali oldal kérése mindig</string>
 
     <!-- Collections -->
     <!-- Collections header on home fragment -->
@@ -1392,7 +1700,7 @@
     <!-- An option to connect additional devices -->
     <string name="sync_connect_device">Másik eszköz csatlakoztatása</string>
     <!-- The dialog text shown when additional devices are not available -->
-    <string name="sync_connect_device_dialog">Lap küldéséhez legalább egy másik eszközön is jelentkezzen be a Firefoxba.</string>
+    <string name="sync_connect_device_dialog" tools:ignore="BrandUsage">Lap küldéséhez legalább egy másik eszközön is jelentkezzen be a Firefoxba.</string>
 
     <!-- Confirmation dialog button -->
     <string name="sync_confirmation_button">Megértettem</string>
@@ -1413,17 +1721,6 @@
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active. -->
     <string name="notification_pbm_delete_text_2">Privát lapok bezárása</string>
 
-    <!-- Text for option one, shown in microsurvey.-->
-    <string name="microsurvey_survey_5_point_option_0" tools:ignore="UnusedResources" moz:removedIn="130">Semleges</string>
-    <!-- Text for option two, shown in microsurvey.-->
-    <string name="microsurvey_survey_5_point_option_1" tools:ignore="UnusedResources" moz:removedIn="130">Nagyon elégedetlen</string>
-    <!-- Text for option three, shown in microsurvey.-->
-    <string name="microsurvey_survey_5_point_option_2" tools:ignore="UnusedResources" moz:removedIn="130">Elégedetlen</string>
-    <!-- Text for option four, shown in microsurvey.-->
-    <string name="microsurvey_survey_5_point_option_3" tools:ignore="UnusedResources" moz:removedIn="130">Elégedett</string>
-    <!-- Text for option five, shown in microsurvey.-->
-    <string name="microsurvey_survey_5_point_option_4" tools:ignore="UnusedResources" moz:removedIn="130">Nagyon elégedett</string>
-
     <!-- Text shown in the notification that pops up to remind the user that a private browsing session is active for Android 14+ -->
     <string name="notification_erase_title_android_14">Bezárja a privát lapokat?</string>
     <string name="notification_erase_text_android_14">Koppintson vagy csúsztassa félre az értesítést a privát lapok bezárásához.</string>
@@ -1433,10 +1730,10 @@
 
     <!-- Title shown in the notification that pops up to remind the user to set fenix as default browser.
     The app name is in the text, due to limitations with localizing Nimbus experiments -->
-    <string name="nimbus_notification_default_browser_title" tools:ignore="UnusedResources">A Firefox gyors és privát</string>
+    <string name="nimbus_notification_default_browser_title" tools:ignore="BrandUsage,UnusedResources">A Firefox gyors és privát</string>
     <!-- Text shown in the notification that pops up to remind the user to set fenix as default browser.
     The app name is in the text, due to limitations with localizing Nimbus experiments -->
-    <string name="nimbus_notification_default_browser_text" tools:ignore="UnusedResources">A Firefox alapértelmezett böngészővé tétele</string>
+    <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">A Firefox alapértelmezett böngészővé tétele</string>
     <!-- Title shown in the notification that pops up to re-engage the user -->
     <string name="notification_re_engagement_title">Próbálja ki a privát böngészést</string>
     <!-- Text shown in the notification that pops up to re-engage the user.
@@ -1456,7 +1753,7 @@
     <!-- Survey -->
     <!-- Text shown in the fullscreen message that pops up to ask user to take a short survey.
     The app name is in the text, due to limitations with localizing Nimbus experiments -->
-    <string name="nimbus_survey_message_text">Segítsen a Firefox jobbá tételében egy rövid felmérés kitöltésével.</string>
+    <string name="nimbus_survey_message_text" tools:ignore="BrandUsage">Segítsen a Firefox jobbá tételében egy rövid felmérés kitöltésével.</string>
     <!-- Preference for taking the short survey. -->
     <string name="preferences_take_survey">Kérdőív kitöltése</string>
     <!-- Preference for not taking the short survey. -->
@@ -1471,8 +1768,10 @@
     <string name="snackbar_tab_closed">Lap bezárva</string>
     <!-- Text shown in snackbar when user closes all tabs -->
     <string name="snackbar_tabs_closed">Lapok bezárva</string>
-    <!-- Text shown in snackbar when user bookmarks a list of tabs -->
-    <string name="snackbar_message_bookmarks_saved">Könyvjelzők mentve!</string>
+    <!-- Text shown in snackbar when user closes multiple inactive tabs. %1$s will be replaced with the number of tabs closed. -->
+    <string name="snackbar_num_tabs_closed">Bezárt lapok: %1$s</string>
+    <!-- Text shown in snackbar when user bookmarks a list of tabs. Parameter will be replaced by the name of the folder the bookmark was saved into.-->
+    <string name="snackbar_message_bookmarks_saved_in">A könyvjelzők ide lettek mentve: „%s”.</string>
     <!-- Text shown in snackbar when user adds a site to shortcuts -->
     <string name="snackbar_added_to_shortcuts">Hozzáadva az indítóikonokhoz.</string>
     <!-- Text shown in snackbar when user closes a private tab -->
@@ -1500,10 +1799,8 @@
     <string name="tab_collection_dialog_message">Biztos, hogy törli ezt: %1$s?</string>
     <!-- Tab collection deletion prompt dialog option to delete the collection -->
     <string name="tab_collection_dialog_positive">Törlés</string>
-    <!-- Text displayed in a notification when the user enters full screen mode -->
-    <string name="full_screen_notification" moz:removedIn="130" tools:ignore="UnusedResources">Belépés teljes képernyős módba</string>
     <!-- Message for copying the URL via long press on the toolbar -->
-    <string name="url_copied">URL másolva</string>
+    <string name="url_copied">Webcím másolva</string>
     <!-- Sample text for accessibility font size -->
     <string name="accessibility_text_size_sample_text_1">Ez egy mintaszöveg. Itt látható, hogy miként jelenik meg a szöveg, ha ezzel a beállítással növeli vagy csökkenti a méretét.</string>
     <!-- Summary for Accessibility Text Size Scaling Preference -->
@@ -1553,8 +1850,6 @@
     <!-- Title text of a delete browsing data dialog. -->
     <string name="delete_history_prompt_title">Törlendő időtartomány</string>
     <!-- Body text of a delete browsing data dialog. -->
-    <string name="delete_history_prompt_body" moz:RemovedIn="130" tools:ignore="UnusedResources">Eltávolítja az előzményeket (beleértve a más eszközökről szinkronizált előzményeket), a sütiket és az egyéb böngészési adatokat.</string>
-    <!-- Body text of a delete browsing data dialog. -->
     <string name="delete_history_prompt_body_2">Törli az előzményeket (beleértve a más eszközökről szinkronizált előzményeket is)</string>
     <!-- Radio button in the delete browsing data dialog to delete history items for the last hour. -->
     <string name="delete_history_prompt_button_last_hour">Utolsó egy óra</string>
@@ -1602,7 +1897,7 @@
     <string name="sync_scan_code">Olvassa le a kódot</string>
 
     <!-- Instructions on how to access pairing -->
-    <string name="sign_in_instructions"><![CDATA[A számítógépen nyissa meg a Firefoxot, és ugorjon a <b>https://firefox.com/pair</b> oldalra]]></string>
+    <string name="sign_in_instructions" tools:ignore="BrandUsage"><![CDATA[A számítógépen nyissa meg a Firefoxot, és ugorjon a <b>https://firefox.com/pair</b> oldalra]]></string>
     <!-- Text shown for sign in pairing when ready -->
     <string name="sign_in_ready_for_scan">Leolvasásra kész</string>
     <!-- Text shown for settings option for sign with pairing -->
@@ -1610,7 +1905,7 @@
     <!-- Text shown for settings option for sign with email -->
     <string name="sign_in_with_email">E-mail használata ehelyett</string>
     <!-- Text shown for settings option for create new account text.'Firefox' intentionally hardcoded here.-->
-    <string name="sign_in_create_account_text"><![CDATA[Nincs fiókja? <u>Hozzon létre egyet</u>, hogy szinkronizálja a Firefoxot az eszközök között.]]></string>
+    <string name="sign_in_create_account_text" tools:ignore="BrandUsage"><![CDATA[Nincs fiókja? <u>Hozzon létre egyet</u>, hogy szinkronizálja a Firefoxot az eszközök között.]]></string>
     <!-- Text shown in confirmation dialog to sign out of account. The first parameter is the name of the app (e.g. Firefox Preview) -->
     <string name="sign_out_confirmation_message_2">A %s leállítja a szinkronizációt a fiókjával, de nem töröl semmilyen böngészési adatot erről az eszközről.</string>
     <!-- Option to continue signing out of account shown in confirmation dialog to sign out of account -->
@@ -1674,7 +1969,7 @@
     <!-- Preference for enhanced tracking protection for the custom protection settings -->
     <string name="preference_enhanced_tracking_protection_custom_cryptominers">Kriptobányászok</string>
     <!-- Preference for enhanced tracking protection for the custom protection settings -->
-    <string name="preference_enhanced_tracking_protection_custom_fingerprinters" moz:RemovedIn="130" tools:ignore="UnusedResources">Ujjlenyomat-készítők</string>
+    <string name="preference_enhanced_tracking_protection_custom_known_fingerprinters">Ismert ujjlenyomat-készítők</string>
     <!-- Button label for navigating to the Enhanced Tracking Protection details -->
     <string name="enhanced_tracking_protection_details">Részletek</string>
     <!-- Header for categories that are being being blocked by current Enhanced Tracking Protection settings -->
@@ -1697,10 +1992,8 @@
     <string name="etp_cryptominers_title">Kriptobányászok</string>
     <!-- Description of cryptominers that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_cryptominers_description">Megakadályozza, hogy a rosszindulatú parancsfájlok digitális valuták bányászatához használják az eszközét.</string>
-    <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
-    <string name="etp_fingerprinters_title" moz:RemovedIn="130" tools:ignore="UnusedResources">Ujjlenyomat-készítők</string>
     <!-- Description of fingerprinters that can be blocked by Enhanced Tracking Protection -->
-    <string name="etp_fingerprinters_description" moz:RemovedIn="130" tools:ignore="UnusedResources">Megállítja az egyedileg azonosítható adatok gyűjtését az eszközéről, amelyek nyomkövetési célokra használhatók fel.</string>
+    <string name="etp_known_fingerprinters_description">Megállítja az egyedileg azonosítható adatok gyűjtését az eszközéről, amelyek nyomkövetési célokra használhatók fel.</string>
     <!-- Category of trackers (tracking content) that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_tracking_content_title">Nyomkövető tartalom</string>
     <!-- Description of tracking content that can be blocked by Enhanced Tracking Protection -->
@@ -1726,6 +2019,12 @@
     <!-- Description of redirect tracker cookies that can be blocked by Enhanced Tracking Protection -->
     <string name="etp_redirect_trackers_description">Törli az ismert nyomkövető webhelyekre történő átirányítással beállított sütiket.</string>
 
+    <!-- Preference for fingerprinting protection for the custom protection settings -->
+    <string name="etp_suspected_fingerprinters_title">Feltételezett ujjlenyomat-készítők</string>
+    <!-- Description of fingerprinters that can be blocked by fingerprinting protection -->
+    <string name="etp_suspected_fingerprinters_description">Engedélyezi az ujjlenyomat-készítők elleni védelmet, hogy megakadályozza a feltételezett ujjlenyomat-készítőket is.</string>
+    <!-- Category of trackers (fingerprinters) that can be blocked by Enhanced Tracking Protection -->
+    <string name="etp_known_fingerprinters_title">Ismert ujjlenyomat-készítők</string>
     <!-- Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
          as we use it on the UI to indicate which trackers have been partially unblocked.  -->
     <string name="preference_etp_smartblock_description">Egyes lent jelzett nyomkövetők részleges feloldásra kerültek, mert interakcióba lépett velük *.</string>
@@ -1763,7 +2062,7 @@
     <string name="browser_toolbar_long_press_popup_paste">Beillesztés</string>
   
     <!-- Snackbar message shown after an URL has been copied to clipboard. -->
-    <string name="browser_toolbar_url_copied_to_clipboard_snackbar">URL a vágólapra másolva</string>
+    <string name="browser_toolbar_url_copied_to_clipboard_snackbar">Webcím a vágólapra másolva</string>
   
     <!-- Title text for the Add To Homescreen dialog -->
     <string name="add_to_homescreen_title">Kezdőképernyőhöz adás</string>
@@ -1786,7 +2085,7 @@
     <!-- Preference option for asking to save passwords in Fenix -->
     <string name="preferences_passwords_save_logins_ask_to_save">Kérdés mentés előtt</string>
     <!-- Preference option for never saving passwords in Fenix -->
-    <string name="preferences_passwords_save_logins_never_save">Soha ne mentse</string>
+    <string name="preferences_passwords_save_logins_never_save">Sose mentse</string>
     <!-- Preference for autofilling saved logins in Firefox (in web content), %1$s will be replaced with the app name -->
     <string name="preferences_passwords_autofill2">Automatikus kitöltés a %1$sban</string>
     <!-- Description for the preference for autofilling saved logins in Firefox (in web content), %1$s will be replaced with the app name -->
@@ -2132,7 +2431,7 @@
     <!-- Text displayed when user has disabled tab syncing in Firefox Sync Account -->
     <string name="synced_tabs_enable_tab_syncing">Engedélyezze a lapok szinkronizálását.</string>
     <!-- Text displayed when user has no tabs that have been synced -->
-    <string name="synced_tabs_no_tabs">Nincs egyetlen lap sem nyitva a Firefoxban a többi eszközén.</string>
+    <string name="synced_tabs_no_tabs" tools:ignore="BrandUsage">Nincs egyetlen lap sem nyitva a Firefoxban a többi eszközén.</string>
 
     <!-- Text displayed in the synced tabs screen when a user is not signed in to Firefox Sync describing Synced Tabs -->
     <string name="synced_tabs_sign_in_message">Tekintse meg a más eszközökről származó lapok listáját.</string>
@@ -2161,8 +2460,8 @@
     <string name="top_sites_rename_dialog_title">Név</string>
     <!-- Hint for renaming title of a shortcut -->
     <string name="shortcut_name_hint">Indítóikon neve</string>
-    <!-- Button caption to confirm the renaming of the top site. -->
-    <string name="top_sites_rename_dialog_ok">Rendben</string>
+    <!-- Hint for editing URL of a shortcut. -->
+    <string name="shortcut_url_hint">Indító webcíme</string>
     <!-- Dialog button text for canceling the rename top site prompt. -->
     <string name="top_sites_rename_dialog_cancel">Mégse</string>
 
@@ -2172,6 +2471,17 @@
     <string name="top_sites_menu_sponsor_privacy">Támogatóink és az Ön adatvédelme</string>
     <!-- Label text displayed for a sponsored top site. -->
     <string name="top_sites_sponsored_label">Szponzorált</string>
+
+    <!-- Text for the menu item to edit a top site. -->
+    <string name="top_sites_edit_top_site">Szerkesztés</string>
+    <!-- Text for the dialog title to edit a top site. -->
+    <string name="top_sites_edit_dialog_title">Indító szerkesztése</string>
+    <!-- Button caption to confirm the edit of the top site. -->
+    <string name="top_sites_edit_dialog_save">Mentés</string>
+    <!-- Error message when the user entered an invalid URL -->
+    <string name="top_sites_edit_dialog_url_error">Adjon meg egy érvényes webcímet</string>
+    <!-- Label for the URL edit field in the edit top site dialog. -->
+    <string name="top_sites_edit_dialog_url_title">Webcím</string>
 
     <!-- Inactive tabs in the tabs tray -->
     <!-- Title text displayed in the tabs tray when a tab has been unused for 14 days. -->
@@ -2188,7 +2498,7 @@
     <!-- The header text of the auto-close message when the user is asked if they want to turn on the auto-closing of inactive tabs. -->
     <string name="inactive_tabs_auto_close_message_header" tools:ignore="UnusedResources">Automatikus bezárás egy hónap után?</string>
     <!-- A description below the header to notify the user what the inactive tabs auto-close feature is. -->
-    <string name="inactive_tabs_auto_close_message_description" tools:ignore="UnusedResources">A Firefox bezárhatja azokat a lapokat, amelyeket az elmúlt hónapban nem nézett meg.</string>
+    <string name="inactive_tabs_auto_close_message_description" tools:ignore="BrandUsage,UnusedResources">A Firefox bezárhatja azokat a lapokat, amelyeket az elmúlt hónapban nem nézett meg.</string>
     <!-- A call to action below the description to allow the user to turn on the auto closing of inactive tabs. -->
     <string name="inactive_tabs_auto_close_message_action" tools:ignore="UnusedResources">AUTOMATIKUS BEZÁRÁS BEKAPCSOLÁSA</string>
 
@@ -2197,7 +2507,7 @@
 
     <!-- Awesome bar suggestion's headers -->
     <!-- Search suggestions title for Firefox Suggest. -->
-    <string name="firefox_suggest_header">Firefox Suggest</string>
+    <string name="firefox_suggest_header" tools:ignore="BrandUsage">Firefox Suggest</string>
 
     <!-- Title for search suggestions when Google is the default search suggestion engine. -->
     <string name="google_search_engine_suggestion_header">Google keresés</string>
@@ -2208,7 +2518,7 @@
     <!-- Default browser card title -->
     <string name="default_browser_experiment_card_title">Az alapértelmezett böngésző módosítása</string>
     <!-- Default browser card text -->
-    <string name="default_browser_experiment_card_text">Állítsa be a webhelyek, e-mailek és üzenetek hivatkozásait, hogy azok automatikusan a Firefoxban nyíljanak meg.</string>
+    <string name="default_browser_experiment_card_text" tools:ignore="BrandUsage">Állítsa be a webhelyek, e-mailek és üzenetek hivatkozásait, hogy azok automatikusan a Firefoxban nyíljanak meg.</string>
 
     <!-- Content description for close button in collection placeholder. -->
     <string name="remove_home_collection_placeholder_content_description">Eltávolítás</string>
@@ -2217,7 +2527,7 @@
     <string name="radio_preference_info_content_description">Kattintson a további részletekért</string>
 
     <!-- Content description for the action bar "up" button -->
-    <string name="action_bar_up_description" moz:removedIn="124" tools:ignore="UnusedResources">Navigálás fel</string>
+    <string name="action_bar_up_description">Navigálás fel</string>
 
     <!-- Content description for privacy content close button -->
     <string name="privacy_content_close_button_content_description">Bezárás</string>
@@ -2232,7 +2542,7 @@
     <!-- Title of an app feature. Smaller than a heading. The first parameter is product name Pocket -->
     <string name="pocket_stories_feature_title_2">A motorháztető alatt: %s.</string>
     <!-- Caption for describing a certain feature. The placeholder is for a clickable text (eg: Learn more) which will load an url in a new tab when clicked.  -->
-    <string name="pocket_stories_feature_caption">A Firefox család tagja. %s</string>
+    <string name="pocket_stories_feature_caption" tools:ignore="BrandUsage">A Firefox család tagja. %s</string>
     <!-- Clickable text for opening an external link for more information about Pocket. -->
     <string name="pocket_stories_feature_learn_more">További tudnivalók</string>
 
@@ -2362,8 +2672,6 @@
     <!-- Clickable text from the contextual onboarding card that links to review quality check support article. -->
     <string name="review_quality_check_contextual_onboarding_learn_more_link">További tudnivalók</string>
     <!-- Caption text to be displayed in review quality check contextual onboarding card above the opt-in button. First parameter is Firefox app name, third parameter is the Fakespot product name. Second & fourth are for clickable texts defined in review_quality_check_contextual_onboarding_privacy_policy_3 and review_quality_check_contextual_onboarding_terms_use. -->
-    <string name="review_quality_check_contextual_onboarding_caption_3" moz:RemovedIn="124" tools:ignore="UnusedResources">Az „Igen, kipróbálom” kiválasztásával elfogadja a következőket: a %1$s %2$s és a %3$s %4$s.</string>
-    <!-- Caption text to be displayed in review quality check contextual onboarding card above the opt-in button. First parameter is Firefox app name, third parameter is the Fakespot product name. Second & fourth are for clickable texts defined in review_quality_check_contextual_onboarding_privacy_policy_3 and review_quality_check_contextual_onboarding_terms_use. -->
     <string name="review_quality_check_contextual_onboarding_caption_4">Az „Igen, kipróbálom” kiválasztásával elfogadja a következőket: a %1$s %2$s és a %3$s %4$s.</string>
     <!-- Clickable text from the review quality check contextual onboarding card that links to Fakespot privacy notice. -->
     <string name="review_quality_check_contextual_onboarding_privacy_policy_3">adatvédelmi nyilatkozatota</string>
@@ -2374,17 +2682,6 @@
     <!-- Text for opt-out button from the review quality check contextual onboarding card. -->
     <string name="review_quality_check_contextual_onboarding_secondary_button_text">Most nem</string>
 
-    <!-- Text for the first CFR presenting the review quality check feature. -->
-    <string name="review_quality_check_first_cfr_message">Tudja meg, hogy megbízhat-e ezen termék értékeléseiben – még a vásárlás előtt.</string>
-    <!-- Text displayed in the first CFR presenting the review quality check feature that opens the review checker when clicked. -->
-    <string name="review_quality_check_first_cfr_action" tools:ignore="UnusedResources">Próbálja ki az értékelés-ellenőrzőt</string>
-
-    <!-- Text for the second CFR presenting the review quality check feature. -->
-    <string name="review_quality_check_second_cfr_message">Megbízhatók ezek az értékelések? Nézze meg a módosított értékelés megtekintéséhez.</string>
-    <!-- Text displayed in the second CFR presenting the review quality check feature that opens the review checker when clicked. -->
-    <string name="review_quality_check_second_cfr_action" tools:ignore="UnusedResources">Értékelés-ellenőrző megnyitása</string>
-    <!-- Flag showing that the review quality check feature is work in progress. -->
-    <string name="review_quality_check_beta_flag">Beta</string>
     <!-- Content description (not visible, for screen readers etc.) for opening browser menu button to open review quality check bottom sheet. -->
     <string name="review_quality_check_open_handle_content_description">Értékelés-ellenőrző megnyitása</string>
     <!-- Content description (not visible, for screen readers etc.) for closing browser menu button to open review quality check bottom sheet. -->
@@ -2497,7 +2794,7 @@
     <!-- Toggle switch label that allows a user to set if they would like a given language to automatically translate or not. The first parameter is the language name, for example, "Spanish". -->
     <string name="translation_option_bottom_sheet_always_translate_in_language">%1$s fordítása mindig</string>
     <!-- Toggle switch label that allows a user to set if they would like to never be offered a translation of the given language. The first parameter is the language name, for example, "Spanish". -->
-    <string name="translation_option_bottom_sheet_never_translate_in_language">Soha ne fordítsa ezt: %1$s</string>
+    <string name="translation_option_bottom_sheet_never_translate_in_language">Sose fordítsa ezt: %1$s</string>
     <!-- Toggle switch label that allows a user to set the setting if they would like the browser to never translate the site the user is currently visiting. -->
     <string name="translation_option_bottom_sheet_never_translate_site">Sose fordítsa le ezt az oldalt</string>
     <!-- Toggle switch description that will appear under the "Never translate these sites" settings toggle switch to provide more information on how this setting interacts with other settings. -->
@@ -2521,14 +2818,14 @@
     <!-- Toggle switch label that indicates that the browser should signal or indicate when a translation is possible for any page. -->
     <string name="translation_settings_offer_to_translate">A fordítás felajánlása, ha lehetséges</string>
     <!-- Toggle switch label that indicates that downloading files required for translating is permitted when using data saver mode in Android. -->
-    <string name="translation_settings_always_download">A nyelvek letöltése minidig adattakarékos módban</string>
+    <string name="translation_settings_always_download">A nyelvek letöltése akkor is, ha adattakarékos módban van</string>
     <!-- Section header text that begins the section of a list of different options the user may select to adjust their translation preferences. -->
     <string name="translation_settings_translation_preference">Fordítás beállításai</string>
     <!-- Button text for the button that will take the user to the automatic translations settings dialog. On the automatic translations settings dialog, the user can set if translations should occur automatically for a given language. -->
     <string name="translation_settings_automatic_translation">Automatikus fordítás</string>
 
     <!-- Button text for the button that will take the user to the never translate these sites dialog. On the never translate these sites dialog, the user can set if translations should never occur on certain websites. -->
-    <string name="translation_settings_automatic_never_translate_sites">Soha ne fordítsa ezeket az oldalakat</string>
+    <string name="translation_settings_automatic_never_translate_sites">Sose fordítsa ezeket az oldalakat</string>
     <!-- Button text for the button that will take the user to the download languages dialog. On the download languages dialog, the user can manage which languages they would like to download for translations. -->
     <string name="translation_settings_download_language">Nyelvek letöltése</string>
 
@@ -2576,8 +2873,8 @@
     <string name="never_translate_site_dialog_cancel_preference">Mégse</string>
 
     <!-- Download languages preference screen -->
-    <!-- Title of the download languages preference screen toolbar.-->
-    <string name="download_languages_toolbar_title_preference">Nyelvek letöltése</string>
+    <!-- Title of the toolbar for the translation feature screen where users may download different languages for translation. -->
+    <string name="download_languages_translations_toolbar_title_preference">Nyelvek letöltése</string>
     <!-- Screen header presenting the download language preference feature. It will appear under the toolbar.The first parameter is "Learn More," a clickable text with a link. Talkback will append this to say "Double tap to open link to learn more". -->
     <string name="download_languages_header_preference">Töltsön le teljes nyelveket a gyorsabb és kapcsolat nélküli fordítás érdekében. %1$s</string>
     <!-- Clickable text from the screen header that links to a website. -->
@@ -2599,8 +2896,12 @@
     <string name="download_language_all_languages_item_preference_to_delete">Összes nyelv törlése</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was downloaded, the user can now delete it. -->
     <string name="download_languages_item_content_description_downloaded_state">Törlés</string>
-    <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress. -->
-    <string name="download_languages_item_content_description_in_progress_state" moz:removedIn="129" tools:ignore="UnusedResources">Folyamatban</string>
+    <!-- Content description (not visible, for screen readers etc.): For a language list item, deleting is in progress. -->
+    <string name="download_languages_item_content_description_delete_in_progress_state">Folyamatban</string>
+    <!-- Content description (not visible, for screen readers etc.): For a language list item, downloading is in progress.
+    The first parameter is the language name, for example, "Spanish".
+    The second parameter is the language file size, for example, "(3.91 KB)". -->
+    <string name="download_languages_item_content_description_download_in_progress_state">Letöltés leállítása: %1$s (%2$s)</string>
     <!-- Content description (not visible, for screen readers etc.): For a language list item that was not downloaded. -->
     <string name="download_languages_item_content_description_not_downloaded_state">Letöltés</string>
 
@@ -2637,8 +2938,6 @@
     <string name="download_language_file_dialog_title">Letöltés adattakarékos módban (%1$s)?</string>
     <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation. -->
     <string name="download_language_file_dialog_message_all_languages">Részleges nyelvek lesznek a gyorsítótárba töltve, hogy a fordítások privátok maradjanak.</string>
-    <!-- Additional information for the data saving mode warning dialog used by the translations feature. This text explains the reason a download is required for a translation without mentioning the cache. -->
-    <string name="download_language_file_dialog_message_all_languages_no_cache" moz:removedIn="129" tools:ignore="UnusedResources">Részleges nyelvek lesznek letöltve, hogy a fordítások privátok maradjanak.</string>
     <!-- Checkbox label text on the data saving mode warning dialog used by the translations feature. This checkbox allows users to ignore the data usage warnings. -->
     <string name="download_language_file_dialog_checkbox_text">Letöltés mindig adattakarékos módban</string>
 
@@ -2648,6 +2947,28 @@
     <string name="download_language_file_dialog_positive_button_text_all_languages">Letöltés és fordítás</string>
     <!-- Button text on the data saving mode warning dialog used by the translations feature to allow users to cancel the action and not perform a download of the language file. -->
     <string name="download_language_file_dialog_negative_button_text">Mégse</string>
+
+    <!-- Unified Trust Panel -->
+    <!-- Title text for the protection panel banner when the site is not secure. -->
+    <string name="protection_panel_banner_not_secure_title">Legyen óvatos ezen az oldalon</string>
+    <!-- Description text for the protection panel banner when the site is not secure. -->
+    <string name="protection_panel_banner_not_secure_description">A kapcsolat nem biztonságos.</string>
+    <!-- Title text for the protection panel banner when tracking protection is disabled. -->
+    <string name="protection_panel_banner_not_protected_title">Kikapcsolta a védelmeket</string>
+    <!-- Description text for the protection panel banner when tracking protection is disabled.
+        The first parameter is the name of the app defined in app_name (for example: Fenix) -->
+    <string name="protection_panel_banner_not_protected_description">A %s szolgálaton kívül van. Javasoljuk a védelmek ismételt bekapcsolását.</string>
+    <!-- Title text for the protection panel banner when tracking protection is enabled.
+        The first parameter is the name of the app defined in app_name (for example: Fenix) -->
+    <string name="protection_panel_banner_protected_title">A %s résen van</string>
+    <!-- Description text for the protection panel banner when tracking protection is enabled. -->
+    <string name="protection_panel_banner_protected_description">Védve van. Ha látunk valamit, értesíteni fogjuk.</string>
+    <!-- Label text for the Enhanced Tracking Protection toggle. -->
+    <string name="protection_panel_etp_toggle_label">Fokozott követés elleni védelem</string>
+    <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is enabled. -->
+    <string name="protection_panel_etp_toggle_enabled_description">Ha valami nem működik ezen az oldalon, próbálja meg kikapcsolni.</string>
+    <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is disabled. -->
+    <string name="protection_panel_etp_toggle_disabled_description">A védelem KI van kapcsolva. Javasoljuk, hogy kapcsolja be újra.</string>
 
     <!-- Debug drawer -->
     <!-- The user-facing title of the Debug Drawer feature. -->
@@ -2697,22 +3018,16 @@
     <!-- Microsurvey -->
     <!-- Prompt view -->
     <!-- The microsurvey prompt title. Note: The word "Firefox" should NOT be translated -->
-    <string name="micro_survey_prompt_title" tools:ignore="UnusedResources">Segítsen a Firefox jobbá tételében. Csak egy percébe kerül.</string>
+    <string name="micro_survey_prompt_title" tools:ignore="BrandUsage,UnusedResources">Segítsen a Firefox jobbá tételében. Csak egy percébe kerül.</string>
     <!-- The continue button label -->
     <string name="micro_survey_continue_button_label" tools:ignore="UnusedResources">Folytatás</string>
     <!-- Survey view -->
     <!-- The survey header -->
-    <string name="micro_survey_survey_header" moz:removedIn="129" tools:ignore="UnusedResources">Töltse ki ezt a kérdőívet</string>
-    <!-- The survey header -->
     <string name="micro_survey_survey_header_2">Töltse ki a kérdőívet</string>
-    <!-- The privacy notice link -->
-    <string name="micro_survey_privacy_notice" moz:removedIn="129" tools:ignore="UnusedResources">Adatvédelmi nyilatkozat</string>
     <!-- The privacy notice link -->
     <string name="micro_survey_privacy_notice_2">Adatvédelmi nyilatkozat</string>
     <!-- The submit button label text -->
     <string name="micro_survey_submit_button_label">Elküldés</string>
-    <!-- The close button label text -->
-    <string name="micro_survey_close_button_label" moz:removedIn="128" tools:ignore="UnusedResources">Bezárás</string>
     <!-- The survey completion header -->
     <string name="micro_survey_survey_header_confirmation" tools:ignore="UnusedResources">A felmérés kész</string>
     <!-- The survey completion confirmation text -->
@@ -2730,14 +3045,29 @@
 
     <!-- Option for likert scale -->
     <string name="likert_scale_option_6" tools:ignore="UnusedResources">Nem használom</string>
-    <!-- Text shown in prompt for homepage microsurvey. Note: The word "Firefox" should NOT be translated. -->
-    <string name="microsurvey_prompt_homepage_title" tools:ignore="UnusedResources">Mennyire elégedett a Firefox kezdőlapjával?</string>
+    <!-- Option for likert scale. Note: The word "Firefox" should NOT be translated. -->
+    <string name="likert_scale_option_7" tools:ignore="BrandUsage,UnusedResources">Nem használok keresőt a Firefoxban</string>
+    <!-- Option for likert scale -->
+    <string name="likert_scale_option_8" tools:ignore="UnusedResources">Nem használom a szinkronizálást</string>
     <!-- Text shown in prompt for printing microsurvey. "sec" It's an abbreviation for "second". Note: The word "Firefox" should NOT be translated. -->
-    <string name="microsurvey_prompt_printing_title" tools:ignore="UnusedResources">Segítsen jobbá tenni a nyomtatást a Firefoxban. Egy pillanat az egész.</string>
-    <!-- Text shown in prompt for printing microsurvey. Note: The word "Firefox" should NOT be translated. -->
-    <string name="microsurvey_survey_printing_title" tools:ignore="UnusedResources">Mennyire elégedett a Firefoxban történő nyomtatással?</string>
-    <!-- Content description (not visible, for screen readers etc.) for opening microsurvey bottom sheet. -->
-    <string name="microsurvey_open_handle_content_description" tools:ignore="UnusedResources" moz:removedIn="130">Kérdőív megnyitása</string>
+    <string name="microsurvey_prompt_printing_title" tools:ignore="BrandUsage,UnusedResources">Segítsen jobbá tenni a nyomtatást a Firefoxban. Egy pillanat az egész.</string>
+    <!-- Text shown in prompt for search microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_prompt_search_title" tools:ignore="BrandUsage,UnusedResources">Segítsen a Firefox keresésének jobbá tételében. Csak egy percébe kerül.</string>
+    <!-- Text shown in prompt for sync microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_prompt_sync_title" tools:ignore="BrandUsage,UnusedResources">Segítsen a Firefox szinkronizálásának jobbá tételében. Csak egy percébe kerül.</string>
+    <!-- Text shown in the survey title for printing microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_survey_printing_title" tools:ignore="BrandUsage,UnusedResources">Mennyire elégedett a Firefoxban történő nyomtatással?</string>
+    <!-- Text shown in the survey title for homepage microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_homepage_title" tools:ignore="BrandUsage,UnusedResources">Mennyire elégedett a Firefox kezdőlapjával?</string>
+    <!-- Text shown in the survey title for search experience microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_search_title" tools:ignore="BrandUsage,UnusedResources">Mennyire elégedett a keresési élményével a Firefoxban?</string>
+    <!-- Text shown in the survey title for sync experience microsurvey. Note: The word "Firefox" should NOT be translated. -->
+    <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">Mennyire elégedett a szinkronizálási élményével a Firefoxban?</string>
+    <!-- Accessibility -->
+    <!-- Content description for the survey application icon. Note: The word "Firefox" should NOT be translated.  -->
+    <string name="microsurvey_app_icon_content_description" tools:ignore="BrandUsage">Firefox logó</string>
+    <!-- Content description for the survey feature icon. -->
+    <string name="microsurvey_feature_icon_content_description">Felmérés funkció ikonja</string>
     <!-- Content description (not visible, for screen readers etc.) for closing microsurvey bottom sheet. -->
     <string name="microsurvey_close_handle_content_description">Kérdőív bezárása</string>
     <!-- Content description for "X" button that is closing microsurvey. -->
@@ -2753,4 +3083,63 @@
     <!-- Content description for delete button where parameter will be the username of the login -->
     <string name="debug_drawer_logins_delete_login_button_content_description">A(z) %s felhasználónevű bejelentkezés törlése</string>
 
-    </resources>
+    <!-- Debug drawer addresses -->
+    <!-- The title of the Addresses feature in the Debug Drawer. -->
+    <string name="debug_drawer_addresses_title">Címek</string>
+
+    <!-- The title of the section header for the list of debug locales that can be enabled and disabled. -->
+    <string name="debug_drawer_addresses_debug_locales_header">Engedélyezendő hibakeresési területi beállítások</string>
+
+    <!-- Debug drawer "contextual feature recommendation" (CFR) tools -->
+    <!-- The title of the CFR Tools feature in the Debug Drawer -->
+    <string name="debug_drawer_cfr_tools_title">CFR eszközök</string>
+    <!-- The title of the reset CFR section in CFR Tools -->
+    <string name="debug_drawer_cfr_tools_reset_cfr_title">CFR-ek visszaállítása</string>
+
+    <!-- Glean debug tools -->
+    <!-- The title of the glean debugging feature -->
+    <string name="glean_debug_tools_title">Glean hibakeresési eszközök</string>
+
+    <!-- Messages explaining how to exit fullscreen mode -->
+    <!-- Message shown to explain how to exit fullscreen mode when gesture navigation is enabled. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_gesture_short">Húzza felülről és használja a vissza gesztust a kilépéshez</string>
+    <!-- Message shown to explain how to exit fullscreen mode when using back button navigation. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_back_button_short">Húzza felülről és nyomja meg a vissza gombot a kilépéshez</string>
+
+    <!-- Beta Label Component !-->
+    <!-- Text shown as a label or tag to indicate a feature or area is still undergoing active development. Note that here "Beta" should not be translated, as it is used as an icon styled element. -->
+    <string name="beta_feature">BÉTA</string>
+
+    <!-- Root certificate expiration warnings -->
+    <!-- These strings for homepage cards and push notifications to be pushed to users running outdated versions of Firefox. We want to encourage these users to update to the latest version so their extensions and other features don't stop working when Firefox's old root certificate expires on 2025-03-14. For more information, see this SUMO article: https://support.mozilla.org/kb/root-certificate-expiration !-->
+    <!-- Homepage card button to open Google Play Store. "Update" is a verb. -->
+    <string name="certificate_warning_homepage_card_update_now_button" tools:ignore="UnusedResources">Frissítés most</string>
+    <!-- Homepage card title about old Firefox version. "Update" is a verb. Note: The word "Firefox" should NOT be translated. -->
+    <string name="certificate_warning_homepage_card_hca1_title" tools:ignore="BrandUsage,UnusedResources">Frissítse a Firefox böngészőjét</string>
+    <!-- Homepage card message about old Firefox version -->
+    <string name="certificate_warning_homepage_card_hca1_message" tools:ignore="UnusedResources">Egy gyökértanúsítvány le fog járni, emiatt egyes funkciók március 14-én megszűnnek működni.</string>
+    <!-- Homepage card title about old Firefox version. "Update" is a verb. -->
+    <string name="certificate_warning_homepage_card_hcr1_title" tools:ignore="UnusedResources">Frissítsen március 14-e előtt</string>
+    <!-- Homepage card message about old Firefox version. Note: The word "Firefox" should NOT be translated. -->
+    <string name="certificate_warning_homepage_card_hcr1_message" tools:ignore="BrandUsage,UnusedResources">Egy gyökértanúsítvány le fog járni, ezért az Ön Firefox verziója nem fog megfelelően működni.</string>
+    <!-- Homepage card title about old Firefox version -->
+    <string name="certificate_warning_homepage_card_hcw2_title" tools:ignore="UnusedResources">Kevesebb mint 7 napja van a frissítésre</string>
+    <!-- Homepage card message about old Firefox version. Note: The word "Firefox" should NOT be translated. -->
+    <string name="certificate_warning_homepage_card_hcw2_message" tools:ignore="BrandUsage,UnusedResources">Március 14-én a kiegészítők és más Firefox-funkciók leállnak, mert egy gyökértanúsítvány le fog járni.</string>
+    <!-- Homepage card title about old Firefox version. Note: The word "Firefox" should NOT be translated. -->
+    <string name="certificate_warning_homepage_card_hcw3_title" tools:ignore="BrandUsage,UnusedResources">Utolsó lehetőség, hogy megtartsa a Firefoxát</string>
+    <!-- Homepage card message about old Firefox version. Note: The word "Firefox" should NOT be translated. -->
+    <string name="certificate_warning_homepage_card_hcw3_message" tools:ignore="BrandUsage,UnusedResources">A Firefox ezen verziója március 14-től nem fog megfelelően működni, mert egy gyökértanúsítvány le fog járni.</string>
+    <!-- Push notification title about old Firefox version. "Update" is a noun. -->
+    <string name="certificate_warning_push_notification_update_recommended_title" tools:ignore="UnusedResources">Frissítés javasolt</string>
+    <!-- Push notification message about old Firefox version -->
+    <string name="certificate_warning_push_notification_pnr1_message" tools:ignore="UnusedResources">A kiegészítők és egyes egyéb funkciók március 14-től nem fognak megfelelően működni.</string>
+    <!-- Push notification title about old Firefox version. Note: The word "Firefox" should NOT be translated. -->
+    <string name="certificate_warning_push_notification_pnw2_title" tools:ignore="BrandUsage,UnusedResources">A Firefox egy régebbi verzióját használja.</string>
+    <!-- Push notification message about old Firefox version. "Update" is a verb. -->
+    <string name="certificate_warning_push_notification_pnw2_message" tools:ignore="UnusedResources">Frissítsen március 14. előtt, hogy továbbra is használhassa a kiegészítőket és az egyéb funkciókat.</string>
+    <!-- Push notification message about old Firefox version -->
+    <string name="certificate_warning_push_notification_pnw3_message" tools:ignore="UnusedResources">Néhány funkció holnaptól nem fog működni.</string>
+</resources>

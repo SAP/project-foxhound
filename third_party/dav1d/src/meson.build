@@ -30,6 +30,7 @@
 libdav1d_sources = files(
     'cdf.c',
     'cpu.c',
+    'ctx.c',
     'data.c',
     'decode.c',
     'dequant_tables.c',
@@ -119,6 +120,7 @@ if is_asm_enabled
                     'arm/64/loopfilter16.S',
                     'arm/64/looprestoration16.S',
                     'arm/64/mc16.S',
+                    'arm/64/mc16_sve.S',
                 )
             endif
         elif host_machine.cpu_family().startswith('arm')
@@ -174,7 +176,6 @@ if is_asm_enabled
             'x86/itx_avx512.asm',
             'x86/cdef_avx2.asm',
             'x86/itx_avx2.asm',
-            'x86/looprestoration_avx2.asm',
             'x86/cdef_sse.asm',
             'x86/itx_sse.asm',
         )
@@ -190,6 +191,7 @@ if is_asm_enabled
                 'x86/filmgrain_avx2.asm',
                 'x86/ipred_avx2.asm',
                 'x86/loopfilter_avx2.asm',
+                'x86/looprestoration_avx2.asm',
                 'x86/mc_avx2.asm',
                 'x86/filmgrain_sse.asm',
                 'x86/ipred_sse.asm',
@@ -237,6 +239,8 @@ if is_asm_enabled
         )}
 
         libdav1d_sources_asm = files(
+            'loongarch/cdef.S',
+            'loongarch/ipred.S',
             'loongarch/mc.S',
             'loongarch/loopfilter.S',
             'loongarch/looprestoration.S',
@@ -256,6 +260,7 @@ if is_asm_enabled
         )}
         arch_flags += {'pwr9': ['-mcpu=power9', '-DDAV1D_PWR9']}
         libdav1d_arch_tmpl_sources += {'pwr9': files(
+            'ppc/itx_tmpl.c',
             'ppc/loopfilter_tmpl.c',
         )}
     elif host_machine.cpu_family().startswith('riscv')
@@ -264,9 +269,26 @@ if is_asm_enabled
         )
         if host_machine.cpu_family() == 'riscv64'
             libdav1d_sources += files(
+                'riscv/64/cdef.S',
                 'riscv/64/cpu.S',
                 'riscv/64/itx.S',
+                'riscv/64/pal.S',
+                'riscv/64/mc.S',
             )
+
+            if dav1d_bitdepths.contains('8')
+                libdav1d_sources += files(
+                    'riscv/64/cdef.S',
+                    'riscv/64/ipred.S',
+                )
+            endif
+
+            if dav1d_bitdepths.contains('16')
+                libdav1d_sources += files(
+                    'riscv/64/cdef16.S',
+                    'riscv/64/ipred16.S',
+                )
+            endif
         endif
     endif
 endif
@@ -370,7 +392,7 @@ libdav1d = library('dav1d',
 )
 
 dav1d_dep = declare_dependency(link_with: libdav1d,
-    include_directories : include_directories('../include/dav1d')
+    include_directories : include_directories('../include')
 )
 
 #

@@ -19,11 +19,11 @@ ${helpers.predefined_type(
 
 ${helpers.single_keyword(
     "-moz-top-layer",
-    "none top",
+    "none auto",
     engines="gecko",
     gecko_enum_prefix="StyleTopLayer",
     gecko_ffi_name="mTopLayer",
-    animation_type="none",
+    animation_type="discrete",
     enabled_in="ua",
     spec="Internal (not web-exposed)",
     affects="layout",
@@ -151,7 +151,7 @@ ${helpers.single_keyword(
         "OverflowClipBox",
         "computed::OverflowClipBox::PaddingBox",
         engines="gecko",
-        enabled_in="ua",
+        enabled_in="chrome",
         gecko_pref="layout.css.overflow-clip-box.enabled",
         animation_type="discrete",
         spec="Internal, may be standardized in the future: \
@@ -631,9 +631,10 @@ ${helpers.predefined_type(
     "zoom",
     "Zoom",
     "computed::box_::Zoom::ONE",
-    engines="gecko",
+    engines="gecko servo",
     spec="Non-standard (https://github.com/atanassov/css-zoom/ is the closest)",
     gecko_pref="layout.css.zoom.enabled",
+    servo_pref="layout.unimplemented",
     affects="layout",
     enabled_in="chrome",
 )}

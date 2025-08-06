@@ -272,6 +272,10 @@ class MouseInput : public InputData {
       MOUSE_UP,
       MOUSE_DRAG_START,
       MOUSE_DRAG_END,
+      MOUSE_DRAG_ENTER,
+      MOUSE_DRAG_OVER,
+      MOUSE_DRAG_EXIT,
+      MOUSE_DROP,
       MOUSE_WIDGET_ENTER,
       MOUSE_WIDGET_EXIT,
       MOUSE_HITTEST,
@@ -314,6 +318,8 @@ class MouseInput : public InputData {
    * event or following "mouseup", set to true.
    */
   bool mPreventClickEvent;
+  bool mIgnoreCapturingContent;
+  bool mSynthesizeMoveAfterDispatch;
 };
 
 /**

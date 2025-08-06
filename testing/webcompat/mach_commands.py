@@ -9,7 +9,7 @@ import platform
 import sys
 
 from mach.decorators import Command
-from mozbuild.base import MozbuildObject
+from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -55,7 +55,7 @@ def create_parser_interventions():
         default="9222",
         help="Port on which to run WebDriver BiDi websocket",
     )
-    parser.add_argument("--bug", help="Bug to run tests for")
+    parser.add_argument("-B", "--bug", help="Bug to run tests for")
     parser.add_argument(
         "--do2fa",
         action="store_true",
@@ -69,6 +69,7 @@ def create_parser_interventions():
         "--debug", action="store_true", default=False, help="Debug failing tests"
     )
     parser.add_argument(
+        "-H",
         "--headless",
         action="store_true",
         default=False,
@@ -93,6 +94,13 @@ def create_parser_interventions():
         action="store",
         choices=["android", "desktop"],
         help="Platform to target",
+    )
+    parser.add_argument(
+        "-S",
+        "--no-failure-screenshots",
+        action="store_true",
+        default=False,
+        help="Do not save a screenshot for each test failure",
     )
 
     desktop_group = parser.add_argument_group("Desktop-specific arguments")
@@ -120,7 +128,12 @@ class InterventionTest(MozbuildObject):
         platform = kwargs["platform"]
         binary = kwargs["binary"]
         device_serial = kwargs["device_serial"]
-        is_gve_build = command_context.substs.get("MOZ_APP_NAME") == "fennec"
+        try:
+            is_gve_build = command_context.substs.get("MOZ_APP_NAME") == "fennec"
+        except BuildEnvironmentNotFoundException:
+            # If we don't have a build, just use the logic below to choose between
+            # desktop and Android
+            is_gve_build = False
 
         if platform == "android" or (
             platform is None and binary is None and (device_serial or is_gve_build)
@@ -283,6 +296,7 @@ class InterventionTest(MozbuildObject):
                     headless=kwargs["headless"],
                     do2fa=kwargs["do2fa"],
                     log_level=log_level,
+                    no_failure_screenshots=kwargs.get("no_failure_screenshots"),
                 )
 
         if kwargs["shims"] != "none":
@@ -309,6 +323,7 @@ class InterventionTest(MozbuildObject):
                     config=kwargs["config"],
                     headless=kwargs["headless"],
                     do2fa=kwargs["do2fa"],
+                    no_failure_screenshots=kwargs.get("no_failure_screenshots"),
                 )
 
         summary = status_handler.summarize()

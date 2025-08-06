@@ -6,7 +6,6 @@
 
 #include "ServiceWorkerUpdateJob.h"
 
-#include "mozilla/Telemetry.h"
 #include "nsIScriptError.h"
 #include "nsIURL.h"
 #include "nsNetUtil.h"
@@ -142,9 +141,11 @@ class ServiceWorkerUpdateJob::ContinueInstallRunnable final
 
 ServiceWorkerUpdateJob::ServiceWorkerUpdateJob(
     nsIPrincipal* aPrincipal, const nsACString& aScope, nsCString aScriptSpec,
-    ServiceWorkerUpdateViaCache aUpdateViaCache)
+    ServiceWorkerUpdateViaCache aUpdateViaCache,
+    const ServiceWorkerLifetimeExtension& aLifetimeExtension)
     : ServiceWorkerUpdateJob(Type::Update, aPrincipal, aScope,
-                             std::move(aScriptSpec), aUpdateViaCache) {}
+                             std::move(aScriptSpec), aUpdateViaCache,
+                             aLifetimeExtension) {}
 
 already_AddRefed<ServiceWorkerRegistrationInfo>
 ServiceWorkerUpdateJob::GetRegistration() const {
@@ -155,9 +156,11 @@ ServiceWorkerUpdateJob::GetRegistration() const {
 
 ServiceWorkerUpdateJob::ServiceWorkerUpdateJob(
     Type aType, nsIPrincipal* aPrincipal, const nsACString& aScope,
-    nsCString aScriptSpec, ServiceWorkerUpdateViaCache aUpdateViaCache)
+    nsCString aScriptSpec, ServiceWorkerUpdateViaCache aUpdateViaCache,
+    const ServiceWorkerLifetimeExtension& aLifetimeExtension)
     : ServiceWorkerJob(aType, aPrincipal, aScope, std::move(aScriptSpec)),
       mUpdateViaCache(aUpdateViaCache),
+      mLifetimeExtension(aLifetimeExtension),
       mOnFailure(serviceWorkerScriptCache::OnFailure::DoNothing) {}
 
 ServiceWorkerUpdateJob::~ServiceWorkerUpdateJob() = default;
@@ -210,6 +213,9 @@ void ServiceWorkerUpdateJob::FailUpdateJob(ErrorResult& aRv) {
 void ServiceWorkerUpdateJob::FailUpdateJob(nsresult aRv) {
   ErrorResult rv(aRv);
   FailUpdateJob(rv);
+  // This signature is intentionally about not using the result, so we do need
+  // to suppress the exception.
+  rv.SuppressException();
 }
 
 void ServiceWorkerUpdateJob::AsyncExecute() {
@@ -406,8 +412,6 @@ void ServiceWorkerUpdateJob::ComparisonResult(nsresult aStatus,
     return;
   }
 
-  Telemetry::Accumulate(Telemetry::SERVICE_WORKER_UPDATED, 1);
-
   // Begin step 7 of the Update algorithm to evaluate the new script.
   nsLoadFlags flags = aLoadFlags;
   if (GetUpdateViaCache() == ServiceWorkerUpdateViaCache::None) {
@@ -435,8 +439,15 @@ void ServiceWorkerUpdateJob::ComparisonResult(nsresult aStatus,
 
   ServiceWorkerPrivate* workerPrivate = sw->WorkerPrivate();
   MOZ_ASSERT(workerPrivate);
-  rv = workerPrivate->CheckScriptEvaluation(callback);
+  // Note that there are some synchronous failure cases that may immediately
+  // invoke the callback, meaning that FailUpdateJob may have already been
+  // called before this method returns.
+  rv = workerPrivate->CheckScriptEvaluation(mLifetimeExtension, callback);
 
+  // We call FailUpdateJob because it is idempotent and as defense-in-depth
+  // against early errors returns potentially being introduced above that return
+  // with ensuring that the passed-in callback will be invoked (such as those
+  // that are frequently added for shutdown phases).
   if (NS_WARN_IF(NS_FAILED(rv))) {
     FailUpdateJob(NS_ERROR_DOM_ABORT_ERR);
     return;
@@ -496,7 +507,8 @@ void ServiceWorkerUpdateJob::Install() {
   // Send the install event to the worker thread
   ServiceWorkerPrivate* workerPrivate =
       mRegistration->GetInstalling()->WorkerPrivate();
-  nsresult rv = workerPrivate->SendLifeCycleEvent(u"install"_ns, callback);
+  nsresult rv = workerPrivate->SendLifeCycleEvent(u"install"_ns,
+                                                  mLifetimeExtension, callback);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     ContinueAfterInstallEvent(false /* aSuccess */);
   }
@@ -542,7 +554,7 @@ void ServiceWorkerUpdateJob::ContinueAfterInstallEvent(
   // Step 22 of the Install algorithm.  Activate is executed after the
   // completion of this job.  The controlling client and skipWaiting checks are
   // performed in TryToActivate().
-  mRegistration->TryToActivateAsync();
+  mRegistration->TryToActivateAsync(mLifetimeExtension);
 }
 
 }  // namespace mozilla::dom

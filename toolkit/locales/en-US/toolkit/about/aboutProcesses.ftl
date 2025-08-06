@@ -13,6 +13,8 @@ about-processes-column-action =
 
 about-processes-shutdown-process =
     .title = Unload tabs and kill process
+about-processes-kill-process =
+    .title = Kill process
 about-processes-shutdown-tab =
     .title = Close tab
 
@@ -48,7 +50,6 @@ about-processes-gpu-process = GPU ({ $pid })
 about-processes-vr-process = VR ({ $pid })
 about-processes-rdd-process = Data Decoder ({ $pid })
 about-processes-socket-process = Network ({ $pid })
-about-processes-remote-sandbox-broker-process = Remote Sandbox Broker ({ $pid })
 about-processes-fork-server-process = Fork Server ({ $pid })
 about-processes-preallocated-process = Preallocated ({ $pid })
 about-processes-utility-process = Utility ({ $pid })

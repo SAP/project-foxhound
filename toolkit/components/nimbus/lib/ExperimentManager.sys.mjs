@@ -413,6 +413,28 @@ export class _ExperimentManager {
   }
 
   /**
+   * Determine userId based on bucketConfig.randomizationUnit;
+   * either "normandy_id" or "group_id".
+   *
+   * @param {object} bucketConfig
+   *
+   */
+  async getUserId(bucketConfig) {
+    let id;
+    if (bucketConfig.randomizationUnit === "normandy_id") {
+      id = lazy.ClientEnvironment.userId;
+    } else if (bucketConfig.randomizationUnit === "group_id") {
+      id = await lazy.ClientID.getProfileGroupID();
+    } else {
+      // Others not currently supported.
+      lazy.log.debug(
+        `Invalid randomizationUnit: ${bucketConfig.randomizationUnit}`
+      );
+    }
+    return id;
+  }
+
+  /**
    * Determine if this client falls into the bucketing specified in bucketConfig
    *
    * @param {object} bucketConfig
@@ -439,16 +461,8 @@ export class _ExperimentManager {
       return false;
     }
 
-    let id;
-    if (bucketConfig.randomizationUnit === "normandy_id") {
-      id = lazy.ClientEnvironment.userId;
-    } else if (bucketConfig.randomizationUnit === "group_id") {
-      id = await lazy.ClientID.getProfileGroupID();
-    } else {
-      // Others not currently supported.
-      lazy.log.debug(
-        `Invalid randomizationUnit: ${bucketConfig.randomizationUnit}`
-      );
+    const id = await this.getUserId(bucketConfig);
+    if (!id) {
       return false;
     }
 
@@ -472,13 +486,13 @@ export class _ExperimentManager {
    * @memberof _ExperimentManager
    */
   async enroll(recipe, source, { reenroll = false } = {}) {
-    let { slug, branches } = recipe;
+    let { slug, branches, bucketConfig } = recipe;
 
     const enrollment = this.store.get(slug);
 
     if (
       enrollment &&
-      (enrollment.isActive || !enrollment.isRollout || !reenroll)
+      (enrollment.active || !enrollment.isRollout || !reenroll)
     ) {
       this.sendFailureTelemetry("enrollFailed", slug, "name-conflict");
       throw new Error(`An experiment with the slug "${slug}" already exists.`);
@@ -487,7 +501,8 @@ export class _ExperimentManager {
     let storeLookupByFeature = recipe.isRollout
       ? this.store.getRolloutForFeature.bind(this.store)
       : this.store.hasExperimentForFeature.bind(this.store);
-    const branch = await this.chooseBranch(slug, branches);
+    const userId = await this.getUserId(bucketConfig);
+    const branch = await this.chooseBranch(slug, branches, userId);
     const features = featuresCompat(branch);
     for (let feature of features) {
       if (storeLookupByFeature(feature?.featureId)) {
@@ -514,6 +529,9 @@ export class _ExperimentManager {
       featureIds,
       isRollout,
       localizations,
+      isFirefoxLabsOptIn,
+      firefoxLabsTitle,
+      firefoxLabsDescription,
     },
     branch,
     source,
@@ -563,6 +581,14 @@ export class _ExperimentManager {
 
     if (localizations) {
       experiment.localizations = localizations;
+    }
+
+    if (typeof isFirefoxLabsOptIn !== "undefined") {
+      Object.assign(experiment, {
+        isFirefoxLabsOptIn,
+        firefoxLabsTitle,
+        firefoxLabsDescription,
+      });
     }
 
     if (typeof isRollout !== "undefined") {
@@ -993,6 +1019,7 @@ export class _ExperimentManager {
    *
    * @param {string} slug
    * @param {Branch[]} branches
+   * @param {string} userId
    * @returns {Promise<Branch>}
    * @memberof _ExperimentManager
    */

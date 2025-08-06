@@ -6,6 +6,7 @@ package org.mozilla.fenix.components.menu
 
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.createTab
+import mozilla.components.feature.addons.Addon
 import mozilla.components.service.fxa.manager.AccountState
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
@@ -44,17 +45,17 @@ class MenuTelemetryMiddlewareTest {
 
         store.dispatch(MenuAction.AddBookmark).joinBlocking()
 
-        assertTelemetryRecorded(Events.browserMenuAction, item = "bookmark")
+        assertTelemetryRecorded(Events.browserMenuAction, item = "add_bookmark")
     }
 
     @Test
-    fun `WHEN navigating to edit a bookmark THEN record the bookmark browser menu telemetry`() {
+    fun `WHEN navigating to edit a bookmark THEN record the edit bookmark browser menu telemetry`() {
         val store = createStore()
         assertNull(Events.browserMenuAction.testGetValue())
 
         store.dispatch(MenuAction.Navigate.EditBookmark).joinBlocking()
 
-        assertTelemetryRecorded(Events.browserMenuAction, item = "bookmark")
+        assertTelemetryRecorded(Events.browserMenuAction, item = "edit_bookmark")
     }
 
     @Test
@@ -85,6 +86,26 @@ class MenuTelemetryMiddlewareTest {
         store.dispatch(MenuAction.RemoveShortcut).joinBlocking()
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "remove_from_top_sites")
+    }
+
+    @Test
+    fun `WHEN navigating to the save submenu THEN record the save submenu browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.SaveMenuClicked).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "save_submenu")
+    }
+
+    @Test
+    fun `WHEN navigating to the tools submenu THEN record the tools submenu browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.ToolsMenuClicked).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "tools_submenu")
     }
 
     fun `WHEN navigating to add site to home screen THEN record the add_to_homescreen browser menu telemetry`() {
@@ -175,6 +196,16 @@ class MenuTelemetryMiddlewareTest {
     }
 
     @Test
+    fun `WHEN opening a new private tab THEN record the new private tab browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.Navigate.NewPrivateTab).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "new_private_tab")
+    }
+
+    @Test
     fun `WHEN opening a site in app THEN record the open in app menu telemetry`() {
         val store = createStore()
         assertNull(Events.browserMenuAction.testGetValue())
@@ -195,13 +226,17 @@ class MenuTelemetryMiddlewareTest {
     }
 
     @Test
-    fun `WHEN navigating to the release notes page THEN record the whats new interaction telemetry`() {
+    fun `WHEN navigating to the release notes page from home page menu THEN record the whats new interaction telemetry`() {
         val store = createStore()
-        assertNull(HomeMenu.helpTapped.testGetValue())
+        assertNull(Events.whatsNewTapped.testGetValue())
 
         store.dispatch(MenuAction.Navigate.ReleaseNotes).joinBlocking()
 
-        assertTelemetryRecorded(Events.whatsNewTapped)
+        assertNotNull(Events.whatsNewTapped.testGetValue())
+        val snapshot = Events.whatsNewTapped.testGetValue()!!
+
+        assertEquals(1, snapshot.size)
+        assertEquals("MENU", snapshot.single().extra?.getValue("source"))
     }
 
     @Test
@@ -367,6 +402,55 @@ class MenuTelemetryMiddlewareTest {
         store.dispatch(MenuAction.RequestMobileSite).joinBlocking()
 
         assertTelemetryRecorded(Events.browserMenuAction, item = "desktop_view_off")
+    }
+
+    fun `When opening a site in browser THEN record the open in Fenix telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.OpenInFirefox).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "open_in_fenix")
+    }
+
+    @Test
+    fun `WHEN navigating to the discover more extensions page THEN record the discover more extensions browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.Navigate.DiscoverMoreExtensions).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "discover_more_extensions")
+    }
+
+    @Test
+    fun `WHEN navigating to the sumo page for installing add-ons THEN record the extensions learn more browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.Navigate.ExtensionsLearnMore).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "extensions_learn_more")
+    }
+
+    @Test
+    fun `WHEN navigating to an add-on's details THEN record the addon details browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.Navigate.AddonDetails(Addon(""))).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "addon_details")
+    }
+
+    @Test
+    fun `WHEN installing an add-on THEN record the install addon browser menu telemetry`() {
+        val store = createStore()
+        assertNull(Events.browserMenuAction.testGetValue())
+
+        store.dispatch(MenuAction.InstallAddon(Addon(""))).joinBlocking()
+
+        assertTelemetryRecorded(Events.browserMenuAction, item = "install_addon")
     }
 
     private fun assertTelemetryRecorded(

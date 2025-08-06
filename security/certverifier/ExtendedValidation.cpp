@@ -1239,12 +1239,56 @@ static const struct EVInfo kEVInfos[] = {
     "QUwgQ0EgUk9PVC1BIFdFQg==",
     "MZch7a+JQn81QYehZ1ZMbQ==",
   },
+  {
+    // CN=SecureSign Root CA12,O="Cybertrust Japan Co., Ltd.",C=JP
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x3F, 0x03, 0x4B, 0xB5, 0x70, 0x4D, 0x44, 0xB2, 0xD0, 0x85, 0x45,
+      0xA0, 0x20, 0x57, 0xDE, 0x93, 0xEB, 0xF3, 0x90, 0x5F, 0xCE, 0x72,
+      0x1A, 0xCB, 0xC7, 0x30, 0xC0, 0x6D, 0xDA, 0xEE, 0x90, 0x4E },
+    "MFExCzAJBgNVBAYTAkpQMSMwIQYDVQQKExpDeWJlcnRydXN0IEphcGFuIENvLiwg"
+    "THRkLjEdMBsGA1UEAxMUU2VjdXJlU2lnbiBSb290IENBMTI=",
+    "ZvnHwa/swlG07VOX5uaCwysckBY=",
+  },
+  {
+    // CN=SecureSign Root CA14,O="Cybertrust Japan Co., Ltd.",C=JP
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x4B, 0x00, 0x9C, 0x10, 0x34, 0x49, 0x4F, 0x9A, 0xB5, 0x6B, 0xBA,
+      0x3B, 0xA1, 0xD6, 0x27, 0x31, 0xFC, 0x4D, 0x20, 0xD8, 0x95, 0x5A,
+      0xDC, 0xEC, 0x10, 0xA9, 0x25, 0x60, 0x72, 0x61, 0xE3, 0x38 },
+    "MFExCzAJBgNVBAYTAkpQMSMwIQYDVQQKExpDeWJlcnRydXN0IEphcGFuIENvLiwg"
+    "THRkLjEdMBsGA1UEAxMUU2VjdXJlU2lnbiBSb290IENBMTQ=",
+    "ZNtaDCBO6Ncpd8hQJ6JaJ90t8ss=",
+  },
+  {
+    // CN=SecureSign Root CA15,O="Cybertrust Japan Co., Ltd.",C=JP
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0xE7, 0x78, 0xF0, 0xF0, 0x95, 0xFE, 0x84, 0x37, 0x29, 0xCD, 0x1A,
+      0x00, 0x82, 0x17, 0x9E, 0x53, 0x14, 0xA9, 0xC2, 0x91, 0x44, 0x28,
+      0x05, 0xE1, 0xFB, 0x1D, 0x8F, 0xB6, 0xB8, 0x88, 0x6C, 0x3A },
+    "MFExCzAJBgNVBAYTAkpQMSMwIQYDVQQKExpDeWJlcnRydXN0IEphcGFuIENvLiwg"
+    "THRkLjEdMBsGA1UEAxMUU2VjdXJlU2lnbiBSb290IENBMTU=",
+    "FhXHw9hJp75pDIqI7fBw+d23Poc=",
+  },
+  {
+    // CN=TWCA CYBER Root CA,OU=Root CA,O=TAIWAN-CA,C=TW
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x3F, 0x63, 0xBB, 0x28, 0x14, 0xBE, 0x17, 0x4E, 0xC8, 0xB6, 0x43,
+      0x9C, 0xF0, 0x8D, 0x6D, 0x56, 0xF0, 0xB7, 0xC4, 0x05, 0x88, 0x3A,
+      0x56, 0x48, 0xA3, 0x34, 0x42, 0x4D, 0x6B, 0x3E, 0xC5, 0x58 },
+    "MFAxCzAJBgNVBAYTAlRXMRIwEAYDVQQKEwlUQUlXQU4tQ0ExEDAOBgNVBAsTB1Jv"
+    "b3QgQ0ExGzAZBgNVBAMTElRXQ0EgQ1lCRVIgUm9vdCBDQQ==",
+    "QAE0jMIAAAAAAAAAATzyxg==",
+  },
     // clang-format on
 };
 
-static pkix::CertPolicyId sEVInfoIds[ArrayLength(kEVInfos)];
+static pkix::CertPolicyId sEVInfoIds[std::size(kEVInfos)];
 static_assert(
-    ArrayLength(sEVInfoIds) == ArrayLength(kEVInfos),
+    std::size(sEVInfoIds) == std::size(kEVInfos),
     "These arrays are used in parallel and must have the same length.");
 static pkix::CertPolicyId sCABForumEVId = {};
 
@@ -1260,7 +1304,7 @@ bool CertIsAuthoritativeForEVPolicy(const nsTArray<uint8_t>& certBytes,
     return false;
   }
 
-  for (size_t i = 0; i < ArrayLength(kEVInfos); ++i) {
+  for (size_t i = 0; i < std::size(kEVInfos); ++i) {
     const EVInfo& entry = kEVInfos[i];
 
     // This check ensures that only the specific roots we approve for EV get
@@ -1294,7 +1338,7 @@ nsresult LoadExtendedValidationInfo() {
   sCABForumEVId.numBytes = cabforumOIDItem.len;
   PodCopy(sCABForumEVId.bytes, cabforumOIDItem.data, sCABForumEVId.numBytes);
 
-  for (size_t i = 0; i < ArrayLength(kEVInfos); ++i) {
+  for (size_t i = 0; i < std::size(kEVInfos); ++i) {
     const EVInfo& entry = kEVInfos[i];
 
     SECStatus srv;

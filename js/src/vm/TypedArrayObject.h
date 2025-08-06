@@ -59,8 +59,12 @@ class TypedArrayObject : public ArrayBufferViewObject {
   }
 
   static const JSClass anyClasses[2][Scalar::MaxTypedArrayViewType];
-  static const JSClass (&fixedLengthClasses)[Scalar::MaxTypedArrayViewType];
-  static const JSClass (&resizableClasses)[Scalar::MaxTypedArrayViewType];
+  static constexpr const JSClass (
+      &fixedLengthClasses)[Scalar::MaxTypedArrayViewType] =
+      TypedArrayObject::anyClasses[0];
+  static constexpr const JSClass (
+      &resizableClasses)[Scalar::MaxTypedArrayViewType] =
+      TypedArrayObject::anyClasses[1];
   static const JSClass protoClasses[Scalar::MaxTypedArrayViewType];
   static const JSClass sharedTypedArrayPrototypeClass;
 
@@ -300,11 +304,6 @@ inline bool CanStartTypedArrayIndex(CharT ch) {
 bool SetTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
                           uint64_t index, HandleValue v,
                           ObjectOpResult& result);
-
-bool SetTypedArrayElementOutOfBounds(JSContext* cx,
-                                     Handle<TypedArrayObject*> obj,
-                                     uint64_t index, HandleValue v,
-                                     ObjectOpResult& result);
 
 /*
  * Implements [[DefineOwnProperty]] for TypedArrays when the property

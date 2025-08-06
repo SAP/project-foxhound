@@ -679,13 +679,9 @@ class TemporalParser final {
     return true;
   }
 
-  // Sign :::
-  //   ASCIISign
-  //   U+2212
-  //
   // ASCIISign ::: one of
   //   + -
-  bool hasSign() const { return hasOneOf({'+', '-', 0x2212}); }
+  bool hasSign() const { return hasOneOf({'+', '-'}); }
 
   /**
    * Consumes the current character, which must be a sign character, and returns
@@ -858,9 +854,7 @@ class TemporalParser final {
   }
 
   // Return true when |DateTimeUTCOffset| can start at the current position.
-  bool hasDateTimeUTCOffsetStart() {
-    return hasOneOf({'Z', 'z', '+', '-', 0x2212});
-  }
+  bool hasDateTimeUTCOffsetStart() { return hasOneOf({'Z', 'z', '+', '-'}); }
 
   mozilla::Result<TimeZoneString, ParserError> dateTimeUTCOffset();
 
@@ -968,7 +962,7 @@ mozilla::Result<PlainDate, ParserError> TemporalParser<CharT>::date() {
 
   // DateYear :::
   //  DecimalDigit{4}
-  //  Sign DecimalDigit{6}
+  //  ASCIISign DecimalDigit{6}
   if (auto year = digits(4)) {
     result.year = year.value();
   } else if (hasSign()) {
@@ -986,7 +980,7 @@ mozilla::Result<PlainDate, ParserError> TemporalParser<CharT>::date() {
   }
 
   // Optional: -
-  character('-');
+  bool hasMonthSeparator = character('-');
 
   // DateMonth :::
   //   0 NonzeroDigit
@@ -1003,7 +997,12 @@ mozilla::Result<PlainDate, ParserError> TemporalParser<CharT>::date() {
   }
 
   // Optional: -
-  character('-');
+  bool hasDaySeparator = character('-');
+
+  // Date separators must be consistent.
+  if (hasMonthSeparator != hasDaySeparator) {
+    return mozilla::Err(JSMSG_TEMPORAL_PARSER_INCONSISTENT_DATE_SEPARATOR);
+  }
 
   // DateDay :::
   //   0 NonzeroDigit
@@ -1053,7 +1052,7 @@ mozilla::Result<PlainTime, ParserError> TemporalParser<CharT>::timeSpec() {
   }
 
   // Optional: :
-  bool needsMinutes = character(':');
+  bool hasMinuteSeparator = character(':');
 
   // TimeMinute :::
   //   MinuteSecond
@@ -1072,7 +1071,7 @@ mozilla::Result<PlainTime, ParserError> TemporalParser<CharT>::timeSpec() {
     }
 
     // Optional: :
-    bool needsSeconds = needsMinutes && character(':');
+    bool hasSecondSeparator = character(':');
 
     // TimeSecond :::
     //   MinuteSecond
@@ -1083,6 +1082,11 @@ mozilla::Result<PlainTime, ParserError> TemporalParser<CharT>::timeSpec() {
         return mozilla::Err(JSMSG_TEMPORAL_PARSER_INVALID_LEAPSECOND);
       }
 
+      // Time separators must be consistent.
+      if (hasMinuteSeparator != hasSecondSeparator) {
+        return mozilla::Err(JSMSG_TEMPORAL_PARSER_INCONSISTENT_TIME_SEPARATOR);
+      }
+
       // TimeFraction :::
       //   Fraction
       if (auto f = fraction()) {
@@ -1091,10 +1095,10 @@ mozilla::Result<PlainTime, ParserError> TemporalParser<CharT>::timeSpec() {
         result.microsecond = (fractionalPart % 1'000'000) / 1'000;
         result.nanosecond = fractionalPart % 1'000;
       }
-    } else if (needsSeconds) {
+    } else if (hasSecondSeparator) {
       return mozilla::Err(JSMSG_TEMPORAL_PARSER_MISSING_SECOND);
     }
-  } else if (needsMinutes) {
+  } else if (hasMinuteSeparator) {
     return mozilla::Err(JSMSG_TEMPORAL_PARSER_MISSING_MINUTE);
   }
 
@@ -1130,9 +1134,9 @@ TemporalParser<CharT>::timeZoneUTCOffsetName() {
   //   UTCOffsetMinutePrecision
   //
   // UTCOffsetMinutePrecision :::
-  //   Sign Hour
-  //   Sign Hour TimeSeparator[+Extended] MinuteSecond
-  //   Sign Hour TimeSeparator[~Extended] MinuteSecond
+  //   ASCIISign Hour
+  //   ASCIISign Hour TimeSeparator[+Extended] MinuteSecond
+  //   ASCIISign Hour TimeSeparator[~Extended] MinuteSecond
 
   TimeZoneUTCOffset result = {};
 
@@ -1196,12 +1200,12 @@ TemporalParser<CharT>::utcOffsetSubMinutePrecision() {
   //   UTCOffsetWithSubMinuteComponents[~Extended]
   //
   // UTCOffsetMinutePrecision :::
-  //   Sign Hour
-  //   Sign Hour TimeSeparator[+Extended] MinuteSecond
-  //   Sign Hour TimeSeparator[~Extended] MinuteSecond
+  //   ASCIISign Hour
+  //   ASCIISign Hour TimeSeparator[+Extended] MinuteSecond
+  //   ASCIISign Hour TimeSeparator[~Extended] MinuteSecond
   //
   // UTCOffsetWithSubMinuteComponents[Extended] :::
-  //   Sign Hour TimeSeparator[?Extended] MinuteSecond TimeSeparator[?Extended] MinuteSecond Fraction?
+  //   ASCIISign Hour TimeSeparator[?Extended] MinuteSecond TimeSeparator[?Extended] MinuteSecond Fraction?
   //
   // clang-format on
 
@@ -1231,7 +1235,7 @@ TemporalParser<CharT>::utcOffsetSubMinutePrecision() {
   // TimeSeparator[Extended] :::
   //   [+Extended] :
   //   [~Extended] [empty]
-  bool needsMinutes = character(':');
+  bool hasMinuteSeparator = character(':');
 
   // MinuteSecond :::
   //   0 DecimalDigit
@@ -1249,7 +1253,7 @@ TemporalParser<CharT>::utcOffsetSubMinutePrecision() {
     // TimeSeparator[Extended] :::
     //   [+Extended] :
     //   [~Extended] [empty]
-    bool needsSeconds = needsMinutes && character(':');
+    bool hasSecondSeparator = character(':');
 
     // MinuteSecond :::
     //   0 DecimalDigit
@@ -1264,15 +1268,20 @@ TemporalParser<CharT>::utcOffsetSubMinutePrecision() {
         return mozilla::Err(JSMSG_TEMPORAL_PARSER_INVALID_SECOND);
       }
 
+      // Time separators must be consistent.
+      if (hasMinuteSeparator != hasSecondSeparator) {
+        return mozilla::Err(JSMSG_TEMPORAL_PARSER_INCONSISTENT_TIME_SEPARATOR);
+      }
+
       if (auto fractionalPart = fraction()) {
         result.fractionalPart = fractionalPart.value();
       }
 
       result.subMinutePrecision = true;
-    } else if (needsSeconds) {
+    } else if (hasSecondSeparator) {
       return mozilla::Err(JSMSG_TEMPORAL_PARSER_MISSING_SECOND);
     }
-  } else if (needsMinutes) {
+  } else if (hasMinuteSeparator) {
     return mozilla::Err(JSMSG_TEMPORAL_PARSER_MISSING_MINUTE);
   }
 
@@ -1820,8 +1829,8 @@ TemporalParser<CharT>::parseTemporalDurationString(JSContext* cx) {
   //   Duration
   //
   // Duration :::
-  //   Sign? DurationDesignator DurationDate
-  //   Sign? DurationDesignator DurationTime
+  //   ASCIISign? DurationDesignator DurationDate
+  //   ASCIISign? DurationDesignator DurationTime
 
   if (hasSign()) {
     result.sign = sign();
@@ -2559,7 +2568,7 @@ TemporalParser<CharT>::dateSpecYearMonth() {
 
   // DateYear :::
   //  DecimalDigit{4}
-  //  Sign DecimalDigit{6}
+  //  ASCIISign DecimalDigit{6}
   if (auto year = digits(4)) {
     result.year = year.value();
   } else if (hasSign()) {

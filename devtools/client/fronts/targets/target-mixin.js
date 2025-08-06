@@ -62,17 +62,6 @@ function TargetMixin(parentClass) {
 
       // In order to avoid destroying the `_resourceCache[event]`, we need to call `super.on()`
       // instead of `this.on()`.
-      // @backward-compat { version 129 } Once Fx129 is release, resource-*-form event won't be used anymore,
-      //                                  only the resources-*-array will be still used.
-      const offResourceAvailable = super.on(
-        "resource-available-form",
-        this._onResourceEvent.bind(this, "resource-available-form")
-      );
-      const offResourceUpdated = super.on(
-        "resource-updated-form",
-        this._onResourceEvent.bind(this, "resource-updated-form")
-      );
-
       const offResourceAvailableArray = super.on(
         "resources-available-array",
         this._onResourceEventArray.bind(this, "resources-available-array")
@@ -83,8 +72,6 @@ function TargetMixin(parentClass) {
       );
 
       this._offResourceEvent = new Map([
-        ["resource-available-form", offResourceAvailable],
-        ["resource-updated-form", offResourceUpdated],
         ["resources-available-array", offResourceAvailableArray],
         ["resources-updated-array", offResourceUpdatedArray],
       ]);
@@ -312,6 +299,9 @@ function TargetMixin(parentClass) {
       );
     }
 
+    // @backward-compat { version 133 } Once 133 is released, this attribute can be removed.
+    // This will never be true anymore. Instead the usage in 'name' getter will be irrelevant
+    // as 'title' served by the backend will be correct for WebExtensions.
     get isWebExtension() {
       return !!(
         this.targetForm &&
@@ -341,25 +331,6 @@ function TargetMixin(parentClass) {
         this.targetForm.actor &&
         this.targetForm.actor.match(/conn\d+\.parentProcessTarget\d+/)
       );
-    }
-
-    getExtensionPathName(url) {
-      // Return the url if the target is not a webextension.
-      if (!this.isWebExtension) {
-        throw new Error("Target is not a WebExtension");
-      }
-
-      try {
-        const parsedURL = new URL(url);
-        // Only moz-extension URL should be shortened into the URL pathname.
-        if (parsedURL.protocol !== "moz-extension:") {
-          return url;
-        }
-        return parsedURL.pathname;
-      } catch (e) {
-        // Return the url if unable to resolve the pathname.
-        return url;
-      }
     }
 
     /**
@@ -555,13 +526,6 @@ function TargetMixin(parentClass) {
 
       this._title = null;
       this._url = null;
-    }
-
-    _onResourceEvent(eventName, resources) {
-      if (!this._resourceCache[eventName]) {
-        this._resourceCache[eventName] = [];
-      }
-      this._resourceCache[eventName].push(resources);
     }
 
     _onResourceEventArray(eventName, array) {

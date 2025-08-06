@@ -67,6 +67,7 @@ support-files = [
   "mochitest_console.js",
   "oauth.html",
   "redirect_auto.sjs",
+  "redirect_to.sjs",
   "redirection.sjs",
   "return_headers.sjs",
   "serviceWorker.js",
@@ -298,7 +299,11 @@ skip-if = [
 ]
 
 ["test_ext_idle.html"]
-skip-if = ["tsan"] # Times out on TSan, bug 1612707
+skip-if = [
+  "tsan", # Times out on TSan, bug 1612707
+  "os == 'linux' && debug", # bug 1918637 (Close to perma fail on Linux debug)
+  "os == 'linux' && (asan || ccov)", # bug 1918637 (Fails intermittently similarly to Linux debug)
+]
 
 ["test_ext_inIncognitoContext_window.html"]
 skip-if = ["os == 'android'"] # Bug 1513544 (GeckoView is missing the windows API and ability to open private tabs)
@@ -348,10 +353,6 @@ skip-if = [
 ["test_ext_runtime_connect_iframe.html"]
 
 ["test_ext_runtime_connect_twoway.html"]
-skip-if = [
-  "http3",
-  "http2",
-]
 
 ["test_ext_runtime_disconnect.html"]
 skip-if = [

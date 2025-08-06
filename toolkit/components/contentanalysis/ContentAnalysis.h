@@ -14,9 +14,11 @@
 #include "mozilla/dom/Promise.h"
 #include "nsIClipboard.h"
 #include "nsIContentAnalysis.h"
+#include "nsITransferable.h"
 #include "nsProxyRelease.h"
 #include "nsString.h"
 #include "nsTHashMap.h"
+#include "nsTHashSet.h"
 
 #include <atomic>
 #include <regex>
@@ -214,7 +216,11 @@ class ContentAnalysis final : public nsIContentAnalysis {
     mozilla::MoveOnlyFunction<void(RefPtr<nsIContentAnalysisResult>&&)>
         mResolver;
   };
-  static bool MightBeActive();
+  // Find the outermost browsing context that has same-origin access to
+  // aBrowsingContext, and this is the URL we will pass to the Content Analysis
+  // agent.
+  static nsCOMPtr<nsIURI> GetURIForBrowsingContext(
+      dom::CanonicalBrowsingContext* aBrowsingContext);
   static bool CheckClipboardContentAnalysisSync(
       nsBaseClipboard* aClipboard, mozilla::dom::WindowGlobalParent* aWindow,
       const nsCOMPtr<nsITransferable>& trans,
@@ -223,7 +229,18 @@ class ContentAnalysis final : public nsIContentAnalysis {
       nsBaseClipboard* aClipboard, mozilla::dom::WindowGlobalParent* aWindow,
       nsITransferable* aTransferable,
       nsIClipboard::ClipboardType aClipboardType,
-      SafeContentAnalysisResultCallback* aResolver);
+      SafeContentAnalysisResultCallback* aResolver,
+      bool aForFullClipboard = false);
+  static RefPtr<ContentAnalysis> GetContentAnalysisFromService();
+  nsresult CancelWithError(nsCString aRequestToken, nsresult aResult);
+
+  // Duration the cache holds requests for. This holds strong references
+  // to the elements of the request, such as the WindowGlobalParent,
+  // for that period.
+  static constexpr uint32_t kDefaultCachedDataTimeoutInMs = 5000;
+  // These are the MIME types that Content Analysis can analyze.
+  static constexpr const char* kKnownClipboardTypes[] = {
+      kTextMime, kHTMLMime, kCustomTypesMime, kFileMime};
 
  private:
   ~ContentAnalysis();
@@ -244,9 +261,7 @@ class ContentAnalysis final : public nsIContentAnalysis {
   nsresult RunAcknowledgeTask(
       nsIContentAnalysisAcknowledgement* aAcknowledgement,
       const nsACString& aRequestToken);
-  nsresult CancelWithError(nsCString aRequestToken, nsresult aResult);
   void GenerateUserActionId();
-  static RefPtr<ContentAnalysis> GetContentAnalysisFromService();
   static void DoAnalyzeRequest(
       nsCString aRequestToken,
       content_analysis::sdk::ContentAnalysisRequest&& aRequest,
@@ -259,6 +274,15 @@ class ContentAnalysis final : public nsIContentAnalysis {
 
   UrlFilterResult FilterByUrlLists(nsIContentAnalysisRequest* aRequest);
   void EnsureParsedUrlFilters();
+
+  // Expand a request to analyze a folder into N requests to scan the files
+  // in the folder (recursively).  Approve the request if all files are
+  // approved.
+  // Returns true if the request was for a folder and spawned new requests,
+  // false if the request was not a folder scan, or an nsresult on error.
+  Result<bool, nsresult> MaybeExpandAndAnalyzeFolderContentRequest(
+      nsIContentAnalysisRequest* aRequest, bool aAutoAcknowledge,
+      nsIContentAnalysisCallback* aCallback);
 
   using ClientPromise =
       MozPromise<std::shared_ptr<content_analysis::sdk::Client>, nsresult,
@@ -293,6 +317,68 @@ class ContentAnalysis final : public nsIContentAnalysis {
   };
   DataMutex<nsTHashMap<nsCString, CallbackData>> mCallbackMap;
 
+  class CachedClipboardResponse {
+   public:
+    CachedClipboardResponse() = default;
+    Maybe<nsIContentAnalysisResponse::Action> GetCachedResponse(
+        nsIURI* aURI, int32_t aClipboardSequenceNumber,
+        const nsTArray<nsCString>& aFlavors) {
+      MOZ_ASSERT(NS_IsMainThread(),
+                 "Expecting main thread access only to avoid synchronization");
+      if (Some(aClipboardSequenceNumber) != mClipboardSequenceNumber) {
+        return Nothing();
+      }
+      Maybe<nsIContentAnalysisResponse::Action> possibleAction;
+      for (const auto& entry : mData) {
+        bool uriEquals = false;
+        if (NS_SUCCEEDED(aURI->Equals(entry.first, &uriEquals)) && uriEquals) {
+          possibleAction = Some(entry.second);
+          break;
+        }
+      }
+      if (possibleAction.isNothing()) {
+        return Nothing();
+      }
+      // Make sure the flavors we have checked are a subset of the ones we
+      // checked before
+      for (const auto& flavor : aFlavors) {
+        if (!mFlavors.Contains(flavor)) {
+          // This only matters if it's a flavor that we check for content
+          // analysis
+          for (const char* knownType : kKnownClipboardTypes) {
+            if (flavor.EqualsASCII(knownType)) {
+              return Nothing();
+            }
+          }
+        }
+      }
+      return possibleAction;
+    }
+    void SetCachedResponse(const nsCOMPtr<nsIURI>& aURI,
+                           int32_t aClipboardSequenceNumber,
+                           const nsTArray<nsCString>& aFlavors,
+                           nsIContentAnalysisResponse::Action aAction) {
+      MOZ_ASSERT(NS_IsMainThread(),
+                 "Expecting main thread access only to avoid synchronization");
+      if (mClipboardSequenceNumber != Some(aClipboardSequenceNumber)) {
+        mData.Clear();
+        mClipboardSequenceNumber = Some(aClipboardSequenceNumber);
+      }
+      mFlavors.Clear();
+      for (const auto& flavor : aFlavors) {
+        mFlavors.Insert(flavor);
+      }
+      mData.AppendElement(std::make_pair(aURI, aAction));
+    }
+
+   private:
+    Maybe<int32_t> mClipboardSequenceNumber;
+    nsTArray<std::pair<nsCOMPtr<nsIURI>, nsIContentAnalysisResponse::Action>>
+        mData;
+    nsTHashSet<nsCString> mFlavors;
+  };
+  CachedClipboardResponse mCachedClipboardResponse;
+
   struct WarnResponseData {
     WarnResponseData(CallbackData&& aCallbackData,
                      RefPtr<ContentAnalysisResponse> aResponse)
@@ -310,6 +396,7 @@ class ContentAnalysis final : public nsIContentAnalysis {
   bool mParsedUrlLists = false;
 
   friend class ContentAnalysisResponse;
+  friend class AnalyzeFilesInDirectoryCallback;
   friend class ::ContentAnalysisTest;
 };
 
@@ -326,6 +413,7 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   void SetOwner(RefPtr<ContentAnalysis> aOwner);
   void DoNotAcknowledge() { mDoNotAcknowledge = true; }
   void SetCancelError(CancelError aCancelError);
+  void SetIsCachedResponse() { mIsCachedResponse = true; }
 
  private:
   ~ContentAnalysisResponse() = default;
@@ -360,6 +448,11 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   // If true, the request was completely handled by URL filter lists, so it
   // was not sent to the agent and should not send an Acknowledge.
   bool mDoNotAcknowledge = false;
+
+  // Whether this is a cached result that wasn't actually sent to the DLP agent.
+  // This indicates that the request was a duplicate of a previously sent one,
+  // so any dialogs (for block/warn) should not be shown.
+  bool mIsCachedResponse = false;
 
   friend class ContentAnalysis;
 };

@@ -172,7 +172,7 @@ static const char* gPrefLangNames[] = {
 #undef FONT_PREF_LANG
 };
 
-static_assert(MOZ_ARRAY_LENGTH(gPrefLangNames) == uint32_t(eFontPrefLang_Count),
+static_assert(std::size(gPrefLangNames) == uint32_t(eFontPrefLang_Count),
               "size of pref lang name array doesn't match pref lang enum size");
 
 class gfxFontListPrefObserver final : public nsIObserver {
@@ -329,8 +329,8 @@ gfxPlatformFontList::gfxPlatformFontList(bool aNeedFullnamePostscriptNames)
   RegisterStrongMemoryReporter(new MemoryReporter());
 
   // initialize lang group pref font defaults (i.e. serif/sans-serif)
-  mDefaultGenericsLangGroup.AppendElements(ArrayLength(gPrefLangNames));
-  for (uint32_t i = 0; i < ArrayLength(gPrefLangNames); i++) {
+  mDefaultGenericsLangGroup.AppendElements(std::size(gPrefLangNames));
+  for (uint32_t i = 0; i < std::size(gPrefLangNames); i++) {
     nsAutoCString prefDefaultFontType("font.default.");
     prefDefaultFontType.Append(GetPrefLangName(eFontPrefLang(i)));
     nsAutoCString serifOrSans;
@@ -378,13 +378,13 @@ gfxPlatformFontList::~gfxPlatformFontList() {
   NS_RELEASE(gFontListPrefObserver);
 }
 
-void gfxPlatformFontList::GetMissingFonts(nsCString& aMissingFonts) {
+void gfxPlatformFontList::GetMissingFonts(nsTArray<nsCString>& aMissingFonts) {
   AutoLock lock(mLock);
 
   auto fontLists = GetFilteredPlatformFontLists();
 
   if (!fontLists.Length()) {
-    aMissingFonts.Append("No font list available for this device.");
+    return;
   }
 
   for (unsigned int i = 0; i < fontLists.Length(); i++) {
@@ -395,8 +395,7 @@ void gfxPlatformFontList::GetMissingFonts(nsCString& aMissingFonts) {
       if (SharedFontList()) {
         fontlist::Family* family = SharedFontList()->FindFamily(key);
         if (!family) {
-          aMissingFonts.Append(fontLists[i].first[j]);
-          aMissingFonts.Append("|");
+          aMissingFonts.AppendElement(fontLists[i].first[j]);
         }
       } else {
         gfxFontFamily* familyEntry = mFontFamilies.GetWeak(key);
@@ -404,12 +403,24 @@ void gfxPlatformFontList::GetMissingFonts(nsCString& aMissingFonts) {
           familyEntry = mOtherFamilyNames.GetWeak(key);
         }
         if (!familyEntry) {
-          aMissingFonts.Append(fontLists[i].first[j]);
-          aMissingFonts.Append("|");
+          aMissingFonts.AppendElement(fontLists[i].first[j]);
         }
       }
     }
   }
+}
+
+void gfxPlatformFontList::GetMissingFonts(nsCString& aMissingFonts) {
+  nsTArray<nsCString> fontList;
+  GetMissingFonts(fontList);
+
+  if (fontList.IsEmpty()) {
+    aMissingFonts.Append("No font list available for this device.");
+    return;
+  }
+
+  fontList.Sort();
+  aMissingFonts.Append(StringJoin("|"_ns, fontList));
 }
 
 /* static */
@@ -928,6 +939,47 @@ gfxFontEntry* gfxPlatformFontList::LookupInSharedFaceNameList(
     fe->mStyleRange = aStyleForEntry;
   }
   return fe;
+}
+
+void gfxPlatformFontList::MaybeAddToLocalNameTable(
+    const nsACString& aName, const fontlist::LocalFaceRec::InitData& aData) {
+  // Compute a measure of the similarity between aName (which will be a PSName
+  // or FullName) and aReference (a font family name).
+  auto nameSimilarity = [](const nsACString& aName,
+                           const nsACString& aReference) -> uint32_t {
+    uint32_t nameIdx = 0, refIdx = 0, matchCount = 0;
+    while (nameIdx < aName.Length() && refIdx < aReference.Length()) {
+      // Ignore non-alphanumerics in the ASCII range, so that a PSname like
+      // "TimesNewRomanPSMT" is a good match for family "Times New Roman".
+      while (nameIdx < aName.Length() && IsAscii(aName[nameIdx]) &&
+             !IsAsciiAlphanumeric(aName[nameIdx])) {
+        ++nameIdx;
+      }
+      while (refIdx < aReference.Length() && IsAscii(aReference[refIdx]) &&
+             !IsAsciiAlphanumeric(aReference[refIdx])) {
+        ++refIdx;
+      }
+      if (nameIdx == aName.Length() || refIdx == aReference.Length() ||
+          aName[nameIdx] != aReference[refIdx]) {
+        break;
+      }
+      ++nameIdx;
+      ++refIdx;
+      ++matchCount;
+    }
+    return matchCount;
+  };
+
+  mLocalNameTable.WithEntryHandle(aName, [&](auto entry) -> void {
+    if (entry) {
+      if (nameSimilarity(aName, aData.mFamilyName) >
+          nameSimilarity(aName, entry.Data().mFamilyName)) {
+        entry.Update(aData);
+      }
+    } else {
+      entry.OrInsert(aData);
+    }
+  });
 }
 
 void gfxPlatformFontList::LoadBadUnderlineList() {
@@ -2203,7 +2255,7 @@ static nsAtom* PrefLangToLangGroups(uint32_t aIndex) {
 #undef FONT_PREF_LANG
   };
 
-  return aIndex < ArrayLength(gPrefLangToLangGroups)
+  return aIndex < std::size(gPrefLangToLangGroups)
              ? gPrefLangToLangGroups[aIndex]
              : nsGkAtoms::Unicode;
 }
@@ -2212,7 +2264,7 @@ eFontPrefLang gfxPlatformFontList::GetFontPrefLangFor(const char* aLang) {
   if (!aLang || !aLang[0]) {
     return eFontPrefLang_Others;
   }
-  for (uint32_t i = 0; i < ArrayLength(gPrefLangNames); ++i) {
+  for (uint32_t i = 0; i < std::size(gPrefLangNames); ++i) {
     if (!nsCRT::strcasecmp(gPrefLangNames[i], aLang)) {
       return eFontPrefLang(i);
     }
@@ -2242,7 +2294,7 @@ nsAtom* gfxPlatformFontList::GetLangGroupForPrefLang(eFontPrefLang aLang) {
 }
 
 const char* gfxPlatformFontList::GetPrefLangName(eFontPrefLang aLang) {
-  if (uint32_t(aLang) < ArrayLength(gPrefLangNames)) {
+  if (uint32_t(aLang) < std::size(gPrefLangNames)) {
     return gPrefLangNames[uint32_t(aLang)];
   }
   return nullptr;
@@ -2560,7 +2612,7 @@ StyleGenericFontFamily gfxPlatformFontList::GetDefaultGeneric(
 
   AutoLock lock(mLock);
 
-  if (uint32_t(aLang) < ArrayLength(gPrefLangNames)) {
+  if (uint32_t(aLang) < std::size(gPrefLangNames)) {
     return mDefaultGenericsLangGroup[uint32_t(aLang)];
   }
   return StyleGenericFontFamily::Serif;
@@ -3044,7 +3096,7 @@ void gfxPlatformFontList::CancelInitOtherFamilyNamesTask() {
 
 void gfxPlatformFontList::ShareFontListShmBlockToProcess(
     uint32_t aGeneration, uint32_t aIndex, base::ProcessId aPid,
-    base::SharedMemoryHandle* aOut) {
+    mozilla::ipc::SharedMemory::Handle* aOut) {
   auto list = SharedFontList();
   if (!list) {
     return;
@@ -3052,26 +3104,28 @@ void gfxPlatformFontList::ShareFontListShmBlockToProcess(
   if (!aGeneration || list->GetGeneration() == aGeneration) {
     list->ShareShmBlockToProcess(aIndex, aPid, aOut);
   } else {
-    *aOut = base::SharedMemory::NULLHandle();
+    *aOut = mozilla::ipc::SharedMemory::NULLHandle();
   }
 }
 
 void gfxPlatformFontList::ShareFontListToProcess(
-    nsTArray<base::SharedMemoryHandle>* aBlocks, base::ProcessId aPid) {
+    nsTArray<mozilla::ipc::SharedMemory::Handle>* aBlocks,
+    base::ProcessId aPid) {
   auto list = SharedFontList();
   if (list) {
     list->ShareBlocksToProcess(aBlocks, aPid);
   }
 }
 
-base::SharedMemoryHandle gfxPlatformFontList::ShareShmBlockToProcess(
+mozilla::ipc::SharedMemory::Handle gfxPlatformFontList::ShareShmBlockToProcess(
     uint32_t aIndex, base::ProcessId aPid) {
   MOZ_RELEASE_ASSERT(SharedFontList());
   return SharedFontList()->ShareBlockToProcess(aIndex, aPid);
 }
 
-void gfxPlatformFontList::ShmBlockAdded(uint32_t aGeneration, uint32_t aIndex,
-                                        base::SharedMemoryHandle aHandle) {
+void gfxPlatformFontList::ShmBlockAdded(
+    uint32_t aGeneration, uint32_t aIndex,
+    mozilla::ipc::SharedMemory::Handle aHandle) {
   if (SharedFontList()) {
     AutoLock lock(mLock);
     SharedFontList()->ShmBlockAdded(aGeneration, aIndex, std::move(aHandle));

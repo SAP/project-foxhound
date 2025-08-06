@@ -1,0 +1,8 @@
+[DEFAULT]
+head = "head.js"
+
+["test_databaseWorkStarted.js"]
+
+["test_slowDatabaseInitialization.js"]
+
+["test_slowStorageInitialization.js"]

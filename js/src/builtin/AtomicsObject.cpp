@@ -860,6 +860,35 @@ static bool atomics_notify(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+#ifdef NIGHTLY_BUILD
+/**
+ * Atomics.pause ( [ N ] )
+ *
+ * https://tc39.es/proposal-atomics-microwait/
+ */
+static bool atomics_pause(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Step 1.
+  if (args.hasDefined(0)) {
+    if (!args[0].isNumber() || !IsInteger(args[0].toNumber())) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_ATOMICS_PAUSE_BAD_COUNT);
+      return false;
+    }
+  }
+
+  // Step 2.
+  //
+  // We ignore the iteration count when not inlining this operation.
+  jit::AtomicOperations::pause();
+
+  // Step 3.
+  args.rval().setUndefined();
+  return true;
+}
+#endif
+
 /* static */
 bool js::FutexThread::initialize() {
   MOZ_ASSERT(!lock_);
@@ -1088,19 +1117,32 @@ const JSFunctionSpec AtomicsMethods[] = {
     JS_FN("wait", atomics_wait, 4, 0),
     JS_FN("notify", atomics_notify, 3, 0),
     JS_FN("wake", atomics_notify, 3, 0),  // Legacy name
-    JS_FS_END};
+#ifdef NIGHTLY_BUILD
+    JS_INLINABLE_FN("pause", atomics_pause, 0, 0, AtomicsPause),
+#endif
+    JS_FS_END,
+};
 
 static const JSPropertySpec AtomicsProperties[] = {
-    JS_STRING_SYM_PS(toStringTag, "Atomics", JSPROP_READONLY), JS_PS_END};
+    JS_STRING_SYM_PS(toStringTag, "Atomics", JSPROP_READONLY),
+    JS_PS_END,
+};
 
 static JSObject* CreateAtomicsObject(JSContext* cx, JSProtoKey key) {
   RootedObject proto(cx, &cx->global()->getObjectPrototype());
   return NewTenuredObjectWithGivenProto(cx, &AtomicsObject::class_, proto);
 }
 
-static const ClassSpec AtomicsClassSpec = {CreateAtomicsObject, nullptr,
-                                           AtomicsMethods, AtomicsProperties};
+static const ClassSpec AtomicsClassSpec = {
+    CreateAtomicsObject,
+    nullptr,
+    AtomicsMethods,
+    AtomicsProperties,
+};
 
 const JSClass AtomicsObject::class_ = {
-    "Atomics", JSCLASS_HAS_CACHED_PROTO(JSProto_Atomics), JS_NULL_CLASS_OPS,
-    &AtomicsClassSpec};
+    "Atomics",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Atomics),
+    JS_NULL_CLASS_OPS,
+    &AtomicsClassSpec,
+};

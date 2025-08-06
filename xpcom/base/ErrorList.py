@@ -325,6 +325,8 @@ with modules["NETWORK"]:
     errors["NS_ERROR_PORT_ACCESS_NOT_ALLOWED"] = FAILURE(19)
     # The connection was established, but no data was ever received.
     errors["NS_ERROR_NET_RESET"] = FAILURE(20)
+    # The connection was established, but browser received an error response from the server
+    errors["NS_ERROR_NET_ERROR_RESPONSE"] = FAILURE(35)
     # The connection was established, but the data transfer was interrupted.
     errors["NS_ERROR_NET_INTERRUPT"] = FAILURE(71)
     # The connection attempt to a proxy failed.
@@ -1189,6 +1191,7 @@ with modules["DOM_MEDIA"]:
     errors["NS_ERROR_DOM_MEDIA_DENIED_IN_NON_UTILITY"] = FAILURE(104)
     errors["NS_ERROR_DOM_MEDIA_RANGE_ERR"] = FAILURE(105)
     errors["NS_ERROR_DOM_MEDIA_TYPE_ERR"] = FAILURE(106)
+    errors["NS_ERROR_DOM_MEDIA_MEDIA_ENGINE_INITIALIZATION_ERR"] = FAILURE(107)
 
 # =======================================================================
 # 42: NS_ERROR_MODULE_URL_CLASSIFIER

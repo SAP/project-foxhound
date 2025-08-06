@@ -8,6 +8,7 @@ import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.DialogInterface
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -20,7 +21,9 @@ import android.widget.Button
 import android.widget.LinearLayout.LayoutParams
 import android.widget.TextView
 import androidx.annotation.VisibleForTesting
+import androidx.appcompat.widget.AppCompatCheckBox
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.feature.addons.Addon
@@ -33,6 +36,7 @@ private const val KEY_DIALOG_WIDTH_MATCH_PARENT = "KEY_DIALOG_WIDTH_MATCH_PARENT
 private const val KEY_POSITIVE_BUTTON_BACKGROUND_COLOR = "KEY_POSITIVE_BUTTON_BACKGROUND_COLOR"
 private const val KEY_POSITIVE_BUTTON_TEXT_COLOR = "KEY_POSITIVE_BUTTON_TEXT_COLOR"
 private const val KEY_POSITIVE_BUTTON_RADIUS = "KEY_POSITIVE_BUTTON_RADIUS"
+private const val KEY_LEARN_MORE_LINK_TEXT_COLOR = "KEY_LEARN_MORE_LINK_TEXT_COLOR"
 private const val KEY_FOR_OPTIONAL_PERMISSIONS = "KEY_FOR_OPTIONAL_PERMISSIONS"
 internal const val KEY_PERMISSIONS = "KEY_PERMISSIONS"
 private const val DEFAULT_VALUE = Int.MAX_VALUE
@@ -43,14 +47,20 @@ private const val DEFAULT_VALUE = Int.MAX_VALUE
 class PermissionsDialogFragment : AddonDialogFragment() {
 
     /**
-     * A lambda called when the allow button is clicked.
+     * A lambda called when the allow button is clicked which contains the [Addon] and
+     * whether the addon is allowed in private browsing mode.
      */
-    var onPositiveButtonClicked: ((Addon) -> Unit)? = null
+    var onPositiveButtonClicked: ((Addon, Boolean) -> Unit)? = null
 
     /**
      * A lambda called when the deny button is clicked.
      */
     var onNegativeButtonClicked: (() -> Unit)? = null
+
+    /**
+     * A lambda called when the learn more link is clicked.
+     */
+    var onLearnMoreClicked: (() -> Unit)? = null
 
     internal val addon get() = requireNotNull(safeArguments.getParcelableCompat(KEY_ADDON, Addon::class.java))
 
@@ -79,6 +89,13 @@ class PermissionsDialogFragment : AddonDialogFragment() {
         get() =
             safeArguments.getInt(
                 KEY_POSITIVE_BUTTON_TEXT_COLOR,
+                DEFAULT_VALUE,
+            )
+
+    internal val learnMoreLinkTextColor
+        get() =
+            safeArguments.getInt(
+                KEY_LEARN_MORE_LINK_TEXT_COLOR,
                 DEFAULT_VALUE,
             )
 
@@ -157,9 +174,13 @@ class PermissionsDialogFragment : AddonDialogFragment() {
         rootView.findViewById<TextView>(R.id.optional_or_required_text).text =
             buildOptionalOrRequiredText(listPermissions.isNotEmpty())
 
+        val learnMoreLink = rootView.findViewById<TextView>(R.id.learn_more_link)
+        learnMoreLink.paintFlags = Paint.UNDERLINE_TEXT_FLAG
+
         val permissionsRecyclerView = rootView.findViewById<RecyclerView>(R.id.permissions)
         val positiveButton = rootView.findViewById<Button>(R.id.allow_button)
         val negativeButton = rootView.findViewById<Button>(R.id.deny_button)
+        val allowedInPrivateBrowsing = rootView.findViewById<AppCompatCheckBox>(R.id.allow_in_private_browsing)
 
         permissionsRecyclerView.adapter = RequiredPermissionsAdapter(listPermissions)
         permissionsRecyclerView.layoutManager = LinearLayoutManager(context)
@@ -169,8 +190,12 @@ class PermissionsDialogFragment : AddonDialogFragment() {
             negativeButton.text = requireContext().getString(R.string.mozac_feature_addons_permissions_dialog_deny)
         }
 
+        if (addon.incognito == Addon.Incognito.NOT_ALLOWED) {
+            allowedInPrivateBrowsing.isVisible = false
+        }
+
         positiveButton.setOnClickListener {
-            onPositiveButtonClicked?.invoke(addon)
+            onPositiveButtonClicked?.invoke(addon, allowedInPrivateBrowsing.isChecked)
             dismiss()
         }
 
@@ -203,6 +228,13 @@ class PermissionsDialogFragment : AddonDialogFragment() {
             dismiss()
         }
 
+        if (learnMoreLinkTextColor != DEFAULT_VALUE) {
+            val color = ContextCompat.getColor(requireContext(), learnMoreLinkTextColor)
+            learnMoreLink.setTextColor(color)
+        }
+        learnMoreLink.setOnClickListener {
+            onLearnMoreClicked?.invoke()
+        }
         return rootView
     }
 
@@ -235,6 +267,7 @@ class PermissionsDialogFragment : AddonDialogFragment() {
          * @param promptsStyling Styling properties for the dialog.
          * @param onPositiveButtonClicked A lambda called when the allow button is clicked.
          * @param onNegativeButtonClicked A lambda called when the deny button is clicked.
+         * @param onLearnMoreClicked A lambda called when the learn more button is clicked.
          */
         fun newInstance(
             addon: Addon,
@@ -244,8 +277,9 @@ class PermissionsDialogFragment : AddonDialogFragment() {
                 gravity = Gravity.BOTTOM,
                 shouldWidthMatchParent = true,
             ),
-            onPositiveButtonClicked: ((Addon) -> Unit)? = null,
+            onPositiveButtonClicked: ((Addon, Boolean) -> Unit)? = null,
             onNegativeButtonClicked: (() -> Unit)? = null,
+            onLearnMoreClicked: (() -> Unit)? = null,
         ): PermissionsDialogFragment {
             val fragment = PermissionsDialogFragment()
             val arguments = fragment.arguments ?: Bundle()
@@ -264,13 +298,16 @@ class PermissionsDialogFragment : AddonDialogFragment() {
                 promptsStyling?.confirmButtonBackgroundColor?.apply {
                     putInt(KEY_POSITIVE_BUTTON_BACKGROUND_COLOR, this)
                 }
-
                 promptsStyling?.confirmButtonTextColor?.apply {
                     putInt(KEY_POSITIVE_BUTTON_TEXT_COLOR, this)
+                }
+                promptsStyling?.learnMoreLinkTextColor?.apply {
+                    putInt(KEY_LEARN_MORE_LINK_TEXT_COLOR, this)
                 }
             }
             fragment.onPositiveButtonClicked = onPositiveButtonClicked
             fragment.onNegativeButtonClicked = onNegativeButtonClicked
+            fragment.onLearnMoreClicked = onLearnMoreClicked
             fragment.arguments = arguments
             return fragment
         }

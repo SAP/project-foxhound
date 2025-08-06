@@ -191,6 +191,7 @@ const TEST_EVENTS = {
 const UPDATE_PROPS = [
   "method",
   "url",
+  "earlyHintsStatus",
   "remotePort",
   "remoteAddress",
   "status",
@@ -457,10 +458,9 @@ const REQUESTS_WATERFALL = {
   BACKGROUND_TICKS_OPACITY_MIN: 32,
   BACKGROUND_TICKS_OPACITY_ADD: 32,
   // Colors for timing markers (theme colors, see variables.css)
-  DOMCONTENTLOADED_TICKS_COLOR: "highlight-blue",
-  LOAD_TICKS_COLOR: "highlight-red",
-  // Opacity for the timing markers
-  TICKS_COLOR_OPACITY: 192,
+  DOMCONTENTLOADED_TICKS_COLOR: "--timing-marker-dom-content-loaded-color",
+  LOAD_TICKS_COLOR: "--timing-marker-load-color",
+
   HEADER_TICKS_MULTIPLE: 5, // ms
   HEADER_TICKS_SPACING_MIN: 60, // px
   // Reserve extra space for rendering waterfall time label
@@ -487,6 +487,7 @@ const DEFAULT_COLUMN_WIDTH = 8; // in %
 const SUPPORTED_HTTP_CODES = [
   "100",
   "101",
+  "103",
   "200",
   "201",
   "202",

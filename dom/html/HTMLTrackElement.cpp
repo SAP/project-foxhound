@@ -98,7 +98,8 @@ class WindowDestroyObserver final : public nsIObserver {
       NS_ENSURE_SUCCESS(rv, rv);
       if (innerID == mInnerID) {
         if (mTrackElement) {
-          mTrackElement->CancelChannelAndListener();
+          // Window is being destroyed, cancel without checking for RFP.
+          mTrackElement->CancelChannelAndListener(false);
         }
         UnRegisterWindowDestroyObserver();
       }
@@ -133,7 +134,8 @@ HTMLTrackElement::~HTMLTrackElement() {
   if (mWindowDestroyObserver) {
     mWindowDestroyObserver->UnRegisterWindowDestroyObserver();
   }
-  CancelChannelAndListener();
+  // Track element is being destroyed, cancel without checking for RFP.
+  CancelChannelAndListener(false);
 }
 
 NS_IMPL_ELEMENT_CLONE(HTMLTrackElement)
@@ -255,8 +257,15 @@ void HTMLTrackElement::MaybeDispatchLoadResource() {
 
   // step2, if the text track's text track mode is not set to one of hidden or
   // showing, then return.
-  if (mTrack->Mode() == TextTrackMode::Disabled) {
+  bool resistFingerprinting = ShouldResistFingerprinting(RFPTarget::WebVTT);
+  if (mTrack->Mode() == TextTrackMode::Disabled && !resistFingerprinting) {
     LOG("Do not load resource for disable track");
+    return;
+  }
+
+  // We need to do this check in order to prevent
+  // HonorUserPreferencesForTrackSelection from loading the text track twice.
+  if (resistFingerprinting && ReadyState() == TextTrackReadyState::Loading) {
     return;
   }
 
@@ -299,7 +308,8 @@ void HTMLTrackElement::LoadResource(RefPtr<WebVTTListener>&& aWebVTTListener) {
   NS_ENSURE_TRUE_VOID(NS_SUCCEEDED(rv));
   LOG("Trying to load from src=%s", NS_ConvertUTF16toUTF8(src).get());
 
-  CancelChannelAndListener();
+  // Prevent canceling the channel and listener if RFP is enabled.
+  CancelChannelAndListener(true);
 
   // According to
   // https://www.w3.org/TR/html5/embedded-content-0.html#sourcing-out-of-band-text-tracks
@@ -475,7 +485,11 @@ void HTMLTrackElement::DispatchTrustedEvent(const nsAString& aName) {
                                        Cancelable::eNo);
 }
 
-void HTMLTrackElement::CancelChannelAndListener() {
+void HTMLTrackElement::CancelChannelAndListener(bool aCheckRFP) {
+  if (aCheckRFP && ShouldResistFingerprinting(RFPTarget::WebVTT)) {
+    return;
+  }
+
   if (mChannel) {
     mChannel->CancelWithReason(NS_BINDING_ABORTED,
                                "HTMLTrackElement::CancelChannelAndListener"_ns);
@@ -496,6 +510,15 @@ nsresult HTMLTrackElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* a
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
+bool HTMLTrackElement::ShouldResistFingerprinting(RFPTarget aRfpTarget) {
+  Document* doc = OwnerDoc();
+  if (!doc) {
+    return nsContentUtils::ShouldResistFingerprinting("Null document",
+                                                      aRfpTarget);
+  }
+  return doc->ShouldResistFingerprinting(aRfpTarget);
 }
 
 void HTMLTrackElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,

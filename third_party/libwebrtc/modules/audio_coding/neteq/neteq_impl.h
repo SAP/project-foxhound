@@ -13,17 +13,19 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "api/audio/audio_frame.h"
+#include "api/environment/environment.h"
 #include "api/neteq/neteq.h"
 #include "api/neteq/neteq_controller.h"
 #include "api/neteq/neteq_controller_factory.h"
 #include "api/neteq/tick_timer.h"
 #include "api/rtp_packet_info.h"
+#include "api/units/timestamp.h"
 #include "modules/audio_coding/neteq/audio_multi_vector.h"
 #include "modules/audio_coding/neteq/expand_uma_logger.h"
 #include "modules/audio_coding/neteq/packet.h"
@@ -38,7 +40,6 @@ namespace webrtc {
 // Forward declarations.
 class Accelerate;
 class BackgroundNoise;
-class Clock;
 class ComfortNoise;
 class DecoderDatabase;
 class DtmfBuffer;
@@ -94,13 +95,13 @@ class NetEqImpl : public webrtc::NetEq {
     // before sending the struct to the NetEqImpl constructor. However, there
     // are dependencies between some of the classes inside the struct, so
     // swapping out one may make it necessary to re-create another one.
-    Dependencies(const NetEq::Config& config,
-                 Clock* clock,
-                 const rtc::scoped_refptr<AudioDecoderFactory>& decoder_factory,
+    Dependencies(const Environment& env,
+                 const NetEq::Config& config,
+                 scoped_refptr<AudioDecoderFactory> decoder_factory,
                  const NetEqControllerFactory& controller_factory);
     ~Dependencies();
 
-    Clock* const clock;
+    const Environment env;
     std::unique_ptr<TickTimer> tick_timer;
     std::unique_ptr<StatisticsCalculator> stats;
     std::unique_ptr<DecoderDatabase> decoder_database;
@@ -127,7 +128,8 @@ class NetEqImpl : public webrtc::NetEq {
 
   // Inserts a new packet into NetEq. Returns 0 on success, -1 on failure.
   int InsertPacket(const RTPHeader& rtp_header,
-                   rtc::ArrayView<const uint8_t> payload) override;
+                   rtc::ArrayView<const uint8_t> payload,
+                   Timestamp receive_time) override;
 
   void InsertEmptyPacket(const RTPHeader& rtp_header) override;
 
@@ -135,7 +137,7 @@ class NetEqImpl : public webrtc::NetEq {
       AudioFrame* audio_frame,
       bool* muted = nullptr,
       int* current_sample_rate_hz = nullptr,
-      absl::optional<Operation> action_override = absl::nullopt) override;
+      std::optional<Operation> action_override = std::nullopt) override;
 
   void SetCodecs(const std::map<int, SdpAudioFormat>& codecs) override;
 
@@ -170,12 +172,11 @@ class NetEqImpl : public webrtc::NetEq {
 
   NetEqOperationsAndState GetOperationsAndState() const override;
 
-  absl::optional<uint32_t> GetPlayoutTimestamp() const override;
+  std::optional<uint32_t> GetPlayoutTimestamp() const override;
 
   int last_output_sample_rate_hz() const override;
 
-  absl::optional<DecoderFormat> GetDecoderFormat(
-      int payload_type) const override;
+  std::optional<DecoderFormat> GetCurrentDecoderFormat() const override;
 
   // Flushes both the packet buffer and the sync buffer.
   void FlushBuffers() override;
@@ -204,7 +205,8 @@ class NetEqImpl : public webrtc::NetEq {
   // above. Returns 0 on success, otherwise an error code.
   // TODO(hlundin): Merge this with InsertPacket above?
   int InsertPacketInternal(const RTPHeader& rtp_header,
-                           rtc::ArrayView<const uint8_t> payload)
+                           rtc::ArrayView<const uint8_t> payload,
+                           Timestamp receive_time)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Returns true if the payload type changed (this should be followed by
@@ -216,7 +218,7 @@ class NetEqImpl : public webrtc::NetEq {
   // Delivers 10 ms of audio data. The data is written to `audio_frame`.
   // Returns 0 on success, otherwise an error code.
   int GetAudioInternal(AudioFrame* audio_frame,
-                       absl::optional<Operation> action_override)
+                       std::optional<Operation> action_override)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Provides a decision to the GetAudioInternal method. The decision what to
@@ -228,7 +230,7 @@ class NetEqImpl : public webrtc::NetEq {
                   PacketList* packet_list,
                   DtmfEvent* dtmf_event,
                   bool* play_dtmf,
-                  absl::optional<Operation> action_override)
+                  std::optional<Operation> action_override)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Decodes the speech packets in `packet_list`, and writes the results to
@@ -336,7 +338,7 @@ class NetEqImpl : public webrtc::NetEq {
   NetEqController::PacketArrivedInfo ToPacketArrivedInfo(
       const Packet& packet) const RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  Clock* const clock_;
+  const Environment env_;
 
   mutable Mutex mutex_;
   const std::unique_ptr<TickTimer> tick_timer_ RTC_GUARDED_BY(mutex_);
@@ -375,7 +377,7 @@ class NetEqImpl : public webrtc::NetEq {
   size_t decoder_frame_length_ RTC_GUARDED_BY(mutex_);
   Mode last_mode_ RTC_GUARDED_BY(mutex_);
   Operation last_operation_ RTC_GUARDED_BY(mutex_);
-  absl::optional<AudioDecoder::SpeechType> last_decoded_type_
+  std::optional<AudioDecoder::SpeechType> last_decoded_type_
       RTC_GUARDED_BY(mutex_);
   size_t decoded_buffer_length_ RTC_GUARDED_BY(mutex_);
   std::unique_ptr<int16_t[]> decoded_buffer_ RTC_GUARDED_BY(mutex_);
@@ -383,8 +385,8 @@ class NetEqImpl : public webrtc::NetEq {
   bool new_codec_ RTC_GUARDED_BY(mutex_);
   uint32_t timestamp_ RTC_GUARDED_BY(mutex_);
   bool reset_decoder_ RTC_GUARDED_BY(mutex_);
-  absl::optional<uint8_t> current_rtp_payload_type_ RTC_GUARDED_BY(mutex_);
-  absl::optional<uint8_t> current_cng_rtp_payload_type_ RTC_GUARDED_BY(mutex_);
+  std::optional<uint8_t> current_rtp_payload_type_ RTC_GUARDED_BY(mutex_);
+  std::optional<uint8_t> current_cng_rtp_payload_type_ RTC_GUARDED_BY(mutex_);
   bool first_packet_ RTC_GUARDED_BY(mutex_);
   bool enable_fast_accelerate_ RTC_GUARDED_BY(mutex_);
   std::unique_ptr<NackTracker> nack_ RTC_GUARDED_BY(mutex_);

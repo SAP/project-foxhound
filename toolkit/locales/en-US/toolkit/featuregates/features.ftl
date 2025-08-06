@@ -20,11 +20,6 @@ experimental-features-media-jxl =
     .label = Media: JPEG XL
 experimental-features-media-jxl-description = With this feature enabled, { -brand-short-name } supports the JPEG XL (JXL) format. This is an enhanced image file format that supports lossless transition from traditional JPEG files. See <a data-l10n-name="bugzilla">bug 1539075</a> for more details.
 
-# Do not translate 'SameSite', 'Lax' and 'None'.
-experimental-features-cookie-samesite-none-requires-secure2 =
-    .label = Cookies: SameSite=None requires secure attribute
-experimental-features-cookie-samesite-none-requires-secure2-description = Cookies with “SameSite=None” attribute require the secure attribute. This feature requires “Cookies: SameSite=Lax by default”.
-
 # "Service Worker" is an API name and is usually not translated.
 experimental-features-devtools-serviceworker-debugger-support =
     .label = Developer Tools: Service Worker debugging
@@ -54,9 +49,18 @@ experimental-features-auto-pip-description = Enable Picture-in-Picture on active
 genai-settings-chat-title =
     .label = AI chatbot
 
-experimental-features-group-browsing =
-  .label = Browsing
+# Updated sidebar settings
+sidebar-title =
+    .label = Sidebar
+sidebar-description = Easily access your history, tabs from other devices, sidebar extensions, and more as you browse. <a data-l10n-name="connect">Share feedback</a>
+vertical-tabs-title =
+    .label = Vertical tabs
+vertical-tabs-description = Move your tabs from the top of the browser to the side. Requires you also try the sidebar. <a data-l10n-name="connect">Share feedback</a>
+
 experimental-features-group-developer-tools =
   .label = Developer Tools
 experimental-features-group-webpage-display =
   .label = Webpage Display
+experimental-features-group-customize-browsing =
+  .label = Customize your browsing
+experimental-features-group-customize-browsing-description = If you try these features, <a data-l10n-name="connect">share your thoughts on Connect</a>

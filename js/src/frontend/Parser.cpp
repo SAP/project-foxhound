@@ -52,9 +52,9 @@
 #include "js/ErrorReport.h"           // JSErrorBase
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/HashTable.h"
-#include "js/RegExpFlags.h"     // JS::RegExpFlags
-#include "js/Stack.h"           // JS::NativeStackLimit
-#include "util/StringBuffer.h"  // StringBuffer
+#include "js/RegExpFlags.h"      // JS::RegExpFlags
+#include "js/Stack.h"            // JS::NativeStackLimit
+#include "util/StringBuilder.h"  // StringBuilder
 #include "vm/BytecodeUtil.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
@@ -167,11 +167,10 @@ void ParserSharedBase::dumpAtom(TaggedParserAtomIndex index) const {
 
 ParserBase::ParserBase(FrontendContext* fc,
                        const ReadOnlyCompileOptions& options,
-                       bool foldConstants, CompilationState& compilationState)
+                       CompilationState& compilationState)
     : ParserSharedBase(fc, compilationState, ParserSharedBase::Kind::Parser),
       anyChars(fc, options, this),
       ss(nullptr),
-      foldConstants_(foldConstants),
 #ifdef DEBUG
       checkOptionsCalled_(false),
 #endif
@@ -200,9 +199,8 @@ JSAtom* ParserBase::liftParserAtomToJSAtom(TaggedParserAtomIndex index) {
 template <class ParseHandler>
 PerHandlerParser<ParseHandler>::PerHandlerParser(
     FrontendContext* fc, const ReadOnlyCompileOptions& options,
-    bool foldConstants, CompilationState& compilationState,
-    void* internalSyntaxParser)
-    : ParserBase(fc, options, foldConstants, compilationState),
+    CompilationState& compilationState, void* internalSyntaxParser)
+    : ParserBase(fc, options, compilationState),
       handler_(fc, compilationState),
       internalSyntaxParser_(internalSyntaxParser) {
   MOZ_ASSERT(compilationState.isInitialStencil() ==
@@ -213,9 +211,9 @@ PerHandlerParser<ParseHandler>::PerHandlerParser(
 template <class ParseHandler, typename Unit>
 GeneralParser<ParseHandler, Unit>::GeneralParser(
     FrontendContext* fc, const ReadOnlyCompileOptions& options,
-    const Unit* units, size_t length, const StringTaint& taint, bool foldConstants,
-    CompilationState& compilationState, SyntaxParser* syntaxParser)
-    : Base(fc, options, foldConstants, compilationState, syntaxParser),
+    const Unit* units, size_t length, const StringTaint& taint, CompilationState& compilationState,
+    SyntaxParser* syntaxParser)
+    : Base(fc, options, compilationState, syntaxParser),
       tokenStream(fc, &compilationState.parserAtoms, options, units, length, taint) {}
 
 template <typename Unit>
@@ -412,18 +410,6 @@ GeneralParser<ParseHandler, Unit>::parse() {
 
   if (!CheckParseTree(this->fc_, alloc_, stmtList)) {
     return errorResult();
-  }
-
-  if (foldConstants_) {
-    Node node = stmtList;
-    // Don't constant-fold inside "use asm" code, as this could create a parse
-    // tree that doesn't type-check as asm.js.
-    if (!pc_->useAsmOrInsideUseAsm()) {
-      if (!FoldConstants(this->fc_, this->parserAtoms(), &node, &handler_)) {
-        return errorResult();
-      }
-    }
-    stmtList = handler_.asListNode(node);
   }
 
   return stmtList;
@@ -1842,7 +1828,8 @@ Parser<FullParseHandler, Unit>::evalBody(EvalSharedContext* evalsc) {
   // Don't constant-fold inside "use asm" code, as this could create a parse
   // tree that doesn't type-check as asm.js.
   if (!pc_->useAsmOrInsideUseAsm()) {
-    if (!FoldConstants(this->fc_, this->parserAtoms(), &node, &handler_)) {
+    if (!FoldConstants(this->fc_, this->parserAtoms(), this->bigInts(), &node,
+                       &handler_)) {
       return errorResult();
     }
   }
@@ -1907,7 +1894,8 @@ FullParseHandler::ListNodeResult Parser<FullParseHandler, Unit>::globalBody(
   // Don't constant-fold inside "use asm" code, as this could create a parse
   // tree that doesn't type-check as asm.js.
   if (!pc_->useAsmOrInsideUseAsm()) {
-    if (!FoldConstants(this->fc_, this->parserAtoms(), &node, &handler_)) {
+    if (!FoldConstants(this->fc_, this->parserAtoms(), this->bigInts(), &node,
+                       &handler_)) {
       return errorResult();
     }
   }
@@ -2042,7 +2030,8 @@ FullParseHandler::ModuleNodeResult Parser<FullParseHandler, Unit>::moduleBody(
   // Don't constant-fold inside "use asm" code, as this could create a parse
   // tree that doesn't type-check as asm.js.
   if (!pc_->useAsmOrInsideUseAsm()) {
-    if (!FoldConstants(this->fc_, this->parserAtoms(), &node, &handler_)) {
+    if (!FoldConstants(this->fc_, this->parserAtoms(), this->bigInts(), &node,
+                       &handler_)) {
       return errorResult();
     }
   }
@@ -2435,7 +2424,8 @@ Parser<FullParseHandler, Unit>::standaloneFunction(
   // Don't constant-fold inside "use asm" code, as this could create a parse
   // tree that doesn't type-check as asm.js.
   if (!pc_->useAsmOrInsideUseAsm()) {
-    if (!FoldConstants(this->fc_, this->parserAtoms(), &node, &handler_)) {
+    if (!FoldConstants(this->fc_, this->parserAtoms(), this->bigInts(), &node,
+                       &handler_)) {
       return errorResult();
     }
   }
@@ -2580,7 +2570,8 @@ bool GeneralParser<ParseHandler, Unit>::matchOrInsertSemicolon(
     }
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-    if (!this->pc_->isUsingSyntaxAllowed() &&
+    if (options().explicitResourceManagement() &&
+        !this->pc_->isUsingSyntaxAllowed() &&
         anyChars.currentToken().type == TokenKind::Using) {
       error(JSMSG_USING_OUTSIDE_BLOCK_OR_MODULE);
       return false;
@@ -2632,7 +2623,7 @@ bool ParserBase::leaveInnerFunction(ParseContext* outerpc) {
 
 TaggedParserAtomIndex ParserBase::prefixAccessorName(
     PropertyType propType, TaggedParserAtomIndex propAtom) {
-  StringBuffer prefixed(fc_);
+  StringBuilder prefixed(fc_);
   if (propType == PropertyType::Setter) {
     if (!prefixed.append("set ")) {
       return TaggedParserAtomIndex::null();
@@ -3467,7 +3458,8 @@ Parser<FullParseHandler, Unit>::standaloneLazyFunction(
   // Don't constant-fold inside "use asm" code, as this could create a parse
   // tree that doesn't type-check as asm.js.
   if (!pc_->useAsmOrInsideUseAsm()) {
-    if (!FoldConstants(this->fc_, this->parserAtoms(), &node, &handler_)) {
+    if (!FoldConstants(this->fc_, this->parserAtoms(), this->bigInts(), &node,
+                       &handler_)) {
       return errorResult();
     }
   }
@@ -5370,8 +5362,7 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
   MOZ_TRY_VAR(importAttributeList,
               handler_.newList(ParseNodeKind::ImportAttributeList, pos()));
 
-  if (tt == TokenKind::With ||
-      (tt == TokenKind::Assert && options().importAttributesAssertSyntax())) {
+  if (tt == TokenKind::With) {
     tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
 
     if (!withClause(importAttributeList)) {
@@ -5745,8 +5736,7 @@ GeneralParser<ParseHandler, Unit>::exportFrom(uint32_t begin, Node specList) {
   ListNodeType importAttributeList;
   MOZ_TRY_VAR(importAttributeList,
               handler_.newList(ParseNodeKind::ImportAttributeList, pos()));
-  if (tt == TokenKind::With ||
-      (tt == TokenKind::Assert && options().importAttributesAssertSyntax())) {
+  if (tt == TokenKind::With) {
     tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
 
     if (!withClause(importAttributeList)) {
@@ -6552,7 +6542,7 @@ bool GeneralParser<ParseHandler, Unit>::forHeadStart(
     tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
   }
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-  else if (tt == TokenKind::Await) {
+  else if (tt == TokenKind::Await && options().explicitResourceManagement()) {
     if (!pc_->isAsync()) {
       if (pc_->atModuleTopLevel()) {
         if (!options().topLevelAwait) {
@@ -6594,7 +6584,7 @@ bool GeneralParser<ParseHandler, Unit>::forHeadStart(
         anyChars.ungetToken();  // put back await token
       }
     }
-  } else if (tt == TokenKind::Using) {
+  } else if (tt == TokenKind::Using && options().explicitResourceManagement()) {
     tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
 
     // Look ahead to find either a 'of' token or if not identifier
@@ -7759,7 +7749,7 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
       // ...
       // Step 3. Let privateStateDesc be the string-concatenation of name
       // and " accessor storage".
-      StringBuffer privateStateDesc(fc_);
+      StringBuilder privateStateDesc(fc_);
       if (!privateStateDesc.append(this->parserAtoms(), propAtom)) {
         return false;
       }
@@ -8971,7 +8961,7 @@ GeneralParser<ParseHandler, Unit>::synthesizePrivateMethodInitializer(
 
   // Synthesize a name for the lexical variable that will store the
   // accessor body.
-  StringBuffer storedMethodName(fc_);
+  StringBuilder storedMethodName(fc_);
   if (!storedMethodName.append(this->parserAtoms(), propAtom)) {
     return errorResult();
   }
@@ -9139,7 +9129,7 @@ GeneralParser<ParseHandler, Unit>::synthesizeAccessor(
   //
   // https://arai-a.github.io/ecma262-compare/?pr=2417&id=sec-makeautoaccessorsetter
   // 2. Let setter be CreateBuiltinFunction(setterClosure, 1, "set", « »).
-  StringBuffer storedMethodName(fc_);
+  StringBuilder storedMethodName(fc_);
   if (!storedMethodName.append(accessorType == AccessorType::Getter ? "get"
                                                                     : "set")) {
     return errorResult();
@@ -9678,34 +9668,38 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
 
       if (tt == TokenKind::Await && pc_->isAsync()) {
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-        // Try finding evidence of a AwaitUsingDeclaration the syntax for which
-        // would be:
-        //   await [no LineTerminator here] using [no LineTerminator here]
-        //     identifier
+        if (options().explicitResourceManagement()) {
+          // Try finding evidence of a AwaitUsingDeclaration the syntax for
+          // which
+          // would be:
+          //   await [no LineTerminator here] using [no LineTerminator here]
+          //     identifier
 
-        TokenKind nextTokUsing = TokenKind::Eof;
-        // Scan with regex modifier because when its await expression, `/`
-        // should be treated as a regexp.
-        if (!tokenStream.peekTokenSameLine(&nextTokUsing,
-                                           TokenStream::SlashIsRegExp)) {
-          return errorResult();
-        }
-
-        if (nextTokUsing == TokenKind::Using &&
-            this->pc_->isUsingSyntaxAllowed()) {
-          tokenStream.consumeKnownToken(nextTokUsing,
-                                        TokenStream::SlashIsRegExp);
-          TokenKind nextTokIdentifier = TokenKind::Eof;
-          // Here we can use the Div modifier because if the next token is using
-          // then a `/` as the next token can only be considered a division.
-          if (!tokenStream.peekTokenSameLine(&nextTokIdentifier)) {
+          TokenKind nextTokUsing = TokenKind::Eof;
+          // Scan with regex modifier because when its await expression, `/`
+          // should be treated as a regexp.
+          if (!tokenStream.peekTokenSameLine(&nextTokUsing,
+                                             TokenStream::SlashIsRegExp)) {
             return errorResult();
           }
-          if (TokenKindIsPossibleIdentifier(nextTokIdentifier)) {
-            return lexicalDeclaration(yieldHandling,
-                                      DeclarationKind::AwaitUsing);
+
+          if (nextTokUsing == TokenKind::Using &&
+              this->pc_->isUsingSyntaxAllowed()) {
+            tokenStream.consumeKnownToken(nextTokUsing,
+                                          TokenStream::SlashIsRegExp);
+            TokenKind nextTokIdentifier = TokenKind::Eof;
+            // Here we can use the Div modifier because if the next token is
+            // using then a `/` as the next token can only be considered a
+            // division.
+            if (!tokenStream.peekTokenSameLine(&nextTokIdentifier)) {
+              return errorResult();
+            }
+            if (TokenKindIsPossibleIdentifier(nextTokIdentifier)) {
+              return lexicalDeclaration(yieldHandling,
+                                        DeclarationKind::AwaitUsing);
+            }
+            anyChars.ungetToken();  // put back using.
           }
-          anyChars.ungetToken();  // put back using.
         }
 #endif
         return expressionStatement(yieldHandling);
@@ -9834,7 +9828,8 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
       if (!tokenStream.peekTokenSameLine(&nextTok)) {
         return errorResult();
       }
-      if (!TokenKindIsPossibleIdentifier(nextTok) ||
+      if (!options().explicitResourceManagement() ||
+          !TokenKindIsPossibleIdentifier(nextTok) ||
           !this->pc_->isUsingSyntaxAllowed()) {
         if (!tokenStream.peekToken(&nextTok)) {
           return errorResult();
@@ -11655,26 +11650,23 @@ Parser<FullParseHandler, Unit>::newBigInt() {
     return errorResult();
   }
 
-  BigIntIndex index(this->compilationState_.bigIntData.length());
+  BigIntIndex index(this->bigInts().length());
   if (uint32_t(index) >= TaggedScriptThingIndex::IndexLimit) {
     ReportAllocationOverflow(fc_);
     return errorResult();
   }
-  if (!this->compilationState_.bigIntData.emplaceBack()) {
+  if (!this->bigInts().emplaceBack()) {
     js::ReportOutOfMemory(this->fc_);
     return errorResult();
   }
 
-  if (!this->compilationState_.bigIntData[index].init(
-          this->fc_, this->stencilAlloc(), chars)) {
+  if (!this->bigInts()[index].init(this->fc_, this->stencilAlloc(), chars)) {
     return errorResult();
   }
 
-  bool isZero = this->compilationState_.bigIntData[index].isZero();
-
   // Should the operations below fail, the buffer held by data will
   // be cleaned up by the CompilationState destructor.
-  return handler_.newBigInt(index, isZero, pos());
+  return handler_.newBigInt(index, pos());
 }
 
 template <typename Unit>
@@ -12011,8 +12003,7 @@ GeneralParser<ParseHandler, Unit>::propertyName(
 static bool TokenKindCanStartPropertyName(TokenKind tt) {
   return TokenKindIsPossibleIdentifierName(tt) || tt == TokenKind::String ||
          tt == TokenKind::Number || tt == TokenKind::LeftBracket ||
-         tt == TokenKind::Mul || tt == TokenKind::BigInt ||
-         tt == TokenKind::PrivateName;
+         tt == TokenKind::BigInt || tt == TokenKind::PrivateName;
 }
 
 template <class ParseHandler, typename Unit>
@@ -12078,7 +12069,7 @@ GeneralParser<ParseHandler, Unit>::propertyOrMethodName(
     if (!tokenStream.peekTokenSameLine(&tt)) {
       return errorResult();
     }
-    if (TokenKindCanStartPropertyName(tt)) {
+    if (TokenKindCanStartPropertyName(tt) || tt == TokenKind::Mul) {
       isAsync = true;
       tokenStream.consumeKnownToken(tt);
       ltok = tt;

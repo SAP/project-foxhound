@@ -273,13 +273,47 @@ urlbar.searchmode.*
   a remote search mode with a built-in engine, we record the engine name. If the
   user enters a remote search mode with an engine they installed (e.g. via
   OpenSearch or a WebExtension), we record ``other`` (not to be confused with
-  the ``urlbar.searchmode.other`` scalar above). If they enter a local search
-  mode, we record the English name of the result source (e.g. "bookmarks",
-  "history", "tabs"). Note that we slightly modify the engine name for some
-  built-in engines: we flatten all localized Amazon sites (Amazon.com,
-  Amazon.ca, Amazon.de, etc.) to "Amazon" and we flatten all localized
-  Wikipedia sites (Wikipedia (en), Wikipedia (fr), etc.) to "Wikipedia". This
-  is done to reduce the number of keys used by these scalars.
+  the ``urlbar.searchmode.other`` scalar above).
+
+  When a user enters local search mode, we record the English name of the
+  result source (e.g., "bookmarks," "history," "tabs"). If they enter local
+  search mode via ``typed``, we record the result source name with the suffix
+  "keyword" or "symbol," depending on whether the user used a symbol
+  (``^, %, *, >``) or a keyword (``@tabs, @bookmarks, @history, @actions``).
+  If they enter local search mode through ``keywordoffer``, we record the
+  result source name with the suffix "keyword" when they select a restrict
+  keyword.
+
+  Note that we slightly modify the engine name for some built-in engines: we
+  flatten all localized Amazon sites (Amazon.com, Amazon.ca, Amazon.de, etc.)
+  to "Amazon" and we flatten all localized Wikipedia sites (Wikipedia (en),
+  Wikipedia (fr), etc.) to "Wikipedia". This is done to reduce the number of
+  keys used by these scalars.
+
+  Changelog
+    Firefox 132
+      The scalar keys for ``urlbar.searchmode.typed`` and
+      ``urlbar.searchmode.keywordoffer`` have been updated.
+
+      For ``urlbar.searchmode.typed``:
+       - If the user enters local search mode using a restrict keyword (@tabs,
+         @history, @bookmarks, @actions) the scalar key is prefixed with
+         "keyword".
+       - If the user enters via a symbol (``%, ^, *, >``) the key is prefixed
+         with "symbol".
+
+      For example, in history search mode:
+       - If entered via a restrict keyword, the scalar key recorded is
+         ``history_keyword``.
+       - If entered via a symbol, the scalar key recorded is ``history_symbol``.
+
+      For ``urlbar.searchmode.keywordoffer``:
+       - If the user uses a restrict keyword through the keywordoffer method,
+         the scalar key is prefixed with "keyword".
+
+      Please note that symbols cannot trigger the ``urlbar.searchmode.keywordoffer``
+      telemetry, as symbols are only valid for typed. [Bug `1919180`_]
+
 
 urlbar.picked.*
 ~~~~~~~~~~~~~~~
@@ -370,6 +404,14 @@ urlbar.picked.*
     A Firefox Suggest (a.k.a. quick suggest) suggestion.
   - ``remotetab``
     A tab synced from another device.
+  - ``restrict_keyword_actions``
+    A restrict keyword result to enter search mode for actions.
+  - ``restrict_keyword_bookmarks``
+    A restrict keyword result to enter search mode for bookmarks.
+  - ``restrict_keyword_history``
+    A restrict keyword result to enter search mode for history.
+  - ``restrict_keyword_tabs``
+    A restrict keyword result to enter search mode for tabs.
   - ``searchengine``
     A search result, but not a suggestion. May be the default search action
     or a search alias.
@@ -464,13 +506,6 @@ urlbar.zeroprefix.exposure
   the "top sites" view since normally it shows the user's top sites. This scalar
   was introduced in Firefox 110.0 in bug 1806765.
 
-urlbar.quickaction.impression
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-  A uint recording the number of times the user was shown a quickaction, the
-  key is in the form $key-$n where $n is the number of characters the user typed
-  in order for the suggestion to show. See bug 1806024.
-
 urlbar.quickaction.picked
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -553,7 +588,7 @@ Other telemetry relevant to the Address Bar
 Search Telemetry
 ~~~~~~~~~~~~~~~~
 
-  Some of the `search telemetry`_ is also relevant to the address bar.
+  Some of `the search telemetry`_ is also relevant to the address bar.
 
 contextual.services.topsites.*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -587,4 +622,5 @@ Firefox Suggest
   Telemetry specific to Firefox Suggest is described in the
   :doc:`firefox-suggest-telemetry` document.
 
-.. _search telemetry: /browser/search/telemetry.html
+.. _the search telemetry: /browser/search/telemetry.html
+.. _1919180: https://bugzilla.mozilla.org/show_bug.cgi?id=1919180

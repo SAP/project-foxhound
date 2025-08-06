@@ -49,27 +49,52 @@ class CellAllocator {
   // before calling any function that can potentially trigger GC. This will
   // ensure that GC tracing never sees junk values stored in the partially
   // initialized thing.
-  template <typename T, js::AllowGC allowGC = CanGC, typename... Args>
+  template <typename T, AllowGC allowGC = CanGC, typename... Args>
   static inline T* NewCell(JSContext* cx, Args&&... args);
 
  private:
+  // Allocate a string. Use cx->newCell<T>([heap]).
+  //
+  // Use for nursery-allocatable strings. Returns a value cast to the correct
+  // type. Non-nursery-allocatable strings will go through the fallback
+  // tenured-only allocation path.
+  template <typename T, AllowGC allowGC, typename... Args>
+  static T* NewString(JSContext* cx, Heap heap, Args&&... args);
+
+  template <typename T, AllowGC allowGC>
+  static T* NewBigInt(JSContext* cx, Heap heap);
+
+  template <typename T, AllowGC allowGC>
+  static T* NewObject(JSContext* cx, AllocKind kind, Heap heap,
+                      const JSClass* clasp, AllocSite* site = nullptr);
+
+  // Allocate all other kinds of GC thing.
+  template <typename T, AllowGC allowGC, typename... Args>
+  static T* NewTenuredCell(JSContext* cx, Args&&... args);
+
+  // Allocate a cell in the nursery, unless |heap| is Heap::Tenured or nursery
+  // allocation is disabled for |traceKind| in the current zone.
+  template <JS::TraceKind traceKind, AllowGC allowGC>
+  static void* AllocNurseryOrTenuredCell(JSContext* cx, AllocKind allocKind,
+                                         size_t thingSize, Heap heap,
+                                         AllocSite* site);
+  friend class TenuringTracer;
+
   template <AllowGC allowGC>
   static void* RetryNurseryAlloc(JSContext* cx, JS::TraceKind traceKind,
                                  AllocKind allocKind, size_t thingSize,
                                  AllocSite* site);
   template <AllowGC allowGC>
-  static void* TryNewTenuredCell(JSContext* cx, AllocKind kind,
-                                 size_t thingSize);
+  static void* AllocTenuredCellForNurseryAlloc(JSContext* cx, AllocKind kind);
 
-#if defined(DEBUG) || defined(JS_GC_ZEAL) || defined(JS_OOM_BREAKPOINT)
+  // Allocate a cell in the tenured heap.
   template <AllowGC allowGC>
-  static bool PreAllocChecks(JSContext* cx, AllocKind kind);
-#else
+  static void* AllocTenuredCell(JSContext* cx, AllocKind kind);
+
   template <AllowGC allowGC>
-  static bool PreAllocChecks(JSContext* cx, AllocKind kind) {
-    return true;
-  }
-#endif
+  static void* AllocTenuredCellUnchecked(JS::Zone* zone, AllocKind kind);
+
+  static void* RetryTenuredAlloc(JS::Zone* zone, AllocKind kind);
 
 #ifdef JS_GC_ZEAL
   static AllocSite* MaybeGenerateMissingAllocSite(JSContext* cx,
@@ -78,41 +103,10 @@ class CellAllocator {
 #endif
 
 #ifdef DEBUG
-  static void CheckIncrementalZoneState(JSContext* cx, void* ptr);
+  static void CheckIncrementalZoneState(JS::Zone* zone, void* ptr);
 #endif
 
-  static inline gc::Heap CheckedHeap(gc::Heap heap);
-
-  // Allocate a cell in the nursery, unless |heap| is Heap::Tenured or nursery
-  // allocation is disabled for |traceKind| in the current zone.
-  template <JS::TraceKind traceKind, AllowGC allowGC>
-  static void* AllocNurseryOrTenuredCell(JSContext* cx, gc::AllocKind allocKind,
-                                         size_t thingSize, gc::Heap heap,
-                                         AllocSite* site);
-  friend class TenuringTracer;
-
-  // Allocate a cell in the tenured heap.
-  template <AllowGC allowGC>
-  static void* AllocTenuredCell(JSContext* cx, gc::AllocKind kind, size_t size);
-
-  // Allocate a string. Use cx->newCell<T>([heap]).
-  //
-  // Use for nursery-allocatable strings. Returns a value cast to the correct
-  // type. Non-nursery-allocatable strings will go through the fallback
-  // tenured-only allocation path.
-  template <typename T, AllowGC allowGC, typename... Args>
-  static T* NewString(JSContext* cx, gc::Heap heap, Args&&... args);
-
-  template <typename T, AllowGC allowGC>
-  static T* NewBigInt(JSContext* cx, Heap heap);
-
-  template <typename T, AllowGC allowGC>
-  static T* NewObject(JSContext* cx, gc::AllocKind kind, gc::Heap heap,
-                      const JSClass* clasp, gc::AllocSite* site = nullptr);
-
-  // Allocate all other kinds of GC thing.
-  template <typename T, AllowGC allowGC, typename... Args>
-  static T* NewTenuredCell(JSContext* cx, Args&&... args);
+  static inline Heap CheckedHeap(Heap heap);
 };
 
 }  // namespace gc

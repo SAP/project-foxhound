@@ -15,7 +15,7 @@ Jinja2 template is not. Please file bugs! #}
     {{ generate_structure(name ~ "Item", struct["items"]) -}}
 
 {% elif struct.type == "object" %}
-    #[derive(Debug, Hash, Eq, PartialEq, ::glean::traits::__serde::Serialize, ::glean::traits::__serde::Deserialize)]
+    #[derive(Debug, Hash, Eq, PartialEq, Clone, ::glean::traits::__serde::Serialize, ::glean::traits::__serde::Deserialize)]
     #[allow(non_snake_case)]
     #[serde(deny_unknown_fields)]
     pub struct {{ name }} {
@@ -59,9 +59,10 @@ pub type {{ name }} = {{ struct.type|structure_type_name }};
 
 {%- macro extra_keys_with_types(obj, name, suffix) -%}
 #[derive(Default, Debug, Clone, Hash, Eq, PartialEq)]
+#[allow(non_snake_case)]
 pub struct {{ obj.name|Camelize }}{{ suffix }} {
     {% for item, type in obj|attr(name) %}
-    pub {{ item|snake_case }}: Option<{{type|extra_type_name}}>,
+    pub r#{{ item }}: Option<{{type|extra_type_name}}>,
     {% endfor %}
 }
 
@@ -71,7 +72,7 @@ impl ExtraKeys for {{ obj.name|Camelize }}{{ suffix }} {
     fn into_ffi_extra(self) -> ::std::collections::HashMap<String, String> {
       let mut map = ::std::collections::HashMap::new();
       {% for key, _ in obj|attr(name) %}
-      self.{{key|snake_case}}.and_then(|val| map.insert("{{key|snake_case}}".into(), val.to_string()));
+      self.r#{{key|snake_case}}.and_then(|val| map.insert("{{key|snake_case}}".into(), val.to_string()));
       {% endfor %}
       map
     }
@@ -210,6 +211,7 @@ pub mod {{ category_name|snake_case }} {
 #[allow(dead_code)]
 pub(crate) mod __glean_metric_maps {
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     use crate::metrics::extra_keys_len;
     use crate::private::*;
@@ -307,11 +309,6 @@ pub(crate) mod __glean_metric_maps {
         match metric_id {
 {% for metric_id, event in events_by_id.items() %}
           {{metric_id}} => {
-              assert!(
-                  extra_keys_len(&super::{{event}}) != 0 || extra.is_empty(),
-                  "No extra keys allowed, but some were passed"
-              );
-
               super::{{event}}.record_raw(extra);
               Ok(())
           }
@@ -421,36 +418,10 @@ pub(crate) mod __glean_metric_maps {
     ///
     /// Panics if no labeled_{{labeled_type}} by the given metric ID could be found.
     #[allow(unused_variables)]
-    pub(crate) fn labeled_{{labeled_type}}_get(metric_id: u32, label: &str) -> Labeled{{labeled_type|Camelize}}Metric {
+    pub(crate) fn labeled_{{labeled_type}}_get(metric_id: u32, label: &str) -> Arc<Labeled{{labeled_type|Camelize}}Metric> {
         match metric_id {
 {% for metric_id, (labeled, _) in labeleds_by_id.items() %}
             {{metric_id}} => super::{{labeled}}.get(label),
-{% endfor %}
-            _ => panic!("No labeled_{{labeled_type}} for metric id {}", metric_id),
-        }
-    }
-
-    /// Gets the submetric from the specified labeled_{{labeled_type}} metric, by enum.
-    ///
-    /// # Arguments
-    ///
-    /// * `metric_id` - The metric's ID to look up
-    /// * `label_enum` - The label enum identifying the {{labeled_type}} submetric.
-    ///
-    /// # Returns
-    ///
-    /// Returns the {{labeled_type}} submetric.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no labeled_{{labeled_type}} by the given metric ID could be found.
-    #[allow(unused_variables)]
-    pub(crate) fn labeled_{{labeled_type}}_enum_get(metric_id: u32, label_enum: u16) -> Labeled{{labeled_type|Camelize}}Metric {
-        match metric_id {
-{% for metric_id, (labeled, has_enum) in labeleds_by_id.items() %}
-{% if has_enum %}
-            {{metric_id}} => super::{{labeled}}.get(labeled_enum_to_str(metric_id, label_enum)),
-{% endif %}
 {% endfor %}
             _ => panic!("No labeled_{{labeled_type}} for metric id {}", metric_id),
         }
@@ -470,9 +441,23 @@ pub(crate) mod __glean_metric_maps {
         }
     }
 
+    pub(crate) fn labeled_submetric_id_get(metric_id: u32, label: &str) -> u32 {
+        match metric_id {
+{% for category_name, objs in all_objs.items() %}
+{% for obj in objs.values() %}
+{% if obj.labeled %}
+            {{obj|metric_id}} => super::{{category_name|snake_case}}::{{obj.name|snake_case}}.get_submetric_id(label),
+{% endif %}
+{% endfor %}
+{% endfor %}
+            _ => panic!("No labeled metric for id {}", metric_id),
+        }
+    }
+
     pub(crate) mod submetric_maps {
         use std::sync::{
           atomic::AtomicU32,
+          Arc,
           RwLock,
         };
         use super::*;
@@ -487,8 +472,8 @@ pub(crate) mod __glean_metric_maps {
         );
 
 {% for typ, metrics in metric_by_type.items() %}
-{% if typ.0 in ('BOOLEAN_MAP', 'COUNTER_MAP', 'CUSTOM_DISTRIBUTION_MAP', 'MEMORY_DISTRIBUTION_MAP', 'STRING_MAP', 'TIMING_DISTRIBUTION_MAP') %}
-        pub static {{typ.0}}: Lazy<RwLock<HashMap<MetricId, Labeled{{typ.1}}>>> = Lazy::new(||
+{% if typ.0 in ('BOOLEAN_MAP', 'COUNTER_MAP', 'CUSTOM_DISTRIBUTION_MAP', 'MEMORY_DISTRIBUTION_MAP', 'QUANTITY_MAP', 'STRING_MAP', 'TIMING_DISTRIBUTION_MAP') %}
+        pub static {{typ.0}}: Lazy<RwLock<HashMap<MetricId, Arc<Labeled{{typ.1}}>>>> = Lazy::new(||
             RwLock::new(HashMap::new())
         );
 {% endif %}

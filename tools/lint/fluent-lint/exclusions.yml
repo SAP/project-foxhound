@@ -63,6 +63,7 @@ ID01:
         - unsafeContentType-title
         - netReset-title
         - netTimeout-title
+        - serverError-title
         - unknownProtocolFound-title
         - proxyConnectFailure-title
         - proxyResolveFailure-title
@@ -164,6 +165,12 @@ CO01:
         - addon-badge-line3
         - recommended-theme-1
         - plugins-openh264-description
+        - details-notification-hard-blocked-extension
+        - details-notification-hard-blocked-other
+        - details-notification-soft-blocked-extension-disabled
+        - details-notification-soft-blocked-extension-enabled
+        - details-notification-soft-blocked-other-disabled
+        - details-notification-soft-blocked-other-enabled
         # toolkit/locales/en-US/toolkit/about/aboutGlean.ftl
         - about-glean-description
         # toolkit/locales/en-US/toolkit/about/aboutRights.ftl
@@ -180,6 +187,14 @@ CO01:
         - webext-perms-description-management
         # toolkit/locales/en-US/toolkit/global/processTypes.ftl
         - process-type-privilegedmozilla
+        # browser/locales/en-US/browser/addonNotifications.ftl
+        - addon-install-error-hard-blocked
+        - addon-install-error-soft-blocked
+        # browser/locales/en-US/browser/unifiedExtensions.ftl
+        - unified-extensions-mb-blocklist-error-multiple
+        - unified-extensions-mb-blocklist-error-single
+        - unified-extensions-mb-blocklist-warning-multiple
+        - unified-extensions-mb-blocklist-warning-single
     files:
         - browser/components/ion/content/ion.ftl
         - browser/locales/en-US/browser/profile/default-bookmarks.ftl

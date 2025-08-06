@@ -163,6 +163,7 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
 
   void SetLazyLoading();
   void StopLazyLoading();
+  void CancelLazyLoading(bool aClearLazyLoadState);
 
   const LazyLoadFrameResumptionState& GetLazyLoadFrameResumptionState() const {
     return mLazyLoadState;

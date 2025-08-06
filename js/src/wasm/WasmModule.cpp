@@ -57,10 +57,11 @@ static UniqueChars Tier2ResultsContext(const ScriptedCaller& scriptedCaller) {
              : UniqueChars();
 }
 
-static void ReportTier2ResultsOffThread(bool success,
-                                        const ScriptedCaller& scriptedCaller,
-                                        const UniqueChars& error,
-                                        const UniqueCharsVector& warnings) {
+void js::wasm::ReportTier2ResultsOffThread(bool success,
+                                           Maybe<uint32_t> maybeFuncIndex,
+                                           const ScriptedCaller& scriptedCaller,
+                                           const UniqueChars& error,
+                                           const UniqueCharsVector& warnings) {
   // Get context to describe this tier-2 task.
   UniqueChars context = Tier2ResultsContext(scriptedCaller);
   const char* contextString = context ? context.get() : "unknown";
@@ -68,15 +69,22 @@ static void ReportTier2ResultsOffThread(bool success,
   // Display the main error, if any.
   if (!success) {
     const char* errorString = error ? error.get() : "out of memory";
-    LogOffThread("'%s': wasm tier-2 failed with '%s'.\n", contextString,
-                 errorString);
+    if (maybeFuncIndex.isSome()) {
+      LogOffThread(
+          "'%s': wasm partial tier-2 (func index %u) failed with '%s'.\n",
+          contextString, maybeFuncIndex.value(), errorString);
+    } else {
+      LogOffThread("'%s': wasm complete tier-2 failed with '%s'.\n",
+                   contextString, errorString);
+    }
   }
 
   // Display warnings as a follow-up, avoiding spamming the console.
   size_t numWarnings = std::min<size_t>(warnings.length(), 3);
 
   for (size_t i = 0; i < numWarnings; i++) {
-    LogOffThread("'%s': wasm tier-2 warning: '%s'.\n'.", contextString,
+    // Per the assertion above, we won't get warnings for partial tier-2.
+    LogOffThread("'%s': wasm complete tier-2 warning: '%s'.\n'.", contextString,
                  warnings[i].get());
   }
   if (warnings.length() > numWarnings) {
@@ -84,17 +92,18 @@ static void ReportTier2ResultsOffThread(bool success,
   }
 }
 
-class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
+class Module::CompleteTier2GeneratorTaskImpl
+    : public CompleteTier2GeneratorTask {
   SharedBytes bytecode_;
   SharedModule module_;
-  Atomic<bool> cancelled_;
+  mozilla::Atomic<bool> cancelled_;
 
  public:
-  Tier2GeneratorTaskImpl(const ShareableBytes& bytecode, Module& module)
+  CompleteTier2GeneratorTaskImpl(const ShareableBytes& bytecode, Module& module)
       : bytecode_(&bytecode), module_(&module), cancelled_(false) {}
 
-  ~Tier2GeneratorTaskImpl() override {
-    module_->tier2Listener_ = nullptr;
+  ~CompleteTier2GeneratorTaskImpl() override {
+    module_->completeTier2Listener_ = nullptr;
     module_->testingTier2Active_ = false;
   }
 
@@ -104,11 +113,11 @@ class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
     {
       AutoUnlockHelperThreadState unlock(locked);
 
-      // Compile tier-2 and report any warning/errors as long as it's not a
-      // cancellation. Encountering a warning/error during compilation and
-      // being cancelled may race with each other, but the only observable race
-      // should be being cancelled after a warning/error is set, and that's
-      // okay.
+      // Compile complete tier-2 and report any warning/errors as long as it's
+      // not a cancellation. Encountering a warning/error during compilation
+      // and being cancelled may race with each other, but the only observable
+      // race should be being cancelled after a warning/error is set, and
+      // that's okay.
       UniqueChars error;
       UniqueCharsVector warnings;
       bool success = CompileCompleteTier2(bytecode_->bytes, *module_, &error,
@@ -117,29 +126,30 @@ class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
         // We could try to dispatch a runnable to the thread that started this
         // compilation, so as to report the warning/error using a JSContext*.
         // For now we just report to stderr.
-        ReportTier2ResultsOffThread(
-            success, module_->codeMeta().scriptedCaller(), error, warnings);
+        ReportTier2ResultsOffThread(success, mozilla::Nothing(),
+                                    module_->codeMeta().scriptedCaller(), error,
+                                    warnings);
       }
     }
 
     // During shutdown the main thread will wait for any ongoing (cancelled)
-    // tier-2 generation to shut down normally.  To do so, it waits on the
-    // HelperThreadState's condition variable for the count of finished
+    // complete tier-2 generation to shut down normally.  To do so, it waits on
+    // the HelperThreadState's condition variable for the count of finished
     // generators to rise.
-    HelperThreadState().incWasmTier2GeneratorsFinished(locked);
+    HelperThreadState().incWasmCompleteTier2GeneratorsFinished(locked);
 
     // The task is finished, release it.
     js_delete(this);
   }
 
   ThreadType threadType() override {
-    return ThreadType::THREAD_TYPE_WASM_GENERATOR_TIER2;
+    return ThreadType::THREAD_TYPE_WASM_GENERATOR_COMPLETE_TIER2;
   }
 };
 
 Module::~Module() {
   // Note: Modules can be destroyed on any thread.
-  MOZ_ASSERT(!tier2Listener_);
+  MOZ_ASSERT(!completeTier2Listener_);
   MOZ_ASSERT(!testingTier2Active_);
 }
 
@@ -147,17 +157,17 @@ void Module::startTier2(const ShareableBytes& bytecode,
                         JS::OptimizedEncodingListener* listener) {
   MOZ_ASSERT(!testingTier2Active_);
 
-  auto task = MakeUnique<Tier2GeneratorTaskImpl>(bytecode, *this);
+  auto task = MakeUnique<CompleteTier2GeneratorTaskImpl>(bytecode, *this);
   if (!task) {
     return;
   }
 
-  // These will be cleared asynchronously by ~Tier2GeneratorTaskImpl() if not
-  // sooner by finishTier2().
-  tier2Listener_ = listener;
+  // These will be cleared asynchronously by ~CompleteTier2GeneratorTaskImpl()
+  // if not sooner by finishTier2().
+  completeTier2Listener_ = listener;
   testingTier2Active_ = true;
 
-  StartOffThreadWasmTier2Generator(std::move(task));
+  StartOffThreadWasmCompleteTier2Generator(std::move(task));
 }
 
 bool Module::finishTier2(UniqueCodeBlock tier2CodeBlock,
@@ -171,12 +181,13 @@ bool Module::finishTier2(UniqueCodeBlock tier2CodeBlock,
   // purposes so that wasmHasTier2CompilationCompleted() only returns true
   // after tier-2 has been fully cached.
 
-  if (tier2Listener_ && code_->codeMeta().features().builtinModules.hasNone()) {
+  if (completeTier2Listener_ && canSerialize()) {
     Bytes bytes;
     if (serialize(&bytes)) {
-      tier2Listener_->storeOptimizedEncoding(bytes.begin(), bytes.length());
+      completeTier2Listener_->storeOptimizedEncoding(bytes.begin(),
+                                                     bytes.length());
     }
-    tier2Listener_ = nullptr;
+    completeTier2Listener_ = nullptr;
   }
   testingTier2Active_ = false;
 
@@ -236,16 +247,16 @@ bool wasm::GetOptimizedEncodingBuildId(JS::BuildIdCharVector* buildId) {
   buildId->infallibleAppend(')');
 
   buildId->infallibleAppend('m');
-  buildId->infallibleAppend(wasm::IsHugeMemoryEnabled(IndexType::I32) ? '+'
-                                                                      : '-');
-  buildId->infallibleAppend(wasm::IsHugeMemoryEnabled(IndexType::I64) ? '+'
-                                                                      : '-');
+  buildId->infallibleAppend(wasm::IsHugeMemoryEnabled(AddressType::I32) ? '+'
+                                                                        : '-');
+  buildId->infallibleAppend(wasm::IsHugeMemoryEnabled(AddressType::I64) ? '+'
+                                                                        : '-');
 
   return true;
 }
 
 /* virtual */
-void Module::addSizeOfMisc(MallocSizeOf mallocSizeOf,
+void Module::addSizeOfMisc(mozilla::MallocSizeOf mallocSizeOf,
                            CodeMetadata::SeenSet* seenCodeMeta,
                            CodeMetadataForAsmJS::SeenSet* seenCodeMetaForAsmJS,
                            Code::SeenSet* seenCode, size_t* code,
@@ -411,9 +422,9 @@ bool Module::instantiateFunctions(JSContext* cx,
 
 template <typename T>
 static bool CheckLimits(JSContext* cx, T declaredMin,
-                        const Maybe<T>& declaredMax, T defaultMax,
-                        T actualLength, const Maybe<T>& actualMax, bool isAsmJS,
-                        const char* kind) {
+                        const mozilla::Maybe<T>& declaredMax, T defaultMax,
+                        T actualLength, const mozilla::Maybe<T>& actualMax,
+                        bool isAsmJS, const char* kind) {
   if (isAsmJS) {
     MOZ_ASSERT(actualLength >= declaredMin);
     MOZ_ASSERT(!declaredMax);
@@ -478,15 +489,15 @@ bool Module::instantiateMemories(
                     memory->buffer().isPreparedForAsmJS());
       MOZ_ASSERT_IF(!codeMeta().isAsmJS(), memory->buffer().isWasm());
 
-      if (memory->indexType() != desc.indexType()) {
+      if (memory->addressType() != desc.addressType()) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                 JSMSG_WASM_BAD_IMP_INDEX,
-                                 ToString(memory->indexType()));
+                                 JSMSG_WASM_BAD_IMP_ADDRESS,
+                                 ToString(memory->addressType()));
         return false;
       }
 
       if (!CheckLimits(cx, desc.initialPages(), desc.maximumPages(),
-                       /* defaultMax */ MaxMemoryPages(desc.indexType()),
+                       /* defaultMax */ MaxMemoryPages(desc.addressType()),
                        /* actualLength */
                        memory->volatilePages(), memory->sourceMaxPages(),
                        codeMeta().isAsmJS(), "Memory")) {
@@ -499,7 +510,7 @@ bool Module::instantiateMemories(
     } else {
       MOZ_ASSERT(!codeMeta().isAsmJS());
 
-      if (desc.initialPages() > MaxMemoryPages(desc.indexType())) {
+      if (desc.initialPages() > MaxMemoryPages(desc.addressType())) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                  JSMSG_WASM_MEM_IMP_LIMIT);
         return false;
@@ -513,7 +524,7 @@ bool Module::instantiateMemories(
 
       RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmMemory));
       memory = WasmMemoryObject::create(
-          cx, buffer, IsHugeMemoryEnabled(desc.indexType()), proto);
+          cx, buffer, IsHugeMemoryEnabled(desc.addressType()), proto);
       if (!memory) {
         return false;
       }
@@ -521,7 +532,7 @@ bool Module::instantiateMemories(
 
     MOZ_RELEASE_ASSERT(codeMeta().isAsmJS() ||
                        memory->isHuge() ==
-                           IsHugeMemoryEnabled(desc.indexType()));
+                           IsHugeMemoryEnabled(desc.addressType()));
 
     if (!memoryObjs.get().append(memory)) {
       return false;
@@ -566,16 +577,18 @@ bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
   MOZ_ASSERT(!codeMeta().isAsmJS());
 
   Table& table = tableObj->table();
-  if (table.indexType() != td.indexType()) {
+  if (table.addressType() != td.addressType()) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                             JSMSG_WASM_BAD_IMP_INDEX,
-                             ToString(tableObj->table().indexType()));
+                             JSMSG_WASM_BAD_IMP_ADDRESS,
+                             ToString(tableObj->table().addressType()));
     return false;
   }
-  if (!CheckLimits(cx, td.initialLength(), td.maximumLength(),
-                   /* declaredMin */ MaxTableLimitField,
-                   /* actualLength */ table.length(), table.maximum(),
-                   codeMeta().isAsmJS(), "Table")) {
+  if (!CheckLimits(cx, /*declaredMin=*/td.initialLength(),
+                   /*declaredMax=*/td.maximumLength(),
+                   /*defaultMax=*/MaxTableElemsValidation(td.addressType()),
+                   /*actualLength=*/uint64_t(table.length()),
+                   /*actualMax=*/table.maximum(), codeMeta().isAsmJS(),
+                   "Table")) {
     return false;
   }
 
@@ -595,7 +608,7 @@ bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
 bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
                                    WasmTableObjectVector* tableObjs,
                                    SharedTableVector* tables) const {
-  if (td.initialLength() > MaxTableLength) {
+  if (td.initialLength() > MaxTableElemsRuntime) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_WASM_TABLE_IMP_LIMIT);
     return false;

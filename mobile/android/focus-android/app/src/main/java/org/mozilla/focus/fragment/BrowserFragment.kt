@@ -63,6 +63,7 @@ import mozilla.components.lib.crash.Crash
 import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.support.ktx.android.content.createChooserExcludingCurrentApp
 import mozilla.components.support.ktx.android.view.exitImmersiveMode
 import mozilla.components.support.locale.ActivityContextWrapper
 import mozilla.components.support.utils.Browsers
@@ -113,7 +114,6 @@ import org.mozilla.focus.topsites.DefaultTopSitesStorage.Companion.TOP_SITES_MAX
 import org.mozilla.focus.topsites.DefaultTopSitesView
 import org.mozilla.focus.utils.FocusSnackbar
 import org.mozilla.focus.utils.FocusSnackbarDelegate
-import org.mozilla.focus.utils.IntentUtils
 import org.mozilla.focus.utils.ViewUtils
 import java.net.URLEncoder
 
@@ -832,6 +832,7 @@ class BrowserFragment :
         tabsPopup?.dismiss()
         trackingProtectionPanel?.hide()
         siteNotSupportedSnackBarScope?.cancel()
+        requireComponents.sessionUseCases.exitFullscreen()
     }
 
     override fun onHomePressed() = pictureInPictureFeature?.onHomePressed() ?: false
@@ -899,10 +900,9 @@ class BrowserFragment :
             shareIntent.putExtra(Intent.EXTRA_SUBJECT, title)
         }
         startActivity(
-            IntentUtils.getIntentChooser(
+            shareIntent.createChooserExcludingCurrentApp(
                 context = requireContext(),
-                intent = shareIntent,
-                chooserTitle = getString(R.string.share_dialog_title),
+                title = getString(R.string.share_dialog_title),
             ),
         )
     }
@@ -963,8 +963,7 @@ class BrowserFragment :
             tab.content.url,
             store,
         )
-        @Suppress("DEPRECATION")
-        fragment.show(requireFragmentManager(), OpenWithFragment.FRAGMENT_TAG)
+        fragment.show(getParentFragmentManager(), OpenWithFragment.FRAGMENT_TAG)
 
         OpenWith.listDisplayed.record(OpenWith.ListDisplayedExtra(apps.size))
     }

@@ -12,6 +12,7 @@
 #include "nsCSPParser.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIConsoleService.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIChannel.h"
 #include "nsICryptoHash.h"
 #include "nsIScriptError.h"
@@ -177,7 +178,12 @@ void CSP_GetLocalizedStr(const char* aName, const nsTArray<nsString>& aParams,
   if (!keyStringBundle) {
     return;
   }
-  keyStringBundle->FormatStringFromName(aName, aParams, outResult);
+
+  if (aParams.IsEmpty()) {
+    keyStringBundle->GetStringFromName(aName, outResult);
+  } else {
+    keyStringBundle->FormatStringFromName(aName, aParams, outResult);
+  }
 }
 
 void CSP_LogStrMessage(const nsAString& aMsg) {
@@ -285,6 +291,7 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
+    case nsIContentPolicy::TYPE_INTERNAL_EXTERNAL_RESOURCE:
       return nsIContentSecurityPolicy::IMG_SRC_DIRECTIVE;
 
     // BLock XSLT as script, see bug 910139
@@ -1041,6 +1048,11 @@ void nsCSPRequireTrustedTypesForDirectiveValue::toString(
   aOutStr.Append(mValue);
 }
 
+bool nsCSPRequireTrustedTypesForDirectiveValue::
+    isRequiresTrustedTypesForSinkGroup(const nsAString& aSinkGroup) const {
+  return mValue == aSinkGroup;
+}
+
 /* =============== nsCSPTrustedTypesDirectivePolicyName =============== */
 
 nsCSPTrustedTypesDirectivePolicyName::nsCSPTrustedTypesDirectivePolicyName(
@@ -1373,6 +1385,15 @@ bool nsCSPDirective::ShouldCreateViolationForNewTrustedTypesPolicy(
   return false;
 }
 
+bool nsCSPDirective::AreTrustedTypesForSinkGroupRequired(
+    const nsAString& aSinkGroup) const {
+  MOZ_ASSERT(mDirective ==
+             nsIContentSecurityPolicy::REQUIRE_TRUSTED_TYPES_FOR_DIRECTIVE);
+
+  return mSrcs.Length() == 1 &&
+         mSrcs[0]->isRequiresTrustedTypesForSinkGroup(aSinkGroup);
+}
+
 void nsCSPDirective::toString(nsAString& outStr) const {
   // Append directive name
   outStr.AppendASCII(CSP_CSPDirectiveToString(mDirective));
@@ -1537,6 +1558,10 @@ void nsCSPDirective::toDomCSPStruct(mozilla::dom::CSP& outCSP) const {
     default:
       NS_ASSERTION(false, "cannot find directive to convert CSP to JSON");
   }
+}
+
+bool nsCSPDirective::isDefaultDirective() const {
+  return mDirective == nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE;
 }
 
 void nsCSPDirective::getReportURIs(nsTArray<nsString>& outReportURIs) const {
@@ -1819,6 +1844,9 @@ void nsCSPPolicy::toDomCSPStruct(mozilla::dom::CSP& outCSP) const {
 }
 
 bool nsCSPPolicy::hasDirective(CSPDirective aDir) const {
+  if (aDir == nsIContentSecurityPolicy::REQUIRE_TRUSTED_TYPES_FOR_DIRECTIVE) {
+    return mHasRequireTrustedTypesForDirective;
+  }
   for (uint32_t i = 0; i < mDirectives.Length(); i++) {
     if (mDirectives[i]->equals(aDir)) {
       return true;
@@ -1845,6 +1873,22 @@ bool nsCSPPolicy::ShouldCreateViolationForNewTrustedTypesPolicy(
     if (directive->equals(nsIContentSecurityPolicy::TRUSTED_TYPES_DIRECTIVE)) {
       return directive->ShouldCreateViolationForNewTrustedTypesPolicy(
           aPolicyName, aCreatedPolicyNames);
+    }
+  }
+
+  return false;
+}
+
+bool nsCSPPolicy::AreTrustedTypesForSinkGroupRequired(
+    const nsAString& aSinkGroup) const {
+  if (!hasDirective(
+          nsIContentSecurityPolicy::REQUIRE_TRUSTED_TYPES_FOR_DIRECTIVE)) {
+    return false;
+  }
+  for (const auto* directive : mDirectives) {
+    if (directive->equals(
+            nsIContentSecurityPolicy::REQUIRE_TRUSTED_TYPES_FOR_DIRECTIVE)) {
+      return directive->AreTrustedTypesForSinkGroupRequired(aSinkGroup);
     }
   }
 

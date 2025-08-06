@@ -241,7 +241,6 @@ extern "C" NS_EXPORT void GIFFT_TimingDistributionCancel(uint32_t aMetricId,
 // Called from within FOG's Rust impl.
 extern "C" NS_EXPORT void GIFFT_LabeledTimingDistributionStart(
     uint32_t aMetricId, const nsACString& aLabel, TimerId aTimerId) {
-  printf_stderr("Labeled Timing Distribution START\n");
   auto mirrorId = mozilla::glean::HistogramIdForMetric(aMetricId);
   if (mirrorId) {
     mozilla::glean::GetLabelTimerIdToStartsLock().apply([&](const auto& lock) {
@@ -255,7 +254,6 @@ extern "C" NS_EXPORT void GIFFT_LabeledTimingDistributionStart(
 // Called from within FOG's Rust impl.
 extern "C" NS_EXPORT void GIFFT_LabeledTimingDistributionStopAndAccumulate(
     uint32_t aMetricId, const nsACString& aLabel, TimerId aTimerId) {
-  printf_stderr("Labeled Timing Distribution STOP AND ACCUMULATE\n");
   auto mirrorId = mozilla::glean::HistogramIdForMetric(aMetricId);
   if (mirrorId) {
     mozilla::glean::GetLabelTimerIdToStartsLock().apply([&](const auto& lock) {
@@ -284,7 +282,6 @@ extern "C" NS_EXPORT void GIFFT_LabeledTimingDistributionAccumulateRawMillis(
 // Called from within FOG's Rust impl.
 extern "C" NS_EXPORT void GIFFT_LabeledTimingDistributionCancel(
     uint32_t aMetricId, const nsACString& aLabel, TimerId aTimerId) {
-  printf_stderr("Labeled Timing Distribution CANCEL\n");
   auto mirrorId = mozilla::glean::HistogramIdForMetric(aMetricId);
   if (mirrorId) {
     mozilla::glean::GetLabelTimerIdToStartsLock().apply([&](const auto& lock) {
@@ -367,6 +364,16 @@ void GleanTimingDistribution::StopAndAccumulate(uint64_t aId) {
 
 void GleanTimingDistribution::Cancel(uint64_t aId) {
   mTimingDist.Cancel(std::move(aId));
+}
+
+void GleanTimingDistribution::AccumulateSamples(
+    const nsTArray<int64_t>& aSamples) {
+  impl::fog_timing_distribution_accumulate_samples(mTimingDist.mId, &aSamples);
+}
+
+void GleanTimingDistribution::AccumulateSingleSample(int64_t aSample) {
+  impl::fog_timing_distribution_accumulate_single_sample(mTimingDist.mId,
+                                                         aSample);
 }
 
 void GleanTimingDistribution::TestGetValue(

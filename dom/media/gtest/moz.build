@@ -15,8 +15,8 @@ LOCAL_INCLUDES += [
     "/dom/media/systemservices",
     "/dom/media/webrtc",
     "/dom/media/webrtc/common",
+    "/third_party/abseil-cpp",
     "/third_party/libwebrtc",
-    "/third_party/libwebrtc/third_party/abseil-cpp",
 ]
 
 UNIFIED_SOURCES += [
@@ -63,10 +63,10 @@ UNIFIED_SOURCES += [
     "TestMuxer.cpp",
     "TestOggWriter.cpp",
     "TestOpusParser.cpp",
-    "TestPacer.cpp",
     "TestRust.cpp",
     "TestTimeUnit.cpp",
     "TestVideoSegment.cpp",
+    "TestVideoSink.cpp",
     "TestVideoTrackEncoder.cpp",
     "TestVideoUtils.cpp",
     "TestVPXDecoding.cpp",
@@ -91,6 +91,7 @@ if CONFIG["OS_TARGET"] != "Android":
 if CONFIG["MOZ_WEBRTC"] and CONFIG["OS_TARGET"] != "Android":
     UNIFIED_SOURCES += [
         "TestAudioDeviceEnumerator.cpp",
+        "TestPacer.cpp",
         "TestVideoFrameConverter.cpp",
     ]
 

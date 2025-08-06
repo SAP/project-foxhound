@@ -16,10 +16,13 @@ tabbrowser-menuitem-close =
 #   $containerName (String): the name of the current container.
 tabbrowser-container-tab-title = { $title } — { $containerName }
 
+# This text serves as an on-screen tooltip as well as an accessible name for
+# the "X" button that is shown on the active tab or, when multiple tabs are
+# selected, to all their "X" buttons.
 # Variables:
 #   $tabCount (Number): The number of tabs that will be closed.
-tabbrowser-close-tabs-tooltip =
-    .label =
+tabbrowser-close-tabs-button =
+    .tooltiptext =
         { $tabCount ->
             [one] Close tab
            *[other] Close { $tabCount } tabs
@@ -174,3 +177,14 @@ tabbrowser-manager-unmute-tab =
   .tooltiptext = Unmute tab
 tabbrowser-manager-close-tab =
   .tooltiptext = Close tab
+
+## Tab Groups
+
+tab-group-editor-title-create = Create tab group
+tab-group-editor-title-edit = Manage tab group
+tab-group-editor-name-label = Name
+tab-group-editor-name-field =
+  .placeholder = Example: Shopping
+tab-group-editor-cancel =
+  .label = Cancel
+  .accesskey = C

@@ -22,7 +22,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
-import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.MainScope
@@ -37,8 +36,9 @@ import mozilla.components.support.ktx.android.content.getColorFromAttr
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.lazyStore
+import org.mozilla.fenix.compose.snackbar.Snackbar
+import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.downloads.dialog.DynamicDownloadDialog
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getRootView
@@ -116,7 +116,7 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
     private fun observeModeChanges() {
         viewLifecycleOwner.lifecycleScope.launch {
             downloadStore.flow()
-                .distinctUntilChangedBy { it.mode::class }
+                .distinctUntilChangedBy { it.mode }
                 .map { it.mode }
                 .collect { mode ->
                     invalidateOptionsMenu()
@@ -217,13 +217,13 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
 
             val rootView = view
             if (!canOpenFile && rootView != null) {
-                FenixSnackbar.make(
-                    view = rootView,
-                    duration = Snackbar.LENGTH_SHORT,
-                ).setText(
-                    DynamicDownloadDialog.getCannotOpenFileErrorMessage(
-                        it,
-                        downloadState,
+                Snackbar.make(
+                    snackBarParentView = rootView,
+                    snackbarState = SnackbarState(
+                        message = DynamicDownloadDialog.getCannotOpenFileErrorMessage(
+                            context = it,
+                            download = downloadState,
+                        ),
                     ),
                 ).show()
             }
@@ -290,6 +290,7 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
     override fun onDetach() {
         super.onDetach()
         context?.let {
+            activity?.title = getString(R.string.app_name)
             activity?.findViewById<Toolbar>(R.id.navigationToolbar)?.setToolbarColors(
                 it.getColorFromAttr(R.attr.textPrimary),
                 it.getColorFromAttr(R.attr.layer1),

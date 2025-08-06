@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys.mjs";
+import { RootBiDiModule } from "chrome://remote/content/webdriver-bidi/modules/RootBiDiModule.sys.mjs";
 
 const lazy = {};
 
@@ -19,13 +19,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
 });
 
+const PREF_COOKIE_CHIPS_ENABLED = "network.cookie.CHIPS.enabled";
 const PREF_COOKIE_BEHAVIOR = "network.cookie.cookieBehavior";
-const PREF_COOKIE_OPTIN_PARTITIONING =
-  "network.cookie.cookieBehavior.optInPartitioning";
 
 // This is a static preference, so it cannot be modified during runtime and we can cache its value.
-ChromeUtils.defineLazyGetter(lazy, "cookieBehaviorOptInPartitioning", () =>
-  Services.prefs.getBoolPref(PREF_COOKIE_OPTIN_PARTITIONING)
+ChromeUtils.defineLazyGetter(lazy, "cookieCHIPSEnabled", () =>
+  Services.prefs.getBoolPref(PREF_COOKIE_CHIPS_ENABLED)
 );
 
 const CookieFieldsMapping = {
@@ -69,7 +68,7 @@ const SameSiteType = {
   [Ci.nsICookie.SAMESITE_STRICT]: "strict",
 };
 
-class StorageModule extends Module {
+class StorageModule extends RootBiDiModule {
   destroy() {}
 
   /**
@@ -299,6 +298,8 @@ class StorageModule extends Module {
       schemeType = Ci.nsICookie.SCHEME_HTTP;
     }
 
+    const isPartitioned = originAttributes.partitionKey?.length > 0;
+
     try {
       Services.cookies.add(
         domain,
@@ -312,7 +313,8 @@ class StorageModule extends Module {
         expiry === null ? MAX_COOKIE_EXPIRY : expiry,
         originAttributes,
         this.#getSameSitePlatformProperty(sameSite),
-        schemeType
+        schemeType,
+        isPartitioned
       );
     } catch (e) {
       throw new lazy.error.UnableToSetCookieError(e);
@@ -759,12 +761,16 @@ class StorageModule extends Module {
           originAttributes.partitionKey = "";
         } else {
           originAttributes.partitionKey = ChromeUtils.getPartitionKeyFromURL(
-            partitionKey.sourceOrigin
+            partitionKey.sourceOrigin,
+            "",
+            false
           );
         }
       } else {
         originAttributes.partitionKey = ChromeUtils.getPartitionKeyFromURL(
-          partitionKey.sourceOrigin
+          partitionKey.sourceOrigin,
+          "",
+          false
         );
       }
     }
@@ -954,7 +960,7 @@ class StorageModule extends Module {
     return (
       cookieBehavior ===
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
-      lazy.cookieBehaviorOptInPartitioning
+      lazy.cookieCHIPSEnabled
     );
   }
 }

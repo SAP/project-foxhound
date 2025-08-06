@@ -30,6 +30,7 @@ import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.tab.collections.ext.invoke
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.feature.top.sites.TopSite
+import mozilla.components.feature.top.sites.TopSitesUseCases
 import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.support.ktx.android.view.showKeyboard
@@ -194,8 +195,9 @@ class DefaultSessionControlController(
     private val tabCollectionStorage: TabCollectionStorage,
     private val addTabUseCase: TabsUseCases.AddNewTabUseCase,
     private val restoreUseCase: TabsUseCases.RestoreUseCase,
-    private val reloadUrlUseCase: SessionUseCases.ReloadUrlUseCase,
     private val selectTabUseCase: TabsUseCases.SelectTabUseCase,
+    private val reloadUrlUseCase: SessionUseCases.ReloadUrlUseCase,
+    private val topSitesUseCases: TopSitesUseCases,
     private val appStore: AppStore,
     private val navController: NavController,
     private val viewLifecycleScope: CoroutineScope,
@@ -241,7 +243,7 @@ class DefaultSessionControlController(
             engine,
             collection,
             onFailure = { url ->
-                addTabUseCase.invoke(url)
+                addTabUseCase(url)
             },
         )
 
@@ -324,14 +326,13 @@ class DefaultSessionControlController(
 
                     if (urlText.isUrl()) {
                         viewLifecycleScope.launch(Dispatchers.IO) {
-                            with(activity.components.useCases.topSitesUseCase) {
-                                updateTopSites(
-                                    topSite = topSite,
-                                    title = titleEditText.text.toString(),
-                                    url = urlText.toNormalizedUrl(),
-                                )
-                            }
+                            updateTopSite(
+                                topSite = topSite,
+                                title = titleEditText.text.toString(),
+                                url = urlText.toNormalizedUrl(),
+                            )
                         }
+
                         dialog.dismiss()
                     } else {
                         val criticalColor = ColorStateList.valueOf(
@@ -356,6 +357,22 @@ class DefaultSessionControlController(
                 titleEditText.setSelection(0, titleEditText.text.length)
                 titleEditText.showKeyboard()
             }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun updateTopSite(topSite: TopSite, title: String, url: String) {
+        if (topSite is TopSite.Frecent) {
+            topSitesUseCases.addPinnedSites(
+                title = title,
+                url = url,
+            )
+        } else {
+            topSitesUseCases.updateTopSites(
+                topSite = topSite,
+                title = title,
+                url = url,
+            )
         }
     }
 
@@ -410,6 +427,7 @@ class DefaultSessionControlController(
                 searchEngine,
                 searchEngine == store.state.search.selectedOrDefaultSearchEngine,
                 searchAccessPoint,
+                activity.components.nimbus.events,
             )
         }
 
@@ -431,15 +449,11 @@ class DefaultSessionControlController(
             if (existingTabForUrl == null) {
                 TopSites.openInNewTab.record(NoExtras())
 
-                val tabId = addTabUseCase.invoke(
+                addTabUseCase.invoke(
                     url = appendSearchAttributionToUrlIfNeeded(topSite.url),
                     selectTab = true,
                     startLoading = true,
                 )
-
-                if (settings.openNextTabInDesktopMode) {
-                    activity.handleRequestDesktopMode(tabId)
-                }
             } else {
                 selectTabUseCase.invoke(existingTabForUrl.id)
             }

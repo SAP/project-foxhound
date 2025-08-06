@@ -12,6 +12,7 @@
 #include <tuple>
 
 #include "mozilla/dom/FlexBinding.h"
+#include "mozilla/IntrinsicISizesCache.h"
 #include "nsContainerFrame.h"
 #include "nsILineIterator.h"
 
@@ -147,7 +148,7 @@ class nsFlexContainerFrame final : public nsContainerFrame,
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
 
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) override;
 
 #ifdef DEBUG_FRAME_DUMP
@@ -159,10 +160,11 @@ class nsFlexContainerFrame final : public nsContainerFrame,
       BaselineExportContext) const override;
 
   // Unions the child overflow from our in-flow children.
-  void UnionInFlowChildOverflow(mozilla::OverflowAreas&);
+  void UnionInFlowChildOverflow(mozilla::OverflowAreas&,
+                                bool aAsIfScrolled = false);
 
   // Unions the child overflow from all our children, including out of flows.
-  void UnionChildOverflow(mozilla::OverflowAreas&) final;
+  void UnionChildOverflow(mozilla::OverflowAreas&, bool aAsIfScrolled) final;
 
   // nsContainerFrame overrides
   bool DrainSelfOverflowList() override;
@@ -649,14 +651,13 @@ class nsFlexContainerFrame final : public nsContainerFrame,
   /**
    * Helper to implement IntrinsicISize().
    */
-  nscoord ComputeIntrinsicISize(gfxContext* aContext,
+  nscoord ComputeIntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                                 mozilla::IntrinsicISizeType aType);
 
   /**
    * Cached values to optimize IntrinsicISize().
    */
-  nscoord mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
-  nscoord mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
+  mozilla::IntrinsicISizesCache mCachedIntrinsicSizes;
 
   /**
    * Cached baselines computed in our last reflow to optimize

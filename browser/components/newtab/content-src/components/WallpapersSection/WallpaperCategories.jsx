@@ -5,6 +5,7 @@
 import React from "react";
 import { connect } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
+// eslint-disable-next-line no-shadow
 import { CSSTransition } from "react-transition-group";
 
 export class _WallpaperCategories extends React.PureComponent {
@@ -36,7 +37,7 @@ export class _WallpaperCategories extends React.PureComponent {
     this.props.setPref("newtabWallpapers.wallpaper", id);
     this.handleUserEvent(at.WALLPAPER_CLICK, {
       selected_wallpaper: id,
-      hadPreviousWallpaper: !!this.props.activeWallpaper,
+      had_previous_wallpaper: !!this.props.activeWallpaper,
     });
   }
   handleReset() {
@@ -46,7 +47,7 @@ export class _WallpaperCategories extends React.PureComponent {
     this.props.setPref("newtabWallpapers.wallpaper", "");
     this.handleUserEvent(at.WALLPAPER_CLICK, {
       selected_wallpaper: "none",
-      hadPreviousWallpaper: !!this.props.activeWallpaper,
+      had_previous_wallpaper: !!this.props.activeWallpaper,
     });
   }
 
@@ -137,6 +138,7 @@ export class _WallpaperCategories extends React.PureComponent {
                 <input
                   id={category}
                   style={style}
+                  type="radio"
                   onClick={this.handleCategory}
                   className="wallpaper-input"
                 />

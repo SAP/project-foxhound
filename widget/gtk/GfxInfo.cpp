@@ -20,7 +20,7 @@
 
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/SSE.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/XREAppData.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/GUniquePtr.h"
@@ -957,14 +957,14 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
     // Bug 1635186 - Poor performance with video playing in a background window
     // on XWayland. Keep in sync with FEATURE_X11_EGL below to only enable them
     // together by default. Only Mesa and Nvidia binary drivers are expected
-    // on Wayland rigth now.
+    // on Wayland right now.
     APPEND_TO_DRIVER_BLOCKLIST_EXT(
         OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
         WindowProtocol::XWayland, DriverVendor::MesaAll, DeviceFamily::All,
         nsIGfxInfo::FEATURE_WEBRENDER,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
-        V(21, 0, 0, 0), "FEATURE_FAILURE_WEBRENDER_BUG_1635186",
-        "Mesa 21.0.0.0");
+        V(17, 0, 0, 0), "FEATURE_FAILURE_WEBRENDER_BUG_1635186",
+        "Mesa 17.0.0.0");
 
     // Bug 1815481 - Disable mesa drivers in virtual machines.
     APPEND_TO_DRIVER_BLOCKLIST_EXT(
@@ -1030,6 +1030,14 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_DMABUF, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         DRIVER_LESS_THAN, V(545, 23, 6, 0), "FEATURE_FAILURE_BUG_1788573", "");
 
+    // Disabled due to high volume crash tracked in bug 1913778. It appears that
+    // only this version of the driver is affected.
+    APPEND_TO_DRIVER_BLOCKLIST_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::MesaRadeonsi, DeviceFamily::AtiAll,
+        nsIGfxInfo::FEATURE_DMABUF, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
+        DRIVER_EQUAL, V(24, 1, 3, 0), "FEATURE_FAILURE_BUG_1913778", "");
+
     ////////////////////////////////////
     // FEATURE_DMABUF_SURFACE_EXPORT
     // Disabled on all Mesa drivers due to various issue, among them:
@@ -1043,6 +1051,17 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_DMABUF_SURFACE_EXPORT,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_COMPARISON_IGNORED,
         V(0, 0, 0, 0), "FEATURE_FAILURE_BROKEN_DRIVER", "");
+
+    ////////////////////////////////////
+    // FEATURE_DMABUF_WEBGL
+    // Disabled due to DMABuf rendering/correctness with WebGL on Nvidia driver,
+    // tracked in bug 1924578.
+    APPEND_TO_DRIVER_BLOCKLIST_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::NonMesaAll, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_DMABUF_WEBGL, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
+        DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), "FEATURE_FAILURE_BUG_1924578",
+        "");
 
     ////////////////////////////////////
     // FEATURE_HARDWARE_VIDEO_DECODING
@@ -1118,6 +1137,14 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_WEBRENDER_PARTIAL_PRESENT,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_COMPARISON_IGNORED,
         V(0, 0, 0, 0), "FEATURE_ROLLOUT_WR_PARTIAL_PRESENT_NVIDIA_BINARY", "");
+
+    APPEND_TO_DRIVER_BLOCKLIST_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::XWayland, DriverVendor::MesaAll, DeviceFamily::All,
+        nsIGfxInfo::FEATURE_WEBRENDER_PARTIAL_PRESENT,
+        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
+        V(21, 0, 0, 0), "FEATURE_FAILURE_WEBRENDER_PARTIAL_PRESENT_BUG_1677892",
+        "Mesa 21.0.0.0");
 
     ////////////////////////////////////
 
@@ -1354,8 +1381,7 @@ GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) {
   } else {
     aWindowProtocol = GfxDriverInfo::GetWindowProtocol(WindowProtocol::X11);
   }
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_LINUX_WINDOW_PROTOCOL,
-                       aWindowProtocol);
+  glean::gfx::linux_window_protocol.Set(NS_ConvertUTF16toUTF8(aWindowProtocol));
   return NS_OK;
 }
 

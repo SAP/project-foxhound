@@ -59,8 +59,6 @@
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/ObjectOperations.h"
-#include "vm/PIC.h"
-#include "vm/PlainObject.h"
 #include "vm/Realm.h"
 #include "vm/StringType.h"
 
@@ -193,35 +191,6 @@ bool js::temporal::ValidateTemporalRoundingIncrement(JSContext* cx,
 
   // Step 5.
   return true;
-}
-
-PropertyName* js::temporal::TemporalUnitToString(JSContext* cx,
-                                                 TemporalUnit unit) {
-  switch (unit) {
-    case TemporalUnit::Auto:
-      break;
-    case TemporalUnit::Year:
-      return cx->names().year;
-    case TemporalUnit::Month:
-      return cx->names().month;
-    case TemporalUnit::Week:
-      return cx->names().week;
-    case TemporalUnit::Day:
-      return cx->names().day;
-    case TemporalUnit::Hour:
-      return cx->names().hour;
-    case TemporalUnit::Minute:
-      return cx->names().minute;
-    case TemporalUnit::Second:
-      return cx->names().second;
-    case TemporalUnit::Millisecond:
-      return cx->names().millisecond;
-    case TemporalUnit::Microsecond:
-      return cx->names().microsecond;
-    case TemporalUnit::Nanosecond:
-      return cx->names().nanosecond;
-  }
-  MOZ_CRASH("invalid temporal unit");
 }
 
 static Handle<PropertyName*> ToPropertyName(JSContext* cx,
@@ -1195,6 +1164,52 @@ bool js::temporal::GetTemporalShowOffsetOption(JSContext* cx,
   return true;
 }
 
+/**
+ * GetDirectionOption ( options )
+ */
+bool js::temporal::GetDirectionOption(JSContext* cx,
+                                      Handle<JSString*> direction,
+                                      Direction* result) {
+  JSLinearString* linear = direction->ensureLinear(cx);
+  if (!linear) {
+    return false;
+  }
+
+  if (StringEqualsLiteral(linear, "next")) {
+    *result = Direction::Next;
+  } else if (StringEqualsLiteral(linear, "previous")) {
+    *result = Direction::Previous;
+  } else {
+    if (auto chars = QuoteString(cx, linear, '"')) {
+      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                               JSMSG_INVALID_OPTION_VALUE, "direction",
+                               chars.get());
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * GetDirectionOption ( options )
+ */
+bool js::temporal::GetDirectionOption(JSContext* cx, Handle<JSObject*> options,
+                                      Direction* result) {
+  // Step 1.
+  Rooted<JSString*> direction(cx);
+  if (!GetStringOption(cx, options, cx->names().direction, &direction)) {
+    return false;
+  }
+
+  if (!direction) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TEMPORAL_MISSING_OPTION, "direction");
+    return false;
+  }
+
+  return GetDirectionOption(cx, direction, result);
+}
+
 template <typename T, typename... Ts>
 static JSObject* MaybeUnwrapIf(JSObject* object) {
   if (auto* unwrapped = object->maybeUnwrapIf<T>()) {
@@ -1303,198 +1318,11 @@ bool js::temporal::ToIntegerWithTruncation(JSContext* cx, Handle<Value> value,
 }
 
 /**
- * GetMethod ( V, P )
- */
-JSObject* js::temporal::GetMethod(JSContext* cx, Handle<JSObject*> object,
-                                  Handle<PropertyName*> name) {
-  // Step 1.
-  Rooted<Value> value(cx);
-  if (!GetProperty(cx, object, object, name, &value)) {
-    return nullptr;
-  }
-
-  // Steps 2-3.
-  if (!IsCallable(value)) {
-    if (auto chars = StringToNewUTF8CharsZ(cx, *name)) {
-      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                               JSMSG_PROPERTY_NOT_CALLABLE, chars.get());
-    }
-    return nullptr;
-  }
-
-  // Step 4.
-  return &value.toObject();
-}
-
-/**
- * CopyDataProperties ( target, source, excludedKeys [ , excludedValues ] )
- *
- * Implementation when |excludedKeys| and |excludedValues| are both empty lists.
- */
-bool js::temporal::CopyDataProperties(JSContext* cx,
-                                      Handle<PlainObject*> target,
-                                      Handle<JSObject*> source) {
-  // Optimization for the common case when |source| is a native object.
-  if (source->is<NativeObject>()) {
-    bool optimized = false;
-    if (!CopyDataPropertiesNative(cx, target, source.as<NativeObject>(),
-                                  nullptr, &optimized)) {
-      return false;
-    }
-    if (optimized) {
-      return true;
-    }
-  }
-
-  // Step 1-2. (Not applicable)
-
-  // Step 3.
-  JS::RootedVector<PropertyKey> keys(cx);
-  if (!GetPropertyKeys(
-          cx, source, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS, &keys)) {
-    return false;
-  }
-
-  // Step 4.
-  Rooted<mozilla::Maybe<PropertyDescriptor>> desc(cx);
-  Rooted<Value> propValue(cx);
-  for (size_t i = 0; i < keys.length(); i++) {
-    Handle<PropertyKey> key = keys[i];
-
-    // Steps 4.a-b. (Not applicable)
-
-    // Step 4.c.i.
-    if (!GetOwnPropertyDescriptor(cx, source, key, &desc)) {
-      return false;
-    }
-
-    // Step 4.c.ii.
-    if (desc.isNothing() || !desc->enumerable()) {
-      continue;
-    }
-
-    // Step 4.c.ii.1.
-    if (!GetProperty(cx, source, source, key, &propValue)) {
-      return false;
-    }
-
-    // Step 4.c.ii.2. (Not applicable)
-
-    // Step 4.c.ii.3.
-    if (!DefineDataProperty(cx, target, key, propValue)) {
-      return false;
-    }
-  }
-
-  // Step 5.
-  return true;
-}
-
-/**
- * CopyDataProperties ( target, source, excludedKeys [ , excludedValues ] )
- *
- * Implementation when |excludedKeys| is an empty list and |excludedValues| is
- * the list «undefined».
- */
-static bool CopyDataPropertiesIgnoreUndefined(JSContext* cx,
-                                              Handle<PlainObject*> target,
-                                              Handle<JSObject*> source) {
-  // Step 1-2. (Not applicable)
-
-  // Step 3.
-  JS::RootedVector<PropertyKey> keys(cx);
-  if (!GetPropertyKeys(
-          cx, source, JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS, &keys)) {
-    return false;
-  }
-
-  // Step 4.
-  Rooted<mozilla::Maybe<PropertyDescriptor>> desc(cx);
-  Rooted<Value> propValue(cx);
-  for (size_t i = 0; i < keys.length(); i++) {
-    Handle<PropertyKey> key = keys[i];
-
-    // Steps 4.a-b. (Not applicable)
-
-    // Step 4.c.i.
-    if (!GetOwnPropertyDescriptor(cx, source, key, &desc)) {
-      return false;
-    }
-
-    // Step 4.c.ii.
-    if (desc.isNothing() || !desc->enumerable()) {
-      continue;
-    }
-
-    // Step 4.c.ii.1.
-    if (!GetProperty(cx, source, source, key, &propValue)) {
-      return false;
-    }
-
-    // Step 4.c.ii.2.
-    if (propValue.isUndefined()) {
-      continue;
-    }
-
-    // Step 4.c.ii.3.
-    if (!DefineDataProperty(cx, target, key, propValue)) {
-      return false;
-    }
-  }
-
-  // Step 5.
-  return true;
-}
-
-/**
- * SnapshotOwnProperties ( source, proto [, excludedKeys [, excludedValues ] ] )
- */
-PlainObject* js::temporal::SnapshotOwnProperties(JSContext* cx,
-                                                 Handle<JSObject*> source) {
-  // Step 1.
-  Rooted<PlainObject*> copy(cx, NewPlainObjectWithProto(cx, nullptr));
-  if (!copy) {
-    return nullptr;
-  }
-
-  // Steps 2-4.
-  if (!CopyDataProperties(cx, copy, source)) {
-    return nullptr;
-  }
-
-  // Step 3.
-  return copy;
-}
-
-/**
- * SnapshotOwnProperties ( source, proto [, excludedKeys [, excludedValues ] ] )
- *
- * Implementation when |excludedKeys| is an empty list and |excludedValues| is
- * the list «undefined».
- */
-PlainObject* js::temporal::SnapshotOwnPropertiesIgnoreUndefined(
-    JSContext* cx, Handle<JSObject*> source) {
-  // Step 1.
-  Rooted<PlainObject*> copy(cx, NewPlainObjectWithProto(cx, nullptr));
-  if (!copy) {
-    return nullptr;
-  }
-
-  // Steps 2-4.
-  if (!CopyDataPropertiesIgnoreUndefined(cx, copy, source)) {
-    return nullptr;
-  }
-
-  // Step 3.
-  return copy;
-}
-
-/**
  * GetDifferenceSettings ( operation, options, unitGroup, disallowedUnits,
  * fallbackSmallestUnit, smallestLargestDefaultUnit )
  */
 bool js::temporal::GetDifferenceSettings(
-    JSContext* cx, TemporalDifference operation, Handle<PlainObject*> options,
+    JSContext* cx, TemporalDifference operation, Handle<JSObject*> options,
     TemporalUnitGroup unitGroup, TemporalUnit smallestAllowedUnit,
     TemporalUnit fallbackSmallestUnit, TemporalUnit smallestLargestDefaultUnit,
     DifferenceSettings* result) {
@@ -1577,14 +1405,6 @@ bool js::temporal::GetDifferenceSettings(
   return true;
 }
 
-bool temporal::IsArrayIterationSane(JSContext* cx, bool* result) {
-  auto* stubChain = ForOfPIC::getOrCreate(cx);
-  if (!stubChain) {
-    return false;
-  }
-  return stubChain->tryOptimizeArray(cx, result);
-}
-
 static JSObject* CreateTemporalObject(JSContext* cx, JSProtoKey key) {
   Rooted<JSObject*> proto(cx, &cx->global()->getObjectPrototype());
 
@@ -1613,7 +1433,6 @@ static bool TemporalClassFinish(JSContext* cx, Handle<JSObject*> temporal,
 
   // Add the constructor properties.
   for (const auto& protoKey : {
-           JSProto_Calendar,
            JSProto_Duration,
            JSProto_Instant,
            JSProto_PlainDate,
@@ -1621,7 +1440,6 @@ static bool TemporalClassFinish(JSContext* cx, Handle<JSObject*> temporal,
            JSProto_PlainMonthDay,
            JSProto_PlainTime,
            JSProto_PlainYearMonth,
-           JSProto_TimeZone,
            JSProto_ZonedDateTime,
        }) {
     if (!defineProperty(protoKey, ClassName(protoKey, cx))) {

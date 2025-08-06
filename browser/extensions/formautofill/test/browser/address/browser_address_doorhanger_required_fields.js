@@ -3,20 +3,6 @@
 // This test verifies that the address fillin popup appears correctly when
 // the required fields have been given values.
 
-const { Region } = ChromeUtils.importESModule(
-  "resource://gre/modules/Region.sys.mjs"
-);
-
-async function expectSavedAddresses(expectedCount) {
-  const addresses = await getAddresses();
-  is(
-    addresses.length,
-    expectedCount,
-    `${addresses.length} address in the storage`
-  );
-  return addresses;
-}
-
 // Test when all required fields are present.
 add_task(
   async function test_doorhanger_shown_when_contain_all_required_fields() {
@@ -40,7 +26,7 @@ add_task(
       }
     );
 
-    await expectSavedAddresses(1);
+    await expectSavedAddressesCount(1);
     await removeAllRecords();
   }
 );
@@ -131,7 +117,7 @@ add_task(
       }
     );
 
-    await expectSavedAddresses(1);
+    await expectSavedAddressesCount(1);
 
     Region._setCurrentRegion(initialHomeRegion);
     Region._setHomeRegion(initialCurrentRegion);
@@ -213,7 +199,7 @@ add_task(
       }
     );
 
-    await expectSavedAddresses(1);
+    await expectSavedAddressesCount(1);
     await SpecialPowers.popPrefEnv();
     await removeAllRecords();
   }

@@ -82,7 +82,7 @@ struct ListHelper {
   LinkedList<nsSHistory> mList;
 };
 
-static ListHelper gSHistoryList;
+MOZ_RUNINIT static ListHelper gSHistoryList;
 // Max viewers allowed total, across all SHistory objects - negative default
 // means we will calculate how many viewers to cache based on total memory
 int32_t nsSHistory::sHistoryMaxTotalViewers = -1;
@@ -303,14 +303,14 @@ uint32_t nsSHistory::CalcMaxTotalViewers() {
 #  define MAX_TOTAL_VIEWERS_BIAS 14
 #endif
 
-  // Calculate an estimate of how many ContentViewers we should cache based
-  // on RAM.  This assumes that the average ContentViewer is 4MB (conservative)
-  // and caps the max at 8 ContentViewers
+  // Calculate an estimate of how many DocumentViewers we should cache based
+  // on RAM.  This assumes that the average DocumentViewer is 4MB (conservative)
+  // and caps the max at 8 DocumentViewers
   //
-  // TODO: Should we split the cache memory betw. ContentViewer caching and
+  // TODO: Should we split the cache memory betw. DocumentViewer caching and
   // nsCacheService?
   //
-  // RAM    | ContentViewers | on Android
+  // RAM    | DocumentViewers | on Android
   // -------------------------------------
   // 32   Mb       0                0
   // 64   Mb       1                0
@@ -339,7 +339,7 @@ uint32_t nsSHistory::CalcMaxTotalViewers() {
 
   // This is essentially the same calculation as for nsCacheService,
   // except that we divide the final memory calculation by 4, since
-  // we assume each ContentViewer takes on average 4MB
+  // we assume each DocumentViewer takes on average 4MB
   uint32_t viewers = 0;
   double x = std::log(kBytesD) / std::log(2.0) - MAX_TOTAL_VIEWERS_BIAS;
   if (x > 0) {
@@ -978,6 +978,10 @@ static void LogEntry(nsISHEntry* aEntry, int32_t aIndex, int32_t aTotal,
       gSHLog, LogLevel::Debug,
       (" %s%s  Is in BFCache = %s\n", prefix.get(), childCount > 0 ? "|" : " ",
        aEntry->GetIsInBFCache() ? "true" : "false"));
+  MOZ_LOG(gSHLog, LogLevel::Debug,
+          (" %s%s  Has User Interaction = %s\n", prefix.get(),
+           childCount > 0 ? "|" : " ",
+           aEntry->GetHasUserInteraction() ? "true" : "false"));
 
   nsCOMPtr<nsISHEntry> prevChild;
   for (int32_t i = 0; i < childCount; ++i) {
@@ -1346,7 +1350,7 @@ void nsSHistory::LoadURIOrBFCache(LoadEntryResult& aLoadEntry) {
         canonicalBC->GetActiveSessionHistoryEntry();
     MOZ_ASSERT(she);
     RefPtr<nsFrameLoader> frameLoader = she->GetFrameLoader();
-    if (frameLoader &&
+    if (frameLoader && canonicalBC->Group()->Toplevels().Length() == 1 &&
         (!currentShe || (she->SharedInfo() != currentShe->SharedInfo() &&
                          !currentShe->GetFrameLoader()))) {
       bool canSave = (!currentShe || currentShe->GetSaveLayoutStateFlag()) &&

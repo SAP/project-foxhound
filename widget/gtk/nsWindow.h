@@ -21,6 +21,7 @@
 #include "mozilla/TouchEvents.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/RWLock.h"
+#include "mozilla/gfx/BaseMargin.h"
 #include "mozilla/widget/WindowSurface.h"
 #include "mozilla/widget/WindowSurfaceProvider.h"
 #include "nsBaseWidget.h"
@@ -109,6 +110,15 @@ typedef enum {
 } GdkAnchorHints;
 #endif
 
+#if !GTK_CHECK_VERSION(3, 18, 0)
+typedef enum {
+  GDK_TOUCHPAD_GESTURE_PHASE_BEGIN,
+  GDK_TOUCHPAD_GESTURE_PHASE_UPDATE,
+  GDK_TOUCHPAD_GESTURE_PHASE_END,
+  GDK_TOUCHPAD_GESTURE_PHASE_CANCEL
+} GdkTouchpadGesturePhase;
+#endif
+
 namespace mozilla {
 enum class NativeKeyBindingsType : uint8_t;
 
@@ -149,17 +159,14 @@ class nsWindow final : public nsBaseWidget {
   // nsIWidget
   using nsBaseWidget::Create;  // for Create signature not overridden here
   [[nodiscard]] nsresult Create(nsIWidget* aParent,
-                                nsNativeWidget aNativeParent,
                                 const LayoutDeviceIntRect& aRect,
                                 InitData* aInitData) override;
   void Destroy() override;
-  nsIWidget* GetParent() override;
   float GetDPI() override;
   double GetDefaultScaleInternal() override;
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() override;
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScaleByScreen()
       override;
-  void SetParent(nsIWidget* aNewParent) override;
   void SetModal(bool aModal) override;
   bool IsVisible() const override;
   bool IsMapped() const override;
@@ -248,6 +255,7 @@ class nsWindow final : public nsBaseWidget {
   gboolean OnKeyReleaseEvent(GdkEventKey* aEvent);
 
   void OnScrollEvent(GdkEventScroll* aEvent);
+  void OnSmoothScrollEvent(uint32_t aTime, float aDeltaX, float aDeltaY);
 
   void OnVisibilityNotifyEvent(GdkVisibilityState aState);
   void OnWindowStateEvent(GtkWidget* aWidget, GdkEventWindowState* aEvent);
@@ -258,6 +266,8 @@ class nsWindow final : public nsBaseWidget {
   gboolean OnPropertyNotifyEvent(GtkWidget* aWidget, GdkEventProperty* aEvent);
   gboolean OnTouchEvent(GdkEventTouch* aEvent);
   gboolean OnTouchpadPinchEvent(GdkEventTouchpadPinch* aEvent);
+  void OnTouchpadHoldEvent(GdkTouchpadGesturePhase aPhase, guint aTime,
+                           uint32_t aFingers);
 
   gint GetInputRegionMarginInGdkCoords();
 
@@ -319,20 +329,10 @@ class nsWindow final : public nsBaseWidget {
       const mozilla::WidgetKeyboardEvent& aEvent,
       nsTArray<mozilla::CommandInt>& aCommands) override;
 
-  // These methods are for toplevel windows only.
-  void ResizeTransparencyBitmap();
-  void ApplyTransparencyBitmap();
-  void ClearTransparencyBitmap();
-
   void SetTransparencyMode(TransparencyMode aMode) override;
   TransparencyMode GetTransparencyMode() override;
   void SetInputRegion(const InputRegion&) override;
-  nsresult UpdateTranslucentWindowAlphaInternal(const nsIntRect& aRect,
-                                                uint8_t* aAlphas,
-                                                int32_t aStride);
-  void ReparentNativeWidget(nsIWidget* aNewParent) override;
-
-  void UpdateTitlebarTransparencyBitmap();
+  void DidChangeParent(nsIWidget* aOldParent) override;
 
   nsresult SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
                                       NativeMouseMessage aNativeMessage,
@@ -417,8 +417,7 @@ class nsWindow final : public nsBaseWidget {
    */
   static GtkWindowDecoration GetSystemGtkWindowDecoration();
 
-  static bool TitlebarUseShapeMask();
-  bool IsRemoteContent() { return HasRemoteContent(); }
+  bool IsRemoteContent() const { return HasRemoteContent(); }
   void NativeMoveResizeWaylandPopupCallback(const GdkRectangle* aFinalSize,
                                             bool aFlippedX, bool aFlippedY);
   static bool IsToplevelWindowTransparent();
@@ -474,6 +473,14 @@ class nsWindow final : public nsBaseWidget {
 
   static nsWindow* GetWindow(GdkWindow* window);
 
+  /**
+   * Dispatch accessible window activate event for the top level window
+   * accessible.
+   */
+  void DispatchActivateEventAccessible();
+
+  void GtkWidgetDestroyHandler(GtkWidget* aWidget);
+
  protected:
   virtual ~nsWindow();
 
@@ -485,12 +492,8 @@ class nsWindow final : public nsBaseWidget {
 
   void RegisterTouchWindow() override;
 
-  nsCOMPtr<nsIWidget> mParent;
   mozilla::Atomic<int, mozilla::Relaxed> mCeiledScaleFactor{1};
   double mFractionalScaleFactor = 0.0;
-
-  void UpdateAlpha(mozilla::gfx::SourceSurface* aSourceSurface,
-                   nsIntRect aBoundsRect);
 
   void NativeMoveResize(bool aMoved, bool aResized);
 
@@ -513,7 +516,6 @@ class nsWindow final : public nsBaseWidget {
   GtkWidget* GetToplevelWidget() const;
   nsWindow* GetContainerWindow() const;
   Window GetX11Window();
-  bool GetShapedState();
   void EnsureGdkWindow();
   void SetUrgencyHint(GtkWidget* top_window, bool state);
   void SetDefaultIcon(void);
@@ -668,7 +670,6 @@ class nsWindow final : public nsBaseWidget {
   bool mIsAlert : 1;
   bool mWindowShouldStartDragging : 1;
   bool mHasMappedToplevel : 1;
-  bool mRetryPointerGrab : 1;
   bool mPanInProgress : 1;
   // Draw titlebar with :backdrop css state (inactive/unfocused).
   bool mTitlebarBackdropState : 1;
@@ -723,10 +724,6 @@ class nsWindow final : public nsBaseWidget {
    * when the widget is shown.
    */
   bool mHiddenPopupPositioned : 1;
-
-  // The transparency bitmap is used instead of ARGB visual for toplevel
-  // window to draw titlebar.
-  bool mTransparencyBitmapForTitlebar : 1;
 
   // True when we're on compositing window manager and this
   // window is using visual with alpha channel.
@@ -789,13 +786,6 @@ class nsWindow final : public nsBaseWidget {
 
   // Whether we need to retry capturing the mouse because we' re not mapped yet.
   bool mNeedsToRetryCapturingMouse : 1;
-
-  // This bitmap tracks which pixels are transparent. We don't support
-  // full translucency at this time; each pixel is either fully opaque
-  // or fully transparent.
-  gchar* mTransparencyBitmap = nullptr;
-  int32_t mTransparencyBitmapWidth = 0;
-  int32_t mTransparencyBitmapHeight = 0;
 
   // all of our DND stuff
   void InitDragEvent(mozilla::WidgetDragEvent& aEvent);
@@ -889,11 +879,6 @@ class nsWindow final : public nsBaseWidget {
   void LogPopupGravity(GdkGravity aGravity);
 #endif
 
-  bool IsTopLevelWindowType() const {
-    return mWindowType == WindowType::TopLevel ||
-           mWindowType == WindowType::Dialog;
-  }
-
   // mPopupPosition is the original popup position/size from layout, set by
   // nsWindow::Move() or nsWindow::Resize().
   // Popup position is relative to main (toplevel) window.
@@ -911,14 +896,31 @@ class nsWindow final : public nsBaseWidget {
   RefPtr<nsWindow> mWaylandPopupNext;
   RefPtr<nsWindow> mWaylandPopupPrev;
 
-#ifdef MOZ_ENABLE_DBUS
-  RefPtr<mozilla::widget::DBusMenuBar> mDBusMenuBar;
-#endif
-
   // When popup is resized by Gtk by move-to-rect callback,
   // we store final popup size here. Then we use mMoveToRectPopupSize size
   // in following popup operations unless mLayoutPopupSizeCleared is set.
   LayoutDeviceIntSize mMoveToRectPopupSize;
+
+#ifdef MOZ_ENABLE_DBUS
+  RefPtr<mozilla::widget::DBusMenuBar> mDBusMenuBar;
+#endif
+
+  struct LastMouseCoordinates {
+    template <typename Event>
+    void Set(Event* aEvent) {
+      mX = aEvent->x;
+      mY = aEvent->y;
+      mRootX = aEvent->x_root;
+      mRootY = aEvent->y_root;
+    }
+
+    float mX = 0.0f, mY = 0.0f;
+    float mRootX = 0.0f, mRootY = 0.0f;
+  } mLastMouseCoordinates;
+
+  // We don't want to fire scroll event with the same timestamp as
+  // smooth scroll event.
+  guint32 mLastSmoothScrollEventTime = GDK_CURRENT_TIME;
 
   /**
    * |mIMContext| takes all IME related stuff.
@@ -956,12 +958,6 @@ class nsWindow final : public nsBaseWidget {
    * @param  aEventType  [in] the accessible event type to dispatch
    */
   void DispatchEventToRootAccessible(uint32_t aEventType);
-
-  /**
-   * Dispatch accessible window activate event for the top level window
-   * accessible.
-   */
-  void DispatchActivateEventAccessible();
 
   /**
    * Dispatch accessible window deactivate event for the top level window
@@ -1019,6 +1015,7 @@ class nsWindow final : public nsBaseWidget {
   LayoutDeviceIntRect mLastLoggedBoundSize;
   int mLastLoggedScale = -1;
 #endif
+  mozilla::Sides mResizableEdges{mozilla::SideBits::eAll};
   // Running in kiosk mode and requested to stay on specified monitor.
   // If monitor is removed minimize the window.
   mozilla::Maybe<int> mKioskMonitor;

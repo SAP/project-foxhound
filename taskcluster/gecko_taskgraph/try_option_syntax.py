@@ -122,13 +122,11 @@ UNITTEST_PLATFORM_PRETTY_NAMES = {
         "linux1804-64-asan",
     ],
     "x64": ["linux64", "linux64-asan", "linux1804-64", "linux1804-64-asan"],
-    "Android 7.0 Samsung A51 32bit": ["android-hw-a51-11.0-arm7"],
-    "Android 7.0 Samsung A51 64bit": ["android-hw-a51-11.0-aarch64"],
     "Android 13.0 Google Pixel 5 32bit": ["android-hw-p5-13.0-arm7"],
     "Android 13.0 Google Pixel 5 64bit": ["android-hw-p5-13.0-android-aarch64"],
-    "Android 13.0 Google Pixel 6 64bit": ["android-hw-p6-13.0-android-aarch64"],
-    "Android 13.0 Samsung S21 64bit": ["android-hw-s21-13.0-android-aarch64"],
-    "Android 14.0 Samsung A55 64bit": ["android-hw-a55-14.0-android-aarch64"],
+    "Android 13.0 Google Pixel 6 64bit": ["android-hw-p6-13.0-aarch64"],
+    "Android 14.0 Samsung A55 64bit": ["android-hw-a55-14.0-aarch64"],
+    "Android 14.0 Samsung S24 64bit": ["android-hw-s24-14.0-aarch64"],
     "Windows 10": ["windows10-64"],
 }
 

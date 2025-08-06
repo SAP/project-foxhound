@@ -52,7 +52,19 @@ void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
   MOZ_CRASH();
 }
 
+void MacroAssembler::flexibleQuotientPtr(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  MOZ_CRASH();
+}
+
 void MacroAssembler::flexibleRemainder32(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  MOZ_CRASH();
+}
+
+void MacroAssembler::flexibleRemainderPtr(
     Register rhs, Register srcDest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
   MOZ_CRASH();
@@ -300,6 +312,8 @@ void MacroAssembler::wasmAtomicExchange64(const wasm::MemoryAccessDesc& access,
   MOZ_CRASH();
 }
 
+void MacroAssembler::atomicPause() { MOZ_CRASH(); }
+
 void MacroAssembler::speculationBarrier() { MOZ_CRASH(); }
 
 void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
@@ -311,6 +325,16 @@ void MacroAssembler::setupUnalignedABICall(Register scratch) { MOZ_CRASH(); }
 
 void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
                                                ExitFrameType type) {
+  MOZ_CRASH();
+}
+
+CodeOffset MacroAssembler::sub32FromMemAndBranchIfNegativeWithPatch(
+    Address address, Label* label) {
+  MOZ_CRASH();
+}
+
+void MacroAssembler::patchSub32FromMemAndBranchIfNegative(CodeOffset offset,
+                                                          Imm32 imm) {
   MOZ_CRASH();
 }
 

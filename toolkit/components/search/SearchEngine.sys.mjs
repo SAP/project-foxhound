@@ -4,12 +4,9 @@
 
 /* eslint no-shadow: error, mozilla/no-aArgs: error */
 
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   OpenSearchEngine: "resource://gre/modules/OpenSearchEngine.sys.mjs",
@@ -27,8 +24,6 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
     maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
   });
 });
-
-const USER_DEFINED = "searchTerms";
 
 // Supported OpenSearch parameters
 // See http://opensearch.a9.com/spec/1.1/querysyntax/#core
@@ -116,81 +111,17 @@ function rescaleIcon(byteArray, contentType, size = 32) {
 }
 
 /**
- * A simple class to handle caching of preferences that may be read from
- * parameters.
- */
-const ParamPreferenceCache = {
-  QueryInterface: ChromeUtils.generateQI([
-    "nsIObserver",
-    "nsISupportsWeakReference",
-  ]),
-
-  initCache() {
-    // Preference params are normally only on the default branch to avoid these being easily changed.
-    // We allow them on the normal branch in nightly builds to make testing easier.
-    let branchFetcher = AppConstants.NIGHTLY_BUILD
-      ? "getBranch"
-      : "getDefaultBranch";
-    this.branch = Services.prefs[branchFetcher](
-      lazy.SearchUtils.BROWSER_SEARCH_PREF + "param."
-    );
-    this.cache = new Map();
-    this.nimbusCache = new Map();
-    for (let prefName of this.branch.getChildList("")) {
-      this.cache.set(prefName, this.branch.getCharPref(prefName, null));
-    }
-    this.branch.addObserver("", this, true);
-
-    this.onNimbusUpdate = this.onNimbusUpdate.bind(this);
-    this.onNimbusUpdate();
-    lazy.NimbusFeatures.search.onUpdate(this.onNimbusUpdate);
-    lazy.NimbusFeatures.search.ready().then(this.onNimbusUpdate);
-  },
-
-  observe(subject, topic, data) {
-    this.cache.set(data, this.branch.getCharPref(data, null));
-  },
-
-  onNimbusUpdate() {
-    let extraParams =
-      lazy.NimbusFeatures.search.getVariable("extraParams") || [];
-    this.nimbusCache.clear();
-    // The try catch ensures that if the params were incorrect for some reason,
-    // the search service can still startup properly.
-    try {
-      for (const { key, value } of extraParams) {
-        this.nimbusCache.set(key, value);
-      }
-    } catch (ex) {
-      console.error("Failed to load nimbus variables for extraParams:", ex);
-    }
-  },
-
-  getPref(prefName) {
-    if (!this.cache) {
-      this.initCache();
-    }
-    return this.nimbusCache.has(prefName)
-      ? this.nimbusCache.get(prefName)
-      : this.cache.get(prefName);
-  },
-};
-
-/**
  * Represents a name/value pair for a parameter
  */
-class QueryParameter {
+export class QueryParameter {
   /**
    * @param {string} name
    *   The parameter's name. Must not be null.
    * @param {string} value
    *   The value of the parameter. May be an empty string, must not be null or
    *   undefined.
-   * @param {string} purpose
-   *   The search purpose for which matches when this parameter should be
-   *   applied, e.g. "searchbar", "contextmenu".
    */
-  constructor(name, value, purpose = null) {
+  constructor(name, value) {
     if (!name || value == null) {
       throw Components.Exception(
         "missing name or value for QueryParameter!",
@@ -200,7 +131,6 @@ class QueryParameter {
 
     this.name = name;
     this._value = value;
-    this.purpose = purpose;
   }
 
   get value() {
@@ -208,59 +138,10 @@ class QueryParameter {
   }
 
   toJSON() {
-    const result = {
+    return {
       name: this.name,
       value: this.value,
     };
-    if (this.purpose) {
-      result.purpose = this.purpose;
-    }
-    return result;
-  }
-}
-
-/**
- * Represents a special paramater that can be set by preferences. The
- * value is read from the 'browser.search.param.*' default preference
- * branch.
- */
-class QueryPreferenceParameter extends QueryParameter {
-  /**
-   * @param {string} name
-   *   The name of the parameter as injected into the query string.
-   * @param {string} prefName
-   *   The name of the preference to read from the branch.
-   * @param {string} purpose
-   *   The search purpose for which matches when this parameter should be
-   *   applied, e.g. `searchbar`, `contextmenu`.
-   */
-  constructor(name, prefName, purpose) {
-    super(name, prefName, purpose);
-  }
-
-  get value() {
-    const prefValue = ParamPreferenceCache.getPref(this._value);
-    return prefValue ? encodeURIComponent(prefValue) : null;
-  }
-
-  /**
-   * Converts the object to json. This object is converted with a mozparam flag
-   * as it gets written to the cache and hence we then know what type it is
-   * when reading it back.
-   *
-   * @returns {object}
-   */
-  toJSON() {
-    const result = {
-      condition: "pref",
-      mozparam: true,
-      name: this.name,
-      pref: this._value,
-    };
-    if (this.purpose) {
-      result.purpose = this.purpose;
-    }
-    return result;
   }
 }
 
@@ -273,7 +154,7 @@ class QueryPreferenceParameter extends QueryParameter {
  *   The OpenSearch search parameters.
  * @param {string} searchTerms
  *   The user-provided search terms. This string will inserted into
- *   paramValue as the value of the OS_PARAM_USER_DEFINED parameter.
+ *   paramValue as the value of the searchTerms parameter.
  *   This value must already be escaped appropriately - it is inserted
  *   as-is.
  * @param {string} queryCharset
@@ -285,7 +166,7 @@ function ParamSubstitution(paramValue, searchTerms, queryCharset) {
   const PARAM_REGEXP = /\{((?:\w+:)?\w+)(\??)\}/g;
   return paramValue.replace(PARAM_REGEXP, function (match, name, optional) {
     // {searchTerms} is by far the most common param so handle it first.
-    if (name == USER_DEFINED) {
+    if (name == "searchTerms") {
       return searchTerms;
     }
 
@@ -325,6 +206,7 @@ function ParamSubstitution(paramValue, searchTerms, queryCharset) {
 export class EngineURL {
   params = [];
   rels = [];
+  #searchTermParamName = null;
 
   /**
    * Creates an EngineURL.
@@ -385,43 +267,67 @@ export class EngineURL {
     }
 
     this.templateHost = templateURI.host;
-  }
 
-  addParam(name, value, purpose) {
-    this.params.push(new QueryParameter(name, value, purpose));
+    // It's possible that the search term parameter
+    // is part of the template.
+    let urlParms = new URLSearchParams(templateURI.query);
+    for (let [name, value] of urlParms.entries()) {
+      if (value == "{searchTerms}") {
+        this.#searchTermParamName = name;
+      }
+    }
   }
 
   /**
-   * Adds a MozParam to the parameters list for this URL. For purpose based params
-   * these are saved as standard parameters, for preference based we save them
-   * as a special type.
-   *
-   * @param {object} param
-   *   The parameter to add.
-   * @param {string} param.name
-   *   The name of the parameter to add to the url.
-   * @param {string} [param.condition]
-   *   The type of parameter this is, e.g. "pref" for a preference parameter,
-   *   or "purpose" for a value-based parameter with a specific purpose. The
-   *   default is "purpose".
-   * @param {string} [param.value]
-   *   The value if it is a "purpose" parameter.
-   * @param {string} [param.purpose]
-   *   The purpose of the parameter for when it is applied, e.g. for `searchbar`
-   *   searches.
-   * @param {string} [param.pref]
-   *   The preference name of the parameter, that gets appended to
-   *   `browser.search.param.`.
+   * @param {QueryParameter} param the QueryParameter to add
    */
-  _addMozParam(param) {
-    const purpose = param.purpose || undefined;
-    if (param.condition && param.condition == "pref") {
-      this.params.push(
-        new QueryPreferenceParameter(param.name, param.pref, purpose)
-      );
-    } else {
-      this.addParam(param.name, param.value || undefined, purpose);
+  addQueryParameter(param) {
+    if (param.value == "{searchTerms}") {
+      this.setSearchTermParamName(param.name);
+      return;
     }
+    this.params.push(param);
+  }
+
+  /**
+   * Adds a QueryParameter by name and value.
+   * Exists because this is a frequent operation and because it allows
+   * other files to add QueryParameters without importing QueryParameter
+   *
+   * @param {string} name name of the parameter
+   * @param {string} value value of the parameter
+   */
+  addParam(name, value) {
+    this.addQueryParameter(new QueryParameter(name, value));
+  }
+
+  /**
+   * Sets the name of the search term parameter and
+   * adds it to the list of query parameters.
+   *
+   * @param {string} name
+   *   The name of the parameter.
+   */
+  setSearchTermParamName(name) {
+    if (this.#searchTermParamName) {
+      lazy.logConsole.warn(
+        "set searchTermParamName: searchTermParamName was set twice."
+      );
+    }
+    this.params.push(new QueryParameter(name, "{searchTerms}"));
+    this.#searchTermParamName = name;
+  }
+
+  /**
+   * Returns the name of the parameter used for the search term.
+   *
+   * @returns {string|null}
+   *   A string which is the name of the parameter, or null
+   *   if no parameter can be found or is not supported (e.g. POST,
+   *   or contained within the URL).
+   */
+  get searchTermParamName() {
+    return this.#searchTermParamName;
   }
 
   /**
@@ -432,39 +338,19 @@ export class EngineURL {
    *   The user's search terms.
    * @param {string} queryCharset
    *   The character set that is being used for the query.
-   * @param {string} purpose
-   *   The source of the search (e.g. searchbar, addressbar).
    * @returns {Submission}
    *   The submission data containing the URL and post data for the URL.
    */
-  getSubmission(searchTerms, queryCharset, purpose) {
+  getSubmission(searchTerms, queryCharset) {
     var url = ParamSubstitution(this.template, searchTerms, queryCharset);
-    // Default to searchbar if the purpose is not provided
-    var requestPurpose = purpose || "searchbar";
-
-    // If a particular purpose isn't defined in the plugin, fallback to 'searchbar'.
-    if (
-      requestPurpose != "searchbar" &&
-      !this.params.some(p => p.purpose && p.purpose == requestPurpose)
-    ) {
-      requestPurpose = "searchbar";
-    }
 
     // Create an application/x-www-form-urlencoded representation of our params
     // (name=value&name=value&name=value)
     let dataArray = [];
-    for (var i = 0; i < this.params.length; ++i) {
-      var param = this.params[i];
-
-      // If this parameter has a purpose, only add it if the purpose matches
-      if (param.purpose && param.purpose != requestPurpose) {
-        continue;
-      }
-
-      // Preference MozParams might not have a preferenced saved, or a valid value.
+    for (let param of this.params) {
+      // QueryPreferenceParameters might not have a preferenced saved, or a valid value.
       if (param.value != null) {
-        var value = ParamSubstitution(param.value, searchTerms, queryCharset);
-
+        let value = ParamSubstitution(param.value, searchTerms, queryCharset);
         dataArray.push(param.name + "=" + value);
       }
     }
@@ -499,24 +385,6 @@ export class EngineURL {
     return new Submission(Services.io.newURI(url), postData);
   }
 
-  _getTermsParameterName() {
-    let searchTerms = "{" + USER_DEFINED + "}";
-    let paramName = this.params.find(p => p.value == searchTerms)?.name;
-    // Some query params might not be added to this.params
-    // in the engine construction process, so try checking the URL
-    // template for the existence of the query parameter value.
-    if (!paramName) {
-      let urlParms = new URL(this.template).searchParams;
-      for (let [name, value] of urlParms.entries()) {
-        if (value == searchTerms) {
-          paramName = name;
-          break;
-        }
-      }
-    }
-    return paramName ?? "";
-  }
-
   _hasRelation(rel) {
     return this.rels.some(e => e == rel.toLowerCase());
   }
@@ -528,11 +396,9 @@ export class EngineURL {
 
     this.rels = json.rels;
 
-    for (let i = 0; i < json.params.length; ++i) {
-      let param = json.params[i];
-      // mozparam and purpose are only supported for app-provided engines.
-      // Since we do not store the details for those engines, we don't want
-      // to handle it here.
+    for (let param of json.params) {
+      // mozparam and purpose were only supported for app-provided engines.
+      // Always ignore them for engines loaded from JSON.
       if (!param.mozparam && !param.purpose) {
         this.addParam(param.name, param.value);
       }
@@ -596,15 +462,11 @@ export class SearchEngine {
   _definedAliases = [];
   // The urls associated with this engine.
   _urls = [];
-  // The query parameter name of the search url, cached in memory to avoid
-  // repeated look-ups.
-  _searchUrlQueryParamName = null;
   // The known public suffix of the search url, cached in memory to avoid
   // repeated look-ups.
   _searchUrlPublicSuffix = null;
   /**
    * The unique id of the Search Engine.
-   * The id is an UUID.
    *
    * @type {string}
    */
@@ -652,50 +514,28 @@ export class SearchEngine {
   }
 
   /**
-   * Creates a key by serializing an object that contains the icon's width
-   * and height.
-   *
-   * @param {number} width
-   *   Width of the icon.
-   * @param {number} height
-   *   Height of the icon.
-   * @returns {string}
-   *   Key string.
-   */
-  _getIconKey(width, height) {
-    let keyObj = {
-      width,
-      height,
-    };
-
-    return JSON.stringify(keyObj);
-  }
-
-  /**
    * Add an icon to the icon map used by getIconURL().
+   * Icon must be square.
    *
-   * @param {number} width
-   *   Width of the icon.
-   * @param {number} height
-   *   Height of the icon.
+   * @param {number} size
+   *   Width and height of the icon.
    * @param {string} uriSpec
    *   String with the icon's URI.
    */
-  _addIconToMap(width, height, uriSpec) {
-    if (width == 16 && height == 16) {
+  _addIconToMap(size, uriSpec) {
+    if (size == 16) {
       // The 16x16 icon is stored in _iconURL, we don't need to store it twice.
       return;
     }
 
     // Use an object instead of a Map() because it needs to be serializable.
     this._iconMapObj = this._iconMapObj || {};
-    let key = this._getIconKey(width, height);
-    this._iconMapObj[key] = uriSpec;
+    this._iconMapObj[size] = uriSpec;
   }
 
   /**
-   * Sets the .iconURI property of the engine. If both aWidth and aHeight are
-   * provided an entry will be added to _iconMapObj that will enable accessing
+   * Sets the .iconURI property of the engine. If size is provided
+   * an entry will be added to _iconMapObj that will enable accessing
    * icon's data through getIconURL() APIs.
    *
    * @param {string} iconURL
@@ -706,12 +546,10 @@ export class SearchEngine {
    * @param {boolean} isPreferred
    *   Whether or not this icon is to be preferred. Preferred icons can
    *   override non-preferred icons.
-   * @param {number} [width]
-   *   Width of the icon.
-   * @param {number} [height]
-   *   Height of the icon.
+   * @param {number} [size]
+   *   Width and height of the icon.
    */
-  _setIcon(iconURL, isPreferred, width, height) {
+  _setIcon(iconURL, isPreferred, size) {
     var uri = lazy.SearchUtils.makeURI(iconURL);
 
     // Ignore bad URIs
@@ -736,8 +574,8 @@ export class SearchEngine {
           this._hasPreferredIcon = isPreferred;
         }
 
-        if (width && height) {
-          this._addIconToMap(width, height, iconURL);
+        if (size) {
+          this._addIconToMap(size, iconURL);
         }
         break;
       case "http":
@@ -771,12 +609,12 @@ export class SearchEngine {
             "data:" +
             contentType +
             ";base64," +
-            btoa(String.fromCharCode.apply(null, byteArray));
+            btoa(String.fromCharCode(...byteArray));
 
           this._iconURI = lazy.SearchUtils.makeURI(dataURL);
 
-          if (width && height) {
-            this._addIconToMap(width, height, dataURL);
+          if (size) {
+            this._addIconToMap(size, iconURL);
           }
 
           if (this._engineAddedToStore) {
@@ -816,8 +654,6 @@ export class SearchEngine {
    *   an array of objects which have name/value pairs.
    * @param {string} [params.method]
    *   The type of method, defaults to GET.
-   * @param {string} [params.mozParams]
-   *   Any special Mozilla Parameters.
    * @param {string | Array} [params.postParams]
    *   Any parameters for a POST method. This is either a query string, or
    *   an array of objects which have name/value pairs.
@@ -829,16 +665,6 @@ export class SearchEngine {
   _getEngineURLFromMetaData(type, params) {
     let url = new EngineURL(type, params.method || "GET", params.template);
 
-    // Do the MozParams first, so that we are more likely to get the query
-    // on the end of the URL, rather than the MozParams (xref bug 1484232).
-    if (params.mozParams) {
-      for (let p of params.mozParams) {
-        if ((p.condition || p.purpose) && !this.isAppProvided) {
-          continue;
-        }
-        url._addMozParam(p);
-      }
-    }
     if (params.postParams) {
       if (Array.isArray(params.postParams)) {
         for (let { name, value } of params.postParams) {
@@ -883,8 +709,6 @@ export class SearchEngine {
    *   The search url parameters for use with the GET method.
    * @param {string} [details.search_url_post_params]
    *   The search url parameters for use with the POST method.
-   * @param {object} [details.params]
-   *   Any special Mozilla parameters.
    * @param {string} [details.suggest_url]
    *   The suggestion url template for the engine.
    * @param {string} [details.suggest_url_get_params]
@@ -893,12 +717,8 @@ export class SearchEngine {
    *   The suggestion url parameters for use with the POST method.
    * @param {string} [details.encoding]
    *   The encoding to use for the engine.
-   * @param {object} [configuration]
-   *   The search engine configuration for application provided engines, that
-   *   may be overriding some of the WebExtension's settings.
    */
-  _initWithDetails(details, configuration = {}) {
-    this._orderHint = configuration.orderHint;
+  _initWithDetails(details) {
     this._name = details.name.trim();
 
     this._definedAliases = [];
@@ -912,7 +732,7 @@ export class SearchEngine {
     if (details.iconURL) {
       this._setIcon(details.iconURL, true);
     }
-    this._setUrls(details, configuration);
+    this._setUrls(details);
   }
 
   /**
@@ -928,8 +748,6 @@ export class SearchEngine {
    *   The search url parameters for use with the GET method.
    * @param {string} [details.search_url_post_params]
    *   The search url parameters for use with the POST method.
-   * @param {object} [details.params]
-   *   Any special Mozilla parameters.
    * @param {string} [details.suggest_url]
    *   The suggestion url template for the engine.
    * @param {string} [details.suggest_url_get_params]
@@ -938,67 +756,34 @@ export class SearchEngine {
    *   The suggestion url parameters for use with the POST method.
    * @param {string} [details.encoding]
    *   The encoding to use for the engine.
-   * @param {object} [configuration]
-   *   The search engine configuration for application provided engines, that
-   *   may be overriding some of the WebExtension's settings.
    */
-  _setUrls(details, configuration = {}) {
-    let postParams =
-      configuration.params?.searchUrlPostParams ||
-      details.search_url_post_params ||
-      "";
+  _setUrls(details) {
+    let postParams = details.search_url_post_params || "";
     let url = this._getEngineURLFromMetaData(lazy.SearchUtils.URL_TYPE.SEARCH, {
       method: (postParams && "POST") || "GET",
       // AddonManager will sometimes encode the URL via `new URL()`. We want
       // to ensure we're always dealing with decoded urls.
       template: decodeURI(details.search_url),
-      getParams:
-        configuration.params?.searchUrlGetParams ||
-        details.search_url_get_params ||
-        "",
+      getParams: details.search_url_get_params || "",
       postParams,
-      mozParams: configuration.extraParams || details.params || [],
     });
 
     this._urls.push(url);
 
     if (details.suggest_url) {
-      let suggestPostParams =
-        configuration.params?.suggestUrlPostParams ||
-        details.suggest_url_post_params ||
-        "";
+      let suggestPostParams = details.suggest_url_post_params || "";
       url = this._getEngineURLFromMetaData(
         lazy.SearchUtils.URL_TYPE.SUGGEST_JSON,
         {
           method: (suggestPostParams && "POST") || "GET",
           // suggest_url doesn't currently get encoded.
           template: details.suggest_url,
-          getParams:
-            configuration.params?.suggestUrlGetParams ||
-            details.suggest_url_get_params ||
-            "",
+          getParams: details.suggest_url_get_params || "",
           postParams: suggestPostParams,
-          mozParams: configuration.suggestExtraParams || [],
         }
       );
 
       this._urls.push(url);
-    }
-
-    if (configuration?.urls?.trending) {
-      let trending = this._getEngineURLFromMetaData(
-        lazy.SearchUtils.URL_TYPE.TRENDING_JSON,
-        {
-          method: "GET",
-          template: decodeURI(configuration.urls.trending.fullPath),
-          getParams: configuration.urls.trending.query,
-        }
-      );
-      this._urls.push(trending);
-    }
-
-    if (configuration.clickUrl) {
-      this.clickUrl = configuration.clickUrl;
     }
 
     if (details.encoding) {
@@ -1395,20 +1180,14 @@ export class SearchEngine {
    *
    * @param {string} searchTerms
    *   The search term(s) for the submission.
-   *   Note: If an empty data string is supplied, the search form of the search
-   *   engine will be returned. This is intentional, as in some cases on the current
-   *   UI an empty search is intended to open the search engine's home/search page.
    * @param {lazy.SearchUtils.URL_TYPE} [responseType]
    *   The MIME type that we'd like to receive in response
    *   to this submission.  If null, will default to "text/html".
-   * @param {string} [purpose]
-   *   A string that indicates the context of the search request. This may then
-   *   be used to provide different submission data depending on the context.
    * @returns {nsISearchSubmission|null}
    *   The submission data. If no appropriate submission can be determined for
    *   the request type, this may be null.
    */
-  getSubmission(searchTerms, responseType, purpose) {
+  getSubmission(searchTerms, responseType) {
     // We can't use a default parameter as that doesn't work correctly with
     // the idl interfaces.
     if (!responseType) {
@@ -1423,7 +1202,8 @@ export class SearchEngine {
 
     if (
       !searchTerms &&
-      responseType != lazy.SearchUtils.URL_TYPE.TRENDING_JSON
+      (responseType == lazy.SearchUtils.URL_TYPE.SEARCH ||
+        responseType == lazy.SearchUtils.URL_TYPE.SUGGEST_JSON)
     ) {
       lazy.logConsole.warn("getSubmission: searchTerms is empty!");
     }
@@ -1443,7 +1223,7 @@ export class SearchEngine {
         searchTerms
       );
     }
-    return url.getSubmission(submissionData, this.queryCharset, purpose);
+    return url.getSubmission(submissionData, this.queryCharset);
   }
 
   /**
@@ -1451,15 +1231,12 @@ export class SearchEngine {
    * purposes where we want to check something on the URL, but not use it for
    * an actual submission to the search engine.
    *
-   * Note: getSubmission cannot be used for this case, as that returns the
-   * search form when passed an empty string.
-   *
    * @returns {nsIURI}
    */
   get searchURLWithNoTerms() {
     return this._getURLOfType(lazy.SearchUtils.URL_TYPE.SEARCH).getSubmission(
       "",
-      this
+      this.queryCharset
     ).uri;
   }
 
@@ -1523,7 +1300,8 @@ export class SearchEngine {
       return "";
     }
 
-    let termsParameterName = this.getURLParsingInfo().termsParameterName;
+    let termsParameterName = this.searchUrlQueryParamName;
+
     if (!skipParamMatching) {
       for (let [name, value] of uriParams.entries()) {
         // Don't check the name matching the search
@@ -1558,29 +1336,10 @@ export class SearchEngine {
   }
 
   get searchUrlQueryParamName() {
-    if (this._searchUrlQueryParamName != null) {
-      return this._searchUrlQueryParamName;
-    }
-
-    let submission = this.getSubmission(
-      "{searchTerms}",
-      lazy.SearchUtils.URL_TYPE.SEARCH
+    return (
+      this._getURLOfType(lazy.SearchUtils.URL_TYPE.SEARCH)
+        .searchTermParamName || ""
     );
-
-    if (submission.postData) {
-      console.error("searchUrlQueryParamName can't handle POST urls.");
-      return (this._searchUrlQueryParamName = "");
-    }
-
-    let queryParams = new URLSearchParams(submission.uri.query);
-    let searchUrlQueryParamName = "";
-    for (let [key, value] of queryParams) {
-      if (value == "{searchTerms}") {
-        searchUrlQueryParamName = key;
-      }
-    }
-
-    return (this._searchUrlQueryParamName = searchUrlQueryParamName);
   }
 
   get searchUrlPublicSuffix() {
@@ -1608,6 +1367,20 @@ export class SearchEngine {
   }
 
   /**
+   * @returns {string}
+   *   URL to the main page of the search engine.
+   *   Uses the first URL of type SEARCH_FORM or the pre path
+   *   of the search URL as a fallback if no such URL exists.
+   */
+  get searchForm() {
+    let url = this._getURLOfType(lazy.SearchUtils.URL_TYPE.SEARCH_FORM);
+    if (url) {
+      return url.getSubmission("").uri.spec;
+    }
+    return this.searchURLWithNoTerms.prePath;
+  }
+
+  /**
    * @returns {object}
    *   URL parsing properties used by _buildParseSubmissionMap.
    */
@@ -1617,7 +1390,7 @@ export class SearchEngine {
       return null;
     }
 
-    let termsParameterName = url._getTermsParameterName();
+    let termsParameterName = url.searchTermParamName;
     if (!termsParameterName) {
       return null;
     }
@@ -1657,9 +1430,8 @@ export class SearchEngine {
       return undefined;
     }
 
-    let key = this._getIconKey(preferredWidth, preferredWidth);
-    if (key in this._iconMapObj) {
-      return this._iconMapObj[key];
+    if (preferredWidth in this._iconMapObj) {
+      return this._iconMapObj[preferredWidth];
     }
     return undefined;
   }

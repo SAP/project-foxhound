@@ -6,6 +6,7 @@
 
 #include "MediaChangeMonitor.h"
 
+#include "Adts.h"
 #include "AnnexB.h"
 #include "H264.h"
 #include "H265.h"
@@ -329,6 +330,10 @@ class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
       vpxInfo.mDisplay = mCurrentConfig.mDisplay;
       VPXDecoder::ReadVPCCBox(vpxInfo, mCurrentConfig.mExtraData);
       mInfo = Some(vpxInfo);
+
+      mCurrentConfig.mTransferFunction = Some(vpxInfo.TransferFunction());
+      mCurrentConfig.mColorPrimaries = Some(vpxInfo.ColorPrimaries());
+      mCurrentConfig.mColorSpace = Some(vpxInfo.ColorSpace());
     }
   }
 
@@ -351,6 +356,7 @@ class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
     if (!VPXDecoder::GetStreamInfo(dataSpan, info, mCodec)) {
       return NS_ERROR_DOM_MEDIA_DECODE_ERR;
     }
+
     // For both VP8 and VP9, we only look for resolution changes
     // on keyframes. Other resolution changes are invalid.
     if (!info.mKeyFrame) {
@@ -362,6 +368,12 @@ class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
       if (mInfo.ref().IsCompatible(info)) {
         return rv;
       }
+
+      // The VPX bitstream does not contain color primary or transfer function
+      // info, so copy over the old values (in case they are used).
+      info.mColorPrimaries = mInfo.ref().mColorPrimaries;
+      info.mTransferFunction = mInfo.ref().mTransferFunction;
+
       // We can't properly determine the image rect once we've had a resolution
       // change.
       mCurrentConfig.ResetImageRect();
@@ -407,11 +419,10 @@ class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
 
     mCurrentConfig.mColorDepth = gfx::ColorDepthForBitDepth(info.mBitDepth);
     mCurrentConfig.mColorSpace = Some(info.ColorSpace());
-    // VPX bitstream doesn't specify color primaries.
 
-    // We don't update the transfer function here, because VPX bitstream
-    // doesn't specify the transfer function. Instead, we keep the transfer
-    // function (if any) that was set in mCurrentConfig when we were created.
+    // VPX bitstream doesn't specify color primaries, transfer function, or
+    // level. Keep the values that were set upon class construction.
+    //
     // If a video changes colorspaces away from BT2020, we won't clear
     // mTransferFunction, in case the video changes back to BT2020 and we
     // need the value again.
@@ -578,34 +589,107 @@ class AV1ChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
 };
 #endif
 
+class AACCodecChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
+ public:
+  explicit AACCodecChangeMonitor(const AudioInfo& aInfo)
+      : mCurrentConfig(aInfo), mIsADTS(IsADTS(aInfo)) {}
+
+  bool CanBeInstantiated() const override { return true; }
+
+  MediaResult CheckForChange(MediaRawData* aSample) override {
+    bool isADTS =
+        ADTS::FrameHeader::MatchesSync(Span{aSample->Data(), aSample->Size()});
+    if (isADTS != mIsADTS) {
+      if (mIsADTS) {
+        if (!MakeAACSpecificConfig()) {
+          LOG("Failed to make AAC specific config");
+          return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR);
+        }
+        LOG("Reconfiguring decoder adts -> raw aac, with maked AAC specific "
+            "config: %zu bytes",
+            mCurrentConfig.mCodecSpecificConfig
+                .as<AudioCodecSpecificBinaryBlob>()
+                .mBinaryBlob->Length());
+      } else {
+        LOG("Reconfiguring decoder raw aac -> adts");
+        // Remove AAC specific config to configure a ADTS decoder.
+        mCurrentConfig.mCodecSpecificConfig =
+            AudioCodecSpecificVariant{NoCodecSpecificData{}};
+      }
+
+      mIsADTS = isADTS;
+      return MediaResult(NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER);
+    }
+    return NS_OK;
+  }
+
+  const TrackInfo& Config() const override { return mCurrentConfig; }
+
+  MediaResult PrepareSample(MediaDataDecoder::ConversionRequired aConversion,
+                            MediaRawData* aSample,
+                            bool aNeedKeyFrame) override {
+    return NS_OK;
+  }
+
+ private:
+  static bool IsADTS(const AudioInfo& aInfo) {
+    return !aInfo.mCodecSpecificConfig.is<AacCodecSpecificData>() &&
+           !aInfo.mCodecSpecificConfig.is<AudioCodecSpecificBinaryBlob>();
+  }
+
+  bool MakeAACSpecificConfig() {
+    MOZ_ASSERT(IsADTS(mCurrentConfig));
+    // If profile is not set, default to AAC-LC
+    const uint8_t aacObjectType =
+        mCurrentConfig.mProfile ? mCurrentConfig.mProfile : 2;
+    auto r = ADTS::MakeSpecificConfig(aacObjectType, mCurrentConfig.mRate,
+                                      mCurrentConfig.mChannels);
+    if (r.isErr()) {
+      return false;
+    }
+    mCurrentConfig.mCodecSpecificConfig =
+        AudioCodecSpecificVariant{AudioCodecSpecificBinaryBlob{r.unwrap()}};
+    return true;
+  }
+
+  AudioInfo mCurrentConfig;
+  bool mIsADTS;
+};
+
 MediaChangeMonitor::MediaChangeMonitor(
     PDMFactory* aPDMFactory,
     UniquePtr<CodecChangeMonitor>&& aCodecChangeMonitor,
     MediaDataDecoder* aDecoder, const CreateDecoderParams& aParams)
     : mChangeMonitor(std::move(aCodecChangeMonitor)),
       mPDMFactory(aPDMFactory),
-      mCurrentConfig(aParams.VideoConfig()),
+      mCurrentConfig(aParams.mConfig.Clone()),
       mDecoder(aDecoder),
       mParams(aParams) {}
 
 /* static */
 RefPtr<PlatformDecoderModule::CreateDecoderPromise> MediaChangeMonitor::Create(
     PDMFactory* aPDMFactory, const CreateDecoderParams& aParams) {
+  LOG("MediaChangeMonitor::Create, params = %s", aParams.ToString().get());
   UniquePtr<CodecChangeMonitor> changeMonitor;
-  const VideoInfo& currentConfig = aParams.VideoConfig();
-  if (VPXDecoder::IsVPX(currentConfig.mMimeType)) {
-    changeMonitor = MakeUnique<VPXChangeMonitor>(currentConfig);
+  if (aParams.IsVideo()) {
+    const VideoInfo& config = aParams.VideoConfig();
+    if (VPXDecoder::IsVPX(config.mMimeType)) {
+      changeMonitor = MakeUnique<VPXChangeMonitor>(config);
 #ifdef MOZ_AV1
-  } else if (AOMDecoder::IsAV1(currentConfig.mMimeType)) {
-    changeMonitor = MakeUnique<AV1ChangeMonitor>(currentConfig);
+    } else if (AOMDecoder::IsAV1(config.mMimeType)) {
+      changeMonitor = MakeUnique<AV1ChangeMonitor>(config);
 #endif
-  } else if (MP4Decoder::IsHEVC(currentConfig.mMimeType)) {
-    changeMonitor = MakeUnique<HEVCChangeMonitor>(currentConfig);
+    } else if (MP4Decoder::IsHEVC(config.mMimeType)) {
+      changeMonitor = MakeUnique<HEVCChangeMonitor>(config);
+    } else {
+      MOZ_ASSERT(MP4Decoder::IsH264(config.mMimeType));
+      changeMonitor = MakeUnique<H264ChangeMonitor>(
+          config, aParams.mOptions.contains(
+                      CreateDecoderParams::Option::FullH264Parsing));
+    }
   } else {
-    MOZ_ASSERT(MP4Decoder::IsH264(currentConfig.mMimeType));
-    changeMonitor = MakeUnique<H264ChangeMonitor>(
-        currentConfig, aParams.mOptions.contains(
-                           CreateDecoderParams::Option::FullH264Parsing));
+    MOZ_ASSERT(MP4Decoder::IsAAC(aParams.AudioConfig().mMimeType));
+    changeMonitor = MakeUnique<AACCodecChangeMonitor>(aParams.AudioConfig());
   }
 
   // The change monitor may have an updated track config. E.g. the h264 monitor
@@ -613,6 +697,7 @@ RefPtr<PlatformDecoderModule::CreateDecoderPromise> MediaChangeMonitor::Create(
   // new set of params with the updated track info from our monitor and the
   // other params for aParams and use that going forward.
   const CreateDecoderParams updatedParams{changeMonitor->Config(), aParams};
+  LOG("updated params = %s", updatedParams.ToString().get());
 
   RefPtr<MediaChangeMonitor> instance = new MediaChangeMonitor(
       aPDMFactory, std::move(changeMonitor), nullptr, updatedParams);
@@ -840,11 +925,13 @@ void MediaChangeMonitor::SetSeekThreshold(const media::TimeUnit& aTime) {
 
 RefPtr<MediaChangeMonitor::CreateDecoderPromise>
 MediaChangeMonitor::CreateDecoder() {
-  mCurrentConfig = *mChangeMonitor->Config().GetAsVideoInfo();
+  mCurrentConfig = mChangeMonitor->Config().Clone();
+  CreateDecoderParams currentParams = {*mCurrentConfig, mParams};
+  currentParams.mWrappers -= media::Wrapper::MediaChangeMonitor;
+  LOG("MediaChangeMonitor::CreateDecoder, current params = %s",
+      currentParams.ToString().get());
   RefPtr<CreateDecoderPromise> p =
-      mPDMFactory
-          ->CreateDecoder(
-              {mCurrentConfig, mParams, CreateDecoderParams::NoWrapper(true)})
+      mPDMFactory->CreateDecoder(currentParams)
           ->Then(
               GetCurrentSerialEventTarget(), __func__,
               [self = RefPtr{this}, this](RefPtr<MediaDataDecoder>&& aDecoder) {

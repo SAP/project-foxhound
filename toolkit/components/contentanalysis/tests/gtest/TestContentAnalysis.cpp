@@ -9,6 +9,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/media/MediaUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsNetUtil.h"
 #include "nsIFile.h"
@@ -110,8 +111,8 @@ class ContentAnalysisTest : public testing::Test {
     return mContentAnalysis->FilterByUrlLists(aReq);
   }
 };
-nsString ContentAnalysisTest::mPipeName;
-MozAgentInfo ContentAnalysisTest::mAgentInfo;
+MOZ_RUNINIT nsString ContentAnalysisTest::mPipeName;
+MOZ_RUNINIT MozAgentInfo ContentAnalysisTest::mAgentInfo;
 
 TEST_F(ContentAnalysisTest, AllowUrlList) {
   MOZ_ALWAYS_SUCCEEDS(
@@ -183,16 +184,33 @@ nsCOMPtr<nsIURI> GetExampleDotComURI() {
   MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), "https://example.com"));
   return uri;
 }
+nsCOMPtr<nsIURI> GetExampleDotComWithPathURI() {
+  nsCOMPtr<nsIURI> uri;
+  MOZ_ALWAYS_SUCCEEDS(
+      NS_NewURI(getter_AddRefs(uri), "https://example.com/path"));
+  return uri;
+}
+
+struct BoolStruct {
+  bool mValue = false;
+};
 
 void SendRequestAndExpectResponse(
     RefPtr<ContentAnalysis> contentAnalysis,
     const nsCOMPtr<nsIContentAnalysisRequest>& request,
     Maybe<bool> expectedShouldAllow,
-    Maybe<nsIContentAnalysisResponse::Action> expectedAction) {
+    Maybe<nsIContentAnalysisResponse::Action> expectedAction,
+    Maybe<bool> expectedIsCached) {
   std::atomic<bool> gotResponse = false;
-  std::atomic<bool> timedOut = false;
+  // Make timedOut a RefPtr so if we get a response from content analysis
+  // after this function has finished we can safely check that (and don't
+  // start accessing stack values that don't exist anymore)
+  RefPtr timedOut = MakeRefPtr<media::Refcountable<BoolStruct>>();
   auto callback = MakeRefPtr<ContentAnalysisCallback>(
-      [&](nsIContentAnalysisResponse* response) {
+      [&, timedOut](nsIContentAnalysisResponse* response) {
+        if (timedOut->mValue) {
+          return;
+        }
         if (expectedShouldAllow.isSome()) {
           bool shouldAllow = false;
           MOZ_ALWAYS_SUCCEEDS(response->GetShouldAllowContent(&shouldAllow));
@@ -203,13 +221,21 @@ void SendRequestAndExpectResponse(
           MOZ_ALWAYS_SUCCEEDS(response->GetAction(&action));
           EXPECT_EQ(*expectedAction, action);
         }
+        if (expectedIsCached.isSome()) {
+          bool isCached;
+          MOZ_ALWAYS_SUCCEEDS(response->GetIsCachedResponse(&isCached));
+          EXPECT_EQ(*expectedIsCached, isCached);
+        }
         nsCString requestToken, originalRequestToken;
         MOZ_ALWAYS_SUCCEEDS(response->GetRequestToken(requestToken));
         MOZ_ALWAYS_SUCCEEDS(request->GetRequestToken(originalRequestToken));
         EXPECT_EQ(originalRequestToken, requestToken);
         gotResponse = true;
       },
-      [&gotResponse](nsresult error) {
+      [&gotResponse, timedOut](nsresult error) {
+        if (timedOut->mValue) {
+          return;
+        }
         EXPECT_EQ(NS_OK, error);
         gotResponse = true;
         // Make sure that we didn't somehow get passed NS_OK
@@ -221,16 +247,35 @@ void SendRequestAndExpectResponse(
   RefPtr<CancelableRunnable> timer =
       NS_NewCancelableRunnableFunction("Content Analysis timeout", [&] {
         if (!gotResponse.load()) {
-          timedOut = true;
+          timedOut->mValue = true;
         }
       });
-  NS_DelayedDispatchToCurrentThread(do_AddRef(timer), 10000);
-  mozilla::SpinEventLoopUntil("Waiting for ContentAnalysis result"_ns, [&]() {
-    return gotResponse.load() || timedOut.load();
-  });
+#if defined(MOZ_ASAN)
+  // This can be pretty slow on ASAN builds (bug 1895256)
+  constexpr uint32_t kCATimeout = 25000;
+#else
+  constexpr uint32_t kCATimeout = 10000;
+#endif
+  NS_DelayedDispatchToCurrentThread(do_AddRef(timer), kCATimeout);
+  mozilla::SpinEventLoopUntil(
+      "Waiting for ContentAnalysis result"_ns,
+      [&, timedOut]() { return gotResponse.load() || timedOut->mValue; });
   timer->Cancel();
   EXPECT_TRUE(gotResponse);
-  EXPECT_FALSE(timedOut);
+  EXPECT_FALSE(timedOut->mValue);
+}
+
+void YieldMainThread(uint32_t timeInMs) {
+  std::atomic<bool> timeExpired = false;
+  // The timer gets cleared on the main thread, so we need to yield the main
+  // thread for this to work
+  RefPtr<CancelableRunnable> timer = NS_NewCancelableRunnableFunction(
+      "Content Analysis yielding", [&] { timeExpired = true; });
+  // Wait for longer than the cache timeout
+  NS_DelayedDispatchToCurrentThread(do_AddRef(timer), timeInMs);
+  mozilla::SpinEventLoopUntil("Waiting for Content Analysis yielding"_ns,
+                              [&]() { return timeExpired.load(); });
+  timer->Cancel();
 }
 
 TEST_F(ContentAnalysisTest, SendAllowedTextToAgent_GetAllowedResponse) {
@@ -242,7 +287,8 @@ TEST_F(ContentAnalysisTest, SendAllowedTextToAgent_GetAllowedResponse) {
       nsIContentAnalysisRequest::OperationType::eClipboard, nullptr);
 
   SendRequestAndExpectResponse(mContentAnalysis, request, Some(true),
-                               Some(nsIContentAnalysisResponse::eAllow));
+                               Some(nsIContentAnalysisResponse::eAllow),
+                               Some(false));
 }
 
 TEST_F(ContentAnalysisTest, SendBlockedTextToAgent_GetBlockResponse) {
@@ -254,7 +300,8 @@ TEST_F(ContentAnalysisTest, SendBlockedTextToAgent_GetBlockResponse) {
       nsIContentAnalysisRequest::OperationType::eClipboard, nullptr);
 
   SendRequestAndExpectResponse(mContentAnalysis, request, Some(false),
-                               Some(nsIContentAnalysisResponse::eBlock));
+                               Some(nsIContentAnalysisResponse::eBlock),
+                               Some(false));
 }
 
 class RawRequestObserver final : public nsIObserver {
@@ -306,7 +353,8 @@ TEST_F(ContentAnalysisTest, CheckRawRequestWithText) {
       obsServ->AddObserver(rawRequestObserver, "dlp-request-sent-raw", false));
   time_t now = time(nullptr);
 
-  SendRequestAndExpectResponse(mContentAnalysis, request, Nothing(), Nothing());
+  SendRequestAndExpectResponse(mContentAnalysis, request, Nothing(), Nothing(),
+                               Some(false));
   auto requests = rawRequestObserver->GetRequests();
   EXPECT_EQ(static_cast<size_t>(1), requests.size());
   time_t t = requests[0].expires_at();
@@ -351,7 +399,8 @@ TEST_F(ContentAnalysisTest, CheckRawRequestWithFile) {
   MOZ_ALWAYS_SUCCEEDS(
       obsServ->AddObserver(rawRequestObserver, "dlp-request-sent-raw", false));
 
-  SendRequestAndExpectResponse(mContentAnalysis, request, Nothing(), Nothing());
+  SendRequestAndExpectResponse(mContentAnalysis, request, Nothing(), Nothing(),
+                               Some(false));
   auto requests = rawRequestObserver->GetRequests();
   EXPECT_EQ(static_cast<size_t>(1), requests.size());
   const auto& request_url = requests[0].request_data().url();
@@ -373,10 +422,17 @@ TEST_F(ContentAnalysisTest, CheckRawRequestWithFile) {
 
 TEST_F(ContentAnalysisTest, CheckTwoRequestsHaveSameUserActionId) {
   nsCOMPtr<nsIURI> uri = GetExampleDotComURI();
-  nsString allow(L"allow");
-  nsCOMPtr<nsIContentAnalysisRequest> request = new ContentAnalysisRequest(
-      nsIContentAnalysisRequest::AnalysisType::eBulkDataEntry, std::move(allow),
-      false, EmptyCString(), uri,
+  nsString allow1(L"allowMe");
+  nsCOMPtr<nsIContentAnalysisRequest> request1 = new ContentAnalysisRequest(
+      nsIContentAnalysisRequest::AnalysisType::eBulkDataEntry,
+      std::move(allow1), false, EmptyCString(), uri,
+      nsIContentAnalysisRequest::OperationType::eClipboard, nullptr);
+
+  // Use different text so the request doesn't match the cache
+  nsString allow2(L"allowMeAgain");
+  nsCOMPtr<nsIContentAnalysisRequest> request2 = new ContentAnalysisRequest(
+      nsIContentAnalysisRequest::AnalysisType::eBulkDataEntry,
+      std::move(allow2), false, EmptyCString(), uri,
       nsIContentAnalysisRequest::OperationType::eClipboard, nullptr);
   nsCOMPtr<nsIObserverService> obsServ =
       mozilla::services::GetObserverService();
@@ -384,8 +440,10 @@ TEST_F(ContentAnalysisTest, CheckTwoRequestsHaveSameUserActionId) {
   MOZ_ALWAYS_SUCCEEDS(
       obsServ->AddObserver(rawRequestObserver, "dlp-request-sent-raw", false));
 
-  SendRequestAndExpectResponse(mContentAnalysis, request, Nothing(), Nothing());
-  SendRequestAndExpectResponse(mContentAnalysis, request, Nothing(), Nothing());
+  SendRequestAndExpectResponse(mContentAnalysis, request1, Nothing(), Nothing(),
+                               Some(false));
+  SendRequestAndExpectResponse(mContentAnalysis, request2, Nothing(), Nothing(),
+                               Some(false));
   auto requests = rawRequestObserver->GetRequests();
   EXPECT_EQ(static_cast<size_t>(2), requests.size());
   EXPECT_EQ(requests[0].user_action_id(), requests[1].user_action_id());

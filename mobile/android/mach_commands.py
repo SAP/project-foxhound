@@ -5,8 +5,6 @@
 import argparse
 import logging
 import os
-import re
-import subprocess
 import sys
 import tarfile
 import time
@@ -15,7 +13,6 @@ import mozpack.path as mozpath
 from mach.decorators import Command, CommandArgument, SubCommand
 from mozbuild.base import MachCommandConditions as conditions
 from mozbuild.shellutil import split as shell_split
-from mozfile import which
 
 # Mach's conditions facility doesn't support subcommands.  Print a
 # deprecation message ourselves instead.
@@ -217,9 +214,15 @@ def create_maven_archive(topobjdir):
 )
 @CommandArgument("args", nargs=argparse.REMAINDER)
 def android_archive_geckoview(command_context, args):
+    tasks = command_context.substs["GRADLE_ANDROID_ARCHIVE_GECKOVIEW_TASKS"]
+    subproject = command_context.substs.get("MOZ_ANDROID_SUBPROJECT")
+    if subproject in (None, "geckoview_example"):
+        tasks += command_context.substs[
+            "GRADLE_ANDROID_ARCHIVE_GECKOVIEW_SUBPROJECT_TASKS"
+        ]
     ret = gradle(
         command_context,
-        command_context.substs["GRADLE_ANDROID_ARCHIVE_GECKOVIEW_TASKS"] + args,
+        tasks + args,
         verbose=True,
     )
 
@@ -251,13 +254,13 @@ def android_build_geckoview_example(command_context, args):
 @SubCommand("android", "compile-all", """Build all source files""")
 @CommandArgument("args", nargs=argparse.REMAINDER)
 def android_compile_all(command_context, args):
-    gradle(
+    ret = gradle(
         command_context,
         command_context.substs["GRADLE_ANDROID_COMPILE_ALL_TASKS"] + args,
         verbose=True,
     )
 
-    return 0
+    return ret
 
 
 def install_app_bundle(command_context, bundle):
@@ -289,6 +292,28 @@ def android_install_geckoview_example(command_context, args):
     return 0
 
 
+@SubCommand("android", "install-fenix", """Install fenix """)
+@CommandArgument("args", nargs=argparse.REMAINDER)
+def android_install_fenix(command_context, args):
+    gradle(
+        command_context,
+        ["fenix:installFenixDebug"] + args,
+        verbose=True,
+    )
+    return 0
+
+
+@SubCommand("android", "install-focus", """Install focus """)
+@CommandArgument("args", nargs=argparse.REMAINDER)
+def android_install_focus(command_context, args):
+    gradle(
+        command_context,
+        ["focus-android:installFocusDebug"] + args,
+        verbose=True,
+    )
+    return 0
+
+
 @SubCommand(
     "android", "install-geckoview-test_runner", """Install geckoview.test_runner """
 )
@@ -299,6 +324,21 @@ def android_install_geckoview_test_runner(command_context, args):
         command_context.substs["GRADLE_ANDROID_INSTALL_GECKOVIEW_TEST_RUNNER_TASKS"]
         + args,
         verbose=True,
+    )
+    return 0
+
+
+@SubCommand("android", "installFenixRelease", """Install fenix Release""")
+@CommandArgument("args", nargs=argparse.REMAINDER)
+def android_install_fenix_release(command_context, args):
+    gradle(
+        command_context,
+        ["installFenixRelease"] + args,
+        verbose=True,
+        gradle_path=mozpath.join(
+            command_context.topsrcdir, "mobile", "android", "fenix", "gradlew"
+        ),
+        topsrcdir=mozpath.join(command_context.topsrcdir, "mobile", "android", "fenix"),
     )
     return 0
 
@@ -500,10 +540,16 @@ def android_geckoview_docs(
     help="Verbose output for what commands the build is running.",
 )
 @CommandArgument("args", nargs=argparse.REMAINDER)
-def gradle(command_context, args, verbose=False):
+def gradle(command_context, args, verbose=False, gradle_path=None, topsrcdir=None):
     if not verbose:
         # Avoid logging the command
         command_context.log_manager.terminal_handler.setLevel(logging.CRITICAL)
+
+    if not gradle_path:
+        gradle_path = command_context.substs["GRADLE"]
+
+    if not topsrcdir:
+        topsrcdir = mozpath.join(command_context.topsrcdir)
 
     # In automation, JAVA_HOME is set via mozconfig, which needs
     # to be specially handled in each mach command. This turns
@@ -537,6 +583,7 @@ def gradle(command_context, args, verbose=False):
         gradle_flags += ["--console=plain"]
 
     env = os.environ.copy()
+
     env.update(
         {
             "GRADLE_OPTS": "-Dfile.encoding=utf-8",
@@ -556,11 +603,11 @@ def gradle(command_context, args, verbose=False):
     if should_print_status:
         print("BUILDSTATUS " + str(time.time()) + " START_Gradle " + args[0])
     rv = command_context.run_process(
-        [command_context.substs["GRADLE"]] + gradle_flags + args,
+        [gradle_path] + gradle_flags + args,
         explicit_env=env,
         pass_thru=True,  # Allow user to run gradle interactively.
         ensure_exit_code=False,  # Don't throw on non-zero exit code.
-        cwd=mozpath.join(command_context.topsrcdir),
+        cwd=topsrcdir,
     )
     if should_print_status:
         print("BUILDSTATUS " + str(time.time()) + " END_Gradle " + args[0])
@@ -708,290 +755,3 @@ def emulator(
                 "Unable to retrieve Android emulator return code.",
             )
     return 0
-
-
-@SubCommand(
-    "android",
-    "uplift",
-    description="Uplift patch to https://github.com/mozilla-mobile/firefox-android.",
-)
-@CommandArgument(
-    "--revset",
-    "-r",
-    default=None,
-    help="Revision or revisions to uplift. Supported values are the same as what your "
-    "VCS provides. Defaults to the current HEAD revision.",
-)
-@CommandArgument(
-    "firefox_android_clone_dir",
-    help="The directory where your local clone of "
-    "https://github.com/mozilla-mobile/firefox-android repo is.",
-)
-def uplift(
-    command_context,
-    revset,
-    firefox_android_clone_dir,
-):
-    revset = _get_default_revset_if_needed(command_context, revset)
-    major_version = _get_major_version(command_context, revset)
-    uplift_version = major_version - 1
-    bug_number = _get_bug_number(command_context, revset)
-    new_branch_name = (
-        f"{uplift_version}-bug{bug_number}" if bug_number else f"{uplift_version}-nobug"
-    )
-    command_context.log(
-        logging.INFO,
-        "uplift",
-        {
-            "new_branch_name": new_branch_name,
-            "firefox_android_clone_dir": firefox_android_clone_dir,
-        },
-        "Creating branch {new_branch_name} in {firefox_android_clone_dir}...",
-    )
-
-    try:
-        _checkout_new_branch_updated_to_the_latest_remote(
-            command_context, firefox_android_clone_dir, uplift_version, new_branch_name
-        )
-        _export_and_apply_revset(command_context, revset, firefox_android_clone_dir)
-    except subprocess.CalledProcessError:
-        return 1
-
-    command_context.log(
-        logging.INFO,
-        "uplift",
-        {"revset": revset, "firefox_android_clone_dir": firefox_android_clone_dir},
-        "Revision(s) {revset} now applied to {firefox_android_clone_dir}. Please go to "
-        "this directory, inspect the commit(s), and push.",
-    )
-    return 0
-
-
-def _get_default_revset_if_needed(command_context, revset):
-    if revset is not None:
-        return revset
-    if conditions.is_hg(command_context):
-        return "."
-    if conditions.is_git(command_context):
-        return "HEAD"
-    raise NotImplementedError()
-
-
-def _get_major_version(command_context, revset):
-    milestone_txt = _get_milestone_txt(command_context, revset)
-    version = _extract_version_from_milestone_txt(milestone_txt)
-    return _extract_major_version(version)
-
-
-def _get_bug_number(command_context, revision):
-    revision_message = _extract_revision_message(command_context, revision)
-    return _extract_bug_number(revision_message)
-
-
-def _get_milestone_txt(command_context, revset):
-    if conditions.is_hg(command_context):
-        args = [
-            str(which("hg")),
-            "cat",
-            "-r",
-            f"first({revset})",
-            "config/milestone.txt",
-        ]
-    elif conditions.is_git(command_context):
-        revision = revset.split("..")[-1]
-        args = [
-            str(which("git")),
-            "show",
-            f"{revision}:config/milestone.txt",
-        ]
-    else:
-        raise NotImplementedError()
-
-    return subprocess.check_output(args, text=True)
-
-
-def _extract_version_from_milestone_txt(milestone_txt):
-    return milestone_txt.splitlines()[-1]
-
-
-def _extract_major_version(version):
-    return int(version.split(".")[0])
-
-
-def _extract_revision_message(command_context, revision):
-    if conditions.is_hg(command_context):
-        args = [
-            str(which("hg")),
-            "log",
-            "--rev",
-            f"first({revision})",
-            "--template",
-            "{desc}",
-        ]
-    elif conditions.is_git(command_context):
-        args = [
-            str(which("git")),
-            "log",
-            "--format=%s",
-            "-n",
-            "1",
-            revision,
-        ]
-    else:
-        raise NotImplementedError()
-
-    return subprocess.check_output(args, text=True)
-
-
-# Source: https://hg.mozilla.org/hgcustom/version-control-tools/file/cef43d3d676e9f9e9668a50a5d90c012e4025e5b/pylib/mozautomation/mozautomation/commitparser.py#l12
-_BUG_TEMPLATE = re.compile(
-    r"""# bug followed by any sequence of numbers, or
-        # a standalone sequence of numbers
-         (
-           (?:
-             bug |
-             b= |
-             # a sequence of 5+ numbers preceded by whitespace
-             (?=\b\#?\d{5,}) |
-             # numbers at the very beginning
-             ^(?=\d)
-           )
-           (?:\s*\#?)(\d+)(?=\b)
-         )""",
-    re.I | re.X,
-)
-
-
-def _extract_bug_number(revision_message):
-    try:
-        return _BUG_TEMPLATE.match(revision_message).group(2)
-    except AttributeError:
-        return ""
-
-
-_FIREFOX_ANDROID_URL = "https://github.com/mozilla-mobile/firefox-android"
-
-
-def _checkout_new_branch_updated_to_the_latest_remote(
-    command_context, firefox_android_clone_dir, uplift_version, new_branch_name
-):
-    args = [
-        str(which("git")),
-        "fetch",
-        _FIREFOX_ANDROID_URL,
-        f"+releases_v{uplift_version}:{new_branch_name}",
-    ]
-
-    try:
-        subprocess.check_call(args, cwd=firefox_android_clone_dir)
-    except subprocess.CalledProcessError:
-        command_context.log(
-            logging.CRITICAL,
-            "uplift",
-            {
-                "firefox_android_clone_dir": firefox_android_clone_dir,
-                "new_branch_name": new_branch_name,
-            },
-            "Could not fetch branch {new_branch_name}. This may be a network issue. If "
-            "not, please go to {firefox_android_clone_dir}, inspect the branch and "
-            "delete it (with `git branch -D {new_branch_name}`) if you don't have any "
-            "use for it anymore",
-        )
-        raise
-
-    args = [
-        str(which("git")),
-        "checkout",
-        new_branch_name,
-    ]
-    subprocess.check_call(args, cwd=firefox_android_clone_dir)
-
-
-_MERCURIAL_REVISION_TO_GIT_COMMIT_TEMPLATE = """
-From 1234567890abcdef1234567890abcdef12345678 Sat Jan 1 00:00:00 2000
-From: {user}
-Date: {date|rfc822date}
-Subject: {desc}
-
-"""
-
-
-def _export_and_apply_revset(command_context, revset, firefox_android_clone_dir):
-    export_command, import_command = _get_export_import_commands(
-        command_context, revset
-    )
-
-    export_process = subprocess.Popen(export_command, stdout=subprocess.PIPE)
-    try:
-        subprocess.check_call(
-            import_command, stdin=export_process.stdout, cwd=firefox_android_clone_dir
-        )
-    except subprocess.CalledProcessError:
-        command_context.log(
-            logging.CRITICAL,
-            "uplift",
-            {"firefox_android_clone_dir": firefox_android_clone_dir},
-            "Could not run `git am`. Please go to {firefox_android_clone_dir} and fix "
-            "the conflicts. Then run `git am --continue`.",
-        )
-        raise
-    export_process.wait()
-
-
-def _get_export_import_commands(command_context, revset):
-    if conditions.is_hg(command_context):
-        export_command = [
-            str(which("hg")),
-            "log",
-            "--rev",
-            revset,
-            "--patch",
-            "--template",
-            _MERCURIAL_REVISION_TO_GIT_COMMIT_TEMPLATE,
-            "--include",
-            "mobile/android",
-        ]
-        import_command = [str(which("git")), "am", "-p3"]
-    elif conditions.is_git(command_context):
-        export_command = [
-            str(which("git")),
-            "format-patch",
-            "--relative=mobile/android",
-            "--stdout",
-        ]
-        # From the git man page:
-        # > If you want to format only <commit> itself, you can do this with
-        # > git format-patch -1 <commit>."
-        #
-        # https://git-scm.com/docs/git-format-patch#_description
-        if _is_single_revision(command_context, revset):
-            export_command.append("-1")
-
-        export_command.extend(
-            [
-                revset,
-                "--",
-            ]
-        )
-        import_command = [str(which("git")), "am"]
-    else:
-        raise NotImplementedError()
-
-    return export_command, import_command
-
-
-def _is_single_revision(command_context, revset):
-    if conditions.is_git(command_context):
-        command = [
-            str(which("git")),
-            "show",
-            "--no-patch",
-            "--format='%H'",
-            revset,
-            "--",
-        ]
-    else:
-        raise NotImplementedError()
-
-    revisions = subprocess.check_output(command, text=True)
-    return len(revisions.splitlines()) == 1

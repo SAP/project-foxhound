@@ -139,7 +139,9 @@ class ChromeUtils {
                                             ErrorResult& aRv);
 
   static void GetPartitionKeyFromURL(dom::GlobalObject& aGlobal,
-                                     const nsAString& aURL,
+                                     const nsAString& aTopLevelUrl,
+                                     const nsAString& aSubresourceUrl,
+                                     const Optional<bool>& aForeignContext,
                                      nsAString& aPartitionKey,
                                      ErrorResult& aRv);
 
@@ -185,16 +187,18 @@ class ChromeUtils {
   static void ClearStyleSheetCacheByPrincipal(GlobalObject&,
                                               nsIPrincipal* aForPrincipal);
 
-  static void ClearStyleSheetCacheByBaseDomain(GlobalObject& aGlobal,
-                                               const nsACString& aBaseDomain);
+  static void ClearStyleSheetCacheBySite(
+      GlobalObject&, const nsACString& aSchemelessSite,
+      const dom::OriginAttributesPatternDictionary& aPattern);
 
   static void ClearStyleSheetCache(GlobalObject& aGlobal);
 
   static void ClearScriptCacheByPrincipal(GlobalObject&,
                                           nsIPrincipal* aForPrincipal);
 
-  static void ClearScriptCacheByBaseDomain(GlobalObject& aGlobal,
-                                           const nsACString& aBaseDomain);
+  static void ClearScriptCacheBySite(
+      GlobalObject& aGlobal, const nsACString& aSchemelessSite,
+      const dom::OriginAttributesPatternDictionary& aPattern);
 
   static void ClearScriptCache(GlobalObject& aGlobal);
 

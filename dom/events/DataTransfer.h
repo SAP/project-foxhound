@@ -9,6 +9,7 @@
 
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
+#include "nsStringStream.h"
 #include "nsTArray.h"
 #include "nsIClipboard.h"
 #include "nsIDragService.h"
@@ -267,7 +268,7 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
    */
   uint32_t DropEffectInt() const { return mDropEffect; }
   void SetDropEffectInt(uint32_t aDropEffectInt) {
-    MOZ_RELEASE_ASSERT(aDropEffectInt < ArrayLength(sEffects),
+    MOZ_RELEASE_ASSERT(aDropEffectInt < std::size(sEffects),
                        "Bogus drop effect value");
     mDropEffect = aDropEffectInt;
   }
@@ -433,6 +434,15 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
   // The drag session on the widget of the owner, if any.
   nsIDragSession* GetOwnerDragSession();
 
+  // format is first element, data is second
+  using ParseExternalCustomTypesStringData = std::pair<nsString&&, nsString&&>;
+
+  // Parses out the contents of aString and calls aCallback for every data
+  // of type eCustomClipboardTypeId_String.
+  static void ParseExternalCustomTypesString(
+      mozilla::Span<const char> aString,
+      std::function<void(ParseExternalCustomTypesStringData&&)>&& aCallback);
+
  protected:
   // Retrieve a list of clipboard formats supported
   //
@@ -521,9 +531,8 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
   // drag and drop.
   mozilla::Maybe<nsIClipboard::ClipboardType> mClipboardType;
 
-  // The nsIClipboardDataSnapshot that is used for getting clipboard formats.
-  // XXXedgar we should get the actual data from this in the future, see bug
-  // 1879401.
+  // The nsIClipboardDataSnapshot that is used for getting clipboard formats and
+  // data.
   nsCOMPtr<nsIClipboardDataSnapshot> mClipboardDataSnapshot;
 
   // The items contained with the DataTransfer

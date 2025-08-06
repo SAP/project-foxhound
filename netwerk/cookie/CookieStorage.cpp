@@ -32,6 +32,10 @@
 #define LIMIT(x, low, high, default) \
   ((x) >= (low) && (x) <= (high) ? (x) : (default))
 
+// in order to keep our metrics consistent
+// we only send metrics when the pref hasn't been manipulated from the default
+static const uint32_t kChipsPartitionByteCapacityDefault = 10240;
+
 namespace mozilla {
 namespace net {
 
@@ -290,7 +294,7 @@ void CookieStorage::GetCookiesFromHost(
 
 void CookieStorage::GetCookiesWithOriginAttributes(
     const OriginAttributesPattern& aPattern, const nsACString& aBaseDomain,
-    nsTArray<RefPtr<nsICookie>>& aResult) {
+    bool aSorted, nsTArray<RefPtr<nsICookie>>& aResult) {
   for (auto iter = mHostTable.Iter(); !iter.Done(); iter.Next()) {
     CookieEntry* entry = iter.Get();
 
@@ -308,13 +312,18 @@ void CookieStorage::GetCookiesWithOriginAttributes(
       aResult.AppendElement(entryCookies[i]);
     }
   }
+
+  if (aSorted) {
+    aResult.Sort(CompareCookiesForSending());
+  }
 }
 
 void CookieStorage::RemoveCookie(const nsACString& aBaseDomain,
                                  const OriginAttributes& aOriginAttributes,
                                  const nsACString& aHost,
                                  const nsACString& aName,
-                                 const nsACString& aPath) {
+                                 const nsACString& aPath,
+                                 const nsID* aOperationID) {
   CookieListIter matchIter{};
   RefPtr<Cookie> cookie;
   if (FindCookie(aBaseDomain, aOriginAttributes, aHost, aName, aPath,
@@ -325,7 +334,8 @@ void CookieStorage::RemoveCookie(const nsACString& aBaseDomain,
 
   if (cookie) {
     // Everything's done. Notify observers.
-    NotifyChanged(cookie, nsICookieNotification::COOKIE_DELETED, aBaseDomain);
+    NotifyChanged(cookie, nsICookieNotification::COOKIE_DELETED, aBaseDomain,
+                  aOperationID);
   }
 }
 
@@ -360,11 +370,6 @@ void CookieStorage::RemoveCookiesWithOriginAttributes(
       }
     }
   }
-}
-
-/* static */ bool CookieStorage::isIPv6BaseDomain(
-    const nsACString& aBaseDomain) {
-  return aBaseDomain.Contains(':');
 }
 
 /* static */ bool CookieStorage::SerializeIPv6BaseDomain(
@@ -406,7 +411,7 @@ void CookieStorage::RemoveCookiesFromExactHost(
   // the normalized (ASCII) host for IP addresses
   // (it is equal to the CookieService::NormalizeHost() output).
   nsAutoCString removeBaseDomain;
-  bool isIPv6 = isIPv6BaseDomain(aBaseDomain);
+  bool isIPv6 = CookieCommons::IsIPv6BaseDomain(aBaseDomain);
   if (isIPv6) {
     MOZ_ASSERT(!aBaseDomain.IsEmpty());
     // Copy base domain since argument is immutable.
@@ -424,7 +429,7 @@ void CookieStorage::RemoveCookiesFromExactHost(
     // IPv6 host / base domain cookies
     if (isIPv6) {
       // If we look for a IPv6 cookie skip non-IPv6 cookie entries.
-      if (!isIPv6BaseDomain(entry->mBaseDomain)) {
+      if (!CookieCommons::IsIPv6BaseDomain(entry->mBaseDomain)) {
         continue;
       }
       // Serialize IPv6 base domains before comparison.
@@ -486,7 +491,8 @@ void CookieStorage::NotifyChanged(nsISupports* aSubject,
                                   const nsACString& aBaseDomain,
                                   bool aIsThirdParty,
                                   dom::BrowsingContext* aBrowsingContext,
-                                  bool aOldCookieIsSession) {
+                                  bool aOldCookieIsSession,
+                                  const nsID* aOperationID) {
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (!os) {
     return;
@@ -506,9 +512,9 @@ void CookieStorage::NotifyChanged(nsISupports* aSubject,
     browsingContextId = aBrowsingContext->Id();
   }
 
-  nsCOMPtr<nsICookieNotification> notification =
-      new CookieNotification(aAction, cookie, aBaseDomain, aIsThirdParty,
-                             batchDeletedCookies, browsingContextId);
+  nsCOMPtr<nsICookieNotification> notification = new CookieNotification(
+      aAction, cookie, aBaseDomain, aIsThirdParty, batchDeletedCookies,
+      browsingContextId, aOperationID);
   // Notify for topic "private-cookie-changed" or "cookie-changed"
   os->NotifyObservers(notification, NotificationTopic(), u"");
 
@@ -528,7 +534,7 @@ bool CookieStorage::RemoveCookiesFromBackUntilUnderLimit(
     RemoveCookieFromList(*it);
     CreateOrUpdatePurgeList(aPurgedList, evictedCookie);
     MOZ_ASSERT((*it).entry);
-    if (PartitionLimitExceededBytes(aCookie, aBaseDomain) <= 0) {
+    if (PartitionLimitExceededBytes(aCookie, aBaseDomain, false) <= 0) {
       return true;
     }
   }
@@ -573,13 +579,14 @@ void CookieStorage::RemoveOlderCookiesUntilUnderLimit(
 }
 
 int32_t CookieStorage::PartitionLimitExceededBytes(
-    Cookie* aCookie, const nsACString& aBaseDomain) {
+    Cookie* aCookie, const nsACString& aBaseDomain, bool aHardMax) {
   uint32_t newCount = CountCookieBytesNotMatchingCookie(*aCookie, aBaseDomain) +
                       aCookie->NameAndValueBytes();
+  double factor = aHardMax ? 1.2 : 1;
   // shouldn't expect more the 4000 cookies * 4000 bytes/cookie -> 16MB
   return static_cast<int32_t>(
       newCount -
-      StaticPrefs::network_cookie_chips_partitionLimitByteCapacity());
+      StaticPrefs::network_cookie_chips_partitionLimitByteCapacity() * factor);
 }
 
 // this is a backend function for adding a cookie to the list, via SetCookie.
@@ -593,7 +600,19 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
                               Cookie* aCookie, int64_t aCurrentTimeInUsec,
                               nsIURI* aHostURI, const nsACString& aCookieHeader,
                               bool aFromHttp, bool aIsThirdParty,
-                              dom::BrowsingContext* aBrowsingContext) {
+                              dom::BrowsingContext* aBrowsingContext,
+                              const nsID* aOperationID) {
+  if (CookieCommons::IsFirstPartyPartitionedCookieWithoutCHIPS(
+          aCookie, aBaseDomain, aOriginAttributes)) {
+    COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
+                      "Invalid first-party partitioned cookie without "
+                      "partitioned cookie attribution.");
+    mozilla::glean::networking::set_invalid_first_party_partitioned_cookie.Add(
+        1);
+    MOZ_ASSERT(false);
+    return;
+  }
+
   int64_t currentTime = aCurrentTimeInUsec / PR_USEC_PER_SEC;
 
   CookieListIter exactIter{};
@@ -707,7 +726,8 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
         COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                           "previously stored cookie was deleted");
         NotifyChanged(oldCookie, nsICookieNotification::COOKIE_DELETED,
-                      aBaseDomain, false, aBrowsingContext, oldCookieIsSession);
+                      aBaseDomain, false, aBrowsingContext, oldCookieIsSession,
+                      aOperationID);
         return;
       }
 
@@ -723,7 +743,7 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
           mHostTable.GetEntry(CookieKey(aBaseDomain, aOriginAttributes));
       if (entry) {
         int32_t exceededBytes =
-            PartitionLimitExceededBytes(aCookie, aBaseDomain);
+            PartitionLimitExceededBytes(aCookie, aBaseDomain, true);
         if (exceededBytes > 0) {
           MOZ_LOG(gCookieLog, LogLevel::Debug,
                   ("Partition byte limit exceeded on cookie overwrite\n"));
@@ -731,8 +751,11 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
             RemoveOlderCookiesUntilUnderLimit(entry, aCookie, aBaseDomain,
                                               purgedList);
           }
-          mozilla::glean::networking::cookie_chips_partition_limit_overflow
-              .AccumulateSingleSample(exceededBytes);
+          if (StaticPrefs::network_cookie_chips_partitionLimitByteCapacity() ==
+              kChipsPartitionByteCapacityDefault) {
+            mozilla::glean::networking::cookie_chips_partition_limit_overflow
+                .AccumulateSingleSample(exceededBytes);
+          }
         }
       }
     }
@@ -786,16 +809,19 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
     } else if (CookieCommons::ChipsLimitEnabledAndChipsCookie(
                    *aCookie, aBrowsingContext) &&
                entry &&
-               (partitionLimitExceededBytes =
-                    PartitionLimitExceededBytes(aCookie, aBaseDomain)) > 0) {
+               (partitionLimitExceededBytes = PartitionLimitExceededBytes(
+                    aCookie, aBaseDomain, true)) > 0) {
       MOZ_LOG(gCookieLog, LogLevel::Debug,
               ("Partition byte limit exceeded on cookie add\n"));
       if (!StaticPrefs::network_cookie_chips_partitionLimitDryRun()) {
         RemoveOlderCookiesUntilUnderLimit(entry, aCookie, aBaseDomain,
                                           purgedList);
       }
-      mozilla::glean::networking::cookie_chips_partition_limit_overflow
-          .AccumulateSingleSample(partitionLimitExceededBytes);
+      if (StaticPrefs::network_cookie_chips_partitionLimitByteCapacity() ==
+          kChipsPartitionByteCapacityDefault) {
+        mozilla::glean::networking::cookie_chips_partition_limit_overflow
+            .AccumulateSingleSample(partitionLimitExceededBytes);
+      }
     } else if (mCookieCount >= ADD_TEN_PERCENT(mMaxNumberOfCookies)) {
       int64_t maxAge = aCurrentTimeInUsec - mCookieOldestTime;
       int64_t purgeAge = ADD_TEN_PERCENT(mCookiePurgeAge);
@@ -828,7 +854,7 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
   // because observers may themselves attempt to mutate the list.
   if (purgedList) {
     NotifyChanged(purgedList, nsICookieNotification::COOKIES_BATCH_DELETED,
-                  ""_ns);
+                  ""_ns, false, nullptr, false, aOperationID);
   }
 
   // Notify for topic "private-cookie-changed" or "cookie-changed"
@@ -836,7 +862,7 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
                 foundCookie ? nsICookieNotification::COOKIE_CHANGED
                             : nsICookieNotification::COOKIE_ADDED,
                 aBaseDomain, aIsThirdParty, aBrowsingContext,
-                oldCookieIsSession);
+                oldCookieIsSession, aOperationID);
 }
 
 void CookieStorage::UpdateCookieOldestTime(Cookie* aCookie) {

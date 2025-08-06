@@ -21,6 +21,12 @@ ChromeUtils.defineLazyGetter(lazy, "weaveXPCService", function () {
   ).wrappedJSObject;
 });
 
+ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/FxAccounts.sys.mjs"
+  ).getFxAccountsSingleton();
+});
+
 // from MDN...
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -105,6 +111,12 @@ let SyncedTabsInternal = {
     return reFilter.test(tab.url) || reFilter.test(tab.title);
   },
 
+  // A wrapper for grabbing the fxaDeviceId, to make it easier for stubbing
+  // for tests
+  _getClientFxaDeviceId(clientId) {
+    return lazy.Weave.Service.clientsEngine.getClientFxaDeviceId(clientId);
+  },
+
   _createRecentTabsList(
     clients,
     maxCount,
@@ -116,9 +128,21 @@ let SyncedTabsInternal = {
       if (extraParams.removeDeviceDupes) {
         client.tabs = this._filterRecentTabsDupes(client.tabs);
       }
+
+      // We have the client obj but we need the FxA device obj so we use the clients
+      // engine to get us the FxA device
+      let device =
+        lazy.fxAccounts.device.recentDeviceList &&
+        lazy.fxAccounts.device.recentDeviceList.find(
+          d => d.id === this._getClientFxaDeviceId(client.id)
+        );
+
       for (let tab of client.tabs) {
         tab.device = client.name;
         tab.deviceType = client.clientType;
+        // Surface broadcasted commmands for things like close remote tab
+        tab.fxaDeviceId = device.id;
+        tab.availableCommands = device.availableCommands;
       }
       tabs = [...tabs, ...client.tabs.reverse()];
     }
@@ -378,14 +402,18 @@ export var SyncedTabs = {
   },
 
   recordSyncedTabsTelemetry(object, tabEvent, extraOptions) {
-    Services.telemetry.setEventRecordingEnabled("synced_tabs", true);
-    Services.telemetry.recordEvent(
-      "synced_tabs",
-      tabEvent,
-      object,
-      null,
-      extraOptions
-    );
+    if (
+      !["fxa_avatar_menu", "fxa_app_menu", "synced_tabs_sidebar"].includes(
+        object
+      )
+    ) {
+      return;
+    }
+    object = object
+      .split("_")
+      .map(word => word[0].toUpperCase() + word.slice(1))
+      .join("");
+    Glean.syncedTabs[tabEvent + object].record(extraOptions);
   },
 
   // Get list of synced tabs across all devices/clients

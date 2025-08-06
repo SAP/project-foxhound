@@ -17,29 +17,6 @@ class CodeGeneratorMIPS : public CodeGeneratorMIPSShared {
   CodeGeneratorMIPS(MIRGenerator* gen, LIRGraph* graph, MacroAssembler* masm)
       : CodeGeneratorMIPSShared(gen, graph, masm) {}
 
-  void testNullEmitBranch(Assembler::Condition cond, const ValueOperand& value,
-                          MBasicBlock* ifTrue, MBasicBlock* ifFalse) {
-    emitBranch(value.typeReg(), (Imm32)ImmType(JSVAL_TYPE_NULL), cond, ifTrue,
-               ifFalse);
-  }
-  void testUndefinedEmitBranch(Assembler::Condition cond,
-                               const ValueOperand& value, MBasicBlock* ifTrue,
-                               MBasicBlock* ifFalse) {
-    emitBranch(value.typeReg(), (Imm32)ImmType(JSVAL_TYPE_UNDEFINED), cond,
-               ifTrue, ifFalse);
-  }
-  void testObjectEmitBranch(Assembler::Condition cond,
-                            const ValueOperand& value, MBasicBlock* ifTrue,
-                            MBasicBlock* ifFalse) {
-    emitBranch(value.typeReg(), (Imm32)ImmType(JSVAL_TYPE_OBJECT), cond, ifTrue,
-               ifFalse);
-  }
-
-  void emitBigIntDiv(LBigIntDiv* ins, Register dividend, Register divisor,
-                     Register output, Label* fail);
-  void emitBigIntMod(LBigIntMod* ins, Register dividend, Register divisor,
-                     Register output, Label* fail);
-
   template <typename T>
   void emitWasmLoadI64(T* ins);
   template <typename T>
@@ -50,6 +27,11 @@ class CodeGeneratorMIPS : public CodeGeneratorMIPSShared {
 
   // Functions for LTestVAndBranch.
   void splitTagForTest(const ValueOperand& value, ScratchTagScope& tag);
+
+  void emitBigIntPtrDiv(LBigIntPtrDiv* ins, Register dividend, Register divisor,
+                        Register output);
+  void emitBigIntPtrMod(LBigIntPtrMod* ins, Register dividend, Register divisor,
+                        Register output);
 };
 
 typedef CodeGeneratorMIPS CodeGeneratorSpecific;

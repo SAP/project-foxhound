@@ -10,7 +10,8 @@
 // Microsoft's API Name hackery sucks
 #undef CreateEvent
 
-#include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
+#include "js/ColumnNumber.h"      // JS::ColumnNumberOneOrigin
+#include "js/EnvironmentChain.h"  // JS::EnvironmentChain
 #include "js/loader/LoadedScript.h"
 #include "js/loader/ScriptFetchOptions.h"
 #include "mozilla/Assertions.h"
@@ -1033,8 +1034,8 @@ nsresult EventListenerManager::SetEventHandler(nsAtom* aName,
     JS::ColumnNumberOneOrigin columnNum;
 
     JSContext* cx = nsContentUtils::GetCurrentJSContext();
-    if (cx && !JS::DescribeScriptedCaller(cx, nullptr, &lineNum, &columnNum)) {
-      JS_ClearPendingException(cx);
+    if (cx) {
+      JS::DescribeScriptedCaller(nullptr, cx, &lineNum, &columnNum);
     }
 
     if (csp) {
@@ -1222,12 +1223,12 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
   JSAutoRealm ar(cx, target);
 
   // Now that we've entered the realm we actually care about, create our
-  // scope chain.  Note that we start with |element|, not aElement, because
-  // mTarget is different from aElement in the <body> case, where mTarget is a
-  // Window, and in that case we do not want the scope chain to include the body
-  // or the document.
-  JS::RootedVector<JSObject*> scopeChain(cx);
-  if (!nsJSUtils::GetScopeChainForElement(cx, element, &scopeChain)) {
+  // environment chain.  Note that we start with |element|, not aElement,
+  // because mTarget is different from aElement in the <body> case, where
+  // mTarget is a Window, and in that case we do not want the environment chain
+  // to include the body or the document.
+  JS::EnvironmentChain envChain(cx, JS::SupportUnscopables::Yes);
+  if (!nsJSUtils::GetEnvironmentChainForElement(cx, element, envChain)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
@@ -1260,7 +1261,7 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
       .setDeferDebugMetadata(true);
 
   JS::Rooted<JSObject*> handler(cx);
-  result = nsJSUtils::CompileFunction(jsapi, scopeChain, options,
+  result = nsJSUtils::CompileFunction(jsapi, envChain, options,
                                       nsAtomCString(aTypeAtom), argCount,
                                       argNames, *body, handler.address());
   NS_ENSURE_SUCCESS(result, result);
@@ -1331,7 +1332,7 @@ bool EventListenerManager::HandleEventSingleListener(
 
   if (NS_SUCCEEDED(result)) {
     Maybe<EventCallbackDebuggerNotificationGuard> dbgGuard;
-    if (dom::ChromeUtils::IsDevToolsOpened()) {
+    if (dom::ChromeUtils::IsDevToolsOpened() || profiler_is_active()) {
       dbgGuard.emplace(aCurrentTarget, aDOMEvent);
     }
     nsAutoMicroTask mt;

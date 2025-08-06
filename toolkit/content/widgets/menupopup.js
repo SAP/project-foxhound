@@ -131,9 +131,7 @@
         :host(.in-menulist) arrowscrollbox::part(scrollbox) {
           overflow: auto;
           margin: 0;
-        }
-        :host(.in-menulist) arrowscrollbox::part(scrollbox-clip) {
-          overflow: visible;
+          padding: 0;
         }
       `;
     }
@@ -269,7 +267,7 @@
       // further to stay clear of the buttons.
       if (
         this.parentNode?.localName == "menulist" ||
-        !this.scrollBox.hasAttribute("overflowing")
+        !this.scrollBox.overflowing
       ) {
         return;
       }

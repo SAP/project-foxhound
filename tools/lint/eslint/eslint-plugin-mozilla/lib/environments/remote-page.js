@@ -27,7 +27,7 @@ module.exports = {
     RPMSendAsyncMessage: false,
     RPMSendQuery: false,
     RPMAddMessageListener: false,
-    RPMRecordTelemetryEvent: false,
+    RPMRecordGleanEvent: false,
     RPMCheckAlternateHostAvailable: false,
     RPMAddToHistogram: false,
     RPMRemoveMessageListener: false,
@@ -39,5 +39,6 @@ module.exports = {
     RPMGetTRRDomain: false,
     RPMIsSiteSpecificTRRError: false,
     RPMSetTRRDisabledLoadFlags: false,
+    RPMShowOSXLocalNetworkPermissionWarning: false,
   },
 };

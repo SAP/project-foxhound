@@ -36,7 +36,6 @@
 #include "builtin/temporal/TemporalUnit.h"
 #include "builtin/temporal/TimeZone.h"
 #include "builtin/temporal/ToString.h"
-#include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
 #include "gc/AllocKind.h"
 #include "gc/Barrier.h"
@@ -427,33 +426,8 @@ static InstantObject* CreateTemporalInstant(JSContext* cx, const CallArgs& args,
 /**
  * ToTemporalInstant ( item )
  */
-Wrapped<InstantObject*> js::temporal::ToTemporalInstant(JSContext* cx,
-                                                        Handle<Value> item) {
-  // Step 1.
-  if (item.isObject()) {
-    JSObject* itemObj = &item.toObject();
-
-    // Step 1.a.
-    if (itemObj->canUnwrapAs<InstantObject>()) {
-      return itemObj;
-    }
-  }
-
-  // Steps 1.b-d and 3-7
-  Instant epochNanoseconds;
-  if (!ToTemporalInstant(cx, item, &epochNanoseconds)) {
-    return nullptr;
-  }
-
-  // Step 8.
-  return CreateTemporalInstant(cx, epochNanoseconds);
-}
-
-/**
- * ToTemporalInstant ( item )
- */
-bool js::temporal::ToTemporalInstant(JSContext* cx, Handle<Value> item,
-                                     Instant* result) {
+static bool ToTemporalInstant(JSContext* cx, Handle<Value> item,
+                              Instant* result) {
   // Step 1.
   Rooted<Value> primitiveValue(cx, item);
   if (item.isObject()) {
@@ -624,23 +598,17 @@ static bool DifferenceTemporalInstant(JSContext* cx,
   // Steps 3-4.
   DifferenceSettings settings;
   if (args.hasDefined(1)) {
+    // Step 3.
     Rooted<JSObject*> options(
         cx, RequireObjectArg(cx, "options", ToName(operation), args[1]));
     if (!options) {
       return false;
     }
 
-    // Step 3.
-    Rooted<PlainObject*> resolvedOptions(cx,
-                                         SnapshotOwnProperties(cx, options));
-    if (!resolvedOptions) {
-      return false;
-    }
-
     // Step 4.
-    if (!GetDifferenceSettings(
-            cx, operation, resolvedOptions, TemporalUnitGroup::Time,
-            TemporalUnit::Nanosecond, TemporalUnit::Second, &settings)) {
+    if (!GetDifferenceSettings(cx, operation, options, TemporalUnitGroup::Time,
+                               TemporalUnit::Nanosecond, TemporalUnit::Second,
+                               &settings)) {
       return false;
     }
   } else {
@@ -1165,15 +1133,9 @@ static bool Instant_toString(JSContext* cx, const CallArgs& args) {
     precision = ToSecondsStringPrecision(smallestUnit, digits);
   }
 
-  // Step 12.
-  auto ns = RoundTemporalInstant(instant, precision.increment, precision.unit,
-                                 roundingMode);
-
-  // Step 13.
-  Rooted<InstantObject*> roundedInstant(cx, CreateTemporalInstant(cx, ns));
-  if (!roundedInstant) {
-    return false;
-  }
+  // Steps 12-13.
+  auto roundedInstant = RoundTemporalInstant(instant, precision.increment,
+                                             precision.unit, roundingMode);
 
   // Step 14.
   JSString* str = TemporalInstantToString(cx, roundedInstant, timeZone,
@@ -1199,8 +1161,7 @@ static bool Instant_toString(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.toLocaleString ( [ locales [ , options ] ] )
  */
 static bool Instant_toLocaleString(JSContext* cx, const CallArgs& args) {
-  Rooted<InstantObject*> instant(cx,
-                                 &args.thisv().toObject().as<InstantObject>());
+  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
 
   // Step 3.
   Rooted<TimeZoneValue> timeZone(cx);
@@ -1227,8 +1188,7 @@ static bool Instant_toLocaleString(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.toJSON ( )
  */
 static bool Instant_toJSON(JSContext* cx, const CallArgs& args) {
-  Rooted<InstantObject*> instant(cx,
-                                 &args.thisv().toObject().as<InstantObject>());
+  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
 
   // Step 3.
   Rooted<TimeZoneValue> timeZone(cx);

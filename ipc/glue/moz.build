@@ -17,7 +17,6 @@ EXPORTS.mozilla.ipc += [
     "BackgroundStarterParent.h",
     "BackgroundUtils.h",
     "BigBuffer.h",
-    "BrowserProcessSubThread.h",
     "ByteBuf.h",
     "ByteBufUtils.h",
     "CrashReporterClient.h",
@@ -34,7 +33,7 @@ EXPORTS.mozilla.ipc += [
     "IdleSchedulerChild.h",
     "IdleSchedulerParent.h",
     "InputStreamUtils.h",
-    "IOThreadChild.h",
+    "IOThread.h",
     "IPCCore.h",
     "IPCForwards.h",
     "IPCStreamUtils.h",
@@ -54,10 +53,10 @@ EXPORTS.mozilla.ipc += [
     "ProtocolUtils.h",
     "RandomAccessStreamUtils.h",
     "RawShmem.h",
+    "RustMessageUtils.h",
     "ScopedPort.h",
     "SerializedStructuredCloneBuffer.h",
     "SharedMemory.h",
-    "SharedMemoryBasic.h",
     "Shmem.h",
     "ShmemMessageUtils.h",
     "SideVariant.h",
@@ -79,14 +78,7 @@ EXPORTS.mozilla.ipc += [
 ]
 
 if CONFIG["OS_ARCH"] == "WINNT":
-    SOURCES += [
-        "SharedMemory_windows.cpp",
-        "WindowsMessageLoop.cpp",
-    ]
-else:
-    UNIFIED_SOURCES += [
-        "SharedMemory_posix.cpp",
-    ]
+    SOURCES += ["WindowsMessageLoop.cpp"]
 
 if CONFIG["OS_ARCH"] == "WINNT":
     SOURCES += [
@@ -115,12 +107,14 @@ else:
     ]
 
 if CONFIG["OS_ARCH"] == "Darwin":
-    EXPORTS.mozilla.ipc += ["SharedMemoryBasic_mach.h"]
-    SOURCES += [
-        "SharedMemoryBasic_mach.mm",
-    ]
+    SOURCES += ["SharedMemory_mach.cpp"]
+elif CONFIG["OS_ARCH"] == "WINNT":
+    SOURCES += ["SharedMemory_windows.cpp"]
+elif CONFIG["OS_TARGET"] == "Android":
+    SOURCES += ["SharedMemory_android.cpp"]
 else:
-    EXPORTS.mozilla.ipc += ["SharedMemoryBasic_chromium.h"]
+    SOURCES += ["SharedMemory_posix.cpp"]
+
 
 if CONFIG["OS_ARCH"] == "Linux":
     UNIFIED_SOURCES += [
@@ -171,7 +165,6 @@ UNIFIED_SOURCES += [
     "BackgroundImpl.cpp",
     "BackgroundUtils.cpp",
     "BigBuffer.cpp",
-    "BrowserProcessSubThread.cpp",
     "CrashReporterClient.cpp",
     "CrashReporterHost.cpp",
     "DataPipe.cpp",
@@ -181,6 +174,7 @@ UNIFIED_SOURCES += [
     "IdleSchedulerChild.cpp",
     "IdleSchedulerParent.cpp",
     "InputStreamUtils.cpp",
+    "IOThread.cpp",
     "IPCMessageUtilsSpecializations.cpp",
     "IPCStreamUtils.cpp",
     "MessageChannel.cpp",
@@ -240,8 +234,8 @@ LOCAL_INCLUDES += [
     "/dom/indexedDB",
     "/dom/storage",
     "/netwerk/base",
+    "/third_party/abseil-cpp",
     "/third_party/libwebrtc",
-    "/third_party/libwebrtc/third_party/abseil-cpp",
     "/tools/fuzzing/ipc",
     "/xpcom/build",
 ]

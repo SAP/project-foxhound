@@ -69,6 +69,7 @@ skip-if = ["win11_2009"] # Bug 1797751
 ["browser_storage_cookies_domain.js"]
 
 ["browser_storage_cookies_domain_port.js"]
+https_first_disabled = true
 
 ["browser_storage_cookies_edit.js"]
 
@@ -137,7 +138,10 @@ skip-if = [
 ]
 
 ["browser_storage_indexeddb_hide_internal_dbs.js"]
-skip-if = ["asan"] # Bug 1591064
+skip-if = [
+  "asan", # Bug 1591064
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929421
+]
 
 ["browser_storage_indexeddb_navigation.js"]
 skip-if = [

@@ -30,6 +30,7 @@ Preferences.addAll([
   { id: "browser.urlbar.trending.featureGate", type: "bool" },
   { id: "browser.urlbar.recentsearches.featureGate", type: "bool" },
   { id: "browser.urlbar.suggest.recentsearches", type: "bool" },
+  { id: "browser.urlbar.scotchBonnet.enableOverride", type: "bool" },
 ]);
 
 const ENGINE_FLAVOR = "text/x-moz-search-engine";
@@ -345,7 +346,10 @@ var gSearchPane = {
   _updateFirefoxSuggestSection(onInit = false) {
     let container = document.getElementById("firefoxSuggestContainer");
 
-    if (UrlbarPrefs.get("quickSuggestEnabled")) {
+    if (
+      UrlbarPrefs.get("quickSuggestEnabled") &&
+      !UrlbarPrefs.get("quickSuggestHideSettingsUI")
+    ) {
       // Update the l10n IDs of text elements.
       let l10nIdByElementId = {
         locationBarGroupHeader: "addressbar-header-firefox-suggest",
@@ -380,9 +384,10 @@ var gSearchPane = {
       let elementIds = ["locationBarGroupHeader", "locationBarSuggestionLabel"];
       for (let id of elementIds) {
         let element = document.getElementById(id);
-        element.dataset.l10nId = element.dataset.l10nIdOriginal;
-        delete element.dataset.l10nIdOriginal;
-        document.l10n.translateElements([element]);
+        if (element.dataset.l10nIdOriginal) {
+          document.l10n.setAttributes(element, element.dataset.l10nIdOriginal);
+          delete element.dataset.l10nIdOriginal;
+        }
       }
     }
   },
@@ -442,8 +447,13 @@ var gSearchPane = {
 
   _initQuickActionsSection() {
     let showPref = Preferences.get("browser.urlbar.quickactions.showPrefs");
+    let scotchBonnet = Preferences.get(
+      "browser.urlbar.scotchBonnet.enableOverride"
+    );
     let showQuickActionsGroup = () => {
-      document.getElementById("quickActionsBox").hidden = !showPref.value;
+      document.getElementById("quickActionsBox").hidden = !(
+        showPref.value || scotchBonnet.value
+      );
     };
     showPref.on("change", showQuickActionsGroup);
     showQuickActionsGroup();
@@ -1163,9 +1173,13 @@ class EngineView {
 
   // nsITreeView
   get rowCount() {
-    return (
-      this._engineStore.engines.length + UrlbarUtils.LOCAL_SEARCH_MODES.length
-    );
+    let localModes = UrlbarUtils.LOCAL_SEARCH_MODES;
+    if (lazy.UrlbarPrefs.get("scotchBonnet.enableOverride")) {
+      localModes = localModes.filter(
+        mode => mode.source != UrlbarUtils.RESULT_SOURCE.ACTIONS
+      );
+    }
+    return this._engineStore.engines.length + localModes.length;
   }
 
   getImageSrc(index, column) {

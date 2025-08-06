@@ -744,22 +744,42 @@ export class BaseContext {
         // TODO(Bug 1810582): change the error associated to the innerWindowID to also
         // include a full stack from the original error.
         if (!this.isProxyContextParent && this.contentWindow) {
-          Services.console.logMessage(
-            new ScriptError(
-              message,
-              fileName,
-              lineNumber,
-              columnNumber,
-              Ci.nsIScriptError.errorFlag,
-              "content javascript",
-              this.innerWindowID
-            )
-          );
+          this.logConsoleScriptError({
+            message,
+            fileName,
+            lineNumber,
+            columnNumber,
+          });
         }
         // Also report the original error object (because it also includes
         // the full error stack).
         Cu.reportError(e);
       }
+    }
+  }
+
+  logConsoleScriptError({
+    message,
+    fileName,
+    lineNumber,
+    columnNumber,
+    flags = Ci.nsIScriptError.errorFlag,
+    innerWindowID = this.innerWindowID,
+  }) {
+    if (innerWindowID) {
+      Services.console.logMessage(
+        new ScriptError(
+          message,
+          fileName,
+          lineNumber,
+          columnNumber,
+          flags,
+          "content javascript",
+          innerWindowID
+        )
+      );
+    } else {
+      Cu.reportError(new Error(message));
     }
   }
 
@@ -1878,12 +1898,14 @@ class SchemaAPIManager extends EventEmitter {
       ExtensionAPI,
       ExtensionAPIPersistent,
       ExtensionCommon,
+      FileReader,
       Glean,
       GleanPings,
       IOUtils,
       MatchGlob,
       MatchPattern,
       MatchPatternSet,
+      OffscreenCanvas,
       PathUtils,
       Services,
       StructuredCloneHolder,
@@ -3009,7 +3031,6 @@ function ignoreEvent(context, name) {
       scriptError.init(
         msg,
         frame.filename,
-        null,
         frame.lineNumber,
         frame.columnNumber,
         Ci.nsIScriptError.warningFlag,

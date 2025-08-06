@@ -236,7 +236,9 @@ class PromiseCombinatorDataHolder : public NativeObject {
 };
 
 const JSClass PromiseCombinatorDataHolder::class_ = {
-    "PromiseCombinatorDataHolder", JSCLASS_HAS_RESERVED_SLOTS(SlotsCount)};
+    "PromiseCombinatorDataHolder",
+    JSCLASS_HAS_RESERVED_SLOTS(SlotsCount),
+};
 
 // Smart pointer to the "F.[[Values]]" part of the state of a Promise.all or
 // Promise.allSettled invocation, or the "F.[[Errors]]" part of the state of a
@@ -540,7 +542,9 @@ class PromiseDebugInfo : public NativeObject {
 };
 
 const JSClass PromiseDebugInfo::class_ = {
-    "PromiseDebugInfo", JSCLASS_HAS_RESERVED_SLOTS(SlotCount)};
+    "PromiseDebugInfo",
+    JSCLASS_HAS_RESERVED_SLOTS(SlotCount),
+};
 
 double PromiseObject::allocationTime() {
   auto debugInfo = PromiseDebugInfo::FromPromise(this);
@@ -609,8 +613,8 @@ static bool MaybeGetAndClearExceptionAndStack(
  * be tedious, so the check in step 1 and the entirety of step 2 aren't
  * included.
  */
-static bool AbruptRejectPromise(JSContext* cx, CallArgs& args,
-                                HandleObject promiseObj, HandleObject reject) {
+bool js::AbruptRejectPromise(JSContext* cx, CallArgs& args,
+                             HandleObject promiseObj, HandleObject reject) {
   // Step 1.a. Perform
   //           ? Call(capability.[[Reject]], undefined, « value.[[Value]] »).
   RootedValue reason(cx);
@@ -910,7 +914,9 @@ class PromiseReactionRecord : public NativeObject {
 };
 
 const JSClass PromiseReactionRecord::class_ = {
-    "PromiseReactionRecord", JSCLASS_HAS_RESERVED_SLOTS(ReactionRecordSlots)};
+    "PromiseReactionRecord",
+    JSCLASS_HAS_RESERVED_SLOTS(ReactionRecordSlots),
+};
 
 static void AddPromiseFlags(PromiseObject& promise, int32_t flag) {
   int32_t flags = promise.flags();
@@ -1799,9 +1805,6 @@ CreatePromiseObjectWithoutResolutionFunctions(JSContext* cx) {
     return true;
   }
 
-  // At this point this is effectively subclassing;
-  ReportUsageCounter(cx, C, SUBCLASSING_PROMISE, SUBCLASSING_TYPE_II);
-
   // Step 4. Let executorClosure be a new Abstract Closure with parameters
   //         (resolve, reject) that captures promiseCapability and performs the
   //         following steps when called:
@@ -2214,7 +2217,18 @@ static bool PromiseReactionJob(JSContext* cx, unsigned argc, Value* vp) {
       // Step 1.d.ii.2. Let handlerResult be ThrowCompletion(argument).
       resolutionMode = RejectMode;
       handlerResult = argument;
-    } else {
+    }
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    else if (handlerNum == PromiseHandler::AsyncIteratorDisposeAwaitFulfilled) {
+      // Explicit Resource Management Proposal
+      // 27.1.3.1 %AsyncIteratorPrototype% [ @@asyncDispose ] ( )
+      // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-%25asynciteratorprototype%25-%40%40asyncdispose
+      //
+      // Step 6.e.i. Return undefined.
+      handlerResult = JS::UndefinedValue();
+    }
+#endif
+    else {
       // Special case for Async-from-Sync Iterator.
 
       MOZ_ASSERT(handlerNum ==
@@ -4894,6 +4908,83 @@ PromiseObject* PromiseObject::unforgeableResolveWithNonPromise(
 }
 
 /**
+ * https://tc39.es/proposal-promise-try/
+ *
+ * Promise.try ( )
+ */
+static bool Promise_static_try(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // 1. Let C be the this value.
+  RootedValue cVal(cx, args.thisv());
+
+  // 2. If C is not an Object, throw a TypeError exception.
+  if (!cVal.isObject()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_OBJECT_REQUIRED,
+                              "Receiver of Promise.try call");
+    return false;
+  }
+
+  // 3. Let promiseCapability be ? NewPromiseCapability(C).
+  RootedObject c(cx, &cVal.toObject());
+  Rooted<PromiseCapability> promiseCapability(cx);
+  if (!NewPromiseCapability(cx, c, &promiseCapability, false)) {
+    return false;
+  }
+  HandleObject promiseObject = promiseCapability.promise();
+
+  // 4. Let status be Completion(Call(callbackfn, undefined, args)).
+  size_t argCount = args.length();
+  if (argCount > 0) {
+    argCount--;
+  }
+
+  InvokeArgs iargs(cx);
+  if (!iargs.init(cx, argCount)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < argCount; i++) {
+    iargs[i].set(args[i + 1]);
+  }
+
+  HandleValue callbackfn = args.get(0);
+  RootedValue rval(cx);
+  bool ok = Call(cx, callbackfn, UndefinedHandleValue, iargs, &rval);
+
+  // 5. If status is an abrupt completion, then
+  if (!ok) {
+    RootedValue reason(cx);
+    Rooted<SavedFrame*> stack(cx);
+
+    if (!MaybeGetAndClearExceptionAndStack(cx, &reason, &stack)) {
+      return false;
+    }
+
+    // 5.a. Perform ? Call(promiseCapability.[[Reject]], undefined, «
+    // status.[[Value]] »).
+    if (!CallPromiseRejectFunction(cx, promiseCapability.reject(), reason,
+                                   promiseObject, stack,
+                                   UnhandledRejectionBehavior::Report)) {
+      return false;
+    }
+  } else {
+    // 6. Else,
+    // 6.a. Perform ? Call(promiseCapability.[[Resolve]], undefined, «
+    // status.[[Value]] »).
+    if (!CallPromiseResolveFunction(cx, promiseCapability.resolve(), rval,
+                                    promiseObject)) {
+      return false;
+    }
+  }
+
+  // 7. Return promiseCapability.[[Promise]].
+  args.rval().setObject(*promiseObject);
+  return true;
+}
+
+/**
  * https://tc39.es/proposal-promise-with-resolvers/
  *
  * Promise.withResolvers ( )
@@ -5520,6 +5611,25 @@ template <typename T>
   extraStep(reaction);
   return PerformPromiseThenWithReaction(cx, unwrappedPromise, reaction);
 }
+
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+// Explicit Resource Management Proposal
+// 27.1.3.1 %AsyncIteratorPrototype% [ @@asyncDispose ] ( )
+// Steps 6.c-g
+// https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-%25asynciteratorprototype%25-%40%40asyncdispose
+// The steps mentioned above are almost identical to the steps 3-7 of
+// https://tc39.es/ecma262/#await we have a utility function InternalAwait which
+// covers these steps thus this following function wraps around the utility
+// and implements the steps of %AsyncIteratorPrototype% [ @@asyncDispose ] ( ).
+[[nodiscard]] bool js::InternalAsyncIteratorDisposeAwait(
+    JSContext* cx, JS::Handle<JS::Value> value,
+    JS::Handle<JSObject*> resultPromise) {
+  auto extra = [](JS::Handle<PromiseReactionRecord*> reaction) {};
+  return InternalAwait(cx, value, resultPromise,
+                       PromiseHandler::AsyncIteratorDisposeAwaitFulfilled,
+                       PromiseHandler::Thrower, extra);
+}
+#endif
 
 [[nodiscard]] bool js::InternalAsyncGeneratorAwait(
     JSContext* cx, JS::Handle<AsyncGeneratorObject*> generator,
@@ -6957,10 +7067,14 @@ const JSJitInfo promise_catch_info = {
 static const JSFunctionSpec promise_methods[] = {
     JS_FNINFO("then", js::Promise_then, &promise_then_info, 2, 0),
     JS_FNINFO("catch", Promise_catch, &promise_catch_info, 1, 0),
-    JS_SELF_HOSTED_FN("finally", "Promise_finally", 1, 0), JS_FS_END};
+    JS_SELF_HOSTED_FN("finally", "Promise_finally", 1, 0),
+    JS_FS_END,
+};
 
 static const JSPropertySpec promise_properties[] = {
-    JS_STRING_SYM_PS(toStringTag, "Promise", JSPROP_READONLY), JS_PS_END};
+    JS_STRING_SYM_PS(toStringTag, "Promise", JSPROP_READONLY),
+    JS_PS_END,
+};
 
 static const JSFunctionSpec promise_static_methods[] = {
     JS_FN("all", Promise_static_all, 1, 0),
@@ -6970,10 +7084,14 @@ static const JSFunctionSpec promise_static_methods[] = {
     JS_FN("reject", Promise_reject, 1, 0),
     JS_FN("resolve", js::Promise_static_resolve, 1, 0),
     JS_FN("withResolvers", Promise_static_withResolvers, 0, 0),
-    JS_FS_END};
+    JS_FN("try", Promise_static_try, 1, 0),
+    JS_FS_END,
+};
 
 static const JSPropertySpec promise_static_properties[] = {
-    JS_SYM_GET(species, js::Promise_static_species, 0), JS_PS_END};
+    JS_SYM_GET(species, js::Promise_static_species, 0),
+    JS_PS_END,
+};
 
 static const ClassSpec PromiseObjectClassSpec = {
     GenericCreateConstructor<PromiseConstructor, 1, gc::AllocKind::FUNCTION>,
@@ -6981,15 +7099,21 @@ static const ClassSpec PromiseObjectClassSpec = {
     promise_static_methods,
     promise_static_properties,
     promise_methods,
-    promise_properties};
+    promise_properties,
+};
 
 const JSClass PromiseObject::class_ = {
     "Promise",
     JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_Promise) |
         JSCLASS_HAS_XRAYED_CONSTRUCTOR,
-    JS_NULL_CLASS_OPS, &PromiseObjectClassSpec};
+    JS_NULL_CLASS_OPS,
+    &PromiseObjectClassSpec,
+};
 
 const JSClass PromiseObject::protoClass_ = {
-    "Promise.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_Promise),
-    JS_NULL_CLASS_OPS, &PromiseObjectClassSpec};
+    "Promise.prototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Promise),
+    JS_NULL_CLASS_OPS,
+    &PromiseObjectClassSpec,
+};

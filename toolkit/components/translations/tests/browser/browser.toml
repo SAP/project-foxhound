@@ -14,6 +14,7 @@ support-files = [
   "translations-tester-shadow-dom-mutation-es.html",
   "translations-tester-shadow-dom-mutation-es-2.html",
   "translations-tester-shadow-dom-slot-es.html",
+  "translations-text-cleaning.html",
 ]
 
 ["browser_about_translations_debounce.js"]
@@ -24,6 +25,10 @@ skip-if = ["os == 'linux'"]  # Bug 1821461
 ["browser_about_translations_dropdowns.js"]
 
 ["browser_about_translations_enabling.js"]
+
+["browser_about_translations_language_swap.js"]
+
+["browser_about_translations_telemetry_open.js"]
 
 ["browser_about_translations_translations.js"]
 
@@ -36,6 +41,8 @@ skip-if = ["os == 'linux'"]  # Bug 1821461
 ["browser_translations_actor_empty_langs.js"]
 
 ["browser_translations_actor_preferred_language.js"]
+
+["browser_translations_actor_store_recent_target_langs.js"]
 
 ["browser_translations_actor_sync_models.js"]
 
@@ -55,4 +62,8 @@ skip-if = ["os == 'linux'"]  # Bug 1821461
 
 ["browser_translations_shadow_dom_mutation.js"]
 
+["browser_translations_text_cleaning.js"]
+
 ["browser_translations_translation_document.js"]
+
+["browser_translations_translation_document_mutations.js"]

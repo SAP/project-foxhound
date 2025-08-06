@@ -17,7 +17,6 @@
 #include <vector>
 
 #include "api/units/time_delta.h"
-#include "modules/remote_bitrate_estimator/test/bwe_test_logging.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
@@ -73,7 +72,7 @@ bool StreamStatisticianImpl::UpdateOutOfOrder(const RtpPacketReceived& packet,
     --cumulative_loss_;
 
     uint16_t expected_sequence_number = *received_seq_out_of_order_ + 1;
-    received_seq_out_of_order_ = absl::nullopt;
+    received_seq_out_of_order_ = std::nullopt;
     if (packet.SequenceNumber() == expected_sequence_number) {
       // Ignore sequence number gap caused by stream restart for packet loss
       // calculation, by setting received_seq_max_ to the sequence number just
@@ -282,20 +281,15 @@ void StreamStatisticianImpl::MaybeAppendReportBlockAndReset(
   // Only for report blocks in RTCP SR and RR.
   last_report_cumulative_loss_ = cumulative_loss_;
   last_report_seq_max_ = received_seq_max_;
-  BWE_TEST_LOGGING_PLOT_WITH_SSRC(1, "cumulative_loss_pkts", now.ms(),
-                                  cumulative_loss_, ssrc_);
-  BWE_TEST_LOGGING_PLOT_WITH_SSRC(1, "received_seq_max_pkts", now.ms(),
-                                  (received_seq_max_ - received_seq_first_),
-                                  ssrc_);
 }
 
-absl::optional<int> StreamStatisticianImpl::GetFractionLostInPercent() const {
+std::optional<int> StreamStatisticianImpl::GetFractionLostInPercent() const {
   if (!ReceivedRtpPacket()) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   int64_t expected_packets = 1 + received_seq_max_ - received_seq_first_;
   if (expected_packets <= 0) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   if (cumulative_loss_ <= 0) {
     return 0;

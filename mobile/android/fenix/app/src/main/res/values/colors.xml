@@ -332,7 +332,6 @@
     <color name="sync_error_background_color">#FFF36E</color>
     <color name="sync_error_text_color">@color/photonYellow90</color>
     <color name="bottom_bar_shadow">#1A000000</color>
-    <color name="snackbar_error_color">#B52645</color>
 
     <!-- Prompt colors -->
     <color name="mozac_feat_prompt_cancel_save_dialog_text_color" tools:ignore="UnusedResources">@color/photonViolet70A80</color>
@@ -370,7 +369,8 @@
     <color name="material_scrim_color">#52000000</color>
 
     <!-- Add-ons colors -->
-    <color name="mozac_feature_addons_error_text_color" tools:ignore="UnusedResources">@color/photonRed70</color>
+    <color name="mozac_feature_addons_messagebar_error_background_color" tools:ignore="UnusedResources">@color/fx_mobile_layer_color_critical</color>
+    <color name="mozac_feature_addons_messagebar_warning_background_color" tools:ignore="UnusedResources">@color/fx_mobile_layer_color_warning</color>
 
     <!-- Star icon fill colors -->
     <color name="mozac_ic_star_filled">@color/photonBlack</color>

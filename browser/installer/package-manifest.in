@@ -100,15 +100,22 @@
 #endif
 #endif
 #ifdef MOZ_GTK
+; This is a standalone binary launched by Firefox on Linux to verify
+; the system's graphics capabilities and behavior.
+; It is separate because it may crash, and handling this within Firefox
+; itself would be more challenging.
 @BINPATH@/glxtest
 @BINPATH@/@DLL_PREFIX@mozgtk@DLL_SUFFIX@
 #ifdef MOZ_WAYLAND
 @BINPATH@/@DLL_PREFIX@mozwayland@DLL_SUFFIX@
 #endif
 #ifdef MOZ_ENABLE_V4L2
+; Similar to glxtest, this tests the hardware decoding for Video for Linux.
+; Currently, it doesn't ship for Firefox targeting typical Intel CPU (or compatible).
 @BINPATH@/v4l2test
 #endif
 #ifdef MOZ_ENABLE_VAAPI
+; Similar to glxtest, this tests the capabilities of the Video Acceleration API (VA-API).
 @BINPATH@/vaapitest
 #endif
 #endif
@@ -275,7 +282,6 @@
 ; Style Sheets, Graphics and other Resources used by the layout engine.
 @RESPATH@/res/EditorOverride.css
 @RESPATH@/res/contenteditable.css
-@RESPATH@/res/designmode.css
 @RESPATH@/res/table-add-column-after-active.gif
 @RESPATH@/res/table-add-column-after-hover.gif
 @RESPATH@/res/table-add-column-after.gif
@@ -394,12 +400,6 @@ bin/libfreebl_64int_3.so
 #endif
 #endif
 
-; [ minidump-analyzer ]
-;
-#ifdef MOZ_CRASHREPORTER
-@BINPATH@/minidump-analyzer@BIN_SUFFIX@
-#endif
-
 ; [ Ping Sender ]
 ;
 @BINPATH@/pingsender@BIN_SUFFIX@
@@ -432,12 +432,6 @@ bin/libfreebl_64int_3.so
 @RESPATH@/gmp-clearkey/0.1/manifest.json
 #if defined(MOZ_WMF_CDM) && defined(ENABLE_TESTS)
 @BINPATH@/@DLL_PREFIX@wmfclearkey@DLL_SUFFIX@
-#endif
-
-#ifdef MOZ_DMD
-; DMD
-@RESPATH@/dmd.py
-@RESPATH@/fix_stacks.py
 #endif
 
 #ifdef PKG_LOCALE_MANIFEST

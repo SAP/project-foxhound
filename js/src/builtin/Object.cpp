@@ -25,7 +25,7 @@
 #include "js/PropertySpec.h"
 #include "js/UniquePtr.h"
 #include "util/Identifier.h"  // js::IsIdentifier
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "util/Text.h"
 #include "vm/BooleanObject.h"
 #include "vm/DateObject.h"
@@ -745,7 +745,7 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 17.
-  StringBuffer sb(cx);
+  StringBuilder sb(cx);
   if (!sb.append("[object ") || !sb.append(tag.toString()) || !sb.append(']')) {
     return false;
   }
@@ -1204,9 +1204,10 @@ JS_PUBLIC_API bool JS_AssignObject(JSContext* cx, JS::HandleObject target,
 static bool obj_assign(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Object", "assign");
   CallArgs args = CallArgsFromVp(argc, vp);
+  RootedTuple<JSObject*, JSObject*> roots(cx);
 
   // Step 1.
-  RootedObject to(cx, ToObject(cx, args.get(0)));
+  RootedField<JSObject*, 0> to(roots, ToObject(cx, args.get(0)));
   if (!to) {
     return false;
   }
@@ -1215,7 +1216,6 @@ static bool obj_assign(JSContext* cx, unsigned argc, Value* vp) {
   // there's 1 argument, the loop below is a no-op.
 
   // Step 4.
-  RootedObject from(cx);
   for (size_t i = 1; i < args.length(); i++) {
     // Step 4.a.
     if (args[i].isNullOrUndefined()) {
@@ -1223,7 +1223,7 @@ static bool obj_assign(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     // Step 4.b.i.
-    from = ToObject(cx, args[i]);
+    RootedField<JSObject*, 1> from(roots, ToObject(cx, args[i]));
     if (!from) {
       return false;
     }
@@ -2447,12 +2447,14 @@ static const JSFunctionSpec object_methods[] = {
     JS_SELF_HOSTED_FN("__defineSetter__", "ObjectDefineSetter", 2, 0),
     JS_SELF_HOSTED_FN("__lookupGetter__", "ObjectLookupGetter", 1, 0),
     JS_SELF_HOSTED_FN("__lookupSetter__", "ObjectLookupSetter", 1, 0),
-    JS_FS_END};
+    JS_FS_END,
+};
 
 static const JSPropertySpec object_properties[] = {
     JS_SELF_HOSTED_GETSET("__proto__", "$ObjectProtoGetter",
                           "$ObjectProtoSetter", 0),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 static const JSFunctionSpec object_static_methods[] = {
     JS_FN("assign", obj_assign, 2, 0),
@@ -2480,7 +2482,8 @@ static const JSFunctionSpec object_static_methods[] = {
     JS_SELF_HOSTED_FN("fromEntries", "ObjectFromEntries", 1, 0),
     JS_SELF_HOSTED_FN("hasOwn", "ObjectHasOwn", 2, 0),
     JS_SELF_HOSTED_FN("groupBy", "ObjectGroupBy", 2, 0),
-    JS_FS_END};
+    JS_FS_END,
+};
 
 static JSObject* CreateObjectConstructor(JSContext* cx, JSProtoKey key) {
   Rooted<GlobalObject*> self(cx, cx->global());
@@ -2557,10 +2560,14 @@ static const ClassSpec PlainObjectClassSpec = {
     CreateObjectConstructor, CreateObjectPrototype,
     object_static_methods,   nullptr,
     object_methods,          object_properties,
-    FinishObjectClassInit};
+    FinishObjectClassInit,
+};
 
-const JSClass PlainObject::class_ = {"Object",
-                                     JSCLASS_HAS_CACHED_PROTO(JSProto_Object),
-                                     JS_NULL_CLASS_OPS, &PlainObjectClassSpec};
+const JSClass PlainObject::class_ = {
+    "Object",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Object),
+    JS_NULL_CLASS_OPS,
+    &PlainObjectClassSpec,
+};
 
 const JSClass* const js::ObjectClassPtr = &PlainObject::class_;

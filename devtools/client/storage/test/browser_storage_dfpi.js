@@ -15,6 +15,7 @@ const { SiteDataTestUtils } = ChromeUtils.importESModule(
 const PREFIX = "https://sub1.test1.example";
 const ORIGIN = `${PREFIX}.org`;
 const ORIGIN_THIRD_PARTY = `${PREFIX}.com`;
+const ORIGIN_PARTITIONED = `${ORIGIN_THIRD_PARTY}^partitionKey=%28https%2Cexample.org%29`;
 const TEST_URL = `${ORIGIN}/${PATH}storage-dfpi.html`;
 
 function listOrigins() {
@@ -45,17 +46,35 @@ add_task(async function () {
   // To ensure more accurate results, try choosing a uncommon origin for PREFIX.
   const EXISTING_ORIGINS = await listOrigins();
   ok(!EXISTING_ORIGINS.includes(ORIGIN), `${ORIGIN} doesn't exist`);
+  ok(
+    !EXISTING_ORIGINS.includes(ORIGIN_PARTITIONED),
+    `${ORIGIN_PARTITIONED} doesn't exist`
+  );
 
   await openTabAndSetupStorage(TEST_URL);
 
   const origins = await listOrigins();
   for (const origin of origins) {
     ok(
-      EXISTING_ORIGINS.includes(origin) || origin === ORIGIN,
+      EXISTING_ORIGINS.includes(origin) ||
+        origin === ORIGIN ||
+        origin == ORIGIN_PARTITIONED,
       `check origin: ${origin}`
     );
   }
   ok(origins.includes(ORIGIN), `${ORIGIN} is added`);
+  if (
+    Services.prefs.getBoolPref(
+      "dom.storage.enable_migration_from_unsupported_legacy_implementation"
+    )
+  ) {
+    ok(origins.includes(ORIGIN_PARTITIONED), `${ORIGIN_PARTITIONED} is added`);
+  } else {
+    ok(
+      !origins.includes(ORIGIN_PARTITIONED),
+      `${ORIGIN_PARTITIONED} is not added`
+    );
+  }
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
@@ -69,13 +88,21 @@ async function setPartitionedStorage(browser, type, key) {
     content.localStorage.setItem(storageKey, storageValue);
   };
 
+  const thirdPartyHandler = async (storageType, storageKey, storageValue) => {
+    if (storageType == "cookie") {
+      content.document.cookie = `${storageKey}=${storageValue}; SameSite=None; Secure; Partitioned;`;
+      return;
+    }
+    content.localStorage.setItem(storageKey, storageValue);
+  };
+
   // Set first party storage.
   await SpecialPowers.spawn(browser, [type, key, "first"], handler);
   // Set third-party (partitioned) storage in the iframe.
   await SpecialPowers.spawn(
     browser.browsingContext.children[0],
     [type, key, "third"],
-    handler
+    thirdPartyHandler
   );
 }
 

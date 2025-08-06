@@ -49,6 +49,10 @@ urlbar-group-pocket =
 urlbar-group-local =
   .label = Local recommendations
 
+# Label shown above sponsored suggestions in the urlbar results.
+urlbar-group-sponsored =
+  .label = Sponsored
+
 # Block menu item shown in the result menu of top pick and quick suggest
 # results.
 urlbar-result-menu-dismiss-firefox-suggest =
@@ -110,7 +114,8 @@ firefox-suggest-weather-temperature = { $value }°{ $unit }
 # This string is the title of the weather summary
 # Variables:
 #   $city (String) - The name of the city the weather data is for
-firefox-suggest-weather-title = Weather for { $city }
+#   $region (String) - The name of the region (e.g., U.S. state)
+firefox-suggest-weather-title = Weather for { $city }, { $region }
 
 # This string displays the weather summary
 # Variables:
@@ -395,26 +400,3 @@ urlbar-firefox-suggest-contextual-opt-in-description-2 =
   <a data-l10n-name="learn-more-link">Learn more</a>
 urlbar-firefox-suggest-contextual-opt-in-allow = Allow suggestions
 urlbar-firefox-suggest-contextual-opt-in-dismiss = Not now
-
-## Searchmode Switcher button
-
-urlbar-searchmode-button =
-    .label = Pick a Search Engine
-    .tooltiptext = Pick a Search Engine
-urlbar-searchmode-dropmarker =
-    .tooltiptext = Pick a Search Engine
-# Variables:
-#   $restrict (Character): the character used to filter results of type.
-urlbar-searchmode-bookmarks =
-    .label = Bookmarks ({ $restrict })
-# Variables:
-#   $restrict (Character): the character used to filter results of type.
-urlbar-searchmode-tabs =
-    .label = Tabs ({ $restrict })
-# Variables:
-#   $restrict (Character): the character used to filter results of type.
-urlbar-searchmode-history =
-    .label = History ({ $restrict })
-
-urlbar-searchmode-popup-description = This time search with:
-urlbar-searchmode-popup-search-settings = Search Settings

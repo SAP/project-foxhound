@@ -6,6 +6,7 @@ import {
   classMap,
   html,
   ifDefined,
+  when,
 } from "chrome://global/content/vendor/lit.all.mjs";
 
 import {
@@ -42,16 +43,21 @@ export class SidebarTabList extends FxviewTabListBase {
     return html`
       <sidebar-tab-row
         ?active=${i == this.activeIndex}
-        .closedId=${ifDefined(tabItem.closedId || tabItem.closedId)}
+        .canClose=${ifDefined(tabItem.canClose)}
+        .closedId=${ifDefined(tabItem.closedId)}
         compact
         .currentActiveElementId=${this.currentActiveElementId}
+        .closeRequested=${tabItem.closeRequested}
+        .fxaDeviceId=${ifDefined(tabItem.fxaDeviceId)}
         .favicon=${tabItem.icon}
         .hasPopup=${this.hasPopup}
         .primaryL10nArgs=${ifDefined(tabItem.primaryL10nArgs)}
         .primaryL10nId=${tabItem.primaryL10nId}
         role="listitem"
         .searchQuery=${ifDefined(this.searchQuery)}
-        .secondaryActionClass=${this.secondaryActionClass}
+        .secondaryActionClass=${ifDefined(
+          this.secondaryActionClass ?? tabItem.secondaryActionClass
+        )}
         .secondaryL10nArgs=${ifDefined(tabItem.secondaryL10nArgs)}
         .secondaryL10nId=${tabItem.secondaryL10nId}
         .sourceClosedId=${ifDefined(tabItem.sourceClosedId)}
@@ -87,18 +93,21 @@ export class SidebarTabRow extends FxviewTabRowBase {
   }
 
   secondaryButtonTemplate() {
-    return html`<moz-button
-      aria-haspopup=${ifDefined(this.hasPopup)}
-      class=${classMap({
-        "fxview-tab-row-button": true,
-        [this.secondaryActionClass]: this.secondaryActionClass,
-      })}
-      data-l10n-args=${ifDefined(this.secondaryL10nArgs)}
-      data-l10n-id=${this.secondaryL10nId}
-      id="fxview-tab-row-secondary-button"
-      type="icon ghost"
-      @click=${this.secondaryActionHandler}
-    ></moz-button>`;
+    return html`${when(
+      this.secondaryL10nId && this.secondaryActionClass,
+      () => html`<moz-button
+        aria-haspopup=${ifDefined(this.hasPopup)}
+        class=${classMap({
+          "fxview-tab-row-button": true,
+          [this.secondaryActionClass]: this.secondaryActionClass,
+        })}
+        data-l10n-args=${ifDefined(this.secondaryL10nArgs)}
+        data-l10n-id=${this.secondaryL10nId}
+        id="fxview-tab-row-secondary-button"
+        type="icon ghost"
+        @click=${this.secondaryActionHandler}
+      ></moz-button>`
+    )}`;
   }
 
   render() {
@@ -109,7 +118,11 @@ export class SidebarTabRow extends FxviewTabRowBase {
         href="chrome://browser/content/sidebar/sidebar-tab-row.css"
       />
       <a
-        class="fxview-tab-row-main"
+        class=${classMap({
+          "fxview-tab-row-main": true,
+          "no-action-button-row": this.canClose === false,
+        })}
+        disabled=${this.closeRequested}
         data-l10n-args=${ifDefined(this.primaryL10nArgs)}
         data-l10n-id=${ifDefined(this.primaryL10nId)}
         href=${ifDefined(this.url)}

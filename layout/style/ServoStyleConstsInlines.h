@@ -56,6 +56,8 @@ template struct StyleStrong<StyleLockedCounterStyleRule>;
 template struct StyleStrong<StyleContainerRule>;
 template struct StyleStrong<StyleScopeRule>;
 template struct StyleStrong<StyleStartingStyleRule>;
+template struct StyleStrong<StyleLockedPositionTryRule>;
+template struct StyleStrong<StyleLockedNestedDeclarationsRule>;
 
 template <typename T>
 inline void StyleOwnedSlice<T>::Clear() {
@@ -572,7 +574,7 @@ StyleCalcLengthPercentage& LengthPercentage::AsCalc() {
   MOZ_ASSERT(IsCalc());
   // NOTE: in 32-bits, the pointer is not swapped, and goes along with the tag.
 #ifdef SERVO_32_BITS
-  return *calc.ptr;
+  return *reinterpret_cast<StyleCalcLengthPercentage*>(calc.ptr);
 #else
   return *reinterpret_cast<StyleCalcLengthPercentage*>(
       NativeEndian::swapFromLittleEndian(calc.ptr));
@@ -805,6 +807,13 @@ void LengthPercentage::ScaleLengthsBy(float aScale) {
 IMPL_LENGTHPERCENTAGE_FORWARDS(LengthPercentageOrAuto)
 IMPL_LENGTHPERCENTAGE_FORWARDS(StyleSize)
 IMPL_LENGTHPERCENTAGE_FORWARDS(StyleMaxSize)
+IMPL_LENGTHPERCENTAGE_FORWARDS(StyleInset)
+IMPL_LENGTHPERCENTAGE_FORWARDS(StyleMargin)
+
+template <>
+inline bool StyleInset::IsAnchorPositioningFunction() const {
+  return IsAnchorFunction() || IsAnchorSizeFunction();
+}
 
 #undef IMPL_LENGTHPERCENTAGE_FORWARDS
 

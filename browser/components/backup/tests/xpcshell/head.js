@@ -36,6 +36,13 @@ const { MockRegistrar } = ChromeUtils.importESModule(
   "resource://testing-common/MockRegistrar.sys.mjs"
 );
 
+const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
+);
+
+const HISTORY_ENABLED_PREF = "places.history.enabled";
+const SANITIZE_ON_SHUTDOWN_PREF = "privacy.sanitize.sanitizeOnShutdown";
+
 let gFakeOSKeyStore;
 
 add_setup(async () => {
@@ -77,6 +84,7 @@ const FAKE_METADATA = {
   osName: "Windows_NT",
   osVersion: "10.0",
   legacyClientID: "decafbad-0cd1-0cd2-0cd3-decafbad1000",
+  profileGroupID: "decafbad-0cd1-0cd2-0cd3-decafbad2000",
   accountID: "",
   accountEmail: "",
 };

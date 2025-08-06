@@ -9,6 +9,7 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWidget.h"
 
+#include "nsArrayEnumerator.h"
 #include "nsIStringBundle.h"
 #include "nsString.h"
 #include "nsCOMArray.h"
@@ -18,12 +19,12 @@
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "WidgetUtils.h"
 #include "nsSimpleEnumerator.h"
-#include "nsThreadUtils.h"
 #include "nsContentUtils.h"
 
 #include "nsBaseFilePicker.h"
@@ -66,46 +67,6 @@ nsresult LocalFileToDirectoryOrBlob(nsPIDOMWindowInner* aWindow,
 }
 
 }  // anonymous namespace
-
-#ifndef XP_WIN
-/**
- * A runnable to dispatch from the main thread to the main thread to display
- * the file picker while letting the showAsync method return right away.
- *
- * Not needed on Windows, where nsFilePicker::Open() is fully async.
- */
-class nsBaseFilePicker::AsyncShowFilePicker : public mozilla::Runnable {
- public:
-  AsyncShowFilePicker(nsBaseFilePicker* aFilePicker,
-                      nsIFilePickerShownCallback* aCallback)
-      : mozilla::Runnable("AsyncShowFilePicker"),
-        mFilePicker(aFilePicker),
-        mCallback(aCallback) {}
-
-  NS_IMETHOD Run() override {
-    NS_ASSERTION(NS_IsMainThread(),
-                 "AsyncShowFilePicker should be on the main thread!");
-
-    // It's possible that some widget implementations require GUI operations
-    // to be on the main thread, so that's why we're not dispatching to another
-    // thread and calling back to the main after it's done.
-    nsIFilePicker::ResultCode result = nsIFilePicker::returnCancel;
-    nsresult rv = mFilePicker->Show(&result);
-    if (NS_FAILED(rv)) {
-      NS_ERROR("FilePicker's Show() implementation failed!");
-    }
-
-    if (mCallback) {
-      mCallback->Done(result);
-    }
-    return NS_OK;
-  }
-
- private:
-  RefPtr<nsBaseFilePicker> mFilePicker;
-  RefPtr<nsIFilePickerShownCallback> mCallback;
-};
-#endif
 
 class nsBaseFilePickerEnumerator : public nsSimpleEnumerator {
  public:
@@ -152,8 +113,7 @@ class nsBaseFilePickerEnumerator : public nsSimpleEnumerator {
   nsIFilePicker::Mode mMode;
 };
 
-nsBaseFilePicker::nsBaseFilePicker()
-    : mAddToRecentDocs(true), mMode(nsIFilePicker::modeOpen) {}
+nsBaseFilePicker::nsBaseFilePicker() = default;
 
 nsBaseFilePicker::~nsBaseFilePicker() = default;
 
@@ -199,34 +159,27 @@ nsBaseFilePicker::IsModeSupported(nsIFilePicker::Mode aMode, JSContext* aCx,
   return NS_OK;
 }
 
-#ifndef XP_WIN
-NS_IMETHODIMP
-nsBaseFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
-  if (MaybeBlockFilePicker(aCallback)) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIRunnable> filePickerEvent =
-      new AsyncShowFilePicker(this, aCallback);
-  return NS_DispatchToMainThread(filePickerEvent);
-}
-#endif
-
 NS_IMETHODIMP
 nsBaseFilePicker::AppendFilters(int32_t aFilterMask) {
   nsCOMPtr<nsIStringBundleService> stringService =
       mozilla::components::StringBundle::Service();
-  if (!stringService) return NS_ERROR_FAILURE;
+  if (!stringService) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsCOMPtr<nsIStringBundle> titleBundle, filterBundle;
 
   nsresult rv = stringService->CreateBundle(FILEPICKER_TITLES,
                                             getter_AddRefs(titleBundle));
-  if (NS_FAILED(rv)) return NS_ERROR_FAILURE;
+  if (NS_FAILED(rv)) {
+    return NS_ERROR_FAILURE;
+  }
 
   rv = stringService->CreateBundle(FILEPICKER_FILTERS,
                                    getter_AddRefs(filterBundle));
-  if (NS_FAILED(rv)) return NS_ERROR_FAILURE;
+  if (NS_FAILED(rv)) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsAutoString title;
   nsAutoString filter;
@@ -342,7 +295,10 @@ NS_IMETHODIMP nsBaseFilePicker::SetDisplayDirectory(nsIFile* aDirectory) {
   }
   nsCOMPtr<nsIFile> directory;
   nsresult rv = aDirectory->Clone(getter_AddRefs(directory));
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
   mDisplayDirectory = directory;
   return NS_OK;
 }
@@ -357,7 +313,10 @@ NS_IMETHODIMP nsBaseFilePicker::GetDisplayDirectory(nsIFile** aDirectory) {
     return NS_OK;
   }
 
-  if (!mDisplayDirectory) return NS_OK;
+  if (!mDisplayDirectory) {
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIFile> directory;
   nsresult rv = mDisplayDirectory->Clone(getter_AddRefs(directory));
   if (NS_FAILED(rv)) {

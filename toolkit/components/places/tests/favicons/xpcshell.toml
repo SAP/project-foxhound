@@ -24,6 +24,7 @@ support-files = [
   "favicon-normal32.png",
   "favicon-scale160x3.jpg",
   "favicon-scale3x160.jpg",
+  "favicon-svg.svg",
   "noise.png",
 ]
 
@@ -54,17 +55,12 @@ support-files = [
 ["test_multiple_frames.js"]
 
 ["test_page-icon_protocol.js"]
+firefox-appdir = "browser"
 prefs = ["dom.security.https_first=false"]
 
 ["test_query_result_favicon_changed_on_child.js"]
 
 ["test_root_icons.js"]
-
-["test_setAndFetchFaviconForPage.js"]
-
-["test_setAndFetchFaviconForPage_failures.js"]
-
-["test_setAndFetchFaviconForPage_redirects.js"]
 
 ["test_setFaviconForPage.js"]
 

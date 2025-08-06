@@ -213,6 +213,10 @@ void IMEContentObserver::OnIMEReceivedFocus() {
 bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
                                         Element* aElement,
                                         EditorBase& aEditorBase) {
+  // mEditableNode is one of
+  // - Anonymous <div> in <input> or <textarea>
+  // - Editing host if it's not in the design mode
+  // - Document if it's in the design mode
   mEditableNode = IMEStateManager::GetRootEditableNode(aPresContext, aElement);
   if (NS_WARN_IF(!mEditableNode)) {
     return false;
@@ -260,11 +264,18 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
       return false;
     }
 
+    // If an editing host has focus, mRootElement is it.
+    // Otherwise, if we're in the design mode, mRootElement is the <body> if
+    // there is and startContainer is not outside of the <body>.  Otherwise, the
+    // document element is used instead.
     nsCOMPtr<nsINode> startContainer = selRange->GetStartContainer();
     mRootElement = Element::FromNodeOrNull(
         startContainer->GetSelectionRootContent(presShell));
   } else {
     MOZ_ASSERT(!mIsTextControl);
+    // If an editing host has focus, mRootElement is it.
+    // Otherwise, if we're in the design mode, mRootElement is the <body> if
+    // there is.  Otherwise, the document element is used instead.
     nsCOMPtr<nsINode> editableNode = mEditableNode;
     mRootElement = Element::FromNodeOrNull(
         editableNode->GetSelectionRootContent(presShell));
@@ -325,6 +336,10 @@ void IMEContentObserver::ObserveEditableNode() {
     mEditorBase->SetIMEContentObserver(this);
   }
 
+  MOZ_LOG(sIMECOLog, LogLevel::Info,
+          ("0x%p ObserveEditableNode(), starting to observe 0x%p (%s)", this,
+           mRootElement.get(), ToString(*mRootElement).c_str()));
+
   mRootElement->AddMutationObserver(this);
   // If it's in a document (should be so), we can use document observer to
   // reduce redundant computation of text change offsets.
@@ -380,6 +395,12 @@ void IMEContentObserver::UnregisterObservers() {
   if (!mIsObserving) {
     return;
   }
+
+  MOZ_LOG(sIMECOLog, LogLevel::Info,
+          ("0x%p UnregisterObservers(), stop observing 0x%p (%s)", this,
+           mRootElement.get(),
+           mRootElement ? ToString(*mRootElement).c_str() : "nullptr"));
+
   mIsObserving = false;
 
   if (mEditorBase) {
@@ -748,8 +769,7 @@ nsresult IMEContentObserver::MaybeHandleSelectionEvent(
       mSelectionData.StartOffset() == aEvent->mOffset &&
       mSelectionData.Length() == aEvent->mLength) {
     if (RefPtr<Selection> selection = mSelection) {
-      selection->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
-                                ScrollAxis(), ScrollAxis(), 0);
+      selection->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION);
     }
     aEvent->mSucceeded = true;
     return NS_OK;
@@ -1234,6 +1254,26 @@ void IMEContentObserver::ContentRemoved(nsIContent* aChild,
                       IsEditorHandlingEventForComposition(),
                       IsEditorComposing());
   MaybeNotifyIMEOfTextChange(data);
+}
+
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void IMEContentObserver::ParentChainChanged(
+    nsIContent* aContent) {
+  // When the observing element itself is directly removed from the document
+  // without a focus move, i.e., it's the root of the removed document fragment
+  // and the editor was handling the design mode, we have already stopped
+  // observing the element because IMEStateManager::OnRemoveContent() should
+  // have already been called for it and the instance which was observing the
+  // node has already been destroyed.  Therefore, this is called only when
+  // this is observing the <body> in the design mode and it's disconnected from
+  // the tree by an <html> element removal.  Even in this case, IMEStateManager
+  // never gets a focus change notification, but we need to notify IME of focus
+  // change because we cannot interact with IME anymore due to no editable
+  // content.  Therefore, this method notifies IMEStateManager of the
+  // disconnection of the observing node to emulate a blur from the editable
+  // content.
+  MOZ_ASSERT(mIsObserving);
+  OwningNonNull<IMEContentObserver> observer(*this);
+  IMEStateManager::OnParentChainChangedOfObservingElement(observer);
 }
 
 void IMEContentObserver::OnTextControlValueChangedWhileNotObservable(
@@ -1912,16 +1952,13 @@ void IMEContentObserver::IMENotificationSender::SendFocusSet() {
   }
 
   observer->mIMEHasFocus = true;
-  // Initialize selection cache with the first selection data.
-#ifdef XP_MACOSX
-  // We need to flush layout only on macOS because character coordinates are
-  // cached by cocoa with this call, but we don't have a way to update them
-  // after that.  Therefore, we need the latest layout information right now.
+  // Initialize selection cache with the first selection data.  However, this
+  // may be handled synchronously when the editor gets focus.  In that case,
+  // some frames may be dirty and they may be required to get caret frame in
+  // ContentEventHandler::Init() to get the nearest widget from the selection.
+  // Therefore, we need to update selection cache with flushing the pending
+  // notifications.
   observer->UpdateSelectionCache(true);
-#else
-  // We avoid flushing for focus in the general case.
-  observer->UpdateSelectionCache(false);
-#endif  // #ifdef XP_MACOSX #else
   MOZ_LOG(sIMECOLog, LogLevel::Info,
           ("0x%p IMENotificationSender::SendFocusSet(), sending "
            "NOTIFY_IME_OF_FOCUS...",

@@ -101,17 +101,20 @@ VISITED_DEPENDENT_PROPERTIES = set(
 STYLE_RULE = 1 << 0
 PAGE_RULE = 1 << 1
 KEYFRAME_RULE = 1 << 2
+POSITION_TRY_RULE = 1 << 3
 
 ALL_RULES = STYLE_RULE | PAGE_RULE | KEYFRAME_RULE
 DEFAULT_RULES = STYLE_RULE | KEYFRAME_RULE
 DEFAULT_RULES_AND_PAGE = DEFAULT_RULES | PAGE_RULE
 DEFAULT_RULES_EXCEPT_KEYFRAME = STYLE_RULE
+DEFAULT_RULES_AND_POSITION_TRY = DEFAULT_RULES | POSITION_TRY_RULE
 
 # Rule name to value dict
 RULE_VALUES = {
     "Style": STYLE_RULE,
     "Page": PAGE_RULE,
     "Keyframe": KEYFRAME_RULE,
+    "PositionTry": POSITION_TRY_RULE,
 }
 
 
@@ -558,17 +561,18 @@ class Longhand(Property):
                 "GreaterThanOrEqualToOneNumber",
                 "GridAutoFlow",
                 "ImageRendering",
+                "Inert",
                 "InitialLetter",
                 "Integer",
-                "InsetArea",
-                "InsetAreaKeyword",
+                "PositionArea",
+                "PositionAreaKeyword",
                 "JustifyContent",
                 "JustifyItems",
                 "JustifySelf",
                 "LineBreak",
                 "LineClamp",
                 "MasonryAutoFlow",
-                "ui::MozTheme",
+                "MozTheme",
                 "BoolInteger",
                 "text::MozControlCharacterVisibility",
                 "MathDepth",
@@ -587,6 +591,7 @@ class Longhand(Property):
                 "OverscrollBehavior",
                 "PageOrientation",
                 "Percentage",
+                "PointerEvents",
                 "PositionTryOrder",
                 "PositionVisibility",
                 "PrintColorAdjust",
@@ -610,6 +615,8 @@ class Longhand(Property):
                 "TextUnderlinePosition",
                 "TouchAction",
                 "TransformStyle",
+                "UserFocus",
+                "UserInput",
                 "UserSelect",
                 "VectorEffect",
                 "WordBreak",

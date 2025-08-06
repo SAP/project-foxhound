@@ -17,7 +17,11 @@
 #include <bcrypt.h>
 #pragma comment(lib, "bcrypt.lib")
 
+#include <oleauto.h>
+#pragma comment(lib, "oleaut32.lib")
+
 #include "AssemblyPayloads.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsProcessMitigations.h"
@@ -75,8 +79,9 @@ struct payload {
   }
 };
 
-extern "C" __declspec(dllexport) __declspec(noinline) payload
-rotatePayload(payload p) {
+extern "C" MOZ_NEVER_INLINE MOZ_NOPROFILE MOZ_NOINSTRUMENT
+    __declspec(dllexport) payload
+    rotatePayload(payload p) {
   UINT64 tmp = p.a;
   p.a = p.b;
   p.b = p.c;
@@ -87,8 +92,9 @@ rotatePayload(payload p) {
 // payloadNotHooked is a target function for a test to expect a negative result.
 // We cannot use rotatePayload for that purpose because our detour cannot hook
 // a function detoured already.  Please keep this function always unhooked.
-extern "C" __declspec(dllexport) __declspec(noinline) payload
-payloadNotHooked(payload p) {
+extern "C" MOZ_NEVER_INLINE MOZ_NOPROFILE MOZ_NOINSTRUMENT
+    __declspec(dllexport) payload
+    payloadNotHooked(payload p) {
   // Do something different from rotatePayload to avoid ICF.
   p.a ^= p.b;
   p.b ^= p.c;
@@ -795,12 +801,12 @@ bool TestShortDetour() {
   return true;
 #else
   return true;
-#endif
+#endif  // defined(_M_X64) || defined(_M_ARM64)
 }
 
 constexpr uintptr_t NoStubAddressCheck = 0;
 constexpr uintptr_t ExpectedFail = 1;
-struct TestCase {
+MOZ_GLOBINIT struct TestCase {
   const char* mFunctionName;
   uintptr_t mExpectedStub;
   bool mPatchedOnce;
@@ -813,10 +819,7 @@ struct TestCase {
         mSkipExec(aSkipExec) {}
 } g_AssemblyTestCases[] = {
 #if defined(__clang__)
-// We disable these testcases because the code coverage instrumentation injects
-// code in a way that WindowsDllInterceptor doesn't understand.
-#  ifndef MOZ_CODE_COVERAGE
-#    if defined(_M_X64)
+#  if defined(_M_X64)
     // Since we have PatchIfTargetIsRecognizedTrampoline for x64, we expect the
     // original jump destination is returned as a stub.
     TestCase("MovPushRet", JumpDestination,
@@ -830,7 +833,8 @@ struct TestCase {
     TestCase("OpcodeFF", NoStubAddressCheck),
     TestCase("IndirectCall", NoStubAddressCheck),
     TestCase("MovImm64", NoStubAddressCheck),
-#    elif defined(_M_IX86)
+    TestCase("RexCmpRipRelativeBytePtr", NoStubAddressCheck),
+#  elif defined(_M_IX86)
     // Skip the stub address check as we always generate a trampoline for x86.
     TestCase("PushRet", NoStubAddressCheck,
              mozilla::IsUserShadowStackEnabled()),
@@ -839,13 +843,12 @@ struct TestCase {
     TestCase("Opcode83", NoStubAddressCheck),
     TestCase("LockPrefix", NoStubAddressCheck),
     TestCase("LooksLikeLockPrefix", NoStubAddressCheck),
-#    endif
-#    if !defined(DEBUG)
+#  endif
+#  if !defined(DEBUG)
     // Skip on Debug build because it hits MOZ_ASSERT_UNREACHABLE.
     TestCase("UnsupportedOp", ExpectedFail),
-#    endif  // !defined(DEBUG)
-#  endif    // MOZ_CODE_COVERAGE
-#endif      // defined(__clang__)
+#  endif  // !defined(DEBUG)
+#endif    // defined(__clang__)
 };
 
 template <typename InterceptorType>
@@ -961,7 +964,7 @@ struct DetouredCallChunk {
 // a module doesn't seem to work. Presumably it conflicts with the static
 // function tables. So we recreate gDetouredCall as dynamic code to be able to
 // associate it with unwind information.
-decltype(&DetouredCallCode) gDetouredCall =
+MOZ_RUNINIT decltype(&DetouredCallCode) gDetouredCall =
     []() -> decltype(&DetouredCallCode) {
   // We first adjust the detoured call jumper from:
   //   ff 25 00 00 00 00    jmp qword ptr [rip + 0]
@@ -1203,8 +1206,7 @@ bool TestDetouredCallUnwindInfo() {
 }
 #endif  // defined(_M_X64) && !defined(MOZ_CODE_COVERAGE)
 
-#ifndef MOZ_CODE_COVERAGE
-#  if defined(_M_X64) || defined(_M_IX86)
+#if defined(_M_X64) || defined(_M_IX86)
 bool TestSpareBytesAfterDetour() {
   WindowsDllInterceptor interceptor;
   interceptor.Init("TestDllInterceptor.exe");
@@ -1230,7 +1232,7 @@ bool TestSpareBytesAfterDetour() {
     return false;
   }
   uint8_t* funcBytes = reinterpret_cast<uint8_t*>(funcAddr);
-#    if defined(_M_X64)
+#  if defined(_M_X64)
   // patch is 13 bytes
   // the next instruction ends after 17 bytes
   if (*(funcBytes + 13) != 0x90 || *(funcBytes + 14) != 0x90 ||
@@ -1244,7 +1246,7 @@ bool TestSpareBytesAfterDetour() {
   printf(
       "TEST-PASS | WindowsDllInterceptor | "
       "SpareBytesAfterDetour has correct nop bytes after the patch.\n");
-#    elif defined(_M_IX86)
+#  elif defined(_M_IX86)
   // patch is 5 bytes
   // the next instruction ends after 6 bytes
   if (*(funcBytes + 5) != 0x90) {
@@ -1257,13 +1259,13 @@ bool TestSpareBytesAfterDetour() {
   printf(
       "TEST-PASS | WindowsDllInterceptor | "
       "SpareBytesAfterDetour has correct nop bytes after the patch.\n");
-#    endif
+#  endif
 
   return true;
 }
-#  endif  // defined(_M_X64) || defined(_M_IX86)
+#endif  // defined(_M_X64) || defined(_M_IX86)
 
-#  if defined(_M_X64)
+#if defined(_M_X64)
 bool TestSpareBytesAfterDetourFor10BytePatch() {
   ShortInterceptor interceptor;
   interceptor.TestOnlyDetourInit(
@@ -1308,8 +1310,7 @@ bool TestSpareBytesAfterDetourFor10BytePatch() {
       "patch.\n");
   return true;
 }
-#  endif
-#endif  // MOZ_CODE_COVERAGE
+#endif  // defined(_M_X64)
 
 bool TestDynamicCodePolicy() {
   PROCESS_MITIGATION_DYNAMIC_CODE_POLICY policy = {};
@@ -1356,14 +1357,43 @@ bool TestDynamicCodePolicy() {
   return true;
 }
 
+#if defined(_M_X64)
+constexpr unsigned char kTestValue = 0xcc;
+
+bool TestIsEqualToGlobalValue() {
+  gGlobalValue = kTestValue;
+  if (!IsEqualToGlobalValue(kTestValue)) {
+    printf(
+        "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+        "Obtained wrong result from IsEqualToGlobalValue (value=0x%02x, "
+        "expected: true).\n",
+        kTestValue);
+    fflush(stdout);
+    return false;
+  }
+  for (int value = 0; value <= 255; ++value) {
+    if (value != kTestValue && IsEqualToGlobalValue(value)) {
+      printf(
+          "TEST-UNEXPECTED-FAIL | WindowsDllInterceptor | "
+          "Obtained wrong result from IsEqualToGlobalValue (value=0x%02x, "
+          "expected: false).\n",
+          value);
+      fflush(stdout);
+      return false;
+    }
+  }
+  printf(
+      "TEST-PASS | WindowsDllInterceptor | "
+      "Successfully passed TestIsEqualToGlobalValue.\n");
+  fflush(stdout);
+  return true;
+}
+#endif  // defined(_M_X64)
+
 extern "C" int wmain(int argc, wchar_t* argv[]) {
   LARGE_INTEGER start;
   QueryPerformanceCounter(&start);
 
-  // We disable this part of the test because the code coverage instrumentation
-  // injects code in rotatePayload in a way that WindowsDllInterceptor doesn't
-  // understand.
-#ifndef MOZ_CODE_COVERAGE
   payload initial = {0x12345678, 0xfc4e9d31, 0x87654321};
   payload p0, p1;
   ZeroMemory(&p0, sizeof(p0));
@@ -1443,11 +1473,12 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
     fflush(stdout);
     return 1;
   }
-#endif
 
   CredHandle credHandle;
   memset(&credHandle, 0, sizeof(CredHandle));
   OBJECT_ATTRIBUTES attributes = {};
+  VARIANTARG var;
+  VariantInit(&var);
 
   // NB: These tests should be ordered such that lower-level APIs are tested
   // before higher-level APIs.
@@ -1458,6 +1489,14 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
       TestAssemblyFunctions<ShortInterceptor>() &&
 #endif
       TestAssemblyFunctions<WindowsDllInterceptor>() &&
+#if defined(_M_X64)
+      // Check that the test passes before hooking ...
+      TestIsEqualToGlobalValue() &&
+      TEST_HOOK_PARAMS("TestDllInterceptor.exe", IsEqualToGlobalValue, Equals,
+                       true, kTestValue) &&
+      // ... and also after hooking.
+      TestIsEqualToGlobalValue() &&
+#endif
 #ifdef _M_IX86
       // We keep this test to hook complex code on x86. (Bug 850957)
       TEST_HOOK("ntdll.dll", NtFlushBuffersFile, NotEquals, 0) &&
@@ -1513,6 +1552,7 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
       TEST_HOOK("bcrypt.dll", BCryptGenRandom, Equals,
                 static_cast<NTSTATUS>(STATUS_INVALID_HANDLE)) &&
       TEST_HOOK("advapi32.dll", RtlGenRandom, Equals, TRUE) &&
+      TEST_HOOK_PARAMS("oleaut32.dll", VariantClear, Equals, S_OK, &var) &&
 #if !defined(_M_ARM64)
       TEST_HOOK("imm32.dll", ImmGetContext, Equals, nullptr) &&
 #endif  // !defined(_M_ARM64)

@@ -51,7 +51,11 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
 
-            buildConfigField("String", "VCS_HASH", "\"" + getVcsHash() + "\"")
+            if (gradle.ext.vcsHashFileContent) {
+                buildConfigField("String", "VCS_HASH", "\"" + gradle.ext.vcsHashFileContent + "\"")
+            } else {
+                buildConfigField("String", "VCS_HASH", "\"" + getVcsHash() + "\"")
+            }
         }
     }
 
@@ -125,4 +129,4 @@ tasks.register("generateComponentEnum") {
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

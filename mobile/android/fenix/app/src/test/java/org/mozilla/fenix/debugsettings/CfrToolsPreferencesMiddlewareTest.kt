@@ -4,72 +4,141 @@
 
 package org.mozilla.fenix.debugsettings
 
-import mozilla.components.support.test.robolectric.testContext
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.spyk
+import io.mockk.verify
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import mozilla.components.support.test.rule.MainCoroutineRule
+import mozilla.components.support.test.rule.runTestOnMain
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.debugsettings.cfrs.CfrPreferencesRepository
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsAction
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsPreferencesMiddleware
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsState
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
-import org.mozilla.fenix.utils.Settings
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(AndroidJUnit4::class)
 class CfrToolsPreferencesMiddlewareTest {
 
-    private lateinit var settings: Settings
+    @get:Rule
+    val mainCoroutineTestRule = MainCoroutineRule()
+
+    private lateinit var cfrPreferencesRepository: CfrPreferencesRepository
     private lateinit var middleware: CfrToolsPreferencesMiddleware
 
     @Before
     fun setup() {
-        settings = Settings(testContext)
-        middleware = CfrToolsPreferencesMiddleware(
-            settings = settings,
-        )
+        cfrPreferencesRepository = spyk(FakeCfrPreferencesRepository())
+        middleware = CfrToolsPreferencesMiddleware(cfrPreferencesRepository)
     }
 
     @Test
-    fun `GIVEN the homepage intro CFR should not be shown WHEN the toggle homepage intro CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowJumpBackInCFR = false
-        assertFalse(settings.shouldShowJumpBackInCFR)
+    fun `WHEN the store gets initialized THEN repository is initialized`() = runTestOnMain {
+        var initCalled = false
+        val repository = object : CfrPreferencesRepository {
+            override val cfrPreferenceUpdates: Flow<CfrPreferencesRepository.CfrPreferenceUpdate>
+                get() = flowOf(
+                    CfrPreferencesRepository.CfrPreferenceUpdate(
+                        preferenceType = CfrPreferencesRepository.CfrPreference.InactiveTabs,
+                        value = false,
+                    ),
+                )
+
+            override fun init() {
+                initCalled = true
+            }
+
+            override fun updateCfrPreference(preferenceUpdate: CfrPreferencesRepository.CfrPreferenceUpdate) {}
+
+            override fun resetLastCfrTimestamp() {}
+        }
 
         val store = CfrToolsStore(
             initialState = CfrToolsState(
-                homepageIntroShown = true,
+                inactiveTabsShown = false,
             ),
             middlewares = listOf(
-                middleware,
+                CfrToolsPreferencesMiddleware(
+                    cfrPreferencesRepository = repository,
+                    coroutineScope = this,
+                ),
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleHomepageIntroShown)
-        assertTrue(settings.shouldShowJumpBackInCFR)
+
+        assertTrue(initCalled)
+        assertTrue(store.state.inactiveTabsShown)
     }
 
     @Test
-    fun `GIVEN the homepage intro CFR should be shown WHEN the toggle homepage intro CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowJumpBackInCFR = true
-        assertTrue(settings.shouldShowJumpBackInCFR)
+    fun `WHEN a preference update is mapped THEN a corresponding action is returned`() {
+        val preferenceUpdatesFalse = CfrPreferencesRepository.CfrPreference.entries.map {
+            CfrPreferencesRepository.CfrPreferenceUpdate(
+                preferenceType = it,
+                value = false,
+            )
+        }
 
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                homepageIntroShown = false,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleHomepageIntroShown)
-        assertFalse(settings.shouldShowJumpBackInCFR)
+        val preferenceUpdatesTrue = CfrPreferencesRepository.CfrPreference.entries.map {
+            CfrPreferencesRepository.CfrPreferenceUpdate(
+                preferenceType = it,
+                value = true,
+            )
+        }
+
+        val preferenceUpdates = preferenceUpdatesFalse + preferenceUpdatesTrue
+
+        preferenceUpdates.forEach {
+            when (it.preferenceType) {
+                CfrPreferencesRepository.CfrPreference.HomepageSync -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.HomepageSyncCfrUpdated
+                    val actualValue = !actual.newValue
+                    assertEquals(it.value, actualValue)
+                }
+                CfrPreferencesRepository.CfrPreference.HomepageNavToolbar -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.HomepageNavToolbarCfrUpdated
+                    val actualValue = !actual.newValue
+                    assertEquals(it.value, actualValue)
+                }
+                CfrPreferencesRepository.CfrPreference.NavButtons -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.NavButtonsCfrUpdated
+                    val actualValue = !actual.newValue
+                    assertEquals(it.value, actualValue)
+                }
+                CfrPreferencesRepository.CfrPreference.AddPrivateTabToHome -> {
+                    // Note that the new value is not inverted in this CFR because of the different
+                    // logic for the pref key
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.AddPrivateTabToHomeCfrUpdated
+                    val actualValue = actual.newValue
+                    assertEquals(it.value, actualValue)
+                }
+                CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.TabAutoCloseBannerCfrUpdated
+                    val actualValue = !actual.newValue
+                    assertEquals(it.value, actualValue)
+                }
+                CfrPreferencesRepository.CfrPreference.InactiveTabs -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.InactiveTabsCfrUpdated
+                    val actualValue = !actual.newValue
+                    assertEquals(it.value, actualValue)
+                }
+                CfrPreferencesRepository.CfrPreference.OpenInApp -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.OpenInAppCfrUpdated
+                    val actualValue = !actual.newValue
+                    assertEquals(it.value, actualValue)
+                }
+            }
+        }
     }
 
     @Test
     fun `GIVEN the homepage sync CFR should not be shown WHEN the toggle homepage sync CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.showSyncCFR = false
-        assertFalse(settings.showSyncCFR)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 homepageSyncShown = true,
@@ -78,15 +147,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleHomepageSyncShown)
-        assertTrue(settings.showSyncCFR)
+        store.dispatch(CfrToolsAction.HomepageSyncShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSync,
+                    value = false,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the homepage sync CFR should be shown WHEN the toggle homepage sync CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.showSyncCFR = true
-        assertTrue(settings.showSyncCFR)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 homepageSyncShown = false,
@@ -95,15 +168,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleHomepageSyncShown)
-        assertFalse(settings.showSyncCFR)
+        store.dispatch(CfrToolsAction.HomepageSyncShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSync,
+                    value = true,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the homepage nav toolbar CFR should not be shown WHEN the toggle homepage nav toolbar CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowNavigationBarCFR = false
-        assertFalse(settings.shouldShowNavigationBarCFR)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 homepageNavToolbarShown = true,
@@ -112,15 +189,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleHomepageNavToolbarShown)
-        assertTrue(settings.shouldShowNavigationBarCFR)
+        store.dispatch(CfrToolsAction.HomepageNavToolbarShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageNavToolbar,
+                    value = false,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the homepage nav toolbar CFR should be shown WHEN the toggle homepage nav toolbar CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowNavigationBarCFR = true
-        assertTrue(settings.shouldShowNavigationBarCFR)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 homepageNavToolbarShown = false,
@@ -129,49 +210,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleHomepageNavToolbarShown)
-        assertFalse(settings.shouldShowNavigationBarCFR)
-    }
-
-    @Test
-    fun `GIVEN the wallpaper selector CFR should not be shown WHEN the toggle wallpaper selector CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.showWallpaperOnboarding = false
-        assertFalse(settings.showWallpaperOnboarding)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                wallpaperSelectorShown = true,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleWallpaperSelectorShown)
-        assertTrue(settings.showWallpaperOnboarding)
-    }
-
-    @Test
-    fun `GIVEN the wallpaper selector CFR should be shown WHEN the toggle wallpaper selector CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.showWallpaperOnboarding = true
-        assertTrue(settings.showWallpaperOnboarding)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                wallpaperSelectorShown = false,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleWallpaperSelectorShown)
-        assertFalse(settings.showWallpaperOnboarding)
+        store.dispatch(CfrToolsAction.HomepageNavToolbarShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageNavToolbar,
+                    value = true,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the nav buttons CFR should not be shown WHEN the toggle nav buttons CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowNavigationButtonsCFR = false
-        assertFalse(settings.shouldShowNavigationButtonsCFR)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 navButtonsShown = true,
@@ -180,15 +231,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleNavButtonsShown)
-        assertTrue(settings.shouldShowNavigationButtonsCFR)
+        store.dispatch(CfrToolsAction.NavButtonsShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.NavButtons,
+                    value = false,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the nav buttons CFR should be shown WHEN the toggle nav buttons CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowNavigationButtonsCFR = true
-        assertTrue(settings.shouldShowNavigationButtonsCFR)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 navButtonsShown = false,
@@ -197,159 +252,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleNavButtonsShown)
-        assertFalse(settings.shouldShowNavigationButtonsCFR)
-    }
-
-    @Test
-    fun `GIVEN the TCP CFR should not be shown WHEN the toggle TCP CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowTotalCookieProtectionCFR = false
-        assertFalse(settings.shouldShowTotalCookieProtectionCFR)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                tcpShown = true,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleTcpShown)
-        assertTrue(settings.shouldShowTotalCookieProtectionCFR)
-    }
-
-    @Test
-    fun `GIVEN the TCP CFR should be shown WHEN the toggle TCP CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowTotalCookieProtectionCFR = true
-        assertTrue(settings.shouldShowTotalCookieProtectionCFR)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                tcpShown = false,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleTcpShown)
-        assertFalse(settings.shouldShowTotalCookieProtectionCFR)
-    }
-
-    @Test
-    fun `GIVEN the cookie banner blocker CFR should not be shown WHEN the toggle cookie banner blocker CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowEraseActionCFR = false
-        assertFalse(settings.shouldShowEraseActionCFR)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                cookieBannerBlockerShown = true,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleCookieBannerBlockerShown)
-        assertTrue(settings.shouldShowEraseActionCFR)
-    }
-
-    @Test
-    fun `GIVEN the cookie banner blocker CFR should be shown WHEN the toggle cookie banner blocker CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowEraseActionCFR = true
-        assertTrue(settings.shouldShowEraseActionCFR)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                cookieBannerBlockerShown = false,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleCookieBannerBlockerShown)
-        assertFalse(settings.shouldShowEraseActionCFR)
-    }
-
-    @Test
-    fun `GIVEN the cookie banners private mode CFR should not be shown WHEN the toggle cookie banners private mode CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowCookieBannersCFR = false
-        settings.shouldUseCookieBannerPrivateMode = false
-        assertFalse(settings.shouldShowCookieBannersCFR)
-        assertFalse(settings.shouldUseCookieBannerPrivateMode)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                cookieBannersPrivateModeShown = true,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleCookieBannersPrivateModeShown)
-        assertTrue(settings.shouldShowCookieBannersCFR)
-        assertTrue(settings.shouldUseCookieBannerPrivateMode)
-    }
-
-    @Test
-    fun `GIVEN the cookie banners private mode CFR should be shown WHEN the toggle cookie banners private mode CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowCookieBannersCFR = true
-        settings.shouldUseCookieBannerPrivateMode = true
-        assertTrue(settings.shouldShowCookieBannersCFR)
-        assertTrue(settings.shouldUseCookieBannerPrivateMode)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                cookieBannersPrivateModeShown = false,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleCookieBannersPrivateModeShown)
-        assertFalse(settings.shouldShowCookieBannersCFR)
-        assertFalse(settings.shouldUseCookieBannerPrivateMode)
-    }
-
-    @Test
-    fun `GIVEN the add private tab to home CFR should not be shown WHEN the toggle add private tab to home CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.showedPrivateModeContextualFeatureRecommender = true
-        settings.setNumTimesPrivateModeOpened(3)
-        assertFalse(settings.shouldShowPrivateModeCfr)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                addPrivateTabToHomeShown = true,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleAddPrivateTabToHomeShown)
-        assertTrue(settings.shouldShowPrivateModeCfr)
-    }
-
-    @Test
-    fun `GIVEN the add private tab to home CFR should be shown WHEN the toggle add private tab to home CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.showedPrivateModeContextualFeatureRecommender = false
-        settings.setNumTimesPrivateModeOpened(3)
-        assertTrue(settings.shouldShowPrivateModeCfr)
-
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                addPrivateTabToHomeShown = true,
-            ),
-            middlewares = listOf(
-                middleware,
-            ),
-        )
-        store.dispatch(CfrToolsAction.ToggleAddPrivateTabToHomeShown)
-        assertFalse(settings.shouldShowPrivateModeCfr)
+        store.dispatch(CfrToolsAction.NavButtonsShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.NavButtons,
+                    value = true,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the tab auto close banner CFR should not be shown WHEN the toggle tab auto close banner CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowAutoCloseTabsBanner = false
-        assertFalse(settings.shouldShowAutoCloseTabsBanner)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 tabAutoCloseBannerShown = true,
@@ -358,15 +273,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleTabAutoCloseBannerShown)
-        assertTrue(settings.shouldShowAutoCloseTabsBanner)
+        store.dispatch(CfrToolsAction.TabAutoCloseBannerShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner,
+                    value = false,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the tab auto close banner CFR should be shown WHEN the toggle tab auto close banner CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowAutoCloseTabsBanner = true
-        assertTrue(settings.shouldShowAutoCloseTabsBanner)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 tabAutoCloseBannerShown = false,
@@ -375,15 +294,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleTabAutoCloseBannerShown)
-        assertFalse(settings.shouldShowAutoCloseTabsBanner)
+        store.dispatch(CfrToolsAction.TabAutoCloseBannerShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner,
+                    value = true,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the inactive tabs CFR should not be shown WHEN the toggle inactive tabs CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowInactiveTabsOnboardingPopup = false
-        assertFalse(settings.shouldShowInactiveTabsOnboardingPopup)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 inactiveTabsShown = true,
@@ -392,15 +315,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleInactiveTabsShown)
-        assertTrue(settings.shouldShowInactiveTabsOnboardingPopup)
+        store.dispatch(CfrToolsAction.InactiveTabsShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.InactiveTabs,
+                    value = false,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the inactive tabs CFR should be shown WHEN the toggle inactive tabs CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowInactiveTabsOnboardingPopup = true
-        assertTrue(settings.shouldShowInactiveTabsOnboardingPopup)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 inactiveTabsShown = false,
@@ -409,15 +336,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleInactiveTabsShown)
-        assertFalse(settings.shouldShowInactiveTabsOnboardingPopup)
+        store.dispatch(CfrToolsAction.InactiveTabsShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.InactiveTabs,
+                    value = true,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the open in app CFR should not be shown WHEN the toggle open in app CFR action is dispatched THEN its preference is set to should be shown`() {
-        settings.shouldShowOpenInAppBanner = false
-        assertFalse(settings.shouldShowOpenInAppBanner)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 openInAppShown = true,
@@ -426,15 +357,19 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleOpenInAppShown)
-        assertTrue(settings.shouldShowOpenInAppBanner)
+        store.dispatch(CfrToolsAction.OpenInAppShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.OpenInApp,
+                    value = false,
+                ),
+            )
+        }
     }
 
     @Test
     fun `GIVEN the open in app CFR should be shown WHEN the toggle open in app CFR action is dispatched THEN its preference is set to should not be shown`() {
-        settings.shouldShowOpenInAppBanner = true
-        assertTrue(settings.shouldShowOpenInAppBanner)
-
         val store = CfrToolsStore(
             initialState = CfrToolsState(
                 openInAppShown = false,
@@ -443,7 +378,42 @@ class CfrToolsPreferencesMiddlewareTest {
                 middleware,
             ),
         )
-        store.dispatch(CfrToolsAction.ToggleOpenInAppShown)
-        assertFalse(settings.shouldShowOpenInAppBanner)
+        store.dispatch(CfrToolsAction.OpenInAppShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.OpenInApp,
+                    value = true,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `WHEN the reset lastCfrShownTimeInMillis action is dispatched THEN lastCfrShownTimeInMillis should be set to at least 3 days ago`() {
+        var resetCalled = false
+        val repository = object : CfrPreferencesRepository {
+            override val cfrPreferenceUpdates: Flow<CfrPreferencesRepository.CfrPreferenceUpdate> = flowOf()
+
+            override fun init() {}
+
+            override fun updateCfrPreference(preferenceUpdate: CfrPreferencesRepository.CfrPreferenceUpdate) {}
+
+            override fun resetLastCfrTimestamp() {
+                resetCalled = true
+            }
+        }
+
+        val store = CfrToolsStore(
+            middlewares = listOf(
+                CfrToolsPreferencesMiddleware(
+                    cfrPreferencesRepository = repository,
+                ),
+            ),
+        )
+
+        assertFalse(resetCalled)
+        store.dispatch(CfrToolsAction.ResetLastCFRTimestampButtonClicked)
+        assertTrue(resetCalled)
     }
 }

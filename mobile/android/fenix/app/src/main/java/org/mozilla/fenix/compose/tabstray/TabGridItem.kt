@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.compose.tabstray
 
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -32,10 +33,8 @@ import androidx.compose.material.Card
 import androidx.compose.material.Icon
 import androidx.compose.material.IconButton
 import androidx.compose.material.Text
-import androidx.compose.material.ripple.rememberRipple
+import androidx.compose.material.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +53,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.core.text.BidiFormatter
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
@@ -83,7 +81,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
  * @param multiSelectionSelected Indicates if the item should be render as multi selection selected
  * option.
  * @param shouldClickListen Whether or not the item should stop listening to click events.
- * @param swipingEnabled Whether or not the item is swipeable.
+ * @param swipeState The swipe state of the item.
  * @param onCloseClick Callback to handle the click event of the close button.
  * @param onMediaClick Callback to handle when the media item is clicked.
  * @param onClick Callback to handle when item is clicked.
@@ -91,7 +89,7 @@ import org.mozilla.fenix.theme.FirefoxTheme
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-@Suppress("MagicNumber", "LongMethod")
+@Suppress("LongMethod")
 fun TabGridItem(
     tab: TabSessionState,
     thumbnailSize: Int,
@@ -99,7 +97,10 @@ fun TabGridItem(
     multiSelectionEnabled: Boolean = false,
     multiSelectionSelected: Boolean = false,
     shouldClickListen: Boolean = true,
-    swipingEnabled: Boolean = true,
+    swipeState: SwipeToDismissState = SwipeToDismissState(
+        density = LocalDensity.current,
+        decayAnimationSpec = rememberSplineBasedDecay(),
+    ),
     onCloseClick: (tab: TabSessionState) -> Unit,
     onMediaClick: (tab: TabSessionState) -> Unit,
     onClick: (tab: TabSessionState) -> Unit,
@@ -118,27 +119,7 @@ fun TabGridItem(
     // Used to propagate the ripple effect to the whole tab
     val interactionSource = remember { MutableInteractionSource() }
 
-    val density = LocalDensity.current
-    val swipeState = remember(multiSelectionEnabled, swipingEnabled) {
-        SwipeToDismissState(
-            density = density,
-            enabled = !multiSelectionEnabled && swipingEnabled,
-        )
-    }
-    val swipingActive by remember(swipeState.swipingActive) {
-        derivedStateOf {
-            swipeState.swipingActive
-        }
-    }
-
     SwipeToDismissBox(
-        modifier = Modifier.zIndex(
-            if (swipingActive) {
-                10f
-            } else {
-                1f
-            },
-        ),
         state = swipeState,
         backgroundContent = {},
         onItemDismiss = {
@@ -154,7 +135,7 @@ fun TabGridItem(
                 Modifier.clickable(
                     enabled = shouldClickListen,
                     interactionSource = interactionSource,
-                    indication = rememberRipple(
+                    indication = ripple(
                         color = clickableColor(),
                     ),
                     onClick = { onClick(tab) },
@@ -163,7 +144,7 @@ fun TabGridItem(
                 Modifier.combinedClickable(
                     enabled = shouldClickListen,
                     interactionSource = interactionSource,
-                    indication = rememberRipple(
+                    indication = ripple(
                         color = clickableColor(),
                     ),
                     onLongClick = { onLongClick(tab) },

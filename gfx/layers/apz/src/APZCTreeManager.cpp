@@ -17,9 +17,10 @@
 #include "WRHitTester.h"            // for WRHitTester
 #include "apz/src/APZUtils.h"
 #include "mozilla/RecursiveMutex.h"
-#include "mozilla/dom/MouseEventBinding.h"  // for MouseEvent constants
 #include "mozilla/dom/BrowserParent.h"      // for AreRecordReplayTabsActive
-#include "mozilla/dom/Touch.h"              // for Touch
+#include "mozilla/dom/MouseEventBinding.h"  // for MouseEvent constants
+#include "mozilla/dom/InteractiveWidget.h"
+#include "mozilla/dom/Touch.h"  // for Touch
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/LoggingConstants.h"
 #include "mozilla/gfx/Matrix.h"
@@ -284,7 +285,10 @@ APZCTreeManager::APZCTreeManager(LayersId aRootLayersId,
       mTestDataLock("APZTestDataLock"),
       mDPI(160.0),
       mHitTester(std::move(aHitTester)),
-      mScrollGenerationLock("APZScrollGenerationLock") {
+      mScrollGenerationLock("APZScrollGenerationLock"),
+      mInteractiveWidget(
+          dom::InteractiveWidgetUtils::DefaultInteractiveWidgetMode()),
+      mIsSoftwareKeyboardVisible(false) {
   AsyncPanZoomController::InitializeGlobalState();
   mApzcTreeLog.ConditionOnPrefFunction(StaticPrefs::apz_printtree);
 
@@ -478,6 +482,7 @@ std::vector<LayersId> APZCTreeManager::UpdateHitTestingTree(
     ancestorTransforms.push(AncestorTransform());
     state.mOverrideFlags.push(EventRegionsOverride::NoOverride);
     nsTArray<Maybe<ZoomConstraints>> zoomConstraintsStack;
+    uint64_t fixedSubtreeDepth = 0;
 
     // push a nothing to be used for anything outside an async zoom container
     zoomConstraintsStack.AppendElement(Nothing());
@@ -509,6 +514,10 @@ std::vector<LayersId> APZCTreeManager::UpdateHitTestingTree(
             MutexAutoLock lock(mMapLock);
             mGeckoFixedLayerMargins =
                 aLayerMetrics.Metrics().GetFixedLayerMargins();
+            mInteractiveWidget =
+                aLayerMetrics.Metadata().GetInteractiveWidget();
+            mIsSoftwareKeyboardVisible =
+                aLayerMetrics.Metadata().IsSoftwareKeyboardVisible();
           } else {
             MOZ_ASSERT(aLayerMetrics.Metrics().GetFixedLayerMargins() ==
                            ScreenMargin(),
@@ -547,7 +556,12 @@ std::vector<LayersId> APZCTreeManager::UpdateHitTestingTree(
           }
 
           if (node->GetFixedPositionAnimationId().isSome()) {
-            state.mFixedPositionInfo.emplace_back(node);
+            // Only top-level fixed nodes should be adjusted
+            // for dynamic toolbar movement.
+            if (fixedSubtreeDepth == 0) {
+              state.mFixedPositionInfo.emplace_back(node);
+            }
+            fixedSubtreeDepth += 1;
           }
           if (node->GetStickyPositionAnimationId().isSome()) {
             state.mStickyPositionInfo.emplace_back(node);
@@ -609,6 +623,10 @@ std::vector<LayersId> APZCTreeManager::UpdateHitTestingTree(
           }
           if (aLayerMetrics.GetReferentId()) {
             state.mOverrideFlags.pop();
+          }
+
+          if (aLayerMetrics.GetFixedPositionAnimationId().isSome()) {
+            fixedSubtreeDepth -= 1;
           }
 
           next = parent;
@@ -900,8 +918,8 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
     // We only care about the horizontal scrollbar.
     if (info.mScrollDirection == ScrollDirection::eHorizontal) {
       ScreenPoint translation =
-          apz::ComputeFixedMarginsOffset(GetCompositorFixedLayerMargins(lock),
-                                         SideBits::eBottom, ScreenMargin());
+          ComputeFixedMarginsOffset(GetCompositorFixedLayerMargins(lock),
+                                    SideBits::eBottom, ScreenMargin());
 
       LayerToParentLayerMatrix4x4 transform =
           LayerToParentLayerMatrix4x4::Translation(ViewAs<ParentLayerPixel>(
@@ -918,9 +936,9 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
       continue;
     }
 
-    ScreenPoint translation = apz::ComputeFixedMarginsOffset(
-        GetCompositorFixedLayerMargins(lock), info.mFixedPosSides,
-        mGeckoFixedLayerMargins);
+    ScreenPoint translation =
+        ComputeFixedMarginsOffset(GetCompositorFixedLayerMargins(lock),
+                                  info.mFixedPosSides, mGeckoFixedLayerMargins);
 
     LayerToParentLayerMatrix4x4 transform =
         LayerToParentLayerMatrix4x4::Translation(ViewAs<ParentLayerPixel>(
@@ -938,12 +956,8 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
       continue;
     }
 
-    ScreenPoint translation = apz::ComputeFixedMarginsOffset(
-        GetCompositorFixedLayerMargins(lock), sides,
-        // For sticky layers, we don't need to factor
-        // mGeckoFixedLayerMargins because Gecko doesn't shift the
-        // position of sticky elements for dynamic toolbar movements.
-        ScreenMargin());
+    ScreenPoint translation = ComputeFixedMarginsOffset(
+        GetCompositorFixedLayerMargins(lock), sides, mGeckoFixedLayerMargins);
 
     LayerToParentLayerMatrix4x4 transform =
         LayerToParentLayerMatrix4x4::Translation(ViewAs<ParentLayerPixel>(
@@ -1628,8 +1642,6 @@ APZEventResult APZCTreeManager::ReceiveInputEvent(
         return state.Finish(*this, std::move(aCallback));
       }
 
-      mOvershootDetector.Update(wheelInput);
-
       if (state.mHit.mTargetApzc) {
         MOZ_ASSERT(state.mHit.mHitResult != CompositorHitTestInvisibleToHit);
 
@@ -2184,7 +2196,7 @@ void APZCTreeManager::AdjustEventPointForDynamicToolbar(
     ScreenIntPoint& aEventPoint, const HitTestResult& aHit) {
   if (aHit.mFixedPosSides != SideBits::eNone) {
     MutexAutoLock lock(mMapLock);
-    aEventPoint -= RoundedToInt(apz::ComputeFixedMarginsOffset(
+    aEventPoint -= RoundedToInt(ComputeFixedMarginsOffset(
         GetCompositorFixedLayerMargins(lock), aHit.mFixedPosSides,
         mGeckoFixedLayerMargins));
   } else if (aHit.mNode && aHit.mNode->GetStickyPositionAnimationId()) {
@@ -2195,8 +2207,9 @@ void APZCTreeManager::AdjustEventPointForDynamicToolbar(
           aHit.mNode.Get(lock), AsyncTransformConsumer::eForEventHandling);
     }
     MutexAutoLock lock(mMapLock);
-    aEventPoint -= RoundedToInt(apz::ComputeFixedMarginsOffset(
-        GetCompositorFixedLayerMargins(lock), sideBits, ScreenMargin()));
+    aEventPoint -= RoundedToInt(
+        ComputeFixedMarginsOffset(GetCompositorFixedLayerMargins(lock),
+                                  sideBits, mGeckoFixedLayerMargins));
   }
 }
 
@@ -2383,9 +2396,11 @@ void APZCTreeManager::MaybeOverrideLayersIdForWheelEvent(InputData& aEvent) {
   APZThreadUtils::AssertOnControllerThread();
 
   InputBlockState* txn = nullptr;
-  if (aEvent.mInputType == SCROLLWHEEL_INPUT) {
+  if (aEvent.mInputType == SCROLLWHEEL_INPUT &&
+      aEvent.AsScrollWheelInput().mHandledByAPZ) {
     txn = mInputQueue->GetActiveWheelTransaction();
-  } else if (aEvent.mInputType == PANGESTURE_INPUT) {
+  } else if (aEvent.mInputType == PANGESTURE_INPUT &&
+             aEvent.AsPanGestureInput().mHandledByAPZ) {
     txn = mInputQueue->GetCurrentPanGestureBlock();
   }
 
@@ -3788,6 +3803,37 @@ void APZCTreeManager::SetFixedLayerMargins(ScreenIntCoord aTop,
   MutexAutoLock lock(mMapLock);
   mCompositorFixedLayerMargins.top = ScreenCoord(aTop);
   mCompositorFixedLayerMargins.bottom = ScreenCoord(aBottom);
+}
+
+ScreenPoint APZCTreeManager::ComputeFixedMarginsOffset(
+    const ScreenMargin& aCompositorFixedLayerMargins, SideBits aFixedSides,
+    const ScreenMargin& aGeckoFixedLayerMargins) const {
+  // If the software keybaord is visible and the interactive-widget is not
+  // resizes-content, we don't need to move the position:fixed or sticky
+  // elements at all.
+  if (mIsSoftwareKeyboardVisible &&
+      mInteractiveWidget != dom::InteractiveWidget::ResizesContent) {
+    return ScreenPoint(0, 0);
+  }
+
+  // Work out the necessary translation, in screen space.
+  ScreenPoint translation;
+
+  ScreenMargin effectiveMargin =
+      aCompositorFixedLayerMargins - aGeckoFixedLayerMargins;
+  if (aFixedSides & SideBits::eLeft) {
+    translation.x += effectiveMargin.left;
+  } else if (aFixedSides & SideBits::eRight) {
+    translation.x -= effectiveMargin.right;
+  }
+
+  if (aFixedSides & SideBits::eTop) {
+    translation.y += effectiveMargin.top;
+  } else if (aFixedSides & SideBits::eBottom) {
+    translation.y -= effectiveMargin.bottom;
+  }
+
+  return translation;
 }
 
 /*static*/

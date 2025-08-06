@@ -5,6 +5,11 @@
 /* eslint-env node */
 
 const { logTest, logTask } = require("./utils/profiling");
+const {
+  startMeasurements,
+  stopMeasurements,
+  finalizeMeasurements,
+} = require("./utils/support_measurements");
 
 module.exports = logTest(
   "speedometer 3 test",
@@ -46,6 +51,14 @@ module.exports = logTest(
         }
         await commands.measure.start(url);
 
+        await startMeasurements(
+          context,
+          commands,
+          true,
+          context.options.browsertime.power_test,
+          true
+        );
+
         await commands.js.runAndWait(`
         this.benchmarkClient.start()
     `);
@@ -83,6 +96,8 @@ module.exports = logTest(
           context.log.error("Benchmark timed out. Aborting...");
           return false;
         }
+        await stopMeasurements();
+
         let internal_data = await commands.js.run(
           `return this.benchmarkClient._measuredValuesList;`
         );
@@ -105,6 +120,7 @@ module.exports = logTest(
         return true;
       });
     }
+    await finalizeMeasurements();
 
     return true;
   }

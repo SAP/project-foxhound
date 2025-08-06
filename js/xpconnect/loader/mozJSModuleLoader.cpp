@@ -7,9 +7,9 @@
 #include "ScriptLoadRequest.h"
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_ASSERT_IF
 #include "mozilla/Attributes.h"
-#include "mozilla/ArrayUtils.h"  // mozilla::ArrayLength
-#include "mozilla/RefPtr.h"      // RefPtr, mozilla::StaticRefPtr
-#include "mozilla/Utf8.h"        // mozilla::Utf8Unit
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/RefPtr.h"  // RefPtr, mozilla::StaticRefPtr
+#include "mozilla/Utf8.h"    // mozilla::Utf8Unit
 
 #include <cstdarg>
 
@@ -113,14 +113,13 @@ static LazyLogModule gJSCLLog("JSModuleLoader");
   "%s - Symbol '%s' accessed before initialization. Cyclic import?"
 
 static constexpr char JSM_Suffix[] = ".jsm";
-static constexpr size_t JSM_SuffixLength = mozilla::ArrayLength(JSM_Suffix) - 1;
+static constexpr size_t JSM_SuffixLength = std::size(JSM_Suffix) - 1;
 static constexpr char JSM_JS_Suffix[] = ".jsm.js";
-static constexpr size_t JSM_JS_SuffixLength =
-    mozilla::ArrayLength(JSM_JS_Suffix) - 1;
+static constexpr size_t JSM_JS_SuffixLength = std::size(JSM_JS_Suffix) - 1;
 static constexpr char JS_Suffix[] = ".js";
-static constexpr size_t JS_SuffixLength = mozilla::ArrayLength(JS_Suffix) - 1;
+static constexpr size_t JS_SuffixLength = std::size(JS_Suffix) - 1;
 static constexpr char MJS_Suffix[] = ".sys.mjs";
-static constexpr size_t MJS_SuffixLength = mozilla::ArrayLength(MJS_Suffix) - 1;
+static constexpr size_t MJS_SuffixLength = std::size(MJS_Suffix) - 1;
 
 static bool IsJSM(const nsACString& aLocation) {
   if (aLocation.Length() < JSM_SuffixLength) {
@@ -874,9 +873,19 @@ nsresult mozJSModuleLoader::LoadSingleModuleScriptOnWorker(
   NS_ENSURE_SUCCESS(rv, rv);
 
   CompileOptions options(aCx);
-  ScriptPreloader::FillCompileOptionsForCachedStencil(options);
+  // NOTE: ScriptPreloader::FillCompileOptionsForCachedStencil shouldn't be
+  //       used here because the module is put into the worker global's
+  //       module map, instead of the shared global's module map, where the
+  //       worker module loader doesn't support lazy source.
+  //       Accessing the source requires the synchronous communication with the
+  //       main thread, and supporting it requires too much complexity compared
+  //       to the benefit.
+  options.setNoScriptRval(true);
   options.setFileAndLine(location.BeginReading(), 1);
   SetModuleOptions(options);
+
+  // Worker global doesn't have the source hook.
+  MOZ_ASSERT(!options.sourceIsLazy);
 
   JS::SourceText<mozilla::Utf8Unit> srcBuf;
   if (!srcBuf.init(aCx, data.get(), data.Length(),
@@ -1420,7 +1429,8 @@ nsresult mozJSModuleLoader::IsModuleLoaded(const nsACString& aLocation,
     nsresult rv = mjsInfo.EnsureURI();
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (mModuleLoader->IsModuleFetched(mjsInfo.URI())) {
+    if (mModuleLoader->IsModuleFetched(
+            JS::loader::ModuleMapKey(mjsInfo.URI(), ModuleType::JavaScript))) {
       *retval = true;
       return NS_OK;
     }
@@ -1465,7 +1475,8 @@ nsresult mozJSModuleLoader::IsESModuleLoaded(const nsACString& aLocation,
   nsresult rv = info.EnsureURI();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (mModuleLoader->IsModuleFetched(info.URI())) {
+  if (mModuleLoader->IsModuleFetched(
+          JS::loader::ModuleMapKey(info.URI(), ModuleType::JavaScript))) {
     *retval = true;
     return NS_OK;
   }
@@ -2084,10 +2095,12 @@ nsresult mozJSModuleLoader::ImportESModule(
   context->mSkipCheck = aSkipCheck;
 
   RefPtr<VisitedURLSet> visitedSet =
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(uri);
+      ModuleLoadRequest::NewVisitedSetForTopLevelImport(
+          uri, JS::ModuleType::JavaScript);
 
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      uri, dom::ReferrerPolicy::No_referrer, options, dom::SRIMetadata(),
+      uri, JS::ModuleType::JavaScript, dom::ReferrerPolicy::No_referrer,
+      options, dom::SRIMetadata(),
       /* aReferrer = */ nullptr, context,
       /* aIsTopLevel = */ true,
       /* aIsDynamicImport = */ false, mModuleLoader, visitedSet, nullptr);

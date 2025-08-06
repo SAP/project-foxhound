@@ -169,9 +169,9 @@ function promisePanelOpened() {
 
   return new Promise(resolve => {
     // Hook to wait until the panel is shown.
-    let originalOnPopupShown = DownloadsPanel.onPopupShown;
-    DownloadsPanel.onPopupShown = function () {
-      DownloadsPanel.onPopupShown = originalOnPopupShown;
+    let originalOnPopupShown = DownloadsPanel._onPopupShown;
+    DownloadsPanel._onPopupShown = function () {
+      DownloadsPanel._onPopupShown = originalOnPopupShown;
       originalOnPopupShown.apply(this, arguments);
 
       // Defer to the next tick of the event loop so that we don't continue
@@ -476,4 +476,17 @@ async function simulateDropAndCheck(win, dropTarget, urls) {
   for (let url of urls) {
     ok(added.has(url), url + " is added to download");
   }
+}
+
+/**
+ * This is a temporary workaround for frequent intermittents.
+ * For some reason the download target size is not updated, even if the code
+ * is "apparently" already executing and awaiting for refresh().
+ * TODO(Bug 1814364): Figure out a proper fix for this.
+ */
+async function expectNonZeroDownloadTargetSize(downloadTarget) {
+  if (!downloadTarget.size) {
+    await downloadTarget.refresh();
+  }
+  return downloadTarget.size;
 }

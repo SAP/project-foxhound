@@ -17,6 +17,18 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
 });
 
 /**
+ * @typedef {object} RefinedConfig
+ * @property {object[]} engines
+ *   An array of objects defining the engines that should be presented to the user.
+ * @property {string} appDefaultEngineId
+ *   The identifier of the engine that should be used for the application
+ *   default engine.
+ * @property {string} [appPrivateDefaultEngineId]
+ *   If specified, the identifier of the engine that should be used for the
+ *   application default engine in private browsing mode.
+ */
+
+/**
  * SearchEngineSelector parses the JSON configuration for
  * search engines and returns the applicable engines depending
  * on their region + locale.
@@ -54,6 +66,9 @@ export class SearchEngineSelector {
 
   /**
    * Handles getting the configuration from remote settings.
+   *
+   * @returns {object}
+   *   The configuration data.
    */
   async getEngineConfiguration() {
     if (this._getConfigurationPromise) {
@@ -88,8 +103,29 @@ export class SearchEngineSelector {
     return this._configuration;
   }
 
+  async findContextualSearchEngineByHost(host) {
+    for (let config of this._configuration) {
+      if (config.recordType !== "engine") {
+        continue;
+      }
+      let searchHost = new URL(config.base.urls.search.base).hostname;
+      if (searchHost.startsWith("www.")) {
+        searchHost = searchHost.slice(4);
+      }
+      if (searchHost.startsWith(host)) {
+        let engine = structuredClone(config.base);
+        engine.identifier = config.identifier;
+        return engine;
+      }
+    }
+    return null;
+  }
+
   /**
    * Used by tests to get the configuration overrides.
+   *
+   * @returns {object}
+   *   The engine overrides data.
    */
   async getEngineConfigurationOverrides() {
     await this.getEngineConfiguration();
@@ -208,10 +244,9 @@ export class SearchEngineSelector {
    *   The name of the application.
    * @param {string} [options.version]
    *   The version of the application.
-   * @returns {object}
-   *   An object with "engines" field, a sorted list of engines and
-   *   optionally "privateDefault" which is an object containing the engine
-   *   details for the engine which should be the default in Private Browsing mode.
+   * @returns {RefinedConfig}
+   *   An object which contains the refined configuration with a filtered list
+   *   of search engines, and the identifiers for the application default engines.
    */
   async fetchEngineConfiguration({
     locale,
@@ -261,16 +296,16 @@ export class SearchEngineSelector {
         continue;
       }
 
-      let variant = config.variants?.findLast(variant =>
-        this.#matchesUserEnvironment(variant, userEnv)
+      let variant = config.variants?.findLast(v =>
+        this.#matchesUserEnvironment(v, userEnv)
       );
 
       if (!variant) {
         continue;
       }
 
-      let subVariant = variant.subVariants?.findLast(subVariant =>
-        this.#matchesUserEnvironment(subVariant, userEnv)
+      let subVariant = variant.subVariants?.findLast(sv =>
+        this.#matchesUserEnvironment(sv, userEnv)
       );
 
       let engine = structuredClone(config.base);
@@ -304,12 +339,25 @@ export class SearchEngineSelector {
       }
     }
 
+    if (!defaultEngine) {
+      if (engines.length) {
+        lazy.logConsole.error(
+          "Could not find a matching default engine, using the first one in the list"
+        );
+        defaultEngine = engines[0];
+      } else {
+        throw new Error(
+          "Could not find any engines in the filtered configuration"
+        );
+      }
+    }
+
     engines.sort(this._sort.bind(this, defaultEngine, privateDefault));
 
-    let result = { engines };
+    let result = { engines, appDefaultEngineId: defaultEngine.identifier };
 
     if (privateDefault) {
-      result.privateDefault = privateDefault;
+      result.appPrivateDefaultEngineId = privateDefault.identifier;
     }
 
     if (lazy.SearchUtils.loggingEnabled) {

@@ -138,7 +138,7 @@ struct ScrollAxis final {
   bool mOnlyIfPerceivedScrollableDirection : 1;
 };
 
-enum class ScrollFlags {
+enum class ScrollFlags : uint8_t {
   None = 0,
   ScrollFirstAncestorOnly = 1 << 0,
   ScrollOverflowHidden = 1 << 1,
@@ -146,8 +146,10 @@ enum class ScrollFlags {
   ScrollSmooth = 1 << 3,
   ScrollSmoothAuto = 1 << 4,
   TriggeredByScript = 1 << 5,
-  // ScrollOverflowHidden | ScrollNoParentFrames
-  AnchorScrollFlags = (1 << 1) | (1 << 2),
+  // NOTE: `Anchor` means here is "scrolling to an anchor", not "CSS scroll
+  // anchoring".
+  AnchorScrollFlags =
+      ScrollOverflowHidden | ScrollNoParentFrames | TriggeredByScript,
   ALL_BITS = (1 << 6) - 1,
 };
 

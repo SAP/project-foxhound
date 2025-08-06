@@ -68,11 +68,14 @@ support-files = [
   "html_sse-test-page.html",
   "html_ws-sse-test-page.html",
   "html_image-cache.html",
+  "html_script-cache.html",
+  "html_stylesheet-cache.html",
   "js_worker-test.js",
   "js_worker-test2.js",
   "js_websocket-worker-test.js",
   "sjs_content-type-test-server.sjs",
   "sjs_cors-test-server.sjs",
+  "sjs_early-hint-test-server.sjs",
   "sjs_https-redirect-test-server.sjs",
   "sjs_hsts-test-server.sjs",
   "sjs_json-test-server.sjs",
@@ -87,9 +90,11 @@ support-files = [
   "sjs_sorting-test-server.sjs",
   "sjs_sse-test-server.sjs",
   "sjs_status-codes-test-server.sjs",
+  "sjs_test-script.sjs",
   "sjs_timings-test-server.sjs",
   "sjs_truncate-test-server.sjs",
   "test-image.png",
+  "test-stylesheet.css",
   "ostrich-regular.ttf",
   "ostrich-black.ttf",
   "service-workers/status-codes.html",
@@ -129,11 +134,10 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_net_block-pattern.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04'",
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
   "win11_2009 && debug", # Bug 1603355
   "win10_2009 && debug", # Bug 1603355
-  "apple_catalina && debug", # Bug 1603355
-  "apple_silicon && debug", # Bug 1603355
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1603355
 ]
 
 ["browser_net_block-serviceworker.js"]
@@ -201,8 +205,7 @@ skip-if = [
 
 ["browser_net_content-type.js"]
 skip-if = [
-  "apple_catalina && !debug",
-  "apple_silicon && !debug",
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt",
 ]
 
 ["browser_net_cookies_sorted.js"]
@@ -221,8 +224,7 @@ skip-if = ["win11_2009 && debug && verify"]
 ["browser_net_copy_params.js"]
 skip-if = [
   "win11_2009", # Bug 1797751
-  "apple_catalina && !debug && verify", # bug 1328915
-  "apple_silicon && !debug && verify", # bug 1328915
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt && verify", # bug 1328915
 ]
 
 ["browser_net_copy_response.js"]
@@ -247,6 +249,8 @@ skip-if = [
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_net_domain-not-found.js"]
+
+["browser_net_earlyhints.js"]
 
 ["browser_net_edit_resend_cancel.js"]
 
@@ -286,7 +290,6 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 skip-if = ["true"] # Bug 1479782
 
 ["browser_net_header-docs.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_net_header-ref-policy.js"]
 
@@ -343,6 +346,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_net_jsonp.js"]
 
 ["browser_net_large-response.js"]
+
+["browser_net_layout_after_toggle.js"]
 
 ["browser_net_leak_on_tab_close.js"]
 
@@ -420,15 +425,17 @@ skip-if = [
 ["browser_net_resend_xhr.js"]
 
 ["browser_net_response_CORS_blocked.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && !debug && a11y_checks"] # bug 1732635
+skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks"] # bug 1732635
 
 ["browser_net_response_node-expanded.js"]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_net_save_response_as.js"]
 
+["browser_net_script_cache.js"]
+
 ["browser_net_search-results.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && a11y_checks"]  # Bug 1721160
+skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && a11y_checks"]  # Bug 1721160
 
 ["browser_net_security-details.js"]
 
@@ -455,7 +462,7 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_net_service-worker-status.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && !debug && verify"]
+skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && verify"]
 
 ["browser_net_service-worker-timings.js"]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
@@ -494,6 +501,8 @@ skip-if = ["true"] # Bug 1373558
 
 ["browser_net_streaming-response.js"]
 
+["browser_net_stylesheet_cache.js"]
+
 ["browser_net_tabbar_focus.js"]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
@@ -510,6 +519,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_net_telemetry_throttle_changed.js"]
 
 ["browser_net_throttle.js"]
+
+["browser_net_throttling_cached.js"]
 
 ["browser_net_throttling_profiles.js"]
 

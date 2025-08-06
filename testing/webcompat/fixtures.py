@@ -4,18 +4,27 @@
 
 import asyncio
 import json
+import os
 import re
 import subprocess
+import sys
+from datetime import datetime
 
 import pytest
 import webdriver
 
 from client import Client
 
+try:
+    import pathlib
+except ImportError:
+    import pathlib2 as pathlib
+
 APS_PREF = "privacy.partition.always_partition_third_party_non_cookie_storage"
 CB_PBM_PREF = "network.cookie.cookieBehavior.pbmode"
 CB_PREF = "network.cookie.cookieBehavior"
 INJECTIONS_PREF = "extensions.webcompat.perform_injections"
+NOTIFICATIONS_PERMISSIONS_PREF = "permissions.default.desktop-notification"
 PBM_PREF = "browser.privatebrowsing.autostart"
 PIP_OVERRIDES_PREF = "extensions.webcompat.enable_picture_in_picture_overrides"
 SHIMS_PREF = "extensions.webcompat.enable_shims"
@@ -89,6 +98,9 @@ class FirefoxWebDriver(WebDriver):
         if "use_strict_etp" in test_config:
             prefs[STRICT_ETP_PREF] = test_config["use_strict_etp"]
 
+        if "no_overlay_scrollbars" in test_config:
+            prefs["widget.gtk.overlay-scrollbars.enabled"] = False
+
         # keep system addon updates off to prevent bug 1882562
         prefs[SYSTEM_ADDON_UPDATES_PREF] = False
 
@@ -97,6 +109,10 @@ class FirefoxWebDriver(WebDriver):
         cookieBehavior = 4 if test_config.get("without_tcp") else 5
         prefs[CB_PREF] = cookieBehavior
         prefs[CB_PBM_PREF] = cookieBehavior
+
+        # prevent "allow notifications for?" popups by setting the
+        # default permission for notificaitons to PERM_DENY_ACTION.
+        prefs[NOTIFICATIONS_PERMISSIONS_PREF] = 2
 
         fx_options = {"prefs": prefs}
 
@@ -139,6 +155,11 @@ def bug_number(request):
 
 
 @pytest.fixture
+def in_headless_mode(request):
+    return request.config.getoption("headless")
+
+
+@pytest.fixture
 def credentials(bug_number, config_file):
     if not config_file:
         pytest.skip(f"login info required for bug #{bug_number}")
@@ -164,14 +185,57 @@ def driver(pytestconfig):
         yield driver_instance
 
 
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, "rep_" + rep.when, rep)
+
+
+@pytest.fixture(scope="function", autouse=True)
+async def test_failed_check(request):
+    yield
+    if (
+        not request.config.getoption("no_failure_screenshots")
+        and request.node.rep_setup.passed
+        and request.node.rep_call.failed
+    ):
+        session = request.node.funcargs["session"]
+        try:
+            file_name = f'{request.node.nodeid}_failure_{datetime.today().strftime("%Y-%m-%d_%H:%M")}.png'.replace(
+                "/", "_"
+            ).replace(
+                "::", "__"
+            )
+            await take_screenshot(session, file_name)
+            print("Saved failure screenshot to: ", file_name)
+        except Exception as e:
+            print("Error saving screenshot: ", e)
+
+
+async def take_screenshot(session, file_name):
+    cwd = pathlib.Path(os.getcwd())
+    path = cwd / file_name
+
+    top = await session.bidi_session.browsing_context.get_tree()
+    screenshot = await session.bidi_session.browsing_context.capture_screenshot(
+        context=top[0]["context"]
+    )
+
+    with path.open("wb") as strm:
+        strm.write(screenshot)
+
+    return file_name
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     return asyncio.get_event_loop_policy().new_event_loop()
 
 
 @pytest.fixture(scope="function")
-async def client(session, event_loop):
-    return Client(session, event_loop)
+async def client(request, session, event_loop):
+    return Client(request, session, event_loop)
 
 
 def install_addon(session, addon_file_path):
@@ -179,6 +243,18 @@ def install_addon(session, addon_file_path):
     session.send_session_command("POST", "moz/context", {"context": "chrome"})
     session.execute_async_script(
         """
+        async function installAsBuiltinExtension(xpi) {
+            // The built-in location requires a resource: URL that maps to a
+            // jar: or file: URL.  This would typically be something bundled
+            // into omni.ja but we use a temp file.
+            let base = Services.io.newURI(`jar:file:${xpi.path}!/`);
+            let resProto = Services.io
+              .getProtocolHandler("resource")
+              .QueryInterface(Ci.nsIResProtocolHandler);
+            resProto.setSubstitution("ext-test", base);
+            return AddonManager.installBuiltinAddon("resource://ext-test/");
+        }
+
         const addon_file_path = arguments[0];
         const cb = arguments[1];
         const { AddonManager } = ChromeUtils.importESModule(
@@ -191,7 +267,7 @@ def install_addon(session, addon_file_path):
             "resource://gre/modules/FileUtils.sys.mjs"
         );
         const file = new FileUtils.File(arguments[0]);
-        AddonManager.installTemporaryAddon(file).then(addon => {
+        installAsBuiltinExtension(file).then(addon => {
             // also make sure the addon works in private browsing mode
             const incognitoPermission = {
                 permissions: ["internal:privateBrowsingAllowed"],
@@ -232,7 +308,10 @@ async def session(driver, test_config):
         except (ConnectionRefusedError, webdriver.error.TimeoutException):
             await asyncio.sleep(0.5)
 
-    await session.bidi_session.start()
+    try:
+        await session.bidi_session.start()
+    except AttributeError:
+        sys.exit("Could not start a WebDriver session; please try again")
 
     if driver.addon:
         install_addon(session, driver.addon)
@@ -249,17 +328,48 @@ def platform(session):
 
 
 @pytest.fixture(autouse=True)
+def check_visible_scrollbars(session):
+    plat = session.capabilities["platformName"]
+    if plat == "android":
+        return "Android does not have visible scrollbars"
+    elif plat == "mac":
+        cmd = ["defaults", "read", "-g", "AppleShowScrollBars"]
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        p.wait()
+        if "Always" in str(p.stdout.readline()):
+            return None
+        return "scrollbars are not set to always be visible in MacOS system preferences"
+    return None
+
+
+@pytest.fixture(autouse=True)
+def need_visible_scrollbars(bug_number, check_visible_scrollbars, request, session):
+    if request.node.get_closest_marker("need_visible_scrollbars"):
+        if (
+            request.node.get_closest_marker("need_visible_scrollbars")
+            and check_visible_scrollbars
+        ):
+            pytest.skip(f"Bug #{bug_number} skipped: {check_visible_scrollbars}")
+
+
+@pytest.fixture(autouse=True)
 def only_platforms(bug_number, platform, request, session):
     if request.node.get_closest_marker("only_platforms"):
-        for only in request.node.get_closest_marker("only_platforms").args:
+        plats = request.node.get_closest_marker("only_platforms").args
+        for only in plats:
             if only == platform:
                 return
-        pytest.skip(f"Bug #{bug_number} skipped on platform ({platform})")
+        pytest.skip(
+            f"Bug #{bug_number} skipped on platform ({platform}, test only for {' or '.join(plats)})"
+        )
 
 
 @pytest.fixture(autouse=True)
 def skip_platforms(bug_number, platform, request, session):
     if request.node.get_closest_marker("skip_platforms"):
-        for skipped in request.node.get_closest_marker("skip_platforms").args:
+        plats = request.node.get_closest_marker("skip_platforms").args
+        for skipped in plats:
             if skipped == platform:
-                pytest.skip(f"Bug #{bug_number} skipped on platform ({platform})")
+                pytest.skip(
+                    f"Bug #{bug_number} skipped on platform ({platform}, test skipped for {' and '.join(plats)})"
+                )

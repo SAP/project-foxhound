@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.helpers.AppAndSystemHelper
+import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
 import org.mozilla.fenix.helpers.DataGenerationHelper
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
@@ -87,7 +88,7 @@ class SettingsPrivateBrowsingTest : TestSetup() {
         }.openAddToHomeScreen {
             addShortcutName(pageShortcutName)
             clickAddShortcutButton()
-            clickAddAutomaticallyButton()
+            clickSystemHomeScreenShortcutAddButton()
             verifyShortcutAdded(pageShortcutName)
         }
 

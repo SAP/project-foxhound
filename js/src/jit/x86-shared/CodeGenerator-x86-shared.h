@@ -101,41 +101,12 @@ class CodeGeneratorX86Shared : public CodeGeneratorShared {
 
   bool generateOutOfLineCode();
 
-  void emitCompare(MCompare::CompareType type, const LAllocation* left,
-                   const LAllocation* right);
-
   // Emits a branch that directs control flow to the true block if |cond| is
   // true, and the false block if |cond| is false.
   void emitBranch(Assembler::Condition cond, MBasicBlock* ifTrue,
-                  MBasicBlock* ifFalse,
-                  Assembler::NaNCond ifNaN = Assembler::NaN_HandledByCond);
-  void emitBranch(Assembler::DoubleCondition cond, MBasicBlock* ifTrue,
                   MBasicBlock* ifFalse);
-
-  void testNullEmitBranch(Assembler::Condition cond, const ValueOperand& value,
-                          MBasicBlock* ifTrue, MBasicBlock* ifFalse) {
-    cond = masm.testNull(cond, value);
-    emitBranch(cond, ifTrue, ifFalse);
-  }
-  void testUndefinedEmitBranch(Assembler::Condition cond,
-                               const ValueOperand& value, MBasicBlock* ifTrue,
-                               MBasicBlock* ifFalse) {
-    cond = masm.testUndefined(cond, value);
-    emitBranch(cond, ifTrue, ifFalse);
-  }
-  void testObjectEmitBranch(Assembler::Condition cond,
-                            const ValueOperand& value, MBasicBlock* ifTrue,
-                            MBasicBlock* ifFalse) {
-    cond = masm.testObject(cond, value);
-    emitBranch(cond, ifTrue, ifFalse);
-  }
-
-  void testZeroEmitBranch(Assembler::Condition cond, Register reg,
-                          MBasicBlock* ifTrue, MBasicBlock* ifFalse) {
-    MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-    masm.cmpPtr(reg, ImmWord(0));
-    emitBranch(cond, ifTrue, ifFalse);
-  }
+  void emitBranch(Assembler::DoubleCondition cond, MBasicBlock* ifTrue,
+                  MBasicBlock* ifFalse, Assembler::NaNCond ifNaN);
 
   void emitTableSwitchDispatch(MTableSwitch* mir, Register index,
                                Register base);

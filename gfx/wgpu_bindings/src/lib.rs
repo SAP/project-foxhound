@@ -104,6 +104,7 @@ pub struct AdapterInformation<S> {
     driver: S,
     driver_info: S,
     backend: wgt::Backend,
+    support_use_external_texture_in_swap_chain: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -152,6 +153,7 @@ enum DeviceAction<'a> {
         wgc::command::RenderBundleDescriptor<'a>,
     ),
     CreateRenderBundleError(id::RenderBundleId, wgc::Label<'a>),
+    CreateQuerySet(id::QuerySetId, wgc::resource::QuerySetDescriptor<'a>),
     CreateCommandEncoder(
         id::CommandEncoderId,
         wgt::CommandEncoderDescriptor<wgc::Label<'a>>,

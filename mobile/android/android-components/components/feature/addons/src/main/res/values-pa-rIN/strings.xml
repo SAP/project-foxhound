@@ -70,6 +70,10 @@
     <string name="mozac_feature_addons_permissions_tab_hide_description">ਬਰਾਊਜ਼ਰ ਟੈਬਾਂ ਲੁਕਾਉਣ ਅਤੇ ਵੇਖਾਉਣ</string>
     <!-- Description for top_sites permission. -->
     <string name="mozac_feature_addons_permissions_top_sites_description">ਬਰਾਊਜ਼ਰ ਅਤੀਤ ਲਈ ਪਹੁੰਚ</string>
+    <!-- Description for trialML permission. -->
+    <string name="mozac_feature_addons_permissions_trial_ml_description">AI ਮਾਡਲਾਂ ਨੂੰ ਆਪਣੇ ਡਿਵਾਈਸ ਉੱਤੇ ਡਾਊਨਲੋਡ ਕਰਕੇ ਚਲਾਓ</string>
+    <!-- Description for userScripts permission. -->
+    <string name="mozac_feature_addons_permissions_user_scripts_description">ਗ਼ੈਰ-ਤਸਦੀਕ ਕੀਤੀਆਂ ਸੁਤੰਤਰ ਧਿਰ ਦੀਆਂ ਸਕ੍ਰਿਪਟਾਂ ਨੂੰ ਆਪਣੇ ਡਾਟੇ ਲਈ ਪਹੁੰਚ ਦੀ ਮਨਜ਼ੂਰੀ ਦਿਓ</string>
     <!-- Description for devtools permission. -->
     <string name="mozac_feature_addons_permissions_devtools_description">ਟੈਬਾਂ ਖੋਲ੍ਹਣ ਵਿੱਚ ਤੁਹਾਡੇ ਡਾਟਾ ਲਈ ਡਿਵੈਲਪਰ ਟੂਲਾਂ ਦੀ ਪਹੁੰਚ</string>
     <!-- The version on of add-on. -->
@@ -91,9 +95,9 @@
     <!-- Indicates the add-on is enabled. -->
     <string name="mozac_feature_addons_settings_on">ਚਾਲੂ</string>
     <!-- Indicates the add-on is allowed in private browsing mode. -->
-    <string name="mozac_feature_addons_settings_allow_in_private_browsing">ਨਿੱਜੀ ਬਰਾਊਜ਼ਿੰਗ ਵਿੱਚ ਮਨਜ਼ੂਰ ਕਰੋ</string>
+    <string name="mozac_feature_addons_settings_allow_in_private_browsing">ਪ੍ਰਾਈਵੇਟ ਬਰਾਊਜ਼ਿੰਗ ਵਿੱਚ ਮਨਜ਼ੂਰ ਕਰੋ</string>
     <!-- Indicates the add-on is allowed in private browsing mode. -->
-    <string name="mozac_feature_addons_settings_run_in_private_browsing">ਨਿੱਜੀ ਬਰਾਊਜ਼ਿੰਗ ਚ ਚਲਾਓ</string>
+    <string name="mozac_feature_addons_settings_run_in_private_browsing">ਪ੍ਰਾਈਵੇਟ ਬਰਾਊਜ਼ਿੰਗ ਚ ਚਲਾਓ</string>
     <!-- This is displayed when the add-on is not allowed to run in private browsing. -->
     <string name="mozac_feature_addons_not_allowed_in_private_browsing">ਪ੍ਰਾਈਵੇਟ ਵਿੰਡੋਆਂ ਵਿੱਚ ਇਜਾਜ਼ਤ ਨਹੀਂ ਹੈ</string>
     <!-- Indicates the add-on is enabled. -->
@@ -130,6 +134,8 @@
     <string name="mozac_feature_addons_permissions_dialog_allow">ਮਨਜ਼ੂਰ</string>
     <!-- This is a button to deny the optional permissions requested by an add-on . -->
     <string name="mozac_feature_addons_permissions_dialog_deny">ਇਨਕਾਰ</string>
+    <!-- Text link to learn more about permission requests on the add-on permissions dialog . -->
+    <string name="mozac_feature_addons_permissions_dialog_learn_more">ਹੋਰ ਜਾਣੋ</string>
     <!-- This is a button to cancel the add-on installation . -->
     <string name="mozac_feature_addons_permissions_dialog_cancel">ਰੱਦ ਕਰੋ</string>
     <!-- Accessibility content description to install add-on button. %1$s is the add-on name. -->
@@ -186,10 +192,12 @@
     <string name="mozac_feature_addons_failed_to_translate">ਉਲੱਥਾ ਨਹੀਂ ਲੱਭਿਆ, ਨਾ ਹੀ ਲੋਕੇਲ %1$s ਲਈ,  ਨਾ ਹੀ ਮੂਲ ਭਾਸ਼ਾ %2$s ਲਈ</string>
     <!-- Text shown after successfully installed an add-on. %1$s is the add-on name. -->
     <string name="mozac_feature_addons_successfully_installed">%1$s ਕਾਮਯਾਬੀ ਨਾਲ ਇੰਸਟਾਲ ਕੀਤੀ</string>
-    <!-- Text shown after failed to install an add-on. %1$s is the add-on name. -->
+    <!-- Text shown after failing to install an add-on (when add-on type isn't supported or an unknown has errored). %1$s is the add-on name. -->
     <string name="mozac_feature_addons_failed_to_install">%1$s ਨੂੰ ਇੰਸਟਾਲ ਕਰਨ ਵਿੱਚ ਅਸਫ਼ਲ</string>
-    <!-- Text shown after failing to install an extension for which we don't have its name. -->
+    <!-- Text shown after failing to install an extension for which we don't have its name (when add-on type isn't supported or an unknown has errored). -->
     <string name="mozac_feature_addons_extension_failed_to_install">ਇਸ ਇਕਸਟੈਨਸ਼ਨ ਨੂੰ ਇੰਸਟਾਲ ਕਰਨ ਲਈ ਫੇਲ੍ਹ ਹੈ।</string>
+    <!-- Text shown when installing an add-on has failed. -->
+    <string name="mozac_feature_addons_cant_install_extension">ਇਕਸਟੈਨਸ਼ਨ ਨੂੰ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ ਹੈ</string>
     <!-- Text shown when attempting to install an extension and a network error happened. -->
     <string name="mozac_feature_addons_extension_failed_to_install_network_error">ਇਸ ਇਕਸਟੈਨਸ਼ਨ ਨੂੰ ਕਨੈਕਸ਼ਨ ਅਸਫ਼ਲ ਰਹਿਣ ਕਰਕੇ ਡਾਊਨਲੋਡ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ।</string>
     <!-- Text shown when attempting to install an extension and the downloaded file is corrupted. -->
@@ -199,9 +207,15 @@
     <!-- Text shown when attempting to install an add-on and an error occurred because the extension was incompatible. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->
     <string name="mozac_feature_addons_failed_to_install_incompatible_error">%2$s %3$s ਨਾਲ ਮੁਆਫ਼ਕ ਨਾ ਹੋਣ ਕਰਕੇ %1$s ਨੂੰ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ।</string>
     <!-- Text shown when attempting to install a blocklisted add-on. %1$s is the add-on name. -->
-    <string name="mozac_feature_addons_blocklisted_1">ਸਥਿਰਤਾ ਜਾਂ ਸੁਰੱਖਿਆ ਸਮੱਸਿਆਵਾਂ ਖੜ੍ਹੀਆਂ ਕਰਨ ਦੇ ਖ਼ਤਰੇ ਕਰਕੇ %1$s ਨੂੰ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ।</string>
+    <string name="mozac_feature_addons_blocklisted_1" moz:removedIn="133" tools:ignore="UnusedResources">ਸਥਿਰਤਾ ਜਾਂ ਸੁਰੱਖਿਆ ਸਮੱਸਿਆਵਾਂ ਖੜ੍ਹੀਆਂ ਕਰਨ ਦੇ ਖ਼ਤਰੇ ਕਰਕੇ %1$s ਨੂੰ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ।</string>
+    <!-- Text shown when attempting to install a (hard) blocked add-on. %1$s is the add-on name. %2$s is the app name. -->
+    <string name="mozac_feature_addons_blocklisted_2">%1$s ਵਲੋਂ Mozilla ਦੀਆਂ ਪਾਲਸੀਆਂ ਦਾ ਉਲੰਘਣ ਕਰਨ ਕਰਕੇ ਇਸ ਨੂੰ %2$s ਉੱਤੇ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ ਹੈ।</string>
     <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
     <string name="mozac_feature_addons_admin_install_only">%1$s ਨੂੰ ਸਿਰਫ਼ ਇੰਟਰਪ੍ਰਾਈਜ਼ ਪਾਲਸੀਆਂ ਵਰਤ ਕੇ ਹੀ ਸੰਗਠਨ ਵਲੋਂ ਇੰਸਟਾਲ ਕੀਤਾ ਜਾ ਸਕਦਾ ਹੈ, ਜੋ ਕਿ ਇਸ ਪਲੇਟਫਾਰਮ ਉੱਤੇ ਸਹਾਇਕ ਨਹੀਂ ਹੈ, ਇਸਕਰਕੇ ਇਸ ਨੂੰ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ।</string>
+    <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. -->
+    <string name="mozac_feature_addons_soft_blocked" moz:removedIn="133" tools:ignore="UnusedResources">%1$s ਵਲੋਂ Mozilla ਦੀਆਂ ਪਾਲਸੀਆਂ ਦਾ ਉਲੰਘਣ ਕਰਨ ਕਰਕੇ ਇਸ ਨੂੰ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ ਹੈ।</string>
+    <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
+    <string name="mozac_feature_addons_soft_blocked_1">%1$s ਵਲੋਂ Mozilla ਦੀਆਂ ਪਾਲਸੀਆਂ ਦਾ ਉਲੰਘਣ ਕਰਨ ਕਰਕੇ ਇਸ ਨੂੰ %2$s ਉੱਤੇ ਇੰਸਟਾਲ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ ਹੈ।</string>
     <!-- Text shown after successfully enabled an add-on. %1$s is the add-on name. -->
     <string name="mozac_feature_addons_successfully_enabled">%1$s ਕਾਮਯਾਬੀ ਨਾਲ ਸਮਰੱਥ ਕੀਤੀ</string>
     <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
@@ -246,8 +260,18 @@
     <string name="mozac_feature_addons_installed_dialog_okay_button_2">ਠੀਕ ਹੈ</string>
     <!-- "Learn more" link displayed below an add-on status message. -->
     <string name="mozac_feature_addons_status_learn_more">ਹੋਰ ਜਾਣੋ</string>
+    <!-- "See details" link displayed below an add-on status message. -->
+    <string name="mozac_feature_addons_status_see_details">ਵੇਰਵੇ ਵੇਖੋ</string>
     <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
-    <string name="mozac_feature_addons_status_blocklisted">%1$s ਨੂੰ ਸੁਰੱਖਿਆ ਜਾਂ ਸਥਿਰਤਾ ਮਸਲਿਆਂ ਕਰਕੇ ਅਸਮਰੱਥ ਕੀਤਾ ਗਿਆ ਹੈ।</string>
+    <string name="mozac_feature_addons_status_blocklisted" moz:removedIn="133" tools:ignore="UnusedResources">%1$s ਨੂੰ ਸੁਰੱਖਿਆ ਜਾਂ ਸਥਿਰਤਾ ਮਸਲਿਆਂ ਕਰਕੇ ਅਸਮਰੱਥ ਕੀਤਾ ਗਿਆ ਹੈ।</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
+    <string name="mozac_feature_addons_status_blocklisted_1">ਇਸ ਇਕਸਟੈਨਸ਼ਨ ਨੂੰ Mozilla ਦੀਆਂ ਪਾਲਸੀਆਂ ਦਾ ਉਲੰਘਣ ਕਰਨ ਕਰਕੇ ਪਾਬੰਦੀ ਲਾਈ ਹੈ ਅਤੇ ਅਸਮਰੱਥ ਕੀਤਾ ਗਿਆ ਹੈ।</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
+    <string name="mozac_feature_addons_status_softblocked" moz:removedIn="133" tools:ignore="UnusedResources">ਇਸ ਇਕਸਟੈਨਸ਼ਨ ਨੂੰ Mozilla ਦੀਆਂ ਪਾਲਸੀਆਂ ਦਾ ਉਲੰਘਣ ਕਰਨ ਕਰਕੇ ਅਸਮਰੱਥ ਕੀਤਾ ਹੈ। ਤੁਸੀਂ ਇਸ ਨੂੰ ਸਮਰੱਥ ਕਰ ਸਕਦੇ ਹੋ, ਪਰ ਇਸ ਖ਼ਤਰਾ ਹੋ ਸਕਦਾ ਹੈ।</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
+    <string name="mozac_feature_addons_status_softblocked_1">ਇਸ ਇਕਸਟੈਨਸ਼ਨ ਨੂੰ Mozilla ਦੀਆਂ ਪਾਲਸੀਆਂ ਦਾ ਉਲੰਘਣ ਕਰਕੇ ਸੀਮਿਤ ਅਤੇ ਅਸਮਰੱਥ ਕੀਤਾ ਹੈ। ਤੁਸੀਂ ਇਸ ਨੂੰ ਸਮਰੱਥ ਕਰ ਸਕਦੇ ਹੋ, ਪਰ ਇਸ ਖ਼ਤਰਾ ਹੋ ਸਕਦਾ ਹੈ।</string>
+    <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
+    <string name="mozac_feature_addons_status_softblocked_re_enabled">ਇਸ ਇਕਸਟੈਨਸ਼ਨ ਨੇ Mozilla ਦੀਆਂ ਪਾਲਸੀਆਂ ਦਾ ਉਲੰਘਣ ਕੀਤਾ ਹੈ। ਇਸ ਨੂੰ ਵਰਤਣਾ ਖ਼ਤਰਨਾਕ ਹੋ ਸਕਦਾ ਹੈ।</string>
     <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
     <string name="mozac_feature_addons_status_unsigned">%1$s ਦੇ ਸੁਰੱਖਿਅਤ ਹੋਣ ਨੂੰ ਤਸਦੀਕ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਿਆ ਅਤੇ ਅਸਮਰੱਥ ਕੀਤਾ ਗਿਆ ਹੈ।</string>
     <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

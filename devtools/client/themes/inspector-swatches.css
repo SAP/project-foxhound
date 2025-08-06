@@ -1,0 +1,144 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Style swatches as rendered by the OutputParser. This needs to be in a shared file as
+   those classes are used in the Rules view and the CSS variable tooltip. */
+
+.inspector-flex,
+.inspector-grid,
+.inspector-shapeswatch,
+.inspector-swatch {
+  --swatch-size: 1em;
+  width: var(--swatch-size);
+  height: var(--swatch-size);
+  vertical-align: middle;
+
+  /* align the swatch with its value */
+  margin-top: -1px;
+  margin-inline-end: 5px;
+  display: inline-block;
+  position: relative;
+
+  /* Set pointer cursor when swatch is interactive */
+  &:is(button, [role="button"]) {
+    cursor: pointer;
+  }
+}
+
+/* Icon swatches not using the .inspector-swatch class (flex, grid, shape) */
+
+.inspector-flex,
+.inspector-grid,
+.inspector-shapeswatch {
+  background-color: transparent;
+  border: none;
+  -moz-context-properties: stroke;
+  stroke: var(--theme-icon-color);
+  /* Prevent line break when copy/pasting an entire rule */
+  user-select: auto;
+}
+
+:is(
+  .inspector-flex,
+  .inspector-grid,
+  .inspector-shapeswatch
+)[aria-pressed="true"] {
+  stroke: var(--theme-icon-checked-color);
+}
+
+.inspector-flex {
+  background-image: url("chrome://devtools/skin/images/flexbox-swatch.svg");
+  background-size: 13px 11px;
+  width: 13px;
+  height: 11px;
+}
+
+.inspector-grid {
+  background-image: url("chrome://devtools/skin/images/grid.svg");
+}
+
+.inspector-grid[disabled] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.inspector-shapeswatch {
+  background-image: url("chrome://devtools/skin/images/shape-swatch.svg");
+  background-size: 110%;
+  width: 1.45em;
+  height: 1.45em;
+}
+
+.inspector-shape-point.active,
+.inspector-shapeswatch[aria-pressed="true"] + .inspector-shape > .inspector-shape-point:hover {
+  background-color: var(--inspector-highlight-background-color);
+  /* Add an outline so when the property is highlighted because of search,
+     the active point still stands out */
+  outline: 1px solid var(--theme-contrast-border);
+}
+
+.inspector-variable {
+  color: var(--theme-highlight-blue);
+}
+
+/* Round swatches using the .inspector-swatch class (color, bezier, filter and angle) */
+
+.inspector-swatch {
+  background-size: var(--swatch-size);
+  border-radius: 50%;
+}
+
+/* Create a stacking context for the color swatch so its before pseudo element can be
+   display below it (see next rule) */
+.color-swatch-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* We want to display a checker below the current swatch color that would be visible
+  if the swatch color isn't opaque */
+.inspector-colorswatch::before {
+  content: '';
+  background-color: #eee;
+  --checker-color: #ccc;
+  --background-gradient: linear-gradient(
+    45deg,
+    var(--checker-color) 25%,
+    transparent 25% 75%,
+    var(--checker-color) 75%
+  );
+  background-image: var(--background-gradient), var(--background-gradient);
+  background-size: var(--swatch-size) var(--swatch-size);
+  background-position: 0 0, calc(var(--swatch-size) / 2) calc(var(--swatch-size) / 2);
+  position: absolute;
+  border-radius: 50%;
+  inset: 0;
+  z-index: -1;
+}
+
+.inspector-swatch.inspector-colorswatch {
+  border: none;
+  padding: 0;
+  /* Adjust outline so it doesn't conflate with the color swatch, which could have a similar background
+     color as the outline */
+  outline-offset: 2px;
+  /* Make sure that the background color is properly set in High Contrast Mode */
+  forced-color-adjust: none;
+}
+
+.inspector-bezierswatch {
+  background-image: url("chrome://devtools/skin/images/cubic-bezier-swatch.svg");
+}
+
+.inspector-filterswatch {
+  background-image: url("chrome://devtools/skin/images/filter-swatch.svg");
+}
+
+.inspector-angleswatch {
+  background-image: url("chrome://devtools/skin/images/angle-swatch.svg");
+}
+
+.inspector-lineareasingswatch {
+  background-image: url("chrome://devtools/skin/images/linear-easing-swatch.svg");
+}

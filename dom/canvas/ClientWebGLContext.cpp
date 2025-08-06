@@ -744,6 +744,12 @@ void ClientWebGLContext::SetDrawingBufferColorSpace(
   Run<RPROC(SetDrawingBufferColorSpace)>(*mDrawingBufferColorSpace);
 }
 
+void ClientWebGLContext::SetUnpackColorSpace(
+    const dom::PredefinedColorSpace val) {
+  mUnpackColorSpace = val;
+  Run<RPROC(SetUnpackColorSpace)>(*mUnpackColorSpace);
+}
+
 void ClientWebGLContext::GetContextAttributes(
     dom::Nullable<dom::WebGLContextAttributes>& retval) {
   retval.SetNull();
@@ -762,6 +768,7 @@ void ClientWebGLContext::GetContextAttributes(
   result.mPreserveDrawingBuffer = options.preserveDrawingBuffer;
   result.mFailIfMajorPerformanceCaveat = options.failIfMajorPerformanceCaveat;
   result.mPowerPreference = options.powerPreference;
+  result.mForceSoftwareRendering = options.forceSoftwareRendering;
 }
 
 // -----------------------
@@ -1054,6 +1061,7 @@ ClientWebGLContext::SetContextOptions(JSContext* cx,
       attributes.mFailIfMajorPerformanceCaveat;
   newOpts.xrCompatible = attributes.mXrCompatible;
   newOpts.powerPreference = attributes.mPowerPreference;
+  newOpts.forceSoftwareRendering = attributes.mForceSoftwareRendering;
   newOpts.enableDebugRendererInfo =
       StaticPrefs::webgl_enable_debug_renderer_info();
   MOZ_ASSERT(mCanvasElement || mOffscreenCanvas);
@@ -2421,6 +2429,7 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
     case LOCAL_GL_RENDERER:
     case LOCAL_GL_VENDOR:
     case LOCAL_GL_VERSION:
+    case dom::MOZ_debug_Binding::CONTEXT_TYPE:
     case dom::MOZ_debug_Binding::WSI_INFO:
       debugOnly = true;
       asString = true;
@@ -4415,16 +4424,25 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
   mozilla::ipc::Shmem* pShmem = nullptr;
   // Image to release after WebGLContext::TexImage().
   RefPtr<layers::Image> keepAliveImage;
+  RefPtr<gfx::DataSourceSurface> keepAliveSurf;
 
   if (desc->sd) {
     const auto& sd = *(desc->sd);
     const auto sdType = sd.type();
     const auto& contextInfo = mNotLost->info;
 
+    // TODO (Bug 754256): Figure out the source colorSpace.
+    const auto& webgl = this;
+    dom::PredefinedColorSpace srcColorSpace = dom::PredefinedColorSpace::Srgb;
+    dom::PredefinedColorSpace dstColorSpace =
+        webgl->mUnpackColorSpace ? *webgl->mUnpackColorSpace
+                                 : dom::PredefinedColorSpace::Srgb;
+    bool sameColorSpace = (srcColorSpace == dstColorSpace);
+
     const auto fallbackReason = [&]() -> Maybe<std::string> {
-      auto fallbackReason =
-          BlitPreventReason(level, offset, respecFormat, pi, *desc,
-                            contextInfo.optionalRenderableFormatBits);
+      auto fallbackReason = BlitPreventReason(
+          level, offset, respecFormat, pi, *desc,
+          contextInfo.optionalRenderableFormatBits, sameColorSpace);
       if (fallbackReason) return fallbackReason;
 
       const bool canUploadViaSd = contextInfo.uploadableSdTypes[sdType];
@@ -4481,6 +4499,15 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
                             "RemoteDecoder null subdesc."});
           }
         } break;
+        case layers::SurfaceDescriptor::TSurfaceDescriptorExternalImage: {
+          const auto& inProcess = mNotLost->inProcess;
+          MOZ_ASSERT(desc->dataSurf);
+          keepAliveSurf = desc->dataSurf;
+          if (inProcess) {
+            return Some(std::string{
+                "SurfaceDescriptorExternalImage works only in GPU process."});
+          }
+        } break;
       }
 
       switch (respecFormat) {
@@ -4506,10 +4533,12 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
                          fallbackReason->c_str());
 
       const auto& image = desc->image;
-      const RefPtr<gfx::SourceSurface> surf = image->GetAsSourceSurface();
-      if (surf) {
-        // WARNING: OSX can lose our MakeCurrent here.
-        desc->dataSurf = surf->GetDataSurface();
+      if (image) {
+        const RefPtr<gfx::SourceSurface> surf = image->GetAsSourceSurface();
+        if (surf) {
+          // WARNING: OSX can lose our MakeCurrent here.
+          desc->dataSurf = surf->GetDataSurface();
+        }
       }
       if (!desc->dataSurf) {
         EnqueueError(LOCAL_GL_OUT_OF_MEMORY,
@@ -4520,6 +4549,9 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
     }
   }
   desc->image = nullptr;
+  if (desc->sd) {
+    desc->dataSurf = nullptr;
+  }
 
   desc->Shrink(pi);
 
@@ -4581,11 +4613,11 @@ void ClientWebGLContext::TexImage(uint8_t funcDims, GLenum imageTarget,
     (void)child->SendTexImage(static_cast<uint32_t>(level), respecFormat,
                               CastUvec3(offset), pi, std::move(*desc));
 
-    if (tempShmem || keepAliveImage) {
+    if (tempShmem || keepAliveImage || keepAliveSurf) {
       const auto eventTarget = GetCurrentSerialEventTarget();
       MOZ_ASSERT(eventTarget);
       child->SendPing()->Then(eventTarget, __func__,
-                              [tempShmem, keepAliveImage]() {
+                              [tempShmem, keepAliveImage, keepAliveSurf]() {
                                 // Cleans up when (our copy of)
                                 // sendableShmem/image goes out of scope.
                               });
@@ -6762,17 +6794,6 @@ bool WebGLShaderPrecisionFormatJS::WrapObject(
 }
 
 // ---------------------
-
-// Todo: Move this to RefPtr.h.
-template <typename T>
-void ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& callback,
-                                 const RefPtr<T>& field, const char* name,
-                                 uint32_t flags) {
-  ImplCycleCollectionTraverse(callback, const_cast<RefPtr<T>&>(field), name,
-                              flags);
-}
-
-// -
 
 template <typename T>
 void ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& callback,

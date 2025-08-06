@@ -53,7 +53,10 @@ from manifestparser.filters import (
     tags,
 )
 from manifestparser.util import normsep
-from mozgeckoprofiler import symbolicate_profile_json, view_gecko_profile
+from mozgeckoprofiler import (
+    symbolicate_profile_json,
+    view_gecko_profile,
+)
 from mozserve import DoHServer, Http2Server, Http3Server
 
 try:
@@ -142,7 +145,6 @@ TBPL_RETRY = 4  # Defined in mozharness
 
 
 class MessageLogger(object):
-
     """File-like object for logging messages (structured logs)"""
 
     BUFFERING_THRESHOLD = 100
@@ -1242,7 +1244,7 @@ class MochitestDesktop(object):
          - create it if it does
         Removal of those directories is handled in cleanup()
         """
-        if type(extraTestsDirs) != list:
+        if type(extraTestsDirs) is not list:
             return
 
         for d in extraTestsDirs:
@@ -1782,7 +1784,7 @@ toolbar#nav-bar {
                 noDefaultFilters = True
 
             # TODO: remove this when crashreporter is fixed on mac via bug 1910777
-            if info["os"] == "mac" and info["os_version"] == "14.40":
+            if info["os"] == "mac" and info["os_version"].split(".")[0] == "14":
                 info["crashreporter"] = False
 
             tests = manifest.active_tests(
@@ -1790,6 +1792,7 @@ toolbar#nav-bar {
                 disabled=disabled,
                 filters=filters,
                 noDefaultFilters=noDefaultFilters,
+                strictExpressions=True,
                 **info
             )
 
@@ -2846,6 +2849,7 @@ toolbar#nav-bar {
                     debuggerInfo,
                     browserProcessId,
                     processLog,
+                    symbolsPath,
                 )
 
             kp_kwargs = {
@@ -3394,7 +3398,6 @@ toolbar#nav-bar {
                 #
                 # Currently for automation, the pref defaults to true (but can be
                 # overridden with --setpref).
-                "serviceworker_e10s": True,
                 "sessionHistoryInParent": not options.disable_fission
                 or not self.extraPrefs.get(
                     "fission.disableSessionHistoryInParent",
@@ -3422,6 +3425,11 @@ toolbar#nav-bar {
                 "xorigin": options.xOriginTests,
                 "condprof": options.conditionedProfile,
                 "msix": "WindowsApps" in options.app,
+                "android_version": mozinfo.info.get("android_version", -1),
+                "android": mozinfo.info.get("android", False),
+                "is_emulator": mozinfo.info.get("is_emulator", False),
+                "cm6": mozinfo.info.get("cm6", False),
+                "coverage": mozinfo.info.get("coverage", False),
             }
         )
 
@@ -3581,7 +3589,7 @@ toolbar#nav-bar {
                 # Only do the extra work of symbolicating and viewing the profile if
                 # officially requested through a command line flag. The MOZ_PROFILER_*
                 # flags can be set by a user.
-                symbolicate_profile_json(profile_path, options.topobjdir)
+                symbolicate_profile_json(profile_path, options.symbolsPath)
                 view_gecko_profile_from_mochitest(
                     profile_path, options, profiler_logger
                 )
@@ -3769,11 +3777,6 @@ toolbar#nav-bar {
                     )
                 )
                 self.log.info(
-                    "runtests.py | Running with serviceworker_e10s: {}".format(
-                        mozinfo.info.get("serviceworker_e10s", False)
-                    )
-                )
-                self.log.info(
                     "runtests.py | Running with socketprocess_e10s: {}".format(
                         mozinfo.info.get("socketprocess_e10s", False)
                     )
@@ -3858,7 +3861,14 @@ toolbar#nav-bar {
         return status
 
     def handleTimeout(
-        self, timeout, proc, utilityPath, debuggerInfo, browser_pid, processLog
+        self,
+        timeout,
+        proc,
+        utilityPath,
+        debuggerInfo,
+        browser_pid,
+        processLog,
+        symbolsPath,
     ):
         """handle process output timeout"""
         # TODO: bug 913975 : _processOutput should call self.processOutputLine
@@ -3883,6 +3893,57 @@ toolbar#nav-bar {
         self.log.warning("Force-terminating active process(es).")
 
         browser_pid = browser_pid or proc.pid
+
+        # Send a signal to start the profiler - if we're running on Linux or MacOS
+        profiler_logger = get_proxy_logger("profiler")
+        if mozinfo.isLinux or mozinfo.isMac:
+            profiler_logger.warning(
+                "Attempting to start the profiler to help with diagnosing the hang."
+            )
+            profiler_logger.info(
+                "Sending SIGUSR1 to pid %d start the profiler." % browser_pid
+            )
+            os.kill(browser_pid, signal.SIGUSR1)
+            profiler_logger.info("Waiting 10s to capture a profile...")
+            time.sleep(10)
+            profiler_logger.info(
+                "Sending SIGUSR2 to pid %d stop the profiler." % browser_pid
+            )
+            os.kill(browser_pid, signal.SIGUSR2)
+            # We trigger `killPid` further down in this function, which will
+            # stop the profiler writing to disk. As we might still be writing a
+            # profile when we run `killPid`, we might end up with a truncated
+            # profile. Instead, we give the profiler ten seconds to write a
+            # profile (which should be plenty of time!) See Bug 1906151 for more
+            # details, and Bug 1905929 for an intermediate solution that would
+            # allow this test to watch for the profile file being completed.
+            profiler_logger.info("Wait 10s for Firefox to write the profile to disk.")
+            time.sleep(10)
+
+            # Symbolicate the profile generated above using signals. The profile
+            # file will be named something like:
+            #  `$MOZ_UPLOAD_DIR/profile_${tid}_${pid}.json
+            # where `tid` is /currently/ always 0 (we can only write our profile
+            # from the main thread). This may change if we end up writing from
+            # other threads in firefox. See `profiler_find_dump_path()` in
+            # `platform.cpp` for more details on how we name signal-generated
+            # profiles.
+            # Sanity check that we actually have a MOZ_UPLOAD_DIR
+            if "MOZ_UPLOAD_DIR" in os.environ:
+                profiler_logger.info(
+                    "Symbolicating profile in %s" % os.environ["MOZ_UPLOAD_DIR"]
+                )
+                profile_path = "{}/profile_0_{}.json".format(
+                    os.environ["MOZ_UPLOAD_DIR"], browser_pid
+                )
+                profiler_logger.info("Looking inside symbols dir: %s)" % symbolsPath)
+                profiler_logger.info("Symbolicating profile: %s" % profile_path)
+                symbolicate_profile_json(profile_path, symbolsPath)
+        else:
+            profiler_logger.info(
+                "Not sending a signal to start the profiler - not on MacOS or Linux. See Bug 1823370."
+            )
+
         child_pids = self.extract_child_pids(processLog, browser_pid)
         self.log.info("Found child pids: %s" % child_pids)
 
@@ -3946,7 +4007,6 @@ toolbar#nav-bar {
                 logzip.close()
 
     class OutputHandler(object):
-
         """line output handler for mozrunner"""
 
         def __init__(

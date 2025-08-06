@@ -5,6 +5,7 @@
 package org.mozilla.fenix.messaging
 
 import android.content.Context
+import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import mozilla.components.service.nimbus.messaging.JexlAttributeProvider
 import mozilla.components.support.base.ext.areNotificationsEnabledSafe
@@ -15,6 +16,7 @@ import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_CONTENT
 import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_MEDIUM
 import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_SOURCE
 import org.mozilla.fenix.components.metrics.UTMParams.Companion.UTM_TERM
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -43,10 +45,16 @@ object CustomAttributeProvider : JexlAttributeProvider {
                 // By convention, we should use snake case.
                 "is_first_run" to isFirstRun,
                 "is_review_checker_enabled" to isReviewCheckerEnabled,
-
+                "install_referrer_response_utm_source" to settings.utmSource,
+                "install_referrer_response_utm_medium" to settings.utmMedium,
+                "install_referrer_response_utm_campaign" to settings.utmCampaign,
+                "install_referrer_response_utm_term" to settings.utmTerm,
+                "install_referrer_response_utm_content" to settings.utmContent,
                 // This camelCase attribute is a boolean value represented as a string.
                 // This is left for backwards compatibility.
                 "isFirstRun" to isFirstRun.toString(),
+                "device_manufacturer" to Build.MANUFACTURER,
+                "device_model" to Build.MODEL,
             ),
         )
     }
@@ -81,6 +89,15 @@ object CustomAttributeProvider : JexlAttributeProvider {
                     .areNotificationsEnabledSafe(),
 
                 "search_widget_is_installed" to settings.searchWidgetInstalled,
+
+                "android_version" to android.os.Build.VERSION.SDK_INT,
+
+                "is_fxa_signed_in" to settings.signedInFxaAccount,
+
+                "fxa_connected_devices" to (
+                    context.components.backgroundServices.syncStore.state
+                        .constellationState?.otherDevices?.size ?: 0
+                    ),
             ),
         )
     }

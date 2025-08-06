@@ -370,6 +370,25 @@ test_only:
       - test-ping
     telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_LABELED_TIMING
 
+  button_jars:
+    type: labeled_quantity
+    unit: buttons
+    description: |
+      The number of buttons in each button jar.
+      This is a test-only metric.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1929979
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1929979
+    data_sensitivity:
+      - technical
+    expires: never
+    notification_emails:
+      - glean-team@mozilla.com
+    send_in_pings:
+      - test-ping
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_LABELED_QUANTITY
+
   mirror_time:
     type: timespan
     time_unit: nanosecond
@@ -543,6 +562,27 @@ test_only.ipc:
     no_lint:
       - COMMON_PREFIX
     telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_COUNTER
+  an_unordered_bool:
+    type: boolean
+    description: |
+      This is a test-only metric.
+      Just flagging things unorderedly in child processes.
+    metadata:
+      permit_non_commutative_operations_over_ipc: true
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923035
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1646165#c1
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - store1
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_UNORDERED_BOOL
   a_bool:
     type: boolean
     description: |
@@ -563,6 +603,27 @@ test_only.ipc:
     no_lint:
       - COMMON_PREFIX
     telemetry_mirror: TELEMETRY_TEST_BOOLEAN_KIND
+  an_unordered_labeled_boolean:
+    type: labeled_boolean
+    description: |
+      This is a test-only metric.
+      Just flagging labeled things unorderedly in child processes.
+    metadata:
+      permit_non_commutative_operations_over_ipc: true
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923035
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1688281#c1
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+    expires: never
+    send_in_pings:
+      - store1
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: TELEMETRY_TEST_MIRROR_FOR_UNORDERED_LABELED_BOOL
   a_date:
     type: datetime
     time_unit: second
@@ -748,6 +809,9 @@ test_only.ipc:
       extra3_longer_name:
         type: boolean
         description: "Some extra data again. Also tests extras with underscores"
+      extra4CamelCase:
+        type: boolean
+        description: "Some extra data again. Also tests extras with Capitals."
     description: |
       This is a test-only metric.
       Just recording some events.

@@ -90,8 +90,8 @@
 #ifdef FUZZING_INTERFACES
 #  include "xpcrtfuzzing/xpcrtfuzzing.h"
 #  include "XREShellData.h"
-static bool fuzzDoDebug = !!getenv("MOZ_FUZZ_DEBUG");
-static bool fuzzHaveModule = !!getenv("FUZZER");
+MOZ_RUNINIT static bool fuzzDoDebug = !!getenv("MOZ_FUZZ_DEBUG");
+MOZ_RUNINIT static bool fuzzHaveModule = !!getenv("FUZZER");
 #endif  // FUZZING_INTERFACES
 
 using namespace mozilla;
@@ -163,7 +163,7 @@ static bool GetLocationProperty(JSContext* cx, unsigned argc, Value* vp) {
   return false;
 #else
   JS::AutoFilename filename;
-  if (JS::DescribeScriptedCaller(cx, &filename) && filename.get()) {
+  if (JS::DescribeScriptedCaller(&filename, cx) && filename.get()) {
     NS_ConvertUTF8toUTF16 filenameString(filename.get());
 
 #  if defined(XP_WIN)
@@ -181,8 +181,7 @@ static bool GetLocationProperty(JSContext* cx, unsigned argc, Value* vp) {
 #  endif
 
     nsCOMPtr<nsIFile> location;
-    nsresult rv =
-        NS_NewLocalFile(filenameString, false, getter_AddRefs(location));
+    nsresult rv = NS_NewLocalFile(filenameString, getter_AddRefs(location));
 
     if (!location && gWorkingDirectory) {
       // could be a relative path, try appending it to the cwd
@@ -190,7 +189,7 @@ static bool GetLocationProperty(JSContext* cx, unsigned argc, Value* vp) {
       nsAutoString absolutePath(*gWorkingDirectory);
       absolutePath.Append(filenameString);
 
-      rv = NS_NewLocalFile(absolutePath, false, getter_AddRefs(location));
+      rv = NS_NewLocalFile(absolutePath, getter_AddRefs(location));
     }
 
     if (location) {
@@ -395,7 +394,7 @@ static bool Quit(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   gQuitting = true;
-  //    exit(0);
+  JS::ReportUncatchableException(cx);
   return false;
 }
 
@@ -1152,7 +1151,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
         printf("GetCurrentWorkingDirectory failed.\n");
         return 1;
       }
-      rv = NS_NewLocalFile(workingDir, true, getter_AddRefs(greDir));
+      rv = NS_NewLocalFile(workingDir, getter_AddRefs(greDir));
       if (NS_FAILED(rv)) {
         printf("NS_NewLocalFile failed.\n");
         return 1;

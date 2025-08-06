@@ -5,8 +5,8 @@
 import argparse
 import logging
 import os
-import subprocess
 import sys
+from datetime import date, timedelta
 
 import requests
 from mach.decorators import Command, CommandArgument, SubCommand
@@ -717,57 +717,6 @@ def run_jsshelltests(command_context, **kwargs):
 
 
 @Command(
-    "cramtest",
-    category="testing",
-    description="Mercurial style .t tests for command line applications.",
-)
-@CommandArgument(
-    "test_paths",
-    nargs="*",
-    metavar="N",
-    help="Test paths to run. Each path can be a test file or directory. "
-    "If omitted, the entire suite will be run.",
-)
-@CommandArgument(
-    "cram_args",
-    nargs=argparse.REMAINDER,
-    help="Extra arguments to pass down to the cram binary. See "
-    "'./mach python -m cram -- -h' for a list of available options.",
-)
-def cramtest(command_context, cram_args=None, test_paths=None, test_objects=None):
-    command_context.activate_virtualenv()
-    import mozinfo
-    from manifestparser import TestManifest
-
-    if test_objects is None:
-        from moztest.resolve import TestResolver
-
-        resolver = command_context._spawn(TestResolver)
-        if test_paths:
-            # If we were given test paths, try to find tests matching them.
-            test_objects = resolver.resolve_tests(paths=test_paths, flavor="cram")
-        else:
-            # Otherwise just run everything in CRAMTEST_MANIFESTS
-            test_objects = resolver.resolve_tests(flavor="cram")
-
-    if not test_objects:
-        message = "No tests were collected, check spelling of the test paths."
-        command_context.log(logging.WARN, "cramtest", {}, message)
-        return 1
-
-    mp = TestManifest()
-    mp.tests.extend(test_objects)
-    tests = mp.active_tests(disabled=False, **mozinfo.info)
-
-    python = command_context.virtualenv_manager.python_path
-    cmd = [python, "-m", "cram"] + cram_args + [t["relpath"] for t in tests]
-    return subprocess.call(cmd, cwd=command_context.topsrcdir)
-
-
-from datetime import date, timedelta
-
-
-@Command(
     "test-info", category="testing", description="Display historical test results."
 )
 def test_info(command_context):
@@ -1303,6 +1252,12 @@ def manifest(_command_context):
     action="store_true",
     help="Use implicit variables in reftest manifests",
 )
+@CommandArgument(
+    "-n",
+    "--new-version",
+    dest="new_version",
+    help="New version to use for annotations",
+)
 def skipfails(
     command_context,
     try_url,
@@ -1317,6 +1272,7 @@ def skipfails(
     verbose=False,
     dry_run=False,
     implicit_vars=False,
+    new_version=None,
 ):
     from skipfails import Skipfails
 
@@ -1335,7 +1291,14 @@ def skipfails(
         max_failures = -1
 
     Skipfails(
-        command_context, try_url, verbose, bugzilla, dry_run, turbo, implicit_vars
+        command_context,
+        try_url,
+        verbose,
+        bugzilla,
+        dry_run,
+        turbo,
+        implicit_vars,
+        new_version,
     ).run(
         meta_bug_id,
         save_tasks,

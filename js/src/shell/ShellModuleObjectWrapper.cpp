@@ -102,6 +102,45 @@ bool IdentFilter(JSContext* cx, JS::Handle<JS::Value> from,
   return true;
 }
 
+bool GetModuleStatusName(JSContext* cx, JS::Handle<JS::Value> from,
+                         JS::MutableHandle<JS::Value> to) {
+  if (!from.isInt32()) {
+    return false;
+  }
+
+  const char* statusStr = nullptr;
+  switch (static_cast<ModuleStatus>(from.toInt32())) {
+    case ModuleStatus::Unlinked:
+      statusStr = "Unlinked";
+      break;
+    case ModuleStatus::Linking:
+      statusStr = "Linking";
+      break;
+    case ModuleStatus::Linked:
+      statusStr = "Linked";
+      break;
+    case ModuleStatus::Evaluating:
+      statusStr = "Evaluating";
+      break;
+    case ModuleStatus::EvaluatingAsync:
+      statusStr = "EvaluatingAsync";
+      break;
+    case ModuleStatus::Evaluated:
+      statusStr = "Evaluated";
+      break;
+    default:
+      MOZ_CRASH("Unknown ModuleStatus value");
+  }
+
+  JS::Rooted<JSString*> str(cx, JS_NewStringCopyZ(cx, statusStr));
+  if (!str) {
+    return false;
+  }
+
+  to.setString(str);
+  return true;
+}
+
 template <class T>
 bool SingleFilter(JSContext* cx, JS::Handle<JS::Value> from,
                   JS::MutableHandle<JS::Value> to) {
@@ -228,6 +267,13 @@ template <class T, typename RawGetterT, typename FilterT>
 bool ShellModuleWrapperGetter(JSContext* cx, const JS::CallArgs& args,
                               RawGetterT rawGetter, FilterT filter) {
   JS::Rooted<T*> wrapper(cx, &args.thisv().toObject().as<T>());
+  if constexpr (std::is_same_v<T, ShellModuleObjectWrapper>) {
+    if (!wrapper->get()->hasCyclicModuleFields()) {
+      args.rval().set(UndefinedValue());
+      return true;
+    }
+  }
+
   JS::Rooted<JS::Value> raw(cx, rawGetter(wrapper->get()));
 
   JS::Rooted<JS::Value> filtered(cx);
@@ -285,6 +331,13 @@ template <class T, typename RawGetterT, typename FilterT>
 bool ShellModuleNativeWrapperGetter(JSContext* cx, const JS::CallArgs& args,
                                     RawGetterT rawGetter, FilterT filter) {
   JS::Rooted<T*> wrapper(cx, &args.thisv().toObject().as<T>());
+  if constexpr (std::is_same_v<T, ShellModuleObjectWrapper>) {
+    if (!wrapper->get()->hasCyclicModuleFields()) {
+      args.rval().set(UndefinedValue());
+      return true;
+    }
+  }
+
   JS::Rooted<typename T::Target*> owner(cx, wrapper->get());
 
   JS::Rooted<JS::Value> filtered(cx);
@@ -334,13 +387,20 @@ bool ModuleTypeToString(JSContext* cx, JS::Handle<JSObject*> owner,
 
 DEFINE_GETTER_FUNCTIONS(ModuleRequestObject, specifier, StringOrNullValue,
                         IdentFilter)
+DEFINE_GETTER_FUNCTIONS(ModuleRequestObject, getFirstUnsupportedAttributeKey,
+                        StringOrNullValue, IdentFilter)
 DEFINE_NATIVE_GETTER_FUNCTIONS(ModuleRequestObject, moduleType,
                                ModuleTypeToString);
 
 static const JSPropertySpec ShellModuleRequestObjectWrapper_accessors[] = {
     JS_PSG("specifier", ShellModuleRequestObjectWrapper_specifierGetter, 0),
     JS_PSG("moduleType", ShellModuleRequestObjectWrapper_moduleTypeGetter, 0),
-    JS_PS_END};
+    JS_PSG(
+        "firstUnsupportedAttributeKey",
+        ShellModuleRequestObjectWrapper_getFirstUnsupportedAttributeKeyGetter,
+        0),
+    JS_PS_END,
+};
 
 DEFINE_GETTER_FUNCTIONS(ImportEntry, moduleRequest, ObjectOrNullValue,
                         SingleFilter<ShellModuleRequestObjectWrapper>)
@@ -356,7 +416,8 @@ static const JSPropertySpec ShellImportEntryWrapper_accessors[] = {
     JS_PSG("localName", ShellImportEntryWrapper_localNameGetter, 0),
     JS_PSG("lineNumber", ShellImportEntryWrapper_lineNumberGetter, 0),
     JS_PSG("columnNumber", ShellImportEntryWrapper_columnNumberGetter, 0),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 DEFINE_GETTER_FUNCTIONS(ExportEntry, exportName, StringOrNullValue, IdentFilter)
 DEFINE_GETTER_FUNCTIONS(ExportEntry, moduleRequest, ObjectOrNullValue,
@@ -374,7 +435,8 @@ static const JSPropertySpec ShellExportEntryWrapper_accessors[] = {
     JS_PSG("localName", ShellExportEntryWrapper_localNameGetter, 0),
     JS_PSG("lineNumber", ShellExportEntryWrapper_lineNumberGetter, 0),
     JS_PSG("columnNumber", ShellExportEntryWrapper_columnNumberGetter, 0),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 DEFINE_GETTER_FUNCTIONS(RequestedModule, moduleRequest, ObjectOrNullValue,
                         SingleFilter<ShellModuleRequestObjectWrapper>)
@@ -386,11 +448,12 @@ static const JSPropertySpec ShellRequestedModuleWrapper_accessors[] = {
     JS_PSG("moduleRequest", ShellRequestedModuleWrapper_moduleRequestGetter, 0),
     JS_PSG("lineNumber", ShellRequestedModuleWrapper_lineNumberGetter, 0),
     JS_PSG("columnNumber", ShellRequestedModuleWrapper_columnNumberGetter, 0),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 DEFINE_GETTER_FUNCTIONS(ModuleObject, namespace_, ObjectOrNullValue,
                         IdentFilter)
-DEFINE_GETTER_FUNCTIONS(ModuleObject, status, StatusValue, IdentFilter)
+DEFINE_GETTER_FUNCTIONS(ModuleObject, status, StatusValue, GetModuleStatusName)
 DEFINE_GETTER_FUNCTIONS(ModuleObject, maybeEvaluationError, Value, IdentFilter)
 DEFINE_NATIVE_GETTER_FUNCTIONS(ModuleObject, requestedModules,
                                SpanToArrayFilter<ShellRequestedModuleWrapper>)
@@ -448,7 +511,8 @@ static const JSPropertySpec ShellModuleObjectWrapper_accessors[] = {
            ShellModuleObjectWrapper_asyncParentModulesGetter, 0),
     JS_PSG("pendingAsyncDependencies",
            ShellModuleObjectWrapper_maybePendingAsyncDependenciesGetter, 0),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 #undef DEFINE_GETTER_FUNCTIONS
 #undef DEFINE_NATIVE_GETTER_FUNCTIONS

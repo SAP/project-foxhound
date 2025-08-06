@@ -300,7 +300,7 @@ class SortedItemSelectList {
     document.l10n.setAttributes(this.menulist, messageId);
     this.menulist.setAttribute(
       "image",
-      "chrome://browser/skin/tabbrowser/tab-connecting.png"
+      "chrome://global/skin/icons/loading.svg"
     );
     this.menulist.disabled = true;
     this.button.disabled = true;
@@ -410,14 +410,9 @@ var gBrowserLanguagesDialog = {
     return Services.prefs.getBoolPref("intl.multilingual.downloadEnabled");
   },
 
-  recordTelemetry(method, extra = null) {
-    Services.telemetry.recordEvent(
-      "intl.ui.browserLanguage",
-      method,
-      "dialog",
-      this._telemetryId,
-      extra
-    );
+  recordTelemetry(method, extra = {}) {
+    extra.value = this._telemetryId;
+    Glean.intlUiBrowserLanguage[method + "Dialog"].record(extra);
   },
 
   async onLoad() {

@@ -283,7 +283,7 @@ static bool AssertParentProcessWithCallerLocationImpl(GlobalObject& aGlobal,
   JS::ColumnNumberOneOrigin colNo;
 
   NS_ENSURE_TRUE(
-      JS::DescribeScriptedCaller(cx, &scriptFilename, &lineNo, &colNo), false);
+      JS::DescribeScriptedCaller(&scriptFilename, cx, &lineNo, &colNo), false);
 
   NS_ENSURE_TRUE(scriptFilename.get(), false);
 
@@ -301,7 +301,7 @@ static void AssertParentProcessWithCallerLocation(GlobalObject& aGlobal) {
 
 // IOUtils implementation
 /* static */
-IOUtils::StateMutex IOUtils::sState{"IOUtils::sState"};
+MOZ_RUNINIT IOUtils::StateMutex IOUtils::sState{"IOUtils::sState"};
 
 /* static */
 template <typename Fn>

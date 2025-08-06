@@ -14,13 +14,16 @@ RUN apt-get update \
     ca-certificates \
     clang \
     clang-tools \
+    cmake \
     curl \
     g++-multilib \
     git \
     gyp \
+    libboost-dev \
+    libboost-dev:i386 \
     libclang-rt-dev \
-    libssl-dev \
-    libssl-dev:i386 \
+    libsqlite3-dev \
+    libsqlite3-dev:i386 \
     libxml2-utils \
     lib32z1-dev \
     linux-libc-dev:i386 \
@@ -31,6 +34,8 @@ RUN apt-get update \
     pkg-config \
     python-is-python3 \
     python3-requests \
+    python3-toml \
+    unzip \
     valgrind \
     zlib1g-dev \
  && rm -rf /var/lib/apt/lists/* \

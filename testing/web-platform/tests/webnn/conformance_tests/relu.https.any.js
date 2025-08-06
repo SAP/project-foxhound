@@ -13,14 +13,6 @@
 //
 // MLOperand relu(MLOperand input);
 
-
-const getReluPrecisionTolerance = (graphResources) => {
-  const toleranceValueDict = {float32: 0, float16: 0};
-  const expectedDataType =
-      getExpectedDataTypeOfSingleOutput(graphResources.expectedOutputs);
-  return {metricType: 'ULP', value: toleranceValueDict[expectedDataType]};
-};
-
 const reluTests = [
   {
     'name': 'relu float32 1D constant tensor',
@@ -37,7 +29,7 @@ const reluTests = [
             51.51447296142578,  -51.63370132446289,  -64.56800079345703,
             -5.093302249908447, 15.354103088378906,  90.03858947753906
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'},
+          'descriptor': {shape: [24], dataType: 'float32'},
           'constant': true
         }
       },
@@ -74,7 +66,31 @@ const reluTests = [
             15.354103088378906,
             90.03858947753906
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'relu float32 0D tensor',
+    'graph': {
+      'inputs': {
+        'reluInput': {
+          'data': [79.04724884033203],
+          'descriptor': {shape: [], dataType: 'float32'}
+        }
+      },
+      'operators': [{
+        'name': 'relu',
+        'arguments': [{'input': 'reluInput'}],
+        'outputs': 'reluOutput'
+      }],
+      'expectedOutputs': {
+        'reluOutput': {
+          'data': [
+            79.04724884033203,
+          ],
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       }
     }
@@ -94,7 +110,7 @@ const reluTests = [
             51.51447296142578,  -51.63370132446289,  -64.56800079345703,
             -5.093302249908447, 15.354103088378906,  90.03858947753906
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -130,7 +146,7 @@ const reluTests = [
             15.354103088378906,
             90.03858947753906
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -150,7 +166,7 @@ const reluTests = [
             51.51447296142578,  -51.63370132446289,  -64.56800079345703,
             -5.093302249908447, 15.354103088378906,  90.03858947753906
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -186,7 +202,7 @@ const reluTests = [
             15.354103088378906,
             90.03858947753906
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       }
     }
@@ -206,7 +222,7 @@ const reluTests = [
             51.51447296142578,  -51.63370132446289,  -64.56800079345703,
             -5.093302249908447, 15.354103088378906,  90.03858947753906
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -242,7 +258,7 @@ const reluTests = [
             15.354103088378906,
             90.03858947753906
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       }
     }
@@ -262,7 +278,7 @@ const reluTests = [
             51.51447296142578,  -51.63370132446289,  -64.56800079345703,
             -5.093302249908447, 15.354103088378906,  90.03858947753906
           ],
-          'descriptor': {'dimensions': [2, 2, 2, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -298,7 +314,7 @@ const reluTests = [
             15.354103088378906,
             90.03858947753906
           ],
-          'descriptor': {'dimensions': [2, 2, 2, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float32'}
         }
       }
     }
@@ -318,7 +334,7 @@ const reluTests = [
             51.51447296142578,  -51.63370132446289,  -64.56800079345703,
             -5.093302249908447, 15.354103088378906,  90.03858947753906
           ],
-          'descriptor': {'dimensions': [2, 1, 4, 1, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -354,7 +370,7 @@ const reluTests = [
             15.354103088378906,
             90.03858947753906
           ],
-          'descriptor': {'dimensions': [2, 1, 4, 1, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float32'}
         }
       }
     }
@@ -363,8 +379,7 @@ const reluTests = [
 
 if (navigator.ml) {
   reluTests.forEach((test) => {
-    webnn_conformance_test(
-        buildGraphAndCompute, getReluPrecisionTolerance, test);
+    webnn_conformance_test(buildAndExecuteGraph, getPrecisionTolerance, test);
   });
 } else {
   test(() => assert_implements(navigator.ml, 'missing navigator.ml'));

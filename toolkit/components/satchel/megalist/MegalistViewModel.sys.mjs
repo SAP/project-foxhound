@@ -7,7 +7,8 @@ import { DefaultAggregator } from "resource://gre/modules/megalist/aggregator/De
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
+  LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
 });
 
 /**
@@ -31,11 +32,13 @@ export class MegalistViewModel {
   #snapshots = [];
   #searchText = "";
   #messageToView;
+  #authExpirationTime;
 
   static #aggregator = new DefaultAggregator();
 
   constructor(messageToView) {
     this.#messageToView = messageToView;
+    this.#authExpirationTime = Number.NEGATIVE_INFINITY;
     MegalistViewModel.#aggregator.attachViewModel(this);
   }
 
@@ -90,11 +93,12 @@ export class MegalistViewModel {
       snapshot.href = snapshotData.href;
     }
 
-    if (snapshotData.stickers) {
-      for (const sticker of snapshotData.stickers()) {
-        snapshot.stickers ??= [];
-        snapshot.stickers.push(sticker);
-      }
+    if ("breached" in snapshotData) {
+      snapshot.breached = snapshotData.breached;
+    }
+
+    if ("vulnerable" in snapshotData) {
+      snapshot.vulnerable = snapshotData.vulnerable;
     }
 
     if ("toggleTooltip" in snapshotData) {
@@ -103,6 +107,10 @@ export class MegalistViewModel {
 
     if ("concealed" in snapshotData) {
       snapshot.concealed = snapshotData.concealed;
+    }
+
+    if ("record" in snapshotData) {
+      snapshot.guid = snapshotData.record.guid;
     }
 
     return snapshot;
@@ -144,6 +152,10 @@ export class MegalistViewModel {
     }
   }
 
+  setNotification(notification) {
+    this.#messageToView("SetNotification", notification);
+  }
+
   async receiveCommand({ commandId, snapshotId, value } = {}) {
     const dotIndex = commandId?.indexOf(".");
     const index = snapshotId;
@@ -163,20 +175,32 @@ export class MegalistViewModel {
     if (snapshot) {
       const commands = snapshot.commands;
       commandId = commandId ?? commands[0]?.id;
-      const mustVerify = commands.find(c => c.id == commandId)?.verify;
-      if (!mustVerify || (await this.#verifyUser())) {
-        // TODO:Enter the prompt message and pref for #verifyUser()
+      const command = snapshot.commands.find(c => c.id == commandId);
+      if (!command?.verify || (await this.#promptForReauth(command))) {
         await snapshot[`execute${commandId}`]?.(value);
       }
     }
   }
 
-  async #verifyUser(promptMessage, prefName) {
-    if (!this.getOSAuthEnabled(prefName)) {
-      promptMessage = false;
+  async #promptForReauth(command) {
+    const { isAuthorized } = await lazy.LoginHelper.requestReauth(
+      lazy.BrowserWindowTracker.getTopWindow().gBrowser,
+      this.getOSAuthEnabled(),
+      this.#authExpirationTime,
+      command.OSAuthPromptMessage,
+      command.OSAuthCaptionMessage
+    );
+
+    if (isAuthorized) {
+      const authTimeoutMs = MegalistViewModel.#aggregator.callFunction(
+        "LoginDataSource",
+        "getAuthTimeoutMs"
+      );
+      this.#authExpirationTime = Date.now() + authTimeoutMs;
     }
-    let result = await lazy.OSKeyStore.ensureLoggedIn(promptMessage);
-    return result.authenticated;
+
+    this.#messageToView("ReauthResponse", isAuthorized);
+    return isAuthorized;
   }
 
   /**

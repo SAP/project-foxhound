@@ -220,6 +220,8 @@ class Http3Session final : public nsAHttpTransaction, public nsAHttpConnection {
 
   void CloseWebTransportConn();
 
+  void SetServer(const nsACString& aServer) { mServer.Assign(aServer); }
+
  private:
   ~Http3Session();
 
@@ -253,7 +255,9 @@ class Http3Session final : public nsAHttpTransaction, public nsAHttpConnection {
   void CallCertVerification(Maybe<nsCString> aEchPublicName);
   void SetSecInfo();
 
+#ifndef ANDROID
   void EchOutcomeTelemetry();
+#endif
 
   void StreamReadyToWrite(Http3StreamBase* aStream);
   void MaybeResumeSend();
@@ -261,6 +265,7 @@ class Http3Session final : public nsAHttpTransaction, public nsAHttpConnection {
   void CloseConnectionTelemetry(CloseError& aError, bool aClosing);
   void Finish0Rtt(bool aRestart);
 
+#ifndef ANDROID
   enum ZeroRttOutcome {
     NOT_USED,
     USED_SUCCEEDED,
@@ -269,6 +274,7 @@ class Http3Session final : public nsAHttpTransaction, public nsAHttpConnection {
     USED_CONN_CLOSED_BY_NECKO
   };
   void ZeroRttTelemetry(ZeroRttOutcome aOutcome);
+#endif
 
   RefPtr<NeqoHttp3Conn> mHttp3Connection;
   RefPtr<nsAHttpConnection> mConnection;
@@ -316,9 +322,6 @@ class Http3Session final : public nsAHttpTransaction, public nsAHttpConnection {
 
   RefPtr<HttpConnectionUDP> mUdpConn;
 
-  // The underlying socket transport object is needed to propogate some events
-  RefPtr<nsISocketTransport> mSocketTransport;
-
   nsCOMPtr<nsITimer> mTimer;
 
   nsTHashMap<nsCStringHashKey, bool> mJoinConnectionCache;
@@ -349,10 +352,13 @@ class Http3Session final : public nsAHttpTransaction, public nsAHttpConnection {
 
   RefPtr<nsHttpConnectionInfo> mConnInfo;
 
-  bool mThroughCaptivePortal = false;
   int64_t mTotalBytesRead = 0;     // total data read
   int64_t mTotalBytesWritten = 0;  // total data read
   PRIntervalTime mLastWriteTime = 0;
+  PRIntervalTime mLastReadTime = 0;
+  uint64_t mTotelReadInterval = 0;
+  uint32_t mTotelReadIntervalCount = 0;
+  nsCString mServer;
 
   // Records whether we sent an ECH Extension and whether it was a GREASE Xtn
   EchExtensionStatus mEchExtensionStatus = EchExtensionStatus::kNotPresent;

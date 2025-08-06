@@ -18,7 +18,6 @@
 
 #include "wasm/WasmGenerator.h"
 
-#include "mozilla/CheckedInt.h"
 #include "mozilla/EnumeratedRange.h"
 #include "mozilla/SHA1.h"
 
@@ -43,7 +42,7 @@ using namespace js;
 using namespace js::jit;
 using namespace js::wasm;
 
-using mozilla::CheckedInt;
+using mozilla::EnumeratedArray;
 using mozilla::MakeEnumeratedRange;
 
 bool CompiledCode::swap(MacroAssembler& masm) {
@@ -58,6 +57,7 @@ bool CompiledCode::swap(MacroAssembler& masm) {
   symbolicAccesses.swap(masm.symbolicAccesses());
   tryNotes.swap(masm.tryNotes());
   codeRangeUnwindInfos.swap(masm.codeRangeUnwindInfos());
+  callRefMetricsPatches.swap(masm.callRefMetricsPatches());
   codeLabels.swap(masm.codeLabels());
   return true;
 }
@@ -74,7 +74,7 @@ ModuleGenerator::MacroAssemblerScope::MacroAssemblerScope(LifoAlloc& lifo)
 ModuleGenerator::ModuleGenerator(const CodeMetadata& codeMeta,
                                  const CompilerEnvironment& compilerEnv,
                                  CompileState compileState,
-                                 const Atomic<bool>* cancelled,
+                                 const mozilla::Atomic<bool>* cancelled,
                                  UniqueChars* error,
                                  UniqueCharsVector* warnings)
     : compileArgs_(codeMeta.compileArgs.get()),
@@ -87,12 +87,14 @@ ModuleGenerator::ModuleGenerator(const CodeMetadata& codeMeta,
       featureUsage_(FeatureUsage::None),
       codeBlock_(nullptr),
       linkData_(nullptr),
-      lifo_(GENERATOR_LIFO_DEFAULT_CHUNK_SIZE),
+      lifo_(GENERATOR_LIFO_DEFAULT_CHUNK_SIZE, js::MallocArena),
       masm_(nullptr),
       debugStubCodeOffset_(0),
       requestTierUpStubCodeOffset_(0),
+      updateCallRefMetricsStubCodeOffset_(0),
       lastPatchedCallSite_(0),
       startOfUnpatchedCallsites_(0),
+      numCallRefMetrics_(0),
       parallel_(false),
       outstanding_(0),
       currentTask_(nullptr),
@@ -212,7 +214,7 @@ static bool InRange(uint32_t caller, uint32_t callee) {
 using OffsetMap =
     HashMap<uint32_t, uint32_t, DefaultHasher<uint32_t>, SystemAllocPolicy>;
 using TrapMaybeOffsetArray =
-    EnumeratedArray<Trap, Maybe<uint32_t>, size_t(Trap::Limit)>;
+    EnumeratedArray<Trap, mozilla::Maybe<uint32_t>, size_t(Trap::Limit)>;
 
 bool ModuleGenerator::linkCallSites() {
   AutoCreatedBy acb(*masm_, "linkCallSites");
@@ -328,6 +330,10 @@ void ModuleGenerator::noteCodeRange(uint32_t codeRangeIndex,
       MOZ_ASSERT(!requestTierUpStubCodeOffset_);
       requestTierUpStubCodeOffset_ = codeRange.begin();
       break;
+    case CodeRange::UpdateCallRefMetricsStub:
+      MOZ_ASSERT(!updateCallRefMetricsStubCodeOffset_);
+      updateCallRefMetricsStubCodeOffset_ = codeRange.begin();
+      break;
     case CodeRange::TrapExit:
       MOZ_ASSERT(!linkData_->trapOffset);
       linkData_->trapOffset = codeRange.begin();
@@ -400,16 +406,38 @@ bool ModuleGenerator::linkCompiledCode(CompiledCode& code) {
   featureUsage_ |= code.featureUsage;
 
   if (compilingTier1() && mode() == CompileMode::LazyTiering) {
+    // All the CallRefMetrics from this batch of functions will start indexing
+    // at our current length of metrics.
+    uint32_t startOfCallRefMetrics = numCallRefMetrics_;
+
     for (const FuncCompileOutput& func : code.funcs) {
       // We only compile defined functions, not imported functions
       MOZ_ASSERT(func.index >= codeMeta_->numFuncImports);
       uint32_t funcDefIndex = func.index - codeMeta_->numFuncImports;
+
       // This function should only be compiled once
       MOZ_ASSERT(funcDefFeatureUsages_[funcDefIndex] == FeatureUsage::None);
+
+      // Track the feature usage for this function
       funcDefFeatureUsages_[funcDefIndex] = func.featureUsage;
+
+      // Record the range of CallRefMetrics this function owns. The metrics
+      // will be processed below when we patch the offsets into code.
+      MOZ_ASSERT(func.callRefMetricsRange.begin +
+                     func.callRefMetricsRange.length <=
+                 code.callRefMetricsPatches.length());
+      funcDefCallRefMetrics_[funcDefIndex] = func.callRefMetricsRange;
+      funcDefCallRefMetrics_[funcDefIndex].offsetBy(startOfCallRefMetrics);
     }
   } else {
-    MOZ_ASSERT(funcDefFeatureUsages_.length() == 0);
+    MOZ_ASSERT(funcDefFeatureUsages_.empty());
+    MOZ_ASSERT(funcDefCallRefMetrics_.empty());
+    MOZ_ASSERT(code.callRefMetricsPatches.empty());
+#ifdef DEBUG
+    for (const FuncCompileOutput& func : code.funcs) {
+      MOZ_ASSERT(func.callRefMetricsRange.length == 0);
+    }
+#endif
   }
 
   // Before merging in new code, if calls in a prior code range might go out of
@@ -468,6 +496,29 @@ bool ModuleGenerator::linkCompiledCode(CompiledCode& code) {
     if (!linkData_->symbolicLinks[access.target].append(patchAt)) {
       return false;
     }
+  }
+
+  for (const CallRefMetricsPatch& patch : code.callRefMetricsPatches) {
+    if (!patch.hasOffsetOfOffsetPatch()) {
+      numCallRefMetrics_ += 1;
+      continue;
+    }
+
+    CodeOffset offset = CodeOffset(patch.offsetOfOffsetPatch());
+    offset.offsetBy(offsetInModule);
+
+    size_t callRefIndex = numCallRefMetrics_;
+    numCallRefMetrics_ += 1;
+    size_t callRefMetricOffset = callRefIndex * sizeof(CallRefMetrics);
+
+    // Compute the offset of the metrics, and patch it. This may overflow,
+    // in which case we report an OOM. We might need to do something smarter
+    // here.
+    if (callRefMetricOffset > (INT32_MAX / sizeof(CallRefMetrics))) {
+      return false;
+    }
+
+    masm_->patchMove32(offset, Imm32(int32_t(callRefMetricOffset)));
   }
 
   for (const CodeLabel& codeLabel : code.codeLabels) {
@@ -579,12 +630,16 @@ bool ModuleGenerator::initTasks() {
 
   MOZ_ASSERT(GetHelperThreadCount() > 1);
 
-  uint32_t numTasks;
-  if (CanUseExtraThreads() && GetHelperThreadCPUCount() > 1) {
+  MOZ_ASSERT(!parallel_);
+  uint32_t numTasks = 1;
+  if (  // "obvious" prerequisites for doing off-thread compilation
+      CanUseExtraThreads() && GetHelperThreadCPUCount() > 1 &&
+      // For lazy tier 2 compilations, the current thread -- running a
+      // WasmPartialTier2CompileTask -- is already dedicated to compiling the
+      // to-be-tiered-up function.  So don't create a new task for it.
+      compileState_ != CompileState::LazyTier2) {
     parallel_ = true;
     numTasks = 2 * GetMaxWasmCompilationThreads();
-  } else {
-    numTasks = 1;
   }
 
   if (!tasks_.initCapacity(numTasks)) {
@@ -692,7 +747,7 @@ bool ModuleGenerator::compileFuncDef(uint32_t funcIndex,
   if (compilingTier1()) {
     static_assert(MaxFunctionBytes < UINT32_MAX);
     uint32_t bodyLength = (uint32_t)(end - begin);
-    funcDefRanges_.infallibleAppend(FuncDefRange(lineOrBytecode, bodyLength));
+    funcDefRanges_.infallibleAppend(BytecodeRange(lineOrBytecode, bodyLength));
   }
 
   uint32_t threshold;
@@ -804,12 +859,12 @@ static void CheckCodeBlock(const CodeBlock& codeBlock) {
 
 #  if (defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) ||   \
        defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_ARM) || \
-       defined(JS_CODEGEN_LOONG64))
+       defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64))
   // Check that each trapsite is associated with a plausible instruction.  The
   // required instruction kind depends on the trapsite kind.
   //
-  // NOTE: currently only enabled on x86_{32,64} and arm{32,64}.  Ideally it
-  // should be extended to riscv, loongson, mips.
+  // NOTE: currently enabled on x86_{32,64}, arm{32,64}, loongson64 and mips64.
+  // Ideally it should be extended to riscv64 too.
   //
   for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
     const TrapSiteVector& trapSites = codeBlock.trapSites[trap];
@@ -918,13 +973,13 @@ UniqueCodeBlock ModuleGenerator::finishCodeBlock(UniqueLinkData* linkData) {
     // by Code::lazyFuncSegments.
     MOZ_ASSERT(mode() == CompileMode::LazyTiering);
 
-    // Try to allocate from Code::lazyFuncSegments.
+    // Try to allocate from Code::lazyFuncSegments. We do not allow a last-ditch
+    // GC here as we may be running in OOL-code that is not ready for a GC.
     uint8_t* codeStart = nullptr;
     uint32_t codeLength = 0;
-    uint32_t metadataBias = 0;
-    codeBlock_->segment = CodeSegment::createFromMasmWithBumpAlloc(
-        *masm_, *linkData_, partialTieringCode_, &codeStart, &codeLength,
-        &metadataBias);
+    codeBlock_->segment = partialTieringCode_->createFuncCodeSegmentFromPool(
+        *masm_, *linkData_, /* allowLastDitchGC = */ false, &codeStart,
+        &codeLength);
     if (!codeBlock_->segment) {
       warnf("failed to allocate executable memory for module");
       return nullptr;
@@ -932,11 +987,11 @@ UniqueCodeBlock ModuleGenerator::finishCodeBlock(UniqueLinkData* linkData) {
     codeBlock_->codeBase = codeStart;
     codeBlock_->codeLength = codeLength;
 
-    // In `codeBlock_`s metadata, we have a bunch of offsets which are
-    // relative to the start of the segment.  But we're placing the code at
-    // `metadataBias` forwards from the start of the segment, so we have to
-    // swizzle the metadata offsets accordingly.
-    codeBlock_->offsetMetadataBy(metadataBias);
+    // All metadata in code block is relative to the start of the code segment
+    // we were placed in, so we must adjust offsets for where we were
+    // allocated.
+    uint32_t codeBlockOffset = codeStart - codeBlock_->segment->base();
+    codeBlock_->offsetMetadataBy(codeBlockOffset);
   } else {
     // Create a new CodeSegment for the code and use that.
     codeBlock_->segment = CodeSegment::createFromMasm(
@@ -959,7 +1014,7 @@ UniqueCodeBlock ModuleGenerator::finishCodeBlock(UniqueLinkData* linkData) {
 
   // Free the macro assembler scope, and reset our masm pointer
   masm_ = nullptr;
-  masmScope_ = Nothing();
+  masmScope_ = mozilla::Nothing();
 
   *linkData = std::move(linkData_);
   return std::move(codeBlock_);
@@ -978,17 +1033,14 @@ bool ModuleGenerator::prepareTier1() {
   // Initialize function definition feature usages (only used for lazy tiering
   // and inlining right now).
   if (mode() == CompileMode::LazyTiering &&
-      !funcDefFeatureUsages_.resize(codeMeta_->numFuncDefs())) {
+      (!funcDefFeatureUsages_.resize(codeMeta_->numFuncDefs()) ||
+       !funcDefCallRefMetrics_.resize(codeMeta_->numFuncDefs()))) {
     return false;
   }
 
   // Initialize function import metadata
   if (!funcImports_.resize(codeMeta_->numFuncImports)) {
     return false;
-  }
-
-  for (size_t i = 0; i < codeMeta_->numFuncImports; i++) {
-    funcImports_[i] = FuncImport(codeMeta_->offsetOfFuncImportInstanceData(i));
   }
 
   // The shared stubs code will contains function definitions for each imported
@@ -1037,6 +1089,15 @@ bool ModuleGenerator::prepareTier1() {
 }
 
 bool ModuleGenerator::startCompleteTier() {
+#ifdef JS_JITSPEW
+  JS_LOG(wasmPerf, mozilla::LogLevel::Info,
+         "CM=..%06lx  MG::startCompleteTier (%s, %u imports, %u functions)",
+         (unsigned long)(uintptr_t(codeMeta_) & 0xFFFFFFL),
+         tier() == Tier::Baseline ? "BL" : "OPT",
+         (uint32_t)codeMeta_->numFuncImports,
+         (uint32_t)codeMeta_->numFuncs() - (uint32_t)codeMeta_->numFuncImports);
+#endif
+
   if (!startCodeBlock(CodeBlock::kindFromTier(tier()))) {
     return false;
   }
@@ -1058,7 +1119,7 @@ bool ModuleGenerator::startCompleteTier() {
   // shrinkStorageToFit calls at the end will trim off unneeded capacity.
 
   size_t codeSectionSize =
-      codeMeta_->codeSection ? codeMeta_->codeSection->size : 0;
+      codeMeta_->codeSectionRange ? codeMeta_->codeSectionRange->size : 0;
 
   size_t estimatedCodeSize =
       size_t(1.2 * EstimateCompiledCodeSize(tier(), codeSectionSize));
@@ -1109,6 +1170,22 @@ bool ModuleGenerator::startCompleteTier() {
 }
 
 bool ModuleGenerator::startPartialTier(uint32_t funcIndex) {
+#ifdef JS_JITSPEW
+  UTF8Bytes name;
+  if (codeMeta_->namePayload.get()) {
+    if (!codeMeta_->getFuncNameForWasm(NameContext::Standalone, funcIndex,
+                                       &name) ||
+        !name.append("\0", 1)) {
+      return false;
+    }
+  }
+  uint32_t bytecodeLength = codeMeta_->funcDefRange(funcIndex).size;
+  JS_LOG(wasmPerf, mozilla::LogLevel::Info,
+         "CM=..%06lx  MG::startPartialTier  fI=%-5u  sz=%-5u  %s",
+         (unsigned long)(uintptr_t(codeMeta_) & 0xFFFFFFL), funcIndex,
+         bytecodeLength, name.length() > 0 ? name.begin() : "(unknown-name)");
+#endif
+
   if (!startCodeBlock(CodeBlock::kindFromTier(tier()))) {
     return false;
   }
@@ -1163,7 +1240,7 @@ UniqueCodeBlock ModuleGenerator::finishTier(UniqueLinkData* linkData) {
 // we will need both codeMeta_ (and maybe codeMetaForAsmJS_) and moduleMeta_.
 SharedModule ModuleGenerator::finishModule(
     const ShareableBytes& bytecode, MutableModuleMetadata moduleMeta,
-    JS::OptimizedEncodingListener* maybeTier2Listener) {
+    JS::OptimizedEncodingListener* maybeCompleteTier2Listener) {
   MOZ_ASSERT(compilingTier1());
 
   UniqueLinkData tier1LinkData;
@@ -1229,14 +1306,39 @@ SharedModule ModuleGenerator::finishModule(
 
   // Transfer the function definition feature usages
   codeMeta->funcDefFeatureUsages = std::move(funcDefFeatureUsages_);
+  codeMeta->funcDefCallRefs = std::move(funcDefCallRefMetrics_);
+  MOZ_ASSERT_IF(mode() != CompileMode::LazyTiering, numCallRefMetrics_ == 0);
+  codeMeta->numCallRefMetrics = numCallRefMetrics_;
+
+  if (mode() == CompileMode::LazyTiering) {
+    codeMeta->callRefHints = MutableCallRefHints(
+        js_pod_calloc<MutableCallRefHint>(numCallRefMetrics_));
+    if (!codeMeta->callRefHints) {
+      return nullptr;
+    }
+  }
 
   // We keep the bytecode alive for debuggable modules, or if we're doing
   // partial tiering.
-  if (compilerEnv_->debugEnabled() ||
-      compilerEnv_->mode() == CompileMode::LazyTiering) {
-    codeMeta->bytecode = &bytecode;
-  } else {
-    codeMeta->bytecode = nullptr;
+  if (debugEnabled()) {
+    MOZ_ASSERT(mode() != CompileMode::LazyTiering);
+    codeMeta->debugBytecode = &bytecode;
+  } else if (mode() == CompileMode::LazyTiering) {
+    MutableBytes codeSectionBytecode = js_new<ShareableBytes>();
+    if (!codeSectionBytecode) {
+      return nullptr;
+    }
+
+    if (codeMeta->codeSectionRange) {
+      const uint8_t* codeSectionStart =
+          bytecode.begin() + codeMeta->codeSectionRange->start;
+      if (!codeSectionBytecode->append(codeSectionStart,
+                                       codeMeta->codeSectionRange->size)) {
+        return nullptr;
+      }
+    }
+
+    codeMeta->codeSectionBytecode = codeSectionBytecode;
   }
 
   // Store a reference to the name section on the code metadata
@@ -1246,7 +1348,7 @@ SharedModule ModuleGenerator::finishModule(
   }
 
   // Initialize the debug hash for display urls, if we need to
-  if (compilerEnv_->debugEnabled()) {
+  if (debugEnabled()) {
     codeMeta->debugEnabled = true;
 
     static_assert(sizeof(ModuleHash) <= sizeof(mozilla::SHA1Sum::Hash),
@@ -1256,6 +1358,26 @@ SharedModule ModuleGenerator::finishModule(
     sha1Sum.update(bytecode.begin(), bytecode.length());
     sha1Sum.finish(hash);
     memcpy(codeMeta->debugHash, hash, sizeof(ModuleHash));
+  }
+
+  // Update statistics in the CodeMeta.
+  {
+    auto guard = codeMeta->stats.writeLock();
+    guard->completeNumFuncs = codeMeta->numFuncDefs();
+    guard->completeBCSize = 0;
+    for (const BytecodeRange& range : codeMeta->funcDefRanges) {
+      guard->completeBCSize += range.size;
+    }
+    // Now that we know the complete bytecode size for the module, we can set
+    // the inlining budget for tiered-up compilation, if appropriate.  See
+    // "[SMDOC] Per-function and per-module inlining limits" (WasmHeuristics.h)
+    guard->inliningBudget =
+        mode() == CompileMode::LazyTiering
+            ? int64_t(guard->completeBCSize) * PerModuleMaxInliningRatio
+            : 0;
+    // But don't be overly stingy for tiny modules.  Function-level inlining
+    // limits will still protect us from excessive inlining.
+    guard->inliningBudget = std::max<int64_t>(guard->inliningBudget, 1000);
   }
 
   MutableCode code = js_new<Code>(mode(), *codeMeta_, codeMetaForAsmJS_);
@@ -1269,6 +1391,7 @@ SharedModule ModuleGenerator::finishModule(
   // Copy in a couple of offsets.
   code->setDebugStubOffset(debugStubCodeOffset_);
   code->setRequestTierUpStubOffset(requestTierUpStubCodeOffset_);
+  code->setUpdateCallRefMetricsStubOffset(updateCallRefMetricsStubCodeOffset_);
 
   // All the components are finished, so create the complete Module and start
   // tier-2 compilation if requested.
@@ -1281,7 +1404,8 @@ SharedModule ModuleGenerator::finishModule(
   // If we can serialize (not asm.js), are not planning on serializing already
   // and are testing serialization, then do a roundtrip through serialization
   // to test it out.
-  if (!isAsmJS() && compileArgs_->features.testSerialization) {
+  if (!isAsmJS() && compileArgs_->features.testSerialization &&
+      module->canSerialize()) {
     MOZ_RELEASE_ASSERT(mode() == CompileMode::Once &&
                        tier() == Tier::Serialized);
 
@@ -1299,22 +1423,30 @@ SharedModule ModuleGenerator::finishModule(
 
     // Perform storeOptimizedEncoding here instead of below so we don't have to
     // re-serialize the module.
-    if (maybeTier2Listener && codeMeta_->features().builtinModules.hasNone()) {
-      maybeTier2Listener->storeOptimizedEncoding(serializedBytes.begin(),
-                                                 serializedBytes.length());
-      maybeTier2Listener = nullptr;
+    if (maybeCompleteTier2Listener && module->canSerialize()) {
+      maybeCompleteTier2Listener->storeOptimizedEncoding(
+          serializedBytes.begin(), serializedBytes.length());
+      maybeCompleteTier2Listener = nullptr;
     }
   }
 
   if (compileState_ == CompileState::EagerTier1) {
-    module->startTier2(bytecode, maybeTier2Listener);
-  } else if (tier() == Tier::Serialized && maybeTier2Listener &&
-             codeMeta_->features().builtinModules.hasNone()) {
+    module->startTier2(bytecode, maybeCompleteTier2Listener);
+  } else if (tier() == Tier::Serialized && maybeCompleteTier2Listener &&
+             module->canSerialize()) {
     Bytes bytes;
     if (module->serialize(&bytes)) {
-      maybeTier2Listener->storeOptimizedEncoding(bytes.begin(), bytes.length());
+      maybeCompleteTier2Listener->storeOptimizedEncoding(bytes.begin(),
+                                                         bytes.length());
     }
   }
+
+#ifdef JS_JITSPEW
+  JS_LOG(wasmPerf, mozilla::LogLevel::Info,
+         "CM=..%06lx  MG::finishModule      (%s, complete tier)",
+         (unsigned long)(uintptr_t(codeMeta_) & 0xFFFFFFL),
+         tier() == Tier::Baseline ? "BL" : "OPT");
+#endif
 
   return module;
 }
@@ -1396,6 +1528,8 @@ size_t CompiledCode::sizeOfExcludingThis(
          callSiteTargets.sizeOfExcludingThis(mallocSizeOf) + trapSitesSize +
          symbolicAccesses.sizeOfExcludingThis(mallocSizeOf) +
          tryNotes.sizeOfExcludingThis(mallocSizeOf) +
+         codeRangeUnwindInfos.sizeOfExcludingThis(mallocSizeOf) +
+         callRefMetricsPatches.sizeOfExcludingThis(mallocSizeOf) +
          codeLabels.sizeOfExcludingThis(mallocSizeOf);
 }
 

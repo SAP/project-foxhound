@@ -18,22 +18,24 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/functional/bind_front.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
+#include "api/candidate.h"
 #include "api/dtls_transport_interface.h"
 #include "api/environment/environment_factory.h"
 #include "api/function_view.h"
 #include "api/media_types.h"
-#include "api/network_state_predictor.h"
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtp_headers.h"
+#include "api/transport/bandwidth_usage.h"
 #include "api/transport/goog_cc_factory.h"
 #include "api/transport/network_control.h"
 #include "api/transport/network_types.h"
@@ -134,7 +136,7 @@ int64_t WrappingDifference(uint32_t later, uint32_t earlier, int64_t modulus) {
 
 // This is much more reliable for outgoing streams than for incoming streams.
 template <typename RtpPacketContainer>
-absl::optional<uint32_t> EstimateRtpClockFrequency(
+std::optional<uint32_t> EstimateRtpClockFrequency(
     const RtpPacketContainer& packets,
     int64_t end_time_us) {
   RTC_CHECK(packets.size() >= 2);
@@ -155,7 +157,7 @@ absl::optional<uint32_t> EstimateRtpClockFrequency(
         << "Failed to estimate RTP clock frequency: Stream too short. ("
         << packets.size() << " packets, "
         << last_log_timestamp - first_log_timestamp << " us)";
-    return absl::nullopt;
+    return std::nullopt;
   }
   double duration =
       static_cast<double>(last_log_timestamp - first_log_timestamp) /
@@ -172,10 +174,10 @@ absl::optional<uint32_t> EstimateRtpClockFrequency(
                       << " not close to any standard RTP frequency."
                       << " Last timestamp " << last_rtp_timestamp
                       << " first timestamp " << first_rtp_timestamp;
-  return absl::nullopt;
+  return std::nullopt;
 }
 
-absl::optional<double> NetworkDelayDiff_AbsSendTime(
+std::optional<double> NetworkDelayDiff_AbsSendTime(
     const LoggedRtpPacketIncoming& old_packet,
     const LoggedRtpPacketIncoming& new_packet) {
   if (old_packet.rtp.header.extension.hasAbsoluteSendTime &&
@@ -189,11 +191,11 @@ absl::optional<double> NetworkDelayDiff_AbsSendTime(
         recv_time_diff - AbsSendTimeToMicroseconds(send_time_diff);
     return delay_change_us / 1000;
   } else {
-    return absl::nullopt;
+    return std::nullopt;
   }
 }
 
-absl::optional<double> NetworkDelayDiff_CaptureTime(
+std::optional<double> NetworkDelayDiff_CaptureTime(
     const LoggedRtpPacketIncoming& old_packet,
     const LoggedRtpPacketIncoming& new_packet,
     const double sample_rate) {
@@ -714,7 +716,7 @@ void EventLogAnalyzer::CreatePacketGraph(PacketDirection direction,
     TimeSeries time_series(GetStreamName(parsed_log_, direction, stream.ssrc),
                            LineStyle::kBar);
     auto GetPacketSize = [](const LoggedRtpPacket& packet) {
-      return absl::optional<float>(packet.total_length);
+      return std::optional<float>(packet.total_length);
     };
     auto ToCallTime = [this](const LoggedRtpPacket& packet) {
       return this->config_.GetCallTimeSec(packet.timestamp);
@@ -900,7 +902,7 @@ void EventLogAnalyzer::CreatePlayoutGraph(Plot* plot) {
     uint32_t ssrc = playout_stream.first;
     if (!MatchingSsrc(ssrc, desired_ssrc_))
       continue;
-    absl::optional<int64_t> last_playout_ms;
+    std::optional<int64_t> last_playout_ms;
     TimeSeries time_series(SsrcToString(ssrc), LineStyle::kBar);
     for (const auto& playout_event : playout_stream.second) {
       float x = config_.GetCallTimeSec(playout_event.log_time());
@@ -1082,7 +1084,7 @@ void EventLogAnalyzer::CreateIncomingDelayGraph(Plot* plot) {
       continue;
     }
     int64_t segment_end_us = parsed_log_.first_log_segment().stop_time_us();
-    absl::optional<uint32_t> estimated_frequency =
+    std::optional<uint32_t> estimated_frequency =
         EstimateRtpClockFrequency(packets, segment_end_us);
     if (!estimated_frequency)
       continue;
@@ -1460,7 +1462,7 @@ void EventLogAnalyzer::CreateBitrateAllocationGraph(PacketDirection direction,
   std::map<LayerDescription, TimeSeries> time_series;
   const auto& xr_list = parsed_log_.extended_reports(direction);
   for (const auto& rtcp : xr_list) {
-    const absl::optional<rtcp::TargetBitrate>& target_bitrate =
+    const std::optional<rtcp::TargetBitrate>& target_bitrate =
         rtcp.xr.target_bitrate();
     if (!target_bitrate.has_value())
       continue;
@@ -1537,6 +1539,9 @@ void EventLogAnalyzer::CreateGoogCcSimulationGraph(Plot* plot) {
 void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) {
   TimeSeries loss_rate_series("Loss rate (from packet feedback)",
                               LineStyle::kLine, PointStyle::kHighlight);
+  TimeSeries reordered_packets_between_feedback(
+      "Ratio of reordered packets from last feedback", LineStyle::kLine,
+      PointStyle::kHighlight);
   TimeSeries average_loss_rate_series("Average loss rate last 5s",
                                       LineStyle::kLine, PointStyle::kHighlight);
   TimeSeries missing_feedback_series("Missing feedback", LineStyle::kNone,
@@ -1555,27 +1560,49 @@ void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) {
         unwrapper.Unwrap(parsed_log_.transport_feedbacks(kIncomingPacket)[0]
                              .transport_feedback.GetBaseSequence());
   }
+  std::unordered_set<int64_t> previous_feedback_lost_sequence_numbers;
+  size_t previous_feedback_size = 0;
   for (auto& feedback : parsed_log_.transport_feedbacks(kIncomingPacket)) {
     const rtcp::TransportFeedback& transport_feedback =
         feedback.transport_feedback;
-    size_t base_seq_num =
+    int64_t base_seq_num =
         unwrapper.Unwrap(transport_feedback.GetBaseSequence());
     // Collect packets that do not have feedback, which are from the last acked
     // packet, to the current base packet.
-    for (size_t seq_num = last_acked; seq_num < base_seq_num; ++seq_num) {
+    for (int64_t seq_num = last_acked; seq_num < base_seq_num; ++seq_num) {
       missing_feedback_series.points.emplace_back(
           config_.GetCallTimeSec(feedback.timestamp),
           100 + seq_num - last_acked);
     }
     last_acked = base_seq_num + transport_feedback.GetPacketStatusCount();
 
+    int num_reordered_packets = 0;
+    std::unordered_set<int64_t> lost_sequence_numbers;
+    transport_feedback.ForAllPackets(
+        [&](uint16_t sequence_number, TimeDelta receive_time_delta) {
+          int64_t unwrapped_seq = unwrapper.Unwrap(sequence_number);
+          if (receive_time_delta.IsInfinite()) {
+            lost_sequence_numbers.insert(unwrapped_seq);
+          } else {
+            num_reordered_packets +=
+                previous_feedback_lost_sequence_numbers.count(unwrapped_seq);
+          }
+        });
+
     // Compute loss rate from the transport feedback.
-    auto loss_rate =
-        static_cast<float>((transport_feedback.GetPacketStatusCount() -
-                            transport_feedback.GetReceivedPackets().size()) *
-                           100.0 / transport_feedback.GetPacketStatusCount());
+    float loss_rate =
+        static_cast<float>(lost_sequence_numbers.size() * 100.0 /
+                           transport_feedback.GetPacketStatusCount());
+
     loss_rate_series.points.emplace_back(
         config_.GetCallTimeSec(feedback.timestamp), loss_rate);
+    float reordered_rate =
+        previous_feedback_size == 0
+            ? 0
+            : static_cast<float>(num_reordered_packets * 100.0 /
+                                 previous_feedback_size);
+    reordered_packets_between_feedback.points.emplace_back(
+        config_.GetCallTimeSec(feedback.timestamp), reordered_rate);
 
     // Compute loss rate in a window of kObservationWindowSize.
     if (window_summary.num_packets == 0) {
@@ -1583,8 +1610,7 @@ void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) {
     }
     window_summary.num_packets += transport_feedback.GetPacketStatusCount();
     window_summary.num_lost_packets +=
-        transport_feedback.GetPacketStatusCount() -
-        transport_feedback.GetReceivedPackets().size();
+        lost_sequence_numbers.size() - num_reordered_packets;
 
     const Timestamp last_received_time = feedback.log_time();
     const TimeDelta observation_duration =
@@ -1615,9 +1641,13 @@ void EventLogAnalyzer::CreateOutgoingTWCCLossRateGraph(Plot* plot) {
       }
       window_summary = PacketLossSummary();
     }
+    std::swap(previous_feedback_lost_sequence_numbers, lost_sequence_numbers);
+    previous_feedback_size = transport_feedback.GetPacketStatusCount();
   }
   // Add the data set to the plot.
   plot->AppendTimeSeriesIfNotEmpty(std::move(loss_rate_series));
+  plot->AppendTimeSeriesIfNotEmpty(
+      std::move(reordered_packets_between_feedback));
   plot->AppendTimeSeriesIfNotEmpty(std::move(average_loss_rate_series));
   plot->AppendTimeSeriesIfNotEmpty(std::move(missing_feedback_series));
 
@@ -1765,20 +1795,20 @@ void EventLogAnalyzer::CreateSendSideBweSimulationGraph(Plot* plot) {
             raw_acked_bitrate.Update(packet.sent_packet.size.bytes(),
                                      packet.receive_time.ms());
           }
-          absl::optional<uint32_t> raw_bitrate_bps =
+          std::optional<uint32_t> raw_bitrate_bps =
               raw_acked_bitrate.Rate(feedback.back().receive_time.ms());
           float x = config_.GetCallTimeSec(clock.CurrentTime());
           if (raw_bitrate_bps) {
             float y = raw_bitrate_bps.value() / 1000;
             acked_time_series.points.emplace_back(x, y);
           }
-          absl::optional<DataRate> robust_estimate =
+          std::optional<DataRate> robust_estimate =
               robust_throughput_estimator->bitrate();
           if (robust_estimate) {
             float y = robust_estimate.value().kbps();
             robust_time_series.points.emplace_back(x, y);
           }
-          absl::optional<DataRate> acked_estimate =
+          std::optional<DataRate> acked_estimate =
               acknowledged_bitrate_estimator->bitrate();
           if (acked_estimate) {
             float y = acked_estimate.value().kbps();
@@ -1875,7 +1905,7 @@ void EventLogAnalyzer::CreateReceiveSideBweSimulationGraph(Plot* plot) {
     rscc.OnReceivedPacket(rtp_packet, MediaType::VIDEO);
     int64_t arrival_time_ms = packet.rtp.log_time().ms();
     acked_bitrate.Update(packet.rtp.total_length, arrival_time_ms);
-    absl::optional<uint32_t> bitrate_bps = acked_bitrate.Rate(arrival_time_ms);
+    std::optional<uint32_t> bitrate_bps = acked_bitrate.Rate(arrival_time_ms);
     if (bitrate_bps) {
       uint32_t y = *bitrate_bps / 1000;
       float x = config_.GetCallTimeSec(clock.CurrentTime());
@@ -1957,7 +1987,7 @@ void EventLogAnalyzer::CreatePacerDelayGraph(Plot* plot) {
       continue;
     }
     int64_t segment_end_us = parsed_log_.first_log_segment().stop_time_us();
-    absl::optional<uint32_t> estimated_frequency =
+    std::optional<uint32_t> estimated_frequency =
         EstimateRtpClockFrequency(packets, segment_end_us);
     if (!estimated_frequency)
       continue;

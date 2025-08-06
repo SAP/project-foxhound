@@ -9,88 +9,6 @@ dnl ========================================================
 AC_PREREQ(2.13)
 AC_INIT(js/src/jsapi.h)
 AC_CONFIG_AUX_DIR(${srcdir}/build/autoconf)
-AC_CANONICAL_SYSTEM
-
-if test -z "$JS_STANDALONE"; then
-  autoconfmk=autoconf-js.mk
-fi
-AC_SUBST(autoconfmk)
-
-dnl ========================================================
-dnl Checks for compilers.
-dnl ========================================================
-
-if test "$COMPILE_ENVIRONMENT"; then
-
-# This prevents mingw from adding .exe when generating executable. Internal use
-# only.
-ac_exeext=.out
-
-# Note:
-#   In Mozilla, we use the names $target, $host and $build incorrectly, but are
-#   too far gone to back out now. See Bug 475488:
-#     - When we say $target, we mean $host, that is, the system on which
-#       Mozilla will be run.
-#     - When we say $host, we mean $build, that is, the system on which Mozilla
-#       is built.
-#     - $target (in its correct usage) is for compilers who generate code for a
-#       different platform than $host, so it would not be used by Mozilla.
-if test "$target" != "$host"; then
-    MOZ_CROSS_COMPILER
-else
-    AC_PROG_CC
-    AC_PROG_CXX
-fi
-
-fi # COMPILE_ENVIRONMENT
-
-dnl ========================================================
-dnl System overrides of the defaults for target
-dnl ========================================================
-
-case "$target" in
-*-darwin*)
-    MOZ_OPTIMIZE_FLAGS="-O3"
-    ;;
-
-*-android*|*-linuxandroid*)
-    MOZ_OPTIMIZE_FLAGS="-O3"
-    if test "$CC_TYPE" == gcc ; then
-       MOZ_OPTIMIZE_FLAGS="-fno-reorder-functions $MOZ_OPTIMIZE_FLAGS"
-    fi
-    ;;
-
-*-*linux*)
-    MOZ_OPTIMIZE_FLAGS="-O3"
-    ;;
-
-*-mingw*)
-    MOZ_OPTIMIZE_FLAGS="-O2"
-    ;;
-
-esac
-
-if test -z "$MOZ_OPTIMIZE_FLAGS"; then
-	MOZ_OPTIMIZE_FLAGS="-O"
-fi
-
-
-dnl Mozilla specific options
-dnl ========================================================
-dnl The macros used for command line options
-dnl are defined in build/autoconf/altoptions.m4.
-
-dnl ========================================================
-dnl = Enable code optimization. ON by default.
-dnl ========================================================
-
-# Use value from moz.configure if one is defined. Else use our computed
-# value.
-if test -n "${MOZ_CONFIGURE_OPTIMIZE_FLAGS}"; then
-    MOZ_OPTIMIZE_FLAGS=${MOZ_CONFIGURE_OPTIMIZE_FLAGS}
-fi
-
-AC_SUBST_LIST(MOZ_OPTIMIZE_FLAGS)
 
 dnl ========================================================
 dnl =
@@ -98,12 +16,7 @@ dnl = Maintainer debug option (no --enable equivalent)
 dnl =
 dnl ========================================================
 
-AC_SUBST(MOZ_POST_PROGRAM_COMMAND)
-
 AC_SUBST(MOZ_APP_DISPLAYNAME)
-
-AC_SUBST(HOST_CC)
-AC_SUBST(HOST_CXX)
 
 dnl Set various defines and substitutions
 dnl ========================================================
@@ -112,17 +25,6 @@ AC_SUBST(MOZ_DEV_EDITION)
 if test -n "$MOZ_DEV_EDITION"; then
     AC_DEFINE(MOZ_DEV_EDITION)
 fi
-
-dnl ========================================================
-dnl JavaScript shell
-dnl ========================================================
-
-if test "$CC_TYPE" != clang-cl ; then
-JS_CONFIG_MOZ_JS_LIBS='-L${libdir} -l${JS_LIBRARY_NAME}'
-else
-JS_CONFIG_MOZ_JS_LIBS='${libdir}/${JS_LIBRARY_NAME}.lib'
-fi
-AC_SUBST(JS_CONFIG_MOZ_JS_LIBS)
 
 dnl Spit out some output
 dnl ========================================================

@@ -121,11 +121,6 @@ nsFilePickerProxy::GetFiles(nsISimpleEnumerator** aFiles) {
   return NS_ERROR_FAILURE;
 }
 
-nsresult nsFilePickerProxy::Show(nsIFilePicker::ResultCode* aReturn) {
-  MOZ_ASSERT(false, "Show is unimplemented; use Open");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
 NS_IMETHODIMP
 nsFilePickerProxy::Open(nsIFilePickerShownCallback* aCallback) {
   mCallback = aCallback;
@@ -177,7 +172,7 @@ mozilla::ipc::IPCResult nsFilePickerProxy::Recv__delete__(
   } else if (aData.type() == MaybeInputData::TInputDirectory) {
     nsCOMPtr<nsIFile> file;
     const nsAString& path(aData.get_InputDirectory().directoryPath());
-    nsresult rv = NS_NewLocalFile(path, true, getter_AddRefs(file));
+    nsresult rv = NS_NewLocalFile(path, getter_AddRefs(file));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return IPC_OK();
     }

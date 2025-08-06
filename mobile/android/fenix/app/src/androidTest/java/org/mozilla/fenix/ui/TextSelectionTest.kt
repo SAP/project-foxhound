@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.test.filters.SdkSuppress
 import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import org.junit.Rule
 import org.junit.Test
@@ -70,7 +71,6 @@ class TextSelectionTest : TestSetup() {
             longClickPageObject(itemContainingText("content"))
             clickContextMenuItem("Copy")
         }.openNavigationToolbar {
-            openEditURLView()
         }
 
         searchScreen {
@@ -129,6 +129,7 @@ class TextSelectionTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2326834
+    @SdkSuppress(maxSdkVersion = 30)
     @Test
     fun verifySelectAllPDFTextOptionTest() {
         val genericURL =
@@ -168,7 +169,6 @@ class TextSelectionTest : TestSetup() {
             longClickPageObject(itemContainingText("Crossing"))
             clickContextMenuItem("Copy")
         }.openNavigationToolbar {
-            openEditURLView()
         }
 
         searchScreen {

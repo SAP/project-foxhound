@@ -570,8 +570,11 @@ void MacroAssemblerLOONG64::ma_addPtrTestOverflow(Register rd, Register rj,
     }
 
     as_add_d(rd, rj, rk);
+    // rd = rj + rk overflow conditions:
+    //   1. rj < 0 and rd >= rk
+    //   2. rj >= 0 and rd < rk
     as_slti(scratch, rj, 0);
-    as_slt(scratch2, rd, rj);
+    as_slt(scratch2, rd, rk);
     ma_b(scratch, Register(scratch2), overflow, Assembler::NotEqual);
   }
 }
@@ -1165,6 +1168,13 @@ void MacroAssemblerLOONG64::ma_cmp_set(Register rd, Address address, Imm32 imm,
   SecondScratchRegisterScope scratch2(asMasm());
   ma_ld_w(scratch2, address);
   ma_cmp_set(rd, Register(scratch2), imm, c);
+}
+
+void MacroAssemblerLOONG64::ma_cmp_set(Register rd, Address address,
+                                       Register rk, Condition c) {
+  SecondScratchRegisterScope scratch2(asMasm());
+  ma_ld_d(scratch2, address);
+  ma_cmp_set(rd, scratch2, rk, c);
 }
 
 void MacroAssemblerLOONG64::ma_cmp_set(Register rd, Address address,
@@ -2130,7 +2140,7 @@ void MacroAssemblerLOONG64::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                          Register ptrScratch,
                                          AnyRegister output, Register tmp) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2178,7 +2188,7 @@ void MacroAssemblerLOONG64::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                           Register memoryBase, Register ptr,
                                           Register ptrScratch, Register tmp) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2224,7 +2234,7 @@ void MacroAssemblerLOONG64::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
 void MacroAssemblerLOONG64Compat::wasmLoadI64Impl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, Register64 output, Register tmp) {
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2270,7 +2280,7 @@ void MacroAssemblerLOONG64Compat::wasmLoadI64Impl(
 void MacroAssemblerLOONG64Compat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2747,6 +2757,16 @@ void MacroAssembler::patchCallToNop(uint8_t* call) {
   inst[1].makeNop();  // ori
   inst[2].makeNop();  // lu32i_d
   inst[3].makeNop();  // jirl
+}
+
+CodeOffset MacroAssembler::move32WithPatch(Register dest) {
+  CodeOffset offs = CodeOffset(currentOffset());
+  ma_liPatchable(dest, Imm32(0));
+  return offs;
+}
+
+void MacroAssembler::patchMove32(CodeOffset offset, Imm32 n) {
+  patchSub32FromStackPtr(offset, n);
 }
 
 void MacroAssembler::pushReturnAddress() { push(ra); }
@@ -3287,6 +3307,43 @@ void MacroAssembler::wasmStoreI64(const wasm::MemoryAccessDesc& access,
 void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
                                                ExitFrameType type) {
   enterFakeExitFrame(cxreg, scratch, type);
+}
+
+CodeOffset MacroAssembler::sub32FromMemAndBranchIfNegativeWithPatch(
+    Address address, Label* label) {
+  ScratchRegisterScope scratch(asMasm());
+  MOZ_ASSERT(scratch != address.base);
+  ma_ld_w(scratch, address);
+  // LoongArch doesn't have subtraction instr that support immediate operand,
+  // and use 'addi.w rd, rj, -imm' instead to achieve same function.
+  // 128 is arbitrary, but makes `*address` count upwards, which may help
+  // to identify cases where the subsequent ::patch..() call was forgotten.
+  as_addi_w(scratch, scratch, 128);
+  // Points immediately after the insn to patch
+  CodeOffset patchPoint = CodeOffset(currentOffset());
+  ma_st_w(scratch, address);
+  ma_b(scratch, Register(scratch), label, Assembler::Signed);
+  return patchPoint;
+}
+
+void MacroAssembler::patchSub32FromMemAndBranchIfNegative(CodeOffset offset,
+                                                          Imm32 imm) {
+  int32_t val = imm.value;
+  // Patching it to zero would make the insn pointless
+  MOZ_RELEASE_ASSERT(val >= 1 && val <= 127);
+  Instruction* instrPtr =
+      (Instruction*)m_buffer.getInst(BufferOffset(offset.offset() - 4));
+  // LoongArch doesn't have subtraction instr that support immediate operand,
+  // and use 'addi.w rd, rj, -imm' instead to achieve same function.
+  // 31   27   23 21   9  4
+  // |    |    |  |    |  |
+  // 0000 0010 10 si12 rj rd = addi.w rd, rj, #si12
+  InstImm* inst = (InstImm*)instrPtr;
+  MOZ_ASSERT(inst->extractBitField(31, 22) == ((uint32_t)op_addi_w >> 22));
+
+  *inst = InstImm(op_addi_w, (int32_t)(-val & 0xfff),
+                  Register::FromCode(inst->extractRJ()),
+                  Register::FromCode(inst->extractRD()), 12);
 }
 
 // TODO(loong64): widenInt32 should be nop?
@@ -4297,16 +4354,34 @@ void MacroAssembler::atomicEffectOpJS(Scalar::Type arrayType,
                  offsetTemp, maskTemp);
 }
 
+void MacroAssembler::atomicPause() {
+  // LoongArch doesn't have 'pause' or 'yield' instructions like other
+  // platforms, just use nop here.
+  nop();
+}
+
 void MacroAssembler::flexibleQuotient32(Register rhs, Register srcDest,
                                         bool isUnsigned,
                                         const LiveRegisterSet&) {
   quotient32(rhs, srcDest, isUnsigned);
 }
 
+void MacroAssembler::flexibleQuotientPtr(Register rhs, Register srcDest,
+                                         bool isUnsigned,
+                                         const LiveRegisterSet&) {
+  quotient64(rhs, srcDest, isUnsigned);
+}
+
 void MacroAssembler::flexibleRemainder32(Register rhs, Register srcDest,
                                          bool isUnsigned,
                                          const LiveRegisterSet&) {
   remainder32(rhs, srcDest, isUnsigned);
+}
+
+void MacroAssembler::flexibleRemainderPtr(Register rhs, Register srcDest,
+                                          bool isUnsigned,
+                                          const LiveRegisterSet&) {
+  remainder64(rhs, srcDest, isUnsigned);
 }
 
 void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
@@ -5498,8 +5573,7 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
   addPtr(indexTemp32, pointer);
 }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
-void MacroAssembler::wasmMarkSlowCall() { mov(ra, ra); }
+void MacroAssembler::wasmMarkCallAsSlow() { mov(ra, ra); }
 
 const int32_t SlowCallMarker = 0x03800021;  // ori ra, ra, 0
 
@@ -5509,7 +5583,13 @@ void MacroAssembler::wasmCheckSlowCallsite(Register ra_, Label* notSlow,
   load32(Address(ra_, 0), temp2);
   branch32(Assembler::NotEqual, temp2, Imm32(SlowCallMarker), notSlow);
 }
-#endif  // ENABLE_WASM_TAIL_CALLS
+
+CodeOffset MacroAssembler::wasmMarkedSlowCall(const wasm::CallSiteDesc& desc,
+                                              const Register reg) {
+  CodeOffset offset = call(desc, reg);
+  wasmMarkCallAsSlow();
+  return offset;
+}
 
 //}}} check_macroassembler_style
 

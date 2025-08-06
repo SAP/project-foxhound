@@ -3,6 +3,8 @@
 
 "use strict";
 
+requestLongerTimeout(2);
+
 /**
  * Test browser toolbar keyboard navigation.
  * These tests assume the default browser configuration for toolbars unless
@@ -118,6 +120,8 @@ const BOOKMARKS_COUNT = 100;
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
+      // TODO: Reenable in https://bugzilla.mozilla.org/show_bug.cgi?id=1923388
+      ["browser.urlbar.scotchBonnet.enableOverride", false],
       ["browser.toolbars.keyboard_navigation", true],
       ["accessibility.tabfocus", 7],
     ],
@@ -154,11 +158,21 @@ add_task(async function testTabStopsNoPageWithHomeButton() {
   AddHomeBesideReload();
   await withNewBlankTab(async function () {
     startFromUrlBar();
-    await expectFocusAfterKey("Shift+Tab", "home-button");
+    if (sidebarRevampEnabled) {
+      await expectFocusAfterKey("Shift+Tab", "sidebar-button");
+      await expectFocusAfterKey("ArrowRight", "home-button");
+    } else {
+      await expectFocusAfterKey("Shift+Tab", "home-button");
+    }
     await expectFocusAfterKey("Shift+Tab", "tabs-newtab-button");
     await expectFocusAfterKey("Shift+Tab", gBrowser.selectedTab);
     await expectFocusAfterKey("Tab", "tabs-newtab-button");
-    await expectFocusAfterKey("Tab", "home-button");
+    if (sidebarRevampEnabled) {
+      await expectFocusAfterKey("Tab", "sidebar-button");
+      await expectFocusAfterKey("ArrowRight", "home-button");
+    } else {
+      await expectFocusAfterKey("Tab", "home-button");
+    }
     await expectFocusAfterKey("Tab", gURLBar.inputField);
     await expectFocusAfterKey("Tab", afterUrlBarButton);
     if (sidebarRevampEnabled) {
@@ -185,11 +199,21 @@ async function doTestTabStopsPageLoaded(aPageActionsVisible) {
       "Shift+Tab",
       "tracking-protection-icon-container"
     );
-    await expectFocusAfterKey("Shift+Tab", "reload-button");
+    if (sidebarRevampEnabled) {
+      await expectFocusAfterKey("Shift+Tab", "sidebar-button");
+      await expectFocusAfterKey("ArrowRight", "reload-button");
+    } else {
+      await expectFocusAfterKey("Shift+Tab", "reload-button");
+    }
     await expectFocusAfterKey("Shift+Tab", "tabs-newtab-button");
     await expectFocusAfterKey("Shift+Tab", gBrowser.selectedTab);
     await expectFocusAfterKey("Tab", "tabs-newtab-button");
-    await expectFocusAfterKey("Tab", "reload-button");
+    if (sidebarRevampEnabled) {
+      await expectFocusAfterKey("Tab", "sidebar-button");
+      await expectFocusAfterKey("ArrowRight", "reload-button");
+    } else {
+      await expectFocusAfterKey("Tab", "reload-button");
+    }
     await expectFocusAfterKey("Tab", "tracking-protection-icon-container");
     await expectFocusAfterKey("Tab", gURLBar.inputField);
     await expectFocusAfterKey(
@@ -297,14 +321,11 @@ add_task(async function testTabStopNoButtons() {
     resetToolbarWithoutDevEditionButtons();
     AddHomeBesideReload();
     if (!sidebarRevampEnabled) {
-      CustomizableUI.addWidgetToArea(
-        "sidebar-button",
-        "nav-bar",
-        CustomizableUI.getPlacementOfWidget("home-button").position + 1
-      );
+      CustomizableUI.addWidgetToArea("sidebar-button", "nav-bar", 0);
     }
     // Make sure the button is reachable now that it has been re-added.
-    await expectFocusAfterKey("Shift+Tab", "home-button", true);
+    await expectFocusAfterKey("Shift+Tab", "sidebar-button", true);
+    await expectFocusAfterKey("ArrowRight", "home-button");
     RemoveHomeButton();
   });
 });
@@ -373,13 +394,26 @@ add_task(async function testArrowsDisabledButtons() {
         "tracking-protection-icon-container"
       );
       // Back and Forward buttons are disabled.
-      await expectFocusAfterKey("Shift+Tab", "reload-button");
+      if (sidebarRevampEnabled) {
+        await expectFocusAfterKey("Shift+Tab", "sidebar-button");
+        await expectFocusAfterKey("ArrowRight", "reload-button");
+      } else {
+        await expectFocusAfterKey("Shift+Tab", "reload-button");
+      }
       EventUtils.synthesizeKey("KEY_ArrowLeft");
-      is(
-        document.activeElement.id,
-        "reload-button",
-        "ArrowLeft on Reload button when prior buttons disabled does nothing"
-      );
+      if (sidebarRevampEnabled) {
+        is(
+          document.activeElement.id,
+          "sidebar-button",
+          "ArrowLeft on Reload button when prior buttons disabled navigates to sidebar-button"
+        );
+      } else {
+        is(
+          document.activeElement.id,
+          "reload-button",
+          "ArrowLeft on Reload button when prior buttons disabled does nothing"
+        );
+      }
 
       BrowserTestUtils.startLoadingURIString(aBrowser, "https://example.com/2");
       await BrowserTestUtils.browserLoaded(aBrowser);
@@ -389,7 +423,12 @@ add_task(async function testArrowsDisabledButtons() {
         "Shift+Tab",
         "tracking-protection-icon-container"
       );
-      await expectFocusAfterKey("Shift+Tab", "back-button");
+      if (sidebarRevampEnabled) {
+        await expectFocusAfterKey("Shift+Tab", "sidebar-button");
+        await expectFocusAfterKey("ArrowRight", "back-button");
+      } else {
+        await expectFocusAfterKey("Shift+Tab", "back-button");
+      }
       // Forward button is still disabled.
       await expectFocusAfterKey("ArrowRight", "reload-button");
     }
@@ -582,11 +621,6 @@ add_task(async function testCharacterNavigation() {
       await expectFocusAfterKey("s", "save-to-pocket-button");
       // Pressing i makes the search "si", so it should focus Sidebars.
       await expectFocusAfterKey("i", "sidebar-button");
-    } else {
-      // Now that the search is reset, pressing s should focus Sidebars.
-      await expectFocusAfterKey("s", "sidebar-button");
-      // Pressing i makes the search "sa", so it should focus Save to Pocket.
-      await expectFocusAfterKey("a", "save-to-pocket-button");
     }
     // Reset the search.
     EventUtils.synthesizeKey("KEY_Escape");
@@ -594,10 +628,6 @@ add_task(async function testCharacterNavigation() {
       await expectFocusAfterKey("s", "save-to-pocket-button");
       // Pressing s again should find the next button starting with s: Sidebars.
       await expectFocusAfterKey("s", "sidebar-button");
-    } else {
-      await expectFocusAfterKey("s", "sidebar-button");
-      // Pressing s again should find the next button starting with s: Save to Pocket.
-      await expectFocusAfterKey("s", "save-to-pocket-button");
     }
   });
   RemoveHomeButton();

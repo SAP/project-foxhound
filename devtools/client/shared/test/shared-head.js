@@ -279,15 +279,6 @@ Services.prefs.setBoolPref("devtools.inspector.three-pane-enabled", true);
 // requests occuring after a process is created/destroyed. See Bug 1620983.
 Services.prefs.setBoolPref("dom.ipc.processPrelaunch.enabled", false);
 
-// Disable this preference to capture async stacks across all locations during
-// DevTools mochitests. Async stacks provide very valuable information to debug
-// intermittents, but come with a performance overhead, which is why they are
-// only captured in Debuggees by default.
-Services.prefs.setBoolPref(
-  "javascript.options.asyncstack_capture_debuggee_only",
-  false
-);
-
 // On some Linux platforms, prefers-reduced-motion is enabled, which would
 // trigger the notification to be displayed in the toolbox. Dismiss the message
 // by default.
@@ -304,9 +295,6 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.toolbox.previousHost");
   Services.prefs.clearUserPref("devtools.toolbox.splitconsole.open");
   Services.prefs.clearUserPref("devtools.toolbox.splitconsoleHeight");
-  Services.prefs.clearUserPref(
-    "javascript.options.asyncstack_capture_debuggee_only"
-  );
   Services.prefs.clearUserPref(
     "devtools.inspector.simple-highlighters.message-dismissed"
   );
@@ -1036,9 +1024,7 @@ function getActiveInspector() {
  *        Optional window where to fire the key event
  */
 function synthesizeKeyShortcut(key, target) {
-  // parseElectronKey requires any window, just to access `KeyboardEvent`
-  const window = Services.appShell.hiddenDOMWindow;
-  const shortcut = KeyShortcuts.parseElectronKey(window, key);
+  const shortcut = KeyShortcuts.parseElectronKey(key);
   const keyEvent = {
     altKey: shortcut.alt,
     ctrlKey: shortcut.ctrl,

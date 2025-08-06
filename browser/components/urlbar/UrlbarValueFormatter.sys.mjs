@@ -193,7 +193,9 @@ export class UrlbarValueFormatter {
       // The protocol has been trimmed, so we add it back.
       url = trimmedProtocol + inputValue;
       trimmedLength = trimmedProtocol.length;
-    } else if (uriInfo.wasSchemelessInput) {
+    } else if (
+      uriInfo.schemelessInput == Ci.nsILoadInfo.SchemelessInputTypeSchemeless
+    ) {
       // The original string didn't have a protocol, but it was identified as
       // a URL. It's not important which scheme we use for parsing, so we'll
       // just copy URIFixup.
@@ -315,7 +317,13 @@ export class UrlbarValueFormatter {
    */
   _formatURL() {
     let urlMetaData = this._getUrlMetaData();
-    if (!urlMetaData || this.window.gBrowser.selectedBrowser.searchTerms) {
+    if (!urlMetaData) {
+      return false;
+    }
+    let state = this.urlbarInput.getBrowserState(
+      this.window.gBrowser.selectedBrowser
+    );
+    if (state.searchTerms) {
       return false;
     }
 
@@ -458,7 +466,7 @@ export class UrlbarValueFormatter {
       return false;
     }
 
-    let alias = this._getSearchAlias();
+    let alias = this._findEngineAliasOrRestrictKeyword();
     if (!alias) {
       return false;
     }
@@ -516,7 +524,7 @@ export class UrlbarValueFormatter {
     return true;
   }
 
-  _getSearchAlias() {
+  _findEngineAliasOrRestrictKeyword() {
     // To determine whether the input contains a valid alias, check if the
     // selected result is a search result with an alias. If there is no selected
     // result, we check the first result in the view, for cases when we do not
@@ -529,12 +537,20 @@ export class UrlbarValueFormatter {
       this.urlbarInput.view.getResultAtIndex(0) ||
       this._selectedResult;
 
-    if (
-      this._selectedResult &&
-      this._selectedResult.type == lazy.UrlbarUtils.RESULT_TYPE.SEARCH
-    ) {
-      return this._selectedResult.payload.keyword || null;
+    if (!this._selectedResult) {
+      return null;
     }
+
+    let { type, payload } = this._selectedResult;
+
+    if (type === lazy.UrlbarUtils.RESULT_TYPE.SEARCH) {
+      return payload.keyword || null;
+    }
+
+    if (type === lazy.UrlbarUtils.RESULT_TYPE.RESTRICT) {
+      return payload.autofillKeyword || null;
+    }
+
     return null;
   }
 

@@ -8,13 +8,14 @@ import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
-import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_DOCS
+import org.mozilla.fenix.helpers.AppAndSystemHelper.assertAppWithPackageNameOpens
+import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.navigationToolbar
@@ -57,7 +58,9 @@ class PDFViewerTest : TestSetup() {
         }.clickDownloadPDFButton {
             verifyDownloadedFileName(downloadFile)
         }.clickOpen("application/pdf") {
-            assertExternalAppOpens(GOOGLE_DOCS)
+            assertAppWithPackageNameOpens(packageName)
+            verifyUrl("content://media/external_primary/downloads/")
+            verifyTabCounter("2")
         }
     }
 
@@ -106,7 +109,7 @@ class PDFViewerTest : TestSetup() {
         }.openAddToHomeScreen {
             verifyShortcutTextFieldTitle(pdfFileName)
             clickAddShortcutButton()
-            clickAddAutomaticallyButton()
+            clickSystemHomeScreenShortcutAddButton()
         }.openHomeScreenShortcut(pdfFileName) {
             verifyUrl(pdfFileURL)
         }

@@ -1025,12 +1025,13 @@ already_AddRefed<const ComputedStyle> KeyframeEffect::GetTargetComputedStyle(
              "Should only have a document when we have a target element");
 
   OwningAnimationTarget kungfuDeathGrip(mTarget.mElement, mTarget.mPseudoType);
+  // TODO: Bug 1921553. Use PseudoStyleRequest for web animations.
+  const PseudoStyleRequest pseudo(mTarget.mPseudoType);
 
   return aFlushType == Flush::Style
-             ? nsComputedDOMStyle::GetComputedStyle(mTarget.mElement,
-                                                    mTarget.mPseudoType)
+             ? nsComputedDOMStyle::GetComputedStyle(mTarget.mElement, pseudo)
              : nsComputedDOMStyle::GetComputedStyleNoFlush(mTarget.mElement,
-                                                           mTarget.mPseudoType);
+                                                           pseudo);
 }
 
 #ifdef DEBUG
@@ -1626,8 +1627,17 @@ bool KeyframeEffect::CanAnimateTransformOnCompositor(
 
   // Async 'transform' animations of aFrames with SVG transforms is not
   // supported.  See bug 779599.
-  if (primaryFrame->IsSVGTransformed()) {
+  if (primaryFrame->GetParentSVGTransforms()) {
     aPerformanceWarning = AnimationPerformanceWarning::Type::TransformSVG;
+    return false;
+  }
+
+  // If there's any content that might have non-scaling stroke then we can't
+  // run in the compositor.
+  if (primaryFrame->IsSVGFrame() &&
+      primaryFrame->HasAnyStateBits(
+          NS_STATE_SVG_MAY_CONTAIN_NON_SCALING_STROKE)) {
+    aPerformanceWarning = AnimationPerformanceWarning::Type::NonScalingStroke;
     return false;
   }
 

@@ -3,23 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 @import url("chrome://browser/skin/browser-shared.css");
-/* stylelint-disable-next-line media-query-no-invalid */
-@import url("chrome://browser/skin/browser-custom-colors.css") not (-moz-bool-pref: "browser.theme.macos.native-theme");
 
 :root {
   --arrowpanel-field-background: light-dark(rgba(249, 249, 250, .3), rgba(12, 12, 13, .3));
 }
 
 /* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "browser.theme.macos.native-theme") {
-  /* TODO: Share this with Linux, which effectively does ~the same */
+@media (-moz-bool-pref: "browser.theme.native-theme") {
   @media not (prefers-contrast) {
     :root:not([lwtheme]) {
-      --toolbar-field-border-color: transparent;
-      --toolbar-field-background-color: light-dark(rgba(0, 0, 0, .05), rgba(0, 0, 0, .3));
-      --toolbar-field-color: inherit;
       @media (prefers-color-scheme: light) {
-        --toolbar-non-lwt-bgcolor: white;
         --urlbar-box-bgcolor: #fafafa;
       }
       @media (prefers-color-scheme: dark) {
@@ -27,36 +20,11 @@
       }
     }
   }
-
-  /* Don't make the toolbox vibrant when in full-screen. macOS fullscreen has a
-   * native titlebar outside of the window (revealed on hover) anyways. */
-  :root[tabsintitlebar]:not([lwtheme], [macOSNativeFullscreen]) #navigator-toolbox {
-    background-color: transparent;
-
-    /* This is conceptually a background, but putting this on a
-     * pseudo-element avoids it from suppressing the chrome-content separator
-     * border, etc */
-    &::after {
-      -moz-default-appearance: -moz-window-titlebar;
-      appearance: auto;
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-    }
-  }
-}
-
-#browser,
-#navigator-toolbox {
-  /* #browser and #navigator-toolbox must have relative positions so that the
-     latter can slide over the former in fullscreen mode. */
-  position: relative;
 }
 
 /** Begin titlebar **/
 
-#titlebar {
+.browser-titlebar {
   /* Centrally align content items vertically */
   justify-content: center;
 }
@@ -233,11 +201,8 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left {
 
 /* ::::: tabbrowser ::::: */
 
-#tabbrowser-tabbox {
-  margin: 0;
-}
-
-.tab-label {
+.tab-label,
+.tab-group-label {
   margin-block: 1px 0;
 }
 
@@ -258,7 +223,6 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left {
 }
 
 .tabbrowser-tab {
-  font: message-box;
   border: none;
 
   /* FIXME: Are these styles really needed nowadays? */
@@ -277,6 +241,7 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left {
 
 #tabbrowser-tabs {
   /* overriding tabbox.css */
+  font: message-box;
   align-items: stretch;
   margin-bottom: 0;
   position: static;

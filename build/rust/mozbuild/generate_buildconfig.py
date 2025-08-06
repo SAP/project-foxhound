@@ -107,9 +107,15 @@ def generate(output):
                     }}
                 }}
 
-                /// The path to the windows-rs crate, for use in build scripts
-                pub const WINDOWS_RS_DIR: &str = {escape_rust_string(windows_rs_dir)};
-
+                /// Macro used to re-export windows-rs's public items
+                #[macro_export]
+                macro_rules! windows_rs_lib {{
+                    () => {{
+                        #[path = {escape_rust_string(windows_rs_dir + "/src/lib.rs")}]
+                        mod lib;
+                        pub use lib::*;
+                    }}
+                }}
                 """
             )
         )

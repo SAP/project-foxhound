@@ -1389,7 +1389,6 @@ media/mp4parse-rust/
 media/openmax_il/
 media/webrtc/signaling/gtest/MockCall.h
 mfbt/double-conversion/double-conversion/
-mfbt/lz4/.*
 mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/JSDOMParser-0.4.2.js
 mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/readability-0.4.2.js
 mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/readability-readerable-0.4.2.js
@@ -1401,6 +1400,7 @@ modules/woff2/
 modules/xz-embedded/
 modules/zlib/
 mozglue/misc/decimal/
+mozglue/static/lz4/.*
 mozglue/tests/glibc_printf_tests/
 netwerk/dns/nsIDNKitInterface.h
 netwerk/sctp/src/
@@ -1419,9 +1419,7 @@ services/common/kinto-http-client.sys.mjs
 services/common/kinto-offline-client.sys.mjs
 testing/gtest/gmock/
 testing/gtest/gtest/
-testing/mochitest/MochiKit/
 testing/mochitest/pywebsocket3/
-testing/mochitest/tests/MochiKit-1.4.2/
 testing/modules/sinon-7.2.7.js
 testing/mozbase/mozproxy/mozproxy/backends/mitm/scripts/catapult/
 testing/talos/talos/tests/devtools/addon/content/pages/
@@ -1442,7 +1440,7 @@ toolkit/components/certviewer/content/vendor/
 toolkit/components/jsoncpp/
 toolkit/components/ml/vendor/
 toolkit/components/normandy/vendor/
-toolkit/components/passwordmgr/PasswordRulesParser.sys.mjs
+toolkit/components/passwordmgr/shared/PasswordRulesParser.sys.mjs
 toolkit/components/protobuf/
 toolkit/components/reader/readability/
 toolkit/components/resistfingerprinting/content/gl-matrix.js
@@ -1503,12 +1501,17 @@ mobile/android/**/generated
 mobile/android/**\/local.properties
 mobile/android/**\/manifest.json
 mobile/android/android-components/components/feature/search/src/main/assets/search/search_telemetry_v2.json
+mobile/android/android-components/config/detekt-baseline.xml
 mobile/android/android-components/gradle/wrapper/
 mobile/android/android-components/samples/glean/src/main/res/raw/initial_experiments.json
+mobile/android/fenix/app/lint-baseline.xml
 mobile/android/fenix/app/src/debug/res/raw/initial_experiments.json
 mobile/android/fenix/app/src/main/res/raw/initial_experiments.json
+mobile/android/fenix/config/detekt-baseline.xml
 mobile/android/fenix/gradle/wrapper/
+mobile/android/focus-android/app/lint-baseline.xml
 mobile/android/focus-android/gradle/wrapper/
+mobile/android/focus-android/quality/detekt-baseline.xml
 mobile/locales/l10n-changesets.json
 mobile/locales/l10n-onchange-changesets.json
 node_modules/
@@ -1516,6 +1519,8 @@ python/mozperftest/mozperftest/tests/data/
 security/manager/tools/KnownRootHashes.json
 security/manager/tools/PreloadedHPKPins.json
 services/settings/dumps/
+toolkit/components/nimbus/schemas/ExperimentFeature.schema.json
+toolkit/components/nimbus/schemas/ExperimentFeatureManifest.schema.json
 toolkit/components/nimbus/schemas/NimbusExperiment.schema.json
 toolkit/components/pdfjs/PdfJsDefaultPrefs.js
 toolkit/components/pdfjs/PdfJsOverridePrefs.js

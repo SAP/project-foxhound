@@ -118,12 +118,6 @@ const startupPhases = {
       stat: 1,
     },
     {
-      // bug 1541226, bug 1363586, bug 1541593
-      path: "ProfD:",
-      condition: WIN,
-      stat: 1,
-    },
-    {
       path: "ProfLD:.startup-incomplete",
       condition: !WIN, // Visible on Windows with an open marker
       close: 1,
@@ -207,6 +201,12 @@ const startupPhases = {
       stat: 1,
       read: 1,
       close: 1,
+    },
+    {
+      // This is the startup lock used to restrict only one Firefox startup at a time.
+      path: `TmpD:firefox-${AppConstants.MOZ_UPDATE_CHANNEL}/parent.lock`,
+      condition: WIN,
+      stat: 1,
     },
   ],
 

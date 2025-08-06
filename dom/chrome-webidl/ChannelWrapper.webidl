@@ -21,7 +21,6 @@ enum MozContentPolicyType {
   "object",
   "object_subrequest",
   "xmlhttprequest",
-  "fetch",
   "xslt",
   "ping",
   "beacon",
@@ -271,8 +270,8 @@ interface ChannelWrapper : EventTarget {
 
 
   /**
-   * The LoadInfo object for this channel, if available. Null for channels
-   * without load info, until support for those is removed.
+   * The LoadInfo object for this channel, if available. Null only if the
+   * channel is no longer alive.
    */
   [Cached, Pure]
   readonly attribute LoadInfo? loadInfo;
@@ -282,13 +281,6 @@ interface ChannelWrapper : EventTarget {
    */
   [Cached, Pure]
   readonly attribute boolean isServiceWorkerScript;
-
-  /**
-   * True if this load was triggered by a system caller. This currently always
-   * false if the request has no LoadInfo or is a top-level document load.
-   */
-  [Cached, Pure]
-  readonly attribute boolean isSystemLoad;
 
   /**
    * The URL of the principal that triggered this load. This is equivalent to
@@ -322,8 +314,8 @@ interface ChannelWrapper : EventTarget {
 
   /**
    * True if extensions may modify this request. This is currently false only
-   * if the request belongs to a document which has access to the
-   * mozAddonManager API.
+   * if this load was triggered by a system caller, from a restricted domain
+   * and/or a document that has access to the mozAddonManager API.
    */
   [Cached, GetterThrows, Pure]
   readonly attribute boolean canModify;
@@ -357,7 +349,7 @@ interface ChannelWrapper : EventTarget {
 
   /**
    * Returns an array of objects that combine the url and frameId from the
-   * ancestorPrincipals and ancestorOuterWindowIDs on loadInfo.
+   * ancestorPrincipals and ancestorBrowsingContextIDs on loadInfo.
    * The immediate parent is the first entry, the last entry is always the top
    * level frame.  It will be an empty list for toplevel window loads and
    * non-subdocument resource loads within a toplevel window.  For the latter,
@@ -416,8 +408,8 @@ interface ChannelWrapper : EventTarget {
    */
   [Throws]
   undefined setRequestHeader(ByteString header,
-                        ByteString value,
-                        optional boolean merge = false);
+                             ByteString value,
+                             optional boolean merge = false);
 
   /**
    * Sets the given response header to the given value, overwriting any
@@ -434,8 +426,8 @@ interface ChannelWrapper : EventTarget {
    */
   [Throws]
   undefined setResponseHeader(ByteString header,
-                         ByteString value,
-                         optional boolean merge = false);
+                              ByteString value,
+                              optional boolean merge = false);
 
   /**
    * Provides the tracking classification data when it is available.
@@ -447,7 +439,7 @@ interface ChannelWrapper : EventTarget {
    * Indicates if this response and its content window hierarchy is third
    * party.
    */
-  [Cached, Constant]
+  [Cached, Pure]
   readonly attribute boolean thirdParty;
 
   /**
@@ -522,12 +514,12 @@ dictionary MozProxyInfo {
 
 /**
  * MozFrameAncestorInfo combines loadInfo::AncestorPrincipals with
- * loadInfo::AncestorOuterWindowIDs for easier access in the WebRequest API.
+ * loadInfo::AncestorBrowsingContextIDs for easier access in the WebRequest API.
  *
  * url represents the parent of the loading window.
- * frameId is the outerWindowID for the parent of the loading window.
+ * frameId is the browsingContextId for the parent of the loading window.
  *
- * For further details see nsILoadInfo.idl and Document::AncestorPrincipals.
+ * For further details see AncestorPrincipals in nsILoadInfo.idl.
  */
 dictionary MozFrameAncestorInfo {
   required ByteString url;

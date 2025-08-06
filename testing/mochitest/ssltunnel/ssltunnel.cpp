@@ -24,7 +24,6 @@
 #include "prenv.h"
 #include "prnetdb.h"
 #include "prtpool.h"
-#include "nsAlgorithm.h"
 #include "nss.h"
 #include "keyhi.h"
 #include "ssl.h"
@@ -204,8 +203,8 @@ const uint32_t MAX_THREADS = 100;
 const uint32_t DEFAULT_STACKSIZE = (512 * 1024);
 
 // global data
-string nssconfigdir;
-vector<server_info_t> servers;
+MOZ_RUNINIT string nssconfigdir;
+MOZ_RUNINIT vector<server_info_t> servers;
 PRNetAddr remote_addr;
 PRNetAddr websocket_server;
 PRThreadPool* threads = nullptr;

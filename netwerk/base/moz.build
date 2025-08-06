@@ -163,6 +163,7 @@ EXPORTS.mozilla.net += [
     "DashboardTypes.h",
     "DefaultURI.h",
     "InterceptionInfo.h",
+    "IPv4Parser.h",
     "MemoryDownloader.h",
     "NetworkConnectivityService.h",
     "Predictor.h",
@@ -171,6 +172,7 @@ EXPORTS.mozilla.net += [
     "RedirectChannelRegistrar.h",
     "RequestContextService.h",
     "SimpleChannelParent.h",
+    "SimpleURIUnknownSchemes.h",
     "SSLTokensCache.h",
     "ThrottleQueue.h",
 ]
@@ -184,6 +186,7 @@ UNIFIED_SOURCES += [
     "DefaultURI.cpp",
     "EventTokenBucket.cpp",
     "InterceptionInfo.cpp",
+    "IPv4Parser.cpp",
     "LoadContextInfo.cpp",
     "LoadInfo.cpp",
     "MemoryDownloader.cpp",
@@ -240,6 +243,7 @@ UNIFIED_SOURCES += [
     "SimpleBuffer.cpp",
     "SimpleChannel.cpp",
     "SimpleChannelParent.cpp",
+    "SimpleURIUnknownSchemes.cpp",
     "SSLTokensCache.cpp",
     "ThrottleQueue.cpp",
     "Tickler.cpp",
@@ -288,6 +292,7 @@ else:
 
 EXTRA_JS_MODULES += [
     "NetUtil.sys.mjs",
+    "SimpleURIUnknownSchemesRemoteObserver.sys.mjs",
 ]
 
 DIRS += ["mozurl", "rust-helper", "http-sfv", "idna_glue"]

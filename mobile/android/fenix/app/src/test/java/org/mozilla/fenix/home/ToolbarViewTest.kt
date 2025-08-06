@@ -14,7 +14,6 @@ import io.mockk.spyk
 import io.mockk.unmockkStatic
 import io.mockk.verify
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.utils.ext.isLandscape
 import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -24,8 +23,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.HomeActivity
+import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.databinding.FragmentHomeBinding
-import org.mozilla.fenix.ext.isTablet
+import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 
@@ -45,7 +45,7 @@ class ToolbarViewTest {
         binding = FragmentHomeBinding.inflate(LayoutInflater.from(testContext))
         every { homeFragment.requireContext() } returns testContext
         every { testContext.settings() } returns mockk(relaxed = true)
-        toolbarView = spyk(ToolbarView(binding, mockk(relaxed = true), homeFragment, homeActivity, {}, {}))
+        toolbarView = spyk(ToolbarView(binding, mockk(relaxed = true), homeFragment, homeActivity))
         every { toolbarView.buildHomeMenu() } returns mockk(relaxed = true)
         every { toolbarView.buildTabCounter() } returns mockk(relaxed = true)
     }
@@ -59,7 +59,7 @@ class ToolbarViewTest {
     @Test
     fun `GIVEN navbar is visible WHEN updateLayout is called THEN tab counter and menu are gone and not initialized`() {
         every { testContext.settings().navigationToolbarEnabled } returns true
-        toolbarView.updateButtonVisibility()
+        toolbarView.updateButtonVisibility(mockk(relaxed = true), testContext.shouldAddNavigationBar())
 
         assertFalse(binding.menuButton.isVisible)
         assertFalse(binding.tabButton.isVisible)
@@ -70,7 +70,7 @@ class ToolbarViewTest {
     @Test
     fun `GIVEN navbar isn't visible WHEN updateLayout is called THEN tab counter and menu are visible and initialized`() {
         every { testContext.settings().navigationToolbarEnabled } returns false
-        toolbarView.updateButtonVisibility()
+        toolbarView.updateButtonVisibility(mockk(relaxed = true), testContext.shouldAddNavigationBar())
 
         assertTrue(binding.menuButton.isVisible)
         assertTrue(binding.tabButton.isVisible)
@@ -80,11 +80,9 @@ class ToolbarViewTest {
 
     @Test
     fun `GIVEN mode is landscape WHEN updateLayout is called THEN tab counter and menu are visible and initialized`() {
-        every { testContext.isLandscape() } returns true
-
         every { testContext.settings().navigationToolbarEnabled } returns false
 
-        toolbarView.updateButtonVisibility()
+        toolbarView.updateButtonVisibility(mockk(relaxed = true), testContext.shouldAddNavigationBar(false))
 
         assertTrue(binding.menuButton.isVisible)
         assertTrue(binding.tabButton.isVisible)
@@ -93,7 +91,7 @@ class ToolbarViewTest {
 
         every { testContext.settings().navigationToolbarEnabled } returns true
 
-        toolbarView.updateButtonVisibility()
+        toolbarView.updateButtonVisibility(mockk(relaxed = true), testContext.shouldAddNavigationBar(false))
 
         assertTrue(binding.menuButton.isVisible)
         assertTrue(binding.tabButton.isVisible)
@@ -103,11 +101,11 @@ class ToolbarViewTest {
 
     @Test
     fun `GIVEN device is tablet WHEN updateLayout is called THEN tab counter and menu are visible and initialized`() {
-        every { testContext.isTablet() } returns true
+        every { testContext.isLargeWindow() } returns true
 
         every { testContext.settings().navigationToolbarEnabled } returns false
 
-        toolbarView.updateButtonVisibility()
+        toolbarView.updateButtonVisibility(mockk(relaxed = true), testContext.shouldAddNavigationBar(false))
 
         assertTrue(binding.menuButton.isVisible)
         assertTrue(binding.tabButton.isVisible)
@@ -116,7 +114,7 @@ class ToolbarViewTest {
 
         every { testContext.settings().navigationToolbarEnabled } returns true
 
-        toolbarView.updateButtonVisibility()
+        toolbarView.updateButtonVisibility(mockk(relaxed = true), testContext.shouldAddNavigationBar(false))
 
         assertTrue(binding.menuButton.isVisible)
         assertTrue(binding.tabButton.isVisible)
@@ -126,9 +124,9 @@ class ToolbarViewTest {
 
     @Test
     fun `WHEN build is called THEN layout gets updated`() {
-        toolbarView.build()
+        toolbarView.build(mockk(relaxed = true))
 
-        verify(exactly = 1) { toolbarView.updateButtonVisibility() }
+        verify(exactly = 1) { toolbarView.updateButtonVisibility(any(), any()) }
     }
 
     @Test

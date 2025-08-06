@@ -5,6 +5,7 @@
 package org.mozilla.fenix.ui
 
 import androidx.core.net.toUri
+import androidx.test.filters.SdkSuppress
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -77,6 +78,7 @@ class NoNetworkAccessStartupTests : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2240721
+    @SdkSuppress(minSdkVersion = 34)
     @SmokeTest
     @Test
     fun testSignInPageWithNoNetworkConnection() {

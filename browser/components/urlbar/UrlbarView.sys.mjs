@@ -15,12 +15,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarProviderGlobalActions:
+    "resource:///modules/UrlbarProviderGlobalActions.sys.mjs",
   UrlbarProviderQuickSuggest:
     "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
   UrlbarProviderRecentSearches:
     "resource:///modules/UrlbarProviderRecentSearches.sys.mjs",
   UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
-  UrlbarProviderWeather: "resource:///modules/UrlbarProviderWeather.sys.mjs",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarSearchOneOffs: "resource:///modules/UrlbarSearchOneOffs.sys.mjs",
@@ -41,9 +42,6 @@ const KEYBOARD_SELECTABLE_ELEMENT_SELECTOR =
   "[role=button]:not([keyboard-inaccessible]), [selectable]";
 
 const ZERO_PREFIX_HISTOGRAM_DWELL_TIME = "FX_URLBAR_ZERO_PREFIX_DWELL_TIME_MS";
-const ZERO_PREFIX_SCALAR_ABANDONMENT = "urlbar.zeroprefix.abandonment";
-const ZERO_PREFIX_SCALAR_ENGAGEMENT = "urlbar.zeroprefix.engagement";
-const ZERO_PREFIX_SCALAR_EXPOSURE = "urlbar.zeroprefix.exposure";
 
 const RESULT_MENU_COMMANDS = {
   DISMISS: "dismiss",
@@ -341,10 +339,18 @@ export class UrlbarView {
         }
         return;
       }
-      this.selectedRowIndex = Math.max(
-        0,
-        Math.min(end, selectedRowIndex + amount * (reverse ? -1 : 1))
-      );
+
+      let index = Math.min(end, selectedRowIndex + amount * (reverse ? -1 : 1));
+      // When navigating with arrow keys we skip rows that contain
+      // global actions.
+      if (
+        this.#rows.children[index]?.result.providerName ==
+          lazy.UrlbarProviderGlobalActions.name &&
+        this.#rows.children.length > 2
+      ) {
+        index = index + (reverse ? -1 : 1);
+      }
+      this.selectedRowIndex = Math.max(0, index);
       return;
     }
 
@@ -374,10 +380,10 @@ export class UrlbarView {
 
     // We cache the first and last rows since they will not change while
     // selectBy is running.
-    let firstSelectableElement = this.#getFirstSelectableElement();
-    // #getLastSelectableElement will not return an element that is over
+    let firstSelectableElement = this.getFirstSelectableElement();
+    // getLastSelectableElement will not return an element that is over
     // maxResults and thus may be hidden and not selectable.
-    let lastSelectableElement = this.#getLastSelectableElement();
+    let lastSelectableElement = this.getLastSelectableElement();
 
     if (!selectedElement) {
       selectedElement = reverse
@@ -546,6 +552,7 @@ export class UrlbarView {
     // implicitly unselected.
     if (this.input.searchMode?.isPreview) {
       this.input.searchMode = null;
+      this.window.gBrowser.userTypedValue = null;
     }
 
     this.resultMenu.hidePopup();
@@ -581,9 +588,9 @@ export class UrlbarView {
 
     if (this.#isShowingZeroPrefix) {
       if (elementPicked) {
-        Services.telemetry.scalarAdd(ZERO_PREFIX_SCALAR_ENGAGEMENT, 1);
+        Glean.urlbarZeroprefix.engagement.add(1);
       } else {
-        Services.telemetry.scalarAdd(ZERO_PREFIX_SCALAR_ABANDONMENT, 1);
+        Glean.urlbarZeroprefix.abandonment.add(1);
       }
       this.#setIsShowingZeroPrefix(false);
     }
@@ -614,11 +621,9 @@ export class UrlbarView {
     }
 
     let queryOptions = { event };
-
     if (
       !this.input.value ||
-      (this.input.getAttribute("pageproxystate") == "valid" &&
-        !this.window.gBrowser.selectedBrowser.searchTerms)
+      this.input.getAttribute("pageproxystate") == "valid"
     ) {
       if (!this.isOpen && ["mousedown", "command"].includes(event.type)) {
         // Try to reuse the cached top-sites context. If it's not cached, then
@@ -798,7 +803,7 @@ export class UrlbarView {
         // result added, which is why we do this check here when each result is
         // added and not above.
         if (this.#shouldShowHeuristic(firstResult)) {
-          this.#selectElement(this.#getFirstSelectableElement(), {
+          this.#selectElement(this.getFirstSelectableElement(), {
             updateInput: false,
             setAccessibleFocus:
               this.controller._userSelectionBehavior == "arrow",
@@ -1246,8 +1251,11 @@ export class UrlbarView {
           this.#rowCanUpdateToResult(rowIndex, result, seenSearchSuggestion)
         ) {
           // We can replace the row's current result with the new one.
-          if (result.exposureResultHidden) {
-            this.controller.engagementEvent.addExposure(result);
+          if (result.isHiddenExposure) {
+            this.controller.engagementEvent.addExposure(
+              result,
+              this.#queryContext
+            );
           } else {
             this.#updateRow(row, result);
           }
@@ -1256,7 +1264,7 @@ export class UrlbarView {
         }
         if (
           (result.hasSuggestedIndex || row.result.hasSuggestedIndex) &&
-          !result.exposureResultHidden
+          !result.isHiddenExposure
         ) {
           seenMisplacedResult = true;
         }
@@ -1282,7 +1290,7 @@ export class UrlbarView {
       if (
         !seenMisplacedResult &&
         result.hasSuggestedIndex &&
-        !result.exposureResultHidden
+        !result.isHiddenExposure
       ) {
         if (result.isSuggestedIndexRelativeToGroup) {
           // We can't know at this point what the right index of a group-
@@ -1311,19 +1319,25 @@ export class UrlbarView {
       let newSpanCount =
         visibleSpanCount +
         lazy.UrlbarUtils.getSpanForResult(result, {
-          includeExposureResultHidden: true,
+          includeHiddenExposures: true,
         });
       let canBeVisible =
         newSpanCount <= this.#queryContext.maxResults && !seenMisplacedResult;
-      if (result.exposureResultHidden) {
+      if (result.isHiddenExposure) {
         if (canBeVisible) {
-          this.controller.engagementEvent.addExposure(result);
+          this.controller.engagementEvent.addExposure(
+            result,
+            this.#queryContext
+          );
         } else {
           // Add a tentative exposure: The hypothetical row for this
           // hidden-exposure result can't be visible now, but as long as it were
           // not marked stale in a later update, it would be shown when stale
           // rows are removed.
-          this.controller.engagementEvent.addTentativeExposure(result);
+          this.controller.engagementEvent.addTentativeExposure(
+            result,
+            this.#queryContext
+          );
         }
         continue;
       }
@@ -1673,6 +1687,9 @@ export class UrlbarView {
     if (global) {
       button.classList.add("urlbarView-global-action-btn");
     }
+    if (action.classList) {
+      button.classList.add(...action.classList);
+    }
     button.setAttribute("role", "button");
     if (action.icon) {
       let icon = this.#createElement("img");
@@ -1769,11 +1786,9 @@ export class UrlbarView {
     item._content.id = item.id + "-inner";
 
     let isFirstChild = item === this.#rows.children[0];
-    let secAction =
-      result.heuristic || isFirstChild
-        ? lazy.UrlbarProvidersManager.getGlobalAction()
-        : result.payload.action;
+    let secAction = result.payload.action;
     let container = item.querySelector(".urlbarView-actions-container");
+    item.toggleAttribute("secondary-action", !!secAction);
     if (secAction && !container) {
       item.appendChild(this.#createSecondaryAction(secAction, isFirstChild));
     } else if (
@@ -1882,14 +1897,11 @@ export class UrlbarView {
     switch (result.type) {
       case lazy.UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
         // Hide chichlet when showing secondaryActions.
-        if (
-          lazy.UrlbarPrefs.getScotchBonnetPref("secondaryActions.featureGate")
-        ) {
-          break;
+        if (!lazy.UrlbarPrefs.get("secondaryActions.switchToTab")) {
+          actionSetter = () => {
+            this.#setSwitchTabActionChiclet(result, action);
+          };
         }
-        actionSetter = () => {
-          this.#setSwitchTabActionChiclet(result, action);
-        };
         setURL = true;
         break;
       case lazy.UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
@@ -2217,8 +2229,11 @@ export class UrlbarView {
 
       let visible = this.#isElementVisible(item);
       if (visible) {
-        if (item.result.exposureResultType) {
-          this.controller.engagementEvent.addExposure(item.result);
+        if (item.result.exposureTelemetry) {
+          this.controller.engagementEvent.addExposure(
+            item.result,
+            this.#queryContext
+          );
         }
         this.visibleResults.push(item.result);
       }
@@ -2229,7 +2244,7 @@ export class UrlbarView {
       }
     }
 
-    let selectableElement = this.#getFirstSelectableElement();
+    let selectableElement = this.getFirstSelectableElement();
     let uiIndex = 0;
     while (selectableElement) {
       selectableElement.elementIndex = uiIndex++;
@@ -2241,6 +2256,11 @@ export class UrlbarView {
     } else {
       this.panel.setAttribute("noresults", "true");
     }
+
+    this.#rows.toggleAttribute(
+      "actionmode",
+      this.visibleResults[0]?.source == lazy.UrlbarUtils.RESULT_SOURCE.ACTIONS
+    );
   }
 
   /**
@@ -2348,6 +2368,11 @@ export class UrlbarView {
       row.result.providerName == lazy.UrlbarProviderQuickSuggest.name
     ) {
       switch (row.result.payload.telemetryType) {
+        case "adm_sponsored":
+          if (!lazy.UrlbarPrefs.get("quickSuggestSponsoredPriority")) {
+            return { id: "urlbar-group-sponsored" };
+          }
+          break;
         case "amo":
           return { id: "urlbar-group-addon" };
         case "mdn":
@@ -2359,10 +2384,7 @@ export class UrlbarView {
       }
     }
 
-    if (
-      row.result.isBestMatch ||
-      row.result.providerName == lazy.UrlbarProviderWeather.name
-    ) {
+    if (row.result.isBestMatch) {
       return { id: "urlbar-group-best-match" };
     }
 
@@ -2577,7 +2599,7 @@ export class UrlbarView {
    * @returns {Element}
    *   The first selectable element in the view.
    */
-  #getFirstSelectableElement() {
+  getFirstSelectableElement() {
     let element = this.#rows.firstElementChild;
     if (element && !this.#isSelectableElement(element)) {
       element = this.#getNextSelectableElement(element);
@@ -2591,7 +2613,7 @@ export class UrlbarView {
    * @returns {Element}
    *   The last selectable element in the view.
    */
-  #getLastSelectableElement() {
+  getLastSelectableElement() {
     let element = this.#rows.lastElementChild;
     if (element && !this.#isSelectableElement(element)) {
       element = this.#getPreviousSelectableElement(element);
@@ -2722,20 +2744,38 @@ export class UrlbarView {
 
     if (result.payload.providesSearchMode) {
       if (result.type == lazy.UrlbarUtils.RESULT_TYPE.RESTRICT) {
+        let keywords = result.payload.l10nRestrictKeyword;
+        this.#setElementL10n(titleNode, {
+          id: "urlbar-result-search-with-local-search-mode",
+          args: {
+            keywords: `@${keywords.toLowerCase()}`,
+            localSearchMode: keywords,
+          },
+        });
+      } else if (
+        result.providerName == "TokenAliasEngines" &&
+        lazy.UrlbarPrefs.getScotchBonnetPref(
+          "searchRestrictKeywords.featureGate"
+        )
+      ) {
+        this.#setElementL10n(titleNode, {
+          id: "urlbar-result-search-with-engine-keywords",
+          args: {
+            keywords: result.payload.keywords,
+            engine: result.payload.engine,
+          },
+        });
+      } else {
+        // Keyword offers are the only result that require a localized title.
+        // We localize the title instead of using the action text as a title
+        // because some keyword offer results use both a title and action text
+        // (e.g., tab-to-search).
         this.#setElementL10n(titleNode, {
           id: "urlbar-result-action-search-w-engine",
-          args: { engine: result.payload.l10nRestrictKeyword },
+          args: { engine: result.payload.engine },
         });
-        return;
       }
-      // Keyword offers are the only result that require a localized title.
-      // We localize the title instead of using the action text as a title
-      // because some keyword offer results use both a title and action text
-      // (e.g. tab-to-search).
-      this.#setElementL10n(titleNode, {
-        id: "urlbar-result-action-search-w-engine",
-        args: { engine: result.payload.engine },
-      });
+
       return;
     }
 
@@ -3015,6 +3055,10 @@ export class UrlbarView {
       { id: "urlbar-result-action-visit-from-clipboard" },
     ];
 
+    let suggestSponsoredEnabled =
+      lazy.UrlbarPrefs.get("quickSuggestEnabled") &&
+      lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored");
+
     if (lazy.UrlbarPrefs.get("groupLabels.enabled")) {
       idArgs.push({ id: "urlbar-group-firefox-suggest" });
       idArgs.push({ id: "urlbar-group-best-match" });
@@ -3031,13 +3075,16 @@ export class UrlbarView {
         if (lazy.UrlbarPrefs.get("yelpFeatureGate")) {
           idArgs.push({ id: "urlbar-group-local" });
         }
+        if (
+          suggestSponsoredEnabled &&
+          lazy.UrlbarPrefs.get("quickSuggestAmpTopPickCharThreshold")
+        ) {
+          idArgs.push({ id: "urlbar-group-sponsored" });
+        }
       }
     }
 
-    if (
-      lazy.UrlbarPrefs.get("quickSuggestEnabled") &&
-      lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored")
-    ) {
+    if (suggestSponsoredEnabled) {
       idArgs.push({ id: "urlbar-result-action-sponsored" });
     }
 
@@ -3191,7 +3238,7 @@ export class UrlbarView {
       this.#zeroPrefixStopwatchInstance
     );
 
-    Services.telemetry.scalarAdd(ZERO_PREFIX_SCALAR_EXPOSURE, 1);
+    Glean.urlbarZeroprefix.exposure.add(1);
   }
 
   /**

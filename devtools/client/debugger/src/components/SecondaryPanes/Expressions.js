@@ -18,7 +18,7 @@ import { connect } from "devtools/client/shared/vendor/react-redux";
 import { features } from "../../utils/prefs";
 import AccessibleImage from "../shared/AccessibleImage";
 
-import { objectInspector } from "devtools/client/shared/components/reps/index";
+import * as objectInspector from "resource://devtools/client/shared/components/object-inspector/index.js";
 
 import actions from "../../actions/index";
 import {
@@ -29,7 +29,6 @@ import {
   getIsCurrentThreadPaused,
   getSelectedFrame,
   getOriginalFrameScope,
-  getCurrentThread,
 } from "../../selectors/index";
 import { getExpressionResultGripAndFront } from "../../utils/expressions";
 
@@ -426,7 +425,7 @@ class Expressions extends Component {
 }
 
 const mapStateToProps = state => {
-  const selectedFrame = getSelectedFrame(state, getCurrentThread(state));
+  const selectedFrame = getSelectedFrame(state);
   const selectedSource = getSelectedSource(state);
   const isPaused = getIsCurrentThreadPaused(state);
   const mapScopesEnabled = isMapScopesEnabled(state);

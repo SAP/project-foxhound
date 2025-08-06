@@ -7,6 +7,7 @@ package org.mozilla.fenix.ui
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.Espresso.openActionBarOverflowOrOptionsMenu
 import androidx.test.espresso.Espresso.pressBack
+import androidx.test.filters.SdkSuppress
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
@@ -35,7 +36,9 @@ class HistoryTest : TestSetup() {
     val activityTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule(
-                isJumpBackInCFREnabled = false,
+                // workaround for toolbar at top position by default
+                // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
+                shouldUseBottomToolbar = true,
             ),
         ) { it.activity }
 
@@ -313,6 +316,7 @@ class HistoryTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1715631
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyVoiceSearchInHistoryTest() {
         homeScreen {

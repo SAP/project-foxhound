@@ -147,7 +147,7 @@ AutoProfilerMessageMarker::~AutoProfilerMessageMarker() {
 
 // Using an unordered_set so we can initialize this with nice syntax instead of
 // having to add them one at a time to a mozilla::HashSet.
-std::unordered_set<UINT> gEventsToLogOriginalParams = {
+MOZ_RUNINIT std::unordered_set<UINT> gEventsToLogOriginalParams = {
     WM_WINDOWPOSCHANGING,  // (dummy comments for clang-format)
     WM_SIZING,             //
     WM_STYLECHANGING,
@@ -160,7 +160,7 @@ std::unordered_set<UINT> gEventsToLogOriginalParams = {
 // If you add an event here, you must add cases for these to
 // MakeMessageSpecificData() and AppendFriendlyMessageSpecificData()
 // in nsWindowLoggedMessages.cpp.
-std::unordered_set<UINT> gEventsToRecordInAboutPage = {
+MOZ_RUNINIT std::unordered_set<UINT> gEventsToRecordInAboutPage = {
     WM_WINDOWPOSCHANGING,  // (dummy comments for clang-format)
     WM_WINDOWPOSCHANGED,   //
     WM_SIZING,
@@ -393,6 +393,35 @@ void RectParamInfo(nsCString& str, uint64_t value, const char* name,
 
 #define VALANDNAME_ENTRY(_msg) {_msg, #_msg}
 
+nsAutoString GetNameFromAtom(LPCWSTR atomOrName) {
+  // null; should never happen?
+  if (atomOrName == nullptr) {
+    return nsAutoString(L"<null>");
+  }
+  // not an atom; return directly
+  if (uintptr_t(atomOrName) > 0xFFFF) {
+    return nsAutoString(atomOrName);
+  }
+
+  UINT const atom = (UINT)(uintptr_t)atomOrName;
+
+  nsAutoString out;
+  out.AppendASCII("atom 0x"_ns);
+  out.AppendInt(atom, 16);
+  out.AppendASCII(": "_ns);
+
+  WCHAR buf[256] = {0};
+  // undocumented, but widely considered reliable
+  BOOL const ok = ::GetClipboardFormatNameW(atom, buf, 255);
+  if (!ok) {
+    out.AppendASCII("unknown atom"_ns);
+  } else {
+    out.Append(buf);
+  }
+
+  return out;
+}
+
 void CreateStructParamInfo(nsCString& str, uint64_t value, const char* name,
                            bool /* isPreCall */) {
   CREATESTRUCT* createStruct = reinterpret_cast<CREATESTRUCT*>(value);
@@ -403,9 +432,10 @@ void CreateStructParamInfo(nsCString& str, uint64_t value, const char* name,
   str.AppendPrintf(
       "%s: hInstance=%p hMenu=%p hwndParent=%p lpszName=%S lpszClass=%S x=%d "
       "y=%d cx=%d cy=%d",
-      name, createStruct->hInstance, createStruct->hMenu,
-      createStruct->hwndParent, createStruct->lpszName, createStruct->lpszClass,
-      createStruct->x, createStruct->y, createStruct->cx, createStruct->cy);
+      name ? name : "<no name>", createStruct->hInstance, createStruct->hMenu,
+      createStruct->hwndParent, createStruct->lpszName,
+      GetNameFromAtom(createStruct->lpszClass).getW(), createStruct->x,
+      createStruct->y, createStruct->cx, createStruct->cy);
   str.AppendASCII(" ");
   const static nsTArray<EnumValueAndName> windowStyles = {
       // these combinations of other flags need to come first
@@ -970,7 +1000,7 @@ nsAutoCString WmSizeParamInfo(uint64_t wParam, uint64_t lParam,
   return result;
 }
 
-const nsTArray<EnumValueAndName> windowPositionFlags = {
+MOZ_RUNINIT const nsTArray<EnumValueAndName> windowPositionFlags = {
     VALANDNAME_ENTRY(SWP_DRAWFRAME),  VALANDNAME_ENTRY(SWP_HIDEWINDOW),
     VALANDNAME_ENTRY(SWP_NOACTIVATE), VALANDNAME_ENTRY(SWP_NOCOPYBITS),
     VALANDNAME_ENTRY(SWP_NOMOVE),     VALANDNAME_ENTRY(SWP_NOOWNERZORDER),
@@ -1158,7 +1188,7 @@ void ResolutionParamInfo(nsCString& result, uint64_t value, const char* name,
       #_msg, _msg, nullptr, wParamInfoFn, wParamName, lParamInfoFn, lParamName \
     }                                                                          \
   }
-std::unordered_map<UINT, EventMsgInfo> gAllEvents = {
+MOZ_RUNINIT std::unordered_map<UINT, EventMsgInfo> gAllEvents = {
     ENTRY_WITH_NO_PARAM_INFO(WM_NULL),
     ENTRY_WITH_SPLIT_PARAM_INFOS(WM_CREATE, nullptr, nullptr,
                                  CreateStructParamInfo, "createStruct"),

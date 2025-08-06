@@ -8,7 +8,7 @@
 # ==============================================================
 option(
     env="HOST_CPPFLAGS",
-    help="Extra flags for Preprocessing host sources.",
+    help="Extra flags for Preprocessing host sources",
     nargs=1,
     default="",
 )
@@ -16,7 +16,7 @@ option(
 
 option(
     env="HOST_CFLAGS",
-    help="Extra flags for compiling host C sources.",
+    help="Extra flags for compiling host C sources",
     nargs=1,
     default="",
 )
@@ -24,7 +24,7 @@ option(
 
 option(
     env="HOST_CXXFLAGS",
-    help="Extra flags for compiling host C++ sources.",
+    help="Extra flags for compiling host C++ sources",
     nargs=1,
     default="",
 )
@@ -32,7 +32,7 @@ option(
 
 option(
     env="HOST_LDFLAGS",
-    help="Extra flags for linking host object files.",
+    help="Extra flags for linking host object files",
     nargs=1,
     default="",
 )
@@ -40,7 +40,7 @@ option(
 
 option(
     env="CPPFLAGS",
-    help="Extra flags for preprocessing sources.",
+    help="Extra flags for preprocessing sources",
     nargs=1,
     default="",
 )
@@ -48,7 +48,7 @@ option(
 
 option(
     env="CFLAGS",
-    help="Extra flags for compiling C sources.",
+    help="Extra flags for compiling C sources",
     nargs=1,
     default="",
 )
@@ -56,7 +56,7 @@ option(
 
 option(
     env="CXXFLAGS",
-    help="Extra flags for compiling C++ sources.",
+    help="Extra flags for compiling C++ sources",
     nargs=1,
     default="",
 )
@@ -64,7 +64,7 @@ option(
 
 option(
     env="ASFLAGS",
-    help="Extra flags for assembling sources.",
+    help="Extra flags for assembling sources",
     nargs=1,
     default="",
 )
@@ -72,7 +72,7 @@ option(
 
 option(
     env="LDFLAGS",
-    help="Extra flags for linking object files.",
+    help="Extra flags for linking object files",
     nargs=1,
     default="",
 )
@@ -80,9 +80,8 @@ option(
 
 option(
     env="MOZ_OPTIMIZE_FLAGS",
-    help="Extra optimization flags.",
+    help="Extra optimization flags",
     nargs=1,
-    default="",
 )
 
 
@@ -98,36 +97,58 @@ def forced_pgo_optimization_level(target):
         return "-O3"
 
 
-@depends("--enable-optimize")
-def moz_optimize(option):
-    if len(option):
-        if "-O0" not in option[0]:
-            return "2"
-    elif option:
-        return "1"
+@imports(_from="mozbuild.shellutil", _import="quote")
+def check_optimize_flags(src, flags):
+    for flag in reversed(flags):
+        if flag.startswith(("-O", "/O")):
+            if flag[2:] == "0":
+                die(
+                    f"Optimization enabled through {src} but last optimization flag is {flag} which disables optimizations"
+                )
+            break
+    else:
+        die(
+            f"Optimization enabled through {src} but no optimization flag found in {quote(*flags)}"
+        )
+    return flags
 
 
-@depends("--enable-optimize", forced_pgo_optimization_level)
+@depends("--enable-optimize", "MOZ_OPTIMIZE_FLAGS")
 @imports(_from="mozbuild.shellutil", _import="split")
-def moz_optimize_flags(option, forced_pgo_optimization_level):
-    if len(option):
-        return split(option[0])
-    elif option and forced_pgo_optimization_level:
-        return [forced_pgo_optimization_level]
+def configured_moz_optimize_flags(enable_optimize, env_flags):
+    if len(enable_optimize):
+        return check_optimize_flags("--enable-optimize", split(enable_optimize[0]))
+    if len(env_flags):
+        return check_optimize_flags("MOZ_OPTIMIZE_FLAGS", split(env_flags[0]))
+
+
+@depends("--enable-optimize", "MOZ_OPTIMIZE_FLAGS")
+def moz_optimize(enable_optimize, env_flags):
+    return "1" if enable_optimize or env_flags else None
 
 
 set_config("MOZ_OPTIMIZE", moz_optimize)
-add_old_configure_assignment("MOZ_OPTIMIZE", moz_optimize)
-add_old_configure_assignment("MOZ_CONFIGURE_OPTIMIZE_FLAGS", moz_optimize_flags)
 
 
-@depends_if("MOZ_OPTIMIZE_FLAGS")
+@depends(
+    target, moz_optimize, configured_moz_optimize_flags, forced_pgo_optimization_level
+)
 @imports(_from="mozbuild.shellutil", _import="split")
-def moz_optimize_flags(env_optimize_flags):
-    return split(env_optimize_flags[0])
+def moz_optimize_flags(
+    target, moz_optimize, configured_moz_optimize_flags, forced_pgo_optimization_level
+):
+    if configured_moz_optimize_flags:
+        return configured_moz_optimize_flags
 
+    if moz_optimize and forced_pgo_optimization_level:
+        return [forced_pgo_optimization_level]
 
-add_old_configure_assignment("MOZ_OPTIMIZE_FLAGS", moz_optimize_flags)
+    if target.kernel == "Darwin":
+        return ["-O3"]
+    elif target.kernel in ("Linux", "WINNT"):
+        return ["-O2"]
+    else:
+        return ["-O"]
 
 
 # Android NDK
@@ -169,19 +190,28 @@ with only_when(target_is_osx):
 @imports("plistlib")
 @imports(_from="__builtin__", _import="open")
 @imports(_from="__builtin__", _import="Exception")
-def get_sdk_version(sdk):
+def get_sdk_settings(sdk):
     with open(os.path.join(sdk, "SDKSettings.plist"), "rb") as plist:
         obj = plistlib.load(plist)
     if not obj:
         raise Exception(
             "Error parsing SDKSettings.plist in the SDK directory: %s" % sdk
         )
-    if "Version" not in obj:
+    return obj
+
+
+@imports(_from="__builtin__", _import="Exception")
+def get_sdk_version_from_settings(sdk, settings):
+    if "Version" not in settings:
         raise Exception(
             "Error finding Version information in SDKSettings.plist from the SDK: %s"
             % sdk
         )
-    return Version(obj["Version"])
+    return Version(settings["Version"])
+
+
+def get_sdk_version(sdk):
+    return get_sdk_version_from_settings(sdk, get_sdk_settings(sdk))
 
 
 with only_when(host_is_osx | target_is_osx):
@@ -310,8 +340,8 @@ with only_when(target_is_ios):
 
 
 with only_when(target_is_ios):
-    # MacOS SDK
-    # =========
+    # iOS SDK
+    # =======
     option(
         "--with-ios-sdk",
         env="IPHONEOS_SDK_DIR",
@@ -319,13 +349,20 @@ with only_when(target_is_ios):
         help="Location of platform SDK to use",
     )
 
+    @depends(target)
+    def target_is_ios_simulator(target):
+        # x86_64-apple-ios is simulator
+        # aarch64-apple-ios is iphone
+        # aarch64-apple-ios-sim is simulator
+        return target.cpu == "x86_64" or target.raw_os == "ios-sim"
+
     def ios_sdk_min_version():
         return "17.4"
 
-    @depends(target)
-    def ios_sdk_name(target):
+    @depends(target_is_ios_simulator)
+    def ios_sdk_name(target_is_ios_simulator):
         return "iPhone{}{}.sdk".format(
-            "Simulator" if target.raw_os == "ios-sim" else "OS",
+            "Simulator" if target_is_ios_simulator else "OS",
             ios_sdk_min_version(),
         )
 
@@ -333,22 +370,24 @@ with only_when(target_is_ios):
         "--with-ios-sdk",
         host,
         target,
+        target_is_ios_simulator,
         bootstrap_path(ios_sdk_name, when=depends("--with-ios-sdk")(lambda x: not x)),
     )
     @imports(_from="__builtin__", _import="Exception")
     @imports(_from="os.path", _import="isdir")
     @imports(_from="os", _import="listdir")
-    def ios_sdk(sdk, host, target, bootstrapped):
+    def ios_sdk(sdk, host, target, target_is_ios_simulator, bootstrapped):
         if bootstrapped:
             sdk = [bootstrapped]
+        sdk_name = "iphonesimulator" if target_is_ios_simulator else "iphoneos"
         if sdk:
             sdk = sdk[0]
             try:
-                version = get_sdk_version(sdk)
+                settings = get_sdk_settings(sdk)
+                version = get_sdk_version_from_settings(sdk, settings)
             except Exception as e:
                 die(e)
         elif host.os == "OSX":
-            sdk_name = "iphonesimulator" if target.raw_os == "ios-sim" else "iphoneos"
             sdk = check_cmd_output(
                 "xcrun", "--show-sdk-path", "--sdk", sdk_name, onerror=lambda: ""
             ).rstrip()
@@ -364,10 +403,12 @@ with only_when(target_is_ios):
                 if d.lower().startswith(sdk_name):
                     try:
                         sdk = os.path.join(sdk_dir, d)
-                        versions.append((get_sdk_version(sdk), sdk))
+                        settings = get_sdk_settings(sdk)
+                        version = get_sdk_version_from_settings(sdk, settings)
+                        versions.append((version, sdk, settings))
                     except Exception:
                         pass
-            version, sdk = max(versions)
+            version, sdk, settings = max(versions)
         else:
             die(
                 "Need an iOS SDK when targeting iOS. Please use --with-ios-sdk "
@@ -380,6 +421,20 @@ with only_when(target_is_ios):
                 "valid SDK. SDKs are installed when the optional cross-development "
                 "tools are selected during the Xcode installation." % sdk
             )
+
+        supported_targets = settings.get("SupportedTargets")
+        if supported_targets:
+            supported_archs = supported_targets.get(sdk_name, {}).get("Archs", [])
+            cpu = {
+                "aarch64": "arm64",
+            }.get(target.cpu, str(target.cpu))
+            if cpu not in supported_archs:
+                die("The SDK in %s does not support target %s" % (sdk, target.alias))
+        else:
+            log.warning(
+                "Cannot check whether the iOS SDK is for the right target, "
+                "assuming it is."
+            )
         if version < Version(ios_sdk_min_version()):
             die(
                 'SDK version "%s" is too old. Please upgrade to at least %s. Try '
@@ -388,17 +443,6 @@ with only_when(target_is_ios):
         return sdk
 
     set_config("IPHONEOS_SDK_DIR", ios_sdk)
-
-# Windows console settings
-# ========================
-
-
-@dependable
-def win32_subsystem_version():
-    return "10.0"
-
-
-add_old_configure_assignment("WIN32_SUBSYSTEM_VERSION", win32_subsystem_version)
 
 
 # GC rooting and hazard analysis.
@@ -410,9 +454,6 @@ option(env="MOZ_HAZARD", help="Build for the GC rooting hazard analysis")
 def hazard_analysis(value):
     if value:
         return True
-
-
-set_config("MOZ_HAZARD", hazard_analysis)
 
 
 # Cross-compilation related things.
@@ -432,21 +473,6 @@ def toolchain_prefix(value, host, target, cross_compiling):
     # We don't want a toolchain prefix by default when building on mac for mac.
     if cross_compiling and not (target.os == "OSX" and host.os == "OSX"):
         return ("%s-" % target.toolchain, "%s-" % target.alias)
-
-
-@depends(toolchain_prefix, target)
-def first_toolchain_prefix(toolchain_prefix, target):
-    # Pass TOOLCHAIN_PREFIX down to the build system if it was given from the
-    # command line/environment (in which case there's only one value in the tuple),
-    # or when cross-compiling for Android or OSX.
-    if toolchain_prefix and (
-        target.os in ("Android", "OSX") or len(toolchain_prefix) == 1
-    ):
-        return toolchain_prefix[0]
-
-
-set_config("TOOLCHAIN_PREFIX", first_toolchain_prefix)
-add_old_configure_assignment("TOOLCHAIN_PREFIX", first_toolchain_prefix)
 
 
 # Compilers
@@ -592,10 +618,14 @@ def get_compiler_info(configure_cache, compiler, language):
                 version = Version("12.0.0")
             elif version < "14.0":
                 version = Version("13.0.0")
-            elif version < "15.0":
+            elif version < "14.3":
                 version = Version("14.0.0")
+            elif version < "15.0":
+                version = Version("15.0.0")
+            elif version < "16.0":
+                version = Version("16.0.0")
             else:
-                version = Version("14.0.0.or.more")
+                version = Version("17.0.6.or.more")
 
     return namespace(
         type=type,
@@ -720,7 +750,7 @@ def check_compiler(configure_cache, compiler, language, target, android_version)
 @imports(_from="__builtin__", _import="open")
 @imports("json")
 @imports("os")
-def get_vc_paths(topsrcdir):
+def get_vc_paths(host, topsrcdir):
     def vswhere(args):
         program_files = os.environ.get("PROGRAMFILES(X86)") or os.environ.get(
             "PROGRAMFILES"
@@ -734,12 +764,13 @@ def get_vc_paths(topsrcdir):
             return []
         return json.loads(check_cmd_output(vswhere, "-format", "json", *args))
 
+    variant = "arm64" if host.cpu == "aarch64" else "x86.x64"
     for install in vswhere(
         [
             "-products",
             "*",
             "-requires",
-            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            f"Microsoft.VisualStudio.Component.VC.Tools.{variant}",
         ]
     ):
         path = install["installationPath"]
@@ -818,7 +849,7 @@ def vc_compiler_paths_for_version(host, env, vc_path, winsysroot):
         # Don't try to do anything when VC_PATH is not set on cross-compiles.
         return
     else:
-        all_versions = sorted(get_vc_paths(env.topsrcdir), key=itemgetter(0))
+        all_versions = sorted(get_vc_paths(host, env.topsrcdir), key=itemgetter(0))
     if not all_versions:
         return
     # Choose the newest version.
@@ -826,6 +857,7 @@ def vc_compiler_paths_for_version(host, env, vc_path, winsysroot):
     host_dir = {
         "x86_64": "Hostx64",
         "x86": "Hostx86",
+        "aarch64": "Hostarm64",
     }.get(host.cpu)
     if host_dir:
         path = os.path.join(path, "bin", host_dir)
@@ -1072,14 +1104,6 @@ def compiler_wrapper(wrapper, ccache):
             return (ccache,)
     elif wrapper:
         return tuple(wrapper)
-
-
-@depends_if(compiler_wrapper)
-def using_compiler_wrapper(compiler_wrapper):
-    return True
-
-
-set_config("MOZ_USING_COMPILER_WRAPPER", using_compiler_wrapper)
 
 
 @dependable
@@ -1703,43 +1727,20 @@ def compiler(
                 )
             return compiler
 
-    # Set CC/CXX/HOST_CC/HOST_CXX for old-configure, which needs the wrapper
-    # and the flags that were part of the user input for those variables to
-    # be provided.
-    add_old_configure_assignment(
-        var,
-        depends_if(valid_compiler)(
-            lambda x: list(x.wrapper) + [x.compiler] + list(x.flags)
-        ),
-    )
+    # This excludes WASM_CC from the list.
+    if var in ("CC", "CXX", "HOST_CC", "HOST_CXX"):
+        # FIXME: we should return a plain list here.
+        @depends_if(valid_compiler)
+        @imports(_from="mozbuild.shellutil", _import="quote")
+        def value(x):
+            return quote(*x.wrapper, x.compiler, *x.flags)
 
-    if host_or_target is target:
-        add_old_configure_assignment(
-            "ac_cv_prog_%s" % var,
-            depends_if(valid_compiler)(
-                lambda x: list(x.wrapper) + [x.compiler] + list(x.flags)
-            ),
-        )
-        # We check that it works in python configure already.
-        add_old_configure_assignment("ac_cv_prog_%s_works" % var.lower(), "yes")
-        add_old_configure_assignment(
-            "ac_cv_prog_%s_cross" % var.lower(),
-            depends(cross_compiling)(lambda x: "yes" if x else "no"),
-        )
-        gcc_like = depends(valid_compiler.type)(
-            lambda x: "yes" if x in ("gcc", "clang") else "no"
-        )
-        add_old_configure_assignment("ac_cv_prog_%s_g" % var.lower(), gcc_like)
-        if language == "C":
-            add_old_configure_assignment("ac_cv_prog_gcc", gcc_like)
-        if language == "C++":
-            add_old_configure_assignment("ac_cv_prog_gxx", gcc_like)
+        set_config(var, value)
 
     # Set CC_TYPE/CC_VERSION/HOST_CC_TYPE/HOST_CC_VERSION to allow
     # old-configure to do some of its still existing checks.
     if language == "C":
         set_config("%s_TYPE" % var, valid_compiler.type)
-        add_old_configure_assignment("%s_TYPE" % var, valid_compiler.type)
         set_config(
             "%s_VERSION" % var, depends(valid_compiler.version)(lambda v: str(v))
         )
@@ -1770,7 +1771,6 @@ def compiler(
         )
 
         set_config(pp_var, preprocessor)
-        add_old_configure_assignment(pp_var, preprocessor)
 
     if language == "C":
         linker_var = {
@@ -2091,7 +2091,6 @@ def select_linker_tmpl(host_or_target):
 
 
 select_linker = select_linker_tmpl(target)
-set_config("LINKER_KIND", select_linker.KIND)
 
 
 @template
@@ -2177,8 +2176,6 @@ def linker_ldflags_tmpl(host_or_target):
 
 
 linker_ldflags = linker_ldflags_tmpl(target)
-add_old_configure_assignment("LINKER_LDFLAGS", linker_ldflags)
-
 host_linker_ldflags = linker_ldflags_tmpl(host)
 
 
@@ -2195,11 +2192,49 @@ def gcc_use_gnu_ld(select_linker, target, c_compiler):
 
 # GCC_USE_GNU_LD=1 means the linker is command line compatible with GNU ld.
 set_config("GCC_USE_GNU_LD", gcc_use_gnu_ld)
-add_old_configure_assignment("GCC_USE_GNU_LD", gcc_use_gnu_ld)
 
 
 include("compile-checks.configure")
 include("arm.configure", when=depends(target.cpu)(lambda cpu: cpu == "arm"))
+
+# Libstdc++ feature detection
+# ==============================================================
+
+with only_when("--enable-debug"):
+    using_libstdcxx = try_compile(
+        language="C++",
+        includes=["new"],
+        body="#ifndef __GLIBCXX__\n#error 1\n#endif",
+        when=depends(c_compiler)(lambda c: c.type != "clang-cl"),
+    )
+
+    libstdcxx_assertions = depends(when=using_libstdcxx)("_GLIBCXX_ASSERTIONS")
+
+    using_libcxx = try_compile(
+        language="C++",
+        includes=["new"],
+        body="#ifndef _LIBCPP_VERSION\n#error 1\n#endif",
+        when=~using_libstdcxx,
+    )
+
+    @depends(
+        try_compile(language="C++", body="#if _LIBCPP_STD_VER >= 18\n#error 1\n#endif"),
+        when=using_libcxx,
+    )
+    def libcxx_assertions(modern_libcxx):
+        if modern_libcxx:
+            return "_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG"
+        else:
+            return "_LIBCPP_HARDENING_MODE_DEBUG"
+
+    @depends(
+        libstdcxx_assertions,
+        libcxx_assertions,
+        when=libstdcxx_assertions | libcxx_assertions,
+    )
+    @checking("which standard c++ library assertions to use")
+    def stdlibcxx_assertions(libstdcxx, libcxx):
+        return libstdcxx or libcxx
 
 
 @depends(
@@ -2302,7 +2337,6 @@ def debug_flags(env_debug_flags, enable_debug_flags, default_debug_flags):
 
 
 set_config("MOZ_DEBUG_FLAGS", debug_flags)
-add_old_configure_assignment("MOZ_DEBUG_FLAGS", debug_flags)
 
 
 @depends(c_compiler, host)
@@ -2642,7 +2676,6 @@ def asan_flags(c_compiler, target, compilation_flags, linker_flags, build_env):
         linker_flags.ldflags.extend([asan_flag, "-rdynamic"])
 
 
-add_old_configure_assignment("MOZ_ASAN", asan)
 set_define("MOZ_ASAN", True, when=asan)
 set_config("MOZ_ASAN", True, when=asan)
 
@@ -2666,7 +2699,6 @@ def msan_flags(c_compiler, compilation_flags, linker_flags):
         linker_flags.ldflags.extend(flags + ["-rdynamic"])
 
 
-add_old_configure_assignment("MOZ_MSAN", msan)
 set_define("MOZ_MSAN", True, when=msan)
 set_config("MOZ_MSAN", True, when=msan)
 
@@ -2690,7 +2722,6 @@ def tsan_flags(c_compiler, compilation_flags, linker_flags):
         linker_flags.ldflags.extend(["-fsanitize=thread", "-rdynamic"])
 
 
-add_old_configure_assignment("MOZ_TSAN", tsan)  # still used in js/src/old-configure.in
 set_define("MOZ_TSAN", True, when=tsan)
 set_config("MOZ_TSAN", True, when=tsan)
 
@@ -2794,10 +2825,6 @@ def ub_signed_overflow_san_flags(
         linker_flags.ldflags.extend(["-fsanitize=signed-integer-overflow", "-rdynamic"])
 
 
-set_define("MOZ_SIGNED_OVERFLOW_SANITIZE", True, when=ub_signed_overflow_san)
-set_config("MOZ_SIGNED_OVERFLOW_SANITIZE", True, when=ub_signed_overflow_san)
-
-
 option(
     "--enable-unsigned-overflow-sanitizer",
     help="Enable UndefinedBehavior Sanitizer (Unsigned Integer Overflow Parts)",
@@ -2837,9 +2864,6 @@ def ub_unsigned_overflow_san_flags(
         )
 
 
-set_define("MOZ_UNSIGNED_OVERFLOW_SANITIZE", True, when=ub_unsigned_overflow_san)
-set_config("MOZ_UNSIGNED_OVERFLOW_SANITIZE", True, when=ub_unsigned_overflow_san)
-
 #
 
 any_ubsan = ubsan | ub_signed_overflow_san | ub_unsigned_overflow_san
@@ -2877,9 +2901,10 @@ option(
     "--enable-optimize",
     c_compiler,
     target,
+    stdlibcxx_assertions,
 )
 def security_hardening_cflags(
-    hardening_flag, asan, debug, optimize, c_compiler, target
+    hardening_flag, asan, debug, optimize, c_compiler, target, cxx_assert
 ):
     compiler_is_gccish = c_compiler.type in ("gcc", "clang")
     mingw_clang = c_compiler.type == "clang" and target.os == "WINNT"
@@ -2901,6 +2926,10 @@ def security_hardening_cflags(
         if compiler_is_gccish and optimize and not asan:
             flags.append("-U_FORTIFY_SOURCE")
             flags.append("-D_FORTIFY_SOURCE=2")
+
+        # Lib c++ debug mode
+        if cxx_assert:
+            flags.append(f"-D{cxx_assert}")
 
         # fstack-protector ------------------------------------
         # Enable only if hardening is not disabled and ASAN is
@@ -2933,6 +2962,13 @@ def security_hardening_cflags(
             # Always enable on debug builds.
             if debug:
                 flags.extend(trivial_auto_var_init)
+
+        if (c_compiler.type == "clang" and c_compiler.version >= "16") or (
+            c_compiler.type == "gcc" and c_compiler.version >= "13"
+        ):
+            # Cannot use level 3 because we have many uses of the [0] GNU syntax.
+            # Cannot use level 2 because sqlite3 and icu use the [1] GNU syntax.
+            flags.append("-fstrict-flex-arrays=1")
 
         # ASLR ------------------------------------------------
         # ASLR (dynamicbase) is enabled by default in clang-cl; but the
@@ -3265,8 +3301,6 @@ llvm_config = check_prog(
     paths=clang_search_path,
 )
 
-add_old_configure_assignment("LLVM_CONFIG", llvm_config)
-
 
 @template
 def llvm_tool(name):
@@ -3303,7 +3337,6 @@ llvm_objdump = check_prog(
     paths=clang_search_path,
 )
 
-add_old_configure_assignment("LLVM_OBJDUMP", llvm_objdump)
 
 # Force clang-cl compiler to treat input as C++
 # ==============================================================
@@ -3433,7 +3466,6 @@ set_define("AFLFUZZ", enable_aflfuzzer)
 
 set_config("FUZZING_INTERFACES", enable_fuzzing_interfaces)
 set_define("FUZZING_INTERFACES", enable_fuzzing_interfaces)
-add_old_configure_assignment("FUZZING_INTERFACES", enable_fuzzing_interfaces)
 
 set_config("FUZZING_JS_FUZZILLI", enable_js_fuzzilli)
 set_define("FUZZING_JS_FUZZILLI", enable_js_fuzzilli)
@@ -3489,9 +3521,6 @@ def sancov(libfuzzer_flags):
         for head in ("-fsanitize-coverage", "-fsanitize=fuzzer")
         for flag in libfuzzer_flags.use_flags
     )
-
-
-add_old_configure_assignment("SANCOV", sancov)
 
 
 set_config("HAVE_LIBFUZZER_FLAG_FUZZER_NO_LINK", libfuzzer_flags.no_link_flag_supported)
@@ -3721,7 +3750,7 @@ option(
     "--enable-path-remapping",
     nargs="*",
     choices=("c", "rust"),
-    help="Enable remapping source and object paths in compiled outputs.",
+    help="Enable remapping source and object paths in compiled outputs",
 )
 
 
@@ -3878,20 +3907,3 @@ dtrace = check_header(
 
 set_config("HAVE_DTRACE", True, when=dtrace)
 set_define("INCLUDE_MOZILLA_DTRACE", True, when=dtrace)
-
-
-@depends(
-    try_compile(
-        includes=["stdio.h"],
-        body='puts("demat");',
-        flags=moz_optimize_flags,
-        language="C",
-        check_msg="for valid C compiler optimization flags",
-    ),
-    moz_optimize_flags,
-    when=moz_optimize,
-)
-@imports(_from="mozbuild.shellutil", _import="quote")
-def check_optimization_flags(check_result, moz_optimize_flags):
-    if not check_result:
-        die(f"Invalid C compiler optimization flags: {quote(*moz_optimize_flags)}")

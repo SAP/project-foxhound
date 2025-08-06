@@ -79,6 +79,36 @@ impl MemoryDistributionMetric {
             }
         }
     }
+
+    pub fn start_buffer(&self) -> LocalMemoryDistribution<'_> {
+        match self {
+            MemoryDistributionMetric::Parent { inner, .. } => {
+                LocalMemoryDistribution::Parent(inner.start_buffer())
+            }
+            MemoryDistributionMetric::Child(_) => {
+                // TODO(bug 1920957): Buffering not implemented for child processes yet. We don't
+                // want to panic though.
+                log::warn!("Can't get a local memory distribution from a child metric. No data will be recorded.");
+                LocalMemoryDistribution::Child
+            }
+        }
+    }
+}
+
+pub enum LocalMemoryDistribution<'a> {
+    Parent(glean::private::LocalMemoryDistribution<'a>),
+    Child,
+}
+
+impl LocalMemoryDistribution<'_> {
+    pub fn accumulate(&mut self, sample: u64) {
+        match self {
+            LocalMemoryDistribution::Parent(p) => p.accumulate(sample),
+            LocalMemoryDistribution::Child => {
+                log::debug!("Can't accumulate local memory distribution in a child process.")
+            }
+        }
+    }
 }
 
 #[inherent]
@@ -197,7 +227,6 @@ mod test {
 
         let metric_data = metric.test_get_value("store1").unwrap();
         assert_eq!(1, metric_data.values[&42494]);
-        assert_eq!(0, metric_data.values[&44376]);
         assert_eq!(43008, metric_data.sum);
     }
 
@@ -218,7 +247,6 @@ mod test {
 
         let metric_data = parent_metric.test_get_value("store1").unwrap();
         assert_eq!(1, metric_data.values[&42494]);
-        assert_eq!(0, metric_data.values[&44376]);
         assert_eq!(43008, metric_data.sum);
 
         // Single-process IPC machine goes brrrrr...

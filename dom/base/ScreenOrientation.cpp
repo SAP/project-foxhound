@@ -626,7 +626,13 @@ void ScreenOrientation::CleanupFullscreenListener() {
 OrientationType ScreenOrientation::DeviceType(CallerType aCallerType) const {
   if (nsContentUtils::ShouldResistFingerprinting(
           aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
-    return OrientationType::Landscape_primary;
+    Document* doc = GetResponsibleDocument();
+    BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
+    if (!bc) {
+      return nsRFPService::GetDefaultOrientationType();
+    }
+    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+    return nsRFPService::ViewportSizeToOrientationType(size.width, size.height);
   }
   return mType;
 }
@@ -634,18 +640,19 @@ OrientationType ScreenOrientation::DeviceType(CallerType aCallerType) const {
 uint16_t ScreenOrientation::DeviceAngle(CallerType aCallerType) const {
   if (nsContentUtils::ShouldResistFingerprinting(
           aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
-    return 0;
+    Document* doc = GetResponsibleDocument();
+    BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
+    if (!bc) {
+      return 0;
+    }
+    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+    return nsRFPService::ViewportSizeToAngle(size.width, size.height);
   }
   return mAngle;
 }
 
 OrientationType ScreenOrientation::GetType(CallerType aCallerType,
                                            ErrorResult& aRv) const {
-  if (nsContentUtils::ShouldResistFingerprinting(
-          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
-    return OrientationType::Landscape_primary;
-  }
-
   Document* doc = GetResponsibleDocument();
   BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
   if (!bc) {
@@ -653,16 +660,17 @@ OrientationType ScreenOrientation::GetType(CallerType aCallerType,
     return OrientationType::Portrait_primary;
   }
 
-  return bc->GetCurrentOrientationType();
+  OrientationType orientation = bc->GetCurrentOrientationType();
+  if (nsContentUtils::ShouldResistFingerprinting(
+          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
+    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+    return nsRFPService::ViewportSizeToOrientationType(size.width, size.height);
+  }
+  return orientation;
 }
 
 uint16_t ScreenOrientation::GetAngle(CallerType aCallerType,
                                      ErrorResult& aRv) const {
-  if (nsContentUtils::ShouldResistFingerprinting(
-          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
-    return 0;
-  }
-
   Document* doc = GetResponsibleDocument();
   BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
   if (!bc) {
@@ -670,7 +678,13 @@ uint16_t ScreenOrientation::GetAngle(CallerType aCallerType,
     return 0;
   }
 
-  return bc->GetCurrentOrientationAngle();
+  uint16_t angle = static_cast<uint16_t>(bc->GetCurrentOrientationAngle());
+  if (nsContentUtils::ShouldResistFingerprinting(
+          aCallerType, GetOwnerGlobal(), RFPTarget::ScreenOrientation)) {
+    CSSIntSize size = bc->GetTopInnerSizeForRFP();
+    return nsRFPService::ViewportSizeToAngle(size.width, size.height);
+  }
+  return angle;
 }
 
 ScreenOrientation::LockPermission
@@ -788,14 +802,17 @@ ScreenOrientation::DispatchChangeEventAndResolvePromise() {
   RefPtr<ScreenOrientation> self = this;
   return NS_NewRunnableFunction(
       "dom::ScreenOrientation::DispatchChangeEvent", [self, doc]() {
-        DebugOnly<nsresult> rv = self->DispatchTrustedEvent(u"change"_ns);
-        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "DispatchTrustedEvent failed");
+        RefPtr<Promise> pendingPromise;
         if (doc) {
-          Promise* pendingPromise = doc->GetOrientationPendingPromise();
+          pendingPromise = doc->GetOrientationPendingPromise();
           if (pendingPromise) {
-            pendingPromise->MaybeResolveWithUndefined();
             doc->ClearOrientationPendingPromise();
           }
+        }
+        DebugOnly<nsresult> rv = self->DispatchTrustedEvent(u"change"_ns);
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "DispatchTrustedEvent failed");
+        if (pendingPromise) {
+          pendingPromise->MaybeResolveWithUndefined();
         }
       });
 }

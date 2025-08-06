@@ -158,8 +158,8 @@ class nsITheme : public nsISupports {
    * Get the preferred content-box size of a checkbox / radio button, in app
    * units.  Historically 9px.
    */
-  virtual nscoord GetCheckboxRadioPrefSize() {
-    return mozilla::CSSPixel::ToAppUnits(9);
+  virtual mozilla::CSSCoord GetCheckboxRadioPrefSize() {
+    return mozilla::CSSCoord(9.0f);
   }
 
   /**
@@ -171,22 +171,15 @@ class nsITheme : public nsISupports {
 
   enum Transparency { eOpaque = 0, eTransparent, eUnknownTransparency };
 
-  /**
-   * Returns what we know about the transparency of the widget.
-   */
+  /** Returns what we know about the transparency of the widget. */
   virtual Transparency GetWidgetTransparency(nsIFrame* aFrame,
                                              StyleAppearance aWidgetType) {
     return eUnknownTransparency;
   }
 
-  /**
-   * Sets |*aShouldRepaint| to indicate whether an attribute or content state
-   * change should trigger a repaint.  Call with null |aAttribute| (and
-   * null |aOldValue|) for content state changes.
-   */
-  NS_IMETHOD WidgetStateChanged(nsIFrame* aFrame, StyleAppearance aWidgetType,
-                                nsAtom* aAttribute, bool* aShouldRepaint,
-                                const nsAttrValue* aOldValue) = 0;
+  /** Returns whether an attribute change should trigger a repaint. */
+  virtual bool WidgetAttributeChangeRequiresRepaint(StyleAppearance,
+                                                    nsAtom* aAttribute) = 0;
 
   NS_IMETHOD ThemeChanged() = 0;
 

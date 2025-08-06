@@ -2,12 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html } from "../vendor/lit.all.mjs";
-import { MozLitElement } from "../lit-utils.mjs";
+import { html, ifDefined } from "../vendor/lit.all.mjs";
+import { MozLitElement, MozBaseInputElement } from "../lit-utils.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-label.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-fieldset.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-support-link.mjs";
 
 const NAVIGATION_FORWARD = "forward";
 const NAVIGATION_BACKWARD = "backward";
@@ -219,36 +221,27 @@ customElements.define("moz-radio-group", MozRadioGroup);
  *
  * @tagname moz-radio
  * @property {boolean} checked - Whether or not the input is selected.
+ * @property {string} description - Description for the input.
  * @property {boolean} disabled - Whether or not the input is disabled.
+ * @property {string} iconSrc - Path to an icon displayed next to the input.
+ * @property {number} inputTabIndex - Tabindex of the input element.
  * @property {string} label - Label for the radio input.
  * @property {string} name
  *  Name of the input control, set by the associated moz-radio-group element.
- * @property {number} inputTabIndex - Tabindex of the input element.
+ * @property {string} supportPage - Name of the SUMO support page to link to.
  * @property {number} value - Value of the radio input.
  */
-export class MozRadio extends MozLitElement {
+export class MozRadio extends MozBaseInputElement {
   #controller;
 
   static properties = {
     checked: { type: Boolean, reflect: true },
-    disabled: { type: Boolean, reflect: true },
-    iconSrc: { type: String },
-    label: { type: String, fluent: true },
-    name: { type: String, attribute: false },
     inputTabIndex: { type: Number, state: true },
-    value: { type: String },
-  };
-
-  static queries = {
-    radioButton: "#radio-button",
-    labelEl: "label",
-    icon: ".icon",
   };
 
   constructor() {
     super();
     this.checked = false;
-    this.disabled = false;
   }
 
   connectedCallback() {
@@ -263,6 +256,8 @@ export class MozRadio extends MozLitElement {
   }
 
   willUpdate(changedProperties) {
+    super.willUpdate(changedProperties);
+
     // Handle setting checked directly via JS.
     if (
       changedProperties.has("checked") &&
@@ -304,54 +299,21 @@ export class MozRadio extends MozLitElement {
     this.dispatchEvent(new Event(e.type, e));
   }
 
-  // Delegate click to the input element.
-  click() {
-    this.radioButton.click();
-    this.focus();
-  }
-
-  // Delegate focus to the input element.
-  focus() {
-    this.radioButton.focus();
-  }
-
-  iconTemplate() {
-    if (this.iconSrc) {
-      return html`<img src=${this.iconSrc} role="presentation" class="icon" />`;
-    }
-    return "";
-  }
-
   inputTemplate() {
     return html`<input
       type="radio"
-      id="radio-button"
+      id="input"
       value=${this.value}
       name=${this.name}
       .checked=${this.checked}
       aria-checked=${this.checked}
+      aria-describedby="description"
       tabindex=${this.inputTabIndex}
       ?disabled=${this.disabled || this.#controller.disabled}
+      accesskey=${ifDefined(this.accessKey)}
       @click=${this.handleClick}
       @change=${this.handleChange}
     />`;
-  }
-
-  labelTemplate() {
-    return html`<span class="label-content">
-      ${this.iconTemplate()}
-      <span class="text">${this.label}</span>
-    </span>`;
-  }
-
-  render() {
-    return html`
-      <link
-        rel="stylesheet"
-        href="chrome://global/content/elements/moz-radio.css"
-      />
-      <label part="label">${this.inputTemplate()}${this.labelTemplate()}</label>
-    `;
   }
 }
 customElements.define("moz-radio", MozRadio);

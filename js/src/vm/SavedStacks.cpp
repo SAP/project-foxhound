@@ -31,7 +31,7 @@
 #include "js/Stack.h"
 #include "js/Vector.h"
 #include "util/DifferentialTesting.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "vm/Compartment.h"
 #include "vm/FrameIter.h"
 #include "vm/GeckoProfiler.h"
@@ -393,24 +393,34 @@ const ClassSpec SavedFrame::classSpec_ = {
     SavedFrame::protoFunctions,
     SavedFrame::protoAccessors,
     SavedFrame::finishSavedFrameInit,
-    ClassSpec::DontDefineConstructor};
+    ClassSpec::DontDefineConstructor,
+};
 
 /* static */ const JSClass SavedFrame::class_ = {
     "SavedFrame",
     JSCLASS_HAS_RESERVED_SLOTS(SavedFrame::JSSLOT_COUNT) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame) |
         JSCLASS_FOREGROUND_FINALIZE,
-    &SavedFrameClassOps, &SavedFrame::classSpec_};
+    &SavedFrameClassOps,
+    &SavedFrame::classSpec_,
+};
 
 const JSClass SavedFrame::protoClass_ = {
-    "SavedFrame.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame),
-    JS_NULL_CLASS_OPS, &SavedFrame::classSpec_};
+    "SavedFrame.prototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame),
+    JS_NULL_CLASS_OPS,
+    &SavedFrame::classSpec_,
+};
 
-/* static */ const JSFunctionSpec SavedFrame::staticFunctions[] = {JS_FS_END};
+/* static */ const JSFunctionSpec SavedFrame::staticFunctions[] = {
+    JS_FS_END,
+};
 
 /* static */ const JSFunctionSpec SavedFrame::protoFunctions[] = {
     JS_FN("constructor", SavedFrame::construct, 0, 0),
-    JS_FN("toString", SavedFrame::toStringMethod, 0, 0), JS_FS_END};
+    JS_FN("toString", SavedFrame::toStringMethod, 0, 0),
+    JS_FS_END,
+};
 
 /* static */ const JSPropertySpec SavedFrame::protoAccessors[] = {
     JS_PSG("source", SavedFrame::sourceProperty, 0),
@@ -422,7 +432,8 @@ const JSClass SavedFrame::protoClass_ = {
     JS_PSG("asyncParent", SavedFrame::asyncParentProperty, 0),
     JS_PSG("parent", SavedFrame::parentProperty, 0),
     JS_STRING_SYM_PS(toStringTag, "SavedFrame", JSPROP_READONLY),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 /* static */
 void SavedFrame::finalize(JS::GCContext* gcx, JSObject* obj) {
@@ -978,19 +989,20 @@ JS_PUBLIC_API SavedFrameResult GetSavedFrameParent(
   return SavedFrameResult::Ok;
 }
 
-static bool FormatStackFrameLine(js::StringBuffer& sb,
+static bool FormatStackFrameLine(js::StringBuilder& sb,
                                  JS::Handle<js::SavedFrame*> frame) {
   if (frame->isWasm()) {
     // See comment in WasmFrameIter::computeLine().
     return sb.append("wasm-function[") &&
-           NumberValueToStringBuffer(NumberValue(frame->wasmFuncIndex()), sb) &&
+           NumberValueToStringBuilder(NumberValue(frame->wasmFuncIndex()),
+                                      sb) &&
            sb.append(']');
   }
 
-  return NumberValueToStringBuffer(NumberValue(frame->getLine()), sb);
+  return NumberValueToStringBuilder(NumberValue(frame->getLine()), sb);
 }
 
-static bool FormatStackFrameColumn(js::StringBuffer& sb,
+static bool FormatStackFrameColumn(js::StringBuilder& sb,
                                    JS::Handle<js::SavedFrame*> frame) {
   if (frame->isWasm()) {
     // See comment in WasmFrameIter::computeLine().
@@ -1003,11 +1015,11 @@ static bool FormatStackFrameColumn(js::StringBuffer& sb,
     return sb.append("0x") && sb.append(cstr, cstrlen);
   }
 
-  return NumberValueToStringBuffer(
+  return NumberValueToStringBuilder(
       NumberValue(frame->getColumn().oneOriginValue()), sb);
 }
 
-static bool FormatSpiderMonkeyStackFrame(JSContext* cx, js::StringBuffer& sb,
+static bool FormatSpiderMonkeyStackFrame(JSContext* cx, js::StringBuilder& sb,
                                          JS::Handle<js::SavedFrame*> frame,
                                          size_t indent, bool skippedAsync) {
   RootedString asyncCause(cx, frame->getAsyncCause());
@@ -1024,7 +1036,7 @@ static bool FormatSpiderMonkeyStackFrame(JSContext* cx, js::StringBuffer& sb,
          FormatStackFrameColumn(sb, frame) && sb.append('\n');
 }
 
-static bool FormatV8StackFrame(JSContext* cx, js::StringBuffer& sb,
+static bool FormatV8StackFrame(JSContext* cx, js::StringBuilder& sb,
                                JS::Handle<js::SavedFrame*> frame, size_t indent,
                                bool lastFrame) {
   Rooted<JSAtom*> name(cx, frame->getFunctionDisplayName());
@@ -1053,7 +1065,7 @@ JS_PUBLIC_API bool BuildStackString(JSContext* cx, JSPrincipals* principals,
   MOZ_ASSERT(format != js::StackFormat::Default);
 
   // Enter a new block to constrain the scope of possibly entering the stack's
-  // realm. This ensures that when we finish the StringBuffer, we are back in
+  // realm. This ensures that when we finish the StringBuilder, we are back in
   // the cx's original compartment, and fulfill our contract with callers to
   // place the output string in the cx's current realm.
   {
@@ -1980,9 +1992,10 @@ JSObject* SavedStacks::MetadataBuilder::build(
 const SavedStacks::MetadataBuilder SavedStacks::metadataBuilder;
 
 /* static */
-ReconstructedSavedFramePrincipals ReconstructedSavedFramePrincipals::IsSystem;
+MOZ_CONSTINIT ReconstructedSavedFramePrincipals
+    ReconstructedSavedFramePrincipals::IsSystem;
 /* static */
-ReconstructedSavedFramePrincipals
+MOZ_CONSTINIT ReconstructedSavedFramePrincipals
     ReconstructedSavedFramePrincipals::IsNotSystem;
 
 UniqueChars BuildUTF8StackString(JSContext* cx, JSPrincipals* principals,

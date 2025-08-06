@@ -6,6 +6,7 @@
 
 import functools
 import math
+from operator import attrgetter
 import os
 import re
 import string
@@ -58,18 +59,22 @@ INSTANCE_RESERVED_SLOTS = 1
 GLOBAL_NAMES_PHF_SIZE = 256
 
 
+def reservedSlot(slotIndex, forXray):
+    base = "DOM_EXPANDO_RESERVED_SLOTS" if forXray else "DOM_INSTANCE_RESERVED_SLOTS"
+    return "(%s + %d)" % (base, slotIndex)
+
+
+def getSlotIndex(member, descriptor):
+    slotIndex = member.slotIndices[descriptor.interface.identifier.name]
+    return slotIndex[0] if isinstance(slotIndex, tuple) else slotIndex
+
+
 def memberReservedSlot(member, descriptor):
-    return (
-        "(DOM_INSTANCE_RESERVED_SLOTS + %d)"
-        % member.slotIndices[descriptor.interface.identifier.name]
-    )
+    return reservedSlot(getSlotIndex(member, descriptor), False)
 
 
 def memberXrayExpandoReservedSlot(member, descriptor):
-    return (
-        "(xpc::JSSLOT_EXPANDO_COUNT + %d)"
-        % member.slotIndices[descriptor.interface.identifier.name]
-    )
+    return reservedSlot(getSlotIndex(member, descriptor), True)
 
 
 def mayUseXrayExpandoSlots(descriptor, attr):
@@ -78,6 +83,20 @@ def mayUseXrayExpandoSlots(descriptor, attr):
     # slots on the reflector for caching.  Also, for interfaces that
     # don't want Xrays we obviously never use the Xray expando slot.
     return descriptor.wantsXrays and not attr.type.isGeckoInterface()
+
+
+def reflectedHTMLAttributesArrayIndex(descriptor, attr):
+    slots = attr.slotIndices[descriptor.interface.identifier.name]
+    return slots[1]
+
+
+def getReflectedHTMLAttributesIface(descriptor):
+    iface = descriptor.interface
+    while iface:
+        if iface.reflectedHTMLAttributesReturningFrozenArray:
+            return iface
+        iface = iface.parent
+    return None
 
 
 def toStringBool(arg):
@@ -584,7 +603,7 @@ def DOMClass(descriptor):
     else:
         wrapperCacheGetter = "nullptr"
 
-    if descriptor.hasOrdinaryObjectPrototype:
+    if descriptor.hasOrdinaryObjectPrototype():
         getProto = "JS::GetRealmObjectPrototypeHandle"
     else:
         getProto = "GetProtoObjectHandle"
@@ -653,7 +672,14 @@ class CGDOMJSClass(CGThing):
             reservedSlots = "JSCLASS_GLOBAL_APPLICATION_SLOTS"
         else:
             classFlags += "JSCLASS_HAS_RESERVED_SLOTS(%d)" % slotCount
-            traceHook = "nullptr"
+            iface = getReflectedHTMLAttributesIface(self.descriptor)
+            if iface:
+                traceHook = (
+                    "%s::ReflectedHTMLAttributeSlots::Trace"
+                    % toBindingNamespace(iface.identifier.name)
+                )
+            else:
+                traceHook = "nullptr"
             reservedSlots = slotCount
         if self.descriptor.interface.hasProbablyShortLivingWrapper():
             if not self.descriptor.wrapperCache:
@@ -712,9 +738,11 @@ class CGDOMJSClass(CGThing):
             """,
             name=self.descriptor.interface.getClassName(),
             flags=classFlags,
-            addProperty=ADDPROPERTY_HOOK_NAME
-            if wantsAddProperty(self.descriptor)
-            else "nullptr",
+            addProperty=(
+                ADDPROPERTY_HOOK_NAME
+                if wantsAddProperty(self.descriptor)
+                else "nullptr"
+            ),
             newEnumerate=newEnumerateHook,
             resolve=resolveHook,
             mayResolve=mayResolveHook,
@@ -782,6 +810,14 @@ class CGXrayExpandoJSClass(CGThing):
         return ""
 
     def define(self):
+        iface = getReflectedHTMLAttributesIface(self.descriptor)
+        if iface:
+            ops = (
+                "&%s::ReflectedHTMLAttributeSlots::sXrayExpandoObjectClassOps"
+                % toBindingNamespace(iface.identifier.name)
+            )
+        else:
+            ops = "&xpc::XrayExpandoObjectClassOps"
         return fill(
             """
             // This may allocate too many slots, because we only really need
@@ -789,9 +825,11 @@ class CGXrayExpandoJSClass(CGThing):
             // allocating slots only for those would make the slot index
             // computations much more complicated, so let's do this the simple
             // way for now.
-            DEFINE_XRAY_EXPANDO_CLASS(static, sXrayExpandoObjectClass, ${memberSlots});
+            DEFINE_XRAY_EXPANDO_CLASS_WITH_OPS(static, sXrayExpandoObjectClass, ${memberSlots},
+                                               ${ops});
             """,
             memberSlots=self.descriptor.interface.totalMembersInSlots,
+            ops=ops,
         )
 
 
@@ -822,6 +860,7 @@ def InterfacePrototypeObjectProtoGetter(descriptor):
         protoGetter = "GetNamedPropertiesObject"
         protoHandleGetter = None
     elif parentProtoName is None:
+        protoHandleGetter = None
         if descriptor.interface.getExtendedAttribute("ExceptionClass"):
             protoGetter = "JS::GetRealmErrorPrototype"
         elif descriptor.interface.isIteratorInterface():
@@ -830,7 +869,7 @@ def InterfacePrototypeObjectProtoGetter(descriptor):
             protoGetter = "JS::GetRealmAsyncIteratorPrototype"
         else:
             protoGetter = "JS::GetRealmObjectPrototype"
-        protoHandleGetter = None
+            protoHandleGetter = "JS::GetRealmObjectPrototypeHandle"
     else:
         prefix = toBindingNamespace(parentProtoName)
         protoGetter = prefix + "::GetProtoObject"
@@ -895,35 +934,21 @@ class CGPrototypeJSClass(CGThing):
         )
 
 
-def InterfaceObjectProtoGetter(descriptor, forXrays=False):
+def InterfaceObjectProtoGetter(descriptor):
     """
-    Returns a tuple with two elements:
-
-        1) The name of the function to call to get the prototype to use for the
-           interface object as a JSObject*.
-
-        2) The name of the function to call to get the prototype to use for the
-           interface prototype as a JS::Handle<JSObject*> or None if no such
-           function exists.
+    Returns the name of the function to call to get the prototype to use for the
+    interface object's prototype as a JS::Handle<JSObject*>.
     """
+    assert not descriptor.interface.isNamespace()
     parentInterface = descriptor.interface.parent
     if parentInterface:
-        assert not descriptor.interface.isNamespace()
         parentIfaceName = parentInterface.identifier.name
         parentDesc = descriptor.getDescriptor(parentIfaceName)
         prefix = toBindingNamespace(parentDesc.name)
-        protoGetter = prefix + "::GetConstructorObject"
         protoHandleGetter = prefix + "::GetConstructorObjectHandle"
-    elif descriptor.interface.isNamespace():
-        if forXrays or not descriptor.interface.getExtendedAttribute("ProtoObjectHack"):
-            protoGetter = "JS::GetRealmObjectPrototype"
-        else:
-            protoGetter = "GetHackedNamespaceProtoObject"
-        protoHandleGetter = None
     else:
-        protoGetter = "JS::GetRealmFunctionPrototype"
-        protoHandleGetter = None
-    return (protoGetter, protoHandleGetter)
+        protoHandleGetter = "JS::GetRealmFunctionPrototypeHandle"
+    return protoHandleGetter
 
 
 class CGNamespaceObjectJSClass(CGThing):
@@ -936,8 +961,6 @@ class CGNamespaceObjectJSClass(CGThing):
         return ""
 
     def define(self):
-        (protoGetter, _) = InterfaceObjectProtoGetter(self.descriptor, forXrays=True)
-
         classString = self.descriptor.interface.getExtendedAttribute("ClassString")
         if classString is None:
             classString = self.descriptor.interface.identifier.name
@@ -958,12 +981,14 @@ class CGNamespaceObjectJSClass(CGThing):
               prototypes::id::_ID_Count,
               0,
               ${hooks},
-              ${protoGetter}
+              // This isn't strictly following the spec (see
+              // https://console.spec.whatwg.org/#ref-for-dfn-namespace-object),
+              // but should be ok for Xrays.
+              JS::GetRealmObjectPrototype
             };
             """,
             classString=classString,
             hooks=NativePropertyHooks(self.descriptor),
-            protoGetter=protoGetter,
         )
 
 
@@ -979,29 +1004,36 @@ class CGInterfaceObjectInfo(CGThing):
     def define(self):
         if self.descriptor.interface.ctor():
             ctorname = CONSTRUCT_HOOK_NAME
+            constructorArgs = methodLength(self.descriptor.interface.ctor())
         else:
             ctorname = "ThrowingConstructor"
+            constructorArgs = 0
+        constructorName = self.descriptor.interface.getClassName()
         wantsIsInstance = self.descriptor.interface.hasInterfacePrototypeObject()
 
         prototypeID, depth = PrototypeIDAndDepth(self.descriptor)
-        (protoGetter, _) = InterfaceObjectProtoGetter(self.descriptor, forXrays=True)
+        protoHandleGetter = InterfaceObjectProtoGetter(self.descriptor)
 
         return fill(
             """
             static const DOMInterfaceInfo sInterfaceObjectInfo = {
               { ${ctorname}, ${hooks} },
-              ${protoGetter},
-              ${prototypeID},
+              ${protoHandleGetter},
               ${depth},
+              ${prototypeID},
               ${wantsIsInstance},
+              ${constructorArgs},
+              "${constructorName}",
             };
             """,
             ctorname=ctorname,
             hooks=NativePropertyHooks(self.descriptor),
-            protoGetter=protoGetter,
-            prototypeID=prototypeID,
+            protoHandleGetter=protoHandleGetter,
             depth=depth,
+            prototypeID=prototypeID,
             wantsIsInstance=toStringBool(wantsIsInstance),
+            constructorArgs=constructorArgs,
+            constructorName=constructorName,
         )
 
 
@@ -2028,6 +2060,31 @@ class CGGetWrapperCacheHook(CGAbstractClassHook):
         )
 
 
+class CGDefineHTMLAttributeSlots(CGThing):
+    """
+    Function to get the slots object for reflected HTML attributes that return
+    a FrozenArray<Element> value.
+    """
+
+    def __init__(self, descriptor):
+        self.descriptor = descriptor
+        CGThing.__init__(self)
+
+    def declare(self):
+        atts = self.descriptor.interface.reflectedHTMLAttributesReturningFrozenArray
+        return fill(
+            """
+            using ReflectedHTMLAttributeSlots = binding_detail::ReflectedHTMLAttributeSlots<${slotIndex}, ${xraySlotIndex}, ${arrayLength}>;
+            """,
+            slotIndex=reservedSlot(atts.slotIndex, False),
+            xraySlotIndex=reservedSlot(atts.slotIndex, True),
+            arrayLength=atts.totalMembersInSlots,
+        )
+
+    def define(self):
+        return ""
+
+
 def finalizeHook(descriptor, hookName, gcx, obj):
     finalize = "JS::SetReservedSlot(%s, DOM_OBJECT_SLOT, JS::UndefinedValue());\n" % obj
     if descriptor.interface.getExtendedAttribute("LegacyOverrideBuiltIns"):
@@ -2067,6 +2124,12 @@ def finalizeHook(descriptor, hookName, gcx, obj):
                 """,
                 slot=memberReservedSlot(m, descriptor),
             )
+    iface = getReflectedHTMLAttributesIface(descriptor)
+    if iface:
+        finalize += "%s::ReflectedHTMLAttributeSlots::Finalize(%s);\n" % (
+            toBindingNamespace(iface.identifier.name),
+            obj,
+        )
     if descriptor.wrapperCache:
         finalize += "ClearWrapper(self, self, %s);\n" % obj
     if descriptor.isGlobal():
@@ -2630,7 +2693,7 @@ class PropertyDefiner:
         specType = "const " + specType
         arrays = fill(
             """
-            static ${specType} ${name}_specs[] = {
+            MOZ_GLOBINIT static ${specType} ${name}_specs[] = {
             ${specs}
             };
 
@@ -2904,9 +2967,9 @@ class MethodDefiner(PropertyDefiner):
             "name": m.identifier.name,
             "methodInfo": not m.isStatic(),
             "length": methodLength(m),
-            "flags": EnumerabilityFlags(m)
-            if (overrideFlags is None)
-            else overrideFlags,
+            "flags": (
+                EnumerabilityFlags(m) if (overrideFlags is None) else overrideFlags
+            ),
             "condition": PropertyDefiner.getControllingCondition(m, descriptor),
             "allowCrossOriginThis": m.getExtendedAttribute("CrossOriginCallable"),
             "returnsPromise": m.returnsPromise(),
@@ -3519,14 +3582,15 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
         else:
             defineOnGlobal = "aDefineOnGlobal != DefineInterfaceProperty::No"
         if needInterfaceObject:
-            (protoGetter, protoHandleGetter) = InterfaceObjectProtoGetter(
-                self.descriptor
-            )
-            if protoHandleGetter is None:
-                getConstructorProto = "aCx, " + protoGetter
+            if self.descriptor.interface.isNamespace():
+                if self.descriptor.interface.getExtendedAttribute("ProtoObjectHack"):
+                    getConstructorProto = "GetHackedNamespaceProtoObject"
+                else:
+                    getConstructorProto = "JS::GetRealmObjectPrototype"
+                getConstructorProto = "aCx, " + getConstructorProto
                 constructorProtoType = "Rooted"
             else:
-                getConstructorProto = protoHandleGetter
+                getConstructorProto = InterfaceObjectProtoGetter(self.descriptor)
                 constructorProtoType = "Handle"
 
             getConstructorProto = fill(
@@ -3693,9 +3757,9 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
             defineOnGlobal=defineOnGlobal,
             unscopableNames="unscopableNames" if self.haveUnscopables else "nullptr",
             isGlobal=toStringBool(isGlobal),
-            legacyWindowAliases="legacyWindowAliases"
-            if self.haveLegacyWindowAliases
-            else "nullptr",
+            legacyWindowAliases=(
+                "legacyWindowAliases" if self.haveLegacyWindowAliases else "nullptr"
+            ),
         )
 
         # If we fail after here, we must clear interface and prototype caches
@@ -3866,11 +3930,9 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
         else:
             unforgeableHolderSetup = None
 
-        # FIXME Unclear whether this is needed for hasOrdinaryObjectPrototype
         if (
             self.descriptor.interface.isOnGlobalProtoChain()
             and needInterfacePrototypeObject
-            and not self.descriptor.hasOrdinaryObjectPrototype
         ):
             makeProtoPrototypeImmutable = CGGeneric(
                 fill(
@@ -3976,7 +4038,6 @@ class CGGetProtoObjectHandleMethod(CGAbstractMethod):
             "GetProtoObjectHandle",
             "JS::Handle<JSObject*>",
             [Argument("JSContext*", "aCx")],
-            inline=True,
             static=static,
             signatureOnly=signatureOnly,
         )
@@ -4027,7 +4088,6 @@ class CGGetConstructorObjectHandleMethod(CGAbstractMethod):
             [
                 Argument("JSContext*", "aCx"),
             ],
-            inline=True,
         )
 
     def definition_body(self):
@@ -4042,24 +4102,6 @@ class CGGetConstructorObjectHandleMethod(CGAbstractMethod):
             """,
             name=self.descriptor.name,
         )
-
-
-class CGGetConstructorObjectMethod(CGAbstractMethod):
-    """
-    A method for getting the interface constructor object.
-    """
-
-    def __init__(self, descriptor):
-        CGAbstractMethod.__init__(
-            self,
-            descriptor,
-            "GetConstructorObject",
-            "JSObject*",
-            [Argument("JSContext*", "aCx")],
-        )
-
-    def definition_body(self):
-        return "return GetConstructorObjectHandle(aCx);\n"
 
 
 class CGGetNamedPropertiesObjectMethod(CGAbstractStaticMethod):
@@ -4833,7 +4875,10 @@ class CGWrapGlobalMethod(CGAbstractMethod):
     """
 
     def __init__(self, descriptor, properties):
-        assert descriptor.interface.hasInterfacePrototypeObject()
+        assert (
+            descriptor.interface.hasInterfacePrototypeObject()
+            or descriptor.hasOrdinaryObjectPrototype()
+        )
         args = [
             Argument("JSContext*", "aCx"),
             Argument(descriptor.nativeType + "*", "aObject"),
@@ -4871,7 +4916,7 @@ class CGWrapGlobalMethod(CGAbstractMethod):
         else:
             unforgeable = ""
 
-        if self.descriptor.hasOrdinaryObjectPrototype:
+        if self.descriptor.hasOrdinaryObjectPrototype():
             getProto = "JS::GetRealmObjectPrototypeHandle"
         else:
             getProto = "GetProtoObjectHandle"
@@ -4973,6 +5018,12 @@ class CGClearCachedValueMethod(CGAbstractMethod):
 
     def definition_body(self):
         slotIndex = memberReservedSlot(self.member, self.descriptor)
+        clearCachedValue = fill(
+            """
+            JS::SetReservedSlot(obj, ${slotIndex}, JS::UndefinedValue());
+            """,
+            slotIndex=slotIndex,
+        )
         if self.member.getExtendedAttribute("StoreInSlot"):
             # We have to root things and save the old value in case
             # regetting fails, so we can restore it.
@@ -5000,17 +5051,46 @@ class CGClearCachedValueMethod(CGAbstractMethod):
             declObj = "JSObject* obj;\n"
             noopRetval = ""
             saveMember = ""
+            if self.member.getExtendedAttribute(
+                "ReflectedHTMLAttributeReturningFrozenArray"
+            ):
+                clearCachedValue = fill(
+                    """
+                    ReflectedHTMLAttributeSlots::Clear(obj, ${arrayIndex});
+                    """,
+                    arrayIndex=reflectedHTMLAttributesArrayIndex(
+                        self.descriptor, self.member
+                    ),
+                )
             regetMember = ""
 
         if self.descriptor.wantsXrays:
-            clearXrayExpandoSlots = fill(
-                """
-                xpc::ClearXrayExpandoSlots(obj, ${xraySlotIndex});
-                """,
-                xraySlotIndex=memberXrayExpandoReservedSlot(
-                    self.member, self.descriptor
-                ),
-            )
+            if self.member.getExtendedAttribute("StoreInSlot"):
+                cx = "JS::RootingContext::get(aCx)"
+            else:
+                cx = "RootingCx()"
+            if self.member.getExtendedAttribute(
+                "ReflectedHTMLAttributeReturningFrozenArray"
+            ):
+                clearXrayExpandoSlots = fill(
+                    """
+                    ReflectedHTMLAttributeSlots::ClearInXrays(${cx}, obj, ${arrayIndex});
+                    """,
+                    cx=cx,
+                    arrayIndex=reflectedHTMLAttributesArrayIndex(
+                        self.descriptor, self.member
+                    ),
+                )
+            else:
+                clearXrayExpandoSlots = fill(
+                    """
+                    ClearXrayExpandoSlots(${cx}, obj, ${xraySlotIndex});
+                    """,
+                    cx=cx,
+                    xraySlotIndex=memberXrayExpandoReservedSlot(
+                        self.member, self.descriptor
+                    ),
+                )
         else:
             clearXrayExpandoSlots = ""
 
@@ -5022,7 +5102,7 @@ class CGClearCachedValueMethod(CGAbstractMethod):
               return${noopRetval};
             }
             $*{saveMember}
-            JS::SetReservedSlot(obj, ${slotIndex}, JS::UndefinedValue());
+            $*{clearCachedValue}
             $*{clearXrayExpandoSlots}
             $*{regetMember}
             """,
@@ -5030,6 +5110,7 @@ class CGClearCachedValueMethod(CGAbstractMethod):
             noopRetval=noopRetval,
             saveMember=saveMember,
             slotIndex=slotIndex,
+            clearCachedValue=clearCachedValue,
             clearXrayExpandoSlots=clearXrayExpandoSlots,
             regetMember=regetMember,
         )
@@ -6923,7 +7004,7 @@ def getJSToNativeConversionInfo(
             defaultCode = fill(
                 """
                 static const char data[] = { ${data} };
-                $${declName} = JS_NewStringCopyN(cx, data, ArrayLength(data) - 1);
+                $${declName} = JS_NewStringCopyN(cx, data, std::size(data) - 1);
                 if (!$${declName}) {
                     $*{exceptionCode}
                 }
@@ -7576,9 +7657,11 @@ def instantiateJSToNativeConversion(info, replacements, checkForValue=False):
                         "%s.emplace(%s);\n"
                         % (
                             originalHolderName,
-                            getArgsCGThing(info.holderArgs).define()
-                            if info.holderArgs
-                            else "",
+                            (
+                                getArgsCGThing(info.holderArgs).define()
+                                if info.holderArgs
+                                else ""
+                            ),
                         )
                     )
                 )
@@ -9670,6 +9753,24 @@ class CGPerSignatureCall(CGThing):
 
             # slotStorageSteps are steps that run once we have entered the
             # slotStorage compartment.
+            if self.idlNode.getExtendedAttribute(
+                "ReflectedHTMLAttributeReturningFrozenArray"
+            ):
+                storeInSlot = fill(
+                    """
+                    array[${arrayIndex}] = storedVal;
+                    """,
+                    arrayIndex=reflectedHTMLAttributesArrayIndex(
+                        self.descriptor, self.idlNode
+                    ),
+                )
+            else:
+                storeInSlot = dedent(
+                    """
+                    JS::SetReservedSlot(slotStorage, slotIndex, storedVal);
+                    """
+                )
+
             slotStorageSteps = fill(
                 """
                 // Make a copy so that we don't do unnecessary wrapping on args.rval().
@@ -9677,9 +9778,10 @@ class CGPerSignatureCall(CGThing):
                 if (!${maybeWrap}(cx, &storedVal)) {
                   return false;
                 }
-                JS::SetReservedSlot(slotStorage, slotIndex, storedVal);
+                $*{storeInSlot}
                 """,
                 maybeWrap=getMaybeWrapValueFuncForType(self.idlNode.type),
+                storeInSlot=storeInSlot,
             )
 
             checkForXray = mayUseXrayExpandoSlots(self.descriptor, self.idlNode)
@@ -11201,7 +11303,7 @@ class CGSpecializedGetterCommon(CGAbstractStaticMethod):
             # to cache it.  The question is, which object?  For dictionary and
             # sequence return values, we want to use a slot on the Xray expando
             # if we're called via Xrays, and a slot on our reflector otherwise.
-            # On the other hand, when dealing with some interfacce types
+            # On the other hand, when dealing with some interface types
             # (e.g. window.document) we want to avoid calling the getter more
             # than once.  In the case of window.document, it's because the
             # getter can start returning null, which would get hidden in the
@@ -11214,7 +11316,7 @@ class CGSpecializedGetterCommon(CGAbstractStaticMethod):
             # we know that in the interface type case the returned object is
             # wrappercached.  So creating Xrays to it is reasonable.
             if mayUseXrayExpandoSlots(self.descriptor, self.attr):
-                prefix += fill(
+                prefix += dedent(
                     """
                     // Have to either root across the getter call or reget after.
                     bool isXray;
@@ -11222,35 +11324,37 @@ class CGSpecializedGetterCommon(CGAbstractStaticMethod):
                     if (!slotStorage) {
                       return false;
                     }
-                    const size_t slotIndex = isXray ? ${xraySlotIndex} : ${slotIndex};
-                    """,
-                    xraySlotIndex=memberXrayExpandoReservedSlot(
-                        self.attr, self.descriptor
-                    ),
-                    slotIndex=memberReservedSlot(self.attr, self.descriptor),
+                    """
                 )
             else:
-                prefix += fill(
+                prefix += dedent(
                     """
                     // Have to either root across the getter call or reget after.
                     JS::Rooted<JSObject*> slotStorage(cx, js::UncheckedUnwrap(obj, /* stopAtWindowProxy = */ false));
                     MOZ_ASSERT(IsDOMObject(slotStorage));
-                    const size_t slotIndex = ${slotIndex};
-                    """,
-                    slotIndex=memberReservedSlot(self.attr, self.descriptor),
+                    """
                 )
 
             if self.attr.getExtendedAttribute(
                 "ReflectedHTMLAttributeReturningFrozenArray"
             ):
                 argsPre.append("hasCachedValue ? &useCachedValue : nullptr")
-                prefix += dedent(
+                isXray = (
+                    "isXray"
+                    if mayUseXrayExpandoSlots(self.descriptor, self.attr)
+                    else "false"
+                )
+                prefix += fill(
                     """
-                    MOZ_ASSERT(slotIndex < JSCLASS_RESERVED_SLOTS(JS::GetClass(slotStorage)));
-                    JS::Rooted<JS::Value> cachedVal(cx, JS::GetReservedSlot(slotStorage, slotIndex));
+                    auto& array = ReflectedHTMLAttributeSlots::GetOrCreate(slotStorage, ${isXray});
+                    JS::Rooted<JS::Value> cachedVal(cx, array[${arrayIndex}]);
                     bool hasCachedValue = !cachedVal.isUndefined();
                     bool useCachedValue = false;
-                    """
+                    """,
+                    isXray=isXray,
+                    arrayIndex=reflectedHTMLAttributesArrayIndex(
+                        self.descriptor, self.attr
+                    ),
                 )
                 maybeReturnCachedVal = fill(
                     """
@@ -11269,6 +11373,23 @@ class CGSpecializedGetterCommon(CGAbstractStaticMethod):
                     clearCachedValue=MakeClearCachedValueNativeName(self.attr),
                 )
             else:
+                if mayUseXrayExpandoSlots(self.descriptor, self.attr):
+                    prefix += fill(
+                        """
+                        const size_t slotIndex = isXray ? ${xraySlotIndex} : ${slotIndex};
+                        """,
+                        xraySlotIndex=memberXrayExpandoReservedSlot(
+                            self.attr, self.descriptor
+                        ),
+                        slotIndex=memberReservedSlot(self.attr, self.descriptor),
+                    )
+                else:
+                    prefix += fill(
+                        """
+                        const size_t slotIndex = ${slotIndex};
+                        """,
+                        slotIndex=memberReservedSlot(self.attr, self.descriptor),
+                    )
                 prefix += fill(
                     """
                     MOZ_ASSERT(slotIndex < JSCLASS_RESERVED_SLOTS(JS::GetClass(slotStorage)));
@@ -12464,7 +12585,7 @@ class CGEnumToJSValue(CGAbstractMethod):
     def definition_body(self):
         return fill(
             """
-            MOZ_ASSERT(uint32_t(aArgument) < ArrayLength(${strings}));
+            MOZ_ASSERT(uint32_t(aArgument) < std::size(${strings}));
             JSString* resultStr =
               JS_NewStringCopyN(aCx, ${strings}[uint32_t(aArgument)].BeginReading(),
                                 ${strings}[uint32_t(aArgument)].Length());
@@ -12488,21 +12609,21 @@ class CGEnum(CGThing):
                 declare=fill(
                     """
                     template <> struct EnumStrings<${name}> {
-                      static const nsLiteralCString Values[${count}];
-                    };
-                    """,
-                    name=self.enum.identifier.name,
-                    count=self.nEnumStrings(),
-                ),
-                define=fill(
-                    """
-                    const nsLiteralCString EnumStrings<${name}>::Values[${count}] = {
-                      $*{entries}
+                      static constexpr nsLiteralCString Values[${count}] {
+                        $*{entries}
+                      };
                     };
                     """,
                     name=self.enum.identifier.name,
                     count=self.nEnumStrings(),
                     entries="".join('"%s"_ns,\n' % val for val in self.enum.values()),
+                ),
+                define=fill(
+                    """
+                    constexpr nsLiteralCString EnumStrings<${name}>::Values[${count}];
+                    """,
+                    name=self.enum.identifier.name,
+                    count=self.nEnumStrings(),
                 ),
             ),
         )
@@ -12558,7 +12679,7 @@ class CGMaxContiguousEnumValue(CGThing):
 
               static_assert(static_cast<${ty}>(dom::${name}::${minValue}) == 0,
                             "We rely on this in ContiguousEnumValues");
-              static_assert(mozilla::ArrayLength(dom::binding_detail::EnumStrings<dom::${name}>::Values) - 1 == UnderlyingValue(value),
+              static_assert(std::size(dom::binding_detail::EnumStrings<dom::${name}>::Values) - 1 == UnderlyingValue(value),
                             "Mismatch between enum strings and enum count");
             };
             """,
@@ -16241,6 +16362,33 @@ class CGDOMJSProxyHandler_className(ClassMethod):
         )
 
 
+class CGDOMJSProxyHandler_trace(ClassMethod):
+    def __init__(self, descriptor):
+        args = [Argument("JSTracer*", "trc"), Argument("JSObject*", "proxy")]
+        ClassMethod.__init__(
+            self,
+            "trace",
+            "void",
+            args,
+            virtual=True,
+            override=True,
+            const=True,
+        )
+        self.descriptor = descriptor
+
+    def getBody(self):
+        iface = getReflectedHTMLAttributesIface(self.descriptor)
+        return fill(
+            """
+            ${reflectedAttributesBase}::ReflectedHTMLAttributeSlots::Trace(${trc}, ${proxy});
+            return Base::trace(${trc}, ${proxy});
+            """,
+            reflectedAttributesBase=toBindingNamespace(iface.identifier.name),
+            trc=self.args[0].name,
+            proxy=self.args[1].name,
+        )
+
+
 class CGDOMJSProxyHandler_finalizeInBackground(ClassMethod):
     def __init__(self, descriptor):
         args = [Argument("const JS::Value&", "priv")]
@@ -16347,7 +16495,7 @@ class CGDOMJSProxyHandler_getElements(ClassMethod):
             ${nativeType}* self = UnwrapProxy(proxy);
             uint32_t length = self->Length(${callerType});
             // Compute the end of the indices we'll get ourselves
-            uint32_t ourEnd = std::max(begin, std::min(end, length));
+            uint32_t ourEnd = std::clamp(length, begin, end);
 
             for (uint32_t index = begin; index < ourEnd; ++index) {
               $*{get}
@@ -16664,6 +16812,18 @@ class CGDOMJSProxyHandler(CGClass):
             or descriptor.supportsNamedProperties()
             or descriptor.isMaybeCrossOriginObject()
         )
+
+        if descriptor.interface.getExtendedAttribute("LegacyOverrideBuiltIns"):
+            assert not descriptor.isMaybeCrossOriginObject()
+            parentClass = "ShadowingDOMProxyHandler"
+        elif descriptor.isMaybeCrossOriginObject():
+            parentClass = "MaybeCrossOriginObject<mozilla::dom::DOMProxyHandler>"
+        else:
+            parentClass = "mozilla::dom::DOMProxyHandler"
+
+        typeAliases = [
+            ClassUsingDeclaration("Base", parentClass),
+        ]
         methods = [
             CGDOMJSProxyHandler_getOwnPropDescriptor(descriptor),
             CGDOMJSProxyHandler_defineProperty(descriptor),
@@ -16679,6 +16839,8 @@ class CGDOMJSProxyHandler(CGClass):
             CGJSProxyHandler_getInstance("DOMProxyHandler"),
             CGDOMJSProxyHandler_delete(descriptor),
         ]
+        if getReflectedHTMLAttributesIface(descriptor):
+            methods.append(CGDOMJSProxyHandler_trace(descriptor))
         constructors = [
             ClassConstructor([], constexpr=True, visibility="public", explicit=True)
         ]
@@ -16717,18 +16879,11 @@ class CGDOMJSProxyHandler(CGClass):
                 ]
             )
 
-        if descriptor.interface.getExtendedAttribute("LegacyOverrideBuiltIns"):
-            assert not descriptor.isMaybeCrossOriginObject()
-            parentClass = "ShadowingDOMProxyHandler"
-        elif descriptor.isMaybeCrossOriginObject():
-            parentClass = "MaybeCrossOriginObject<mozilla::dom::DOMProxyHandler>"
-        else:
-            parentClass = "mozilla::dom::DOMProxyHandler"
-
         CGClass.__init__(
             self,
             "DOMProxyHandler",
             bases=[ClassBase(parentClass)],
+            typeAliases=typeAliases,
             constructors=constructors,
             methods=methods,
         )
@@ -16812,6 +16967,7 @@ class CGDescriptor(CGThing):
         assert (
             not descriptor.concrete
             or descriptor.interface.hasInterfacePrototypeObject()
+            or descriptor.hasOrdinaryObjectPrototype()
         )
 
         self._deps = descriptor.interface.getDeps()
@@ -16882,6 +17038,9 @@ class CGDescriptor(CGThing):
                     cgThings.append(
                         CGTemplateForSpecializedSetter(descriptor, template)
                     )
+
+        if descriptor.interface.reflectedHTMLAttributesReturningFrozenArray:
+            cgThings.append(CGDefineHTMLAttributeSlots(descriptor))
 
         for m in descriptor.interface.members:
             if m.isMethod() and m.identifier.name == "QueryInterface":
@@ -17109,13 +17268,23 @@ class CGDescriptor(CGThing):
         if descriptor.needsMissingPropUseCounters:
             cgThings.append(CGCountMaybeMissingProperty(descriptor))
 
+        # CGDOMProxyJSClass/CGDOMJSClass need GetProtoObjectHandle, but we don't
+        # want to export it for the iterator interfaces, or if we don't need it
+        # for child interfaces or for the named properties object.
+        protoObjectHandleGetterIsStatic = descriptor.concrete and (
+            isIteratorInterface
+            or (
+                descriptor.interface.hasInterfacePrototypeObject()
+                and not descriptor.interface.hasChildInterfaces()
+                and not descriptor.hasNamedPropertiesObject
+            )
+        )
         if descriptor.concrete:
             if descriptor.interface.isSerializable():
                 cgThings.append(CGSerializer(descriptor))
                 cgThings.append(CGDeserializer(descriptor))
 
-            # CGDOMProxyJSClass/CGDOMJSClass need GetProtoObjectHandle, but we don't want to export it for the iterator interfaces, so declare it here.
-            if isIteratorInterface:
+            if protoObjectHandleGetterIsStatic:
                 cgThings.append(
                     CGGetProtoObjectHandleMethod(
                         descriptor, static=True, signatureOnly=True
@@ -17195,38 +17364,37 @@ class CGDescriptor(CGThing):
                 )
             )
 
-        # CGCreateInterfaceObjectsMethod needs to come after our
-        # CGDOMJSClass and unscopables, if any.
-        cgThings.append(
-            CGCreateInterfaceObjectsMethod(
-                descriptor,
-                properties,
-                haveUnscopables,
-                haveLegacyWindowAliases,
-                static=isIteratorInterface,
-            )
-        )
-
-        # CGGetProtoObjectMethod and CGGetConstructorObjectMethod need
-        # to come after CGCreateInterfaceObjectsMethod.
-        if (
-            descriptor.interface.hasInterfacePrototypeObject()
-            and not descriptor.hasOrdinaryObjectPrototype
-        ):
+        if not descriptor.hasOrdinaryObjectPrototype():
+            # CGCreateInterfaceObjectsMethod needs to come after our
+            # CGDOMJSClass and unscopables, if any.
             cgThings.append(
-                CGGetProtoObjectHandleMethod(descriptor, static=isIteratorInterface)
-            )
-            if descriptor.interface.hasChildInterfaces():
-                assert not isIteratorInterface
-                cgThings.append(CGGetProtoObjectMethod(descriptor))
-        if descriptor.interface.hasInterfaceObject():
-            cgThings.append(CGGetConstructorObjectHandleMethod(descriptor))
-            cgThings.append(CGGetConstructorObjectMethod(descriptor))
-            cgThings.append(
-                CGCreateAndDefineOnGlobalMethod(
+                CGCreateInterfaceObjectsMethod(
                     descriptor,
+                    properties,
+                    haveUnscopables,
+                    haveLegacyWindowAliases,
+                    static=isIteratorInterface,
                 )
             )
+
+            # CGGetProtoObjectMethod and CGGetConstructorObjectMethod need
+            # to come after CGCreateInterfaceObjectsMethod.
+            if descriptor.interface.hasInterfacePrototypeObject():
+                cgThings.append(
+                    CGGetProtoObjectHandleMethod(
+                        descriptor, static=protoObjectHandleGetterIsStatic
+                    )
+                )
+                if descriptor.interface.hasChildInterfaces():
+                    assert not isIteratorInterface
+                    cgThings.append(CGGetProtoObjectMethod(descriptor))
+            if descriptor.interface.hasInterfaceObject():
+                cgThings.append(CGGetConstructorObjectHandleMethod(descriptor))
+                cgThings.append(
+                    CGCreateAndDefineOnGlobalMethod(
+                        descriptor,
+                    )
+                )
 
         # See whether we need to generate cross-origin property arrays.
         if needCrossOriginPropertyArrays:
@@ -18889,6 +19057,11 @@ class CGBindingRoot(CGThing):
         descriptors = config.getDescriptors(
             webIDLFile=webIDLFile, hasInterfaceOrInterfacePrototypeObject=True
         )
+        descriptors.extend(
+            config.getDescriptors(
+                webIDLFile=webIDLFile, hasOrdinaryObjectPrototype=True
+            )
+        )
 
         unionTypes = UnionsForFile(config, webIDLFile)
 
@@ -18910,6 +19083,9 @@ class CGBindingRoot(CGThing):
         # both this bit and the bit in UnionTypes can be removed.
         bindingDeclareHeaders["mozilla/dom/BindingUtils.h"] = any(
             d.isObject() for t in unionTypes for d in t.flatMemberTypes
+        )
+        bindingDeclareHeaders["mozilla/dom/JSSlots.h"] = any(
+            d.interface.reflectedHTMLAttributesReturningFrozenArray for d in descriptors
         )
         bindingHeaders["mozilla/dom/IterableIterator.h"] = any(
             (
@@ -19248,6 +19424,14 @@ class CGBindingRoot(CGThing):
             if not ancestor:
                 continue
             bindingHeaders[CGHeaders.getDeclarationFilename(ancestor)] = True
+
+        for d in descriptors:
+            ancestor = d.interface.parent
+            while ancestor:
+                if ancestor.reflectedHTMLAttributesReturningFrozenArray:
+                    bindingHeaders[CGHeaders.getDeclarationFilename(ancestor)] = True
+                    break
+                ancestor = ancestor.parent
 
         cgthings.extend(traverseMethods)
         cgthings.extend(unlinkMethods)
@@ -23622,6 +23806,10 @@ class GlobalGenRoots:
         descriptorsWithPrototype = config.getDescriptors(
             hasInterfacePrototypeObject=True
         )
+        descriptorsWithPrototype.extend(
+            config.getDescriptors(hasOrdinaryObjectPrototype=True)
+        )
+        descriptorsWithPrototype.sort(key=attrgetter("name"))
         protos = [d.name for d in descriptorsWithPrototype]
         idEnum = CGNamespacedEnum("id", "ID", ["_ID_Start"] + protos, [0, "_ID_Start"])
         idEnum = CGList([idEnum])

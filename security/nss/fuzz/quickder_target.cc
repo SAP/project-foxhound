@@ -2,7 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
 #include "asn1_mutators.h"
+#include "certt.h"
+#include "keythi.h"
+#include "secdert.h"
 #include "shared.h"
 
 const std::vector<const SEC_ASN1Template *> templates = {
@@ -80,6 +87,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
                                           size_t max_size, unsigned int seed) {
   return CustomMutate(
-      Mutators({ASN1MutatorFlipConstructed, ASN1MutatorChangeType}), data, size,
-      max_size, seed);
+      Mutators({ASN1Mutators::FlipConstructed, ASN1Mutators::ChangeType}), data,
+      size, max_size, seed);
 }

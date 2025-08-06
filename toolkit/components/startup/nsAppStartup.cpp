@@ -159,7 +159,6 @@ nsAppStartup::nsAppStartup()
       mShuttingDown(false),
       mStartingUp(true),
       mAttemptingQuit(false),
-      mInterrupted(false),
       mIsSafeModeNecessary(false),
       mStartupCrashTrackingEnded(false) {
   char* mozAppSilentStart = PR_GetEnv("MOZ_APP_SILENT_START");
@@ -347,17 +346,12 @@ nsAppStartup::Quit(uint32_t aMode, int aExitCode, bool* aUserAllowedQuit) {
     }
 #ifdef XP_MACOSX
     else if (mConsiderQuitStopper == suspiciousCount) {
-      // ... or there is only a hiddenWindow left, and it's useless:
-
       // Failure shouldn't be fatal, but will abort quit attempt:
       if (!appShell) return NS_OK;
-
-      bool usefulHiddenWindow;
-      appShell->GetApplicationProvidedHiddenWindow(&usefulHiddenWindow);
-      nsCOMPtr<nsIAppWindow> hiddenWindow;
-      appShell->GetHiddenWindow(getter_AddRefs(hiddenWindow));
-      // If the remaining windows are useful, we won't quit:
-      if (!hiddenWindow || usefulHiddenWindow) {
+      bool hasHiddenWindow = false;
+      appShell->GetHasHiddenWindow(&hasHiddenWindow);
+      // If there's a hidden window, we won't quit:
+      if (hasHiddenWindow) {
         return NS_OK;
       }
 
@@ -685,18 +679,6 @@ nsAppStartup::GetShowedPreXULSkeletonUI(bool* aResult) {
 #else
   *aResult = false;
 #endif
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsAppStartup::SetInterrupted(bool aInterrupted) {
-  mInterrupted = aInterrupted;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsAppStartup::GetInterrupted(bool* aInterrupted) {
-  *aInterrupted = mInterrupted;
   return NS_OK;
 }
 
@@ -1088,8 +1070,7 @@ nsAppStartup::CreateInstanceWithProfile(nsIToolkitProfile* aProfile) {
   }
 
   nsCOMPtr<nsIFile> execPath;
-  nsresult rv =
-      NS_NewLocalFile(gAbsoluteArgv0Path, true, getter_AddRefs(execPath));
+  nsresult rv = NS_NewLocalFile(gAbsoluteArgv0Path, getter_AddRefs(execPath));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

@@ -97,7 +97,8 @@ export class PromptCollection {
           (Ci.nsIPrompt.BUTTON_TITLE_CANCEL * Ci.nsIPrompt.BUTTON_POS_1) |
           (Ci.nsIPrompt.BUTTON_TITLE_DONT_SAVE * Ci.nsIPrompt.BUTTON_POS_2);
         args.useTitle = true;
-        args.headerIconURL = "chrome://branding/content/document_pdf.svg";
+        args.headerIconCSSValue =
+          "url('chrome://branding/content/document_pdf.svg')";
       } else {
         title = this.stringBundles.dom.GetStringFromName("OnBeforeUnloadTitle");
         message = this.stringBundles.dom.GetStringFromName(
@@ -194,7 +195,7 @@ export class PromptCollection {
         Services.prompt.MODAL_TYPE_TAB,
         title,
         message,
-        buttonFlags,
+        buttonFlags | Ci.nsIPrompt.BUTTON_DELAY_ENABLE,
         acceptLabel,
         null,
         null,

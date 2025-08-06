@@ -14,7 +14,17 @@ edition = "2018"
 name = "jsparagus-generated-parser"
 version = "0.1.0"
 authors = ["khyperia <khyperia@live.com>"]
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+readme = false
 license = "MIT/Apache-2.0"
+
+[lib]
+name = "jsparagus_generated_parser"
+path = "src/lib.rs"
 
 [dependencies]
 bumpalo = "3.4.0"

@@ -49,7 +49,6 @@
 #include "mozilla/dom/StaticRange.h"
 #include "mozilla/mozalloc.h"
 #include "nsAString.h"
-#include "nsAlgorithm.h"
 #include "nsAtom.h"
 #include "nsCRT.h"
 #include "nsCRTGlue.h"
@@ -859,7 +858,8 @@ MOZ_CAN_RUN_SCRIPT static nsStaticAtom& MarginPropertyAtomForIndent(
                                         : *nsGkAtoms::marginLeft;
 }
 
-nsresult HTMLEditor::EnsureCaretNotAfterInvisibleBRElement() {
+nsresult HTMLEditor::EnsureCaretNotAfterInvisibleBRElement(
+    const Element& aEditingHost) {
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(SelectionRef().IsCollapsed());
 
@@ -880,17 +880,9 @@ nsresult HTMLEditor::EnsureCaretNotAfterInvisibleBRElement() {
     return NS_OK;
   }
 
-  Element* editingHost = ComputeEditingHost();
-  if (!editingHost) {
-    NS_WARNING(
-        "HTMLEditor::EnsureCaretNotAfterInvisibleBRElement() did nothing "
-        "because of no editing host");
-    return NS_OK;
-  }
-
   nsIContent* previousBRElement = HTMLEditUtils::GetPreviousContent(
       atSelectionStart, {}, BlockInlineCheck::UseComputedDisplayStyle,
-      editingHost);
+      &aEditingHost);
   if (!previousBRElement || !previousBRElement->IsHTMLElement(nsGkAtoms::br) ||
       !previousBRElement->GetParent() ||
       !EditorUtils::IsEditableContent(*previousBRElement->GetParent(),
@@ -1125,6 +1117,12 @@ Result<EditActionResult, nsresult> HTMLEditor::HandleInsertText(
     }
   }
 
+  const RefPtr<Element> editingHost =
+      ComputeEditingHost(LimitInBodyElement::No);
+  if (NS_WARN_IF(!editingHost)) {
+    return Err(NS_ERROR_FAILURE);
+  }
+
   nsresult rv = EnsureNoPaddingBRElementForEmptyEditor();
   if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
     return Err(NS_ERROR_EDITOR_DESTROYED);
@@ -1134,7 +1132,7 @@ Result<EditActionResult, nsresult> HTMLEditor::HandleInsertText(
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(*editingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -1154,13 +1152,6 @@ Result<EditActionResult, nsresult> HTMLEditor::HandleInsertText(
 
   RefPtr<Document> document = GetDocument();
   if (NS_WARN_IF(!document)) {
-    return Err(NS_ERROR_FAILURE);
-  }
-
-  const RefPtr<Element> editingHost = ComputeEditingHost(
-      GetDocument()->IsXMLDocument() ? LimitInBodyElement::No
-                                     : LimitInBodyElement::Yes);
-  if (NS_WARN_IF(!editingHost)) {
     return Err(NS_ERROR_FAILURE);
   }
 
@@ -1579,7 +1570,8 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
   }
   MOZ_ASSERT(atStartOfSelection.IsSetAndValid());
 
-  RefPtr<Element> editingHost = ComputeEditingHost();
+  const RefPtr<Element> editingHost =
+      ComputeEditingHost(LimitInBodyElement::No);
   if (NS_WARN_IF(!editingHost)) {
     return NS_ERROR_FAILURE;
   }
@@ -1683,7 +1675,7 @@ nsresult HTMLEditor::InsertLineBreakAsSubAction() {
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(*editingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return NS_ERROR_EDITOR_DESTROYED;
     }
@@ -1787,7 +1779,7 @@ HTMLEditor::InsertParagraphSeparatorAsSubAction(const Element& aEditingHost) {
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(aEditingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -3406,7 +3398,8 @@ Result<EditActionResult, nsresult>
 HTMLEditor::MakeOrChangeListAndListItemAsSubAction(
     const nsStaticAtom& aListElementOrListItemElementTagName,
     const nsAString& aBulletType,
-    SelectAllOfCurrentList aSelectAllOfCurrentList) {
+    SelectAllOfCurrentList aSelectAllOfCurrentList,
+    const Element& aEditingHost) {
   MOZ_ASSERT(IsEditActionDataAvailable());
   MOZ_ASSERT(&aListElementOrListItemElementTagName == nsGkAtoms::ul ||
              &aListElementOrListItemElementTagName == nsGkAtoms::ol ||
@@ -3469,7 +3462,7 @@ HTMLEditor::MakeOrChangeListAndListItemAsSubAction(
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(aEditingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -3508,11 +3501,6 @@ HTMLEditor::MakeOrChangeListAndListItemAsSubAction(
     return Err(NS_ERROR_INVALID_ARG);
   }
 
-  const RefPtr<Element> editingHost = ComputeEditingHost();
-  if (MOZ_UNLIKELY(!editingHost)) {
-    return EditActionResult::CanceledResult();
-  }
-
   // Expands selection range to include the immediate block parent, and then
   // further expands to include any ancestors whose children are all in the
   // range.
@@ -3520,7 +3508,7 @@ HTMLEditor::MakeOrChangeListAndListItemAsSubAction(
   if (!SelectionRef().IsCollapsed() && SelectionRef().RangeCount() == 1u) {
     Result<EditorRawDOMRange, nsresult> extendedRange =
         GetRangeExtendedToHardLineEdgesForBlockEditAction(
-            SelectionRef().GetRangeAt(0u), *editingHost);
+            SelectionRef().GetRangeAt(0u), aEditingHost);
     if (MOZ_UNLIKELY(extendedRange.isErr())) {
       NS_WARNING(
           "HTMLEditor::GetRangeExtendedToHardLineEdgesForBlockEditAction() "
@@ -3546,7 +3534,7 @@ HTMLEditor::MakeOrChangeListAndListItemAsSubAction(
                                      aBulletType);
   AutoRangeArray selectionRanges(SelectionRef());
   Result<EditActionResult, nsresult> result = listCreator.Run(
-      *this, selectionRanges, aSelectAllOfCurrentList, *editingHost);
+      *this, selectionRanges, aSelectAllOfCurrentList, aEditingHost);
   if (MOZ_UNLIKELY(result.isErr())) {
     NS_WARNING("HTMLEditor::ConvertContentAroundRangesToList() failed");
     // XXX Should we try to restore selection ranges in this case?
@@ -5125,7 +5113,7 @@ Result<EditActionResult, nsresult> HTMLEditor::HandleIndentAtSelection(
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(aEditingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -6998,7 +6986,7 @@ Result<EditActionResult, nsresult> HTMLEditor::AlignAsSubAction(
   }
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(aEditingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -11392,7 +11380,7 @@ HTMLEditor::SetSelectionToAbsoluteAsSubAction(const Element& aEditingHost) {
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(aEditingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -11967,6 +11955,12 @@ HTMLEditor::SetSelectionToStaticAsSubAction() {
     }
   }
 
+  const RefPtr<Element> editingHost =
+      ComputeEditingHost(LimitInBodyElement::No);
+  if (NS_WARN_IF(!editingHost)) {
+    return Err(NS_ERROR_FAILURE);
+  }
+
   nsresult rv = EnsureNoPaddingBRElementForEmptyEditor();
   if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
     return Err(NS_ERROR_EDITOR_DESTROYED);
@@ -11976,7 +11970,7 @@ HTMLEditor::SetSelectionToStaticAsSubAction() {
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(*editingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }
@@ -12056,6 +12050,12 @@ Result<EditActionResult, nsresult> HTMLEditor::AddZIndexAsSubAction(
     }
   }
 
+  const RefPtr<Element> editingHost =
+      ComputeEditingHost(LimitInBodyElement::No);
+  if (NS_WARN_IF(!editingHost)) {
+    return Err(NS_ERROR_FAILURE);
+  }
+
   nsresult rv = EnsureNoPaddingBRElementForEmptyEditor();
   if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
     return Err(NS_ERROR_EDITOR_DESTROYED);
@@ -12065,7 +12065,7 @@ Result<EditActionResult, nsresult> HTMLEditor::AddZIndexAsSubAction(
                        "failed, but ignored");
 
   if (NS_SUCCEEDED(rv) && SelectionRef().IsCollapsed()) {
-    nsresult rv = EnsureCaretNotAfterInvisibleBRElement();
+    nsresult rv = EnsureCaretNotAfterInvisibleBRElement(*editingHost);
     if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
       return Err(NS_ERROR_EDITOR_DESTROYED);
     }

@@ -187,7 +187,7 @@ export class MessageHandler extends EventEmitter {
    * @typedef {object} CommandDestination
    * @property {string} type
    *     One of MessageHandler.type.
-   * @property {string=} id
+   * @property {string | number=} id
    *     Unique context identifier. The format depends on the type.
    *     For WINDOW_GLOBAL destinations, this is a browsing context id.
    *     Optional, should only be provided if `contextDescriptor` is missing.
@@ -210,7 +210,9 @@ export class MessageHandler extends EventEmitter {
    * @property {boolean=} retryOnAbort
    *     Optional. When true, commands will be retried upon AbortError, which
    *     can occur when the underlying JSWindowActor pair is destroyed.
-   *     Defaults to `false`.
+   *     If not explicitly set, the framework will automatically retry if the
+   *     destination is likely to be replaced (e.g. browsingContext on the
+   *     initial document or loading a document).
    */
 
   /**

@@ -45,7 +45,7 @@ static const GUID IID_MsaaAccessible = {
     0x4afc,
     {0xa3, 0x2c, 0xd6, 0xb5, 0xc0, 0x10, 0x04, 0x6b}};
 
-MsaaIdGenerator MsaaAccessible::sIDGen;
+MOZ_RUNINIT MsaaIdGenerator MsaaAccessible::sIDGen;
 ITypeInfo* MsaaAccessible::gTypeInfo = nullptr;
 
 /* static */
@@ -216,7 +216,7 @@ void MsaaAccessible::FireWinEvent(Accessible* aTarget, uint32_t aEventType) {
                     nsIAccessibleEvent::EVENT_LAST_ENTRY,
                 "MSAA event map skewed");
 
-  if (aEventType == 0 || aEventType >= ArrayLength(gWinEventMap)) {
+  if (aEventType == 0 || aEventType >= std::size(gWinEventMap)) {
     MOZ_ASSERT_UNREACHABLE("invalid event type");
     return;
   }

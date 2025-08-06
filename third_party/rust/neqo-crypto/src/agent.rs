@@ -117,12 +117,12 @@ pub struct SecretAgentPreInfo {
 }
 
 macro_rules! preinfo_arg {
-    ($v:ident, $m:ident, $f:ident: $t:ident $(,)?) => {
+    ($v:ident, $m:ident, $f:ident: $t:ty $(,)?) => {
         #[must_use]
         pub fn $v(&self) -> Option<$t> {
             match self.info.valuesSet & ssl::$m {
                 0 => None,
-                _ => Some($t::try_from(self.info.$f).unwrap()),
+                _ => Some(<$t>::try_from(self.info.$f).unwrap()),
             }
         }
     };
@@ -748,7 +748,7 @@ impl SecretAgent {
     /// # Panics
     ///
     /// If setup fails.
-    #[allow(unknown_lints, clippy::branches_sharing_code)]
+    #[allow(clippy::branches_sharing_code)]
     pub fn close(&mut self) {
         // It should be safe to close multiple times.
         if self.fd.is_null() {
@@ -833,12 +833,7 @@ impl ResumptionToken {
 
 /// A TLS Client.
 #[derive(Debug)]
-#[allow(
-    renamed_and_removed_lints,
-    clippy::box_vec,
-    unknown_lints,
-    clippy::box_collection
-)] // We need the Box.
+#[allow(clippy::box_collection)] // We need the Box.
 pub struct Client {
     agent: SecretAgent,
 

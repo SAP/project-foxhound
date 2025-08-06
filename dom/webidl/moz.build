@@ -358,6 +358,9 @@ with Files("VRDisplay.webidl"):
 with Files("Video*"):
     BUG_COMPONENT = ("Core", "Audio/Video")
 
+with Files("ViewTransition.webidl"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
 with Files("WaveShaperNode.webidl"):
     BUG_COMPONENT = ("Core", "Web Audio")
 
@@ -397,6 +400,7 @@ with Files("WebTransport*"):
 GENERATED_WEBIDL_FILES = [
     "CSS2Properties.webidl",
     "CSSPageDescriptors.webidl",
+    "CSSPositionTryDescriptors.webidl",
 ]
 
 PREPROCESSED_WEBIDL_FILES = [
@@ -470,12 +474,15 @@ WEBIDL_FILES = [
     "Clients.webidl",
     "Clipboard.webidl",
     "ClipboardEvent.webidl",
+    "CloseWatcher.webidl",
     "Comment.webidl",
     "CompositionEvent.webidl",
     "CompressionStream.webidl",
     "Console.webidl",
     "ConstantSourceNode.webidl",
     "ConvolverNode.webidl",
+    "CookieChangeEvent.webidl",
+    "CookieStore.webidl",
     "CreateOfferRequest.webidl",
     "CredentialManagement.webidl",
     "Crypto.webidl",
@@ -499,7 +506,9 @@ WEBIDL_FILES = [
     "CSSMediaRule.webidl",
     "CSSMozDocumentRule.webidl",
     "CSSNamespaceRule.webidl",
+    "CSSNestedDeclarations.webidl",
     "CSSPageRule.webidl",
+    "CSSPositionTryRule.webidl",
     "CSSPropertyRule.webidl",
     "CSSPseudoElement.webidl",
     "CSSRule.webidl",
@@ -740,6 +749,7 @@ WEBIDL_FILES = [
     "MediaStreamError.webidl",
     "MediaStreamTrack.webidl",
     "MediaStreamTrackAudioSourceNode.webidl",
+    "MediaTrackCapabilities.webidl",
     "MediaTrackSettings.webidl",
     "MediaTrackSupportedConstraints.webidl",
     "MerchantValidationEvent.webidl",
@@ -1015,6 +1025,7 @@ WEBIDL_FILES = [
     "VideoPlaybackQuality.webidl",
     "VideoTrack.webidl",
     "VideoTrackList.webidl",
+    "ViewTransition.webidl",
     "VisualViewport.webidl",
     "VRDisplay.webidl",
     "VRDisplayEvent.webidl",

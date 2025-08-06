@@ -19,8 +19,6 @@ pub enum ExpressionError {
     NegativeIndex(Handle<crate::Expression>),
     #[error("Accessing index {1} is out of {0:?} bounds")]
     IndexOutOfBounds(Handle<crate::Expression>, u32),
-    #[error("The expression {0:?} may only be indexed by a constant")]
-    IndexMustBeConstant(Handle<crate::Expression>),
     #[error("Function argument {0:?} doesn't exist")]
     FunctionArgumentDoesntExist(u32),
     #[error("Loading of {0:?} can't be done")]
@@ -238,11 +236,11 @@ impl super::Validator {
         let stages = match *expression {
             E::Access { base, index } => {
                 let base_type = &resolver[base];
-                // See the documentation for `Expression::Access`.
-                let dynamic_indexing_restricted = match *base_type {
-                    Ti::Vector { .. } => false,
-                    Ti::Matrix { .. } | Ti::Array { .. } => true,
-                    Ti::Pointer { .. }
+                match *base_type {
+                    Ti::Matrix { .. }
+                    | Ti::Vector { .. }
+                    | Ti::Array { .. }
+                    | Ti::Pointer { .. }
                     | Ti::ValuePointer { size: Some(_), .. }
                     | Ti::BindingArray { .. } => false,
                     ref other => {
@@ -260,9 +258,6 @@ impl super::Validator {
                         log::error!("Indexing by {:?}", other);
                         return Err(ExpressionError::InvalidIndexType(index));
                     }
-                }
-                if dynamic_indexing_restricted && function.expressions[index].is_dynamic_index() {
-                    return Err(ExpressionError::IndexMustBeConstant(base));
                 }
 
                 // If we know both the length and the index, we can do the
@@ -1161,7 +1156,7 @@ impl super::Validator {
                             ));
                         }
                     }
-                    Mf::Outer | Mf::Cross | Mf::Reflect => {
+                    Mf::Outer | Mf::Reflect => {
                         let arg1_ty = match (arg1_ty, arg2_ty, arg3_ty) {
                             (Some(ty1), None, None) => ty1,
                             _ => return Err(ExpressionError::WrongArgumentCount(fun)),
@@ -1173,6 +1168,29 @@ impl super::Validator {
                                         kind: Sk::Float, ..
                                     },
                                 ..
+                            } => {}
+                            _ => return Err(ExpressionError::InvalidArgumentType(fun, 0, arg)),
+                        }
+                        if arg1_ty != arg_ty {
+                            return Err(ExpressionError::InvalidArgumentType(
+                                fun,
+                                1,
+                                arg1.unwrap(),
+                            ));
+                        }
+                    }
+                    Mf::Cross => {
+                        let arg1_ty = match (arg1_ty, arg2_ty, arg3_ty) {
+                            (Some(ty1), None, None) => ty1,
+                            _ => return Err(ExpressionError::WrongArgumentCount(fun)),
+                        };
+                        match *arg_ty {
+                            Ti::Vector {
+                                scalar:
+                                    Sc {
+                                        kind: Sk::Float, ..
+                                    },
+                                size: crate::VectorSize::Tri,
                             } => {}
                             _ => return Err(ExpressionError::InvalidArgumentType(fun, 0, arg)),
                         }
@@ -1350,8 +1368,8 @@ impl super::Validator {
                     | Mf::CountTrailingZeros
                     | Mf::CountOneBits
                     | Mf::ReverseBits
-                    | Mf::FindMsb
-                    | Mf::FindLsb => {
+                    | Mf::FirstLeadingBit
+                    | Mf::FirstTrailingBit => {
                         if arg1_ty.is_some() || arg2_ty.is_some() || arg3_ty.is_some() {
                             return Err(ExpressionError::WrongArgumentCount(fun));
                         }
@@ -1696,7 +1714,7 @@ pub fn check_literal_value(literal: crate::Literal) -> Result<(), LiteralError> 
     Ok(())
 }
 
-#[cfg(all(test, feature = "validate"))]
+#[cfg(test)]
 /// Validate a module containing the given expression, expecting an error.
 fn validate_with_expression(
     expr: crate::Expression,
@@ -1719,7 +1737,7 @@ fn validate_with_expression(
     validator.validate(&module)
 }
 
-#[cfg(all(test, feature = "validate"))]
+#[cfg(test)]
 /// Validate a module containing the given constant expression, expecting an error.
 fn validate_with_const_expression(
     expr: crate::Expression,
@@ -1736,7 +1754,6 @@ fn validate_with_const_expression(
 }
 
 /// Using F64 in a function's expression arena is forbidden.
-#[cfg(feature = "validate")]
 #[test]
 fn f64_runtime_literals() {
     let result = validate_with_expression(
@@ -1748,7 +1765,7 @@ fn f64_runtime_literals() {
         error,
         crate::valid::ValidationError::Function {
             source: super::FunctionError::Expression {
-                source: super::ExpressionError::Literal(super::LiteralError::Width(
+                source: ExpressionError::Literal(LiteralError::Width(
                     super::r#type::WidthError::MissingCapability {
                         name: "f64",
                         flag: "FLOAT64",
@@ -1768,7 +1785,6 @@ fn f64_runtime_literals() {
 }
 
 /// Using F64 in a module's constant expression arena is forbidden.
-#[cfg(feature = "validate")]
 #[test]
 fn f64_const_literals() {
     let result = validate_with_const_expression(
@@ -1779,7 +1795,7 @@ fn f64_const_literals() {
     assert!(matches!(
         error,
         crate::valid::ValidationError::ConstExpression {
-            source: super::ConstExpressionError::Literal(super::LiteralError::Width(
+            source: ConstExpressionError::Literal(LiteralError::Width(
                 super::r#type::WidthError::MissingCapability {
                     name: "f64",
                     flag: "FLOAT64",
@@ -1794,49 +1810,4 @@ fn f64_const_literals() {
         super::Capabilities::default() | super::Capabilities::FLOAT64,
     );
     assert!(result.is_ok());
-}
-
-/// Using I64 in a function's expression arena is forbidden.
-#[cfg(feature = "validate")]
-#[test]
-fn i64_runtime_literals() {
-    let result = validate_with_expression(
-        crate::Expression::Literal(crate::Literal::I64(1729)),
-        // There is no capability that enables this.
-        super::Capabilities::all(),
-    );
-    let error = result.unwrap_err().into_inner();
-    assert!(matches!(
-        error,
-        crate::valid::ValidationError::Function {
-            source: super::FunctionError::Expression {
-                source: super::ExpressionError::Literal(super::LiteralError::Width(
-                    super::r#type::WidthError::Unsupported64Bit
-                ),),
-                ..
-            },
-            ..
-        }
-    ));
-}
-
-/// Using I64 in a module's constant expression arena is forbidden.
-#[cfg(feature = "validate")]
-#[test]
-fn i64_const_literals() {
-    let result = validate_with_const_expression(
-        crate::Expression::Literal(crate::Literal::I64(1729)),
-        // There is no capability that enables this.
-        super::Capabilities::all(),
-    );
-    let error = result.unwrap_err().into_inner();
-    assert!(matches!(
-        error,
-        crate::valid::ValidationError::ConstExpression {
-            source: super::ConstExpressionError::Literal(super::LiteralError::Width(
-                super::r#type::WidthError::Unsupported64Bit,
-            ),),
-            ..
-        }
-    ));
 }

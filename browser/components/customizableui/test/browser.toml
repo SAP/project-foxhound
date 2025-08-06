@@ -19,7 +19,6 @@ prefs = [
 
 ["browser_1087303_button_fullscreen.js"]
 tags = "fullscreen"
-skip-if = ["os == 'mac'"]
 
 ["browser_1087303_button_preferences.js"]
 
@@ -49,7 +48,7 @@ skip-if = ["os == 'mac' && debug"]
 ["browser_873501_handle_specials.js"]
 
 ["browser_876926_customize_mode_wrapping.js"]
-skip-if = ["os == 'linux' && !debug"] # Bug 1682752
+skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && release_or_beta"] # bug 1921617
 
 ["browser_876944_customize_mode_create_destroy.js"]
 
@@ -97,8 +96,7 @@ skip-if = ["os == 'linux'"]
 ["browser_927717_customize_drag_empty_toolbar.js"]
 
 ["browser_934113_menubar_removable.js"]
-# Because this test is about the menubar, it can't be run on mac
-skip-if = ["os == 'mac'"]
+run-if = ["os != 'mac'"] # Because this test is about the menubar, it can't be run on mac
 
 ["browser_934951_zoom_in_toolbar.js"]
 
@@ -145,7 +143,7 @@ support-files = ["dummy_history_item.html"]
 ["browser_947914_button_zoomOut.js"]
 
 ["browser_947914_button_zoomReset.js"]
-skip-if = ["os == 'linux' && debug"] # Intermittent failures
+skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && socketprocess_networking"]
 
 ["browser_947987_removable_default.js"]
 
@@ -283,7 +281,7 @@ https_first_disabled = true
 ["browser_insert_before_moved_node.js"]
 
 ["browser_menubar_visibility.js"]
-skip-if = ["os == 'mac'"] # no toggle-able menubar on macOS.
+run-if = ["os != 'mac'"] # no toggle-able menubar on macOS.
 
 ["browser_newtab_button_customizemode.js"]
 
@@ -303,7 +301,7 @@ skip-if = ["verify"]
 
 ["browser_panelUINotifications_fullscreen.js"]
 tags = "fullscreen"
-skip-if = ["os == 'mac'"]
+run-if = ["os != 'mac'"]
 
 ["browser_panelUINotifications_fullscreen_noAutoHideToolbar.js"]
 skip-if = ["verify && (os == 'linux' || os == 'mac')"]

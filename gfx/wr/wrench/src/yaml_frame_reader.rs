@@ -142,7 +142,8 @@ impl LocalExternalImageHandler {
             ExternalImageData {
                 id: image_id,
                 channel_index: channel_idx,
-                image_type: ExternalImageType::TextureHandle(target)
+                image_type: ExternalImageType::TextureHandle(target),
+                normalized_uvs: false,
             }
         )
     }
@@ -311,6 +312,11 @@ fn is_image_opaque(format: ImageFormat, bytes: &[u8]) -> bool {
 
 struct IsRoot(bool);
 
+pub struct Snapshot {
+    key: SnapshotImageKey,
+    size: LayoutSize,
+}
+
 pub struct YamlFrameReader {
     yaml_path: PathBuf,
     aux_dir: PathBuf,
@@ -331,6 +337,7 @@ pub struct YamlFrameReader {
     fonts: HashMap<FontDescriptor, FontKey>,
     font_instances: HashMap<(FontKey, FontSize, FontInstanceFlags, SyntheticItalics), FontInstanceKey>,
     font_render_mode: Option<FontRenderMode>,
+    snapshots: HashMap<String, Snapshot>,
     allow_mipmaps: bool,
 
     /// A HashMap that allows specifying a numeric id for clip and clip chains in YAML
@@ -365,6 +372,7 @@ impl YamlFrameReader {
             fonts: HashMap::new(),
             font_instances: HashMap::new(),
             font_render_mode: None,
+            snapshots: HashMap::new(),
             allow_mipmaps: false,
             image_map: HashMap::new(),
             user_clip_id_map: HashMap::new(),
@@ -664,6 +672,15 @@ impl YamlFrameReader {
                             y_count,
                             kind,
                         )
+                    }
+                    ("snapshot", args, _) => {
+                        let snapshot = self.snapshots
+                            .get(args[0])
+                            .expect("Missing snapshot");
+                        return (
+                            snapshot.key.as_image(),
+                            snapshot.size,
+                        );
                     }
                     _ => {
                         panic!("Failed to load image {:?}", file.to_str());
@@ -1235,6 +1252,15 @@ impl YamlFrameReader {
 
                 YuvData::P010(y_key, uv_key)
             }
+            "nv16" => {
+                let y_path = rsrc_path(&item["src-y"], &self.aux_dir);
+                let (y_key, _) = self.add_or_get_image(&y_path, None, item, wrench);
+
+                let uv_path = rsrc_path(&item["src-uv"], &self.aux_dir);
+                let (uv_key, _) = self.add_or_get_image(&uv_path, None, item, wrench);
+
+                YuvData::NV16(y_key, uv_key)
+            }
             "interleaved" => {
                 let yuv_path = rsrc_path(&item["src"], &self.aux_dir);
                 let (yuv_key, _) = self.add_or_get_image(&yuv_path, None, item, wrench);
@@ -1276,6 +1302,7 @@ impl YamlFrameReader {
                                  "src"
                              }];
         let tiling = item["tile-size"].as_i64();
+
         let file = rsrc_path(filename, &self.aux_dir);
         let (image_key, image_dims) =
             self.add_or_get_image(&file, tiling, item, wrench);
@@ -2010,6 +2037,26 @@ impl YamlFrameReader {
         let filter_datas = yaml["filter-datas"].as_vec_filter_data().unwrap_or_default();
         let filter_primitives = yaml["filter-primitives"].as_vec_filter_primitive().unwrap_or_default();
 
+        let snapshot = if !yaml["snapshot"].is_badvalue() {
+            let yaml = &yaml["snapshot"];
+            let name = yaml["name"].as_str().unwrap_or("snapshot");
+            let area = yaml["area"].as_rect().unwrap_or(bounds);
+
+            let key = SnapshotImageKey(wrench.api.generate_image_key());
+            self.snapshots.insert(name.to_string(), Snapshot {
+                key,
+                size: bounds.size(),
+            });
+
+            let mut txn = Transaction::new();
+            txn.add_snapshot_image(key);
+            wrench.api.send_transaction(wrench.document_id, txn);
+
+            Some(SnapshotInfo { key, area })
+        } else {
+            None
+        };
+
         let mut flags = StackingContextFlags::empty();
         flags.set(StackingContextFlags::IS_BLEND_CONTAINER, is_blend_container);
         flags.set(StackingContextFlags::WRAPS_BACKDROP_FILTER, wraps_backdrop_filter);
@@ -2026,6 +2073,7 @@ impl YamlFrameReader {
             &filter_primitives,
             raster_space,
             flags,
+            snapshot,
         );
 
         if let Some(yaml_items) = yaml["items"].as_vec() {

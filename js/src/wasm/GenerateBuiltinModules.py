@@ -54,6 +54,7 @@ def specTypeToMIRType(specType):
         specType == "externref"
         or specType == "anyref"
         or specType == "funcref"
+        or specType == "exnref"
         or isinstance(specType, dict)
     ):
         return "MIRType::WasmAnyRef"
@@ -67,6 +68,8 @@ def specHeapTypeToTypeCode(specHeapType):
         return "Any"
     if specHeapType == "extern":
         return "Extern"
+    if specHeapType == "exn":
+        return "Exn"
     if specHeapType == "array":
         return "Array"
     if specHeapType == "struct":
@@ -80,6 +83,9 @@ def specTypeToValType(specType):
 
     if specType == "externref":
         return "ValType(RefType::extern_())"
+
+    if specType == "exnref":
+        return "ValType(RefType::exn())"
 
     if specType == "anyref":
         return "ValType(RefType::any())"
@@ -107,9 +113,12 @@ def main(c_out, yaml_path):
     for i in range(len(data)):
         op = data[i]
         sa = op["symbolic_address"]
+        inlineOp = "BuiltinInlineOp::None"
+        if "inline_op" in op:
+            inlineOp = f"BuiltinInlineOp::{op['inline_op']}"
         contents += (
             f"    M({op['op']}, \"{op['export']}\", "
-            f"{sa['name']}, {sa['type']}, {op['entry']}, {cppBool(op['uses_memory'])}, {i})\\\n"
+            f"{sa['name']}, {sa['type']}, {op['entry']}, {cppBool(op['uses_memory'])}, {inlineOp}, {i})\\\n"
         )
     contents += "\n"
 
@@ -139,9 +148,9 @@ def main(c_out, yaml_path):
         # `Some(X)` if present, or else `Nothing()`.
         result_valtype = ""
         if "result" in op:
-            result_valtype = f"Some({specTypeToValType(op['result'])})\n"
+            result_valtype = f"mozilla::Some({specTypeToValType(op['result'])})\n"
         else:
-            result_valtype = "Nothing()"
+            result_valtype = "mozilla::Nothing()"
         contents += f"#define DECLARE_BUILTIN_MODULE_FUNC_RESULT_VALTYPE_{op['op']} {result_valtype}\n"
 
         # Define DECLARE_BUILTIN_MODULE_FUNC_RESULT_MIRTYPE_<op> as:

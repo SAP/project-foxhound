@@ -96,6 +96,8 @@ function isKeyIn(key, ...keys) {
  * @param {Object} options: Options for the editable field
  * @param {Element} options.element:
  *        (required) The span to be edited on focus.
+ * @param {String} options.inputClass:
+ *        An optional class to be added to the input.
  * @param {Function} options.canEdit:
  *        Will be called before creating the inplace editor.  Editor
  *        won't be created if canEdit returns false.
@@ -147,7 +149,8 @@ function isKeyIn(key, ...keys) {
  *        from `element` to the new input.
  *        defaults to false
  * @param {Object} options.cssProperties: An instance of CSSProperties.
- * @param {Object} options.cssVariables: A Map object containing all CSS variables.
+ * @param {Object} options.getCssVariables: A function that returns a Map containing
+ *        all CSS variables. The Map key is the variable name, the value is the variable value
  * @param {Number} options.defaultIncrement: The value by which the input is incremented
  *        or decremented by default (0.1 for properties like opacity and 1 by default)
  * @param {Function} options.getGridLineNames:
@@ -246,6 +249,8 @@ function editableItem(options, callback) {
   // Mark the element editable field for tab
   // navigation while editing.
   element._editable = true;
+  // And an attribute that can be used to target
+  element.setAttribute("editable", "");
 
   // Save the trigger type so we can dispatch this later
   element._trigger = trigger;
@@ -282,7 +287,9 @@ class InplaceEditor extends EventEmitter {
     this.doc = doc;
     this.elt.inplaceEditor = this;
     this.cssProperties = options.cssProperties;
-    this.cssVariables = options.cssVariables || new Map();
+    this.getCssVariables = options.getCssVariables
+      ? options.getCssVariables.bind(this)
+      : null;
     this.change = options.change;
     this.done = options.done;
     this.contextMenu = options.contextMenu;
@@ -362,6 +369,7 @@ class InplaceEditor extends EventEmitter {
       this.#onKeyPress,
       eventListenerConfig
     );
+    this.input.addEventListener("wheel", this.#onWheel, eventListenerConfig);
     this.input.addEventListener("input", this.#onInput, eventListenerConfig);
     this.input.addEventListener(
       "dblclick",
@@ -409,6 +417,8 @@ class InplaceEditor extends EventEmitter {
   #pressedKey;
   #preventSuggestions;
   #selectedIndex;
+  #variableNames;
+  #variables;
 
   get currentInputValue() {
     const val = this.trimOutput ? this.input.value.trim() : this.input.value;
@@ -423,6 +433,8 @@ class InplaceEditor extends EventEmitter {
    *        Optional aria-label attribute value that will be added to the input.
    * @param {String} options.inputAriaLabelledBy
    *        Optional aria-labelledby attribute value that will be added to the input.
+   * @param {String} options.inputClass:
+   *        Optional class to be added to the input.
    */
   #createInput(options = {}) {
     this.input = this.doc.createElementNS(
@@ -440,6 +452,9 @@ class InplaceEditor extends EventEmitter {
     }
 
     this.input.classList.add("styleinspector-propertyeditor");
+    if (options.inputClass) {
+      this.input.classList.add(options.inputClass);
+    }
     this.input.value = this.initial;
     if (options.inputAriaLabel) {
       this.input.setAttribute("aria-label", options.inputAriaLabel);
@@ -1422,41 +1437,59 @@ class InplaceEditor extends EventEmitter {
   }
 
   /**
-   * Get the increment/decrement step to use for the provided key event.
+   * Get the increment/decrement step to use for the provided key or wheel
+   * event.
+   *
+   * @param {Event} event
+   *        The event from which the increment should be comuted
+   * @return {number} The computed increment value.
    */
   #getIncrement(event) {
-    const getSmallIncrementKey = evt => {
-      if (isOSX) {
-        return evt.altKey;
-      }
-      return evt.ctrlKey;
-    };
-
     const largeIncrement = 100;
     const mediumIncrement = 10;
     const smallIncrement = 0.1;
 
     let increment = 0;
+
+    let wheelUp = false;
+    let wheelDown = false;
+    if (event.type === "wheel") {
+      if (event.wheelDelta > 0) {
+        wheelUp = true;
+      } else if (event.wheelDelta < 0) {
+        wheelDown = true;
+      }
+    }
+
     const key = event.keyCode;
 
-    if (isKeyIn(key, "UP", "PAGE_UP")) {
+    if (wheelUp || isKeyIn(key, "UP", "PAGE_UP")) {
       increment = 1 * this.defaultIncrement;
-    } else if (isKeyIn(key, "DOWN", "PAGE_DOWN")) {
+    } else if (wheelDown || isKeyIn(key, "DOWN", "PAGE_DOWN")) {
       increment = -1 * this.defaultIncrement;
     }
 
-    if (event.shiftKey && !getSmallIncrementKey(event)) {
+    const largeIncrementKeyPressed = event.shiftKey;
+    const smallIncrementKeyPressed = this.#isSmallIncrementKeyPressed(event);
+    if (largeIncrementKeyPressed && !smallIncrementKeyPressed) {
       if (isKeyIn(key, "PAGE_UP", "PAGE_DOWN")) {
         increment *= largeIncrement;
       } else {
         increment *= mediumIncrement;
       }
-    } else if (getSmallIncrementKey(event) && !event.shiftKey) {
+    } else if (smallIncrementKeyPressed && !largeIncrementKeyPressed) {
       increment *= smallIncrement;
     }
 
     return increment;
   }
+
+  #isSmallIncrementKeyPressed = evt => {
+    if (isOSX) {
+      return evt.altKey;
+    }
+    return evt.ctrlKey;
+  };
 
   /**
    * Handle the input field's keyup event.
@@ -1485,6 +1518,24 @@ class InplaceEditor extends EventEmitter {
     // In case that the current value becomes empty, show the suggestions if needed.
     if (this.currentInputValue === "" && this.showSuggestCompletionOnEmpty) {
       this.#maybeSuggestCompletion(false);
+    }
+  };
+
+  /**
+   * Handle the input field's wheel event.
+   *
+   * @param {WheelEvent} event
+   */
+  #onWheel = event => {
+    const isPlainText = this.contentType == CONTENT_TYPES.PLAIN_TEXT;
+    let increment = 0;
+    if (!isPlainText) {
+      increment = this.#getIncrement(event);
+    }
+
+    if (increment && this.#incrementValue(increment)) {
+      this.#updateSize();
+      event.preventDefault();
     }
   };
 
@@ -1825,13 +1876,31 @@ class InplaceEditor extends EventEmitter {
       .sort();
   }
 
+  #getCSSVariablesMap() {
+    if (!this.getCssVariables) {
+      return null;
+    }
+
+    if (!this.#variables) {
+      this.#variables = this.getCssVariables();
+    }
+    return this.#variables;
+  }
+
   /**
    * Returns the list of all CSS variables to use for the autocompletion.
    *
    * @return {Array} array of CSS variable names (Strings)
    */
   #getCSSVariableNames() {
-    return Array.from(this.cssVariables.keys()).sort();
+    if (!this.#variableNames) {
+      const variables = this.#getCSSVariablesMap();
+      if (!variables) {
+        return [];
+      }
+      this.#variableNames = Array.from(variables.keys()).sort();
+    }
+    return this.#variableNames;
   }
 
   /**
@@ -1842,7 +1911,7 @@ class InplaceEditor extends EventEmitter {
    * @return {String} the variable value to the given CSS variable name
    */
   #getCSSVariableValue(varName) {
-    return this.cssVariables.get(varName);
+    return this.#getCSSVariablesMap()?.get(varName);
   }
 }
 

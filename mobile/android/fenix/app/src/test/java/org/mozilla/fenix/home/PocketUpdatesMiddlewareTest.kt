@@ -21,8 +21,9 @@ import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.components.AppStore
-import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.appstate.AppAction.ContentRecommendationsAction
 import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsState
 import org.mozilla.fenix.datastore.SelectedPocketStoriesCategories
 import org.mozilla.fenix.datastore.SelectedPocketStoriesCategories.SelectedPocketStoriesCategory
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
@@ -49,12 +50,14 @@ class PocketUpdatesMiddlewareTest {
         val pocketMiddleware = PocketUpdatesMiddleware(pocketService, mockk(), this)
         val appstore = AppStore(
             AppState(
-                pocketStories = listOf(story1, story2, story3),
+                recommendationState = ContentRecommendationsState(
+                    pocketStories = listOf(story1, story2, story3),
+                ),
             ),
             listOf(pocketMiddleware),
         )
 
-        appstore.dispatch(AppAction.PocketStoriesShown(listOf(story2))).joinBlocking()
+        appstore.dispatch(ContentRecommendationsAction.PocketStoriesShown(listOf(story2))).joinBlocking()
 
         coVerify { pocketService.updateStoriesTimesShown(listOf(story2.copy(timesShown = 1))) }
     }
@@ -102,17 +105,19 @@ class PocketUpdatesMiddlewareTest {
         val appStore = spyk(
             AppStore(
                 AppState(
-                    pocketStoriesCategories = currentCategories,
+                    recommendationState = ContentRecommendationsState(
+                        pocketStoriesCategories = currentCategories,
+                    ),
                 ),
                 listOf(pocketMiddleware),
             ),
         )
 
-        appStore.dispatch(AppAction.PocketStoriesCategoriesChange(currentCategories)).joinBlocking()
+        appStore.dispatch(ContentRecommendationsAction.PocketStoriesCategoriesChange(currentCategories)).joinBlocking()
 
         verify {
             appStore.dispatch(
-                AppAction.PocketStoriesCategoriesSelectionsChange(
+                ContentRecommendationsAction.PocketStoriesCategoriesSelectionsChange(
                     storiesCategories = currentCategories,
                     categoriesSelected = listOf(
                         PocketRecommendedStoriesSelectedCategory("testCategory", 123),
@@ -134,13 +139,15 @@ class PocketUpdatesMiddlewareTest {
         val appStore = spyk(
             AppStore(
                 AppState(
-                    pocketStoriesCategories = listOf(categ1, categ2),
+                    recommendationState = ContentRecommendationsState(
+                        pocketStoriesCategories = listOf(categ1, categ2),
+                    ),
                 ),
                 listOf(pocketMiddleware),
             ),
         )
 
-        appStore.dispatch(AppAction.SelectPocketStoriesCategory(categ2.name)).joinBlocking()
+        appStore.dispatch(ContentRecommendationsAction.SelectPocketStoriesCategory(categ2.name)).joinBlocking()
 
         // Seems like the most we can test is that an update was made.
         coVerify { dataStore.updateData(any()) }
@@ -158,13 +165,15 @@ class PocketUpdatesMiddlewareTest {
         val appStore = spyk(
             AppStore(
                 AppState(
-                    pocketStoriesCategories = listOf(categ1, categ2),
+                    recommendationState = ContentRecommendationsState(
+                        pocketStoriesCategories = listOf(categ1, categ2),
+                    ),
                 ),
                 listOf(pocketMiddleware),
             ),
         )
 
-        appStore.dispatch(AppAction.DeselectPocketStoriesCategory(categ2.name)).joinBlocking()
+        appStore.dispatch(ContentRecommendationsAction.DeselectPocketStoriesCategory(categ2.name)).joinBlocking()
 
         // Seems like the most we can test is that an update was made.
         coVerify { dataStore.updateData(any()) }
@@ -211,7 +220,7 @@ class PocketUpdatesMiddlewareTest {
 
         coVerify {
             appStore.dispatch(
-                AppAction.PocketStoriesCategoriesSelectionsChange(
+                ContentRecommendationsAction.PocketStoriesCategoriesSelectionsChange(
                     storiesCategories = currentCategories,
                     categoriesSelected = listOf(
                         PocketRecommendedStoriesSelectedCategory("testCategory", 123),

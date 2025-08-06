@@ -191,6 +191,7 @@ class PrefObserver {
       {
         name: "supportsCaretBrowsingMode",
         type: "bool",
+        dispatchToContent: true,
       },
     ],
   ]);
@@ -205,14 +206,36 @@ class PrefObserver {
       this.#prefs.set(toolbarDensityPref, {
         name: "toolbarDensity",
         type: "int",
+        dispatchToContent: true,
       });
       this.#prefs.set("pdfjs.enableGuessAltText", {
         name: "enableGuessAltText",
         type: "bool",
+        dispatchToContent: true,
+        dispatchToParent: true,
       });
       this.#prefs.set("pdfjs.enableAltTextModelDownload", {
         name: "enableAltTextModelDownload",
         type: "bool",
+        dispatchToContent: true,
+        dispatchToParent: true,
+      });
+
+      // Once the experiment for new alt-text stuff is removed, we can remove this.
+      this.#prefs.set("pdfjs.enableAltText", {
+        name: "enableAltText",
+        type: "bool",
+        dispatchToParent: true,
+      });
+      this.#prefs.set("pdfjs.enableNewAltTextWhenAddingImage", {
+        name: "enableNewAltTextWhenAddingImage",
+        type: "bool",
+        dispatchToParent: true,
+      });
+      this.#prefs.set("browser.ml.enable", {
+        name: "browser.ml.enable",
+        type: "bool",
+        dispatchToParent: true,
       });
     }
     for (const pref of this.#prefs.keys()) {
@@ -229,7 +252,8 @@ class PrefObserver {
     if (!actor) {
       return;
     }
-    const { name, type } = this.#prefs.get(aPrefName) || {};
+    const { name, type, dispatchToContent, dispatchToParent } =
+      this.#prefs.get(aPrefName) || {};
     if (!name) {
       return;
     }
@@ -244,10 +268,13 @@ class PrefObserver {
         break;
       }
     }
-    actor.dispatchEvent("updatedPreference", {
-      name,
-      value,
-    });
+    const data = { name, value };
+    if (dispatchToContent) {
+      actor.dispatchEvent("updatedPreference", data);
+    }
+    if (dispatchToParent) {
+      actor.sendAsyncMessage("PDFJS:Parent:updatedPreference", data);
+    }
   }
 
   QueryInterface = ChromeUtils.generateQI([Ci.nsISupportsWeakReference]);
@@ -498,11 +525,17 @@ class ChromeActions {
     if (typeof data.rawQuery === "string") {
       rawQuery = data.rawQuery;
     }
+    // Same for the `entireWord` property.
+    let entireWord = false;
+    if (typeof data.entireWord === "boolean") {
+      entireWord = data.entireWord;
+    }
 
     let actor = getActor(this.domWindow);
     actor?.sendAsyncMessage("PDFJS:Parent:updateControlState", {
       result,
       findPrevious,
+      entireWord,
       matchesCount,
       rawQuery,
     });
@@ -991,6 +1024,13 @@ PdfStreamConverter.prototype = {
   },
 
   getConvertedType(aFromType, aChannel) {
+    if (aChannel instanceof Ci.nsIMultiPartChannel) {
+      throw new Components.Exception(
+        "PDF.js doesn't support multipart responses.",
+        Cr.NS_ERROR_NOT_IMPLEMENTED
+      );
+    }
+
     const HTML = "text/html";
     let channelURI = aChannel?.URI;
     // We can be invoked for application/octet-stream; check if we want the

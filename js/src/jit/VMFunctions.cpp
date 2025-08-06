@@ -10,7 +10,6 @@
 
 #include "builtin/MapObject.h"
 #include "builtin/String.h"
-#include "ds/OrderedHashTable.h"
 #include "gc/Cell.h"
 #include "gc/GC.h"
 #include "jit/arm/Simulator-arm.h"
@@ -32,6 +31,7 @@
 #include "util/Unicode.h"
 #include "vm/ArrayObject.h"
 #include "vm/Compartment.h"
+#include "vm/DateObject.h"
 #include "vm/Float16.h"
 #include "vm/Interpreter.h"
 #include "vm/JSAtomUtils.h"  // AtomizeString
@@ -44,6 +44,7 @@
 #include "wasm/WasmGcObject.h"
 
 #include "debugger/DebugAPI-inl.h"
+#include "gc/StoreBuffer-inl.h"
 #include "jit/BaselineFrame-inl.h"
 #include "jit/VMFunctionList-inl.h"
 #include "vm/Interpreter-inl.h"
@@ -958,21 +959,18 @@ void PostWriteElementBarrier(JSRuntime* rt, JSObject* obj, int32_t index) {
   MOZ_ASSERT(index >= 0);
   MOZ_ASSERT(uint32_t(index) < nobj->getDenseInitializedLength());
 
-  if (nobj->isInWholeCellBuffer()) {
+  if (gc::StoreBuffer::isInWholeCellBuffer(nobj)) {
     return;
   }
 
-  if (nobj->getDenseInitializedLength() > MAX_WHOLE_CELL_BUFFER_SIZE
-#ifdef JS_GC_ZEAL
-      || rt->hasZealMode(gc::ZealMode::ElementsBarrier)
-#endif
-  ) {
-    rt->gc.storeBuffer().putSlot(nobj, HeapSlot::Element,
-                                 nobj->unshiftedIndex(index), 1);
+  gc::StoreBuffer* sb = &rt->gc.storeBuffer();
+  if (nobj->getDenseInitializedLength() > MAX_WHOLE_CELL_BUFFER_SIZE ||
+      rt->hasZealMode(gc::ZealMode::ElementsBarrier)) {
+    sb->putSlot(nobj, HeapSlot::Element, nobj->unshiftedIndex(index), 1);
     return;
   }
 
-  rt->gc.storeBuffer().putWholeCell(obj);
+  sb->putWholeCell(obj);
 }
 
 void PostGlobalWriteBarrier(JSRuntime* rt, GlobalObject* obj) {
@@ -1862,12 +1860,12 @@ static MOZ_ALWAYS_INLINE bool ValueToAtomOrSymbolPure(JSContext* cx,
   }
 
   if (idVal.isNull()) {
-    *id = PropertyKey::NonIntAtom(cx->names().null);
+    *id = NameToId(cx->names().null);
     return true;
   }
 
   if (idVal.isUndefined()) {
-    *id = PropertyKey::NonIntAtom(cx->names().undefined);
+    *id = NameToId(cx->names().undefined);
     return true;
   }
 
@@ -2542,6 +2540,10 @@ void TraceCreateObject(JSObject* obj) {
 }
 #endif
 
+BigInt* CreateBigIntFromInt32(JSContext* cx, int32_t i32) {
+  return js::BigInt::createFromInt64(cx, int64_t(i32));
+}
+
 #if JS_BITS_PER_WORD == 32
 BigInt* CreateBigIntFromInt64(JSContext* cx, uint32_t low, uint32_t high) {
   uint64_t n = (static_cast<uint64_t>(high) << 32) + low;
@@ -3096,6 +3098,11 @@ int32_t Float32ToFloat16(float value) {
   return static_cast<int32_t>(js::float16{value}.toRawBits());
 }
 
+void DateFillLocalTimeSlots(DateObject* dateObj) {
+  AutoUnsafeCallWithABI unsafe;
+  dateObj->fillLocalTimeSlots();
+}
+
 JSAtom* AtomizeStringNoGC(JSContext* cx, JSString* str) {
   // IC code calls this directly so we shouldn't GC.
   AutoUnsafeCallWithABI unsafe;
@@ -3109,30 +3116,68 @@ JSAtom* AtomizeStringNoGC(JSContext* cx, JSString* str) {
   return atom;
 }
 
-bool SetObjectHas(JSContext* cx, HandleObject obj, HandleValue key,
+bool SetObjectHas(JSContext* cx, Handle<SetObject*> obj, HandleValue key,
                   bool* rval) {
-  return SetObject::has(cx, obj, key, rval);
+  return obj->has(cx, key, rval);
 }
 
-bool MapObjectHas(JSContext* cx, HandleObject obj, HandleValue key,
-                  bool* rval) {
-  return MapObject::has(cx, obj, key, rval);
+bool SetObjectDelete(JSContext* cx, Handle<SetObject*> obj, HandleValue key,
+                     bool* rval) {
+  return obj->delete_(cx, key, rval);
 }
 
-bool MapObjectGet(JSContext* cx, HandleObject obj, HandleValue key,
+bool SetObjectAdd(JSContext* cx, Handle<SetObject*> obj, HandleValue key) {
+  return obj->add(cx, key);
+}
+
+bool SetObjectAddFromIC(JSContext* cx, Handle<SetObject*> obj, HandleValue key,
+                        MutableHandleValue rval) {
+  if (!SetObjectAdd(cx, obj, key)) {
+    return false;
+  }
+  rval.setObject(*obj);
+  return true;
+}
+
+bool MapObjectHas(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                  bool* rval) {
+  return obj->has(cx, key, rval);
+}
+
+bool MapObjectGet(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
                   MutableHandleValue rval) {
-  return MapObject::get(cx, obj, key, rval);
+  return obj->get(cx, key, rval);
+}
+
+bool MapObjectDelete(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                     bool* rval) {
+  return obj->delete_(cx, key, rval);
+}
+
+bool MapObjectSet(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                  HandleValue val) {
+  return obj->set(cx, key, val);
+}
+
+bool MapObjectSetFromIC(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                        HandleValue val, MutableHandleValue rval) {
+  if (!MapObjectSet(cx, obj, key, val)) {
+    return false;
+  }
+  rval.setObject(*obj);
+  return true;
 }
 
 #ifdef DEBUG
-template <class OrderedHashTable>
-static mozilla::HashNumber HashValue(JSContext* cx, OrderedHashTable* hashTable,
+template <class T>
+static mozilla::HashNumber HashValue(JSContext* cx, T* obj,
                                      const Value* value) {
   RootedValue rootedValue(cx, *value);
   HashableValue hashable;
   MOZ_ALWAYS_TRUE(hashable.setValue(cx, rootedValue));
 
-  return hashTable->hash(hashable);
+  using Table = typename T::Table;
+  return Table(obj).hash(hashable);
 }
 #endif
 
@@ -3140,14 +3185,14 @@ void AssertSetObjectHash(JSContext* cx, SetObject* obj, const Value* value,
                          mozilla::HashNumber actualHash) {
   AutoUnsafeCallWithABI unsafe;
 
-  MOZ_ASSERT(actualHash == HashValue(cx, obj->getData(), value));
+  MOZ_ASSERT(actualHash == HashValue(cx, obj, value));
 }
 
 void AssertMapObjectHash(JSContext* cx, MapObject* obj, const Value* value,
                          mozilla::HashNumber actualHash) {
   AutoUnsafeCallWithABI unsafe;
 
-  MOZ_ASSERT(actualHash == HashValue(cx, obj->getData(), value));
+  MOZ_ASSERT(actualHash == HashValue(cx, obj, value));
 }
 
 void AssertPropertyLookup(NativeObject* obj, PropertyKey id, uint32_t slot) {

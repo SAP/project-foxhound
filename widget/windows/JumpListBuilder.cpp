@@ -261,10 +261,12 @@ JumpListBuilder::ObtainAndCacheFaviconAsync(nsIURI* aFaviconURI, JSContext* aCx,
       mozilla::widget::FaviconHelper::IconCacheDir::JumpListCacheDir)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [promise](nsString aIcoFilePath) {
-            promise->MaybeResolve(aIcoFilePath);
+          [promiseHolder](nsString aIcoFilePath) {
+            promiseHolder.get()->MaybeResolve(aIcoFilePath);
           },
-          [promise](nsresult aResult) { promise->MaybeReject(aResult); });
+          [promiseHolder](nsresult aResult) {
+            promiseHolder.get()->MaybeReject(aResult);
+          });
 
   promise.forget(aPromise);
   return NS_OK;
@@ -788,7 +790,7 @@ void JumpListBuilder::DeleteIconFromDisk(const nsAString& aPath) {
   if (StringTail(aPath, 4).LowerCaseEqualsASCII(".ico")) {
     // Construct the parent path of the passed in path
     nsCOMPtr<nsIFile> icoFile;
-    nsresult rv = NS_NewLocalFile(aPath, true, getter_AddRefs(icoFile));
+    nsresult rv = NS_NewLocalFile(aPath, getter_AddRefs(icoFile));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }

@@ -7,32 +7,33 @@
 #ifndef nsLayoutUtils_h__
 #define nsLayoutUtils_h__
 
+#include <limits>
+#include <algorithm>
+
+#include "gfxPoint.h"
 #include "LayoutConstants.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
+#include "mozilla/LayoutStructs.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/RelativeTo.h"
+#include "mozilla/Span.h"
 #include "mozilla/StaticPrefs_nglayout.h"
 #include "mozilla/SurfaceFromElementResult.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/ToString.h"
 #include "mozilla/TypedEnumBits.h"
-#include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"
-#include "mozilla/layers/ScrollableLayerGuid.h"
-#include "mozilla/gfx/2D.h"
-
-#include "gfxPoint.h"
 #include "nsBoundingMetrics.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsFrameList.h"
 #include "nsThreadUtils.h"
 #include "Units.h"
-#include "mozilla/layers/LayersTypes.h"
-#include <limits>
-#include <algorithm>
 // If you're thinking of adding a new include here, please try hard to not.
 // This header file gets included just about everywhere and adding headers here
 // can dramatically increase avoidable build activity. Try instead:
@@ -1470,6 +1471,8 @@ class nsLayoutUtils {
    * @param aMarginBoxMinSizeClamp make the result fit within this margin-box
    * size by reducing the *content size* (flooring at zero).  This is used for:
    * https://drafts.csswg.org/css-grid/#min-size-auto
+   * @param aSizeOverrides optional override values for size properties, which
+   * this function will use internally instead of the actual property values.
    */
   enum {
     IGNORE_PADDING = 0x01,
@@ -1480,7 +1483,8 @@ class nsLayoutUtils {
       mozilla::PhysicalAxis aAxis, gfxContext* aRenderingContext,
       nsIFrame* aFrame, mozilla::IntrinsicISizeType aType,
       const mozilla::Maybe<LogicalSize>& aPercentageBasis = mozilla::Nothing(),
-      uint32_t aFlags = 0, nscoord aMarginBoxMinSizeClamp = NS_MAXSIZE);
+      uint32_t aFlags = 0, nscoord aMarginBoxMinSizeClamp = NS_MAXSIZE,
+      const mozilla::StyleSizeOverrides& aSizeOverrides = {});
   /**
    * Calls IntrinsicForAxis with aFrame's parent's inline physical axis.
    */
@@ -1488,7 +1492,8 @@ class nsLayoutUtils {
       gfxContext* aRenderingContext, nsIFrame* aFrame,
       mozilla::IntrinsicISizeType aType,
       const mozilla::Maybe<LogicalSize>& aPercentageBasis = mozilla::Nothing(),
-      uint32_t aFlags = 0);
+      uint32_t aFlags = 0,
+      const mozilla::StyleSizeOverrides& aSizeOverrides = {});
 
   /**
    * Get the definite size contribution of aFrame for the given physical axis.
@@ -1535,6 +1540,23 @@ class nsLayoutUtils {
       return 0;
     }
     return ComputeCBDependentValue(aPercentBasis, aCoord.AsLengthPercentage());
+  }
+
+  static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
+                                         const mozilla::StyleInset& aInset) {
+    if (!aInset.IsLengthPercentage()) {
+      // Callers are assumed to have handled other cases already.
+      return 0;
+    }
+    return ComputeCBDependentValue(aPercentBasis, aInset.AsLengthPercentage());
+  }
+
+  static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
+                                         const mozilla::StyleMargin& aMargin) {
+    if (!aMargin.IsLengthPercentage()) {
+      return 0;
+    }
+    return ComputeCBDependentValue(aPercentBasis, aMargin.AsLengthPercentage());
   }
 
   static nscoord ComputeBSizeValue(nscoord aContainingBlockBSize,
@@ -1591,12 +1613,12 @@ class nsLayoutUtils {
   // Get a suitable foreground color for painting aColor for aFrame.
   static nscolor DarkenColorIfNeeded(nsIFrame* aFrame, nscolor aColor);
 
-  // Get a suitable foreground color for painting aField for aFrame.
+  // Get a suitable text foreground color for painting aField for aFrame.
   // Type of aFrame is made a template parameter because nsIFrame is not
   // a complete type in the header. Type-safety is not harmed given that
   // DarkenColorIfNeeded requires an nsIFrame pointer.
   template <typename Frame, typename T, typename S>
-  static nscolor GetColor(Frame* aFrame, T S::*aField) {
+  static nscolor GetTextColor(Frame* aFrame, T S::*aField) {
     nscolor color = aFrame->GetVisitedDependentColor(aField);
     return DarkenColorIfNeeded(aFrame, color);
   }
@@ -1762,11 +1784,11 @@ class nsLayoutUtils {
                                      mozilla::StyleBorderStyle aBorderStyle) {
     if (aBorderStyle == mozilla::StyleBorderStyle::Dotted) {
       static Float dot[] = {1.f, 1.f};
-      aStrokeOptions.mDashLength = MOZ_ARRAY_LENGTH(dot);
+      aStrokeOptions.mDashLength = std::size(dot);
       aStrokeOptions.mDashPattern = dot;
     } else if (aBorderStyle == mozilla::StyleBorderStyle::Dashed) {
       static Float dash[] = {5.f, 5.f};
-      aStrokeOptions.mDashLength = MOZ_ARRAY_LENGTH(dash);
+      aStrokeOptions.mDashLength = std::size(dash);
       aStrokeOptions.mDashPattern = dash;
     } else {
       aStrokeOptions.mDashLength = 0;
@@ -2984,7 +3006,8 @@ class nsLayoutUtils {
    * a cross-process ancestor document.
    * Note this function only works for frames in out-of-process iframes.
    **/
-  static bool FrameIsScrolledOutOfViewInCrossProcess(const nsIFrame* aFrame);
+  static bool FrameRectIsScrolledOutOfViewInCrossProcess(
+      const nsIFrame* aFrame, const nsRect& aFrameRect);
 
   /**
    * Similar to above FrameIsScrolledOutViewInCrossProcess but returns true even

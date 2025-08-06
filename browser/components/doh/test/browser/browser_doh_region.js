@@ -31,19 +31,31 @@ add_task(async function testPrefFirstRollout() {
     "DE",
     "Initial region should be DE"
   );
+  RegionTestUtils.setNetworkRegion("UK");
+  await Region._fetchRegion();
   Region._setHomeRegion("UK");
   await ensureTRRMode(2); // Mode shouldn't change.
 
-  is(Preferences.get("doh-rollout.home-region-changed"), true);
+  // The idle-daily event will cause the new region to take effect.
+  Services.obs.notifyObservers(null, "idle-daily");
 
-  await DoHController._uninit();
-  await DoHConfigController._uninit();
-
-  // Check after controller gets reinitialized (or restart)
-  // that the region gets set to UK
-  await DoHConfigController.init();
-  await DoHController.init();
   is(Preferences.get("doh-rollout.home-region"), "UK");
+
+  RegionTestUtils.setNetworkRegion("FR");
+
+  let promise = new Promise(resolve => {
+    Services.obs.addObserver(function obs(subject, topic) {
+      Services.obs.removeObserver(obs, topic);
+      resolve();
+    }, "doh-config-updated");
+  });
+
+  // For a timezone change, a region check should be performed,
+  // and the region should change immediately.
+  Services.obs.notifyObservers(null, "default-timezone-changed");
+
+  await promise;
+  is(Preferences.get("doh-rollout.home-region"), "FR");
 
   is(
     DoHConfigController.currentConfig.enabled,

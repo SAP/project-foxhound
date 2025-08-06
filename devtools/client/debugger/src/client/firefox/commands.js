@@ -5,7 +5,7 @@
 import { createFrame } from "./create";
 import { makeBreakpointServerLocationId } from "../../utils/breakpoint/index";
 
-import Reps from "devtools/client/shared/components/reps/index";
+import * as objectInspector from "resource://devtools/client/shared/components/object-inspector/index.js";
 
 let commands;
 let breakpoints;
@@ -46,7 +46,7 @@ function createObjectFront(grip, frame) {
 }
 
 async function loadObjectProperties(root, threadActorID) {
-  const { utils } = Reps.objectInspector;
+  const { utils } = objectInspector;
   const properties = await utils.loadProperties.loadItemProperties(
     root,
     commands.client,
@@ -268,21 +268,45 @@ async function removeBreakpoint(location) {
   });
 }
 
-async function evaluateExpressions(scripts, options) {
-  return Promise.all(scripts.map(script => evaluate(script, options)));
+async function evaluateExpressions(expressions, options) {
+  return Promise.all(
+    expressions.map(expression => evaluate(expression, options))
+  );
 }
 
-async function evaluate(script, { frameId, threadId } = {}) {
-  if (!currentTarget() || !script) {
+/**
+ * Evaluate some JS expression in a given thread.
+ *
+ * @param {String} expression
+ * @param {Object} options
+ * @param {String} options.frameId
+ *                 Optional frame actor ID into which the expression should be evaluated.
+ * @param {String} options.threadId
+ *                 Optional thread actor ID into which the expression should be evaluated.
+ * @param {String} options.selectedNodeActor
+ *                 Optional node actor ID which related to "$0" in the evaluated expression.
+ * @param {Boolean} options.evalInTracer
+ *                 To be set to true, if the object actors created during the evaluation
+ *                 should be registered in the tracer actor Pool.
+ * @return {Object}
+ *                 See ScriptCommand.execute JS Doc.
+ */
+async function evaluate(
+  expression,
+  { frameId, threadId, selectedNodeActor, evalInTracer } = {}
+) {
+  if (!currentTarget() || !expression) {
     return { result: null };
   }
 
   const selectedTargetFront = threadId ? lookupTarget(threadId) : null;
 
-  return commands.scriptCommand.execute(script, {
+  return commands.scriptCommand.execute(expression, {
     frameActor: frameId,
     selectedTargetFront,
     disableBreaks: true,
+    selectedNodeActor,
+    evalInTracer,
   });
 }
 
@@ -302,19 +326,6 @@ async function autocomplete(input, cursor, frameId) {
       result => resolve(result),
       frameId
     );
-  });
-}
-
-function getProperties(thread, grip) {
-  const objClient = lookupThreadFront(thread).pauseGrip(grip);
-
-  return objClient.getPrototypeAndProperties().then(resp => {
-    const { ownProperties, safeGetterValues } = resp;
-    for (const name in safeGetterValues) {
-      const { enumerable, writable, getterValue } = safeGetterValues[name];
-      ownProperties[name] = { enumerable, writable, value: getterValue };
-    }
-    return resp;
   });
 }
 
@@ -403,10 +414,6 @@ async function getEventListenerBreakpointTypes() {
   return currentThreadFront().getAvailableEventBreakpoints();
 }
 
-function pauseGrip(thread, func) {
-  return lookupThreadFront(thread).pauseGrip(func);
-}
-
 async function toggleEventLogging(logEventBreakpoints) {
   await commands.threadConfigurationCommand.updateConfiguration({
     logEventBreakpoints,
@@ -445,32 +452,12 @@ function fetchAncestorFramePositions(index) {
   currentThreadFront().fetchAncestorFramePositions(index);
 }
 
-async function setOverride(url, path) {
-  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
-  if (hasWatcherSupport) {
-    const networkFront =
-      await commands.targetCommand.watcherFront.getNetworkParentActor();
-    return networkFront.override(url, path);
-  }
-  return null;
-}
-
-async function removeOverride(url) {
-  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
-  if (hasWatcherSupport) {
-    const networkFront =
-      await commands.targetCommand.watcherFront.getNetworkParentActor();
-    networkFront.removeOverride(url);
-  }
-}
-
 const clientCommands = {
   autocomplete,
   blackBox,
   createObjectFront,
   loadObjectProperties,
   releaseActor,
-  pauseGrip,
   resume,
   stepIn,
   stepOut,
@@ -490,7 +477,6 @@ const clientCommands = {
   removeBreakpoint,
   evaluate,
   evaluateExpressions,
-  getProperties,
   getFrameScopes,
   getFrames,
   pauseOnDebuggerStatement,
@@ -503,8 +489,6 @@ const clientCommands = {
   getFrontByID,
   fetchAncestorFramePositions,
   toggleJavaScriptEnabled,
-  setOverride,
-  removeOverride,
 };
 
 export { setupCommands, clientCommands };

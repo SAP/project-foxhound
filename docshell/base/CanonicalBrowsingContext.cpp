@@ -39,7 +39,7 @@
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_docshell.h"
 #include "mozilla/StaticPrefs_fission.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "nsILayoutHistoryState.h"
 #include "nsIPrintSettings.h"
 #include "nsIPrintSettingsService.h"
@@ -93,9 +93,7 @@ static void IncreasePrivateCount() {
   static bool sHasSeenPrivateContext = false;
   if (!sHasSeenPrivateContext) {
     sHasSeenPrivateContext = true;
-    mozilla::Telemetry::ScalarSet(
-        mozilla::Telemetry::ScalarID::DOM_PARENTPROCESS_PRIVATE_WINDOW_USED,
-        true);
+    mozilla::glean::dom_parentprocess::private_window_used.Set(true);
   }
 }
 
@@ -324,6 +322,7 @@ void CanonicalBrowsingContext::ReplacedBy(
   txn.SetHasRestoreData(GetHasRestoreData());
   txn.SetShouldDelayMediaFromStart(GetShouldDelayMediaFromStart());
   txn.SetForceOffline(GetForceOffline());
+  txn.SetTopInnerSizeForRFP(GetTopInnerSizeForRFP());
 
   // Propagate some settings on BrowsingContext replacement so they're not lost
   // on bfcached navigations. These are important for GeckoView (see bug
@@ -336,9 +335,11 @@ void CanonicalBrowsingContext::ReplacedBy(
   txn.SetForceDesktopViewport(GetForceDesktopViewport());
   txn.SetIsUnderHiddenEmbedderElement(GetIsUnderHiddenEmbedderElement());
 
-  // When using site-specific zoom, we let the front-end manage it, otherwise it
-  // can cause weirdness like bug 1846141.
-  if (!StaticPrefs::browser_zoom_siteSpecific()) {
+  // When using site-specific zoom, we let the frontend manage the zoom level
+  // of BFCache'd contexts. Overriding those zoom levels can cause weirdness
+  // like bug 1846141. We always copy to new contexts to avoid bug 1914149.
+  if (!aNewContext->EverAttached() ||
+      !StaticPrefs::browser_zoom_siteSpecific()) {
     txn.SetFullZoom(GetFullZoom());
     txn.SetTextZoom(GetTextZoom());
   }
@@ -1222,6 +1223,14 @@ void CanonicalBrowsingContext::SetActiveSessionHistoryEntry(
     mActiveEntry->SharedInfo()->mCacheKey = aUpdatedCacheKey;
   }
 
+  if (oldActiveEntry) {
+    // aInfo comes from the entry stored in the current document's docshell,
+    // whose interaction state does not get updated. So we instead propagate
+    // state from the previous canonical entry. See bug 1917369.
+    mActiveEntry->SetHasUserInteraction(
+        oldActiveEntry->GetHasUserInteraction());
+  }
+
   if (IsTop()) {
     Maybe<int32_t> previousEntryIndex, loadedEntryIndex;
     shistory->AddToRootSessionHistory(
@@ -1255,7 +1264,12 @@ void CanonicalBrowsingContext::ReplaceActiveSessionHistoryEntry(
     return;
   }
 
+  // aInfo comes from the entry stored in the current document's docshell, whose
+  // interaction state does not get updated. So we instead propagate state from
+  // the previous canonical entry. See bug 1917369.
+  const bool hasUserInteraction = mActiveEntry->GetHasUserInteraction();
   mActiveEntry->SetInfo(aInfo);
+  mActiveEntry->SetHasUserInteraction(hasUserInteraction);
   // Notify children of the update
   nsSHistory* shistory = static_cast<nsSHistory*>(GetSessionHistory());
   if (shistory) {
@@ -2595,6 +2609,10 @@ already_AddRefed<Promise> CanonicalBrowsingContext::GetRestorePromise() {
 }
 
 void CanonicalBrowsingContext::ClearRestoreState() {
+  if (IsDiscarded()) {
+    return;
+  }
+
   if (!mRestoreState) {
     MOZ_DIAGNOSTIC_ASSERT(!GetHasRestoreData());
     return;
@@ -2603,6 +2621,7 @@ void CanonicalBrowsingContext::ClearRestoreState() {
     mRestoreState->mPromise->MaybeRejectWithUndefined();
   }
   mRestoreState = nullptr;
+
   MOZ_ALWAYS_SUCCEEDS(SetHasRestoreData(false));
 }
 
@@ -3028,6 +3047,18 @@ bool CanonicalBrowsingContext::AllowedInBFCache(
   }
 
   return bfcacheCombo == 0;
+}
+
+void CanonicalBrowsingContext::SetIsActive(bool aIsActive, ErrorResult& aRv) {
+#ifdef DEBUG
+  if (MOZ_UNLIKELY(!ManuallyManagesActiveness())) {
+    xpc_DumpJSStack(true, true, false);
+    MOZ_ASSERT_UNREACHABLE(
+        "Trying to manually manage activeness of a browsing context that isn't "
+        "manually managed (see manualactiveness attribute)");
+  }
+#endif
+  SetIsActiveInternal(aIsActive, aRv);
 }
 
 void CanonicalBrowsingContext::SetTouchEventsOverride(

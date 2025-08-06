@@ -270,6 +270,11 @@ class MOZ_STACK_CLASS ParserSharedBase {
     return compilationState_.parserAtoms;
   }
 
+  BigIntStencilVector& bigInts() { return compilationState_.bigIntData; }
+  const BigIntStencilVector& bigInts() const {
+    return compilationState_.bigIntData;
+  }
+
   LifoAlloc& stencilAlloc() { return compilationState_.alloc; }
 
   const UsedNameTracker& usedNames() { return usedNames_; }
@@ -287,9 +292,6 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
   TokenStreamAnyChars anyChars;
 
   ScriptSource* ss;
-
-  // Perform constant-folding; must be true when interfacing with the emitter.
-  const bool foldConstants_ : 1;
 
  protected:
 #if DEBUG
@@ -327,7 +329,7 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
   friend class AutoInParametersOfAsyncFunction;
 
   ParserBase(FrontendContext* fc, const JS::ReadOnlyCompileOptions& options,
-             bool foldConstants, CompilationState& compilationState);
+             CompilationState& compilationState);
   ~ParserBase();
 
   bool checkOptions();
@@ -478,16 +480,16 @@ class MOZ_STACK_CLASS PerHandlerParser : public ParserBase {
   //       are less likely to select this overload.
   PerHandlerParser(FrontendContext* fc,
                    const JS::ReadOnlyCompileOptions& options,
-                   bool foldConstants, CompilationState& compilationState,
+                   CompilationState& compilationState,
                    void* internalSyntaxParser);
 
  protected:
   template <typename Unit>
   PerHandlerParser(FrontendContext* fc,
                    const JS::ReadOnlyCompileOptions& options,
-                   bool foldConstants, CompilationState& compilationState,
+                   CompilationState& compilationState,
                    GeneralParser<SyntaxParseHandler, Unit>* syntaxParser)
-      : PerHandlerParser(fc, options, foldConstants, compilationState,
+      : PerHandlerParser(fc, options, compilationState,
                          static_cast<void*>(syntaxParser)) {}
 
   static typename ParseHandler::NullNode null() { return ParseHandler::null(); }
@@ -722,7 +724,6 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
   using Base::finishClassBodyScope;
   using Base::finishFunctionScopes;
   using Base::finishLexicalScope;
-  using Base::foldConstants_;
   using Base::getFilename;
   using Base::hasValidSimpleStrictParameterNames;
   using Base::isUnexpectedEOF_;
@@ -933,7 +934,7 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
 
  public:
   GeneralParser(FrontendContext* fc, const JS::ReadOnlyCompileOptions& options,
-                const Unit* units, size_t length, const StringTaint& taint, bool foldConstants,
+                const Unit* units, size_t length, const StringTaint& taint,
                 CompilationState& compilationState, SyntaxParser* syntaxParser);
 
   GeneralParser(FrontendContext* fc, const JS::ReadOnlyCompileOptions& options,

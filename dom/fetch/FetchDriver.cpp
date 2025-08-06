@@ -641,8 +641,14 @@ nsresult FetchDriver::HttpFetch(
                        nullptr, /* aCallbacks */
                        loadFlags, ios);
   } else {
+    nsCOMPtr<nsIPrincipal> principal = mPrincipal;
+    if (principal->IsSystemPrincipal() &&
+        mRequest->GetTriggeringPrincipalOverride()) {
+      principal = mRequest->GetTriggeringPrincipalOverride();
+    }
+
     rv =
-        NS_NewChannel(getter_AddRefs(chan), uri, mPrincipal, secFlags,
+        NS_NewChannel(getter_AddRefs(chan), uri, principal, secFlags,
                       mRequest->ContentPolicyType(), mCookieJarSettings,
                       mPerformanceStorage, mLoadGroup, nullptr, /* aCallbacks */
                       loadFlags, ios);
@@ -849,12 +855,16 @@ nsresult FetchDriver::HttpFetch(
                        nsIClassOfService::Tail);
   }
 
+  const auto fetchPriority = ToFetchPriority(mRequest->GetPriorityMode());
+  if (cos) {
+    cos->SetFetchPriorityDOM(fetchPriority);
+  }
+
   if (nsCOMPtr<nsISupportsPriority> p = do_QueryInterface(chan)) {
     if (mIsTrackingFetch &&
         StaticPrefs::privacy_trackingprotection_lower_network_priority()) {
       p->SetPriority(nsISupportsPriority::PRIORITY_LOWEST);
     } else if (StaticPrefs::network_fetchpriority_enabled()) {
-      const auto fetchPriority = ToFetchPriority(mRequest->GetPriorityMode());
       // According to step 15 of https://fetch.spec.whatwg.org/#concept-fetch
       // request’s priority, initiator, destination, and render-blocking are
       // used in an implementation-defined manner to set the internal priority.
@@ -942,12 +952,12 @@ nsresult FetchDriver::HttpFetch(
   } else {
     // Integrity check cannot be done on alt-data yet.
     if (mRequest->GetIntegrity().IsEmpty()) {
-      MOZ_ASSERT(!FetchUtil::WasmAltDataType.IsEmpty());
       nsCOMPtr<nsICacheInfoChannel> cic = do_QueryInterface(chan);
       if (cic && StaticPrefs::javascript_options_wasm_caching() &&
           !mRequest->SkipWasmCaching()) {
         cic->PreferAlternativeDataType(
-            FetchUtil::WasmAltDataType, nsLiteralCString(WASM_CONTENT_TYPE),
+            FetchUtil::GetWasmAltDataType(),
+            nsLiteralCString(WASM_CONTENT_TYPE),
             nsICacheInfoChannel::PreferredAlternativeDataDeliveryType::
                 SERIALIZE);
       }
@@ -1237,7 +1247,7 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     } else if (!cic->PreferredAlternativeDataTypes().IsEmpty()) {
       MOZ_ASSERT(cic->PreferredAlternativeDataTypes().Length() == 1);
       MOZ_ASSERT(cic->PreferredAlternativeDataTypes()[0].type().Equals(
-          FetchUtil::WasmAltDataType));
+          FetchUtil::GetWasmAltDataType()));
       MOZ_ASSERT(
           cic->PreferredAlternativeDataTypes()[0].contentType().EqualsLiteral(
               WASM_CONTENT_TYPE));

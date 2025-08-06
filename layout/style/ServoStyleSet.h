@@ -31,6 +31,7 @@ namespace mozilla {
 enum class MediaFeatureChangeReason : uint8_t;
 enum class StylePageSizeOrientation : uint8_t;
 enum class StyleRuleChangeKind : uint32_t;
+struct StyleRuleChange;
 
 class ErrorResult;
 
@@ -134,9 +135,9 @@ class ServoStyleSet {
   // are mutated from CSSOM.
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
-  void RuleChanged(StyleSheet&, css::Rule*, StyleRuleChangeKind);
+  void RuleChanged(StyleSheet&, css::Rule*, const StyleRuleChange&);
   void SheetCloned(StyleSheet&);
-  void ImportRuleLoaded(dom::CSSImportRule&, StyleSheet&);
+  void ImportRuleLoaded(StyleSheet&);
 
   // Runs style invalidation due to document state changes.
   void InvalidateStyleForDocumentStateChanges(
@@ -232,8 +233,7 @@ class ServoStyleSet {
   // was resolved, it is not stored in the DOM. (That is, the element remains
   // unstyled.)
   already_AddRefed<ComputedStyle> ResolveStyleLazily(
-      const dom::Element&, PseudoStyleType = PseudoStyleType::NotPseudo,
-      nsAtom* aFunctionalPseudoParameter = nullptr,
+      const dom::Element&, const PseudoStyleRequest& aPseudoRequest = {},
       StyleRuleInclusion = StyleRuleInclusion::All);
 
   // Get a ComputedStyle for an anonymous box. The pseudo type must be an
@@ -604,7 +604,7 @@ class ServoStyleSet {
 
   bool ShouldTraverseInParallel() const;
 
-  void RuleChangedInternal(StyleSheet&, css::Rule&, StyleRuleChangeKind);
+  void RuleChangedInternal(StyleSheet&, css::Rule&, const StyleRuleChange&);
 
   /**
    * Forces all the ShadowRoot styles to be dirty.

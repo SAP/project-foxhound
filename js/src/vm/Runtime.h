@@ -55,6 +55,7 @@
 #include "vm/GeckoProfiler.h"
 #include "vm/InvalidatingFuse.h"
 #include "vm/JSScript.h"
+#include "vm/Logging.h"
 #include "vm/OffThreadPromiseRuntimeState.h"  // js::OffThreadPromiseRuntimeState
 #include "vm/SharedScriptDataTableHolder.h"   // js::SharedScriptDataTableHolder
 #include "vm/Stack.h"
@@ -308,6 +309,9 @@ class HasSeenObjectEmulateUndefinedFuse : public js::InvalidatingRuntimeFuse {
     // this invariant directly.
     return true;
   }
+
+ public:
+  virtual void popFuse(JSContext* cx) override;
 };
 
 }  // namespace js

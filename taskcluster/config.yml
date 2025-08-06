@@ -7,7 +7,6 @@ project-repo-param-prefix: ''
 product-dir: 'browser'
 treeherder:
     group-names:
-        'cram': 'Cram tests'
         'js-bench-sm': 'JavaScript shell benchmarks with Spidermonkey'
         'js-bench-v8': 'JavaScript shell benchmarks with Google V8'
         'node': 'Node tests'
@@ -25,6 +24,7 @@ treeherder:
         'Btime-live-nofis-fenix': 'Browsertime tests on Fenix without fission enabled using live sites'
         'Btime-nofis-fenix': 'Browsertime tests on Fenix without fission enabled'
         'Btime-webext-nofis-fenix': 'Browsertime performance tests on Fenix with extensions and without fission enabled'
+        'Btime-webext-fenix': 'Browsertime performance tests on Fenix with extensions'
         'Btime-webext': 'Browsertime performance tests on Firefox with extensions'
         'Btime-live-nofis': 'Browsertime tests on Firefox without fission enabled using live sites'
         'Btime-nofis-refbrow': 'Browsertime tests on reference browser without fission enabled'
@@ -46,6 +46,15 @@ treeherder:
         'Btime-STP': 'Browsertime performance tests on Safari Technology Preview'
         'Btime-CaR': 'Browsertime performance tests on Chromium-as-Release'
         'Btime-nofis-CaR': 'Browsertime performance tests on Chromium-as-Release without fission enabled'
+        'Btime-slow3G': 'Browsertime network benchmark tests with slow3G condition'
+        'Btime-ChR-slow3G': 'Browsertime network benchmark tests with slow3G condition'
+        'Btime-CaR-slow3G': 'Browsertime network benchmark tests with slow3G condition'
+        'Btime-fast5G': 'Browsertime network benchmark tests with fast5G condition'
+        'Btime-ChR-fast5G': 'Browsertime network benchmark tests with fast5G condition'
+        'Btime-CaR-fast5G': 'Browsertime network benchmark tests with fast5G condition'
+        'Btime-busy5G': 'Browsertime network benchmark tests with busy5G condition'
+        'Btime-ChR-busy5G': 'Browsertime network benchmark tests with busy5G condition'
+        'Btime-CaR-busy5G': 'Browsertime network benchmark tests with busy5G condition'
         'Fetch': 'Fetch and store content'
         'Fxfn': 'Firefox functional tests'
         'l10n-bump': 'L10n Bumper'
@@ -79,6 +88,8 @@ treeherder:
         'M-nofis-cf': 'Mochitests confirm failure without fission enabled'
         'M-nofis-ship': "Mochitests without fission and with SHIP (session history in parent) enabled (Android-specific)"
         'M-nofis-ship-cf': "Mochitests confirm failure: no fission + with SHIP (session history in parent) on (Android-only)"
+        'M-nogpu': 'Mochitests without GPU process enabled'
+        'M-nogpu-cf': 'Mochitests confirm failure without GPU process enabled'
         'M-spi': 'Mochitests with socket process'
         'M-spi-cf': 'Mochitests confirm failure with socket process'
         'M-spi-nofis': 'Mochitests with socket process without fission enabled'
@@ -101,12 +112,18 @@ treeherder:
         'M-wmfme-cf': 'Mochitests confirm failure with Windows Media Foundation media engine enabled'
         'M-mda-gpu': 'Mochitests Media on GPU worker'
         'M-mda-gpu-cf': 'Mochitests confirm failure Media on GPU worker'
+        'M-cm6': 'Mochitests for devtools with codemirror 6 enabled'
+        'M-cm6-cf': 'Mochitests for devtools confirm failure with codemirror 6 enabled'
         'M-f': 'Mochitest failures'
         'M-f-swr': 'Mochitest failures software webrender'
         'M-f-cf': 'Mochitest failures w/confirm failure'
         'M-f-swr-cf': 'Mochitest failures software webrender w/confirm failure'
         'M-msix': 'Mochitests from MSIX builds'
         'M-msix-cf': 'Mochitests confirm failure from MSIX builds'
+        'M-osint': 'Mochitests tagged with os-integration'
+        'Mn': 'Marionette tests'
+        'Mn-swr': 'Marionette tests with software webrender enabled'
+        'Mn-headless': 'Marionette tests running in headless mode'
         'MSI': 'Repack installers into MSIs'
         'MSIs': 'Signing of Repacked installers of MSIs'
         'MSIX': 'Repack into MSIX package'
@@ -120,6 +137,8 @@ treeherder:
         'R-nofis-cf': 'Reftests confirm failure without fission enabled'
         'R-nofis-ship': 'Reftests without fission and with SHIP (session history in parent) enabled (Android specific)'
         'R-nofis-ship-cf': 'Reftests confirm failure: no fission + with SHIP (session history in parent) on (Android-only)'
+        'R-nogpu': 'Reftests without GPU process enabled'
+        'R-nogpu-cf': 'Reftests confirm failure without GPU process enabled'
         'R-swr': 'Reftests with software webrender enabled'
         'R-swr-cf': 'Reftests confirm failure with software webrender enabled'
         'R-swr-nofis': 'Reftests with software webrender enabled without fission enabled'
@@ -162,6 +181,10 @@ treeherder:
         'W-pb': 'Web platform tests with private browsing enabled'
         'W-emewmf': 'Web platform tests with Windows Media Foundation based CDM enabled'
         'W-emewmf-cf': 'Web platform tests confirm failure with Windows Media Foundation based CDM enabled'
+        'W-async': 'Web platform tests with parent process dispatching enabled'
+        'W-async-cf': 'Web platform tests with parent process dispatching enabled'
+        'W-wd-async': 'Web platform tests for WebDriver with parent process dispatching enabled'
+        'W-wd-async-cf': 'Web platform tests for WebDriver with parent process dispatching enabled'
         'X': 'Xpcshell tests'
         'X-cf': 'Xpcshell tests confirm failure'
         'X-condprof': 'Xpcshell tests with a conditioned profile'
@@ -170,6 +193,7 @@ treeherder:
         'X-nofis-cf': 'Xpcshell tests confirm failure without fission enabled'
         'X-nofis-ship': 'Xpcshell tests without fission and with SHIP (session history in parent) enabled (Android specific)'
         'X-nofis-ship-cf': 'Xpcshell confirm failure: no fission + with SHIP (session history in parent) on (Android-only)'
+        'X-osint': 'Xpcshell tests tagged with the os-integration tag'
         'X-spi-nw': 'Xpcshell tests with networking on socket process'
         'X-spi-nw-cf': 'Xpcshell tests confirm failure with networking on socket process'
         'X-spi-nw-nofis': 'Xpcshell tests with networking on socket process without fission enabled'
@@ -200,20 +224,24 @@ treeherder:
         'Ub20': 'Packages for Ubuntu 20.04'
         'Ub22': 'Packages for Ubuntu 22.04'
         'Ub22a64': 'AArch64 packages for Ubuntu 22.04'
+        'Ub24': 'Packages for Ubuntu 24.04'
         'I': 'Docker Image Builds'
         'TA': 'Toolchain builds for Android'
         'TL': 'Toolchain builds for Linux 64-bits'
         'TL32': 'Toolchain builds for Linux 32-bits'
         'TLA64': 'Toolchain builds for Linux AArch64'
         'TM': 'Toolchain builds for OSX'
+        'TMA64': 'Toolchain builds for OSX Aarch64'
         'TMW': 'Toolchain builds for Windows MinGW'
         'TW32': 'Toolchain builds for Windows 32-bits'
         'TW64': 'Toolchain builds for Windows 64-bits'
+        'TWA64': 'Toolchain builds for Windows AArch64'
         'WMC32': 'MinGW-Clang builds for Windows 32-bits'
         'WMC64': 'MinGW-Clang builds for Windows 64-bits'
         'Searchfox': 'Searchfox builds'
         'SM': 'Spidermonkey builds'
         'p': 'Partial generation'
+        'pz': 'Partial-zucchini generation'
         'ps': 'Partials signing'
         'ms': 'Complete MAR signing'
         'ms-stage': 'Autograph-stage MAR signing test'
@@ -248,7 +276,6 @@ treeherder:
         'perftest-http3': 'Performance tests with HTTP/3'
         'perftest-fenix': 'Performance tests using Fenix'
         'l10n': 'Localization checks'
-        'fxrec': 'Desktop startup recorder (fxrecord)'
         'wc': 'webcompat'
         'Boot': 'Bootstrap'
         'Attr-L10n': 'Build Attribution'
@@ -288,7 +315,6 @@ treeherder:
         'browser-tabstray': 'browser-tabstray'
         'browser-thumbnails': 'browser-thumbnails'
         'browser-toolbar': 'browser-toolbar'
-        'browser-toolbar2': 'browser-toolbar2'
         'compose-awesomebar': 'compose-engine'
         'compose-browser-toolbar': 'awesomebar-browser-toolbar'
         'compose-engine': 'compose-engine'
@@ -555,6 +581,9 @@ merge-automation:
                 - - browser/config/mozconfigs/macosx64/l10n-mozconfig
                   - ac_add_options --with-branding=browser/branding/nightly
                   - ac_add_options --enable-official-branding
+                - - .arcconfig
+                  - MOZILLACENTRAL
+                  - BETA
             merge-old-head: true
             base-tag: 'FIREFOX_BETA_{major_version}_BASE'
             end-tag: 'FIREFOX_BETA_{major_version}_END'
@@ -579,7 +608,10 @@ merge-automation:
                   new-suffix: ''
                 - filename: "mobile/android/version.txt"
                   new-suffix: ''
-            replacements: []
+            replacements:
+                - - .arcconfig
+                  - BETA
+                  - RELEASE
             merge-old-head: true
             base-tag: 'FIREFOX_RELEASE_{major_version}_BASE'
             end-tag: 'FIREFOX_RELEASE_{major_version}_END'
@@ -592,7 +624,10 @@ merge-automation:
             version-files:
                 - filename: "browser/config/version_display.txt"
                   new-suffix: 'esr'
-            replacements: []
+            replacements:
+                - - .arcconfig
+                  - RELEASE
+                  - ESRONETWOEIGHT
             merge-old-head: false
             end-tag: "FIREFOX_ESR_{major_version}_BASE"
             to-repo: 'https://hg.mozilla.org/releases/mozilla-esr128'
@@ -709,6 +744,11 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
+        b-win-aarch64:
+            provisioner: '{trust-domain}-{level}'
+            implementation: generic-worker
+            os: windows
+            worker-type: 'win11-a64-24h2-builder'
         image:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
@@ -867,6 +907,11 @@ workers:
             implementation: generic-worker
             os: linux
             worker-type: 'gecko-{alias}'
+        t-linux-netperf-1804:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: linux
+            worker-type: 'gecko-{alias}'
         t-linux-talos-1804:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -887,11 +932,16 @@ workers:
             implementation: generic-worker
             os: linux
             worker-type: 't-linux-vm-2204-wayland'
-        t-linux-wayland-snap:
+        t-linux-2204-wayland-snap:
             provisioner: '{trust-domain}-t'
             implementation: generic-worker
             os: linux
             worker-type: 't-linux-2204-wayland-snap'
+        t-linux-2404-wayland-snap:
+            provisioner: '{trust-domain}-t'
+            implementation: generic-worker
+            os: linux
+            worker-type: 't-linux-2404-wayland-snap'
         t-osx-1015-r8:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -912,14 +962,6 @@ workers:
             implementation: generic-worker
             os: macosx
             worker-type: 'gecko-{alias}'
-        t-linux-xlarge-pgo:
-            provisioner:
-                by-level:
-                    '3': '{trust-domain}-{level}'
-                    default: '{trust-domain}-t'
-            implementation: docker-worker
-            os: linux
-            worker-type: 't-linux-xlarge-noscratch-gcp'
         b-osx-1015:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -967,6 +1009,11 @@ workers:
             os: windows
             worker-type: '{alias}'
         win11-64-2009(|-gpu|-ssd|-source|-ssd-gpu):
+            provisioner: 'gecko-t'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
+        win11-a64-24h2:
             provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows
@@ -1031,7 +1078,6 @@ mac-signing:
                       - "/Contents/Library/LaunchServices/org.mozilla.updater"
                       - "/Contents/MacOS/XUL"
                       - "/Contents/MacOS/pingsender"
-                      - "/Contents/MacOS/minidump-analyzer"
                       - "/Contents/MacOS/nmhproxy"
                       - "/Contents/MacOS/*.dylib"
                       - "/Contents/Resources/gmp-clearkey/*/*.dylib"
@@ -1075,7 +1121,6 @@ mac-signing:
                       - "/Contents/MacOS/updater.app"
                       - "/Contents/Library/LaunchServices/org.mozilla.updater"
                       - "/Contents/MacOS/pingsender"
-                      - "/Contents/MacOS/minidump-analyzer"
                       - "/Contents/MacOS/nmhproxy"
                       - "/Contents/Frameworks/ChannelPrefs.framework"
 

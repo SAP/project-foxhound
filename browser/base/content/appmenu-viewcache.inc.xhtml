@@ -10,6 +10,10 @@
       <toolbarbutton id="appMenu-update-banner" class="panel-banner-item subviewbutton"
                      wrap="true"
                      hidden="true"/>
+
+      <toolbaritem id="appMenu-fxa-menu-message"
+                   closemenu="none">
+      </toolbaritem>
       <toolbaritem id="appMenu-fxa-status2"
                    closemenu="none"
                    class="subviewbutton toolbaritem-combined-buttons">
@@ -25,10 +29,13 @@
           </vbox>
         </toolbarbutton>
       </toolbaritem>
-      <toolbarbutton id="appMenu-profiles-button"
+      <toolbarbutton id="appMenu-empty-profiles-button"
                      class="subviewbutton subviewbutton-nav"
-                     data-l10n-id="appmenuitem-profiles"
-                     data-l10n-args='{ "profilename": "" }'
+                     closemenu="none"
+                     data-l10n-id="appmenu-profiles"
+                     hidden="true"/>
+      <toolbarbutton id="appMenu-profiles-button"
+                     class="subviewbutton subviewbutton-nav subviewbutton-iconic"
                      closemenu="none"
                      hidden="true"/>
       <toolbarseparator id="appMenu-fxa-separator" class="proton-zap"/>
@@ -197,32 +204,37 @@
                    />
   </panelview>
 
-  <panelview id="PanelUI-profiles" flex="1">
+  <panelview id="PanelUI-profiles"
+             flex="1"
+             has-custom-header="true">
+    <box id="PanelUI-profiles-header" class="panel-header">
+      <toolbarbutton class="subviewbutton subviewbutton-iconic subviewbutton-back"
+                     id="profiles-appmenu-back-button"
+                     tabindex="0"
+                     closemenu="none"
+                     />
+      <html:h1 id="profiles-header-title">
+        <html:span id="profiles-header-content"></html:span>
+      </html:h1>
+      <toolbarbutton id="profiles-edit-this-profile-button"
+                     class="subviewbutton subviewbutton-iconic toolbarbutton-1"
+                     data-l10n-id="appmenu-edit-profile"
+                     />
+    </box>
     <vbox class="panel-subview-body">
       <vbox id="current-profile">
+        <box id="half-height-profile"></box>
         <image id="profile-icon-image"></image>
-        <h2 id="profile-name"></h2>
-        <hbox id="this-profile-buttons">
-          <toolbarbutton id="profiles-edit-this-delete-button"
-                         class="subviewbutton toolbarbutton-1"
-                         />
-          <toolbarbutton id="profiles-delete-this-profile-button"
-                         class="subviewbutton toolbarbutton-1"
-                         />
-        </hbox>
       </vbox>
-      <toolbarseparator/>
+      <html:h2 id="profiles-subtitle"
+               class="subview-subheader"
+               data-l10n-id="appmenu-other-profiles" />
       <vbox id="profiles-list"></vbox>
-      <toolbarseparator/>
-      <toolbarbutton id="profiles-close-profile-button"
-                     class="subviewbutton"
-                     data-l10n-id="appmenu-close-profile"
-                     data-l10n-args='{ "profilename": "" }'
-                     />
       <toolbarbutton id="profiles-create-profile-button"
-                     class="subviewbutton"
+                     class="subviewbutton subviewbutton-iconic"
                      data-l10n-id="appmenu-create-profile"
                      />
+      <toolbarseparator/>
       <toolbarbutton id="profiles-manage-profiles-button"
                      class="subviewbutton"
                      data-l10n-id="appmenu-manage-profiles"
@@ -568,6 +580,9 @@
 
   <panelview id="PanelUI-fxa" class="PanelUI-subView">
     <vbox id="PanelUI-fxa-menu" class="panel-subview-body">
+      <toolbaritem id="PanelUI-fxa-menu-message"
+                   closemenu="none">
+      </toolbaritem>
       <toolbarbutton id="fxa-manage-account-button"
                      align="center"
                      class="subviewbutton"
@@ -601,6 +616,7 @@
       <toolbarbutton id="PanelUI-fxa-menu-setup-sync-button"
                       class="subviewbutton"
                       data-l10n-id="appmenu-fxa-setup-sync"
+                      hidden="true"
                       />
       <!-- The `Connect Another Device` button is disabled by default until the user logs into Sync. -->
       <toolbarbutton id="PanelUI-fxa-menu-connect-device-button"
@@ -608,6 +624,26 @@
                       data-l10n-id="fxa-menu-connect-another-device"
                       disabled="true"
                       />
+      <vbox id="PanelUI-fxa-menu-setup-sync-container" hidden="true">
+        <toolbarseparator id="PanelUI-set-up-sync-separator" />
+        <vbox class="PanelUI-fxa-menu-setup-sync" flex="1">
+          <hbox class="sync-status-container" align="center">
+            <image class="sync-status-indicator" role="presentation"/>
+            <image class="sync-setup-icon" alt="Sync Status Icon" />
+            <label id="sync-status-text"
+                  class="sync-setup-title"
+                  data-l10n-id="appmenuitem-fxa-sync-off-title"
+                  crop="end" />
+          </hbox>
+          <label id="sync-description-text"
+                class="sync-setup-description"
+                data-l10n-id="appmenuitem-fxa-sync-off-description"
+                crop="end"/>
+          <toolbarbutton id="PanelUI-fxa-menu-setup-sync-button-new"
+                  class="subviewbutton"
+                  data-l10n-id="appmenu-fxa-setup-sync-new"/>
+        </vbox>
+    </vbox>
       <toolbarbutton id="PanelUI-fxa-menu-sendtab-button"
                       class="subviewbutton subviewbutton-nav"
                       data-l10n-id="fxa-menu-send-tab-to-device"

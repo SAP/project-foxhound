@@ -59,6 +59,7 @@ class ZstdWrapper {
  public:
   ZstdWrapper() {
     mDStream = ZSTD_createDStream();
+    MOZ_RELEASE_ASSERT(mDStream);  // we'll crash anyways if it fails
     ZSTD_DCtx_setParameter(mDStream, ZSTD_d_windowLogMax, 23 /*8*1024*1024*/);
   }
   ~ZstdWrapper() {
@@ -260,11 +261,7 @@ nsHTTPCompressConv::OnStopRequest(nsIRequest* request, nsresult aStatus) {
     if (fpChannel && !isPending) {
       fpChannel->ForcePending(true);
     }
-    bool allowTruncatedEmpty =
-        StaticPrefs::network_compress_allow_truncated_empty_brotli();
-    if (mBrotli && ((allowTruncatedEmpty && NS_FAILED(mBrotli->mStatus)) ||
-                    (!allowTruncatedEmpty && mBrotli->mTotalOut == 0 &&
-                     !mBrotli->mBrotliStateIsStreamEnd))) {
+    if (mBrotli && NS_FAILED(mBrotli->mStatus)) {
       status = NS_ERROR_INVALID_CONTENT_ENCODING;
     }
     LOG(("nsHttpCompresssConv %p onstop brotlihandler rv %" PRIx32 "\n", this,

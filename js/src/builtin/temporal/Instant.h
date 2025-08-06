@@ -12,7 +12,6 @@
 #include <stdint.h>
 
 #include "builtin/temporal/TemporalTypes.h"
-#include "builtin/temporal/Wrapped.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "vm/NativeObject.h"
@@ -86,18 +85,6 @@ Instant ToInstant(const JS::BigInt* epochNanoseconds);
  * Convert an instant to a BigInt. The input must be a valid epoch instant.
  */
 JS::BigInt* ToEpochNanoseconds(JSContext* cx, const Instant& instant);
-
-/**
- * ToTemporalInstant ( item )
- */
-Wrapped<InstantObject*> ToTemporalInstant(JSContext* cx,
-                                          JS::Handle<JS::Value> item);
-
-/**
- * ToTemporalInstant ( item )
- */
-bool ToTemporalInstant(JSContext* cx, JS::Handle<JS::Value> item,
-                       Instant* result);
 
 /**
  * CreateTemporalInstant ( epochNanoseconds [ , newTarget ] )

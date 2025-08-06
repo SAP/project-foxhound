@@ -72,11 +72,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 /**
- * Tracks the number of currently open player windows for Telemetry tracking
- */
-let gCurrentPlayerCount = 0;
-
-/**
  * To differentiate windows in the Telemetry Event Log, each Picture-in-Picture
  * player window is given a unique ID.
  */
@@ -255,6 +250,10 @@ export var PictureInPicture = {
 
   // Maps a WindowGlobal to count of eligible PiP videos
   weakGlobalToEligiblePipCount: new WeakMap(),
+
+  // Tracks the number of open player windows for Telemetry tracking.
+  currentPlayerCount: 0,
+  maxConcurrentPlayerCount: 0,
 
   /**
    * Returns the player window if one exists and if it hasn't yet been closed.
@@ -478,7 +477,7 @@ export var PictureInPicture = {
     tab.ownerGlobal.focus();
 
     gBrowser.selectedTab = tab;
-    await this.closeSinglePipWindow({ reason: "unpip", actorRef: pipActor });
+    await this.closeSinglePipWindow({ reason: "Unpip", actorRef: pipActor });
   },
 
   /**
@@ -495,11 +494,7 @@ export var PictureInPicture = {
       respectPipDisabled
     );
 
-    Services.telemetry.recordEvent(
-      "pictureinpicture",
-      "disrespect_disable",
-      "urlBar"
-    );
+    Glean.pictureinpicture.disrespectDisableUrlBar.record();
   },
 
   /**
@@ -624,10 +619,6 @@ export var PictureInPicture = {
    * @param {Event} event Event from clicking the PiP urlbar button
    */
   toggleUrlbar(event) {
-    if (event.button !== 0) {
-      return;
-    }
-
     let win = event.target.ownerGlobal;
     let browser = win.gBrowser.selectedBrowser;
 
@@ -669,7 +660,7 @@ export var PictureInPicture = {
               )
             );
             if (callout) {
-              eventExtraKeys.callout = "true";
+              eventExtraKeys.callout = true;
             }
           }
         }
@@ -715,13 +706,9 @@ export var PictureInPicture = {
       );
 
       pipPanel.openPopup(anchor, "bottomright topright");
-      Services.telemetry.recordEvent(
-        "pictureinpicture",
-        "opened_method",
-        "urlBar",
-        null,
-        { disableDialog: "true" }
-      );
+      Glean.pictureinpicture.openedMethodUrlBar.record({
+        disableDialog: true,
+      });
     } else {
       pipPanel.hidePopup();
     }
@@ -829,12 +816,7 @@ export var PictureInPicture = {
     }
     this.removePiPBrowserFromWeakMap(this.weakWinToBrowser.get(win));
 
-    Services.telemetry.recordEvent(
-      "pictureinpicture",
-      "closed_method",
-      reason,
-      null
-    );
+    Glean.pictureinpicture["closedMethod" + reason].record();
     await this.closePipWindow(win);
   },
 
@@ -860,11 +842,13 @@ export var PictureInPicture = {
    *   the player component inside it has finished loading.
    */
   async handlePictureInPictureRequest(wgp, videoData) {
-    gCurrentPlayerCount += 1;
-
-    Services.telemetry.scalarSetMaximum(
-      "pictureinpicture.most_concurrent_players",
-      gCurrentPlayerCount
+    this.currentPlayerCount += 1;
+    this.maxConcurrentPlayerCount = Math.max(
+      this.maxConcurrentPlayerCount,
+      this.currentPlayerCount
+    );
+    Glean.pictureinpicture.mostConcurrentPlayers.set(
+      this.maxConcurrentPlayerCount
     );
 
     let browser = wgp.browsingContext.top.embedderElement;
@@ -896,22 +880,15 @@ export var PictureInPicture = {
 
     Services.prefs.setBoolPref(TOGGLE_HAS_USED_PREF, true);
 
-    let args = {
-      width: win.innerWidth.toString(),
-      height: win.innerHeight.toString(),
-      screenX: win.screenX.toString(),
-      screenY: win.screenY.toString(),
-      ccEnabled: videoData.ccEnabled.toString(),
-      webVTTSubtitles: videoData.webVTTSubtitles.toString(),
-    };
-
-    Services.telemetry.recordEvent(
-      "pictureinpicture",
-      "create",
-      "player",
-      pipId,
-      args
-    );
+    Glean.pictureinpicture.createPlayer.record({
+      value: pipId,
+      width: win.innerWidth,
+      height: win.innerHeight,
+      screenX: win.screenX,
+      screenY: win.screenY,
+      ccEnabled: videoData.ccEnabled,
+      webVTTSubtitles: videoData.webVTTSubtitles,
+    });
   },
 
   /**
@@ -954,7 +931,7 @@ export var PictureInPicture = {
     let browser = this.weakWinToBrowser.get(window);
     this.removeOriginatingWinFromWeakMap(browser);
 
-    gCurrentPlayerCount -= 1;
+    this.currentPlayerCount -= 1;
     // Saves the location of the Picture in Picture window
     this.savePosition(window);
     this.clearPipTabIcon(window);
@@ -1493,11 +1470,7 @@ export var PictureInPicture = {
 
   hideToggle() {
     Services.prefs.setBoolPref(TOGGLE_ENABLED_PREF, false);
-    Services.telemetry.recordEvent(
-      "pictureinpicture.settings",
-      "disable",
-      "player"
-    );
+    Glean.pictureinpictureSettings.disablePlayer.record();
   },
 
   /**

@@ -42,6 +42,7 @@ export const LinkMenuOptions = {
         advertiser_name: (site.label || site.hostname).toLocaleLowerCase(),
         position: site.sponsored_position,
         tile_id: site.sponsored_tile_id,
+        block_key: site.block_key,
       },
     }),
     userEvent: "TOPSITE_SPONSOR_INFO",
@@ -96,6 +97,7 @@ export const LinkMenuOptions = {
         // pocket_id is only for pocket stories being in highlights, and then dismissed.
         pocket_id: site.pocket_id,
         tile_id: site.tile_id,
+        ...(site.block_key ? { block_key: site.block_key } : {}),
         recommendation_id: site.recommendation_id,
         scheduled_corpus_item_id: site.scheduled_corpus_item_id,
         received_rank: site.received_rank,
@@ -118,6 +120,14 @@ export const LinkMenuOptions = {
         position: pos,
         ...(site.sponsored_tile_id ? { tile_id: site.sponsored_tile_id } : {}),
         is_pocket_card: site.type === "CardGrid",
+        is_list_card: site.is_list_card,
+        ...(site.format ? { format: site.format } : {}),
+        ...(site.section
+          ? {
+              section: site.section,
+              section_position: site.section_position,
+            }
+          : {}),
       })),
     }),
     impression: ac.ImpressionStats({
@@ -243,6 +253,7 @@ export const LinkMenuOptions = {
   SaveToPocket: (site, index, eventSource = "CARDGRID") => ({
     id: "newtab-menu-save-to-pocket",
     icon: "pocket-save",
+    className: "stp-context-menu",
     action: ac.AlsoToMain({
       type: at.SAVE_TO_POCKET,
       data: {
@@ -376,6 +387,29 @@ export const LinkMenuOptions = {
     action: ac.OnlyToMain({
       type: at.OPEN_LINK,
       data: { url: site.url },
+    }),
+  }),
+  FakespotDismiss: () => ({
+    id: "newtab-menu-dismiss",
+    action: ac.OnlyToMain({
+      type: at.SET_PREF,
+      data: {
+        name: "discoverystream.contextualContent.fakespot.enabled",
+        value: false,
+      },
+    }),
+    impression: ac.OnlyToMain({
+      type: at.FAKESPOT_DISMISS,
+    }),
+  }),
+  AboutFakespot: site => ({
+    id: "newtab-menu-about-fakespot",
+    action: ac.OnlyToMain({
+      type: at.OPEN_LINK,
+      data: { url: site.url },
+    }),
+    impression: ac.OnlyToMain({
+      type: at.OPEN_ABOUT_FAKESPOT,
     }),
   }),
 };

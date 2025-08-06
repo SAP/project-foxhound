@@ -102,7 +102,7 @@ static bool HasUserNamespaceSupport() {
       "/proc/self/ns/net",
       "/proc/self/ns/ipc",
   };
-  for (size_t i = 0; i < ArrayLength(paths); ++i) {
+  for (size_t i = 0; i < std::size(paths); ++i) {
     if (access(paths[i], F_OK) == -1) {
       MOZ_ASSERT(errno == ENOENT);
       return false;
@@ -175,7 +175,7 @@ static bool CanCreateUserNamespace() {
 }
 
 /* static */
-const SandboxInfo SandboxInfo::sSingleton = SandboxInfo();
+MOZ_RUNINIT const SandboxInfo SandboxInfo::sSingleton = SandboxInfo();
 
 SandboxInfo::SandboxInfo() {
   int flags = 0;

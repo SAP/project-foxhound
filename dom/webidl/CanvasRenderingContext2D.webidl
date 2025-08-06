@@ -34,6 +34,20 @@ dictionary CanvasRenderingContext2DSettings {
 
   // whether or not we're planning to do a lot of readback operations
   boolean willReadFrequently = false;
+
+  [Func="nsRFPService::IsSystemPrincipalOrAboutFingerprintingProtection"]
+  boolean forceSoftwareRendering = false;
+};
+
+[GenerateInit]
+dictionary CanvasRenderingContext2DDebugInfo {
+  required boolean isAccelerated;
+
+  required boolean isShared;
+
+  required byte backendType;
+
+  required byte drawTargetType;
 };
 
 dictionary HitRegionOptions {
@@ -60,6 +74,9 @@ interface CanvasRenderingContext2D {
   readonly attribute HTMLCanvasElement? canvas;
 
   CanvasRenderingContext2DSettings getContextAttributes();
+
+  [Throws, Func="nsRFPService::IsSystemPrincipalOrAboutFingerprintingProtection"]
+  CanvasRenderingContext2DDebugInfo getDebugInfo(optional boolean ensureTarget = false);
 
   // Show the caret if appropriate when drawing
   [Func="CanvasUtils::HasDrawWindowPrivilege"]
@@ -343,8 +360,7 @@ interface mixin CanvasPathMethods {
   undefined ellipse(double x, double y, double radiusX, double radiusY, double rotation, double startAngle, double endAngle, optional boolean anticlockwise = false);
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface CanvasGradient {
   // opaque object
   [Throws]
@@ -352,8 +368,7 @@ interface CanvasGradient {
   undefined addColorStop(float offset, UTF8String color);
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface CanvasPattern {
   // opaque object
   // [Throws, LenientFloat] - could not do this overload because of bug 1020975

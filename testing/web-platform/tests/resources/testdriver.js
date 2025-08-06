@@ -50,6 +50,144 @@
      */
     window.test_driver = {
         /**
+         Represents `WebDriver BiDi <https://w3c.github.io/webdriver-bidi>`_ protocol.
+         */
+        bidi: {
+            /**
+             * @typedef {(String|WindowProxy)} Context A browsing context. Can
+             * be specified by its ID (a string) or using a `WindowProxy`
+             * object.
+             */
+            /**
+             * `bluetooth <https://webbluetoothcg.github.io/web-bluetooth>`_ module.
+             */
+            bluetooth: {
+                /**
+                 * Creates a simulated bluetooth adapter with the given params. Matches the
+                 * `bluetooth.simulateAdapter <https://webbluetoothcg.github.io/web-bluetooth/#bluetooth-simulateAdapter-command>`_
+                 * WebDriver BiDi command.
+                 *
+                 * @example
+                 * await test_driver.bidi.bluetooth.simulate_adapter({
+                 *     state: "powered-on"
+                 * });
+                 *
+                 * @param {object} params - Parameters for the command.
+                 * @param {string} params.state The state of the simulated bluetooth adapter.
+                 * Matches the
+                 * `bluetooth.SimulateAdapterParameters:state <https://webbluetoothcg.github.io/web-bluetooth/#bluetooth-simulateAdapter-command>`_
+                 * value.
+                 * @param {Context} [params.context] The optional context parameter specifies in
+                 * which browsing context the simulated bluetooth adapter should be set. If not
+                 * provided, the current browsing context is used.
+                 * @returns {Promise} fulfilled after the simulated bluetooth adapter is created
+                 * and set, or rejected if the operation fails.
+                 */
+                simulate_adapter: function (params) {
+                    return window.test_driver_internal.bidi.bluetooth.simulate_adapter(params);
+                }
+            },
+            /**
+             * `log <https://w3c.github.io/webdriver-bidi/#module-log>`_ module.
+             */
+            log: {
+                entry_added: {
+                    /**
+                     * @typedef {object} LogEntryAdded `log.entryAdded <https://w3c.github.io/webdriver-bidi/#event-log-entryAdded>`_ event.
+                     */
+
+                    /**
+                     * Subscribes to the event. Events will be emitted only if
+                     * there is a subscription for the event. This method does
+                     * not add actual listeners. To listen to the event, use the
+                     * `on` or `once` methods. The buffered events will be
+                     * emitted before the command promise is resolved.
+                     *
+                     * @param {object} [params] Parameters for the subscription.
+                     * @param {null|Array.<(Context)>} [params.contexts] The
+                     * optional contexts parameter specifies which browsing
+                     * contexts to subscribe to the event on. It should be
+                     * either an array of Context objects, or null. If null, the
+                     * event will be subscribed to globally. If omitted, the
+                     * event will be subscribed to on the current browsing
+                     * context.
+                     * @returns {Promise<void>} Resolves when the subscription
+                     * is successfully done.
+                     */
+                    subscribe: async function (params = {}) {
+                        return window.test_driver_internal.bidi.log.entry_added.subscribe(params);
+                    },
+                    /**
+                     * Adds an event listener for the event.
+                     *
+                     * @param {function(LogEntryAdded): void} callback The
+                     * callback to be called when the event is emitted. The
+                     * callback is called with the event object as a parameter.
+                     * @returns {function(): void} A function that removes the
+                     * added event listener when called.
+                     */
+                    on: function (callback) {
+                        return window.test_driver_internal.bidi.log.entry_added.on(callback);
+                    },
+                    /**
+                     * Adds an event listener for the event that is only called
+                     * once and removed afterward.
+                     *
+                     * @return {Promise<LogEntryAdded>} The promise which is resolved
+                     * with the event object when the event is emitted.
+                     */
+                    once: function () {
+                        return new Promise(resolve => {
+                            const remove_handler = window.test_driver_internal.bidi.log.entry_added.on(
+                                event => {
+                                    resolve(event);
+                                    remove_handler();
+                                });
+                        });
+                    },
+                }
+            },
+            /**
+             * `permissions <https://www.w3.org/TR/permissions/>`_ module.
+             */
+            permissions: {
+                /**
+                 * Sets the state of a permission
+                 *
+                 * This function causes permission requests and queries for the status
+                 * of a certain permission type (e.g. "push", or "background-fetch") to
+                 * always return ``state`` for the specific origin.
+                 *
+                 * Matches the `permissions.setPermission <https://w3c.github.io/permissions/#webdriver-bidi-command-permissions-setPermission>`_
+                 * WebDriver BiDi command.
+                 *
+                 * @example
+                 * await test_driver.bidi.permissions.set_permission({
+                 *     {name: "geolocation"},
+                 *     state: "granted",
+                 * });
+                 *
+                 * @param {object} params - Parameters for the command.
+                 * @param {PermissionDescriptor} params.descriptor - a `PermissionDescriptor
+                 *                               <https://w3c.github.io/permissions/#dom-permissiondescriptor>`_
+                 *                               or derived object.
+                 * @param {PermissionState} params.state - a `PermissionState
+                 *                          <https://w3c.github.io/permissions/#dom-permissionstate>`_
+                 *                          value.
+                 * @param {string} [params.origin] - an optional `origin` string to set the
+                 *                 permission for. If omitted, the permission is set for the
+                 *                 current window's origin.
+                 * @returns {Promise} fulfilled after the permission is set, or rejected if setting
+                 *                    the permission fails.
+                 */
+                set_permission: function (params) {
+                    return window.test_driver_internal.bidi.permissions.set_permission(
+                        params);
+                }
+            }
+        },
+
+        /**
          * Set the context in which testharness.js is loaded
          *
          * @param {WindowProxy} context - the window containing testharness.js
@@ -124,11 +262,10 @@
         },
 
         /**
-         * Triggers a user-initiated click
+         * Triggers a user-initiated mouse click.
          *
-         * If ``element`` isn't inside the
-         * viewport, it will be scrolled into view before the click
-         * occurs.
+         * If ``element`` isn't inside the viewport, it will be
+         * scrolled into view before the click occurs.
          *
          * If ``element`` is from a different browsing context, the
          * command will be run in that context.
@@ -1076,7 +1213,7 @@
          * deleted hosts.
          *
          * Matches the `Run Bounce Tracking Mitigations
-         * https://privacycg.github.io/nav-tracking-mitigations/#run-bounce-tracking-mitigations-command`_
+         * <https://privacycg.github.io/nav-tracking-mitigations/#run-bounce-tracking-mitigations-command>`_
          * WebDriver command.
          *
          * @param {WindowProxy} [context=null] - Browsing context in which to
@@ -1089,6 +1226,82 @@
          */
         run_bounce_tracking_mitigations: function (context = null) {
             return window.test_driver_internal.run_bounce_tracking_mitigations(context);
+        },
+
+        /**
+         * Creates a virtual pressure source.
+         *
+         * Matches the `Create virtual pressure source
+         * <https://w3c.github.io/compute-pressure/#create-virtual-pressure-source>`_
+         * WebDriver command.
+         *
+         * @param {String} source_type - A `virtual pressure source type
+         *                               <https://w3c.github.io/compute-pressure/#dom-pressuresource>`_
+         *                               such as "cpu".
+         * @param {Object} [metadata={}] - Optional parameters described
+         *                                 in `Create virtual pressure source
+         *                                 <https://w3c.github.io/compute-pressure/#create-virtual-pressure-source>`_.
+         * @param {WindowProxy} [context=null] - Browsing context in which to
+         *                                       run the call, or null for the
+         *                                       current browsing context.
+         *
+         * @returns {Promise} Fulfilled when virtual pressure source is created.
+         *                    Rejected in case the WebDriver command errors out
+         *                    (including if a virtual pressure source of the
+         *                    same type already exists).
+         */
+        create_virtual_pressure_source: function(source_type, metadata={}, context=null) {
+            return window.test_driver_internal.create_virtual_pressure_source(source_type, metadata, context);
+        },
+
+        /**
+         * Causes a virtual pressure source to report a new reading.
+         *
+         * Matches the `Update virtual pressure source
+         * <https://w3c.github.io/compute-pressure/#update-virtual-pressure-source>`_
+         * WebDriver command.
+         *
+         * @param {String} source_type - A `virtual pressure source type
+         *                               <https://w3c.github.io/compute-pressure/#dom-pressuresource>`_
+         *                               such as "cpu".
+         * @param {String} sample - A `virtual pressure state
+         *                          <https://w3c.github.io/compute-pressure/#dom-pressurestate>`_
+         *                          such as "critical".
+         * @param {WindowProxy} [context=null] - Browsing context in which to
+         *                                       run the call, or null for the
+         *                                       current browsing context.
+         *
+         * @returns {Promise} Fulfilled after the reading update reaches the
+         *                    virtual pressure source. Rejected in case the
+         *                    WebDriver command errors out (including if a
+         *                    virtual pressure source of the given type does not
+         *                    exist).
+         */
+        update_virtual_pressure_source: function(source_type, sample, context=null) {
+            return window.test_driver_internal.update_virtual_pressure_source(source_type, sample, context);
+        },
+
+        /**
+         * Removes created virtual pressure source.
+         *
+         * Matches the `Delete virtual pressure source
+         * <https://w3c.github.io/compute-pressure/#delete-virtual-pressure-source>`_
+         * WebDriver command.
+         *
+         * @param {String} source_type - A `virtual pressure source type
+         *                               <https://w3c.github.io/compute-pressure/#dom-pressuresource>`_
+         *                               such as "cpu".
+         * @param {WindowProxy} [context=null] - Browsing context in which to
+         *                                       run the call, or null for the
+         *                                       current browsing context.
+         *
+         * @returns {Promise} Fulfilled after the virtual pressure source has
+         *                    been removed or if a pressure source of the given
+         *                    type does not exist. Rejected in case the
+         *                    WebDriver command errors out.
+         */
+        remove_virtual_pressure_source: function(source_type, context=null) {
+            return window.test_driver_internal.remove_virtual_pressure_source(source_type, context);
         }
     };
 
@@ -1100,6 +1313,33 @@
          * implementation of one of the methods is not available.
          */
         in_automation: false,
+
+        bidi: {
+            bluetooth: {
+                simulate_adapter: function () {
+                    throw new Error(
+                        "bidi.bluetooth.simulate_adapter is not implemented by testdriver-vendor.js");
+                }
+            },
+            log: {
+                entry_added: {
+                    async subscribe() {
+                        throw new Error(
+                            "bidi.log.entry_added.subscribe is not implemented by testdriver-vendor.js");
+                    },
+                    on() {
+                        throw new Error(
+                            "bidi.log.entry_added.on is not implemented by testdriver-vendor.js");
+                    }
+                }
+            },
+            permissions: {
+                async set_permission() {
+                    throw new Error(
+                        "bidi.permissions.set_permission() is not implemented by testdriver-vendor.js");
+                }
+            }
+        },
 
         async click(element, coords) {
             if (this.in_automation) {
@@ -1289,6 +1529,18 @@
 
         async run_bounce_tracking_mitigations(context=null) {
             throw new Error("run_bounce_tracking_mitigations() is not implemented by testdriver-vendor.js");
+        },
+
+        async create_virtual_pressure_source(source_type, metadata={}, context=null) {
+            throw new Error("create_virtual_pressure_source() is not implemented by testdriver-vendor.js");
+        },
+
+        async update_virtual_pressure_source(source_type, sample, context=null) {
+            throw new Error("update_virtual_pressure_source() is not implemented by testdriver-vendor.js");
+        },
+
+        async remove_virtual_pressure_source(source_type, context=null) {
+            throw new Error("remove_virtual_pressure_source() is not implemented by testdriver-vendor.js");
         }
     };
 })();

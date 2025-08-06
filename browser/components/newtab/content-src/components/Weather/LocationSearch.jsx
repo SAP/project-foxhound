@@ -101,17 +101,23 @@ function LocationSearch({ outerClassName }) {
           ref={inputRef}
           list="merino-location-list"
           type="text"
-          placeholder="Search location"
+          data-l10n-id="newtab-weather-change-location-search-input-placeholder"
           onChange={handleChange}
           value={userInput}
           onKeyDown={handleKeyDown}
         />
-        <button className="close-icon" onClick={handleCloseSearch} />
+        <moz-button
+          class="close-icon"
+          type="icon ghost"
+          size="small"
+          iconSrc="chrome://global/skin/icons/close.svg"
+          onClick={handleCloseSearch}
+        />
         <datalist id="merino-location-list">
-          {(suggestedLocations || []).map(location => (
-            <option value={location.key} key={location.key}>
-              {location.localized_name},{" "}
-              {location.administrative_area.localized_name}
+          {(suggestedLocations || []).map(merinoLcation => (
+            <option value={merinoLcation.key} key={merinoLcation.key}>
+              {merinoLcation.localized_name},{" "}
+              {merinoLcation.administrative_area.localized_name}
             </option>
           ))}
         </datalist>

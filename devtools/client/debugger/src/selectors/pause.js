@@ -5,6 +5,7 @@
 import { getThreadPauseState } from "../reducers/pause";
 import { getSelectedSource, getSelectedLocation } from "./sources";
 import { getBlackBoxRanges } from "./source-blackbox";
+import { getSelectedTraceSource } from "./tracer";
 
 // eslint-disable-next-line
 import { getSelectedLocation as _getSelectedLocation } from "../utils/selected-location";
@@ -12,7 +13,7 @@ import { isFrameBlackBoxed } from "../utils/source";
 import { createSelector } from "devtools/client/shared/vendor/reselect";
 
 export const getSelectedFrame = createSelector(
-  (state, thread) => state.pause.threads[thread],
+  (state, thread) => state.pause.threads[thread || getCurrentThread(state)],
   threadPauseState => {
     if (!threadPauseState) return null;
     const { selectedFrameId, frames } = threadPauseState;
@@ -238,6 +239,11 @@ export function getSelectedFrameId(state, thread) {
 
 export function isTopFrameSelected(state, thread) {
   const selectedFrameId = getSelectedFrameId(state, thread);
+  // Consider that the top frame is selected when none is specified,
+  // which happens when a JS Tracer frame is selected.
+  if (!selectedFrameId) {
+    return true;
+  }
   const topFrame = getTopFrame(state, thread);
   return selectedFrameId == topFrame?.id;
 }
@@ -271,27 +277,56 @@ export function isMapScopesEnabled(state) {
   return state.pause.mapScopes;
 }
 
-export function getInlinePreviews(state, thread, frameId) {
-  if (state.tracerFrames?.previews) {
-    return state.tracerFrames?.previews;
+/**
+ * This selector only returns inline previews object for current paused location.
+ * (it ignores the JS Tracer and ignore the selected location, which may different from paused location)
+ */
+export function getSelectedFrameInlinePreviews(state) {
+  const thread = getCurrentThread(state);
+  const frame = getSelectedFrame(state, thread);
+  if (!frame) {
+    return null;
   }
-  if (frameId) {
-    return getThreadPauseState(state.pause, thread).inlinePreview[
-      getGeneratedFrameId(frameId)
-    ];
-  }
-  return null;
+  return getThreadPauseState(state.pause, thread).inlinePreview[
+    getGeneratedFrameId(frame.id)
+  ];
 }
 
-// This is only used by tests
-export function getSelectedInlinePreviews(state) {
-  const thread = getCurrentThread(state);
-  const frameId = getSelectedFrameId(state, thread);
-  if (!frameId) {
+/**
+ * This selector returns the inline previews object for the selected location.
+ * It consider both paused and traced previews and will only return values
+ * if it matches the currently selected location.
+ */
+export function getInlinePreviews(state) {
+  const selectedSource = getSelectedSource(state);
+  if (!selectedSource) {
     return null;
   }
 
-  return getInlinePreviews(state, thread, frameId);
+  // We first check if a frame in the JS Tracer was selected and generated its previews
+  if (state.tracerFrames?.previews) {
+    const selectedTraceSource = getSelectedTraceSource(state);
+    if (selectedTraceSource) {
+      if (selectedTraceSource.id == selectedSource.id) {
+        return state.tracerFrames?.previews;
+      }
+    }
+  }
+
+  // Otherwise, we fallback to look if we were paused and the inline preview is available
+  const thread = getCurrentThread(state);
+  const frame = getSelectedFrame(state, thread);
+  // When we are paused, we also check if the selected source matches the paused original or generated location.
+  if (
+    !frame ||
+    (frame.location.source.id != selectedSource.id &&
+      frame.generatedLocation.source.id != selectedSource.id)
+  ) {
+    return null;
+  }
+  return getThreadPauseState(state.pause, thread).inlinePreview[
+    getGeneratedFrameId(frame.id)
+  ];
 }
 
 export function getLastExpandedScopes(state, thread) {

@@ -284,17 +284,17 @@ summary {
 .progress-icon[state="success"],
 .progress-icon[state="info"] {
   content: url("chrome://browser/skin/migration/success.svg");
-  fill: var(--in-content-success-icon-color);
+  fill: var(--icon-color-success);
 }
 
 .progress-icon[state="warning"] {
   content: url("chrome://global/skin/icons/warning.svg");
-  fill: var(--in-content-warning-icon-color);
+  fill: var(--icon-color-warning);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .progress-icon[state="loading"] {
-    content: url("chrome://browser/skin/tabbrowser/hourglass.svg");
+    content: url("chrome://global/skin/icons/loading.svg");
     fill: var(--text-color-deemphasized);
   }
 }

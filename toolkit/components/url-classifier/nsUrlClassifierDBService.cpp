@@ -734,11 +734,6 @@ nsUrlClassifierDBServiceWorker::FinishStream() {
     mTableUpdates.AppendElements(mProtocolParser->GetTableUpdates());
     mProtocolParser->ForgetTableUpdates();
 
-#ifdef MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES
-    // The assignment involves no string copy since the source string is
-    // sharable.
-    mRawTableUpdates = mProtocolParser->GetRawTableUpdates();
-#endif
   } else {
     LOG(
         ("nsUrlClassifierDBService::FinishStream Failed to parse the stream "
@@ -795,18 +790,8 @@ nsUrlClassifierDBServiceWorker::FinishUpdate() {
 
   RefPtr<nsUrlClassifierDBServiceWorker> self = this;
   nsresult rv = mClassifier->AsyncApplyUpdates(
-      mTableUpdates, [self](nsresult aRv) -> void {
-#ifdef MOZ_SAFEBROWSING_DUMP_FAILED_UPDATES
-        if (NS_FAILED(aRv) && NS_ERROR_OUT_OF_MEMORY != aRv &&
-            NS_ERROR_UC_UPDATE_SHUTDOWNING != aRv) {
-          self->mClassifier->DumpRawTableUpdates(self->mRawTableUpdates);
-        }
-        // Invalidate the raw table updates.
-        self->mRawTableUpdates.Truncate();
-#endif
-
-        self->NotifyUpdateObserver(aRv);
-      });
+      mTableUpdates,
+      [self](nsresult aRv) -> void { self->NotifyUpdateObserver(aRv); });
   mTableUpdates.Clear();  // Classifier is working on its copy.
 
   if (NS_FAILED(rv)) {
@@ -1517,6 +1502,11 @@ nsresult nsUrlClassifierLookupCallback::CacheMisses() {
   return NS_OK;
 }
 
+struct LiteralProvider {
+  nsLiteralCString name;
+  uint8_t priority;
+};
+
 struct Provider {
   nsCString name;
   uint8_t priority;
@@ -1524,7 +1514,7 @@ struct Provider {
 
 // Order matters
 // Provider which is not included in this table has the lowest priority 0
-static const Provider kBuiltInProviders[] = {
+static constexpr LiteralProvider kBuiltInProviders[] = {
     {"mozilla"_ns, 1},
     {"google4"_ns, 2},
     {"google"_ns, 3},
@@ -1615,9 +1605,9 @@ nsUrlClassifierClassifyCallback::HandleResult(const nsACString& aTable,
 
   matchedInfo->provider.name = NS_SUCCEEDED(rv) ? provider : ""_ns;
   matchedInfo->provider.priority = 0;
-  for (uint8_t i = 0; i < ArrayLength(kBuiltInProviders); i++) {
-    if (kBuiltInProviders[i].name.Equals(matchedInfo->provider.name)) {
-      matchedInfo->provider.priority = kBuiltInProviders[i].priority;
+  for (auto const& BuiltInProvider : kBuiltInProviders) {
+    if (BuiltInProvider.name.Equals(matchedInfo->provider.name)) {
+      matchedInfo->provider.priority = BuiltInProvider.priority;
     }
   }
   matchedInfo->errorCode = TablesToResponse(aTable);

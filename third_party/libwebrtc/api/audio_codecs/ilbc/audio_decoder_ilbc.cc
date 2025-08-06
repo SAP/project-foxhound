@@ -11,20 +11,25 @@
 #include "api/audio_codecs/ilbc/audio_decoder_ilbc.h"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "absl/strings/match.h"
+#include "api/audio_codecs/audio_codec_pair_id.h"
+#include "api/audio_codecs/audio_decoder.h"
+#include "api/audio_codecs/audio_format.h"
+#include "api/field_trials_view.h"
 #include "modules/audio_coding/codecs/ilbc/audio_decoder_ilbc.h"
 
 namespace webrtc {
 
-absl::optional<AudioDecoderIlbc::Config> AudioDecoderIlbc::SdpToConfig(
+std::optional<AudioDecoderIlbc::Config> AudioDecoderIlbc::SdpToConfig(
     const SdpAudioFormat& format) {
   if (absl::EqualsIgnoreCase(format.name, "ILBC") &&
       format.clockrate_hz == 8000 && format.num_channels == 1) {
     return Config();
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 void AudioDecoderIlbc::AppendSupportedDecoders(
@@ -34,7 +39,7 @@ void AudioDecoderIlbc::AppendSupportedDecoders(
 
 std::unique_ptr<AudioDecoder> AudioDecoderIlbc::MakeAudioDecoder(
     Config config,
-    absl::optional<AudioCodecPairId> /*codec_pair_id*/,
+    std::optional<AudioCodecPairId> /*codec_pair_id*/,
     const FieldTrialsView* field_trials) {
   return std::make_unique<AudioDecoderIlbcImpl>();
 }

@@ -14,7 +14,7 @@ To record Legacy Telemetry events using Glean APIs, you need these two things:
 2. A Legacy Telemetry event definition, for the [Glean Interface For Firefox Telemetry][gifft] to mirror to
     * Use `./mach event-into-legacy <Glean event metric name like privacy.sanitize.dialog_open>` to generate this automatically.
     * Place it in `toolkit/components/telemetry/Events.yaml`
-    * Be sure to add the `telemetry-mirror` property to the Glean `event`
+    * Be sure to add the `telemetry_mirror` property to the Glean `event`
       definition from step 1. You can follow the instructions in the output from `./mach event-into-legacy`,
       or [this guide for determining the Legacy Telemetry event's enum name manually][legacy-enum-name].
 
@@ -23,12 +23,6 @@ Now build Firefox.
 To record your new event, use [the Glean `record(...)` API][glean-event-api].
 
 To test your new event, use [the Glean `testGetValue()` API][glean-test-api].
-
-```{admonition} Don't Forget!
-Though you're using Glean, there's still a Legacy Telemetry event underneath.
-You must call `Services.telemetry.setEventRecordingEnabled("myCategory", true);`
-in order for the Legacy Telemetry event to be recorded.
-```
 
 Your Legacy Telemetry event will appear in `about:telemetry`
 when your code is triggered as confirmation this is all working as you expect.
@@ -42,11 +36,11 @@ which means that testing the Legacy Telemetry event or seeing its value in `abou
 [requires a full, compiled build][artifact-support-gifft].
 
 [new-metrics-yaml]: ./new_definitions_file.md#where-do-i-define-new-metrics-and-pings
-[glean-events-vs]: ./migration.md#events-use-glean-s-event
+[glean-events-vs]: ./migration.md#events---use-gleans-event
 [glean-event-doc]: https://mozilla.github.io/glean/book/reference/metrics/event.html
 [sample-event-defn]: https://mozilla.github.io/glean/book/reference/metrics/event.html#metric-parameters
 [gifft]: ./gifft.md
-[legacy-enum-name]: ./gifft.md#the-telemetry-mirror-property-in-metrics-yaml
+[legacy-enum-name]: ./gifft.md#the-telemetry_mirror-property-in-metricsyaml
 [glean-event-api]: https://mozilla.github.io/glean/book/reference/metrics/event.html#recordobject
 [glean-test-api]: https://mozilla.github.io/glean/book/reference/metrics/event.html#testing-api
 [artifact-support-gifft]: ./gifft.md#artifact-build-support

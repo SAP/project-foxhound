@@ -7,11 +7,13 @@
 newtab-page-title = New Tab
 newtab-settings-button =
     .title = Customize your New Tab page
-newtab-personalize-icon-label =
-    .title = Personalize new tab
-    .aria-label = Personalize new tab
-newtab-personalize-dialog-label =
-    .aria-label = Personalize
+newtab-personalize-settings-icon-label =
+    .title = Personalize New Tab
+    .aria-label = Settings
+newtab-settings-dialog-label =
+    .aria-label = Settings
+newtab-logo-and-wordmark =
+    .aria-label = { -brand-full-name }
 
 ## Search box component.
 
@@ -114,6 +116,7 @@ newtab-menu-save-to-pocket = Save to { -pocket-brand-name }
 newtab-menu-delete-pocket = Delete from { -pocket-brand-name }
 newtab-menu-archive-pocket = Archive in { -pocket-brand-name }
 newtab-menu-show-privacy-info = Our sponsors & your privacy
+newtab-menu-about-fakespot = About { -fakespot-brand-name }
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -226,16 +229,9 @@ newtab-discovery-empty-section-topstories-timed-out = Oops! We almost loaded thi
 
 ## Pocket Content Section.
 
-# This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
-newtab-pocket-read-more = Popular Topics:
-newtab-pocket-new-topics-title = Want even more stories? See these popular topics from { -pocket-brand-name }
-newtab-pocket-more-recommendations = More Recommendations
-newtab-pocket-learn-more = Learn more
-newtab-pocket-cta-button = Get { -pocket-brand-name }
-newtab-pocket-cta-text = Save the stories you love in { -pocket-brand-name }, and fuel your mind with fascinating reads.
-newtab-pocket-pocket-firefox-family = { -pocket-brand-name } is part of the { -brand-product-name } family
-
 # A save to Pocket button that shows over the card thumbnail on hover.
+newtab-pocket-image =
+    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Save
 newtab-pocket-saved = Saved
 
@@ -307,6 +303,8 @@ newtab-wallpaper-dark-panda = Red panda hidden in forest
 newtab-wallpaper-dark-sky = City landscape with a night sky
 newtab-wallpaper-dark-mountain = Landscape mountain
 newtab-wallpaper-dark-city = Purple city landscape
+newtab-wallpaper-dark-fox-anniversary =  A fox on the pavement near a forest
+newtab-wallpaper-light-fox-anniversary = A fox in a grassy field with a misty mountain landscape
 
 ## Solid Colors
 
@@ -372,7 +370,9 @@ newtab-weather-see-forecast =
 #   $provider (string) - Service provider for weather data
 newtab-weather-sponsored = { $provider } ∙ Sponsored
 newtab-weather-menu-change-location = Change location
-newtab-weather-change-location-search-input = Search location
+newtab-weather-change-location-search-input-placeholder =
+    .placeholder = Search location
+    .aria-label = Search location
 newtab-weather-menu-weather-display = Weather display
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -414,6 +414,7 @@ newtab-topic-label-society = Life Hacks
 newtab-topic-label-sports = Sports
 newtab-topic-label-tech = Tech
 newtab-topic-label-travel = Travel
+newtab-topic-label-home = Home & Garden
 
 ## Topic Selection Modal
 

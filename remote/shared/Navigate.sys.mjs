@@ -11,7 +11,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 
   Deferred: "chrome://remote/content/shared/Sync.sys.mjs",
+  isInitialDocument:
+    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  NavigationListener:
+    "chrome://remote/content/shared/listeners/NavigationListener.sys.mjs",
+  PromptListener:
+    "chrome://remote/content/shared/listeners/PromptListener.sys.mjs",
   truncate: "chrome://remote/content/shared/Format.sys.mjs",
 });
 
@@ -89,14 +95,7 @@ export async function waitForInitialNavigationCompleted(
   });
   const navigated = listener.start();
 
-  // Right after a browsing context has been attached it could happen that
-  // no window global has been set yet. Consider this as nothing has been
-  // loaded yet.
-  let isInitial = true;
-  if (browsingContext.currentWindowGlobal) {
-    isInitial = browsingContext.currentWindowGlobal.isInitialDocument;
-  }
-
+  const isInitial = lazy.isInitialDocument(browsingContext);
   const isLoadingDocument = listener.isLoadingDocument;
   lazy.logger.trace(
     lazy.truncate`[${browsingContext.id}] Wait for initial navigation: isInitial=${isInitial}, isLoadingDocument=${isLoadingDocument}`
@@ -122,10 +121,14 @@ export async function waitForInitialNavigationCompleted(
     );
   }
 
-  return {
+  const result = {
     currentURI: listener.currentURI,
     targetURI: listener.targetURI,
   };
+
+  listener.destroy();
+
+  return result;
 }
 
 /**
@@ -140,6 +143,9 @@ export class ProgressListener {
 
   #deferredNavigation;
   #errorName;
+  #navigationId;
+  #navigationListener;
+  #promptListener;
   #seenStartFlag;
   #targetURI;
   #unloadTimerId;
@@ -155,10 +161,15 @@ export class ProgressListener {
    *     When set to `true`, the ProgressListener will ignore options.unloadTimeout
    *     and will only resolve when the expected navigation happens.
    *     Defaults to `false`.
+   * @param {NavigationManager=} options.navigationManager
+   *     The NavigationManager where navigations for the current session are
+   *     monitored.
    * @param {boolean=} options.resolveWhenStarted
    *     Flag to indicate that the Promise has to be resolved when the
    *     page load has been started. Otherwise wait until the page has
    *     finished loading. Defaults to `false`.
+   * @param {string=} options.targetURI
+   *     The target URI for the navigation.
    * @param {number=} options.unloadTimeout
    *     Time to allow before the page gets unloaded. Defaults to 200ms on
    *     regular platforms. A multiplier will be applied on slower platforms
@@ -173,7 +184,9 @@ export class ProgressListener {
   constructor(webProgress, options = {}) {
     const {
       expectNavigation = false,
+      navigationManager = null,
       resolveWhenStarted = false,
+      targetURI,
       unloadTimeout = DEFAULT_UNLOAD_TIMEOUT,
       waitForExplicitStart = false,
     } = options;
@@ -187,8 +200,36 @@ export class ProgressListener {
     this.#deferredNavigation = null;
     this.#errorName = null;
     this.#seenStartFlag = false;
-    this.#targetURI = null;
+    this.#targetURI = targetURI;
     this.#unloadTimerId = null;
+
+    if (navigationManager !== null) {
+      this.#navigationListener = new lazy.NavigationListener(navigationManager);
+      this.#navigationListener.on(
+        "navigation-failed",
+        this.#onNavigationFailed
+      );
+      this.#navigationListener.startListening();
+    }
+
+    this.#promptListener = new lazy.PromptListener();
+    this.#promptListener.on("opened", this.#onPromptOpened);
+    this.#promptListener.startListening();
+  }
+
+  destroy() {
+    this.#promptListener.stopListening();
+    this.#promptListener.off("opened", this.#onPromptOpened);
+    this.#promptListener.destroy();
+
+    if (this.#navigationListener) {
+      this.#navigationListener.stopListening();
+      this.#navigationListener.off(
+        "navigation-failed",
+        this.#onNavigationFailed
+      );
+      this.#navigationListener.destroy();
+    }
   }
 
   get #messagePrefix() {
@@ -322,6 +363,42 @@ export class ProgressListener {
     return null;
   }
 
+  #onNavigationFailed = (eventName, data) => {
+    const { errorName, navigationId } = data;
+
+    if (this.#navigationId === navigationId) {
+      this.#trace(
+        `Received "navigation-failed" event with error=${errorName}. Stopping the navigation.`
+      );
+      this.stop({ error: new Error(errorName) });
+    }
+  };
+
+  #onPromptOpened = (eventName, data) => {
+    const { prompt, contentBrowser } = data;
+    const { promptType } = prompt;
+
+    this.#trace(`A prompt of type=${promptType} is open`);
+    // Prompt open events come for top level context,
+    // that's why in case of navigation in iframe we also have to find
+    // top level context to identify if this navigation is affected.
+    const topLevelContext = this.browsingContext.top
+      ? this.browsingContext.top
+      : this.browsingContext;
+    if (
+      topLevelContext === contentBrowser.browsingContext &&
+      promptType === "beforeunload" &&
+      this.#resolveWhenStarted
+    ) {
+      this.#trace(
+        "A beforeunload prompt is open in the context of the navigated context and resolveWhenStarted=true. " +
+          "Stopping the navigation."
+      );
+      this.#seenStartFlag = true;
+      this.stop();
+    }
+  };
+
   #setUnloadTimer() {
     if (this.#expectNavigation) {
       this.#trace("Skip setting the unload timer");
@@ -381,10 +458,14 @@ export class ProgressListener {
   /**
    * Start observing web progress changes.
    *
+   * @param {string=} navigationId
+   *     The UUID for the navigation.
    * @returns {Promise}
    *     A promise that will resolve when the navigation has been finished.
    */
-  start() {
+  start(navigationId) {
+    this.#navigationId = navigationId;
+
     if (this.#deferredNavigation) {
       throw new Error(`Progress listener already started`);
     }

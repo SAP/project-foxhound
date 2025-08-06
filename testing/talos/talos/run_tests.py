@@ -158,12 +158,6 @@ def run_tests(config, browser_config):
     else:
         browser_config["extra_args"] = []
 
-    # pass --no-remote to firefox launch, if --develop is specified
-    # we do that to allow locally the user to have another running firefox
-    # instance
-    if browser_config["develop"]:
-        browser_config["extra_args"].append("--no-remote")
-
     # Pass subtests filter argument via a preference
     if browser_config["subtests"]:
         browser_config["preferences"]["talos.subtests"] = browser_config["subtests"]
@@ -275,10 +269,6 @@ function FindProxyForURL(url, host) {
     else:
         # we need to add 'webrender' so reported data is consistent
         talos_results.add_extra_option("webrender")
-
-    # differentiate webgl from webgl-ipc results
-    if browser_config["preferences"].get("webgl.out-of-process", False):
-        talos_results.add_extra_option("webgl-ipc")
 
     testname = None
 

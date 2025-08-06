@@ -109,15 +109,6 @@ template void LIRGeneratorX86Shared::lowerForShiftInt64(
     LInstructionHelper<INT64_PIECES, INT64_PIECES + 1, 1>* ins,
     MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
 
-void LIRGeneratorX86Shared::lowerForCompareI64AndBranch(
-    MTest* mir, MCompare* comp, JSOp op, MDefinition* left, MDefinition* right,
-    MBasicBlock* ifTrue, MBasicBlock* ifFalse) {
-  auto* lir = new (alloc())
-      LCompareI64AndBranch(comp, op, useInt64Register(left),
-                           useInt64OrConstant(right), ifTrue, ifFalse);
-  add(lir, mir);
-}
-
 void LIRGeneratorX86Shared::lowerForALU(LInstructionHelper<1, 1, 0>* ins,
                                         MDefinition* mir, MDefinition* input) {
   ins->setOperand(0, useRegisterAtStart(input));
@@ -158,15 +149,6 @@ template void LIRGeneratorX86Shared::lowerForFPU(
 template void LIRGeneratorX86Shared::lowerForFPU(
     LInstructionHelper<1, 2, 1>* ins, MDefinition* mir, MDefinition* lhs,
     MDefinition* rhs);
-
-void LIRGeneratorX86Shared::lowerForBitAndAndBranch(LBitAndAndBranch* baab,
-                                                    MInstruction* mir,
-                                                    MDefinition* lhs,
-                                                    MDefinition* rhs) {
-  baab->setOperand(0, useRegisterAtStart(lhs));
-  baab->setOperand(1, useRegisterOrConstantAtStart(rhs));
-  add(baab, mir);
-}
 
 void LIRGeneratorX86Shared::lowerNegI(MInstruction* ins, MDefinition* input) {
   defineReuseInput(new (alloc()) LNegI(useRegisterAtStart(input)), ins, 0);
@@ -512,26 +494,24 @@ void LIRGeneratorX86Shared::lowerPowOfTwoI(MPow* mir) {
   define(lir, mir);
 }
 
-void LIRGeneratorX86Shared::lowerBigIntLsh(MBigIntLsh* ins) {
+void LIRGeneratorX86Shared::lowerBigIntPtrLsh(MBigIntPtrLsh* ins) {
   // Shift operand should be in register ecx, unless BMI2 is available.
   // x86 can't shift a non-ecx register.
   LDefinition shiftAlloc = Assembler::HasBMI2() ? temp() : tempFixed(ecx);
-  auto* lir =
-      new (alloc()) LBigIntLsh(useRegister(ins->lhs()), useRegister(ins->rhs()),
-                               temp(), shiftAlloc, temp());
+  auto* lir = new (alloc()) LBigIntPtrLsh(
+      useRegister(ins->lhs()), useRegister(ins->rhs()), temp(), shiftAlloc);
+  assignSnapshot(lir, ins->bailoutKind());
   define(lir, ins);
-  assignSafepoint(lir, ins);
 }
 
-void LIRGeneratorX86Shared::lowerBigIntRsh(MBigIntRsh* ins) {
+void LIRGeneratorX86Shared::lowerBigIntPtrRsh(MBigIntPtrRsh* ins) {
   // Shift operand should be in register ecx, unless BMI2 is available.
   // x86 can't shift a non-ecx register.
   LDefinition shiftAlloc = Assembler::HasBMI2() ? temp() : tempFixed(ecx);
-  auto* lir =
-      new (alloc()) LBigIntRsh(useRegister(ins->lhs()), useRegister(ins->rhs()),
-                               temp(), shiftAlloc, temp());
+  auto* lir = new (alloc()) LBigIntPtrRsh(
+      useRegister(ins->lhs()), useRegister(ins->rhs()), temp(), shiftAlloc);
+  assignSnapshot(lir, ins->bailoutKind());
   define(lir, ins);
-  assignSafepoint(lir, ins);
 }
 
 void LIRGeneratorX86Shared::lowerWasmBuiltinTruncateToInt32(

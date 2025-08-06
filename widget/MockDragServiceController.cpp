@@ -102,8 +102,8 @@ static EventMessage MockEventTypeToEventMessage(
       return EventMessage::eDragEnter;
     case EventType::eDragOver:
       return EventMessage::eDragOver;
-    case EventType::eDragLeave:
-      return EventMessage::eDragLeave;
+    case EventType::eDragExit:
+      return EventMessage::eDragExit;
     case EventType::eDrop:
       return EventMessage::eDrop;
     case EventType::eMouseDown:
@@ -135,15 +135,14 @@ MockDragServiceController::SendEvent(
     dom::BrowsingContext* aBC,
     nsIMockDragServiceController::EventType aEventType, int32_t aScreenX,
     int32_t aScreenY, uint32_t aKeyModifiers = 0) {
-  RefPtr<nsIWidget> widget =
-      aBC->Canonical()->GetParentProcessWidgetContaining();
-  NS_ENSURE_TRUE(widget, NS_ERROR_UNEXPECTED);
   auto* embedder = aBC->Top()->GetEmbedderElement();
   NS_ENSURE_TRUE(embedder, NS_ERROR_UNEXPECTED);
   auto* frame = embedder->GetPrimaryFrame();
   NS_ENSURE_TRUE(frame, NS_ERROR_UNEXPECTED);
   auto* presCxt = frame->PresContext();
   MOZ_ASSERT(presCxt);
+  RefPtr<nsIWidget> widget = nsContentUtils::WidgetForContent(embedder);
+  NS_ENSURE_TRUE(widget, NS_ERROR_UNEXPECTED);
 
   EventMessage eventType = MockEventTypeToEventMessage(aEventType);
   UniquePtr<WidgetInputEvent> widgetEvent;
@@ -184,7 +183,7 @@ MockDragServiceController::SendEvent(
       currentDragSession->SetDragAction(nsIDragService::DRAGDROP_ACTION_MOVE);
       widget->DispatchInputEvent(widgetEvent.get());
       break;
-    case EventType::eDragLeave: {
+    case EventType::eDragExit: {
       NS_ENSURE_TRUE(currentDragSession, NS_ERROR_UNEXPECTED);
       currentDragSession->SetDragAction(nsIDragService::DRAGDROP_ACTION_MOVE);
       widget->DispatchInputEvent(widgetEvent.get());

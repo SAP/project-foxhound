@@ -11,9 +11,9 @@
 namespace mozilla::dom::quota {
 
 template <typename ResolverType>
-class ResolveResponseAndReturn {
+class ResolveAndReturn {
  public:
-  explicit ResolveResponseAndReturn(const ResolverType& aResolver)
+  explicit ResolveAndReturn(const ResolverType& aResolver)
       : mResolver(aResolver) {}
 
   mozilla::ipc::IPCResult operator()(const nsresult rv) {
@@ -25,9 +25,19 @@ class ResolveResponseAndReturn {
   const ResolverType& mResolver;
 };
 
+using ResolveNSResultAndReturn =
+    ResolveAndReturn<mozilla::ipc::NSResultResolver>;
+
 using ResolveBoolResponseAndReturn =
-    ResolveResponseAndReturn<mozilla::ipc::BoolResponseResolver>;
-using ResolveNSResultResponseAndReturn =
-    ResolveResponseAndReturn<mozilla::ipc::NSResultResponseResolver>;
+    ResolveAndReturn<mozilla::ipc::BoolResponseResolver>;
+using ResolveUInt64ResponseAndReturn =
+    ResolveAndReturn<mozilla::ipc::UInt64ResponseResolver>;
+using ResolveCStringArrayResponseAndReturn =
+    ResolveAndReturn<mozilla::ipc::CStringArrayResponseResolver>;
+
+using ResolveOriginUsageMetadataArrayResponseAndReturn =
+    ResolveAndReturn<OriginUsageMetadataArrayResponseResolver>;
+using ResolveUsageInfoResponseAndReturn =
+    ResolveAndReturn<UsageInfoResponseResolver>;
 
 }  // namespace mozilla::dom::quota

@@ -1,16 +1,18 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
-/* eslint-disable-next-line import/no-unassigned-import, mozilla/no-browser-refs-in-toolkit */
-import "chrome://browser/content/aboutlogins/components/input-field/login-origin-field.mjs";
-/* eslint-disable-next-line import/no-unassigned-import, mozilla/no-browser-refs-in-toolkit */
-import "chrome://browser/content/aboutlogins/components/input-field/login-username-field.mjs";
-/* eslint-disable-next-line import/no-unassigned-import, mozilla/no-browser-refs-in-toolkit */
-import "chrome://browser/content/aboutlogins/components/input-field/login-password-field.mjs";
+/* eslint-disable-next-line import/no-unassigned-import */
+import "chrome://global/content/megalist/LoginLine.mjs";
+
+const DIRECTIONS = {
+  ArrowUp: -1,
+  ArrowLeft: -1,
+  ArrowDown: 1,
+  ArrowRight: 1,
+};
 
 export class PasswordCard extends MozLitElement {
   static properties = {
@@ -18,14 +20,89 @@ export class PasswordCard extends MozLitElement {
     username: { type: Object },
     password: { type: Object },
     messageToViewModel: { type: Function },
+    reauthCommandHandler: { type: Function },
   };
 
-  #revealIconSrc(concealed) {
-    return !concealed
-      ? /* eslint-disable-next-line mozilla/no-browser-refs-in-toolkit */
-        "chrome://browser/content/aboutlogins/icons/password-hide.svg"
-      : /* eslint-disable-next-line mozilla/no-browser-refs-in-toolkit */
-        "chrome://browser/content/aboutlogins/icons/password.svg";
+  static get queries() {
+    return {
+      originLine: ".line-item[linetype='origin']",
+      usernameLine: ".line-item[linetype='username']",
+      passwordLine: "concealed-login-line",
+      editBtn: ".edit-button",
+    };
+  }
+
+  #focusableElementsList;
+  #focusableElementsMap;
+
+  /**
+   * Returns the first focusable element of the next password card componenet.
+   * If the user is navigating down, then the next focusable element should be the edit button,
+   * and if the user is navigating up, then it should be the origin line.
+   *
+   * @param {string} keyCode - The code associated with a keypress event. Either 'ArrowUp' or 'ArrowDown'.
+   * @returns {HTMLElement | null} The first focusable element of the next password-card.
+   */
+  #getNextFocusableElement(keyCode) {
+    return keyCode === "ArrowDown"
+      ? this.nextElementSibling?.originLine
+      : this.previousElementSibling?.editBtn;
+  }
+
+  async firstUpdated() {
+    this.#focusableElementsMap = new Map();
+
+    let index = 0;
+    for (const el of this.shadowRoot.querySelectorAll(".line-item")) {
+      if (el === this.passwordLine) {
+        await el.updateComplete;
+        this.#focusableElementsMap.set(el.loginLine, index++);
+        this.#focusableElementsMap.set(el.revealBtn.buttonEl, index++);
+      } else {
+        this.#focusableElementsMap.set(el, index++);
+      }
+    }
+
+    this.#focusableElementsMap.set(this.editBtn.buttonEl, index);
+    this.#focusableElementsList = Array.from(this.#focusableElementsMap.keys());
+  }
+
+  #handleKeydown(e) {
+    const element = e.composedTarget;
+
+    const focusInternal = offset => {
+      const index = this.#focusableElementsMap.get(element);
+      this.#focusableElementsList[index + offset].focus();
+    };
+
+    switch (e.code) {
+      case "ArrowUp":
+        e.preventDefault();
+        if (this.#focusableElementsMap.get(element) === 0) {
+          this.#getNextFocusableElement(e.code)?.focus();
+        } else {
+          focusInternal(DIRECTIONS[e.code]);
+        }
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        if (
+          this.#focusableElementsMap.get(element) ===
+          this.#focusableElementsList.length - 1
+        ) {
+          this.#getNextFocusableElement(e.code)?.focus();
+        } else {
+          focusInternal(DIRECTIONS[e.code]);
+        }
+        break;
+    }
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener("keydown", e => this.#handleKeydown(e), {
+      capture: true,
+    });
   }
 
   handleCommand(commandId, lineIndex) {
@@ -36,11 +113,15 @@ export class PasswordCard extends MozLitElement {
     // TODO: Implement me!
   }
 
-  onCopyButtonClick(lineIndex) {
+  #onOriginLineClick(lineIndex) {
+    this.handleCommand("OpenLink", lineIndex);
+  }
+
+  #onCopyButtonClick(lineIndex) {
     this.handleCommand("Copy", lineIndex);
   }
 
-  onPasswordRevealClick(concealed, lineIndex) {
+  #onPasswordRevealClick(concealed, lineIndex) {
     if (concealed) {
       this.handleCommand("Reveal", lineIndex);
     } else {
@@ -49,72 +130,93 @@ export class PasswordCard extends MozLitElement {
   }
 
   renderOriginField() {
-    return html`<login-origin-field readonly .value=${this.origin.value}>
-      <moz-button
-        slot="actions"
-        @click=${() => this.onCopyButtonClick(this.origin.lineIndex)}
-        type="icon ghost"
-        iconSrc="chrome://global/skin/icons/edit-copy.svg"
-      ></moz-button>
-    </login-origin-field>`;
+    return html`
+      <login-line
+        tabindex="-1"
+        role="option"
+        class="line-item"
+        data-l10n-id="origin-login-line"
+        data-l10n-args="${JSON.stringify({ url: this.origin.value })}"
+        inputType="text"
+        lineType="origin"
+        labelL10nId="passwords-origin-label"
+        .value=${this.origin.value}
+        .favIcon=${this.origin.valueIcon}
+        ?alert=${this.origin.breached}
+        .onLineClick=${() => {
+          this.#onOriginLineClick(this.origin.lineIndex);
+          return true;
+        }}
+      >
+      </login-line>
+    `;
   }
 
   renderUsernameField() {
-    return html`<login-username-field readonly .value=${this.username.value}>
-      <moz-button
-        slot="actions"
-        @click=${() => this.onCopyButtonClick(this.username.lineIndex)}
-        @click=${this.onCopyButtonClick}
-        type="icon ghost"
-        iconSrc="chrome://global/skin/icons/edit-copy.svg"
-      ></moz-button>
-    </login-username-field>`;
+    return html`
+      <login-line
+        tabindex="-1"
+        role="option"
+        class="line-item"
+        data-l10n-id="username-login-line"
+        data-l10n-args="${JSON.stringify({ username: this.username.value })}"
+        inputType="text"
+        lineType="username"
+        labelL10nId="passwords-username-label"
+        .value=${this.username.value}
+        .onLineClick=${() => {
+          this.#onCopyButtonClick(this.username.lineIndex);
+          return true;
+        }}
+        ?alert=${this.username.value.length === 0}
+      >
+      </login-line>
+    `;
   }
 
   renderPasswordField() {
-    return html`<login-password-field
-      readonly
-      .value=${this.password.value}
-      .visible=${!this.password.concealed}
-    >
-      <moz-button
-        slot="actions"
-        @click=${() =>
-          this.onPasswordRevealClick(
-            this.password.concealed,
-            this.password.lineIndex
+    return html`
+      <concealed-login-line
+        class="line-item"
+        labelL10nId="passwords-password-label"
+        .value=${this.password.value}
+        .visible=${!this.password.concealed}
+        ?alert=${this.password.vulnerable}
+        .onLineClick=${() =>
+          this.reauthCommandHandler(() =>
+            this.#onCopyButtonClick(this.password.lineIndex)
           )}
-        type="icon ghost"
-        iconSrc=${this.#revealIconSrc(this.password.concealed)}
-      ></moz-button>
-      <moz-button
-        slot="actions"
-        @click=${() => this.onCopyButtonClick(this.password.lineIndex)}
-        type="icon ghost"
-        iconSrc="chrome://global/skin/icons/edit-copy.svg"
-      ></moz-button>
-    </login-password-field>`;
+        .onButtonClick=${() =>
+          this.reauthCommandHandler(() =>
+            this.#onPasswordRevealClick(
+              this.password.concealed,
+              this.password.lineIndex
+            )
+          )}
+      >
+      </concealed-login-line>
+    `;
   }
 
   renderButton() {
-    return html`<moz-button
-      data-l10n-id="login-item-edit-button"
-      class="edit-button"
-      @click=${this.onEditButtonClick}
-    ></moz-button>`;
+    return html`<div class="edit-line-container" role="option">
+      <moz-button
+        data-l10n-id="edit-login-button"
+        class="edit-button"
+        @click=${this.onEditButtonClick}
+      ></moz-button>
+    </div>`;
   }
 
   render() {
-    return html` <link
+    return html`
+      <link
         rel="stylesheet"
-        href="chrome://global/content/megalist/megalist.css"
+        href="chrome://global/content/megalist/PasswordCard.css"
       />
-      <moz-card>
-        <div class="password-card-container">
-          ${this.renderOriginField()} ${this.renderUsernameField()}
-          ${this.renderPasswordField()} ${this.renderButton()}
-        </div>
-      </moz-card>`;
+      ${this.renderOriginField()} ${this.renderUsernameField()}
+      ${this.renderPasswordField()} ${this.renderButton()}
+    `;
   }
 }
 

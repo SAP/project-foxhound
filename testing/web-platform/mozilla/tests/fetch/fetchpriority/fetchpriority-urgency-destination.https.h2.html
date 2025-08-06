@@ -60,7 +60,7 @@
       // See network.fetchpriority.adjustments.images and
       // nsHttpHandler::UrgencyFromCoSFlags.
       let normalUrgency = 4;
-      assert_equals(await getUrgencyForImage("low"), normalUrgency + 1);
+      assert_equals(await getUrgencyForImage("low"), normalUrgency + 2);
       assert_equals(await getUrgencyForImage("high"), normalUrgency - 1);
       assert_equals(await getUrgencyForImage("auto"), normalUrgency + 1);
       assert_equals(await getUrgencyForImage(), normalUrgency + 1);
@@ -182,7 +182,7 @@
       // nsHttpHandler::UrgencyFromCoSFlags.
       let normalUrgency = 3;
       assert_equals(await getUrgencyForFont("low"), normalUrgency + 2);
-      assert_equals(await getUrgencyForFont("high"), normalUrgency);
+      assert_equals(await getUrgencyForFont("high"), normalUrgency - 1);
       assert_equals(await getUrgencyForFont("auto"), normalUrgency);
       assert_equals(await getUrgencyForFont(), normalUrgency);
   }, 'Adjustment of urgency parameter when fetching with a "font" Request.destination');

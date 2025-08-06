@@ -318,6 +318,9 @@
             android:id="@+id/action_browserFragment_to_createShortcutFragment"
             app:destination="@id/createShortcutFragment" />
         <action
+            android:id="@+id/action_browserFragment_to_createXiaomiShortcutFragment"
+            app:destination="@id/createXiaomiShortcutFragment" />
+        <action
             android:id="@+id/action_browserFragment_to_pwaOnboardingDialogFragment"
             app:destination="@id/pwaOnboardingDialogFragment" />
         <action
@@ -750,8 +753,8 @@
         android:label="@string/preference_experiments_2" />
     <fragment
         android:id="@+id/sitePermissionsFragment"
-        android:name="org.mozilla.fenix.settings.sitepermissions.SitePermissionsFragment"
-        android:label="@string/preferences_site_permissions">
+        android:name="org.mozilla.fenix.settings.sitepermissions.SiteSettingsFragment"
+        android:label="@string/preferences_site_settings">
         <action
             android:id="@+id/action_site_permissions_to_manage_phone_features"
             app:destination="@id/SitePermissionsManagePhoneFeature"
@@ -918,6 +921,10 @@
         android:id="@+id/createShortcutFragment"
         android:name="org.mozilla.fenix.shortcut.CreateShortcutFragment"
         tools:layout="@layout/fragment_create_shortcut" />
+    <dialog
+        android:id="@+id/createXiaomiShortcutFragment"
+        android:name="org.mozilla.fenix.shortcut.CreateXiaomiShortcutFragment"
+        tools:layout="@layout/fragment_create_xiaomi_shortcut" />
     <dialog
         android:id="@+id/pwaOnboardingDialogFragment"
         android:name="org.mozilla.fenix.shortcut.PwaOnboardingDialogFragment"
@@ -1500,8 +1507,12 @@
             android:id="@+id/automaticTranslationOptionsPreferenceFragment"
             android:name="org.mozilla.fenix.translations.preferences.automatic.AutomaticTranslationOptionsPreferenceFragment">
             <argument
-                android:name="selectedTranslationOptionPreference"
-                app:argType="org.mozilla.fenix.translations.preferences.automatic.AutomaticTranslationItemPreference" />
+                android:name="selectedLanguageCode"
+                app:argType="string" />
+            <argument
+                android:name="selectedLanguageDisplayName"
+                app:argType="string"
+                app:nullable="true"/>
         </fragment>
         <fragment
             android:id="@+id/neverTranslateSitePreferenceFragment"
@@ -1558,6 +1569,10 @@
             android:defaultValue="@null"
             app:nullable="true"
             app:argType="string" />
+        <argument
+            android:name="isSandboxCustomTab"
+            android:defaultValue="false"
+            app:argType="boolean" />
         <dialog
             android:id="@+id/menuDialogFragment"
             android:name="org.mozilla.fenix.components.menu.MenuDialogFragment">
@@ -1569,6 +1584,10 @@
                 android:defaultValue="@null"
                 app:nullable="true"
                 app:argType="string" />
+            <argument
+                android:name="isSandboxCustomTab"
+                android:defaultValue="false"
+                app:argType="boolean" />
             <action
                 android:id="@+id/action_menuDialogFragment_to_translationsDialogFragment"
                 app:destination="@id/translationsDialogFragment" />
@@ -1578,6 +1597,9 @@
             <action
                 android:id="@+id/action_menuDialogFragmen_to_addonDetailsFragment"
                 app:destination="@id/addonDetailsFragment" />
+            <action
+                android:id="@+id/action_menuDialogFragment_to_loginsListFragment"
+                app:destination="@id/savedLogins" />
         </dialog>
     </navigation>
 </navigation>

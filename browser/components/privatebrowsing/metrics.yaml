@@ -48,21 +48,65 @@ private_browsing.reset_pbm:
     notification_emails:
       - pbz@mozilla.com
     expires: never
-private_browsing:
-  window_open_during_teardown:
-    type: rate
+
+aboutprivatebrowsing:
+  click_info_link:
+    type: event
     description: >
-      Numerator: How often a new private browsing window is opened while the old
-      private browsing session is still being shut down.
-      Denominator: How many private browsing sessions (are fully exited).
-      Rate: Of all private browsing sessions, how often do we run into the race
-      condition.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900840
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900840
-    data_sensitivity:
-      - interaction
-    notification_emails:
+      This is recorded when a user clicks a link on the private browsing
+      newtab.
+      This event was generated to correspond to the Legacy Telemetry event
+      aboutprivatebrowsing.click#info_link.
+    bugs: &aboutprivatebrowsing_click_bugs
+      - https://bugzil.la/1709344
+      - https://bugzil.la/1754635
+      - https://bugzil.la/1781973
+      - https://bugzil.la/1811146
+      - https://bugzil.la/1841925
+      - https://bugzil.la/1871197
+      - https://bugzil.la/1922609
+    data_reviews: &aboutprivatebrowsing_click_data_reviews
+      - https://bugzil.la/1709344
+      - https://bugzil.la/1754635
+      - https://bugzil.la/1781973
+      - https://bugzil.la/1811146
+      - https://bugzil.la/1841925
+      - https://bugzil.la/1871197
+      - https://phabricator.services.mozilla.com/D225937
+    notification_emails: &aboutprivatebrowsing_click_emails
       - pbz@mozilla.com
-    expires: 133
+      - tihuang@mozilla.com
+    expires: 139
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: Aboutprivatebrowsing_Click_InfoLink
+
+  click_promo_link:
+    type: event
+    description: >
+      This is recorded when a user clicks a link on the private browsing
+      newtab.
+      This event was generated to correspond to the Legacy Telemetry event
+      aboutprivatebrowsing.click#promo_link.
+    bugs: *aboutprivatebrowsing_click_bugs
+    data_reviews: *aboutprivatebrowsing_click_data_reviews
+    notification_emails: *aboutprivatebrowsing_click_emails
+    expires: 139
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: Aboutprivatebrowsing_Click_PromoLink
+
+  click_dismiss_button:
+    type: event
+    description: >
+      This is recorded when a user clicks a link on the private browsing
+      newtab.
+      This event was generated to correspond to the Legacy Telemetry event
+      aboutprivatebrowsing.click#dismiss_button.
+    bugs: *aboutprivatebrowsing_click_bugs
+    data_reviews: *aboutprivatebrowsing_click_data_reviews
+    notification_emails: *aboutprivatebrowsing_click_emails
+    expires: 139
+    no_lint:
+      - COMMON_PREFIX
+    telemetry_mirror: Aboutprivatebrowsing_Click_DismissButton

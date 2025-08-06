@@ -264,18 +264,17 @@ if __name__ == "__main__":
         atexit.unregister(early_exit_handler)
         sys.exit(0)
 
-    # make sure the mercurial repo is clean before beginning
+    # make sure the relevant bits of the mercurial repo is clean before beginning
     error_help = (
-        "There are modified or untracked files in the mercurial repo.\n"
-        f"Please start with a clean repo before running {script_name}"
+        f"There are modified or untracked files under {args.target_path}.\n"
+        f"Please cleanup the repo under {args.target_path} before running {script_name}"
     )
-    stdout_lines = run_hg("hg status")
+    stdout_lines = run_hg(f"hg status {args.target_path}")
     if len(stdout_lines) != 0:
         sys.exit(1)
     error_help = None
 
     if len(resume_state) == 0:
-        update_resume_state("resume2", resume_state_filename)
         if args.skip_restore is False:
             # Restoring is done with each new cherry-pick to ensure that
             # guidance from verify_vendoring (the next step) is
@@ -302,6 +301,7 @@ if __name__ == "__main__":
                 args.tar_name,
                 "https",  # unused if a previous restore has completed
             )
+        update_resume_state("resume2", resume_state_filename)
 
     # make sure the github repo exists
     error_help = (

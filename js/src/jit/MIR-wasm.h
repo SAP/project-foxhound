@@ -120,7 +120,7 @@ class MWasmFloatConstant : public MNullaryInstruction {
   }
 #endif
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     switch (type()) {
       case MIRType::Float32:
@@ -575,7 +575,7 @@ class MWasmBinaryBitwise : public MBinaryInstruction,
   AliasSet getAliasSet() const override { return AliasSet::None(); }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     const char* what = "!!unknown!!";
     switch (subOpcode()) {
       case SubOpcode::And:
@@ -850,7 +850,7 @@ class MWasmLoad
   bool hasMemoryBase() const { return numOperands() > 1; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     SprintfLiteral(buf, "(offs=%lld)", (long long int)access().offset64());
     extras->add(buf);
@@ -897,7 +897,7 @@ class MWasmStore : public MVariadicInstruction, public NoTypePolicy::Data {
   bool hasMemoryBase() const { return numOperands() > 2; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     SprintfLiteral(buf, "(offs=%lld)", (long long int)access().offset64());
     extras->add(buf);
@@ -1219,7 +1219,7 @@ class MWasmLoadInstanceDataField : public MUnaryInstruction,
   AliasType mightAlias(const MDefinition* def) const override;
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[96];
     SprintfLiteral(buf, "(offs=%lld, isConst=%s)",
                    (long long int)instanceDataOffset_,
@@ -1368,7 +1368,7 @@ class MWasmDerivedPointer : public MUnaryInstruction,
   }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     SprintfLiteral(buf, "(offs=%lld)", (long long int)offset_);
     extras->add(buf);
@@ -1449,7 +1449,7 @@ class MWasmStoreRef : public MAryInstruction<3>, public NoTypePolicy::Data {
   WasmPreBarrierKind preBarrierKind() const { return preBarrierKind_; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     SprintfLiteral(buf, "(offs=%lld)", (long long int)offset_);
     extras->add(buf);
@@ -1722,22 +1722,6 @@ class MWasmStackResult : public MUnaryInstruction, public NoTypePolicy::Data {
   }
 };
 
-// Arguments for constructing a catchable wasm call inside of a try block.
-struct MWasmCallTryDesc {
-  bool inTry;
-  uint32_t relativeTryDepth;
-  size_t tryNoteIndex;
-  MBasicBlock* fallthroughBlock;
-  MBasicBlock* prePadBlock;
-
-  MWasmCallTryDesc()
-      : inTry(false),
-        relativeTryDepth(0),
-        tryNoteIndex(0),
-        fallthroughBlock(nullptr),
-        prePadBlock(nullptr) {}
-};
-
 // Mixin class for wasm calls that may or may not be catchable.
 class MWasmCallBase {
  public:
@@ -1771,7 +1755,7 @@ class MWasmCallBase {
   template <class MVariadicT>
   [[nodiscard]] bool initWithArgs(TempAllocator& alloc, MVariadicT* ins,
                                   const Args& args,
-                                  MDefinition* tableIndexOrRef) {
+                                  MDefinition* tableAddressOrRef) {
     if (!argRegs_.init(alloc, args.length())) {
       return false;
     }
@@ -1779,15 +1763,15 @@ class MWasmCallBase {
       argRegs_[i] = args[i].reg;
     }
 
-    if (!ins->init(alloc, argRegs_.length() + (tableIndexOrRef ? 1 : 0))) {
+    if (!ins->init(alloc, argRegs_.length() + (tableAddressOrRef ? 1 : 0))) {
       return false;
     }
     // FixedList doesn't initialize its elements, so do an unchecked init.
     for (size_t i = 0; i < argRegs_.length(); i++) {
       ins->initOperand(i, args[i].def);
     }
-    if (tableIndexOrRef) {
-      ins->initOperand(argRegs_.length(), tableIndexOrRef);
+    if (tableAddressOrRef) {
+      ins->initOperand(argRegs_.length(), tableAddressOrRef);
     }
     return true;
   }
@@ -1846,19 +1830,19 @@ class MWasmCallCatchable final : public MVariadicControlInstruction<2>,
  public:
   INSTRUCTION_HEADER(WasmCallCatchable)
 
-  static MWasmCallCatchable* New(TempAllocator& alloc,
-                                 const wasm::CallSiteDesc& desc,
-                                 const wasm::CalleeDesc& callee,
-                                 const Args& args,
-                                 uint32_t stackArgAreaSizeUnaligned,
-                                 const MWasmCallTryDesc& tryDesc,
-                                 MDefinition* tableIndexOrRef = nullptr);
+  static MWasmCallCatchable* New(
+      TempAllocator& alloc, const wasm::CallSiteDesc& desc,
+      const wasm::CalleeDesc& callee, const Args& args,
+      uint32_t stackArgAreaSizeUnaligned, uint32_t tryNoteIndex,
+      MBasicBlock* fallthroughBlock, MBasicBlock* prePadBlock,
+      MDefinition* tableAddressOrRef = nullptr);
 
   static MWasmCallCatchable* NewBuiltinInstanceMethodCall(
       TempAllocator& alloc, const wasm::CallSiteDesc& desc,
       const wasm::SymbolicAddress builtin, wasm::FailureMode failureMode,
       const ABIArg& instanceArg, const Args& args,
-      uint32_t stackArgAreaSizeUnaligned, const MWasmCallTryDesc& tryDesc);
+      uint32_t stackArgAreaSizeUnaligned, uint32_t tryNoteIndex,
+      MBasicBlock* fallthroughBlock, MBasicBlock* prePadBlock);
 
   bool possiblyCalls() const override { return true; }
   AliasSet getAliasSet() const override { return wasmCallAliasSet(); }
@@ -1886,7 +1870,7 @@ class MWasmCallUncatchable final : public MVariadicInstruction,
                                    const wasm::CalleeDesc& callee,
                                    const Args& args,
                                    uint32_t stackArgAreaSizeUnaligned,
-                                   MDefinition* tableIndexOrRef = nullptr);
+                                   MDefinition* tableAddressOrRef = nullptr);
 
   static MWasmCallUncatchable* NewBuiltinInstanceMethodCall(
       TempAllocator& alloc, const wasm::CallSiteDesc& desc,
@@ -1914,7 +1898,7 @@ class MWasmReturnCall final : public MVariadicControlInstruction<0>,
                               const wasm::CallSiteDesc& desc,
                               const wasm::CalleeDesc& callee, const Args& args,
                               uint32_t stackArgAreaSizeUnaligned,
-                              MDefinition* tableIndexOrRef = nullptr);
+                              MDefinition* tableAddressOrRef = nullptr);
 
   bool possiblyCalls() const override { return true; }
 };
@@ -2486,7 +2470,7 @@ class MWasmLoadField : public MUnaryInstruction, public NoTypePolicy::Data {
   }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[96];
     SprintfLiteral(buf, "(offs=%lld, wideningOp=%s)", (long long int)offset_,
                    StringFromMWideningOp(wideningOp_));
@@ -2508,15 +2492,18 @@ class MWasmLoadField : public MUnaryInstruction, public NoTypePolicy::Data {
 // 31-bit unsigned integer.
 class MWasmLoadFieldKA : public MBinaryInstruction, public NoTypePolicy::Data {
   uint32_t offset_;
+  uint32_t fieldIndex_;
   MWideningOp wideningOp_;
   AliasSet aliases_;
   MaybeTrapSiteInfo maybeTrap_;
 
   MWasmLoadFieldKA(MDefinition* ka, MDefinition* obj, size_t offset,
-                   MIRType type, MWideningOp wideningOp, AliasSet aliases,
+                   uint32_t fieldIndex, MIRType type, MWideningOp wideningOp,
+                   AliasSet aliases,
                    MaybeTrapSiteInfo maybeTrap = mozilla::Nothing())
       : MBinaryInstruction(classOpcode, ka, obj),
         offset_(uint32_t(offset)),
+        fieldIndex_(fieldIndex),
         wideningOp_(wideningOp),
         aliases_(aliases),
         maybeTrap_(maybeTrap) {
@@ -2542,12 +2529,13 @@ class MWasmLoadFieldKA : public MBinaryInstruction, public NoTypePolicy::Data {
   NAMED_OPERANDS((0, ka), (1, obj))
 
   uint32_t offset() const { return offset_; }
+  uint32_t fieldIndex() const { return fieldIndex_; }
   MWideningOp wideningOp() const { return wideningOp_; }
   AliasSet getAliasSet() const override { return aliases_; }
   MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[96];
     SprintfLiteral(buf, "(offs=%lld, wideningOp=%s)", (long long int)offset_,
                    StringFromMWideningOp(wideningOp_));
@@ -2603,7 +2591,7 @@ class MWasmLoadElementKA : public MTernaryInstruction,
   MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[96];
     SprintfLiteral(buf, "(wideningOp=%s, scale=%s)",
                    StringFromMWideningOp(wideningOp_), StringFromScale(scale_));
@@ -2623,16 +2611,18 @@ class MWasmLoadElementKA : public MTernaryInstruction,
 class MWasmStoreFieldKA : public MTernaryInstruction,
                           public NoTypePolicy::Data {
   uint32_t offset_;
+  uint32_t fieldIndex_;
   MNarrowingOp narrowingOp_;
   AliasSet aliases_;
   MaybeTrapSiteInfo maybeTrap_;
 
   MWasmStoreFieldKA(MDefinition* ka, MDefinition* obj, size_t offset,
-                    MDefinition* value, MNarrowingOp narrowingOp,
-                    AliasSet aliases,
+                    uint32_t fieldIndex, MDefinition* value,
+                    MNarrowingOp narrowingOp, AliasSet aliases,
                     MaybeTrapSiteInfo maybeTrap = mozilla::Nothing())
       : MTernaryInstruction(classOpcode, ka, obj, value),
         offset_(uint32_t(offset)),
+        fieldIndex_(fieldIndex),
         narrowingOp_(narrowingOp),
         aliases_(aliases),
         maybeTrap_(maybeTrap) {
@@ -2661,12 +2651,13 @@ class MWasmStoreFieldKA : public MTernaryInstruction,
   NAMED_OPERANDS((0, ka), (1, obj), (2, value))
 
   uint32_t offset() const { return offset_; }
+  uint32_t fieldIndex() const { return fieldIndex_; }
   MNarrowingOp narrowingOp() const { return narrowingOp_; }
   AliasSet getAliasSet() const override { return aliases_; }
   MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[96];
     SprintfLiteral(buf, "(offs=%lld, narrowingOp=%s)", (long long int)offset_,
                    StringFromMNarrowingOp(narrowingOp_));
@@ -2685,16 +2676,18 @@ class MWasmStoreFieldKA : public MTernaryInstruction,
 class MWasmStoreFieldRefKA : public MAryInstruction<4>,
                              public NoTypePolicy::Data {
   uint32_t offset_;
+  uint32_t fieldIndex_;
   AliasSet aliases_;
   MaybeTrapSiteInfo maybeTrap_;
   WasmPreBarrierKind preBarrierKind_;
 
   MWasmStoreFieldRefKA(MDefinition* instance, MDefinition* ka, MDefinition* obj,
-                       size_t offset, MDefinition* value, AliasSet aliases,
-                       MaybeTrapSiteInfo maybeTrap,
+                       size_t offset, uint32_t fieldIndex, MDefinition* value,
+                       AliasSet aliases, MaybeTrapSiteInfo maybeTrap,
                        WasmPreBarrierKind preBarrierKind)
       : MAryInstruction<4>(classOpcode),
         offset_(uint32_t(offset)),
+        fieldIndex_(fieldIndex),
         aliases_(aliases),
         maybeTrap_(maybeTrap),
         preBarrierKind_(preBarrierKind) {
@@ -2727,12 +2720,13 @@ class MWasmStoreFieldRefKA : public MAryInstruction<4>,
   NAMED_OPERANDS((0, instance), (1, ka), (2, obj), (3, value))
 
   uint32_t offset() const { return offset_; }
+  uint32_t fieldIndex() const { return fieldIndex_; }
   AliasSet getAliasSet() const override { return aliases_; }
   MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
   WasmPreBarrierKind preBarrierKind() const { return preBarrierKind_; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     SprintfLiteral(buf, "(offs=%lld)", (long long int)offset_);
     extras->add(buf);
@@ -2792,7 +2786,7 @@ class MWasmStoreElementKA : public MQuaternaryInstruction,
   MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[96];
     SprintfLiteral(buf, "(narrowingOp=%s, scale=%s)",
                    StringFromMNarrowingOp(narrowingOp_),
@@ -2890,6 +2884,33 @@ class MWasmRefIsSubtypeOfAbstract : public MUnaryInstruction,
   MDefinition* foldsTo(TempAllocator& alloc) override;
 };
 
+// Represents the contents of all fields of a wasm struct.
+// This class will be used for scalar replacement of wasm structs.
+class MWasmStructState : public TempObject {
+ private:
+  MDefinition* wasmStruct_;
+  // Represents the fields of this struct.
+  Vector<MDefinition*, 0, JitAllocPolicy> fields_;
+
+  explicit MWasmStructState(TempAllocator& alloc, MDefinition* structObject)
+      : wasmStruct_(structObject), fields_(alloc) {}
+
+ public:
+  static MWasmStructState* New(TempAllocator& alloc, MDefinition* structObject);
+  static MWasmStructState* Copy(TempAllocator& alloc, MWasmStructState* state);
+
+  // Init the fields_ vector.
+  [[nodiscard]] bool init();
+
+  size_t numFields() const { return fields_.length(); }
+  MDefinition* wasmStruct() const { return wasmStruct_; }
+
+  // Get the field value based on the position of the field in the struct.
+  MDefinition* getField(uint32_t index) const { return fields_[index]; }
+  // Set the field offset based on the position of the field in the struct.
+  void setField(uint32_t index, MDefinition* def) { fields_[index] = def; }
+};
+
 // Tests if the wasm ref `ref` is a subtype of `superSTV`.
 // The actual super type definition must be known at compile time, so that the
 // subtyping depth of super type depth can be used.
@@ -2938,13 +2959,19 @@ class MWasmNewStructObject : public MBinaryInstruction,
   bool isOutline_;
   bool zeroFields_;
   gc::AllocKind allocKind_;
+  const wasm::StructType& structType_;
+  wasm::BytecodeOffset bytecodeOffset_;
 
   MWasmNewStructObject(MDefinition* instance, MDefinition* typeDefData,
-                       bool isOutline, bool zeroFields, gc::AllocKind allocKind)
+                       const wasm::StructType& structType_, bool isOutline,
+                       bool zeroFields, gc::AllocKind allocKind,
+                       wasm::BytecodeOffset bytecodeOffset)
       : MBinaryInstruction(classOpcode, instance, typeDefData),
         isOutline_(isOutline),
         zeroFields_(zeroFields),
-        allocKind_(allocKind) {
+        allocKind_(allocKind),
+        structType_(structType_),
+        bytecodeOffset_(bytecodeOffset) {
     setResultType(MIRType::WasmAnyRef);
   }
 
@@ -2963,6 +2990,8 @@ class MWasmNewStructObject : public MBinaryInstruction,
   bool isOutline() const { return isOutline_; }
   bool zeroFields() const { return zeroFields_; }
   gc::AllocKind allocKind() const { return allocKind_; }
+  wasm::BytecodeOffset bytecodeOffset() const { return bytecodeOffset_; }
+  const wasm::StructType& structType() { return structType_; }
 };
 
 class MWasmNewArrayObject : public MTernaryInstruction,

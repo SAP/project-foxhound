@@ -62,6 +62,9 @@ async function openAboutInference({
       // Enabled by default.
       ["browser.ml.enable", !disabled],
       ["browser.ml.logLevel", "Debug"],
+      ["dom.webgpu.enabled", !disabled],
+      ["dom.webgpu.workers.enabled", !disabled],
+      ["gfx.webgpu.force-enabled", !disabled],
       ...(prefs ?? []),
     ],
   });
@@ -81,8 +84,8 @@ async function openAboutInference({
    */
   const selectors = {
     pageHeader: '[data-l10n-id="about-inference-header"]',
-    warning: "div#warning",
-    processes: "div#runningInference",
+    warning: "moz-message-bar#warning",
+    processes: "div#procInfoTableContainer",
   };
 
   // Start the tab at a blank page.
@@ -98,14 +101,13 @@ async function openAboutInference({
 
   await ContentTask.spawn(tab.linkedBrowser, { selectors }, runInPage);
 
-  await loadBlankPage();
-  BrowserTestUtils.removeTab(tab);
-  await SpecialPowers.popPrefEnv();
-
   if (runInference) {
     await EngineProcess.destroyMLEngine();
     await cleanup();
   }
+  await loadBlankPage();
+  BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
 }
 
 /**

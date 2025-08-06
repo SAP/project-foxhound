@@ -25,12 +25,13 @@ import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.support.ktx.android.view.showKeyboard
 import mozilla.components.support.ktx.util.URLStringUtils
+import org.mozilla.fenix.AuthenticationStatus
+import org.mozilla.fenix.BiometricAuthenticationManager
 import org.mozilla.fenix.GleanMetrics.Logins
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.databinding.FragmentAddLoginBinding
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.redirectToReAuth
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.ext.toEditable
@@ -354,15 +355,6 @@ class AddLoginFragment : Fragment(R.layout.fragment_add_login), MenuProvider {
         saveButton.isEnabled = changesMadeWithNoErrors
     }
 
-    override fun onPause() {
-        redirectToReAuth(
-            listOf(R.id.loginDetailFragment, R.id.savedLoginsFragment),
-            findNavController().currentDestination?.id,
-            R.id.addLoginFragment,
-        )
-        super.onPause()
-    }
-
     override fun onResume() {
         super.onResume()
         showToolbar(getString(R.string.add_login_2))
@@ -391,6 +383,12 @@ class AddLoginFragment : Fragment(R.layout.fragment_add_login), MenuProvider {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+        // If you've made it here you're already authenticated. Let's reset the values so we don't
+        // prompt the user again when navigating back.
+        BiometricAuthenticationManager.biometricAuthenticationNeededInfo.shouldShowAuthenticationPrompt =
+            false
+        BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticationStatus =
+            AuthenticationStatus.AUTHENTICATED
     }
 
     companion object {

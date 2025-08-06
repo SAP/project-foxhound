@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{BlobImageHandler, ColorF, IdNamespace, DocumentId, CrashAnnotator};
+use api::{BlobImageHandler, ColorF, CrashAnnotator, DocumentId, IdNamespace};
 use api::{VoidPtrToSizeFn, FontRenderMode, ImageFormat};
 use api::{RenderNotifier, ImageBufferKind};
 use api::units::*;
 use api::channel::unbounded_channel;
 pub use api::DebugFlags;
 
+use crate::bump_allocator::ChunkPool;
 use crate::render_api::{RenderApiSender, FrameMsg};
 use crate::composite::{CompositorKind, CompositorConfig};
 use crate::device::{
@@ -19,7 +20,7 @@ use crate::glyph_cache::GlyphCache;
 use glyph_rasterizer::{GlyphRasterThread, GlyphRasterizer, SharedFontResources};
 use crate::gpu_types::PrimitiveInstanceData;
 use crate::internal_types::{FastHashMap, FastHashSet, FrameId};
-use crate::picture;
+use crate::{picture, Compositor2};
 use crate::profiler::{self, Profiler, TransactionProfile};
 use crate::device::query::{GpuProfiler, GpuDebugMethod};
 use crate::render_backend::RenderBackend;
@@ -134,6 +135,10 @@ pub struct WebRenderOptions {
     pub upload_pbo_default_size: usize,
     pub batched_upload_threshold: i32,
     pub workers: Option<Arc<ThreadPool>>,
+    /// A pool of large memory chunks used by the per-frame allocators.
+    /// Providing the pool here makes it possible to share a single pool for
+    /// all WebRender instances.
+    pub chunk_pool: Option<Arc<ChunkPool>>,
     pub dedicated_glyph_raster_thread: Option<GlyphRasterThread>,
     pub enable_multithreading: bool,
     pub blob_image_handler: Option<Box<dyn BlobImageHandler>>,
@@ -197,6 +202,10 @@ pub struct WebRenderOptions {
     /// make the result look quite close to the high-quality zoom, except for glyphs.
     pub low_quality_pinch_zoom: bool,
     pub max_shared_surface_size: i32,
+    /// If supplied, composite the frame using the new experimental compositing
+    /// interface. If this is set, it overrides `compositor_config`. These will
+    /// be unified as the interface stabilises.
+    pub compositor2: Option<Box<dyn Compositor2>>,
 }
 
 impl WebRenderOptions {
@@ -234,6 +243,7 @@ impl Default for WebRenderOptions {
             upload_pbo_default_size: 512 * 512 * 4,
             batched_upload_threshold: 512 * 512,
             workers: None,
+            chunk_pool: None,
             dedicated_glyph_raster_thread: None,
             enable_multithreading: true,
             blob_image_handler: None,
@@ -268,6 +278,7 @@ impl Default for WebRenderOptions {
             reject_software_rasterizer: false,
             low_quality_pinch_zoom: false,
             max_shared_surface_size: 2048,
+            compositor2: None,
         }
     }
 }
@@ -310,6 +321,10 @@ pub fn create_webrender_instance(
     }
 
     HAS_BEEN_INITIALIZED.store(true, Ordering::SeqCst);
+
+    // For now, we assume that native OS compositors are top-left origin. If that doesn't
+    // turn out to be the case, we can add a query method on `Compositor2`.
+    options.surface_origin_is_top_left |= options.compositor2.is_some();
 
     let (api_tx, api_rx) = unbounded_channel();
     let (result_tx, result_rx) = unbounded_channel();
@@ -617,6 +632,7 @@ pub fn create_webrender_instance(
         let lp_builder = LowPrioritySceneBuilderThread {
             rx: low_priority_scene_rx,
             tx: scene_tx.clone(),
+            tile_pool: api::BlobTilePool::new(),
         };
 
         thread::Builder::new().name(lp_scene_thread_name.clone()).spawn(move || {
@@ -651,6 +667,10 @@ pub fn create_webrender_instance(
     };
 
     let render_backend_hooks = options.render_backend_hooks.take();
+
+    let chunk_pool = options.chunk_pool.take().unwrap_or_else(|| {
+        Arc::new(ChunkPool::new())
+    });
 
     let rb_scene_tx = scene_tx.clone();
     let rb_fonts = fonts.clone();
@@ -693,6 +713,7 @@ pub fn create_webrender_instance(
             result_tx,
             rb_scene_tx,
             resource_cache,
+            chunk_pool,
             backend_notifier,
             config,
             sampler,
@@ -789,6 +810,7 @@ pub fn create_webrender_instance(
         consecutive_oom_frames: 0,
         target_frame_publish_id: None,
         pending_result_msg: None,
+        compositor2: options.compositor2,
     };
 
     // We initially set the flags to default and then now call set_debug_flags

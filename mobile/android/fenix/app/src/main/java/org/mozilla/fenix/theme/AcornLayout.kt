@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.theme
 
+import android.content.Context
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +40,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.mozilla.fenix.utils.isLargeScreenSize
 
 /**
  * The baseline dimension primitives for size, space, and window size.
@@ -167,6 +170,12 @@ data class AcornSize(
      * Placeholder for detekt.
      */
     val circularIndicatorDiameter = xSmall
+
+    /**
+     * The maximum width that a container can take when it is the sole UI element on the screen.
+     * This will adapt a phone-centric design into a large screen viewport.
+     */
+    val containerMaxWidth = LayoutPrimitives.windowBreakpointSmallMax
 }
 
 /**
@@ -290,12 +299,71 @@ enum class AcornWindowSize(
 
     companion object {
         /**
-         * Returns the [AcornWindowSize] that corresponds to the current window width.
+         * Helper function for obtaining the window's [AcornWindowSize] within Compose.
+         *
+         * @return The [AcornWindowSize] that corresponds to the current window width.
          */
         @Composable
-        fun getWindowSize(): AcornWindowSize {
-            val configuration = LocalConfiguration.current
-            val width = configuration.screenWidthDp.dp
+        fun getWindowSize(): AcornWindowSize = getWindowSizeToken(
+            configuration = LocalConfiguration.current,
+            measureUsingAllScreenEdges = false,
+        )
+
+        /**
+         * Helper function for obtaining the window's [AcornWindowSize] via a [Context].
+         *
+         * @param context [Context] used to obtain the current [Configuration].
+         * @return The [AcornWindowSize] that corresponds to the current window width.
+         */
+        fun getWindowSize(context: Context): AcornWindowSize = getWindowSizeToken(
+            configuration = context.resources.configuration,
+            measureUsingAllScreenEdges = false,
+        )
+
+        /**
+         * Helper function used to determine when the app's total *window* size is at least the
+         * size of a tablet. To determine whether the device's *physical* size is at least
+         * the size of a tablet, use [Context.isLargeScreenSize] instead.
+         *
+         * @return true if the app has a window size that is not [AcornWindowSize.Small].
+         */
+        @Composable
+        fun isLargeWindow(): Boolean = getWindowSizeToken(
+            configuration = LocalConfiguration.current,
+            measureUsingAllScreenEdges = true,
+        ).isNotSmall()
+
+        /**
+         * Helper function used to determine when the app's total *window* size is at least the
+         * size of a tablet. To determine whether the device's *physical* size is at least
+         * the size of a tablet, use [Context.isLargeScreenSize] instead.
+         *
+         * @param context [Context] used to obtain the current [Configuration].
+         * @return true if the app has a window size that is not [AcornWindowSize.Small].
+         */
+        fun isLargeWindow(context: Context): Boolean = getWindowSizeToken(
+            configuration = context.resources.configuration,
+            measureUsingAllScreenEdges = true,
+        ).isNotSmall()
+
+        /**
+         * Internal function for deriving the window's [AcornWindowSize].
+         *
+         * @param configuration [Configuration] used to obtain the window's screen width.
+         * @param measureUsingAllScreenEdges Whether to derive the [AcornWindowSize] by considering all screen edges.
+         * @return The [AcornWindowSize] calculated from the window's screen width. See [AcornWindowSize]
+         *  for possible values.
+         */
+        private fun getWindowSizeToken(
+            configuration: Configuration,
+            measureUsingAllScreenEdges: Boolean,
+        ): AcornWindowSize {
+            val width = if (measureUsingAllScreenEdges) {
+                configuration.smallestScreenWidthDp.dp
+            } else {
+                configuration.screenWidthDp.dp
+            }
+
             return when {
                 width < Small.windowWidthMax -> Small
                 width < Medium.windowWidthMax -> Medium

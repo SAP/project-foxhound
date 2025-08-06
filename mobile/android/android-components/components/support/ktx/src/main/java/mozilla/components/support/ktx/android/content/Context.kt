@@ -24,12 +24,16 @@ import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
+import android.os.Build.VERSION.SDK_INT
+import android.os.Build.VERSION_CODES
 import android.os.Process
 import android.provider.ContactsContract
+import android.util.TypedValue
 import android.view.accessibility.AccessibilityManager
 import androidx.annotation.AttrRes
 import androidx.annotation.ColorInt
 import androidx.annotation.DrawableRes
+import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
@@ -45,10 +49,10 @@ import java.io.File
 
 /**
  * The (visible) version name of the application, as specified by the <manifest> tag's versionName
- * attribute. E.g. "2.0".
+ * attribute. E.g. "2.0". Returns an empty string if versionName is null.
  */
 val Context.appVersionName: String
-    get() = packageManager.getPackageInfoCompat(packageName, 0).versionName
+    get() = packageManager.getPackageInfoCompat(packageName, 0).versionName ?: ""
 
 /**
  * Returns the name (label) of the application or the package name as a fallback.
@@ -333,6 +337,18 @@ fun Context.getColorFromAttr(@AttrRes attr: Int) =
     ContextCompat.getColor(this, theme.resolveAttribute(attr))
 
 /**
+ * Returns the color int corresponding to the Android statusBarColor attribute.
+ */
+@ColorInt
+fun Context.getStatusBarColor() =
+    if (isEdgeToEdgeDisabled()) {
+        @Suppress("DEPRECATION")
+        ContextCompat.getColor(this, theme.resolveAttribute(android.R.attr.statusBarColor))
+    } else {
+        null
+    }
+
+/**
  * Returns a tinted drawable for the given resource ID.
  * @param resId ID of the drawable to load.
  * @param tint Tint color int to apply to the drawable.
@@ -342,3 +358,30 @@ fun Context.getDrawableWithTint(@DrawableRes resId: Int, @ColorInt tint: Int) =
         mutate()
         setTint(tint)
     }
+
+/**
+ * Checks if the current theme has the `windowOptOutEdgeToEdgeEnforcement` attribute enabled.
+ *
+ * @return `true` if the `windowOptOutEdgeToEdgeEnforcement` attribute is set tu true, `false` otherwise.
+ */
+@RequiresApi(VERSION_CODES.VANILLA_ICE_CREAM)
+private fun Context.isEdgeToEdgeOptOutEnabled(): Boolean {
+    val typedValue = TypedValue()
+    val attribute = android.R.attr.windowOptOutEdgeToEdgeEnforcement
+
+    return if (theme.resolveAttribute(attribute, typedValue, true)) {
+        typedValue.data != 0
+    } else {
+        false
+    }
+}
+
+/**
+ * Checks if the edge-to-edge behaviour is disabled.
+ *
+ * @return `true` if the edge-to-edge behaviour is disabled.
+ */
+fun Context.isEdgeToEdgeDisabled(): Boolean =
+    SDK_INT < VERSION_CODES.VANILLA_ICE_CREAM ||
+        applicationInfo.targetSdkVersion < VERSION_CODES.VANILLA_ICE_CREAM ||
+        isEdgeToEdgeOptOutEnabled()

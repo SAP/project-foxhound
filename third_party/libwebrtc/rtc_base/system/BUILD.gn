@@ -8,8 +8,8 @@
 
 import("../../webrtc.gni")
 if (is_android) {
-  import("//build/config/android/config.gni")
-  import("//build/config/android/rules.gni")
+  import("//chromium/build/config/android/config.gni")
+  import("//chromium/build/config/android/rules.gni")
 }
 
 rtc_source_set("arch") {
@@ -29,10 +29,7 @@ rtc_library("file_wrapper") {
     "..:checks",
     "..:criticalsection",
     "..:safe_conversions",
-  ]
-  absl_deps = [
-    "//third_party/abseil-cpp/absl/strings",
-    "//third_party/abseil-cpp/absl/types:optional",
+    "//third_party/abseil-cpp/absl/strings:string_view",
   ]
 }
 

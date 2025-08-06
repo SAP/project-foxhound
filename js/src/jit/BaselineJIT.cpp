@@ -8,7 +8,6 @@
 
 #include "mozilla/BinarySearch.h"
 #include "mozilla/CheckedInt.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 
 #include <algorithm>
@@ -20,6 +19,8 @@
 #include "jit/BaselineCodeGen.h"
 #include "jit/BaselineIC.h"
 #include "jit/CalleeToken.h"
+#include "jit/Ion.h"
+#include "jit/IonOptimizationLevels.h"
 #include "jit/JitCommon.h"
 #include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
@@ -37,7 +38,6 @@
 
 using mozilla::BinarySearchIf;
 using mozilla::CheckedInt;
-using mozilla::DebugOnly;
 
 using namespace js;
 using namespace js::jit;
@@ -131,7 +131,6 @@ static JitExecStatus EnterBaseline(JSContext* cx, EnterJitData& data) {
   data.result.setInt32(data.numActualArgs);
   {
     AssertRealmUnchanged aru(cx);
-    ActivationEntryMonitor entryMonitor(cx, data.calleeToken);
     JitActivation activation(cx);
 
     data.osrFrame->setRunningInJit();
@@ -218,17 +217,28 @@ MethodStatus jit::BaselineCompile(JSContext* cx, JSScript* script,
   TempAllocator temp(&cx->tempLifoAlloc());
   JitContext jctx(cx);
 
-  BaselineCompiler compiler(cx, temp, script);
+  GlobalLexicalEnvironmentObject* globalLexical =
+      &cx->global()->lexicalEnvironment();
+  JSObject* globalThis = globalLexical->thisObject();
+  uint32_t baseWarmUpThreshold =
+      OptimizationInfo::baseWarmUpThresholdForScript(cx, script);
+  BaselineCompiler compiler(cx, temp, script, globalLexical, globalThis,
+                            baseWarmUpThreshold);
   if (!compiler.init()) {
     ReportOutOfMemory(cx);
     return Method_Error;
+  }
+
+  bool ionCompileable = IsIonEnabled(cx) && CanIonCompileScript(cx, script);
+  if (!ionCompileable) {
+    compiler.setIonCompileable(false);
   }
 
   if (forceDebugInstrumentation) {
     compiler.setCompileDebugInstrumentation();
   }
 
-  MethodStatus status = compiler.compile();
+  MethodStatus status = compiler.compile(cx);
 
   MOZ_ASSERT_IF(status == Method_Compiled, script->hasBaselineScript());
   MOZ_ASSERT_IF(status != Method_Compiled, !script->hasBaselineScript());
@@ -762,8 +772,7 @@ jsbytecode* BaselineScript::approximatePcForNativeAddress(
   // Return the last entry's pc. Every BaselineScript has at least one
   // RetAddrEntry for the prologue stack overflow check.
   MOZ_ASSERT(!retAddrEntries().empty());
-  const RetAddrEntry& lastEntry = retAddrEntries()[retAddrEntries().size() - 1];
-  return script->offsetToPC(lastEntry.pcOffset());
+  return script->offsetToPC(retAddrEntries().crbegin()->pcOffset());
 }
 
 void BaselineScript::toggleDebugTraps(JSScript* script, jsbytecode* pc) {
@@ -1000,7 +1009,7 @@ bool jit::GenerateBaselineInterpreter(JSContext* cx,
   if (IsBaselineInterpreterEnabled()) {
     TempAllocator temp(&cx->tempLifoAlloc());
     BaselineInterpreterGenerator generator(cx, temp);
-    return generator.generate(interpreter);
+    return generator.generate(cx, interpreter);
   }
 
   return true;

@@ -5,9 +5,17 @@ head = "head.js"
 
 ["test_basics_worker.js"]
 
+["test_databaseWorkStarted.js"]
+
 ["test_fileSystemDirectoryHandle.js"]
 
 ["test_fileSystemDirectoryHandle_worker.js"]
+
+["test_getDirectoryFailure.js"]
+
+["test_slowDatabaseInitialization.js"]
+
+["test_slowStorageInitialization.js"]
 
 ["test_syncAccessHandle_worker.js"]
 

@@ -63,6 +63,7 @@ js_source_path = [
     "../browser/components/migration/content",
     "../browser/components/uitour",
     "../browser/components/urlbar",
+    "../js/xpconnect/loader",
     "../remote/marionette",
     "../testing/mochitest/BrowserTestUtils",
     "../testing/mochitest/tests/SimpleTest/SimpleTest.js",
@@ -79,6 +80,7 @@ js_source_path = [
     "../toolkit/components/pictureinpicture",
     "../toolkit/components/pictureinpicture/content",
     "../toolkit/components/search",
+    "../toolkit/components/uniffi-bindgen-gecko-js/components/generated",
 ]
 root_for_relative_js_paths = ".."
 jsdoc_config_path = "jsdoc.json"

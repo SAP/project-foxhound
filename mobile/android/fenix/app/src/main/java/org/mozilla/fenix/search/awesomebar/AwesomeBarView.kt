@@ -69,7 +69,7 @@ class AwesomeBarView(
     private val searchSuggestionProviderMap: MutableMap<SearchEngine, List<AwesomeBar.SuggestionProvider>>
 
     private val loadUrlUseCase = object : SessionUseCases.LoadUrlUseCase {
-        override fun invoke(
+        override operator fun invoke(
             url: String,
             flags: EngineSession.LoadUrlFlags,
             additionalHeaders: Map<String, String>?,
@@ -341,14 +341,26 @@ class AwesomeBarView(
 
         if (state.showSponsoredSuggestions || state.showNonSponsoredSuggestions) {
             providersToAdd.add(
-                FxSuggestSuggestionProvider(
-                    resources = activity.resources,
-                    loadUrlUseCase = loadUrlUseCase,
-                    includeSponsoredSuggestions = state.showSponsoredSuggestions,
-                    includeNonSponsoredSuggestions = state.showNonSponsoredSuggestions,
-                    suggestionsHeader = activity.getString(R.string.firefox_suggest_header),
-                    contextId = activity.settings().contileContextId,
-                ),
+                if (activity.settings().boostAmpWikiSuggestions) {
+                    FxSuggestSuggestionProvider(
+                        resources = activity.resources,
+                        loadUrlUseCase = loadUrlUseCase,
+                        includeSponsoredSuggestions = state.showSponsoredSuggestions,
+                        includeNonSponsoredSuggestions = state.showNonSponsoredSuggestions,
+                        suggestionsHeader = activity.getString(R.string.firefox_suggest_header),
+                        contextId = activity.settings().contileContextId,
+                        scorer = FxSuggestionExperimentScorer(),
+                    )
+                } else {
+                    FxSuggestSuggestionProvider(
+                        resources = activity.resources,
+                        loadUrlUseCase = loadUrlUseCase,
+                        includeSponsoredSuggestions = state.showSponsoredSuggestions,
+                        includeNonSponsoredSuggestions = state.showNonSponsoredSuggestions,
+                        suggestionsHeader = activity.getString(R.string.firefox_suggest_header),
+                        contextId = activity.settings().contileContextId,
+                    )
+                },
             )
         }
 

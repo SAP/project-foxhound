@@ -10,6 +10,10 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.storage.LoginsStorage
 import org.mozilla.fenix.R
+import org.mozilla.fenix.debugsettings.cfrs.CfrToolsState
+import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
+import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsStore
+import org.mozilla.fenix.debugsettings.gleandebugtools.ui.GleanDebugToolsScreen
 import org.mozilla.fenix.debugsettings.logins.LoginsTools
 import org.mozilla.fenix.debugsettings.store.DebugDrawerAction
 import org.mozilla.fenix.debugsettings.store.DebugDrawerStore
@@ -39,6 +43,10 @@ enum class DebugDrawerRoute(val route: String, @StringRes val title: Int) {
         route = "cfr_tools",
         title = R.string.debug_drawer_cfr_tools_title,
     ),
+    GleanDebugTools(
+        route = "glean_debug_tools",
+        title = R.string.glean_debug_tools_title,
+    ),
     ;
 
     companion object {
@@ -47,16 +55,20 @@ enum class DebugDrawerRoute(val route: String, @StringRes val title: Int) {
          *
          * @param debugDrawerStore [DebugDrawerStore] used to dispatch navigation actions.
          * @param browserStore [BrowserStore] used to access [BrowserState].
+         * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
+         * @param gleanDebugToolsStore [GleanDebugToolsStore] used to dispatch glean debug tools actions.
          * @param loginsStorage [LoginsStorage] used to access logins for [LoginsScreen].
          * @param inactiveTabsEnabled Whether the inactive tabs feature is enabled.
          */
         fun generateDebugDrawerDestinations(
             debugDrawerStore: DebugDrawerStore,
             browserStore: BrowserStore,
+            cfrToolsStore: CfrToolsStore,
+            gleanDebugToolsStore: GleanDebugToolsStore,
             loginsStorage: LoginsStorage,
             inactiveTabsEnabled: Boolean,
         ): List<DebugDrawerDestination> =
-            DebugDrawerRoute.values().map { debugDrawerRoute ->
+            entries.map { debugDrawerRoute ->
                 val onClick: () -> Unit
                 val content: @Composable () -> Unit
                 when (debugDrawerRoute) {
@@ -89,7 +101,16 @@ enum class DebugDrawerRoute(val route: String, @StringRes val title: Int) {
                             debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.CfrTools)
                         }
                         content = {
-                            CfrToolsScreen()
+                            CfrToolsScreen(cfrToolsStore = cfrToolsStore)
+                        }
+                    }
+
+                    GleanDebugTools -> {
+                        onClick = {
+                            debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.GleanDebugTools)
+                        }
+                        content = {
+                            GleanDebugToolsScreen(gleanDebugToolsStore = gleanDebugToolsStore)
                         }
                     }
                 }

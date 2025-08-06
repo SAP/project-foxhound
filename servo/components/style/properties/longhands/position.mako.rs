@@ -3,17 +3,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
-<% from data import ALL_SIZES, PHYSICAL_SIDES, LOGICAL_SIDES %>
+<% from data import ALL_SIZES, PHYSICAL_SIDES, LOGICAL_SIDES, DEFAULT_RULES_AND_POSITION_TRY %>
 
 // "top" / "left" / "bottom" / "right"
-% for side in PHYSICAL_SIDES:
+% for index, side in enumerate(PHYSICAL_SIDES):
     ${helpers.predefined_type(
         side,
-        "LengthPercentageOrAuto",
-        "computed::LengthPercentageOrAuto::auto()",
+        "Inset",
+        "computed::Inset::auto()",
         engines="gecko servo",
         spec="https://www.w3.org/TR/CSS2/visuren.html#propdef-%s" % side,
         allow_quirks="Yes",
+        rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
+        gecko_ffi_name="mOffset.{}".format(index),
         servo_restyle_damage="reflow_out_of_flow",
         logical_group="inset",
         affects="layout",
@@ -23,10 +25,11 @@
 % for side in LOGICAL_SIDES:
     ${helpers.predefined_type(
         "inset-%s" % side,
-        "LengthPercentageOrAuto",
-        "computed::LengthPercentageOrAuto::auto()",
+        "Inset",
+        "computed::Inset::auto()",
         engines="gecko servo",
         spec="https://drafts.csswg.org/css-logical-props/#propdef-inset-%s" % side,
+        rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
         logical=True,
         logical_group="inset",
         affects="layout",
@@ -151,6 +154,7 @@ ${helpers.predefined_type(
     spec="https://drafts.csswg.org/css-align/#align-self-property",
     extra_prefixes="webkit",
     animation_type="discrete",
+    rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
     affects="layout",
 )}
 ${helpers.predefined_type(
@@ -160,6 +164,7 @@ ${helpers.predefined_type(
     engines="gecko servo",
     spec="https://drafts.csswg.org/css-align/#justify-self-property",
     animation_type="discrete",
+    rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
     affects="layout",
 )}
 
@@ -205,6 +210,7 @@ ${helpers.predefined_type(
         logical_group="size",
         allow_quirks="No" if logical else "Yes",
         spec=spec % size,
+        rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
         servo_restyle_damage="reflow",
         affects="layout",
     )}
@@ -218,6 +224,7 @@ ${helpers.predefined_type(
         logical_group="min-size",
         allow_quirks="No" if logical else "Yes",
         spec=spec % size,
+        rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
         servo_restyle_damage="reflow",
         affects="layout",
     )}
@@ -230,6 +237,7 @@ ${helpers.predefined_type(
         logical_group="max-size",
         allow_quirks="No" if logical else "Yes",
         spec=spec % size,
+        rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
         servo_restyle_damage="reflow",
         affects="layout",
     )}
@@ -241,8 +249,22 @@ ${helpers.predefined_type(
     "computed::PositionAnchor::auto()",
     engines="gecko",
     animation_type="discrete",
+    rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
     gecko_pref="layout.css.anchor-positioning.enabled",
     spec="https://drafts.csswg.org/css-anchor-position-1/#propdef-position-anchor",
+    affects="layout",
+)}
+
+${helpers.predefined_type(
+    "position-area",
+    "PositionArea",
+    "computed::PositionArea::none()",
+    engines="gecko",
+    initial_specified_value="specified::PositionArea::none()",
+    animation_type="discrete",
+    rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
+    gecko_pref="layout.css.anchor-positioning.enabled",
+    spec="https://drafts.csswg.org/css-anchor-position-1/#typedef-position-area",
     affects="layout",
 )}
 
@@ -255,18 +277,6 @@ ${helpers.predefined_type(
     animation_type="discrete",
     gecko_pref="layout.css.anchor-positioning.enabled",
     spec="https://drafts.csswg.org/css-anchor-position-1/#propdef-position-visibility",
-    affects="layout",
-)}
-
-${helpers.predefined_type(
-    "inset-area",
-    "InsetArea",
-    "computed::InsetArea::none()",
-    engines="gecko",
-    initial_specified_value="specified::InsetArea::none()",
-    animation_type="discrete",
-    gecko_pref="layout.css.anchor-positioning.enabled",
-    spec="https://drafts.csswg.org/css-anchor-position-1/#typedef-inset-area",
     affects="layout",
 )}
 
@@ -310,7 +320,7 @@ ${helpers.single_keyword(
 ${helpers.single_keyword(
     "object-fit",
     "fill contain cover none scale-down",
-    engines="gecko",
+    engines="gecko servo",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-images/#propdef-object-fit",
     gecko_enum_prefix = "StyleObjectFit",
@@ -321,7 +331,7 @@ ${helpers.predefined_type(
     "object-position",
     "Position",
     "computed::Position::center()",
-    engines="gecko",
+    engines="gecko servo",
     boxed=True,
     spec="https://drafts.csswg.org/css-images-3/#the-object-position",
     affects="layout",

@@ -34,6 +34,7 @@
 #include "mozilla/MacroForEach.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Services.h"
 #include "mozilla/Sprintf.h"
@@ -48,6 +49,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/dom/MediaDeviceInfoBinding.h"
 #include "mozilla/fallible.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
@@ -111,7 +113,7 @@ static mozilla::LazyLogModule gTimestamps("Timestamps");
 #define RFP_TIMER_UNCONDITIONAL_VALUE 20
 #define LAST_PB_SESSION_EXITED_TOPIC "last-pb-context-exited"
 #define IDLE_TOPIC "browser-idle-startup-tasks-finished"
-#define GFX_FEATURES "gfx-features-ready"
+#define COMPOSITOR_CREATED "compositor:created"
 #define USER_CHARACTERISTICS_TEST_REQUEST \
   "user-characteristics-testing-please-populate-data"
 
@@ -202,7 +204,7 @@ nsresult nsRFPService::Init() {
     rv = obs->AddObserver(this, IDLE_TOPIC, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = obs->AddObserver(this, GFX_FEATURES, false);
+    rv = obs->AddObserver(this, COMPOSITOR_CREATED, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = obs->AddObserver(this, USER_CHARACTERISTICS_TEST_REQUEST, false);
@@ -237,6 +239,12 @@ bool nsRFPService::IsRFPEnabledFor(
     bool aIsPrivateMode, RFPTarget aTarget,
     const Maybe<RFPTarget>& aOverriddenFingerprintingSettings) {
   MOZ_ASSERT(aTarget != RFPTarget::AllTargets);
+
+#if SPOOFED_MAX_TOUCH_POINTS > 0
+  if (aTarget == RFPTarget::PointerId) {
+    return false;
+  }
+#endif
 
   if (StaticPrefs::privacy_resistFingerprinting_DoNotUseDirectly() ||
       (aIsPrivateMode &&
@@ -305,7 +313,7 @@ void nsRFPService::StartShutdown() {
       obs->RemoveObserver(this, LAST_PB_SESSION_EXITED_TOPIC);
       obs->RemoveObserver(this, OBSERVER_TOPIC_IDLE_DAILY);
       obs->RemoveObserver(this, IDLE_TOPIC);
-      obs->RemoveObserver(this, GFX_FEATURES);
+      obs->RemoveObserver(this, COMPOSITOR_CREATED);
       obs->RemoveObserver(this, USER_CHARACTERISTICS_TEST_REQUEST);
     }
   }
@@ -360,7 +368,7 @@ nsRFPService::Observe(nsISupports* aObject, const char* aTopic,
     ClearBrowsingSessionKey(pattern);
   }
 
-  if (!strcmp(IDLE_TOPIC, aTopic) || !strcmp(GFX_FEATURES, aTopic)) {
+  if (!strcmp(IDLE_TOPIC, aTopic) || !strcmp(COMPOSITOR_CREATED, aTopic)) {
     seenTopicsForUserCharacteristics++;
 
     if (seenTopicsForUserCharacteristics == kNumTopicsForUserCharacteristics) {
@@ -906,12 +914,11 @@ void nsRFPService::GetSpoofedUserAgent(nsACString& userAgent,
 
   // These magic numbers are the lengths of the UA string literals below.
   // Assume three-digit Firefox version numbers so we have room to grow.
-  size_t preallocatedLength =
-      13 +
-      (isForHTTPHeader ? mozilla::ArrayLength(SPOOFED_HTTP_UA_OS)
-                       : mozilla::ArrayLength(SPOOFED_UA_OS)) -
-      1 + 5 + 3 + 10 + mozilla::ArrayLength(LEGACY_UA_GECKO_TRAIL) - 1 + 9 + 3 +
-      2;
+  size_t preallocatedLength = 13 +
+                              (isForHTTPHeader ? std::size(SPOOFED_HTTP_UA_OS)
+                                               : std::size(SPOOFED_UA_OS)) -
+                              1 + 5 + 3 + 10 +
+                              std::size(LEGACY_UA_GECKO_TRAIL) - 1 + 9 + 3 + 2;
   userAgent.SetCapacity(preallocatedLength);
 
   // "Mozilla/5.0 (%s; rv:%d.0) Gecko/%d Firefox/%d.0"
@@ -1348,6 +1355,55 @@ Maybe<nsTArray<uint8_t>> nsRFPService::GenerateKey(nsIChannel* aChannel) {
   return key;
 }
 
+// static
+Maybe<nsTArray<uint8_t>> nsRFPService::GenerateKeyForServiceWorker(
+    nsIURI* aFirstPartyURI, nsIPrincipal* aPrincipal,
+    bool aForeignByAncestorContext) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(aFirstPartyURI);
+
+  RefPtr<nsRFPService> service = GetOrCreate();
+
+  OriginAttributes attrs = aPrincipal->OriginAttributesRef();
+  attrs.SetPartitionKey(aFirstPartyURI, aForeignByAncestorContext);
+
+  nsID sessionKey = {};
+  if (NS_FAILED(service->GetBrowsingSessionKey(attrs, sessionKey))) {
+    return Nothing();
+  }
+  auto sessionKeyStr = sessionKey.ToString();
+
+  // Generate the key by using the hMAC. The key is based on the session key and
+  // the partitionKey, i.e. top-level site.
+  HMAC hmac;
+
+  nsresult rv = hmac.Begin(
+      SEC_OID_SHA256,
+      Span(reinterpret_cast<const uint8_t*>(sessionKeyStr.get()), NSID_LENGTH));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return Nothing();
+  }
+
+  // Using the OriginAttributes to get the top level site. The site is composed
+  // of scheme, host, and port.
+  NS_ConvertUTF16toUTF8 topLevelSite(attrs.mPartitionKey);
+  rv = hmac.Update(reinterpret_cast<const uint8_t*>(topLevelSite.get()),
+                   topLevelSite.Length());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return Nothing();
+  }
+
+  Maybe<nsTArray<uint8_t>> key;
+  key.emplace();
+
+  rv = hmac.End(key.ref());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return Nothing();
+  }
+
+  return key;
+}
+
 NS_IMETHODIMP
 nsRFPService::CleanAllRandomKeys() {
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -1376,51 +1432,26 @@ nsRFPService::CleanRandomKeyByPrincipal(nsIPrincipal* aPrincipal) {
 }
 
 NS_IMETHODIMP
-nsRFPService::CleanRandomKeyByDomain(const nsACString& aDomain) {
+nsRFPService::CleanRandomKeyBySite(
+    const nsACString& aSchemelessSite,
+    JS::Handle<JS::Value> aOriginAttributesPattern, JSContext* aCx) {
   MOZ_ASSERT(XRE_IsParentProcess());
+  NS_ENSURE_ARG_POINTER(aCx);
 
-  // Get http URI from the domain.
-  nsCOMPtr<nsIURI> httpURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(httpURI), "http://"_ns + aDomain);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Use the originAttributes to get the partitionKey.
-  OriginAttributes attrs;
-  attrs.SetPartitionKey(httpURI, false);
-
-  // Create a originAttributesPattern and set the http partitionKey to the
-  // pattern.
   OriginAttributesPattern pattern;
-  pattern.mPartitionKey.Reset();
-  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
+  if (!aOriginAttributesPattern.isObject() ||
+      !pattern.Init(aCx, aOriginAttributesPattern)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (!pattern.mPartitionKeyPattern.WasPassed()) {
+    pattern.mPartitionKeyPattern.Construct();
+  }
+  pattern.mPartitionKeyPattern.Value().mBaseDomain.Construct(
+      NS_ConvertUTF8toUTF16(aSchemelessSite));
+
   ClearBrowsingSessionKey(pattern);
 
-  // We must also include the cross-site embeds of this principal that end up
-  // re-embedded back into the same principal's top level, otherwise state will
-  // persist for this target
-  attrs.SetPartitionKey(httpURI, true);
-  pattern.mPartitionKey.Reset();
-  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
-  ClearBrowsingSessionKey(pattern);
-
-  // Get https URI from the domain.
-  nsCOMPtr<nsIURI> httpsURI;
-  rv = NS_NewURI(getter_AddRefs(httpsURI), "https://"_ns + aDomain);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Use the originAttributes to get the partitionKey and set to the pattern.
-  attrs.SetPartitionKey(httpsURI, false);
-  pattern.mPartitionKey.Reset();
-  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
-  ClearBrowsingSessionKey(pattern);
-
-  // We must also include the cross-site embeds of this principal that end up
-  // re-embedded back into the same principal's top level, otherwise state will
-  // persist for this target
-  attrs.SetPartitionKey(httpsURI, true);
-  pattern.mPartitionKey.Reset();
-  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
-  ClearBrowsingSessionKey(pattern);
   return NS_OK;
 }
 
@@ -1513,6 +1544,8 @@ nsresult nsRFPService::GenerateCanvasKeyFromImageData(
     nsICookieJarSettings* aCookieJarSettings, uint8_t* aImageData,
     uint32_t aSize, nsTArray<uint8_t>& aCanvasKey) {
   NS_ENSURE_ARG_POINTER(aCookieJarSettings);
+  AUTO_PROFILER_MARKER_TEXT("nsRFPService", OTHER, {},
+                            "nsRFPService::GenerateCanvasKeyFromImageData"_ns);
 
   nsTArray<uint8_t> randomKey;
   nsresult rv =
@@ -1525,19 +1558,50 @@ nsresult nsRFPService::GenerateCanvasKeyFromImageData(
     return NS_ERROR_FAILURE;
   }
 
-  // Generate the key for randomizing the canvas data using hMAC. The key is
-  // based on the random key of the document and the canvas data itself. So,
-  // different canvas would have different keys.
-  HMAC hmac;
+  if (StaticPrefs::
+          privacy_resistFingerprinting_randomization_canvas_use_siphash()) {
+    // Hash the canvas data to generate the image data hash.
+    mozilla::HashNumber imageHashData = mozilla::HashString(aImageData, aSize);
 
-  rv = hmac.Begin(SEC_OID_SHA256, Span(randomKey));
-  NS_ENSURE_SUCCESS(rv, rv);
+    // Then, we use the SipHash seeded by the first half of the random key to
+    // generate a hash result using the image hash data. Our sipHash is
+    // implemented in the mozilla::HashCodeScrambler.
+    uint64_t k0 = *reinterpret_cast<uint64_t*>(randomKey.Elements());
+    uint64_t k1 = *reinterpret_cast<uint64_t*>(randomKey.Elements() + 8);
+    mozilla::HashCodeScrambler hcs(k0, k1);
+    mozilla::HashNumber hashResult = hcs.scramble(imageHashData);
 
-  rv = hmac.Update(aImageData, aSize);
-  NS_ENSURE_SUCCESS(rv, rv);
+    aCanvasKey.SetLength(32);
+    aCanvasKey.ClearAndRetainStorage();
 
-  rv = hmac.End(aCanvasKey);
-  NS_ENSURE_SUCCESS(rv, rv);
+    // Finally, we use the hash result, image hash data, and the second half of
+    // the random key to generate the 256 bits canvas key.
+    uint64_t digest = static_cast<uint64_t>(hashResult) << 32 | imageHashData;
+    non_crypto::XorShift128PlusRNG rng(
+        digest, *reinterpret_cast<uint64_t*>(randomKey.Elements() + 16));
+
+    for (size_t i = 0; i < 4; ++i) {
+      uint64_t val = rng.next();
+      for (size_t j = 0; j < 8; ++j) {
+        uint8_t data = static_cast<uint8_t>((val >> (j * 8)) & 0xFF);
+        aCanvasKey.InsertElementAt((i * 8) + j, data);
+      }
+    }
+  } else {
+    // Generate the key for randomizing the canvas data using hMAC. The key is
+    // based on the random key of the document and the canvas data itself. So,
+    // different canvas would have different keys.
+    HMAC hmac;
+
+    rv = hmac.Begin(SEC_OID_SHA256, Span(randomKey));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = hmac.Update(aImageData, aSize);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = hmac.End(aCanvasKey);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return NS_OK;
 }
@@ -1700,7 +1764,7 @@ static void MaybeCurrentCaller(nsACString& aFilename, uint32_t& aLineNum,
 
   JS::AutoFilename scriptFilename;
   JS::ColumnNumberOneOrigin columnNum;
-  if (JS::DescribeScriptedCaller(cx, &scriptFilename, &aLineNum, &columnNum)) {
+  if (JS::DescribeScriptedCaller(&scriptFilename, cx, &aLineNum, &columnNum)) {
     if (const char* file = scriptFilename.get()) {
       aFilename = nsDependentCString(file);
     }
@@ -1886,6 +1950,22 @@ bool nsRFPService::CheckSuspiciousFingerprintingActivity(
   // If the number of suspicious fingerprinting activity exceeds the threshold,
   // we return true to indicates there is a suspicious fingerprinting activity.
   return cnt > kSuspiciousFingerprintingActivityThreshold;
+}
+
+/* static */
+bool nsRFPService::IsSystemPrincipalOrAboutFingerprintingProtection(
+    JSContext* aCx, JSObject* aObj) {
+  if (!NS_IsMainThread()) {
+    return false;
+  }
+
+  nsIPrincipal* principal = nsContentUtils::SubjectPrincipal(aCx);
+  if (principal->IsSystemPrincipal()) {
+    return true;
+  }
+
+  return principal->Equals(
+      nsContentUtils::GetFingerprintingProtectionPrincipal());
 }
 
 /* static */
@@ -2278,4 +2358,79 @@ Maybe<RFPTarget> nsRFPService::GetOverriddenFingerprintingSettingsForURI(
   }
 
   return result;
+}
+
+/* static */
+void nsRFPService::GetMediaDeviceName(nsString& aName,
+                                      dom::MediaDeviceKind aKind) {
+  switch (aKind) {
+    case dom::MediaDeviceKind::Audioinput:
+      aName.Assign(u"Internal Microphone"_ns);
+      break;
+    case dom::MediaDeviceKind::Videoinput:
+      aName = u"Internal Camera"_ns;
+      break;
+    case dom::MediaDeviceKind::Audiooutput:
+      aName = u"Internal Speaker"_ns;
+      break;
+  }
+}
+
+/* static */
+void nsRFPService::GetMediaDeviceGroup(nsString& aGroup,
+                                       dom::MediaDeviceKind aKind) {
+  switch (aKind) {
+    case dom::MediaDeviceKind::Audioinput:
+      aGroup.Assign(u"Audio Device Group"_ns);
+      break;
+    case dom::MediaDeviceKind::Videoinput:
+      aGroup = u"Video Device Group"_ns;
+      break;
+    case dom::MediaDeviceKind::Audiooutput:
+      aGroup = u"Speaker Device Group"_ns;
+      break;
+  }
+}
+
+/* static */
+uint16_t nsRFPService::ViewportSizeToAngle(int32_t aWidth, int32_t aHeight) {
+  // Note that, if screen is square, we return portrait-primary.
+  // That's why we use > on non-android and >= on Android.
+#ifdef MOZ_WIDGET_ANDROID
+  bool neutral = aHeight >= aWidth;
+#else
+  bool neutral = aWidth > aHeight;
+#endif
+  if (neutral) {
+    return 0;
+  }
+  return 90;
+}
+
+/* static */
+dom::OrientationType nsRFPService::ViewportSizeToOrientationType(
+    int32_t aWidth, int32_t aHeight) {
+  if (aWidth > aHeight) {
+    return dom::OrientationType::Landscape_primary;
+  }
+  return dom::OrientationType::Portrait_primary;
+}
+
+/* static */
+dom::OrientationType nsRFPService::GetDefaultOrientationType() {
+#ifdef MOZ_WIDGET_ANDROID
+  return dom::OrientationType::Portrait_primary;
+#else
+  return dom::OrientationType::Landscape_primary;
+#endif
+}
+
+/* static */
+float nsRFPService::GetDefaultPixelDensity() { return 2.0f; }
+
+/* static */
+double nsRFPService::GetDevicePixelRatioAtZoom(float aZoom) {
+  return double(AppUnitsPerCSSPixel()) /
+         double(NSToIntRound(AppUnitsPerCSSPixel() / GetDefaultPixelDensity() /
+                             aZoom));
 }

@@ -129,6 +129,11 @@ test-verify:
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
                     - linux64-hostutils
+        fetch:
+            - ort.wasm
+            - ort-training.wasm
+            - ort.jsep.wasm
+
     worker-type:
         by-test-platform:
             .*wayland.*: t-linux-wayland-vm

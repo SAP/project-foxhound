@@ -151,6 +151,17 @@ ffi::WGPURecordedRenderPass* BeginRenderPass(
     }
   }
 
+  if (aDesc.mOcclusionQuerySet.WasPassed()) {
+    desc.occlusion_query_set = aDesc.mOcclusionQuerySet.Value().mId;
+  }
+
+  ffi::WGPUPassTimestampWrites passTimestampWrites = {};
+  if (aDesc.mTimestampWrites.WasPassed()) {
+    AssignPassTimestampWrites(aDesc.mTimestampWrites.Value(),
+                              passTimestampWrites);
+    desc.timestamp_writes = &passTimestampWrites;
+  }
+
   return ffi::wgpu_command_encoder_begin_render_pass(&desc);
 }
 
@@ -174,21 +185,29 @@ RenderPassEncoder::RenderPassEncoder(CommandEncoder* const aParent,
 RenderPassEncoder::~RenderPassEncoder() { Cleanup(); }
 
 void RenderPassEncoder::Cleanup() {
-  if (mValid) {
-    End();
-  }
+  mValid = false;
+  mPass.release();
+  mUsedBindGroups.Clear();
+  mUsedBuffers.Clear();
+  mUsedPipelines.Clear();
+  mUsedTextureViews.Clear();
+  mUsedRenderBundles.Clear();
 }
 
 void RenderPassEncoder::SetBindGroup(
-    uint32_t aSlot, const BindGroup& aBindGroup,
+    uint32_t aSlot, BindGroup* const aBindGroup,
     const dom::Sequence<uint32_t>& aDynamicOffsets) {
   if (!mValid) {
     return;
   }
-  mUsedBindGroups.AppendElement(&aBindGroup);
-  ffi::wgpu_recorded_render_pass_set_bind_group(
-      mPass.get(), aSlot, aBindGroup.mId, aDynamicOffsets.Elements(),
-      aDynamicOffsets.Length());
+  RawId bindGroup = 0;
+  if (aBindGroup) {
+    mUsedBindGroups.AppendElement(aBindGroup);
+    bindGroup = aBindGroup->mId;
+  }
+  ffi::wgpu_recorded_render_pass_set_bind_group(mPass.get(), aSlot, bindGroup,
+                                                aDynamicOffsets.Elements(),
+                                                aDynamicOffsets.Length());
 }
 
 void RenderPassEncoder::SetPipeline(const RenderPipeline& aPipeline) {
@@ -296,6 +315,21 @@ void RenderPassEncoder::SetStencilReference(uint32_t reference) {
   ffi::wgpu_recorded_render_pass_set_stencil_reference(mPass.get(), reference);
 }
 
+void RenderPassEncoder::BeginOcclusionQuery(uint32_t aQueryIndex) {
+  if (!mValid) {
+    return;
+  }
+  ffi::wgpu_recorded_render_pass_begin_occlusion_query(mPass.get(),
+                                                       aQueryIndex);
+}
+
+void RenderPassEncoder::EndOcclusionQuery() {
+  if (!mValid) {
+    return;
+  }
+  ffi::wgpu_recorded_render_pass_end_occlusion_query(mPass.get());
+}
+
 void RenderPassEncoder::ExecuteBundles(
     const dom::Sequence<OwningNonNull<RenderBundle>>& aBundles) {
   if (!mValid) {
@@ -333,12 +367,12 @@ void RenderPassEncoder::InsertDebugMarker(const nsAString& aString) {
 }
 
 void RenderPassEncoder::End() {
-  if (mValid) {
-    mValid = false;
-    auto* pass = mPass.release();
-    MOZ_ASSERT(pass);
-    mParent->EndRenderPass(*pass);
+  if (!mValid) {
+    return;
   }
+  MOZ_ASSERT(!!mPass);
+  mParent->EndRenderPass(*mPass);
+  Cleanup();
 }
 
 }  // namespace mozilla::webgpu

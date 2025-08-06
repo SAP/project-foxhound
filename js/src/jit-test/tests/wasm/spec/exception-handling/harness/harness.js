@@ -138,10 +138,6 @@ class ExternRefResult {
 // ref.host values created by spectests will be whatever the JS API does to
 // convert the given value to anyref. It should implicitly be like any.convert_extern.
 function hostref(v) {
-  if (!wasmGcEnabled()) {
-    throw new Error("ref.host only works when wasm GC is enabled");
-  }
-
   const { internalizeNum } = new WebAssembly.Instance(
     new WebAssembly.Module(wasmTextToBinary(`(module
       (func (import "test" "coerce") (param i32) (result anyref))
@@ -197,16 +193,10 @@ let linkage = {
   spectest,
 };
 
-function getInstance(instanceish) {
-  if (typeof instanceish === "string") {
-    assertEq(
-      instanceish in linkage,
-      true,
-      `'${instanceish}'' must be registered`,
-    );
-    return linkage[instanceish];
-  }
-  return instanceish;
+function module(source) {
+  let bytecode = wasmTextToBinary(source);
+  let module = new WebAssembly.Module(bytecode);
+  return module;
 }
 
 function instantiate(source) {
@@ -216,18 +206,23 @@ function instantiate(source) {
   return instance.exports;
 }
 
-function register(instanceish, name) {
-  linkage[name] = getInstance(instanceish);
+function instantiateFromModule(module) {
+  let instance = new WebAssembly.Instance(module, linkage);
+  return instance.exports;
 }
 
-function invoke(instanceish, field, params) {
-  let func = getInstance(instanceish)[field];
+function register(instance, name) {
+  linkage[name] = instance;
+}
+
+function invoke(instance, field, params) {
+  let func = instance[field];
   assertEq(func instanceof Function, true, "expected a function");
   return wasmLosslessInvoke(func, ...params);
 }
 
-function get(instanceish, field) {
-  let global = getInstance(instanceish)[field];
+function get(instance, field) {
+  let global = instance[field];
   assertEq(
     global instanceof WebAssembly.Global,
     true,
@@ -239,7 +234,7 @@ function get(instanceish, field) {
 function assert_trap(thunk, message) {
   try {
     thunk();
-    throw new Error(`expected trap but got no error (${message})`);
+    throw new Error(`got no error`);
   } catch (err) {
     if (err instanceof WebAssembly.RuntimeError) {
       return;
@@ -260,7 +255,7 @@ try {
 function assert_exhaustion(thunk, message) {
   try {
     thunk();
-    throw new Error(`expected exhaustion but got no error (${message})`);
+    throw new Error(`got no error`);
   } catch (err) {
     if (err instanceof StackOverflow) {
       return;
@@ -273,7 +268,7 @@ function assert_exhaustion(thunk, message) {
 function assert_invalid(thunk, message) {
   try {
     thunk();
-    throw new Error(`expected invalid module but got no error (${message})`);
+    throw new Error(`got no error`);
   } catch (err) {
     if (err instanceof WebAssembly.LinkError || err instanceof WebAssembly.CompileError) {
       return;
@@ -286,7 +281,7 @@ function assert_invalid(thunk, message) {
 function assert_unlinkable(thunk, message) {
   try {
     thunk();
-    throw new Error(`expected an unlinkable module (${message})`);
+    throw new Error(`got no error`);
   } catch (err) {
     if (err instanceof WebAssembly.LinkError || err instanceof WebAssembly.CompileError) {
       return;
@@ -299,7 +294,7 @@ function assert_unlinkable(thunk, message) {
 function assert_malformed(thunk, message) {
   try {
     thunk();
-    throw new Error(`expected a malformed module (${message})`);
+    throw new Error(`got no error`);
   } catch (err) {
     if (
       err instanceof TypeError ||

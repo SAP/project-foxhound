@@ -103,6 +103,7 @@ class MutationObservers;
 template <typename T>
 class Optional;
 class OwningNodeOrString;
+class SelectionNodeCache;
 template <typename>
 class Sequence;
 class ShadowRoot;
@@ -1654,8 +1655,26 @@ class nsINode : public mozilla::dom::EventTarget {
    * for that nsRange.  Collapsed ranges always counts as non-overlapping.
    *
    * @param aStartOffset has to be less or equal to aEndOffset.
+   * @param aCache A cache which contains all fully selected nodes for each
+   *               selection. If present, this provides a fast path to check if
+   *               a node is fully selected.
    */
-  bool IsSelected(uint32_t aStartOffset, uint32_t aEndOffset) const;
+  bool IsSelected(uint32_t aStartOffset, uint32_t aEndOffset,
+                  mozilla::dom::SelectionNodeCache* aCache = nullptr) const;
+
+#ifdef DEBUG
+  void AssertIsRootElementSlow(bool) const;
+#endif
+
+  /** Returns whether we're the root element of our document. */
+  bool IsRootElement() const {
+    // This should be faster than pointer-chasing in the common cases.
+    const bool isRoot = !GetParent() && IsInUncomposedDoc() && IsElement();
+#ifdef DEBUG
+    AssertIsRootElementSlow(isRoot);
+#endif
+    return isRoot;
+  }
 
   /**
    * Get the root element of the text editor associated with this node or the
@@ -1931,6 +1950,9 @@ class nsINode : public mozilla::dom::EventTarget {
     ElementHasPart,
     // Set if the element might have a contenteditable attribute set.
     ElementMayHaveContentEditableAttr,
+    // Set if the element has a contenteditable attribute whose value makes the
+    // element editable.
+    ElementHasContentEditableAttrTrueOrPlainTextOnly,
     // Set if the node is the closest common inclusive ancestor of the start/end
     // nodes of a Range that is in a Selection.
     NodeIsClosestCommonInclusiveAncestorForRangeInSelection,
@@ -2027,6 +2049,14 @@ class nsINode : public mozilla::dom::EventTarget {
   bool HasPartAttribute() const { return GetBoolFlag(ElementHasPart); }
   bool MayHaveContentEditableAttr() const {
     return GetBoolFlag(ElementMayHaveContentEditableAttr);
+  }
+  /**
+   * HasContentEditableAttrTrueOrPlainTextOnly() should not be called between
+   * nsGenericHTMLElement::BeforeSetAttr and nsGenericHTMLElement::AfterSetAttr
+   * because this is set and cleared by nsGenericHTMLElement::AfterSetAttr.
+   */
+  bool HasContentEditableAttrTrueOrPlainTextOnly() const {
+    return GetBoolFlag(ElementHasContentEditableAttrTrueOrPlainTextOnly);
   }
   /**
    * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor
@@ -2157,6 +2187,15 @@ class nsINode : public mozilla::dom::EventTarget {
   void SetHasPartAttribute(bool aPart) { SetBoolFlag(ElementHasPart, aPart); }
   void SetMayHaveContentEditableAttr() {
     SetBoolFlag(ElementMayHaveContentEditableAttr);
+  }
+  void ClearMayHaveContentEditableAttr() {
+    ClearBoolFlag(ElementMayHaveContentEditableAttr);
+  }
+  void SetHasContentEditableAttrTrueOrPlainTextOnly() {
+    SetBoolFlag(ElementHasContentEditableAttrTrueOrPlainTextOnly);
+  }
+  void ClearHasContentEditableAttrTrueOrPlainTextOnly() {
+    ClearBoolFlag(ElementHasContentEditableAttrTrueOrPlainTextOnly);
   }
   void SetHasLockedStyleStates() { SetBoolFlag(ElementHasLockedStyleStates); }
   void ClearHasLockedStyleStates() {

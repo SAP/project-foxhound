@@ -284,6 +284,7 @@ public class GeckoSession {
   private float mViewportLeft;
   private float mViewportTop;
   private float mViewportZoom = 1.0f;
+  private int mKeyboardHeight = 0; // The software keyboard height, 0 if it's hidden.
 
   //
   // NOTE: These values are also defined in
@@ -409,6 +410,9 @@ public class GeckoSession {
 
     @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
     public native void onSafeAreaInsetsChanged(int top, int right, int bottom, int left);
+
+    @WrapForJNI(calledFrom = "ui", dispatchTo = "gecko")
+    public native void onKeyboardHeightChanged(int height);
 
     @WrapForJNI(calledFrom = "ui")
     public void setPointerIcon(
@@ -2638,6 +2642,10 @@ public class GeckoSession {
     } else {
       // Delete any pending memory pressure events since we're active again.
       ThreadUtils.removeUiThreadCallbacks(mNotifyMemoryPressure);
+
+      if (mAttachedCompositor) {
+        mCompositor.onKeyboardHeightChanged(mKeyboardHeight);
+      }
     }
 
     ThreadUtils.runOnUiThread(() -> getAutofillSupport().onActiveChanged(active));
@@ -3141,6 +3149,24 @@ public class GeckoSession {
     final GeckoBundle bundle = new GeckoBundle(1);
     bundle.putString("url", url);
     return mEventDispatcher.queryString("GeckoView:ReportBackInStock", bundle);
+  }
+
+  /**
+   * Get the web compatibility info when a site is reported as broken.
+   *
+   * @return a {@link GeckoResult} containing the WebCompatInfo as a JSONObject.
+   */
+  @AnyThread
+  public @NonNull GeckoResult<JSONObject> getWebCompatInfo() {
+    return mEventDispatcher
+        .queryString("GeckoView:GetWebCompatInfo")
+        .map(
+            value -> {
+              if (value == null) {
+                throw new IllegalStateException("Unable to get web compat info");
+              }
+              return new JSONObject(value);
+            });
   }
 
   // This is the GeckoDisplay acquired via acquireDisplay(), if any.
@@ -4293,18 +4319,6 @@ public class GeckoSession {
     @UiThread
     default void onMetaViewportFitChange(
         @NonNull final GeckoSession session, @NonNull final String viewportFit) {}
-
-    /**
-     * This method is scheduled for deprecation, see Bug 1898055 for details.
-     *
-     * <p>Session is on a product url.
-     *
-     * @param session The GeckoSession that initiated the callback.
-     */
-    @Deprecated
-    @DeprecationSchedule(id = "session-onProductUrl", version = 131)
-    @UiThread
-    default void onProductUrl(@NonNull final GeckoSession session) {}
 
     /** Element details for onContextMenu callbacks. */
     class ContextElement {
@@ -7893,6 +7907,20 @@ public class GeckoSession {
 
     if (mAttachedCompositor) {
       mCompositor.onSafeAreaInsetsChanged(top, right, bottom, left);
+    }
+  }
+
+  /* package */ void onKeyboardHeight(final int height) {
+    ThreadUtils.assertOnUiThread();
+
+    if (mKeyboardHeight == height) {
+      return;
+    }
+
+    mKeyboardHeight = height;
+
+    if (mAttachedCompositor) {
+      mCompositor.onKeyboardHeightChanged(mKeyboardHeight);
     }
   }
 

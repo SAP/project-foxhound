@@ -10,6 +10,9 @@
 #include <poll.h>
 #include <unistd.h>
 #include <linux/rtnetlink.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "nsThreadUtils.h"
 #include "NetlinkService.h"
@@ -26,6 +29,7 @@
 #include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/ScopeExit.h"
 
 #if defined(HAVE_RES_NINIT)
 #  include <netinet/in.h>
@@ -73,6 +77,11 @@ static void GetAddrStr(const in_common_addr* aAddr, uint8_t aFamily,
   }
   _retval.Assign(addr);
 }
+
+// Assume true by default.
+static Atomic<bool, MemoryOrdering::Relaxed> sHasNonLocalIPv6{true};
+// static
+bool NetlinkService::HasNonLocalIPv6Address() { return sHasNonLocalIPv6; }
 
 class NetlinkAddress {
  public:
@@ -1229,13 +1238,13 @@ nsresult NetlinkService::Init(NetlinkServiceListener* aListener) {
 
   if (inet_pton(AF_INET, ROUTE_CHECK_IPV4, &mRouteCheckIPv4) != 1) {
     LOG(("Cannot parse address " ROUTE_CHECK_IPV4));
-    MOZ_DIAGNOSTIC_ASSERT(false, "Cannot parse address " ROUTE_CHECK_IPV4);
+    MOZ_DIAGNOSTIC_CRASH("Cannot parse address " ROUTE_CHECK_IPV4);
     return NS_ERROR_UNEXPECTED;
   }
 
   if (inet_pton(AF_INET6, ROUTE_CHECK_IPV6, &mRouteCheckIPv6) != 1) {
     LOG(("Cannot parse address " ROUTE_CHECK_IPV6));
-    MOZ_DIAGNOSTIC_ASSERT(false, "Cannot parse address " ROUTE_CHECK_IPV6);
+    MOZ_DIAGNOSTIC_CRASH("Cannot parse address " ROUTE_CHECK_IPV6);
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -1844,6 +1853,11 @@ void NetlinkService::CalculateNetworkID() {
       idChanged = true;
       Telemetry::Accumulate(Telemetry::NETWORK_ID2, 0);
     }
+  }
+
+  if (idChanged) {
+    sHasNonLocalIPv6 = found6;
+    LOG(("has IPv6: %d", bool(sHasNonLocalIPv6)));
   }
 
   // If this is first time we calculate network ID, don't report it as a network

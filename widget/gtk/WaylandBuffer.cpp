@@ -37,9 +37,10 @@ namespace mozilla::widget {
 gfx::SurfaceFormat WaylandBuffer::mFormat = gfx::SurfaceFormat::B8G8R8A8;
 
 #ifdef MOZ_LOGGING
-int WaylandBufferSHM::mDumpSerial =
+MOZ_RUNINIT int WaylandBufferSHM::mDumpSerial =
     PR_GetEnv("MOZ_WAYLAND_DUMP_WL_BUFFERS") ? 1 : 0;
-char* WaylandBufferSHM::mDumpDir = PR_GetEnv("MOZ_WAYLAND_DUMP_DIR");
+MOZ_RUNINIT char* WaylandBufferSHM::mDumpDir =
+    PR_GetEnv("MOZ_WAYLAND_DUMP_DIR");
 #endif
 
 /* static */
@@ -52,7 +53,7 @@ RefPtr<WaylandShmPool> WaylandShmPool::Create(nsWaylandDisplay* aWaylandDisplay,
 
   RefPtr<WaylandShmPool> shmPool = new WaylandShmPool();
 
-  shmPool->mShm = MakeUnique<base::SharedMemory>();
+  shmPool->mShm = MakeRefPtr<ipc::SharedMemory>();
   if (!shmPool->mShm->Create(aSize)) {
     NS_WARNING("WaylandShmPool: Unable to allocate shared memory!");
     return nullptr;
@@ -77,7 +78,7 @@ void* WaylandShmPool::GetImageData() {
     NS_WARNING("WaylandShmPool: Failed to map Shm!");
     return nullptr;
   }
-  mImageData = mShm->memory();
+  mImageData = mShm->Memory();
   return mImageData;
 }
 

@@ -7,37 +7,103 @@ use std::sync::Arc;
 
 use glean::traits::Boolean;
 
-use super::CommonMetricData;
+use super::{CommonMetricData, MetricId};
 
-use crate::ipc::need_ipc;
-use crate::private::MetricId;
+use crate::ipc::{need_ipc, with_ipc_payload};
+
+#[cfg(feature = "with_gecko")]
+use super::profiler_utils::{lookup_canonical_metric_name, LookupError};
+
+#[cfg(feature = "with_gecko")]
+use gecko_profiler::gecko_profiler_category;
+
+#[cfg(feature = "with_gecko")]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct BooleanMetricMarker {
+    id: MetricId,
+    val: bool,
+}
+
+#[cfg(feature = "with_gecko")]
+impl gecko_profiler::ProfilerMarker for BooleanMetricMarker {
+    fn marker_type_name() -> &'static str {
+        "BooleanMetric"
+    }
+
+    fn marker_type_display() -> gecko_profiler::MarkerSchema {
+        use gecko_profiler::schema::*;
+        let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+        schema.set_tooltip_label("{marker.data.id} {marker.data.val}");
+        schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.val}");
+        schema.add_key_label_format_searchable(
+            "id",
+            "Metric",
+            Format::String,
+            Searchable::Searchable,
+        );
+        schema.add_key_label_format("val", "Value", Format::String);
+        schema
+    }
+
+    fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
+        json_writer.string_property(
+            "id",
+            lookup_canonical_metric_name(&self.id).unwrap_or_else(LookupError::as_str),
+        );
+        json_writer.bool_property("val", self.val);
+    }
+}
 
 /// A boolean metric.
 ///
 /// Records a simple true or false value.
 #[derive(Clone)]
 pub enum BooleanMetric {
-    Parent(Arc<glean::private::BooleanMetric>),
+    Parent {
+        id: MetricId,
+        inner: Arc<glean::private::BooleanMetric>,
+    },
     Child(BooleanMetricIpc),
+    UnorderedChild(MetricId),
 }
 #[derive(Clone, Debug)]
 pub struct BooleanMetricIpc;
 
 impl BooleanMetric {
     /// Create a new boolean metric.
-    pub fn new(_id: MetricId, meta: CommonMetricData) -> Self {
+    pub fn new(id: MetricId, meta: CommonMetricData) -> Self {
         if need_ipc() {
             BooleanMetric::Child(BooleanMetricIpc)
         } else {
-            BooleanMetric::Parent(Arc::new(glean::private::BooleanMetric::new(meta)))
+            BooleanMetric::Parent {
+                id,
+                inner: Arc::new(glean::private::BooleanMetric::new(meta)),
+            }
+        }
+    }
+
+    pub fn with_unordered_ipc(id: MetricId, meta: CommonMetricData) -> Self {
+        if need_ipc() {
+            BooleanMetric::UnorderedChild(id)
+        } else {
+            Self::new(id, meta)
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metric_id(&self) -> MetricId {
+        match self {
+            BooleanMetric::Parent { id, .. } => *id,
+            BooleanMetric::UnorderedChild(id) => *id,
+            _ => panic!("Can't get a metric_id from a non-ipc-supporting child boolean metric."),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn child_metric(&self) -> Self {
         match self {
-            BooleanMetric::Parent(_) => BooleanMetric::Child(BooleanMetricIpc),
-            BooleanMetric::Child(_) => panic!("Can't get a child metric from a child metric"),
+            BooleanMetric::Parent { id: _, inner: _ } => BooleanMetric::Child(BooleanMetricIpc),
+            _ => panic!("Can't get a child metric from a child metric"),
         }
     }
 }
@@ -51,8 +117,19 @@ impl Boolean for BooleanMetric {
     /// * `value` - the value to set.
     pub fn set(&self, value: bool) {
         match self {
-            BooleanMetric::Parent(p) => {
-                p.set(value);
+            #[allow(unused)]
+            BooleanMetric::Parent { id, inner } => {
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::add_marker(
+                    "Boolean::set",
+                    gecko_profiler_category!(Telemetry),
+                    Default::default(),
+                    BooleanMetricMarker {
+                        id: *id,
+                        val: value,
+                    },
+                );
+                inner.set(value);
             }
             BooleanMetric::Child(_) => {
                 log::error!("Unable to set boolean metric in non-main process. This operation will be ignored.");
@@ -60,6 +137,25 @@ impl Boolean for BooleanMetric {
                 // This is a deliberate violation of Glean's "metric APIs must not throw" design.
                 assert!(!crate::ipc::is_in_automation(), "Attempted to set boolean metric in non-main process, which is forbidden. This panics in automation.");
                 // TODO: Record an error.
+            }
+            BooleanMetric::UnorderedChild(id) => {
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::add_marker(
+                    "Boolean::set",
+                    gecko_profiler_category!(Telemetry),
+                    Default::default(),
+                    BooleanMetricMarker {
+                        id: *id,
+                        val: value,
+                    },
+                );
+                with_ipc_payload(move |payload| {
+                    if let Some(v) = payload.booleans.get_mut(&id) {
+                        *v = value;
+                    } else {
+                        payload.booleans.insert(*id, value);
+                    }
+                });
             }
         }
     }
@@ -79,8 +175,8 @@ impl Boolean for BooleanMetric {
     pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<bool> {
         let ping_name = ping_name.into().map(|s| s.to_string());
         match self {
-            BooleanMetric::Parent(p) => p.test_get_value(ping_name),
-            BooleanMetric::Child(_) => {
+            BooleanMetric::Parent { id: _, inner } => inner.test_get_value(ping_name),
+            _ => {
                 panic!("Cannot get test value for boolean metric in non-main process!",)
             }
         }
@@ -101,8 +197,8 @@ impl Boolean for BooleanMetric {
     /// The number of errors reported.
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
-            BooleanMetric::Parent(p) => p.test_get_num_recorded_errors(error),
-            BooleanMetric::Child(_) => panic!(
+            BooleanMetric::Parent { id: _, inner } => inner.test_get_num_recorded_errors(error),
+            _ => panic!(
                 "Cannot get the number of recorded errors for boolean metric in non-main process!"
             ),
         }
@@ -124,7 +220,7 @@ mod test {
     }
 
     #[test]
-    fn boolean_ipc() {
+    fn boolean_no_ipc() {
         // BooleanMetric doesn't support IPC.
         let _lock = lock_test();
 
@@ -150,6 +246,32 @@ mod test {
         assert!(
             false == parent_metric.test_get_value("store1").unwrap(),
             "Boolean metrics should only work in the parent process"
+        );
+    }
+
+    #[test]
+    fn boolean_unordered_ipc() {
+        // BooleanMetric::UnorderedChild _does_ support IPC.
+        let _lock = lock_test();
+
+        let parent_metric = &metrics::test_only_ipc::an_unordered_bool;
+
+        parent_metric.set(false);
+
+        {
+            let child_metric = parent_metric.child_metric();
+
+            // scope for need_ipc RAII
+            let _raii = ipc::test_set_need_ipc(true);
+
+            child_metric.set(true);
+        }
+
+        assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
+
+        assert!(
+            !parent_metric.test_get_value("store1").unwrap(),
+            "Boolean metrics can unsafely work in child processes"
         );
     }
 }

@@ -629,6 +629,15 @@ static bool HasPercentageUnitSide(const StyleRect<T>& aSides) {
   return aSides.Any([](const auto& aLength) { return aLength.HasPercent(); });
 }
 
+static bool HasPercentageUnitMargin(const nsStyleMargin& aStyleMargin) {
+  for (const auto side : AllPhysicalSides()) {
+    if (aStyleMargin.GetMargin(side).HasPercent()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
   MOZ_ASSERT(aFrame, "null frame is not allowed");
 
@@ -644,7 +653,7 @@ static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
   // quite rarely.
 
   const nsStyleMargin* margin = aFrame->StyleMargin();
-  if (HasPercentageUnitSide(margin->mMargin)) {
+  if (HasPercentageUnitMargin(*margin)) {
     return true;
   }
 
@@ -660,8 +669,8 @@ static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
   if ((pos->ISizeDependsOnContainer(aWM) && !pos->ISize(aWM).IsAuto()) ||
       pos->MaxISizeDependsOnContainer(aWM) ||
       pos->MinISizeDependsOnContainer(aWM) ||
-      pos->mOffset.GetIStart(aWM).HasPercent() ||
-      pos->mOffset.GetIEnd(aWM).HasPercent()) {
+      pos->GetInset(LogicalSide::IStart, aWM).HasPercent() ||
+      pos->GetInset(LogicalSide::IEnd, aWM).HasPercent()) {
     return true;
   }
 
@@ -1368,7 +1377,8 @@ void nsLineLayout::AddMarkerFrame(nsIFrame* aFrame,
 
   nsBlockFrame* blockFrame = do_QueryFrame(LineContainerFrame());
   MOZ_ASSERT(blockFrame, "must be for block");
-  if (!blockFrame->MarkerIsEmpty()) {
+  if (!blockFrame->MarkerIsEmpty(aFrame)) {
+    mLineIsEmpty = false;
     mHasMarker = true;
     mLineBox->SetHasMarker();
   }
@@ -1481,6 +1491,34 @@ void nsLineLayout::VerticalAlignLine() {
   // this operation is set to zero so that the y coordinates for all
   // of the placed children will be relative to there.
   PerSpanData* psd = mRootSpan;
+  if (mLineIsEmpty) {
+    // This line is empty, and should be consisting of only inline elements.
+    // (inline-block elements would make the line non-empty).
+    WritingMode lineWM = psd->mWritingMode;
+    for (PerFrameData* pfd = psd->mFirstFrame; pfd; pfd = pfd->mNext) {
+      // Ideally, if the frame would collapse itself - but it depends on
+      // knowing that the line is empty.
+      if (!pfd->mFrame->IsInlineFrame() && !pfd->mFrame->IsRubyFrame()) {
+        continue;
+      }
+      // Collapse the physical size to 0.
+      pfd->mBounds.BStart(lineWM) = mBStartEdge;
+      pfd->mBounds.BSize(lineWM) = 0;
+      // Initialize mBlockDirAlign (though it doesn't make much difference
+      // because we don't align empty boxes).
+      pfd->mBlockDirAlign = VALIGN_OTHER;
+      pfd->mFrame->SetRect(lineWM, pfd->mBounds, ContainerSize());
+    }
+
+    mFinalLineBSize = 0;
+    if (mGotLineBox) {
+      mLineBox->SetBounds(psd->mWritingMode, psd->mIStart, mBStartEdge,
+                          psd->mICoord - psd->mIStart, 0, ContainerSize());
+
+      mLineBox->SetLogicalAscent(0);
+    }
+    return;
+  }
   VerticalAlignFrames(psd);
 
   // *** Note that comments here still use the anachronistic term
@@ -1644,7 +1682,8 @@ void nsLineLayout::AdjustLeadings(nsIFrame* spanFrame, PerSpanData* psd,
   }
   if (aStyleText->HasEffectiveTextEmphasis()) {
     nscoord bsize = GetBSizeOfEmphasisMarks(spanFrame, aInflation);
-    LogicalSide side = aStyleText->TextEmphasisSide(mRootSpan->mWritingMode);
+    LogicalSide side = aStyleText->TextEmphasisSide(
+        mRootSpan->mWritingMode, spanFrame->StyleFont()->mLanguage);
     if (side == LogicalSide::BStart) {
       requiredStartLeading += bsize;
     } else {
@@ -2195,8 +2234,12 @@ void nsLineLayout::VerticalAlignFrames(PerSpanData* psd) {
             blockEnd = BLOCKDIR_ALIGN_FRAMES_NO_MAXIMUM;
           }
         }
-        if (blockStart < minBCoord) minBCoord = blockStart;
-        if (blockEnd > maxBCoord) maxBCoord = blockEnd;
+        if (blockStart < minBCoord) {
+          minBCoord = blockStart;
+        }
+        if (blockEnd > maxBCoord) {
+          maxBCoord = blockEnd;
+        }
 #ifdef NOISY_BLOCKDIR_ALIGN
         printf(
             "     [frame]raw: a=%d h=%d bp=%d,%d logical: h=%d leading=%d y=%d "
@@ -2272,7 +2315,8 @@ void nsLineLayout::VerticalAlignFrames(PerSpanData* psd) {
               blockEnd = descent;
               delta = emphasisHeight;
             }
-            LogicalSide side = mStyleText->TextEmphasisSide(lineWM);
+            LogicalSide side = mStyleText->TextEmphasisSide(
+                lineWM, spanFrame->StyleFont()->mLanguage);
             if (side == LogicalSide::BStart) {
               blockStart -= delta;
             } else {
@@ -3384,10 +3428,11 @@ void nsLineLayout::RelativePositionFrames(PerSpanData* psd,
     // Do this here (rather than along with setting the overflow rect
     // below) so we get leaf frames as well.  No need to worry
     // about the root span, since it doesn't have a frame.
-    if (frame->HasView())
+    if (frame->HasView()) {
       nsContainerFrame::SyncFrameViewAfterReflow(
           mPresContext, frame, frame->GetView(), r.InkOverflow(),
           nsIFrame::ReflowChildFlags::NoMoveView);
+    }
 
     overflowAreas.UnionWith(r + frame->GetPosition());
   }

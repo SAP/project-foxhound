@@ -64,9 +64,15 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(
     return;
   }
 
+  Maybe<ClientInfo> clientInfo = aGlobal->GetClientInfo();
+  if (clientInfo.isNothing()) {
+    Shutdown();
+    return;
+  }
+
   PServiceWorkerRegistrationChild* sentActor =
       parentActor->SendPServiceWorkerRegistrationConstructor(
-          actor, aDescriptor.ToIPC());
+          actor, aDescriptor.ToIPC(), clientInfo.ref().ToIPC());
   if (NS_WARN_IF(!sentActor)) {
     Shutdown();
     return;
@@ -523,13 +529,18 @@ void ServiceWorkerRegistration::WhenVersionReached(
 void ServiceWorkerRegistration::MaybeScheduleUpdateFound(
     const Maybe<ServiceWorkerDescriptor>& aInstallingDescriptor) {
   // This function sets mScheduledUpdateFoundId to note when we were told about
-  // a new installing worker. We rely on a call to
-  // MaybeDispatchUpdateFoundRunnable (called indirectly from UpdateJobCallback)
-  // to actually fire the event.
+  // a new installing worker. We rely on a call to MaybeDispatchUpdateFound via
+  // ServiceWorkerRegistrationChild::RecvFireUpdateFound to trigger the properly
+  // timed notification...
   uint64_t newId = aInstallingDescriptor.isSome()
                        ? aInstallingDescriptor.ref().Id()
                        : kInvalidUpdateFoundId;
 
+  // ...but the whole reason this logic exists is because SWRegistrations are
+  // bootstrapped off of inherently stale descriptor snapshots and receive
+  // catch-up updates once the actor is created and registered in the parent.
+  // To handle the catch-up case where we need to generate a synthetic
+  // updatefound that would otherwise be lost, we immediately flush here.
   if (mScheduledUpdateFoundId != kInvalidUpdateFoundId) {
     if (mScheduledUpdateFoundId == newId) {
       return;
@@ -546,22 +557,6 @@ void ServiceWorkerRegistration::MaybeScheduleUpdateFound(
   }
 
   mScheduledUpdateFoundId = newId;
-}
-
-void ServiceWorkerRegistration::MaybeDispatchUpdateFoundRunnable() {
-  if (mScheduledUpdateFoundId == kInvalidUpdateFoundId) {
-    return;
-  }
-
-  nsIGlobalObject* global = GetParentObject();
-  NS_ENSURE_TRUE_VOID(global);
-
-  nsCOMPtr<nsIRunnable> r = NewCancelableRunnableMethod(
-      "ServiceWorkerRegistration::MaybeDispatchUpdateFound", this,
-      &ServiceWorkerRegistration::MaybeDispatchUpdateFound);
-
-  Unused << global->SerialEventTarget()->Dispatch(r.forget(),
-                                                  NS_DISPATCH_NORMAL);
 }
 
 void ServiceWorkerRegistration::MaybeDispatchUpdateFound() {
@@ -638,11 +633,8 @@ void ServiceWorkerRegistration::UpdateStateInternal(
   });
 
   // Clear all workers if the registration has been detached from the global.
-  // Also, we cannot expose ServiceWorker objects on worker threads yet, so
-  // do the same on when off-main-thread.  This main thread check should be
-  // removed as part of bug 1113522.
   nsCOMPtr<nsIGlobalObject> global = GetParentObject();
-  if (!global || !NS_IsMainThread()) {
+  if (!global) {
     return;
   }
 

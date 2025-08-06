@@ -94,7 +94,7 @@
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/quota/PersistenceType.h"
-#include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/quota/PrincipalUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/layers/FrameUniformityData.h"
 #include "nsPrintfCString.h"
@@ -116,6 +116,7 @@
 #include "mozilla/layers/IAPZCTreeManager.h"  // for layers::ZoomToRectBehavior
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/RDDProcessManager.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -219,7 +220,7 @@ already_AddRefed<nsIRunnable> NativeInputRunnable::Create(
 
 }  // unnamed namespace
 
-LinkedList<OldWindowSize> OldWindowSize::sList;
+MOZ_RUNINIT LinkedList<OldWindowSize> OldWindowSize::sList;
 
 NS_INTERFACE_MAP_BEGIN(nsDOMWindowUtils)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMWindowUtils)
@@ -1561,7 +1562,7 @@ nsDOMWindowUtils::GetTranslationNodes(nsINode* aRoot,
 
   uint32_t limit = 15000;
 
-  // We begin iteration with content->GetNextNode because we want to explictly
+  // We begin iteration with content->GetNextNode because we want to explicitly
   // skip the root tag from being a translation node.
   nsIContent* content = root;
   while ((limit > 0) && (content = content->GetNextNode(root))) {
@@ -1705,6 +1706,27 @@ nsDOMWindowUtils::GetIsMozAfterPaintPending(bool* aResult) {
   nsPresContext* presContext = GetPresContext();
   if (!presContext) return NS_OK;
   *aResult = presContext->IsDOMPaintEventPending();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetIsWindowFullyOccluded(bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aResult);
+  *aResult = false;
+  if (nsIWidget* widget = GetWidget()) {
+    *aResult = widget->IsFullyOccluded();
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetIsCompositorPaused(bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aResult);
+  *aResult = false;
+  CompositorBridgeChild* cbc = GetCompositorBridge();
+  if (cbc) {
+    *aResult = cbc->IsPaused();
+  }
   return NS_OK;
 }
 
@@ -2296,6 +2318,16 @@ nsDOMWindowUtils::GetFocusedAutocapitalize(nsAString& aAutocapitalize) {
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::GetFocusedAutocorrect(bool* aAutocorrect) {
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget) {
+    return NS_ERROR_FAILURE;
+  }
+  *aAutocorrect = widget->GetInputContext().mAutocorrect;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::GetViewId(Element* aElement, nsViewID* aResult) {
   if (aElement && nsLayoutUtils::FindIDFor(aElement, aResult)) {
     return NS_OK;
@@ -2641,7 +2673,7 @@ nsDOMWindowUtils::GetVisitedDependentComputedStyle(
   {
     ErrorResult rv;
     decl = innerWindow->GetComputedStyle(*aElement, aPseudoElement, rv);
-    ENSURE_SUCCESS(rv, rv.StealNSResult());
+    RETURN_NSRESULT_ON_FAILURE(rv);
   }
 
   nsAutoCString result;
@@ -3280,7 +3312,8 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
     return NS_ERROR_FAILURE;
   }
   RefPtr<const ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(aElement, *pseudo);
+      nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(
+          aElement, PseudoStyleRequest(*pseudo));
   if (!computedStyle) {
     return NS_ERROR_FAILURE;
   }
@@ -3475,8 +3508,7 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   quota::PrincipalMetadata principalMetadata;
-  MOZ_TRY_VAR(principalMetadata,
-              quota::QuotaManager::GetInfoFromWindow(window));
+  MOZ_TRY_VAR(principalMetadata, quota::GetInfoFromWindow(window));
 
   RefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
   if (mgr) {
@@ -3623,17 +3655,14 @@ static void PrepareForFullscreenChange(nsIDocShell* aDocShell,
     nsCOMPtr<nsIDocumentViewer> viewer;
     aDocShell->GetDocViewer(getter_AddRefs(viewer));
     if (viewer) {
-      nsIntRect viewerBounds;
+      LayoutDeviceIntRect viewerBounds;
       viewer->GetBounds(viewerBounds);
       nscoord auPerDev = presShell->GetPresContext()->AppUnitsPerDevPixel();
       if (aOldSize) {
-        *aOldSize = LayoutDeviceIntSize::ToAppUnits(
-            LayoutDeviceIntSize::FromUnknownSize(viewerBounds.Size()),
-            auPerDev);
+        *aOldSize =
+            LayoutDeviceIntSize::ToAppUnits(viewerBounds.Size(), auPerDev);
       }
-      LayoutDeviceIntSize newSize =
-          LayoutDeviceIntSize::FromAppUnitsRounded(aSize, auPerDev);
-
+      auto newSize = LayoutDeviceIntSize::FromAppUnitsRounded(aSize, auPerDev);
       viewerBounds.SizeTo(newSize.width, newSize.height);
       viewer->SetBounds(viewerBounds);
     }
@@ -3652,7 +3681,7 @@ nsDOMWindowUtils::HandleFullscreenRequests(bool* aRetVal) {
   // extra resize reflow after this point.
   nsRect screenRect;
   if (nsPresContext* presContext = GetPresContext()) {
-    presContext->DeviceContext()->GetRect(screenRect);
+    screenRect = presContext->DeviceContext()->GetRect();
   }
   nsSize oldSize;
   PrepareForFullscreenChange(GetDocShell(), screenRect.Size(), &oldSize);
@@ -4345,6 +4374,18 @@ nsDOMWindowUtils::GetGpuProcessPid(int32_t* aPid) {
   GPUProcessManager* pm = GPUProcessManager::Get();
   if (pm) {
     *aPid = pm->GPUProcessPid();
+  } else {
+    *aPid = -1;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetRddProcessPid(int32_t* aPid) {
+  RDDProcessManager* pm = RDDProcessManager::Get();
+  if (pm) {
+    *aPid = pm->RDDProcessPid();
   } else {
     *aPid = -1;
   }

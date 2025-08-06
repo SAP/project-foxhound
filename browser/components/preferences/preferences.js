@@ -43,10 +43,6 @@ var { Weave } = ChromeUtils.importESModule(
   "resource://services-sync/main.sys.mjs"
 );
 
-var { FirefoxRelayTelemetry } = ChromeUtils.importESModule(
-  "resource://gre/modules/FirefoxRelayTelemetry.mjs"
-);
-
 var { FxAccounts, getFxAccountsSingleton } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccounts.sys.mjs"
 );
@@ -195,7 +191,6 @@ function init_all() {
   // Asks Preferences to queue an update of the attribute values of
   // the entire document.
   Preferences.queueUpdateOfAllElements();
-  Services.telemetry.setEventRecordingEnabled("aboutpreferences", true);
 
   register_module("paneGeneral", gMainPane);
   register_module("paneHome", gHomePane);
@@ -275,12 +270,12 @@ function init_all() {
 }
 
 function onHashChange() {
-  gotoPref(null, "hash");
+  gotoPref(null, "Hash");
 }
 
 async function gotoPref(
   aCategory,
-  aShowReason = aCategory ? "click" : "initial"
+  aShowReason = aCategory ? "Click" : "Initial"
 ) {
   let categories = document.getElementById("categories");
   const kDefaultCategoryInternalName = "paneGeneral";
@@ -380,7 +375,7 @@ async function gotoPref(
 
   search(category, "data-category");
 
-  if (aShowReason != "initial") {
+  if (aShowReason != "Initial") {
     document.querySelector(".main-content").scrollTop = 0;
   }
 
@@ -394,12 +389,7 @@ async function gotoPref(
   }
 
   // Record which category is shown
-  Services.telemetry.recordEvent(
-    "aboutpreferences",
-    "show",
-    aShowReason,
-    category
-  );
+  Glean.aboutpreferences["show" + aShowReason].record({ value: category });
 
   document.dispatchEvent(
     new CustomEvent("paneshown", {

@@ -135,16 +135,6 @@ fuzzy-if(Android,0-4,0-87) == dynamic-clipPath-01.svg pass.svg
 == dynamic-conditions-01.svg pass.svg
 == dynamic-conditions-02.svg about:blank
 == dynamic-conditions-03.svg pass.svg
-== dynamic-conditions-04.svg about:blank
-== dynamic-conditions-05.svg pass.svg
-== dynamic-conditions-06.svg about:blank
-== dynamic-conditions-07.svg pass.svg
-== dynamic-conditions-08.svg pass.svg
-== dynamic-conditions-09.svg about:blank
-== dynamic-conditions-10.svg about:blank
-== dynamic-conditions-11.svg pass.svg
-== dynamic-conditions-12.svg pass.svg
-== dynamic-conditions-13.svg about:blank
 == dynamic-feFlood-01.svg pass.svg
 asserts(0-1) == dynamic-feImage-01.svg pass.svg # intermittent assertions (bug 886080)
 == dynamic-fill-01.svg dynamic-fill-01-ref.svg
@@ -360,7 +350,7 @@ fuzzy(0-1,0-10000) == opacity-and-transform-01.svg opacity-and-transform-01-ref.
 
 fuzzy-if(Android,0-8,0-200) == outer-svg-border-and-padding-01.svg outer-svg-border-and-padding-01-ref.svg
 
-fuzzy(0-7,0-214) == outline.html outline-ref.html # Bug 1503525
+fuzzy(0-255,0-214) fuzzy-if(Android,0-255,0-1439) == outline.html outline-ref.html # Bug 1503525
 
 == overflow-on-outer-svg-01.svg overflow-on-outer-svg-01-ref.svg
 == overflow-on-outer-svg-02a.xhtml overflow-on-outer-svg-02-ref.xhtml
@@ -377,7 +367,7 @@ fuzzy-if(winWidget,0-16,0-5) == paint-order-01.svg paint-order-01-ref.svg
 == paint-order-02.svg paint-order-02-ref.svg
 == paint-order-03.svg paint-order-03-ref.svg
 
-#fuzzy(0-23,0-60) fails-if(winWidget) == path-01.svg path-01-ref.svg
+fuzzy(0-54,0-77) == path-01.svg path-01-ref.svg
 == path-02.svg pass.svg
 == path-04.svg pass.svg
 == path-05.svg pass.svg
@@ -404,7 +394,7 @@ fuzzy(0-128,0-100) == pattern-big-image.html pattern-big-image-ref.html
 == pattern-scale-01c.svg pattern-scale-01-ref.svg
 == pattern-transform-presence-01.svg pattern-transform-presence-01-ref.svg
 == pattern-transformed-01.svg pattern-transformed-01-ref.svg
-fuzzy(0-27,0-9058) fuzzy-if(Android,0-28,0-11169) == pattern-transformed-02.svg pattern-transformed-02-ref.svg
+fuzzy(0-27,0-9058) fuzzy-if(Android,0-40,0-13015) == pattern-transformed-02.svg pattern-transformed-02-ref.svg
 
 == polygon-01.svg polygon-01-ref.svg
 == polygon-marker-01.svg pass.svg
@@ -642,3 +632,5 @@ pref(svg.use-element.recursive-clone-limit.enabled,1) != about:blank explosive-u
 # do not increase fuzz significantly, test was designed to be within 1 color unit
 fuzzy(0-1,0-230400) == 1630900-1.html 1630900-1-ref.html
 # do not increase fuzz significantly, test was designed to be within 1 color unit
+
+== rect-no-backgrounds-print.html rect-no-backgrounds-print-ref.html

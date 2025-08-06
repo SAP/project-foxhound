@@ -810,7 +810,7 @@ sealed class ContentAction : BrowserAction() {
     /**
      * Updates the [ContentState] of the given [sessionId] to indicate whether or not desktop mode is enabled.
      */
-    data class UpdateDesktopModeAction(val sessionId: String, val enabled: Boolean) : ContentAction()
+    data class UpdateTabDesktopMode(val sessionId: String, val enabled: Boolean) : ContentAction()
 
     /**
      * Updates the [AppIntentState] of the [ContentState] with the given [sessionId].
@@ -854,6 +854,20 @@ sealed class ContentAction : BrowserAction() {
     data class UpdateProductUrlStateAction(
         val tabId: String,
         val isProductUrl: Boolean,
+    ) : ContentAction()
+
+    /**
+     * Inform that the tab with [tabId] started rendering a pdf.
+     */
+    data class EnteredPdfViewer(
+        val tabId: String,
+    ) : ContentAction()
+
+    /**
+     * Inform that the tab with [tabId] stopped rendering a pdf.
+     */
+    data class ExitedPdfViewer(
+        val tabId: String,
     ) : ContentAction()
 }
 
@@ -1870,6 +1884,11 @@ sealed class SearchAction : BrowserAction() {
 }
 
 /**
+ * [BrowserAction] implements setting and updating the distribution
+ */
+data class UpdateDistribution(val distributionId: String?) : BrowserAction()
+
+/**
  * [BrowserAction] implementations for updating state needed for debugging. These actions should
  * be carefully considered before being used.
  *
@@ -1902,4 +1921,19 @@ sealed class AppLifecycleAction : BrowserAction() {
      * The application has received an ON_PAUSE event.
      */
     object PauseAction : AppLifecycleAction()
+}
+
+/**
+ * [BrowserAction] implementations related to updating the application's default desktop mode setting.
+ */
+sealed class DefaultDesktopModeAction : BrowserAction() {
+    /**
+     * Toggles the global default for desktop browsing mode.
+     */
+    data object ToggleDesktopMode : DefaultDesktopModeAction()
+
+    /**
+     * Updates the global default for desktop browsing mode.
+     */
+    data class DesktopModeUpdated(val newValue: Boolean) : DefaultDesktopModeAction()
 }

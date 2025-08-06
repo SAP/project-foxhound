@@ -37,14 +37,10 @@ var gTabsPanel = {
   },
 
   hasHiddenTabsExcludingFxView() {
-    const hiddenTabCount = gBrowser.tabs.length - gBrowser.visibleTabs.length;
-
-    // If there's only 1 hidden tab, check if it's Firefox View to exclude it.
-    // See Bug 1880138.
-    if (hiddenTabCount == 1) {
-      return !FirefoxViewHandler.tab?.hidden;
-    }
-    return hiddenTabCount > 0;
+    // Exclude Firefox View, see Bug 1880138.
+    return gBrowser.tabs.some(
+      tab => tab.hidden && tab != FirefoxViewHandler.tab
+    );
   },
 
   init() {
@@ -59,14 +55,10 @@ var gTabsPanel = {
       insertBefore: document.getElementById("allTabsMenu-tabsSeparator"),
       filterFn: tab => tab.hidden && tab.soundPlaying,
     });
-    let showPinnedTabs = Services.prefs.getBoolPref(
-      "browser.tabs.tabmanager.enabled"
-    );
     this.allTabsPanel = new TabsPanel({
       view: this.allTabsView,
       containerNode: this.allTabsViewTabs,
-      filterFn: tab =>
-        !tab.hidden && (!tab.pinned || (showPinnedTabs && tab.pinned)),
+      filterFn: tab => !tab.hidden,
       dropIndicator: this.dropIndicator,
     });
 
@@ -94,6 +86,10 @@ var gTabsPanel = {
       closeDuplicateTabsItem.hidden = !closeDuplicateEnabled;
       closeDuplicateTabsItem.disabled =
         !closeDuplicateEnabled || !gBrowser.getAllDuplicateTabsToClose().length;
+
+      let syncedTabs = document.getElementById("allTabsMenu-syncedTabs");
+      syncedTabs.hidden =
+        !PlacesUIUtils.shouldShowTabsFromOtherComputersMenuitem();
     });
 
     this.allTabsView.addEventListener("ViewShown", () =>
@@ -117,6 +113,9 @@ var gTabsPanel = {
           break;
         case "allTabsMenu-hiddenTabsButton":
           PanelUI.showSubView(this.kElements.hiddenTabsView, target);
+          break;
+        case "allTabsMenu-syncedTabs":
+          SidebarController.show("viewTabsSidebar");
           break;
       }
     });
@@ -185,11 +184,7 @@ var gTabsPanel = {
     }
     this.init();
     if (this.canOpen) {
-      Services.telemetry.keyedScalarAdd(
-        "browser.ui.interaction.all_tabs_panel_entrypoint",
-        entrypoint,
-        1
-      );
+      Glean.browserUiInteraction.allTabsPanelEntrypoint[entrypoint].add(1);
       BrowserUsageTelemetry.recordInteractionEvent(
         entrypoint,
         "all-tabs-panel-entrypoint"

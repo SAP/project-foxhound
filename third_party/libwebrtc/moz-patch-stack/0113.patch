@@ -1,50 +1,27 @@
-From: Jan Grulich <jgrulich@redhat.com>
-Date: Sat, 15 Jun 2024 11:27:00 +0000
-Subject: Bug 1902615 - WebRTC backport: PipeWire camera - check for node
- existence before adding it to the list r=pehrsons,webrtc-reviewers
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Thu, 29 Aug 2024 08:31:00 +0000
+Subject: Bug 1914837 - Always initialize DesktopCapturer::pid.
+ r=webrtc-reviewers,ng
 
-This is a simple backport of an WebRTC upstream change.
+This member is patched on top of libwebrtc. New backends could be added from
+under us. It needs to be initialized.
 
-Upstream commit: 633a41ff8edec405cefa109ac3c8f9662a020cc1
-
-Differential Revision: https://phabricator.services.mozilla.com/D213749
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/dc5e463eb0f570b9b89aef8cddd47f6659bdd16e
+Differential Revision: https://phabricator.services.mozilla.com/D220265
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fdf5b0a81b0c0e87d31c5963091681a0e5960678
 ---
- modules/video_capture/linux/pipewire_session.cc | 17 +++++++++++------
- 1 file changed, 11 insertions(+), 6 deletions(-)
+ modules/desktop_capture/desktop_capturer.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/modules/video_capture/linux/pipewire_session.cc b/modules/video_capture/linux/pipewire_session.cc
-index 4d1b200aca..90ac4a3bdd 100644
---- a/modules/video_capture/linux/pipewire_session.cc
-+++ b/modules/video_capture/linux/pipewire_session.cc
-@@ -354,6 +354,13 @@ void PipeWireSession::OnRegistryGlobal(void* data,
-                                        const spa_dict* props) {
-   PipeWireSession* that = static_cast<PipeWireSession*>(data);
+diff --git a/modules/desktop_capture/desktop_capturer.h b/modules/desktop_capture/desktop_capturer.h
+index 2c9c419bcd..29e05938dc 100644
+--- a/modules/desktop_capture/desktop_capturer.h
++++ b/modules/desktop_capture/desktop_capturer.h
+@@ -82,7 +82,7 @@ class RTC_EXPORT DesktopCapturer {
+   struct Source {
+     // The unique id to represent a Source of current DesktopCapturer.
+     SourceId id;
+-    pid_t pid;
++    pid_t pid = 0;
  
-+  // Skip already added nodes to avoid duplicate camera entries
-+  if (std::find_if(that->nodes_.begin(), that->nodes_.end(),
-+                   [id](const PipeWireNode& node) {
-+                     return node.id() == id;
-+                   }) != that->nodes_.end())
-+    return;
-+
-   if (type != absl::string_view(PW_TYPE_INTERFACE_Node))
-     return;
- 
-@@ -372,12 +379,10 @@ void PipeWireSession::OnRegistryGlobal(void* data,
- void PipeWireSession::OnRegistryGlobalRemove(void* data, uint32_t id) {
-   PipeWireSession* that = static_cast<PipeWireSession*>(data);
- 
--  for (auto it = that->nodes_.begin(); it != that->nodes().end(); ++it) {
--    if ((*it).id() == id) {
--      that->nodes_.erase(it);
--      break;
--    }
--  }
-+  auto it = std::remove_if(
-+      that->nodes_.begin(), that->nodes_.end(),
-+      [id](const PipeWireNode& node) { return node.id() == id; });
-+  that->nodes_.erase(it, that->nodes_.end());
- }
- 
- void PipeWireSession::Finish(VideoCaptureOptions::Status status) {
+     // Title of the window or screen in UTF-8 encoding, maybe empty. This field
+     // should not be used to identify a source.

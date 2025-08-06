@@ -9,6 +9,7 @@ itself to the target of the initiating event when opened with
 Note: XUL is currently required to
 support accesskey underlining (although using `moz-label` could change that).
 Shortcuts are not displayed automatically in the `panel-item`.
+This XUL requirement affects the "With Accesskeys" story, enabling or disabling accesskeys will not show any visual change in the story.
 
 ```html story
 <panel-list stay-open open>
@@ -49,7 +50,7 @@ be brought up to our design systems standards.
 ## Basic usage
 
 The source for `panel-list` can be found under
-[toolkit/content/widgets/panel-list.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/panel-list.js).
+[toolkit/content/widgets/panel-list/panel-list.js](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/panel-list/panel-list.js).
 You can find an examples of `panel-list` in use in the Firefox codebase in both
 [about:addons](https://searchfox.org/mozilla-central/source/toolkit/mozapps/extensions/content/aboutaddons.html#87,102,114)
 and the
@@ -155,6 +156,27 @@ function openMenu(event) {
 let menuButton = document.getElementById("open-menu-button");
 menuButton.addEventListener("mousedown", openMenu);
 menuButton.addEventListener("click", openMenu);
+```
+
+
+### Checkbox
+
+Items may be used as a checkbox by setting the `type` attribute.
+This allows checkmark icon to be automatically rendered and removed via the item's `checked` attribute.
+Note: this item does not have its own click handler for adding or removing the checkmark, you must handle that.
+
+```html story
+<panel-list stay-open open>
+  <panel-item action="toggle-setting" type="checkbox" checked="">Toggle Setting</panel-item>
+  <panel-item action="toggle-panel" type="checkbox">Toggle Panel</panel-item>
+</panel-list>
+```
+
+```html
+<panel-list>
+  <panel-item action="toggle-setting" type="checkbox" checked="">Toggle Setting</panel-item>
+  <panel-item action="toggle-panel" type="checkbox">Toggle Panel</panel-item>
+</panel-list>
 ```
 
 ### Icons

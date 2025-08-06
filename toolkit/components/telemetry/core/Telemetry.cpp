@@ -24,6 +24,7 @@
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BackgroundHangMonitor.h"
@@ -185,7 +186,8 @@ class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
   friend class nsFetchTelemetryData;
 };
 
-StaticDataMutex<TelemetryImpl*> TelemetryImpl::sTelemetry(nullptr, nullptr);
+MOZ_RUNINIT StaticDataMutex<TelemetryImpl*> TelemetryImpl::sTelemetry(nullptr,
+                                                                      nullptr);
 
 MOZ_DEFINE_MALLOC_SIZE_OF(TelemetryMallocSizeOf)
 
@@ -333,8 +335,7 @@ class nsFetchTelemetryData : public Runnable {
       telemetry->ReadLateWritesStacks(mProfileDir);
     }
 
-    TelemetryScalar::Set(Telemetry::ScalarID::BROWSER_TIMINGS_LAST_SHUTDOWN,
-                         lastShutdownDuration);
+    glean::browser_timings::last_shutdown.Set(lastShutdownDuration);
 
     nsCOMPtr<nsIRunnable> e =
         NewRunnableMethod("nsFetchTelemetryData::MainThread", this,
@@ -552,12 +553,6 @@ bool TelemetryImpl::AddSQLInfo(JSContext* cx, JS::Handle<JSObject*> rootObj,
   return JS_DefineProperty(cx, rootObj,
                            mainThread ? "mainThread" : "otherThreads", statsObj,
                            JSPROP_ENUMERATE);
-}
-
-NS_IMETHODIMP
-TelemetryImpl::SetHistogramRecordingEnabled(const nsACString& id,
-                                            bool aEnabled) {
-  return TelemetryHistogram::SetHistogramRecordingEnabled(id, aEnabled);
 }
 
 NS_IMETHODIMP
@@ -1596,16 +1591,6 @@ TelemetryImpl::ClearScalars() {
 // Telemetry Event IDL implementation.
 
 NS_IMETHODIMP
-TelemetryImpl::RecordEvent(const nsACString& aCategory,
-                           const nsACString& aMethod, const nsACString& aObject,
-                           JS::Handle<JS::Value> aValue,
-                           JS::Handle<JS::Value> aExtra, JSContext* aCx,
-                           uint8_t optional_argc) {
-  return TelemetryEvent::RecordEvent(aCategory, aMethod, aObject, aValue,
-                                     aExtra, aCx, optional_argc);
-}
-
-NS_IMETHODIMP
 TelemetryImpl::SnapshotEvents(uint32_t aDataset, bool aClear,
                               uint32_t aEventLimit, JSContext* aCx,
                               uint8_t optional_argc,
@@ -1615,28 +1600,15 @@ TelemetryImpl::SnapshotEvents(uint32_t aDataset, bool aClear,
 }
 
 NS_IMETHODIMP
-TelemetryImpl::RegisterEvents(const nsACString& aCategory,
-                              JS::Handle<JS::Value> aEventData, JSContext* cx) {
-  return TelemetryEvent::RegisterEvents(aCategory, aEventData, false, cx);
-}
-
-NS_IMETHODIMP
 TelemetryImpl::RegisterBuiltinEvents(const nsACString& aCategory,
                                      JS::Handle<JS::Value> aEventData,
                                      JSContext* cx) {
-  return TelemetryEvent::RegisterEvents(aCategory, aEventData, true, cx);
+  return TelemetryEvent::RegisterBuiltinEvents(aCategory, aEventData, cx);
 }
 
 NS_IMETHODIMP
 TelemetryImpl::ClearEvents() {
   TelemetryEvent::ClearEvents();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-TelemetryImpl::SetEventRecordingEnabled(const nsACString& aCategory,
-                                        bool aEnabled) {
-  TelemetryEvent::SetEventRecordingEnabled(aCategory, aEnabled);
   return NS_OK;
 }
 
@@ -1817,11 +1789,6 @@ void RecordShutdownEndTimeStamp() {
 
 namespace mozilla::Telemetry {
 
-// The external API for controlling recording state
-void SetHistogramRecordingEnabled(HistogramID aID, bool aEnabled) {
-  TelemetryHistogram::SetHistogramRecordingEnabled(aID, aEnabled);
-}
-
 void Accumulate(HistogramID aHistogram, uint32_t aSample) {
   TelemetryHistogram::Accumulate(aHistogram, aSample);
 }
@@ -1858,7 +1825,12 @@ void AccumulateCategorical(HistogramID id, const nsTArray<nsCString>& labels) {
 void AccumulateTimeDelta(HistogramID aHistogram, TimeStamp start,
                          TimeStamp end) {
   if (start > end) {
+#if !defined(MOZ_WIDGET_ANDROID)
+    mozilla::glean::telemetry::clamping_time_hgrams
+        .Get(nsDependentCString(GetHistogramName(aHistogram)))
+        .Add(1);
     Accumulate(aHistogram, 0);
+#endif  // !defined(MOZ_WIDGET_ANDROID)
     return;
   }
   Accumulate(aHistogram, static_cast<uint32_t>((end - start).ToMilliseconds()));
@@ -1867,7 +1839,12 @@ void AccumulateTimeDelta(HistogramID aHistogram, TimeStamp start,
 void AccumulateTimeDelta(HistogramID aHistogram, const nsCString& key,
                          TimeStamp start, TimeStamp end) {
   if (start > end) {
+#if !defined(MOZ_WIDGET_ANDROID)
+    mozilla::glean::telemetry::clamping_time_hgrams
+        .Get(nsDependentCString(GetHistogramName(aHistogram)))
+        .Add(1);
     Accumulate(aHistogram, key, 0);
+#endif  // !defined(MOZ_WIDGET_ANDROID)
     return;
   }
   Accumulate(aHistogram, key,
@@ -2010,16 +1987,6 @@ void ScalarSet(mozilla::Telemetry::ScalarID aId, const nsAString& aKey,
 void ScalarSetMaximum(mozilla::Telemetry::ScalarID aId, const nsAString& aKey,
                       uint32_t aVal) {
   TelemetryScalar::SetMaximum(aId, aKey, aVal);
-}
-
-void RecordEvent(
-    mozilla::Telemetry::EventID aId, const mozilla::Maybe<nsCString>& aValue,
-    const mozilla::Maybe<CopyableTArray<EventExtraEntry>>& aExtra) {
-  TelemetryEvent::RecordEventNative(aId, aValue, aExtra);
-}
-
-void SetEventRecordingEnabled(const nsACString& aCategory, bool aEnabled) {
-  TelemetryEvent::SetEventRecordingEnabled(aCategory, aEnabled);
 }
 
 void ShutdownTelemetry() { TelemetryImpl::ShutdownTelemetry(); }

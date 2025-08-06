@@ -48,6 +48,12 @@ export class AdmWikipedia extends BaseFeature {
     return ["Amp", "Wikipedia"];
   }
 
+  isSuggestionSponsored(suggestion) {
+    return suggestion.source == "rust"
+      ? suggestion.provider == "Amp"
+      : !NONSPONSORED_IAB_CATEGORIES.has(suggestion.iab_category);
+  }
+
   getSuggestionTelemetryType(suggestion) {
     return suggestion.is_sponsored ? "adm_sponsored" : "adm_nonsponsored";
   }
@@ -59,7 +65,7 @@ export class AdmWikipedia extends BaseFeature {
       case "Wikipedia":
         return lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored");
     }
-    this.logger.error("Unknown Rust suggestion type: " + type);
+    this.logger.error("Unknown Rust suggestion type", { type });
     return false;
   }
 
@@ -101,7 +107,7 @@ export class AdmWikipedia extends BaseFeature {
 
   async onRemoteSettingsSync(rs) {
     let dataType = lazy.UrlbarPrefs.get("quickSuggestRemoteSettingsDataType");
-    this.logger.debug("Loading remote settings with type: " + dataType);
+    this.logger.debug("Loading remote settings", { dataType });
 
     let [data] = await Promise.all([
       rs.get({ filters: { type: dataType } }),
@@ -117,7 +123,7 @@ export class AdmWikipedia extends BaseFeature {
 
     let suggestionsMap = new lazy.SuggestionsMap();
 
-    this.logger.debug(`Got data with ${data.length} records`);
+    this.logger.debug("Got remote settings data", { recordCount: data.length });
     for (let record of data) {
       let { buffer } = await rs.attachments.download(record);
       if (!this.isEnabled) {
@@ -125,7 +131,7 @@ export class AdmWikipedia extends BaseFeature {
       }
 
       let results = JSON.parse(new TextDecoder("utf-8").decode(buffer));
-      this.logger.debug(`Adding ${results.length} results`);
+      this.logger.debug("Adding results", { resultCount: results.length });
       await suggestionsMap.add(results);
       if (!this.isEnabled) {
         return;
@@ -178,10 +184,6 @@ export class AdmWikipedia extends BaseFeature {
       originalUrl,
       url: suggestion.url,
       title: suggestion.title,
-      qsSuggestion: [
-        suggestion.full_keyword,
-        lazy.UrlbarUtils.HIGHLIGHT.SUGGESTED,
-      ],
       isSponsored: suggestion.is_sponsored,
       requestId: suggestion.request_id,
       urlTimestampIndex: suggestion.urlTimestampIndex,
@@ -197,6 +199,19 @@ export class AdmWikipedia extends BaseFeature {
       isManageable: true,
     };
 
+    let isAmpTopPick =
+      suggestion.is_sponsored &&
+      lazy.UrlbarPrefs.get("quickSuggestAmpTopPickCharThreshold") &&
+      lazy.UrlbarPrefs.get("quickSuggestAmpTopPickCharThreshold") <=
+        queryContext.trimmedLowerCaseSearchString.length;
+
+    payload.qsSuggestion = [
+      suggestion.full_keyword,
+      isAmpTopPick
+        ? lazy.UrlbarUtils.HIGHLIGHT.TYPED
+        : lazy.UrlbarUtils.HIGHLIGHT.SUGGESTED,
+    ];
+
     let result = new lazy.UrlbarResult(
       lazy.UrlbarUtils.RESULT_TYPE.URL,
       lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -207,14 +222,21 @@ export class AdmWikipedia extends BaseFeature {
     );
 
     if (suggestion.is_sponsored) {
-      if (!lazy.UrlbarPrefs.get("quickSuggestSponsoredPriority")) {
-        result.richSuggestionIconSize = 16;
-      }
-
-      result.payload.descriptionL10n = {
-        id: "urlbar-result-action-sponsored",
-      };
       result.isRichSuggestion = true;
+      if (isAmpTopPick) {
+        result.isBestMatch = true;
+        result.suggestedIndex = 1;
+      } else {
+        if (lazy.UrlbarPrefs.get("quickSuggestSponsoredPriority")) {
+          result.isBestMatch = true;
+          result.suggestedIndex = 1;
+        } else {
+          result.richSuggestionIconSize = 16;
+        }
+        result.payload.descriptionL10n = {
+          id: "urlbar-result-action-sponsored",
+        };
+      }
     }
 
     return result;
@@ -278,6 +300,8 @@ export class AdmWikipedia extends BaseFeature {
    *
    * @param {string} path
    *   The icon's remote settings path.
+   * @returns {string}
+   *   The absolute file path to the downloaded attachment.
    */
   async #fetchIcon(path) {
     if (!path) {

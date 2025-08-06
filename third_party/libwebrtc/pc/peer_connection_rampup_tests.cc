@@ -9,11 +9,11 @@
  */
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "api/audio/audio_device.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio/audio_processing.h"
@@ -51,10 +51,10 @@
 #include "pc/test/frame_generator_capturer_video_track_source.h"
 #include "pc/test/mock_peer_connection_observers.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/crypto_random.h"
 #include "rtc_base/fake_network.h"
 #include "rtc_base/firewall_socket_server.h"
 #include "rtc_base/gunit.h"
-#include "rtc_base/helpers.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/socket_factory.h"
 #include "rtc_base/ssl_certificate.h"

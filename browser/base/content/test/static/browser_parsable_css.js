@@ -30,12 +30,6 @@ let ignoreList = [
     errorMessage: /Unknown pseudo-class.*-moz-/i,
     isFromDevTools: false,
   },
-  // Reserved to UA sheets unless layout.css.overflow-clip-box.enabled flipped to true.
-  {
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Unknown property.*overflow-clip-box/i,
-    isFromDevTools: false,
-  },
   // content: -moz-alt-content is UA-only.
   {
     sourceName: /\b(html)\.css$/i,
@@ -51,7 +45,6 @@ let ignoreList = [
     errorMessage: /Property contained reference to invalid variable.*color/i,
     isFromDevTools: true,
   },
-  // PDF.js uses a property that is currently only supported in chrome.
   {
     sourceName: /web\/viewer\.css$/i,
     errorMessage:
@@ -59,6 +52,13 @@ let ignoreList = [
     isFromDevTools: false,
   },
 ];
+
+if (AppConstants.platform != "macosx") {
+  ignoreList.push({
+    errorMessage: /Unknown property.*-moz-osx-font-smoothing/i,
+    isFromDevTools: false,
+  });
+}
 
 if (!Services.prefs.getBoolPref("layout.css.zoom.enabled")) {
   ignoreList.push({
@@ -73,24 +73,6 @@ if (!Services.prefs.getBoolPref("layout.css.scroll-anchoring.enabled")) {
     sourceName: /webconsole\.css$/i,
     errorMessage: /Unknown property .*\boverflow-anchor\b/i,
     isFromDevTools: true,
-  });
-}
-
-if (!Services.prefs.getBoolPref("layout.css.forced-colors.enabled")) {
-  ignoreList.push({
-    sourceName: /pdf\.js\/web\/viewer\.css$/,
-    errorMessage: /Expected media feature name but found ‘forced-colors’*/i,
-    isFromDevTools: false,
-  });
-}
-
-if (!Services.prefs.getBoolPref("layout.css.forced-color-adjust.enabled")) {
-  // PDF.js uses a property that is currently not enabled.
-  ignoreList.push({
-    sourceName: /web\/viewer\.css$/i,
-    errorMessage:
-      /Unknown property ‘forced-color-adjust’\. {2}Declaration dropped\./i,
-    isFromDevTools: false,
   });
 }
 
@@ -123,8 +105,6 @@ let propNameAllowlist = [
     isFromDevTools: false,
   },
   { propName: "--browser-stack-z-index-rdm-toolbar", isFromDevTools: false },
-  // about:profiling is in devtools even though it uses non-devtools styles.
-  { propName: "--in-content-border-hover", isFromDevTools: false },
 
   // These variables are specified from devtools but read from non-devtools
   // styles, which confuses the test.
@@ -134,6 +114,54 @@ let propNameAllowlist = [
   { propName: "--panel-border-color", isFromDevTools: true },
   { propName: "--panel-shadow", isFromDevTools: true },
   { propName: "--panel-shadow-margin", isFromDevTools: true },
+
+  // These variables are used in JS in viewer.mjs (PDF.js).
+  {
+    propName: "--scale-round-x",
+    isFromDevTools: false,
+  },
+  {
+    propName: "--scale-round-y",
+    isFromDevTools: false,
+  },
+
+  // These variables define accent colors for tab group chrome
+  // and are used in JS in tabgroup.js
+  { propName: "--tab-group-color-blue", isFromDevTools: false },
+  { propName: "--tab-group-color-blue-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-blue-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-purple", isFromDevTools: false },
+  { propName: "--tab-group-color-purple-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-purple-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-cyan", isFromDevTools: false },
+  { propName: "--tab-group-color-cyan-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-cyan-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-orange", isFromDevTools: false },
+  { propName: "--tab-group-color-orange-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-orange-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-yellow", isFromDevTools: false },
+  { propName: "--tab-group-color-yellow-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-yellow-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-pink", isFromDevTools: false },
+  { propName: "--tab-group-color-pink-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-pink-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-green", isFromDevTools: false },
+  { propName: "--tab-group-color-green-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-green-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-red", isFromDevTools: false },
+  { propName: "--tab-group-color-red-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-red-pale", isFromDevTools: false },
+
+  { propName: "--tab-group-color-gray", isFromDevTools: false },
+  { propName: "--tab-group-color-gray-invert", isFromDevTools: false },
+  { propName: "--tab-group-color-gray-pale", isFromDevTools: false },
 ];
 
 // Add suffix to stylesheets' URI so that we always load them here and

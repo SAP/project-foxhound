@@ -3,6 +3,7 @@
 
 "use strict";
 
+Services.prefs.clearUserPref("sidebar.main.tools");
 registerCleanupFunction(() =>
   Services.prefs.clearUserPref("sidebar.main.tools")
 );
@@ -139,6 +140,114 @@ add_task(async function test_conditional_tools() {
     set: [["browser.ml.chat.enabled", false]],
   });
   is(sidebar.toolButtons.length, origCount, "Disabled tool removed");
+
+  await BrowserTestUtils.closeWindow(win);
+});
+
+/**
+ * Check that tools pref changes happen for existing windows
+ */
+add_task(async function test_tool_pref_change() {
+  const sidebar = document.querySelector("sidebar-main");
+  await sidebar.updateComplete;
+
+  const origCount = sidebar.toolButtons.length;
+  is(origCount, 1, "Expected number of initial tools");
+
+  const origTools = Services.prefs.getStringPref("sidebar.main.tools");
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.main.tools", origTools.replace(",bookmarks", "")]],
+  });
+  is(sidebar.toolButtons.length, origCount - 1, "Removed tool");
+
+  await SpecialPowers.pushPrefEnv({ set: [["sidebar.main.tools", origTools]] });
+  is(sidebar.toolButtons.length, origCount, "Restored tool");
+
+  await SpecialPowers.pushPrefEnv({ clear: [["sidebar.main.tools"]] });
+  is(sidebar.toolButtons.length, origCount + 1, "Restored default tools");
+});
+
+/**
+ * Check that the new sidebar is hidden/shown automatically (without a browser restart)
+ * when flipping the sidebar.revamp pref
+ */
+add_task(async function test_flip_revamp_pref() {
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  const sidebar = win.document.querySelector("sidebar-main");
+  await sidebar.updateComplete;
+
+  let verticalTabs = win.document.querySelector("#vertical-tabs");
+  ok(
+    !BrowserTestUtils.isVisible(verticalTabs),
+    "Vertical tabs slot is not visible initially"
+  );
+  // Open history sidebar
+  await toggleSidebarPanel(win, "viewHistorySidebar");
+
+  await SpecialPowers.pushPrefEnv({ set: [["sidebar.verticalTabs", true]] });
+  ok(BrowserTestUtils.isVisible(verticalTabs), "Vertical tabs slot is visible");
+
+  ok(sidebar, "Revamped sidebar is shown initially.");
+
+  await SpecialPowers.pushPrefEnv({ set: [["sidebar.revamp", false]] });
+
+  await TestUtils.waitForCondition(() => {
+    let isSidebarMainShown = !win.document.querySelector("sidebar-main").hidden;
+    let isSwitcherPanelShown =
+      !win.document.getElementById("sidebar-header").hidden;
+    // Vertical tabs pref should be turned off when revamp pref is turned off
+    let isVerticalTabsShown = BrowserTestUtils.isVisible(verticalTabs);
+    return !isSidebarMainShown && isSwitcherPanelShown && !isVerticalTabsShown;
+  }, "The new sidebar is hidden and the old sidebar is shown.");
+
+  ok(true, "The new sidebar is hidden and the old sidebar is shown.");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", true]],
+  });
+  await sidebar.updateComplete;
+  await TestUtils.waitForCondition(() => {
+    let isSidebarMainShown = !document.querySelector("sidebar-main").hidden;
+    let isSwitcherPanelShown =
+      !win.document.getElementById("sidebar-header").hidden;
+    return isSidebarMainShown && !isSwitcherPanelShown;
+  }, "The old sidebar is hidden and the new sidebar is shown.");
+
+  ok(true, "The old sidebar is hidden and the new sidebar is shown.");
+  await BrowserTestUtils.closeWindow(win);
+});
+
+/**
+ * Check that conditional sidebar tools hide if open on pref change
+ */
+add_task(async function test_conditional_tools() {
+  const COMMAND_ID = "viewGenaiChatSidebar";
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  const { SidebarController } = win;
+  const sidebar = win.document.querySelector("sidebar-main");
+  await sidebar.updateComplete;
+
+  await SpecialPowers.pushPrefEnv({ set: [["browser.ml.chat.enabled", true]] });
+
+  await SidebarController.show(COMMAND_ID);
+
+  await TestUtils.waitForCondition(() => {
+    return (
+      SidebarController.isOpen && SidebarController.currentID == COMMAND_ID
+    );
+  }, "The sidebar was opened.");
+
+  ok(true, "Conditional sidebar is shown.");
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.enabled", false]],
+  });
+
+  await TestUtils.waitForCondition(() => {
+    return !SidebarController.isOpen;
+  }, "The sidebar is hidden.");
+
+  ok(true, "Conditional sidebar is hidden after the pref change.");
 
   await BrowserTestUtils.closeWindow(win);
 });

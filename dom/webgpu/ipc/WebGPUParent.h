@@ -48,12 +48,11 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   explicit WebGPUParent();
 
   ipc::IPCResult RecvInstanceRequestAdapter(
-      const dom::GPURequestAdapterOptions& aOptions,
-      const nsTArray<RawId>& aTargetIds,
+      const dom::GPURequestAdapterOptions& aOptions, RawId aAdapterId,
       InstanceRequestAdapterResolver&& resolver);
   ipc::IPCResult RecvAdapterRequestDevice(
       RawId aAdapterId, const ipc::ByteBuf& aByteBuf, RawId aDeviceId,
-      AdapterRequestDeviceResolver&& resolver);
+      RawId aQueueId, AdapterRequestDeviceResolver&& resolver);
   ipc::IPCResult RecvAdapterDrop(RawId aAdapterId);
   ipc::IPCResult RecvDeviceDestroy(RawId aDeviceId);
   ipc::IPCResult RecvDeviceDrop(RawId aDeviceId);
@@ -70,6 +69,7 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   ipc::IPCResult RecvTextureDrop(RawId aTextureId);
   ipc::IPCResult RecvTextureViewDrop(RawId aTextureViewId);
   ipc::IPCResult RecvSamplerDrop(RawId aSamplerId);
+  ipc::IPCResult RecvQuerySetDrop(RawId aQuerySetId);
   ipc::IPCResult RecvCommandEncoderFinish(
       RawId aEncoderId, RawId aDeviceId,
       const dom::GPUCommandBufferDescriptor& aDesc);
@@ -151,6 +151,8 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   BufferMapData* GetBufferMapData(RawId aBufferId);
 
   bool UseExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId);
+
+  void DisableExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId);
 
   bool EnsureExternalTextureForSwapChain(ffi::WGPUSwapChainId aSwapChainId,
                                          ffi::WGPUDeviceId aDeviceId,

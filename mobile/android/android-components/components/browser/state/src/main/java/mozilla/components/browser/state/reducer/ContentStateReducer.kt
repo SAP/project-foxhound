@@ -238,7 +238,7 @@ internal object ContentStateReducer {
             is ContentAction.SetRecordingDevices -> updateContentState(state, action.sessionId) {
                 it.copy(recordingDevices = action.devices)
             }
-            is ContentAction.UpdateDesktopModeAction -> updateContentState(state, action.sessionId) {
+            is ContentAction.UpdateTabDesktopMode -> updateContentState(state, action.sessionId) {
                 it.copy(desktopMode = action.enabled)
             }
             is UpdatePermissionHighlightsStateAction.NotificationChangedAction -> {
@@ -321,8 +321,19 @@ internal object ContentStateReducer {
                     }
                 }
             }
+            is ContentAction.EnteredPdfViewer -> {
+                updateContentState(state, action.tabId) {
+                    it.copy(isPdf = true)
+                }
+            }
+            is ContentAction.ExitedPdfViewer -> {
+                updateContentState(state, action.tabId) {
+                    it.copy(isPdf = false)
+                }
+            }
         }
     }
+
     private fun consumeDownload(state: BrowserState, sessionId: String, downloadId: String): BrowserState {
         return updateContentState(state, sessionId) {
             if (it.download != null && it.download.id == downloadId) {

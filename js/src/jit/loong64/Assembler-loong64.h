@@ -210,6 +210,7 @@ static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
 // Registers used for ref calls.
 static constexpr Register WasmCallRefCallScratchReg0 = ABINonArgReg0;
 static constexpr Register WasmCallRefCallScratchReg1 = ABINonArgReg1;
+static constexpr Register WasmCallRefCallScratchReg2 = ABINonArgReg2;
 static constexpr Register WasmCallRefReg = ABINonArgReg3;
 
 // Registers used for wasm tail calls operations.
@@ -811,10 +812,6 @@ inline bool is_uintN(int32_t x, unsigned n) {
   MOZ_ASSERT((0 < n) && (n < (sizeof(x) * 8)));
   return !(x >> n);
 }
-
-inline Imm32 Imm64::firstHalf() const { return low(); }
-
-inline Imm32 Imm64::secondHalf() const { return hi(); }
 
 static constexpr int32_t SliceSize = 1024;
 typedef js::jit::AssemblerBuffer<SliceSize, Instruction> LOONGBuffer;

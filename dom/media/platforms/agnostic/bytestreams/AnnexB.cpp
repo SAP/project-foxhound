@@ -50,7 +50,7 @@ Result<Ok, nsresult> AnnexB::ConvertAVCCSampleToAnnexB(
     MOZ_TRY_VAR(nalLen, reader.ReadU32());
     const uint8_t* p = reader.Read(nalLen);
 
-    if (!writer.Write(kAnnexBDelimiter, ArrayLength(kAnnexBDelimiter))) {
+    if (!writer.Write(kAnnexBDelimiter, std::size(kAnnexBDelimiter))) {
       return Err(NS_ERROR_OUT_OF_MEMORY);
     }
     if (!p) {
@@ -122,7 +122,7 @@ Result<Ok, nsresult> AnnexB::ConvertHVCCSampleToAnnexB(
     uint32_t nalLen;
     MOZ_TRY_VAR(nalLen, reader.ReadU32());
     const uint8_t* p = reader.Read(nalLen);
-    if (!writer.Write(kAnnexBDelimiter, ArrayLength(kAnnexBDelimiter))) {
+    if (!writer.Write(kAnnexBDelimiter, std::size(kAnnexBDelimiter))) {
       LOG("Failed to write kAnnexBDelimiter, OOM?");
       return Err(NS_ERROR_OUT_OF_MEMORY);
     }
@@ -218,7 +218,7 @@ already_AddRefed<mozilla::MediaByteBuffer> AnnexB::ConvertHVCCExtraDataToAnnexB(
   const HVCCConfig hvcc = rv.unwrap();
   RefPtr<mozilla::MediaByteBuffer> annexB = new mozilla::MediaByteBuffer;
   for (const auto& nalu : hvcc.mNALUs) {
-    annexB->AppendElements(kAnnexBDelimiter, ArrayLength(kAnnexBDelimiter));
+    annexB->AppendElements(kAnnexBDelimiter, std::size(kAnnexBDelimiter));
     annexB->AppendElements(nalu.mNALU.Elements(), nalu.mNALU.Length());
     LOGV("Insert NALU (type=%hhu, size=%zu) to AnnexB (size=%zu)",
          nalu.mNalUnitType, nalu.mNALU.Length(), annexB->Length());
@@ -236,7 +236,7 @@ Result<mozilla::Ok, nsresult> AnnexB::ConvertSPSOrPPS(
     if (!ptr) {
       return Err(NS_ERROR_FAILURE);
     }
-    aAnnexB->AppendElements(kAnnexBDelimiter, ArrayLength(kAnnexBDelimiter));
+    aAnnexB->AppendElements(kAnnexBDelimiter, std::size(kAnnexBDelimiter));
     aAnnexB->AppendElements(ptr, length);
   }
   return Ok();
@@ -337,6 +337,28 @@ void AnnexB::ParseNALEntries(const Span<const uint8_t>& aSpan,
   }
 }
 
+/* static */
+bool AnnexB::FindAllNalTypes(const Span<const uint8_t>& aSpan,
+                             const nsTArray<NAL_TYPES>& aTypes) {
+  nsTArray<AnnexB::NALEntry> nalEntries;
+  AnnexB::ParseNALEntries(aSpan, nalEntries);
+  nsTArray<NAL_TYPES> checkTypes = aTypes.Clone();
+  auto entry = nalEntries.cbegin();
+  while (entry != nalEntries.cend()) {
+    int64_t offset = (*entry).mOffset;
+    uint8_t nalUnitType = (aSpan.cbegin() + offset)[0] & 0x1f;
+    size_t index = checkTypes.IndexOf(nalUnitType);
+    if (index != nsTArray<NAL_TYPES>::NoIndex) {
+      checkTypes.RemoveElementAt(index);
+      if (checkTypes.IsEmpty()) {
+        return true;
+      }
+    }
+    entry++;
+  }
+  return false;
+}
+
 static Result<mozilla::Ok, nsresult> ParseNALUnits(ByteWriter<BigEndian>& aBw,
                                                    BufferReader& aBr) {
   size_t startSize;
@@ -404,7 +426,7 @@ bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample,
   };
   // XXX(Bug 1631371) Check if this should use a fallible operation as it
   // pretended earlier.
-  extradata->AppendElements(kFakeExtraData, ArrayLength(kFakeExtraData));
+  extradata->AppendElements(kFakeExtraData, std::size(kFakeExtraData));
   aSample->mExtraData = std::move(extradata);
   return true;
 }

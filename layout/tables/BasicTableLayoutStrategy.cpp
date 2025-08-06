@@ -69,11 +69,14 @@ struct CellISizeInfo {
   float prefPercent;
 };
 
-// Used for both column and cell calculations.  The parts needed only
-// for cells are skipped when aIsCell is false.
+// A helper for ComputeColumnIntrinsicISizes(), used for both column and cell
+// intrinsic inline size calculations. The parts needed only for cells are
+// skipped when aIsCell is false.
 static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
                                   nsIFrame* aFrame, WritingMode aWM,
                                   bool aIsCell) {
+  MOZ_ASSERT(aFrame->GetWritingMode() == aWM,
+             "The caller is expected to pass aFrame's writing mode!");
   nscoord minCoord, prefCoord;
   const nsStylePosition* stylePos = aFrame->StylePosition();
   bool isQuirks =
@@ -84,8 +87,30 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
     // wrapping inside of it should not apply font size inflation.
     AutoMaybeDisableFontInflation an(aFrame);
 
-    minCoord = aFrame->GetMinISize(aRenderingContext);
-    prefCoord = aFrame->GetPrefISize(aRenderingContext);
+    // Resolve the cell's block size 'cellBSize' as a percentage basis, in case
+    // it impacts its children's inline-size contributions (e.g. via percentage
+    // block size + aspect-ratio). However, this behavior might not be
+    // web-compatible (Bug 1461852).
+    //
+    // Note that if the cell *itself* has a percentage-based block size, we
+    // treat it as unresolvable here by using an unconstrained cbBSize. It will
+    // be resolved during the "special bsize reflow" pass if the table has a
+    // specified block size. See nsTableFrame::Reflow() and
+    // ReflowInput::Flags::mSpecialBSizeReflow.
+    const nscoord cbBSize = NS_UNCONSTRAINEDSIZE;
+    const nscoord contentEdgeToBoxSizingBSize =
+        stylePos->mBoxSizing == StyleBoxSizing::Border
+            ? aFrame->IntrinsicBSizeOffsets().BorderPadding()
+            : 0;
+    const nscoord cellBSize = nsIFrame::ComputeBSizeValueAsPercentageBasis(
+        stylePos->BSize(aWM), stylePos->MinBSize(aWM), stylePos->MaxBSize(aWM),
+        cbBSize, contentEdgeToBoxSizingBSize);
+
+    const IntrinsicSizeInput input(
+        aRenderingContext, Nothing(),
+        Some(LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, cellBSize)));
+    minCoord = aFrame->GetMinISize(input);
+    prefCoord = aFrame->GetPrefISize(input);
     // Until almost the end of this function, minCoord and prefCoord
     // represent the box-sizing based isize values (which mean they
     // should include inline padding and border width when
@@ -146,6 +171,7 @@ static CellISizeInfo GetISizeInfo(gfxContext* aRenderingContext,
         // TODO: Bug 1708310: Make sure fit-content() work properly in table.
       case StyleSize::Tag::Auto:
       case StyleSize::Tag::LengthPercentage:
+      case StyleSize::Tag::AnchorSizeFunction:
         break;
     }
   }
@@ -455,7 +481,9 @@ void BasicTableLayoutStrategy::ComputeIntrinsicISizes(
         (nonpct_pref_total == nscoord_MAX
              ? nscoord_MAX
              : nscoord(float(nonpct_pref_total) / (1.0f - pct_total)));
-    if (large_pct_pref > pref_pct_expand) pref_pct_expand = large_pct_pref;
+    if (large_pct_pref > pref_pct_expand) {
+      pref_pct_expand = large_pct_pref;
+    }
   }
 
   // border-spacing isn't part of the basis for percentages
@@ -501,7 +529,9 @@ void BasicTableLayoutStrategy::ComputeColumnISizes(
 
   nsTableCellMap* cellMap = mTableFrame->GetCellMap();
   int32_t colCount = cellMap->GetColCount();
-  if (colCount <= 0) return;  // nothing to do
+  if (colCount <= 0) {
+    return;  // nothing to do
+  }
 
   DistributeISizeToColumns(iSize, 0, colCount, BtlsISizeType::FinalISize,
                            false);
@@ -851,8 +881,9 @@ void BasicTableLayoutStrategy::DistributeISizeToColumns(
               col_iSize = NSCoordSaturatingAdd(
                   col_iSize, NSToCoordRound(float(pref_minus_min) * c));
             }
-          } else
+          } else {
             col_iSize = col_iSize_before_adjust = colFrame->GetMinCoord();
+          }
         }
         break;
       case FLEX_FLEX_SMALL:

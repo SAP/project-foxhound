@@ -170,9 +170,9 @@ add_task(async function general() {
     assert: () =>
       assertAbandonmentTelemetry([
         {
-          groups: "heuristic,general",
-          results: "search_engine,bookmark",
-          n_results: 2,
+          groups: "heuristic,suggested_index,general",
+          results: "search_engine,action,bookmark",
+          n_results: 3,
         },
       ]),
   });
@@ -187,6 +187,24 @@ add_task(async function general() {
           n_results: 2,
         },
       ]),
+  });
+});
+
+add_task(async function restrict_keywords() {
+  let telemetry = {
+    groups:
+      "general,general,general,general,general,general,restrict_keyword," +
+      "restrict_keyword,restrict_keyword,restrict_keyword",
+    results:
+      "search_engine,search_engine,search_engine,search_engine,search_engine," +
+      "search_engine,restrict_keyword_bookmarks,restrict_keyword_tabs," +
+      "restrict_keyword_history,restrict_keyword_actions",
+    n_results: 10,
+  };
+  await doRestrictKeywordsTest({
+    trigger: () => doBlur(),
+    assert: () =>
+      assertAbandonmentTelemetry([telemetry, telemetry, telemetry, telemetry]),
   });
 });
 

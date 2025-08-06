@@ -9,64 +9,6 @@ dnl ========================================================
 AC_PREREQ(2.13)
 AC_INIT(config/config.mk)
 AC_CONFIG_AUX_DIR(${srcdir}/build/autoconf)
-AC_CANONICAL_SYSTEM
-
-dnl ========================================================
-dnl Checks for compilers.
-dnl ========================================================
-
-if test "$COMPILE_ENVIRONMENT"; then
-
-# This prevents mingw from adding .exe when generating executable. Internal use
-# only.
-ac_exeext=.out
-
-if test "$target" != "$host"; then
-    MOZ_CROSS_COMPILER
-else
-    AC_PROG_CC
-    case "$target" in
-    *-mingw*)
-      # Work around the conftest.exe access problem on Windows
-      sleep 2
-    esac
-    AC_PROG_CXX
-fi
-
-fi # COMPILE_ENVIRONMENT
-
-dnl ========================================================
-dnl System overrides of the defaults for target
-dnl ========================================================
-
-case "$target" in
-*-darwin*)
-    MOZ_OPTIMIZE_FLAGS="-O3"
-    ;;
-
-*-android*|*-linuxandroid*)
-    MOZ_OPTIMIZE_FLAGS="-O2"
-    ;;
-
-*-*linux*)
-    if test "$CC_TYPE" != clang-cl ; then
-        MOZ_OPTIMIZE_FLAGS="-O2"
-    fi
-    ;;
-*-mingw*)
-    MOZ_OPTIMIZE_FLAGS="-O2"
-    ;;
-esac
-
-if test -z "$MOZ_OPTIMIZE_FLAGS"; then
-    MOZ_OPTIMIZE_FLAGS="-O"
-fi
-
-
-dnl Mozilla specific options
-dnl ========================================================
-dnl The macros used for command line options
-dnl are defined in build/autoconf/altoptions.m4.
 
 dnl ========================================================
 dnl =
@@ -123,18 +65,6 @@ if test -f "${_topsrcdir}/$REAL_BRANDING_DIRECTORY/configure.sh"; then
 fi
 
 AC_SUBST(MOZ_BRANDING_DIRECTORY)
-
-dnl ========================================================
-dnl = Enable code optimization. ON by default.
-dnl ========================================================
-
-# Use value from moz.configure if one is defined. Else use our computed
-# value.
-if test -n "${MOZ_CONFIGURE_OPTIMIZE_FLAGS}"; then
-    MOZ_OPTIMIZE_FLAGS=${MOZ_CONFIGURE_OPTIMIZE_FLAGS}
-fi
-
-AC_SUBST_LIST(MOZ_OPTIMIZE_FLAGS)
 
 
 dnl ========================================================
@@ -209,34 +139,9 @@ AC_SUBST(MOZ_EME_PROCESS_BUNDLEID)
 # version_display.txt or version.txt in the application directory, or
 # browser/config/version_display.txt.
 
-# For extensions and langpacks, we require a max version that is compatible
-# across security releases. MOZ_APP_MAXVERSION is our method for doing that.
-# 24.0a1 and 24.0a2 aren't affected
-# 24.0 becomes 24.*
-# 24.1.1 becomes 24.*
-IS_ALPHA=`echo $MOZ_APP_VERSION | grep a`
-if test -z "$IS_ALPHA"; then
-  changequote(,)
-  if test "$(basename $MOZ_BUILD_APP)" = "suite"; then
-    MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\.[0-9]*\).*|\1|"`.*
-  else
-    MOZ_APP_MAXVERSION=`echo $MOZ_APP_VERSION | sed "s|\(^[0-9]*\).*|\1|"`.*
-  fi
-  changequote([,])
-else
-  MOZ_APP_MAXVERSION=$MOZ_APP_VERSION
-fi
-
 AC_SUBST(MOZ_APP_DISPLAYNAME)
 AC_SUBST(MOZ_APP_PROFILE)
-AC_SUBST(MAR_CHANNEL_ID)
-AC_SUBST(ACCEPTED_MAR_CHANNEL_IDS)
 AC_DEFINE_UNQUOTED(MOZ_APP_UA_VERSION, "$MOZ_APP_VERSION")
-
-AC_SUBST(MOZ_APP_MAXVERSION)
-
-AC_SUBST(HOST_CC)
-AC_SUBST(HOST_CXX)
 
 dnl Set various defines and substitutions
 dnl ========================================================

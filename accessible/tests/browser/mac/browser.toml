@@ -13,7 +13,7 @@ support-files = [
   "!/accessible/tests/mochitest/letters.gif",
   "!/accessible/tests/mochitest/moz.png",
 ]
-prefs = ["javascript.options.asyncstack_capture_debuggee_only=false"]
+prefs = ["dom.text_fragments.enabled=true"]
 
 ["browser_app.js"]
 https_first_disabled = true
@@ -35,6 +35,8 @@ https_first_disabled = true
 ["browser_attributed_text.js"]
 
 ["browser_bounds.js"]
+
+["browser_combobox.js"]
 
 ["browser_details_summary.js"]
 

@@ -14,7 +14,6 @@ support-files = [
   "bounds-helper.svg",
   "dataTypes-helper.svg",
   "fragments-helper.svg",
-  "getBBox-options-helper.svg",
   "getCTM-helper.svg",
   "getSubStringLength-helper.svg",
   "matrixUtils.js",
@@ -79,9 +78,9 @@ support-files = [
 
 ["test_dataTypesModEvents.html"]
 
-["test_fragments.html"]
+["test_dynamic-move-under-mouse.html"]
 
-["test_getBBox-options.html"]
+["test_fragments.html"]
 
 ["test_getCTM.html"]
 
@@ -185,3 +184,5 @@ scheme = "https"
 ["test_viewBox.html"]
 
 ["test_viewport.html"]
+
+["test_SVG_switch_language_spoof.html"]

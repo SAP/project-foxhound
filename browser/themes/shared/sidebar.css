@@ -2,18 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-@namespace html url("http://www.w3.org/1999/xhtml");
-
-:root {
-  --sidebar-background-color: -moz-sidebar;
-  --sidebar-text-color: -moz-sidebartext;
-  --sidebar-border-color: -moz-sidebarborder;
-}
-
 #sidebar-box {
-  background-color: var(--sidebar-background-color);
-  color: var(--sidebar-text-color);
-  text-shadow: none;
   max-width: 75vw;
   min-width: 14em;
   width: 18em;
@@ -28,10 +17,46 @@
   /* stylelint-disable-next-line media-query-no-invalid */
   @media (-moz-bool-pref: "sidebar.revamp") {
     min-width: 200px;
+    width: 340px;
+    padding-block-end: var(--space-small);
+    padding-inline-end: var(--space-small);
+    position: relative;
+    z-index: var(--browser-area-z-index-sidebar);
+
+    &[positionend] {
+      padding-inline-end: 0;
+      padding-inline-start: var(--space-small);
+    }
   }
 
   &[sidebarcommand="viewGenaiChatSidebar"] {
     min-width: 400px;
+  }
+}
+
+#sidebar-main,
+#sidebar-box {
+  text-shadow: none;
+
+  &:not(.browser-toolbox-background) {
+    background-color: var(--sidebar-background-color);
+    color: var(--sidebar-text-color);
+
+    /* Note that with sidebar.revamp we apply the --sidebar-background-color to the
+     * #sidebar browser. We still need the #sidebar-box background to match the
+     * toolbar tho */
+    /* stylelint-disable-next-line media-query-no-invalid */
+    @media (-moz-bool-pref: "sidebar.revamp") {
+      background-color: var(--toolbar-bgcolor);
+      color: var(--toolbar-color);
+
+      :root[lwtheme] & {
+        /* Ensure toolbar color displays on top of the frame/toolbox color to
+         * guarantee full opacity */
+        background-color: var(--lwt-accent-color);
+        background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor));
+      }
+    }
   }
 }
 
@@ -49,10 +74,25 @@
 
 #sidebar {
   flex: 1;
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.revamp") {
+    border-radius: var(--border-radius-medium);
+    box-shadow: var(--content-area-shadow);
+    border: 0.5px solid var(--sidebar-border-color);
+    background-color: var(--sidebar-background-color);
+    color: var(--sidebar-text-color);
+  }
 }
 
 .sidebar-splitter {
-  @media not (-moz-platform: linux) {
+  --splitter-width: 4px;
+  /* Ensure the splitter is painted on top of the sidebar box it overlaps.
+  Otherwise, the user may be unable to drag the splitter to resize the sidebar. */
+  z-index: var(--browser-area-z-index-sidebar-splitter);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.revamp") or (not (-moz-platform: linux)) {
     /* We don't let the splitter overlap the sidebar on Linux since the sidebar's
     scrollbar is too narrow on Linux. */
     appearance: none;
@@ -60,21 +100,23 @@
     border-inline-end-width: 1px;
     border-color: var(--sidebar-border-color);
     min-width: 1px;
-    width: 4px;
+    width: var(--splitter-width);
     background-image: none !important;
     background-color: transparent;
-    margin-inline-start: -4px;
+    margin-inline-start: calc(-1 * var(--splitter-width));
     position: relative;
 
     #sidebar-box[positionend] + & {
       border-inline-width: 1px 0;
-      margin-inline: 0 -4px;
+      margin-inline: 0 calc(-1 * var(--splitter-width));
     }
   }
 
   /* stylelint-disable-next-line media-query-no-invalid */
   @media (-moz-bool-pref: "sidebar.revamp") {
-    transition: background-color .5s ease-in-out;
+    --splitter-width: 6px;
+    transition: background-color 0.5s ease-in-out;
+    border-style: none;
 
     &:hover {
       background-color: var(--focus-outline-color);
@@ -172,4 +214,20 @@ menuseparator + #sidebar-extensions-separator {
 
 .webextension-menuitem {
   list-style-image: var(--webextension-menuitem-image, inherit) !important;
+}
+
+/* Sidebar animation */
+
+#sidebar-main,
+sidebar-main,
+#sidebar-box,
+#sidebar-splitter,
+#tabbrowser-tabbox {
+  transform-origin: 0 0;
+  will-change: translate;
+}
+
+#sidebar-main {
+  /* Prevent overflow during sidebar animation when the sidebar is reordered */
+  overflow: clip;
 }

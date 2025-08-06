@@ -82,7 +82,6 @@ add_task(async function test_process_ping() {
   Assert.ok(m.isPingAllowed("gpu"));
   Assert.ok(m.isPingAllowed("main"));
   Assert.ok(m.isPingAllowed("rdd"));
-  Assert.ok(m.isPingAllowed("sandboxbroker"));
   Assert.ok(m.isPingAllowed("socket"));
   Assert.ok(m.isPingAllowed("utility"));
   Assert.ok(m.isPingAllowed("vr"));
@@ -707,7 +706,6 @@ add_task(async function test_child_process_crash_ping() {
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_VR],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_RDD],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_SOCKET],
-    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_REMOTESANDBOXBROKER],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_FORKSERVER],
     m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_UTILITY],
   ];
@@ -1045,6 +1043,39 @@ add_task(async function test_glean_crash_ping() {
       WindowsErrorReporting: "1",
       WindowsFileDialogErrorCode: 42,
       WindowsPackageFamilyName: "Windows 10",
+    }
+  );
+
+  Assert.ok(submitted);
+});
+
+add_task(async function test_glean_crash_ping_utility() {
+  let m = await getManager();
+
+  let id = await m.createDummyDump();
+
+  let submitted = false;
+  GleanPings.crash.testBeforeNextSubmit(() => {
+    const MINUTES = new Date(DUMMY_DATE_2);
+    Assert.equal(Glean.crash.time.testGetValue().getTime(), MINUTES.getTime());
+    Assert.equal(
+      Glean.crash.processType.testGetValue(),
+      m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_UTILITY]
+    );
+    Assert.deepEqual(Glean.crash.utilityActorsName.testGetValue(), [
+      "audio-decoder-generic",
+      "js-oracle",
+    ]);
+    submitted = true;
+  });
+
+  await m.addCrash(
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_UTILITY],
+    m.CRASH_TYPE_CRASH,
+    id,
+    DUMMY_DATE_2,
+    {
+      UtilityActorsName: "audio-decoder-generic,js-oracle",
     }
   );
 

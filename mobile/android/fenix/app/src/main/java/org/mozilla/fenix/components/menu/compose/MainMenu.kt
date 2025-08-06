@@ -8,9 +8,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import mozilla.components.feature.addons.Addon
+import mozilla.components.feature.addons.ui.displayName
 import mozilla.components.service.fxa.manager.AccountState
 import mozilla.components.service.fxa.manager.AccountState.NotAuthenticated
 import mozilla.components.service.fxa.store.Account
@@ -22,20 +25,21 @@ import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 
-internal const val MAIN_MENU_ROUTE = "main_menu"
-
 /**
  * Wrapper column containing the main menu items.
  *
  * @param accessPoint The [MenuAccessPoint] that was used to navigate to the menu dialog.
  * @param account [Account] information available for a synced account.
  * @param accountState The [AccountState] of a Mozilla account.
+ * @param availableAddons A list of installed and enabled [Addon]s to be shown.
  * @param isPrivate Whether or not the browsing mode is in private mode.
  * @param isDesktopMode Whether or not the desktop mode is enabled.
+ * @param isPdf Whether or not the current tab is a PDF.
  * @param isTranslationSupported Whether or not translation is supported.
  * @param showQuitMenu Whether or not the button to delete browsing data and quit
  * should be visible.
  * @param isExtensionsProcessDisabled Whether or not the extensions process is disabled due to extension errors.
+ * @param reportSiteIssueLabel The label of report site issue web extension menu item.
  * @param onMozillaAccountButtonClick Invoked when the user clicks on Mozilla account button.
  * @param onHelpButtonClick Invoked when the user clicks on the help button.
  * @param onSettingsButtonClick Invoked when the user clicks on the settings button.
@@ -58,15 +62,18 @@ internal const val MAIN_MENU_ROUTE = "main_menu"
  */
 @Suppress("LongParameterList")
 @Composable
-internal fun MainMenu(
+fun MainMenu(
     accessPoint: MenuAccessPoint,
     account: Account?,
     accountState: AccountState,
+    availableAddons: List<Addon>,
     isPrivate: Boolean,
     isDesktopMode: Boolean,
+    isPdf: Boolean,
     isTranslationSupported: Boolean,
     showQuitMenu: Boolean,
     isExtensionsProcessDisabled: Boolean,
+    reportSiteIssueLabel: String?,
     onMozillaAccountButtonClick: () -> Unit,
     onHelpButtonClick: () -> Unit,
     onSettingsButtonClick: () -> Unit,
@@ -105,9 +112,12 @@ internal fun MainMenu(
 
         ToolsAndActionsMenuGroup(
             accessPoint = accessPoint,
+            availableAddons = availableAddons,
             isDesktopMode = isDesktopMode,
+            isPdf = isPdf,
             isTranslationSupported = isTranslationSupported,
             isExtensionsProcessDisabled = isExtensionsProcessDisabled,
+            reportSiteIssueLabel = reportSiteIssueLabel,
             onSwitchToDesktopSiteMenuClick = onSwitchToDesktopSiteMenuClick,
             onFindInPageMenuClick = onFindInPageMenuClick,
             onToolsMenuClick = onToolsMenuClick,
@@ -143,7 +153,10 @@ private fun QuitMenuGroup(
 ) {
     MenuGroup {
         MenuItem(
-            label = stringResource(id = R.string.delete_browsing_data_on_quit_action),
+            label = stringResource(
+                id = R.string.browser_menu_delete_browsing_data_on_quit,
+                stringResource(id = R.string.app_name),
+            ),
             beforeIconPainter = painterResource(id = R.drawable.mozac_ic_cross_circle_fill_24),
             state = MenuItemState.WARNING,
             onClick = onQuitMenuClick,
@@ -194,13 +207,16 @@ private fun NewTabsMenuGroup(
     }
 }
 
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "LongMethod")
 @Composable
 private fun ToolsAndActionsMenuGroup(
     accessPoint: MenuAccessPoint,
+    availableAddons: List<Addon>,
     isDesktopMode: Boolean,
+    isPdf: Boolean,
     isTranslationSupported: Boolean,
     isExtensionsProcessDisabled: Boolean,
+    reportSiteIssueLabel: String?,
     onSwitchToDesktopSiteMenuClick: () -> Unit,
     onFindInPageMenuClick: () -> Unit,
     onToolsMenuClick: () -> Unit,
@@ -209,18 +225,24 @@ private fun ToolsAndActionsMenuGroup(
 ) {
     MenuGroup {
         if (accessPoint == MenuAccessPoint.Browser) {
+            val labelId: Int
+            val iconId: Int
+            val menuItemState: MenuItemState
+
+            if (isDesktopMode) {
+                labelId = R.string.browser_menu_switch_to_mobile_site
+                iconId = R.drawable.mozac_ic_device_mobile_24
+                menuItemState = MenuItemState.ACTIVE
+            } else {
+                labelId = R.string.browser_menu_switch_to_desktop_site
+                iconId = R.drawable.mozac_ic_device_desktop_24
+                menuItemState = if (isPdf) MenuItemState.DISABLED else MenuItemState.ENABLED
+            }
+
             MenuItem(
-                label = if (isDesktopMode) {
-                    stringResource(id = R.string.browser_menu_switch_to_mobile_site)
-                } else {
-                    stringResource(id = R.string.browser_menu_switch_to_desktop_site)
-                },
-                beforeIconPainter = painterResource(id = R.drawable.mozac_ic_device_desktop_24),
-                state = if (isDesktopMode) {
-                    MenuItemState.ACTIVE
-                } else {
-                    MenuItemState.ENABLED
-                },
+                label = stringResource(id = labelId),
+                beforeIconPainter = painterResource(id = iconId),
+                state = menuItemState,
                 onClick = onSwitchToDesktopSiteMenuClick,
             )
 
@@ -237,13 +259,22 @@ private fun ToolsAndActionsMenuGroup(
             MenuItem(
                 label = stringResource(id = R.string.browser_menu_tools),
                 beforeIconPainter = painterResource(id = R.drawable.mozac_ic_tool_24),
-                description = stringResource(
-                    id = if (isTranslationSupported) {
-                        R.string.browser_menu_tools_description_with_translate
-                    } else {
-                        R.string.browser_menu_tools_description
-                    },
-                ),
+                description = when {
+                    isTranslationSupported && reportSiteIssueLabel != null -> stringResource(
+                        R.string.browser_menu_tools_description_with_translate_with_report_site,
+                        reportSiteIssueLabel,
+                    )
+                    isTranslationSupported -> stringResource(
+                        R.string.browser_menu_tools_description_with_translate_without_report_site,
+                    )
+                    reportSiteIssueLabel != null -> stringResource(
+                        R.string.browser_menu_tools_description_with_report_site,
+                        reportSiteIssueLabel,
+                    )
+                    else -> stringResource(
+                        R.string.browser_menu_tools_description_without_report_site,
+                    )
+                },
                 onClick = onToolsMenuClick,
                 afterIconPainter = painterResource(id = R.drawable.mozac_ic_chevron_right_24),
             )
@@ -266,7 +297,12 @@ private fun ToolsAndActionsMenuGroup(
             description = if (isExtensionsProcessDisabled) {
                 stringResource(R.string.browser_menu_extensions_disabled_description)
             } else {
-                null
+                if (availableAddons.isEmpty()) {
+                    stringResource(R.string.browser_menu_no_extensions_installed_description)
+                } else {
+                    val context = LocalContext.current
+                    availableAddons.joinToString(separator = ", ") { it.displayName(context) }
+                }
             },
             descriptionState = if (isExtensionsProcessDisabled) {
                 MenuItemState.WARNING
@@ -275,7 +311,11 @@ private fun ToolsAndActionsMenuGroup(
             },
             beforeIconPainter = painterResource(id = R.drawable.mozac_ic_extension_24),
             onClick = onExtensionsMenuClick,
-            afterIconPainter = painterResource(id = R.drawable.mozac_ic_chevron_right_24),
+            afterIconPainter = if (accessPoint != MenuAccessPoint.Home) {
+                painterResource(id = R.drawable.mozac_ic_chevron_right_24)
+            } else {
+                null
+            },
         )
     }
 }
@@ -357,11 +397,14 @@ private fun MenuDialogPreview() {
                 accessPoint = MenuAccessPoint.Browser,
                 account = null,
                 accountState = NotAuthenticated,
+                availableAddons = emptyList(),
                 isPrivate = false,
                 isDesktopMode = false,
+                isPdf = false,
                 isTranslationSupported = true,
                 showQuitMenu = true,
                 isExtensionsProcessDisabled = true,
+                reportSiteIssueLabel = "Report Site Issue",
                 onMozillaAccountButtonClick = {},
                 onHelpButtonClick = {},
                 onSettingsButtonClick = {},
@@ -396,11 +439,14 @@ private fun MenuDialogPrivatePreview() {
                 accessPoint = MenuAccessPoint.Home,
                 account = null,
                 accountState = NotAuthenticated,
+                availableAddons = emptyList(),
                 isPrivate = false,
                 isDesktopMode = false,
+                isPdf = false,
                 isTranslationSupported = true,
                 showQuitMenu = true,
                 isExtensionsProcessDisabled = false,
+                reportSiteIssueLabel = "Report Site Issue",
                 onMozillaAccountButtonClick = {},
                 onHelpButtonClick = {},
                 onSettingsButtonClick = {},

@@ -39,11 +39,15 @@ class MenuTelemetryMiddleware(
         next(action)
 
         when (action) {
-            MenuAction.AddBookmark,
-            MenuAction.Navigate.EditBookmark,
-            -> Events.browserMenuAction.record(
+            MenuAction.AddBookmark -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
-                    item = "bookmark",
+                    item = "add_bookmark",
+                ),
+            )
+
+            MenuAction.Navigate.EditBookmark -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "edit_bookmark",
                 ),
             )
 
@@ -56,6 +60,18 @@ class MenuTelemetryMiddleware(
             MenuAction.RemoveShortcut -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = "remove_from_top_sites",
+                ),
+            )
+
+            MenuAction.SaveMenuClicked -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "save_submenu",
+                ),
+            )
+
+            MenuAction.ToolsMenuClicked -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "tools_submenu",
                 ),
             )
 
@@ -107,6 +123,12 @@ class MenuTelemetryMiddleware(
                 ),
             )
 
+            MenuAction.Navigate.NewPrivateTab -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "new_private_tab",
+                ),
+            )
+
             MenuAction.OpenInApp -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = "open_in_app",
@@ -119,7 +141,11 @@ class MenuTelemetryMiddleware(
                 ),
             )
 
-            MenuAction.Navigate.ReleaseNotes -> Events.whatsNewTapped.record(NoExtras())
+            MenuAction.Navigate.ReleaseNotes -> Events.whatsNewTapped.record(
+                Events.WhatsNewTappedExtra(
+                    source = "MENU",
+                ),
+            )
 
             MenuAction.Navigate.Settings -> {
                 when (accessPoint) {
@@ -193,20 +219,58 @@ class MenuTelemetryMiddleware(
                 ),
             )
 
+            MenuAction.OpenInFirefox -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "open_in_fenix",
+                ),
+            )
+
+            MenuAction.Navigate.DiscoverMoreExtensions -> {
+                Events.browserMenuAction.record(
+                    Events.BrowserMenuActionExtra(
+                        item = "discover_more_extensions",
+                    ),
+                )
+            }
+
+            MenuAction.Navigate.ExtensionsLearnMore -> {
+                Events.browserMenuAction.record(
+                    Events.BrowserMenuActionExtra(
+                        item = "extensions_learn_more",
+                    ),
+                )
+            }
+
+            is MenuAction.Navigate.AddonDetails -> {
+                Events.browserMenuAction.record(
+                    Events.BrowserMenuActionExtra(
+                        item = "addon_details",
+                    ),
+                )
+            }
+
+            is MenuAction.InstallAddon -> {
+                Events.browserMenuAction.record(
+                    Events.BrowserMenuActionExtra(
+                        item = "install_addon",
+                    ),
+                )
+            }
+
             MenuAction.InitAction,
-            MenuAction.OpenInFirefox,
-            is MenuAction.InstallAddon,
             is MenuAction.CustomMenuItemAction,
-            is MenuAction.Navigate.AddonDetails,
-            MenuAction.Navigate.Back,
-            MenuAction.Navigate.DiscoverMoreExtensions,
-            MenuAction.Navigate.Extensions,
-            MenuAction.Navigate.NewPrivateTab,
-            MenuAction.Navigate.Save,
-            MenuAction.Navigate.Tools,
             is MenuAction.UpdateBookmarkState,
             is MenuAction.UpdateExtensionState,
             is MenuAction.UpdatePinnedState,
+            is MenuAction.UpdateWebExtensionBrowserMenuItems,
+            is MenuAction.UpdateWebExtensionPageMenuItems,
+            is MenuAction.InstallAddonFailed,
+            is MenuAction.InstallAddonSuccess,
+            is MenuAction.UpdateInstallAddonInProgress,
+            is MenuAction.UpdateShowExtensionsOnboarding,
+            is MenuAction.UpdateShowDisabledExtensionsOnboarding,
+            is MenuAction.UpdateManageExtensionsMenuItemVisibility,
+            is MenuAction.UpdateAvailableAddons,
             -> Unit
         }
     }

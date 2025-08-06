@@ -154,15 +154,21 @@ add_task(async function test_fog_event_works() {
 
   // camelCase extras work.
   let extra5 = {
-    extra3LongerName: false,
+    extra4CamelCase: false,
   };
   Glean.testOnlyIpc.eventWithExtra.record(extra5);
   events = Glean.testOnlyIpc.eventWithExtra.testGetValue();
   Assert.equal(2, events.length, "Recorded one event too many.");
   expectedExtra = {
-    extra3_longer_name: "false",
+    extra4CamelCase: "false",
   };
   Assert.deepEqual(expectedExtra, events[1].extra);
+
+  // Passing `null` works.
+  Glean.testOnlyIpc.eventWithExtra.record(null);
+  events = Glean.testOnlyIpc.eventWithExtra.testGetValue();
+  Assert.equal(3, events.length, "Recorded another event.");
+  Assert.equal(events[2].extra, null);
 
   // Invalid extra keys don't crash, the event is not recorded,
   // but an error is recorded.
@@ -170,6 +176,15 @@ add_task(async function test_fog_event_works() {
     extra1_nonexistent_extra: "this does not crash",
   };
   Glean.testOnlyIpc.eventWithExtra.record(extra3);
+  Assert.throws(
+    () => Glean.testOnlyIpc.eventWithExtra.testGetValue(),
+    /DataError/,
+    "Should throw because of a recording error."
+  );
+
+  // Supplying extras when there aren't any defined results in the event not
+  // being recorded, but an error is.
+  Glean.testOnlyIpc.noExtraEvent.record(extra3);
   Assert.throws(
     () => Glean.testOnlyIpc.eventWithExtra.testGetValue(),
     /DataError/,
@@ -255,25 +270,28 @@ add_task(async function test_fog_timing_distribution_works() {
 
   Glean.testOnly.whatTimeIsIt.stopAndAccumulate(t2); // 10ms
   Glean.testOnly.whatTimeIsIt.stopAndAccumulate(t3); // 5ms
+  // samples are measured in microseconds, since that's the unit listed in metrics.yaml
+  Glean.testOnly.whatTimeIsIt.accumulateSingleSample(5000); // 5ms
+  Glean.testOnly.whatTimeIsIt.accumulateSamples([2000, 8000]); // 10ms
 
   let data = Glean.testOnly.whatTimeIsIt.testGetValue();
 
   // Cancelled timers should not be counted.
-  Assert.equal(2, data.count, "Count of entries is correct");
+  Assert.equal(5, data.count, "Count of entries is correct");
 
   const NANOS_IN_MILLIS = 1e6;
   // bug 1701949 - Sleep gets close, but sometimes doesn't wait long enough.
   const EPSILON = 40000;
 
   // Variance in timing makes getting the sum impossible to know.
-  Assert.greater(data.sum, 15 * NANOS_IN_MILLIS - EPSILON);
+  Assert.greater(data.sum, 30 * NANOS_IN_MILLIS - EPSILON);
 
   // No guarantees from timers means no guarantees on buckets.
-  // But we can guarantee it's only two samples.
+  // But we can guarantee it's only five samples.
   Assert.equal(
-    2,
+    5,
     Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
-    "Only two buckets with samples"
+    "Only five buckets with samples"
   );
 });
 
@@ -747,5 +765,25 @@ add_task(async function test_labeled_timing_distribution_works() {
     2,
     Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
     "Only two buckets with samples"
+  );
+});
+
+add_task(async function test_fog_labeled_quantity_works() {
+  Assert.equal(
+    undefined,
+    Glean.testOnly.buttonJars.up.testGetValue(),
+    "New labels with no values should return undefined"
+  );
+  Glean.testOnly.buttonJars.up.set(2);
+  Glean.testOnly.buttonJars.curling.set(0);
+  Assert.equal(2, Glean.testOnly.buttonJars.up.testGetValue());
+  Assert.equal(0, Glean.testOnly.buttonJars.curling.testGetValue());
+  // What about invalid/__other__?
+  Assert.equal(undefined, Glean.testOnly.buttonJars.__other__.testGetValue());
+  Glean.testOnly.buttonJars["1".repeat(72)].set(0);
+  Assert.throws(
+    () => Glean.testOnly.buttonJars.__other__.testGetValue(),
+    /DataError/,
+    "Should throw because of a recording error."
   );
 });

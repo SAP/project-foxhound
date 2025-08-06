@@ -27,6 +27,12 @@ import "chrome://global/content/elements/moz-label.mjs";
  * @property {string} hasVisibleLabel - Internal, tracks whether or not the button has a visible label.
  * @property {HTMLButtonElement} buttonEl - The internal button element in the shadow DOM.
  * @property {HTMLButtonElement} slotEl - The internal slot element in the shadow DOM.
+ * @cssproperty [--button-outer-padding-inline] - Used to set the outer inline padding of toolbar style buttons
+ * @csspropert [--button-outer-padding-block] - Used to set the outer block padding of toolbar style buttons.
+ * @cssproperty [--button-outer-padding-inline-start] - Used to set the outer inline-start padding of toolbar style buttons
+ * @cssproperty [--button-outer-padding-inline-end] - Used to set the outer inline-end padding of toolbar style buttons
+ * @cssproperty [--button-outer-padding-block-start] - Used to set the outer block-start padding of toolbar style buttons
+ * @cssproperty [--button-outer-padding-block-end] - Used to set the outer block-end padding of toolbar style buttons
  * @slot default - The button's content, overrides label property.
  * @fires click - The click event.
  */
@@ -41,24 +47,18 @@ export default class MozButton extends MozLitElement {
     type: { type: String, reflect: true },
     size: { type: String, reflect: true },
     disabled: { type: Boolean, reflect: true },
-    title: { type: String, state: true },
-    titleAttribute: { type: String, attribute: "title", reflect: true },
+    title: { type: String, mapped: true },
     tooltipText: { type: String, fluent: true },
-    ariaLabelAttribute: {
-      type: String,
-      attribute: "aria-label",
-      reflect: true,
-    },
-    ariaLabel: { type: String, state: true },
+    ariaLabel: { type: String, mapped: true },
     iconSrc: { type: String },
     hasVisibleLabel: { type: Boolean, state: true },
-    accessKeyAttribute: { type: String, attribute: "accesskey", reflect: true },
-    accessKey: { type: String, state: true },
+    accessKey: { type: String, mapped: true },
   };
 
   static queries = {
     buttonEl: "button",
     slotEl: "slot",
+    backgroundEl: ".button-background",
   };
 
   constructor() {
@@ -67,21 +67,6 @@ export default class MozButton extends MozLitElement {
     this.size = "default";
     this.disabled = false;
     this.hasVisibleLabel = !!this.label;
-  }
-
-  willUpdate(changes) {
-    if (changes.has("titleAttribute")) {
-      this.title = this.titleAttribute;
-      this.titleAttribute = null;
-    }
-    if (changes.has("ariaLabelAttribute")) {
-      this.ariaLabel = this.ariaLabelAttribute;
-      this.ariaLabelAttribute = null;
-    }
-    if (changes.has("accessKeyAttribute")) {
-      this.accessKey = this.accessKeyAttribute;
-      this.accessKeyAttribute = null;
-    }
   }
 
   // Delegate clicks on host to the button element.
@@ -109,21 +94,27 @@ export default class MozButton extends MozLitElement {
         href="chrome://global/content/elements/moz-button.css"
       />
       <button
-        type=${this.type}
-        size=${this.size}
         ?disabled=${this.disabled}
         title=${ifDefined(this.title || this.tooltipText)}
         aria-label=${ifDefined(this.ariaLabel)}
-        part="button"
-        class=${classMap({ labelled: this.label || this.hasVisibleLabel })}
         accesskey=${ifDefined(this.accessKey)}
       >
-        ${this.iconSrc
-          ? html`<img src=${this.iconSrc} role="presentation" />`
-          : ""}
-        <label is="moz-label" shownaccesskey=${ifDefined(this.accessKey)}>
-          ${this.labelTemplate()}
-        </label>
+        <span
+          class=${classMap({
+            labelled: this.label || this.hasVisibleLabel,
+            "button-background": true,
+          })}
+          part="button"
+          type=${this.type}
+          size=${this.size}
+        >
+          ${this.iconSrc
+            ? html`<img src=${this.iconSrc} role="presentation" />`
+            : ""}
+          <label is="moz-label" shownaccesskey=${ifDefined(this.accessKey)}>
+            ${this.labelTemplate()}
+          </label>
+        </span>
       </button>
     `;
   }

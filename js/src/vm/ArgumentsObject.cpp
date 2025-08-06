@@ -285,7 +285,7 @@ ArgumentsObject* GlobalObject::maybeArgumentsTemplateObject(bool mapped) const {
 ArgumentsObject* GlobalObject::getOrCreateArgumentsTemplateObject(JSContext* cx,
                                                                   bool mapped) {
   GlobalObjectData& data = cx->global()->data();
-  HeapPtr<ArgumentsObject*>& obj =
+  GCPtr<ArgumentsObject*>& obj =
       mapped ? data.mappedArgumentsTemplate : data.unmappedArgumentsTemplate;
 
   ArgumentsObject* templateObj = obj;
@@ -1151,7 +1151,8 @@ const JSClass MappedArgumentsObject::class_ = {
     &MappedArgumentsObject::classOps_,
     nullptr,
     &MappedArgumentsObject::classExt_,
-    &MappedArgumentsObject::objectOps_};
+    &MappedArgumentsObject::objectOps_,
+};
 
 /*
  * Unmapped arguments is significantly less magical than mapped arguments, so
@@ -1180,5 +1181,7 @@ const JSClass UnmappedArgumentsObject::class_ = {
         JSCLASS_HAS_RESERVED_SLOTS(UnmappedArgumentsObject::RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_Object) |
         JSCLASS_SKIP_NURSERY_FINALIZE | JSCLASS_BACKGROUND_FINALIZE,
-    &UnmappedArgumentsObject::classOps_, nullptr,
-    &UnmappedArgumentsObject::classExt_};
+    &UnmappedArgumentsObject::classOps_,
+    nullptr,
+    &UnmappedArgumentsObject::classExt_,
+};

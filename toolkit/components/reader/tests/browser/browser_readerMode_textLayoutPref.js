@@ -10,7 +10,7 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 );
 
 const defaultValues = {
-  "font-family": "Helvetica, Arial, sans-serif",
+  "font-family": "sans-serif",
   "font-weight": "normal",
   "content-width": "30em",
   "line-height": "1.6em",
@@ -168,9 +168,16 @@ async function testTextLayoutFocus() {
           "Focus moves back to the first focusable button"
         );
 
+        firstFocusableElement.focus();
+        EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true }, content);
+        is(
+          doc.activeElement,
+          advancedHeader,
+          "Focus moves to last focusable button"
+        );
+
         // Expand the advanced layout accordion.
         advancedHeader.click();
-
         let resetButton = doc.querySelector(".text-layout-reset-button");
         resetButton.focus();
 
@@ -180,6 +187,14 @@ async function testTextLayoutFocus() {
           firstFocusableElement,
           "Focus moves back to the first focusable button"
         );
+
+        firstFocusableElement.focus();
+        EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true }, content);
+        is(
+          doc.activeElement,
+          resetButton,
+          "Focus moves from first focusable button to last focusable button"
+        );
       });
     }
   );
@@ -187,12 +202,7 @@ async function testTextLayoutFocus() {
 
 add_task(async function () {
   await testTextLayout("font_size", 7, "font-size", "24px");
-  await testTextLayout(
-    "font_type",
-    "monospace",
-    "font-family",
-    '"Courier New", Courier, monospace'
-  );
+  await testTextLayout("font_type", "monospace", "font-family", "monospace");
   await testTextLayout("font_weight", "bold", "font-weight", "bolder");
   await testTextLayout("content_width", 7, "content-width", "50em");
   await testTextLayout("line_height", 7, "line-height", "2.2em");

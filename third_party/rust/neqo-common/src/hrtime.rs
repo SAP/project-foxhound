@@ -11,9 +11,7 @@ use std::{
 };
 
 #[cfg(windows)]
-use winapi::shared::minwindef::UINT;
-#[cfg(windows)]
-use winapi::um::timeapi::{timeBeginPeriod, timeEndPeriod};
+use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 
 /// A quantized `Duration`.  This currently just produces 16 discrete values
 /// corresponding to whole milliseconds.  Future implementations might choose
@@ -26,8 +24,8 @@ impl Period {
     const MIN: Self = Self(1);
 
     #[cfg(windows)]
-    fn as_uint(self) -> UINT {
-        UINT::from(self.0)
+    fn as_u32(self) -> u32 {
+        u32::from(self.0)
     }
 
     #[cfg(target_os = "macos")]
@@ -287,36 +285,36 @@ impl Time {
         }
     }
 
-    #[allow(clippy::unused_self)] // Only on some platforms is it unused.
-    #[allow(clippy::missing_const_for_fn)] // Only const on some platforms where the function is empty.
+    #[cfg(target_os = "macos")]
     fn start(&self) {
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(p) = self.active {
-                mac::set_realtime(p.scaled(self.scale));
-            } else {
-                mac::set_thread_policy(self.deflt);
-            }
-        }
-
-        #[cfg(windows)]
-        {
-            if let Some(p) = self.active {
-                _ = unsafe { timeBeginPeriod(p.as_uint()) };
-            }
+        if let Some(p) = self.active {
+            mac::set_realtime(p.scaled(self.scale));
+        } else {
+            mac::set_thread_policy(self.deflt);
         }
     }
 
-    #[allow(clippy::unused_self)] // Only on some platforms is it unused.
-    #[allow(clippy::missing_const_for_fn)] // Only const on some platforms where the function is empty.
+    #[cfg(target_os = "windows")]
+    fn start(&self) {
+        if let Some(p) = self.active {
+            _ = unsafe { timeBeginPeriod(p.as_u32()) };
+        }
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[allow(clippy::unused_self)]
+    const fn start(&self) {}
+
+    #[cfg(windows)]
     fn stop(&self) {
-        #[cfg(windows)]
-        {
-            if let Some(p) = self.active {
-                _ = unsafe { timeEndPeriod(p.as_uint()) };
-            }
+        if let Some(p) = self.active {
+            _ = unsafe { timeEndPeriod(p.as_u32()) };
         }
     }
+
+    #[cfg(not(target_os = "windows"))]
+    #[allow(clippy::unused_self)]
+    const fn stop(&self) {}
 
     fn update(&mut self) {
         let next = self.periods.min();
@@ -376,7 +374,9 @@ impl Drop for Time {
 // inaccuracies are too high to pass the tests.
 #[cfg(all(
     test,
-    not(all(any(target_os = "macos", target_os = "windows"), feature = "ci"))
+    not(all(any(target_os = "macos", target_os = "windows"), feature = "ci")),
+    // Sanitizers are too slow to uphold timing assumptions.
+    not(neqo_sanitize),
 ))]
 mod test {
     use std::{

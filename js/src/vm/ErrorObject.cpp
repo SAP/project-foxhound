@@ -36,7 +36,8 @@
 #include "js/Utility.h"
 #include "js/Value.h"
 #include "js/Wrapper.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
+#include "vm/ErrorReporting.h"
 #include "vm/GlobalObject.h"
 #include "vm/Iteration.h"
 #include "vm/JSAtomUtils.h"  // ClassName
@@ -82,13 +83,27 @@ const JSClass ErrorObject::protoClasses[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_PROTO_CLASS(DebuggeeWouldRun),
     IMPLEMENT_ERROR_PROTO_CLASS(CompileError),
     IMPLEMENT_ERROR_PROTO_CLASS(LinkError),
-    IMPLEMENT_ERROR_PROTO_CLASS(RuntimeError)};
+    IMPLEMENT_ERROR_PROTO_CLASS(RuntimeError),
+};
 
 static bool exn_toSource(JSContext* cx, unsigned argc, Value* vp);
 
 static const JSFunctionSpec error_methods[] = {
     JS_FN("toSource", exn_toSource, 0, 0),
-    JS_SELF_HOSTED_FN("toString", "ErrorToString", 0, 0), JS_FS_END};
+    JS_SELF_HOSTED_FN("toString", "ErrorToString", 0, 0),
+    JS_FS_END,
+};
+
+#ifdef NIGHTLY_BUILD
+static bool exn_isError(JSContext* cx, unsigned argc, Value* vp);
+#endif
+
+static const JSFunctionSpec error_static_methods[] = {
+#ifdef NIGHTLY_BUILD
+    JS_FN("isError", exn_isError, 1, 0),
+#endif
+    JS_FS_END,
+};
 
 // Error.prototype and NativeError.prototype have own .message and .name
 // properties.
@@ -99,7 +114,8 @@ static const JSPropertySpec error_properties[] = {
     COMMON_ERROR_PROPERTIES(Error),
     // Only Error.prototype has .stack!
     JS_PSGS("stack", ErrorObject::getStack, ErrorObject::setStack, 0),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 #define IMPLEMENT_NATIVE_ERROR_PROPERTIES(name)       \
   static const JSPropertySpec name##_properties[] = { \
@@ -142,8 +158,8 @@ IMPLEMENT_NATIVE_ERROR_PROPERTIES(RuntimeError)
    JSProto_Error | ClassSpec::DontDefineConstructor}
 
 const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
-    {ErrorObject::createConstructor, ErrorObject::createProto, nullptr, nullptr,
-     error_methods, error_properties},
+    {ErrorObject::createConstructor, ErrorObject::createProto,
+     error_static_methods, nullptr, error_methods, error_properties},
 
     IMPLEMENT_NATIVE_ERROR_SPEC(InternalError),
     IMPLEMENT_NATIVE_ERROR_SPEC(AggregateError),
@@ -197,17 +213,22 @@ static const JSClassOps ErrorObjectClassOps = {
 const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_CLASS(Error),
     IMPLEMENT_ERROR_CLASS_MAYBE_WASM_TRAP(InternalError),
-    IMPLEMENT_ERROR_CLASS(AggregateError), IMPLEMENT_ERROR_CLASS(EvalError),
-    IMPLEMENT_ERROR_CLASS(RangeError), IMPLEMENT_ERROR_CLASS(ReferenceError),
+    IMPLEMENT_ERROR_CLASS(AggregateError),
+    IMPLEMENT_ERROR_CLASS(EvalError),
+    IMPLEMENT_ERROR_CLASS(RangeError),
+    IMPLEMENT_ERROR_CLASS(ReferenceError),
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     IMPLEMENT_ERROR_CLASS(SuppressedError),
 #endif
-    IMPLEMENT_ERROR_CLASS(SyntaxError), IMPLEMENT_ERROR_CLASS(TypeError),
+    IMPLEMENT_ERROR_CLASS(SyntaxError),
+    IMPLEMENT_ERROR_CLASS(TypeError),
     IMPLEMENT_ERROR_CLASS(URIError),
     // These Error subclasses are not accessible via the global object:
     IMPLEMENT_ERROR_CLASS(DebuggeeWouldRun),
-    IMPLEMENT_ERROR_CLASS(CompileError), IMPLEMENT_ERROR_CLASS(LinkError),
-    IMPLEMENT_ERROR_CLASS_MAYBE_WASM_TRAP(RuntimeError)};
+    IMPLEMENT_ERROR_CLASS(CompileError),
+    IMPLEMENT_ERROR_CLASS(LinkError),
+    IMPLEMENT_ERROR_CLASS_MAYBE_WASM_TRAP(RuntimeError),
+};
 
 static void exn_finalize(JS::GCContext* gcx, JSObject* obj) {
   if (JSErrorReport* report = obj->as<ErrorObject>().getErrorReport()) {
@@ -897,3 +918,50 @@ static bool exn_toSource(JSContext* cx, unsigned argc, Value* vp) {
   args.rval().setString(str);
   return true;
 }
+
+#ifdef NIGHTLY_BUILD
+
+/**
+ * Error.isError Proposal
+ * Error.isError ( arg )
+ * https://tc39.es/proposal-is-error/#sec-error.iserror
+ * IsError ( argument )
+ * https://tc39.es/proposal-is-error/#sec-iserror
+ */
+static bool exn_isError(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Error.isError ( arg )
+  // Step 1. Return IsError(arg).
+
+  // IsError ( argument )
+  // Step 1. If argument is not an Object, return false.
+  if (!args.get(0).isObject()) {
+    args.rval().setBoolean(false);
+    return true;
+  }
+
+  JSObject* unwrappedObject = CheckedUnwrapStatic(&args.get(0).toObject());
+  if (!unwrappedObject) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_OBJECT_ACCESS_DENIED);
+    return false;
+  }
+
+  if (JS_IsDeadWrapper(unwrappedObject)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_DEAD_OBJECT);
+    return false;
+  }
+
+  // Step 2. If argument has an [[ErrorData]] internal slot, return true.
+  if (unwrappedObject->is<ErrorObject>()) {
+    args.rval().setBoolean(true);
+    return true;
+  }
+
+  // Step 3. Return false
+  args.rval().setBoolean(false);
+  return true;
+}
+
+#endif

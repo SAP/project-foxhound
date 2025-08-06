@@ -12,7 +12,7 @@
  * terms were peristed.
  */
 
-let defaultTestEngine;
+requestLongerTimeout(3);
 
 // The main search string used in tests
 const SEARCH_STRING = "chocolate cake";
@@ -25,58 +25,14 @@ add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.showSearchTerms.featureGate", true]],
   });
-  await SearchTestUtils.installSearchExtension(
-    {
-      name: "MozSearch",
-      search_url: "https://www.example.com/",
-      search_url_get_params: "q={searchTerms}&pc=fake_code",
-    },
-    { setAsDefault: true }
-  );
-  defaultTestEngine = Services.search.getEngineByName("MozSearch");
+  let cleanup = await installPersistTestEngines();
   Services.telemetry.clearScalars();
-
   registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     Services.telemetry.clearScalars();
+    cleanup();
   });
 });
-
-// Starts a search with a tab and asserts that
-// the state of the Urlbar contains the search term.
-async function searchWithTab(
-  searchString,
-  tab = null,
-  engine = defaultTestEngine,
-  assertSearchString = true
-) {
-  if (!tab) {
-    tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-  }
-
-  let [expectedSearchUrl] = UrlbarUtils.getSearchQueryUrl(engine, searchString);
-  let browserLoadedPromise = BrowserTestUtils.browserLoaded(
-    tab.linkedBrowser,
-    false,
-    expectedSearchUrl
-  );
-
-  gURLBar.focus();
-  await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
-    waitForFocus,
-    value: searchString,
-    fireInputEvent: true,
-  });
-  EventUtils.synthesizeKey("KEY_Enter");
-  await browserLoadedPromise;
-
-  if (assertSearchString) {
-    assertSearchStringIsInUrlbar(searchString);
-  }
-
-  return { tab, expectedSearchUrl };
-}
 
 add_task(async function load_page_with_persisted_search() {
   let { tab } = await searchWithTab(SEARCH_STRING);
@@ -96,7 +52,7 @@ add_task(async function load_page_without_persisted_search() {
   let { tab } = await searchWithTab(
     SEARCH_STRING,
     null,
-    defaultTestEngine,
+    Services.search.defaultEngine,
     false
   );
 
@@ -329,7 +285,7 @@ add_task(async function popup_in_urlbar_without_feature() {
   let { tab } = await searchWithTab(
     SEARCH_STRING,
     null,
-    defaultTestEngine,
+    Services.search.defaultEngine,
     false
   );
   let promisePopupShown = BrowserTestUtils.waitForEvent(

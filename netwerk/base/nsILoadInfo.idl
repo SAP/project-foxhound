@@ -536,7 +536,7 @@ interface nsILoadInfo : nsISupports
   /**
    * Reflects whetehr this is an HTTP Strict Transport Security host
    */
-[infallible] attribute boolean hstsStatus;
+  [infallible] attribute boolean hstsStatus;
 
   /**
    * Returns true if at the time of the loadinfo construction the document
@@ -741,6 +741,11 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean isFormSubmission;
 
   /**
+   * True if the load will be a get request.
+   */
+  [infallible] attribute boolean isGETRequest;
+
+  /**
    * The external contentPolicyType of the channel, used for security checks
    * like Mixed Content Blocking and Content Security Policy.
    *
@@ -781,6 +786,12 @@ interface nsILoadInfo : nsISupports
   nsContentPolicyType binaryInternalContentPolicyType();
 
   readonly attribute nsContentPolicyType internalContentPolicyType;
+
+  /**
+   * Returns the internalContentPolicyType converted to a destination
+   * string matching the fetch specification.
+   */
+  readonly attribute ACString fetchDestination;
 
   /**
    * Returns true if document or any of the documents ancestors
@@ -1563,10 +1574,15 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] attribute boolean hasInjectedCookieForCookieBannerHandling;
 
+  cenum SchemelessInputType : 8 {
+    SchemelessInputTypeUnset = 0,
+    SchemelessInputTypeSchemeful = 1,
+    SchemelessInputTypeSchemeless = 2,
+  };
   /**
    * Whether the load has gone through the URL bar, where the fixup had to add * the protocol scheme.
    */
-   [infallible] attribute boolean wasSchemelessInput;
+   [infallible] attribute nsILoadInfo_SchemelessInputType schemelessInput;
 
   cenum HTTPSUpgradeTelemetryType : 32 {
     NOT_INITIALIZED = 0,
@@ -1583,6 +1599,7 @@ interface nsILoadInfo : nsISupports
     HTTPS_RR = (1 << 10),
     WEB_EXTENSION_UPGRADE = (1 << 11),
     UPGRADE_EXCEPTION = (1 << 12),
+    SKIP_HTTPS_UPGRADE = (1 << 13),
   };
 
   /**
@@ -1590,4 +1607,13 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] attribute nsILoadInfo_HTTPSUpgradeTelemetryType httpsUpgradeTelemetry;
 
+  /**
+   * Is this the first load in a new pop-up window/tab?
+   */
+  [infallible] attribute boolean isNewWindowTarget;
+
+  /**
+   * When true, this load will never be upgraded to HTTPS.
+   */
+  [infallible] attribute boolean skipHTTPSUpgrade;
 };

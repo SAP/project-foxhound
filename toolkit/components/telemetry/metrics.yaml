@@ -26,8 +26,10 @@ legacy.telemetry:
       Does not need to be sent in the Glean "deletion-request" ping.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1755549
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921440
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1755549
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1921440
     data_sensitivity:
       - technical
       - highly_sensitive
@@ -65,3 +67,111 @@ legacy.telemetry:
     no_lint:
       - BASELINE_PING
     send_in_pings: *client_id_pings
+
+telemetry:
+  data_upload_optin:
+    type: boolean
+    description: >
+      User opted into sending Telemetry data again.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar telemetry.data_upload_optin.
+    bugs:
+      - https://bugzil.la/1445921
+    data_reviews:
+      - https://bugzil.la/1445921
+    notification_emails:
+      - jrediger@mozilla.com
+      - telemetry-client-dev@mozilla.com
+    expires: never
+    telemetry_mirror: TELEMETRY_DATA_UPLOAD_OPTIN
+
+  clamping_time_hgrams:
+    type: labeled_counter
+    description: >
+      How often do which histograms that use
+      `Telemetry::AccumulateTimeDelta` have clamped samples due to underflow?
+    bugs:
+      - https://bugzil.la/1935419
+    data_reviews:
+      - https://bugzil.la/1935419
+    notification_emails:
+      - chutten@mozilla.com
+    expires: 140
+
+usage:
+  profile_id:
+    type: uuid
+    lifetime: user
+    description: |
+      A UUID uniquely identifying the profile,
+      not shared with other telemetry data.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1926829
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1926829
+    data_sensitivity:
+      - technical
+      - highly_sensitive
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage-reporting
+
+browser.engagement:
+  session_time_including_suspend:
+    type: quantity
+    description: >
+      The duration of the session in milliseconds, including the time the
+      device was suspended.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar browser.engagement.session_time_including_suspend.
+    bugs:
+      - https://bugzil.la/1205985
+    data_reviews:
+      - https://bugzil.la/1205985
+    notification_emails:
+      - padenot@mozilla.com
+    expires: never
+    unit: ms
+    telemetry_mirror: BROWSER_ENGAGEMENT_SESSION_TIME_INCLUDING_SUSPEND
+
+  session_time_excluding_suspend:
+    type: quantity
+    description: >
+      The duration of the session in milliseconds, excluding the time the
+      device was suspended.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar browser.engagement.session_time_excluding_suspend.
+    bugs:
+      - https://bugzil.la/1205985
+    data_reviews:
+      - https://bugzil.la/1205985
+    notification_emails:
+      - padenot@mozilla.com
+    expires: never
+    unit: ms
+    telemetry_mirror: BROWSER_ENGAGEMENT_SESSION_TIME_EXCLUDING_SUSPEND
+
+browser.timings:
+  last_shutdown:
+    type: quantity
+    description: >
+      The time, in milliseconds, it took to complete the last shutdown. On
+      successful shutdown, Telemetry saves this to disk into
+      Telemetry.ShutdownTime.txt. On the next startup this is loaded and
+      recorded.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar browser.timings.last_shutdown.
+    bugs:
+      - https://bugzil.la/1429510
+    data_reviews:
+      - https://bugzil.la/1429510
+    notification_emails:
+      - perf-telemetry-alerts@mozilla.com
+      - florian@mozilla.com
+    expires: never
+    unit: ms
+    telemetry_mirror: BROWSER_TIMINGS_LAST_SHUTDOWN

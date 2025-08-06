@@ -34,7 +34,6 @@
 #include "wasm/WasmInstance-inl.h"
 
 using mozilla::MallocSizeOf;
-using mozilla::PodCopy;
 
 using namespace js;
 
@@ -189,14 +188,10 @@ struct StatsClosure {
 };
 
 static void DecommittedPagesChunkCallback(JSRuntime* rt, void* data,
-                                          gc::TenuredChunk* chunk,
+                                          gc::ArenaChunk* chunk,
                                           const JS::AutoRequireNoGC& nogc) {
-  size_t n = 0;
-  for (uint32_t word : chunk->decommittedPages.Storage()) {
-    n += mozilla::CountPopulation32(word);
-  }
-
-  *static_cast<size_t*>(data) += n * gc::PageSize;
+  auto* gcHeapDecommittedPages = static_cast<size_t*>(data);
+  *gcHeapDecommittedPages += chunk->decommittedPages.Count() * gc::PageSize;
 }
 
 static void StatsZoneCallback(JSRuntime* rt, void* data, Zone* zone,
@@ -732,7 +727,7 @@ static bool CollectRuntimeStatsHelper(JSContext* cx, RuntimeStats* rtStats,
   size_t numDirtyChunks =
       (rtStats->gcHeapChunkTotal - rtStats->gcHeapUnusedChunks) / gc::ChunkSize;
   size_t perChunkAdmin =
-      sizeof(gc::TenuredChunk) - (sizeof(gc::Arena) * gc::ArenasPerChunk);
+      sizeof(gc::ArenaChunk) - (sizeof(gc::Arena) * gc::ArenasPerChunk);
   rtStats->gcHeapChunkAdmin = numDirtyChunks * perChunkAdmin;
 
   // |gcHeapUnusedArenas| is the only thing left.  Compute it in terms of

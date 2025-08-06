@@ -1,18 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- This Source Code Form is subject to the terms of the Mozilla Public
-   - License, v. 2.0. If a copy of the MPL was not distributed with this
-   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<issues format="6" by="lint 8.4.0" type="baseline" client="gradle" dependencies="false" name="AGP (8.4.0)" variant="all" version="8.4.0">
+<issues format="6" by="lint 8.7.1" type="baseline" client="gradle" dependencies="false" name="AGP (8.7.1)" variant="all" version="8.7.1">
 
     <issue
-        id="UseGetLayoutInflater"
-        message="Use of LayoutInflater.from(Context) detected. Consider using layoutInflater instead"
-        errorLine1="                val layout = LayoutInflater.from(context)"
-        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        id="ObsoleteLintCustomCheck"
+        message="Library lint checks out of date;&#xA;these checks **will be skipped**!&#xA;&#xA;Lint found an issue registry (`androidx.navigation.common.lint.NavigationCommonIssueRegistry`)&#xA;which was compiled against an older version of lint&#xA;than this one. This is usually fine, but not in this&#xA;case; some basic verification shows that the lint&#xA;check jar references (for example) the following API&#xA;which is no longer valid in this version of lint:&#xA;com.android.tools.lint.checks.infrastructure.LintDetectorTest#kotlin(java.lang.String): com.android.tools.lint.checks.infrastructure.TestFile&#xA;(Referenced from androidx/navigation/lint/common/LintUtilKt.class)&#xA;&#xA;Therefore, this lint check library is **not** included&#xA;in analysis. This affects the following lint checks:&#xA;`EmptyNavDeepLink`,`WrongStartDestinationType`&#xA;&#xA;Recompile the checks against the latest version, or if&#xA;this is a check bundled with a third-party library, see&#xA;if there is a more recent version available.&#xA;&#xA;Version of Lint API this lint check is using is 14.&#xA;The Lint API version currently running is 16 (8.7+).">
         <location
-            file="src/main/java/org/mozilla/fenix/library/history/HistoryFragment.kt"
-            line="429"
-            column="30"/>
+            file="build/intermediates/lint-cache/lintReportFenixDebug/migrated-jars/androidx.navigation.common.lint.NavigationCommonIssueRegistry-3d526261eadfd16f..jar"/>
+    </issue>
+
+    <issue
+        id="ObsoleteLintCustomCheck"
+        message="Library lint checks out of date;&#xA;these checks **will be skipped**!&#xA;&#xA;Lint found an issue registry (`androidx.navigation.compose.lint.NavigationComposeIssueRegistry`)&#xA;which was compiled against an older version of lint&#xA;than this one. This is usually fine, but not in this&#xA;case; some basic verification shows that the lint&#xA;check jar references (for example) the following API&#xA;which is no longer valid in this version of lint:&#xA;com.android.tools.lint.checks.infrastructure.LintDetectorTest#kotlin(java.lang.String): com.android.tools.lint.checks.infrastructure.TestFile&#xA;(Referenced from androidx/navigation/lint/common/LintUtilKt.class)&#xA;&#xA;Therefore, this lint check library is **not** included&#xA;in analysis. This affects the following lint checks:&#xA;`ComposableDestinationInComposeScope`,`ComposableNavGraphInComposeScope`,`UnrememberedGetBackStackEntry`,`WrongStartDestinationType`&#xA;&#xA;Recompile the checks against the latest version, or if&#xA;this is a check bundled with a third-party library, see&#xA;if there is a more recent version available.&#xA;&#xA;Version of Lint API this lint check is using is 14.&#xA;The Lint API version currently running is 16 (8.7+).">
+        <location
+            file="build/intermediates/lint-cache/lintReportFenixDebug/migrated-jars/androidx.navigation.compose.lint.NavigationComposeIssueRegistry-0eba33012d8b022c..jar"/>
+    </issue>
+
+    <issue
+        id="ObsoleteLintCustomCheck"
+        message="Library lint checks out of date;&#xA;these checks **will be skipped**!&#xA;&#xA;Lint found an issue registry (`androidx.navigation.runtime.lint.NavigationRuntimeIssueRegistry`)&#xA;which was compiled against an older version of lint&#xA;than this one. This is usually fine, but not in this&#xA;case; some basic verification shows that the lint&#xA;check jar references (for example) the following API&#xA;which is no longer valid in this version of lint:&#xA;com.android.tools.lint.checks.infrastructure.LintDetectorTest#kotlin(java.lang.String): com.android.tools.lint.checks.infrastructure.TestFile&#xA;(Referenced from androidx/navigation/lint/common/LintUtilKt.class)&#xA;&#xA;Therefore, this lint check library is **not** included&#xA;in analysis. This affects the following lint checks:&#xA;`DeepLinkInActivityDestination`,`WrongStartDestinationType`,`WrongNavigateRouteType`&#xA;&#xA;Recompile the checks against the latest version, or if&#xA;this is a check bundled with a third-party library, see&#xA;if there is a more recent version available.&#xA;&#xA;Version of Lint API this lint check is using is 14.&#xA;The Lint API version currently running is 16 (8.7+).">
+        <location
+            file="build/intermediates/lint-cache/lintReportFenixDebug/migrated-jars/androidx.navigation.runtime.lint.NavigationRuntimeIssueRegistry-b42dcf0e5b11d978..jar"/>
     </issue>
 
     <issue
@@ -253,7 +260,7 @@
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/ext/Context.kt"
-            line="78"
+            line="80"
             column="9"/>
     </issue>
 
@@ -275,7 +282,7 @@
         errorLine2="                                                                        ~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/library/history/HistoryFragment.kt"
-            line="430"
+            line="434"
             column="73"/>
     </issue>
 
@@ -286,7 +293,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="122"
+            line="137"
             column="17"/>
     </issue>
 
@@ -297,7 +304,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="124"
+            line="139"
             column="17"/>
     </issue>
 
@@ -308,7 +315,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="126"
+            line="141"
             column="17"/>
     </issue>
 
@@ -319,7 +326,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="128"
+            line="143"
             column="17"/>
     </issue>
 
@@ -330,7 +337,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="130"
+            line="145"
             column="17"/>
     </issue>
 
@@ -341,7 +348,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="132"
+            line="147"
             column="17"/>
     </issue>
 
@@ -352,7 +359,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="134"
+            line="149"
             column="17"/>
     </issue>
 
@@ -363,7 +370,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="136"
+            line="151"
             column="17"/>
     </issue>
 
@@ -374,7 +381,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="138"
+            line="153"
             column="17"/>
     </issue>
 
@@ -385,7 +392,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="140"
+            line="155"
             column="17"/>
     </issue>
 
@@ -396,7 +403,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="142"
+            line="157"
             column="17"/>
     </issue>
 
@@ -407,7 +414,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="144"
+            line="159"
             column="17"/>
     </issue>
 
@@ -418,7 +425,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="146"
+            line="161"
             column="17"/>
     </issue>
 
@@ -429,7 +436,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="148"
+            line="163"
             column="17"/>
     </issue>
 
@@ -440,7 +447,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="150"
+            line="165"
             column="17"/>
     </issue>
 
@@ -451,7 +458,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="152"
+            line="167"
             column="17"/>
     </issue>
 
@@ -462,7 +469,7 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="154"
+            line="169"
             column="17"/>
     </issue>
 
@@ -473,19 +480,8 @@
         errorLine2="                ^">
         <location
             file="src/main/AndroidManifest.xml"
-            line="156"
+            line="171"
             column="17"/>
-    </issue>
-
-    <issue
-        id="InvalidLicenseFormat"
-        message="The license comment must be followed by a newline character"
-        errorLine1=" * file, You can obtain one at http://mozilla.org/MPL/2.0/. */"
-        errorLine2="                                                             ~">
-        <location
-            file="src/main/java/org/mozilla/fenix/translations/TranslationsDialogStore.kt"
-            line="3"
-            column="62"/>
     </issue>
 
     <issue
@@ -595,17 +591,6 @@
         <location
             file="src/main/java/org/mozilla/fenix/settings/creditcards/view/CreditCardsManagementView.kt"
             line="44"
-            column="31"/>
-    </issue>
-
-    <issue
-        id="NonConstantResourceId"
-        message="Resource IDs will be non-final by default in Android Gradle Plugin version 8.0, avoid using them in const fields"
-        errorLine1="        const val LAYOUT_ID = R.layout.download_list_item"
-        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/fenix/library/downloads/viewholders/DownloadsListItemViewHolder.kt"
-            line="85"
             column="31"/>
     </issue>
 
@@ -726,7 +711,7 @@
         errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/home/topsites/TopSiteItemViewHolder.kt"
-            line="216"
+            line="201"
             column="31"/>
     </issue>
 
@@ -759,7 +744,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="172"
+            line="187"
             column="13"/>
     </issue>
 
@@ -946,41 +931,8 @@
         errorLine2="                                              ~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/components/appstate/AppStoreReducer.kt"
-            line="76"
+            line="83"
             column="47"/>
-    </issue>
-
-    <issue
-        id="VisibleForTests"
-        message="This method should only be accessed from tests or within private scope"
-        errorLine1="                selected = getCurrentTab()?.let {"
-        errorLine2="                           ~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/fenix/browser/BrowserFragment.kt"
-            line="139"
-            column="28"/>
-    </issue>
-
-    <issue
-        id="VisibleForTests"
-        message="This method should only be accessed from tests or within private scope"
-        errorLine1="                if (it == getCurrentTab()?.id) {"
-        errorLine2="                          ~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/fenix/browser/BrowserFragment.kt"
-            line="222"
-            column="27"/>
-    </issue>
-
-    <issue
-        id="VisibleForTests"
-        message="This method should only be accessed from tests or within private scope"
-        errorLine1="                    getCurrentTab()?.content?.loading == false"
-        errorLine2="                    ~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/fenix/browser/BrowserFragment.kt"
-            line="328"
-            column="21"/>
     </issue>
 
     <issue
@@ -990,7 +942,7 @@
         errorLine2="                        ~~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/browser/BrowserFragment.kt"
-            line="343"
+            line="270"
             column="25"/>
     </issue>
 
@@ -1001,7 +953,7 @@
         errorLine2="        ~~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/browser/BrowserFragment.kt"
-            line="719"
+            line="707"
             column="9"/>
     </issue>
 
@@ -1045,7 +997,7 @@
         errorLine2="                                                   ~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/tabstray/browser/InactiveTabViewHolder.kt"
-            line="95"
+            line="94"
             column="52"/>
     </issue>
 
@@ -1056,7 +1008,7 @@
         errorLine2="                                                   ~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/tabstray/browser/InactiveTabViewHolder.kt"
-            line="95"
+            line="94"
             column="52"/>
     </issue>
 
@@ -1107,17 +1059,6 @@
     <issue
         id="VisibleForTests"
         message="This method should only be accessed from tests or within private scope"
-        errorLine1="            tabsAction.updateCount(tabCount)"
-        errorLine2="                       ~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/fenix/components/toolbar/ToolbarIntegration.kt"
-            line="164"
-            column="24"/>
-    </issue>
-
-    <issue
-        id="VisibleForTests"
-        message="This method should only be accessed from tests or within private scope"
         errorLine1="        binding.exceptionsList.apply {"
         errorLine2="        ~~~~~~~">
         <location
@@ -1155,7 +1096,7 @@
         errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/wallpapers/WallpaperState.kt"
-            line="50"
+            line="72"
             column="9"/>
     </issue>
 
@@ -1209,8 +1150,30 @@
         errorLine1="    modifier: Modifier = Modifier,"
         errorLine2="    ~~~~~~~~">
         <location
-            file="src/main/java/org/mozilla/fenix/compose/SwitchWithLabel.kt"
-            line="51"
+            file="src/main/java/org/mozilla/fenix/compose/list/ListItem.kt"
+            line="84"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Modifier parameter should be the first optional parameter"
+        errorLine1="    modifier: Modifier = Modifier,"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/org/mozilla/fenix/components/menu/compose/MenuItem.kt"
+            line="167"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="ModifierParameter"
+        message="Optional Modifier parameter should have a default value of `Modifier`"
+        errorLine1="    modifier: Modifier = Modifier.fillMaxWidth(),"
+        errorLine2="    ~~~~~~~~">
+        <location
+            file="src/main/java/org/mozilla/fenix/compose/TextField.kt"
+            line="91"
             column="5"/>
     </issue>
 
@@ -1226,58 +1189,14 @@
     </issue>
 
     <issue
-        id="Typos"
-        message="&quot;internett&quot; is usually capitalized as &quot;Internett&quot;"
-        errorLine1="    &lt;string name=&quot;private_browsing_placeholder_description_2&quot;>%1$s fjerner søk- og nettleserhistorikken fra private nettlesingsfaner når du lukker dem eller avslutter appen. Selv om dette ikke gjør deg anonym for nettsteder eller internett-leverandøren din, vil det gjøre det lettere"
-        errorLine2="                                                                                                                                                                                                                                      ^">
+        id="NotifyUsage"
+        message="Using Android NOTIFY instead of base component"
+        errorLine1="        notificationManagerCompat.notify(TABS_CLOSED_TAG, notificationId, notification)"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/res/values-nb-rNO/strings.xml"
-            line="64"
-            column="231"/>
-    </issue>
-
-    <issue
-        id="Typos"
-        message="&quot;internett&quot; is usually capitalized as &quot;Internett&quot;"
-        errorLine1="    &lt;string name=&quot;onboarding_home_welcome_title_2&quot;>Velkommen til et mer personlig internett&lt;/string>"
-        errorLine2="                                                                                  ^">
-        <location
-            file="src/main/res/values-nb-rNO/strings.xml"
-            line="326"
-            column="83"/>
-    </issue>
-
-    <issue
-        id="Typos"
-        message="Repeated word &quot;zaman&quot; in message: possible typo"
-        errorLine1="    &lt;string name=&quot;studies_description_2&quot;>%1$s zaman zaman araştırmalar yükleyip çalıştırabilir.&lt;/string>"
-        errorLine2="                                              ^">
-        <location
-            file="src/main/res/values-tr/strings.xml"
-            line="1009"
-            column="47"/>
-    </issue>
-
-    <issue
-        id="Typos"
-        message="&quot;A a&quot; is a common misspelling; did you mean &quot;A&quot;?"
-        errorLine1="    &lt;string name=&quot;review_quality_check_info_review_grade_header&quot;>&lt;![CDATA[Atribuímos às avaliações de cada produto uma &lt;b>classificação baseada em letras&lt;/b> de A a F.]]&gt;&lt;/string>"
-        errorLine2="                                                                                                                                                                 ^">
-        <location
-            file="src/main/res/values-pt-rPT/strings.xml"
-            line="2336"
-            column="162"/>
-    </issue>
-
-    <issue
-        id="Typos"
-        message="&quot;A a&quot; is a common misspelling; did you mean &quot;A&quot;?"
-        errorLine1="    &lt;string name=&quot;review_quality_check_info_review_grade_header&quot;>&lt;![CDATA[Atribuímos às avaliações de cada produto uma &lt;b>nota com letra&lt;/b> de A a F.]]&gt;&lt;/string>"
-        errorLine2="                                                                                                                                                ^">
-        <location
-            file="src/main/res/values-pt-rBR/strings.xml"
-            line="2339"
-            column="145"/>
+            file="src/main/java/org/mozilla/fenix/components/NotificationManager.kt"
+            line="125"
+            column="9"/>
     </issue>
 
     <issue
@@ -1287,7 +1206,7 @@
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/components/NotificationManager.kt"
-            line="96"
+            line="170"
             column="17"/>
     </issue>
 
@@ -1309,7 +1228,7 @@
         errorLine2="         ~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="357"
+            line="375"
             column="10"/>
     </issue>
 
@@ -1320,7 +1239,7 @@
         errorLine2="                             ~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="55"
+            line="57"
             column="30"/>
     </issue>
 
@@ -1375,7 +1294,7 @@
         errorLine2="     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/layout/component_tracking_protection_panel.xml"
-            line="198"
+            line="216"
             column="6"/>
     </issue>
 
@@ -1399,17 +1318,6 @@
             file="src/main/res/layout/fragment_share.xml"
             line="30"
             column="6"/>
-    </issue>
-
-    <issue
-        id="NotifyDataSetChanged"
-        message="It will always be more efficient to use more specific change events if you can. Rely on `notifyDataSetChanged` as a last resort."
-        errorLine1="        notifyDataSetChanged()"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/fenix/library/downloads/DownloadAdapter.kt"
-            line="43"
-            column="9"/>
     </issue>
 
     <issue
@@ -1441,7 +1349,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/org/mozilla/fenix/tabstray/TabsTrayFragment.kt"
-            line="588"
+            line="622"
             column="13"/>
     </issue>
 
@@ -1613,12 +1521,45 @@
     <issue
         id="MozMultipleConstraintLayoutsAndCustomViews"
         message="Custom views extending `ConstraintLayout` are less efficient because they cannot share other `ConstraintLayout` defined in file."
+        errorLine1="        &lt;org.mozilla.fenix.trackingprotection.TrackingProtectionCategoryItem"
+        errorLine2="         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/fragment_tracking_protection_blocking.xml"
+            line="86"
+            column="10"/>
+    </issue>
+
+    <issue
+        id="MozMultipleConstraintLayoutsAndCustomViews"
+        message="Custom views extending `ConstraintLayout` are less efficient because they cannot share other `ConstraintLayout` defined in file."
         errorLine1="    &lt;org.mozilla.fenix.trackingprotection.SwitchWithDescription"
         errorLine2="     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/layout/quicksettings_protections_panel.xml"
             line="18"
             column="6"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var debugDrawerFabOffsetX by remember { mutableStateOf(INITIAL_FAB_OFFSET_X) }"
+        errorLine2="                                            ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/org/mozilla/fenix/debugsettings/ui/DebugOverlay.kt"
+            line="86"
+            column="45"/>
+    </issue>
+
+    <issue
+        id="AutoboxingStateCreation"
+        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
+        errorLine1="    var debugDrawerFabOffsetY by remember { mutableStateOf(INITIAL_FAB_OFFSET_Y) }"
+        errorLine2="                                            ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/org/mozilla/fenix/debugsettings/ui/DebugOverlay.kt"
+            line="87"
+            column="45"/>
     </issue>
 
     <issue
@@ -1760,6 +1701,17 @@
         errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/layout/fragment_create_shortcut.xml"
+            line="11"
+            column="5"/>
+    </issue>
+
+    <issue
+        id="Overdraw"
+        message="Possible overdraw: Root element paints background `?scrim` with a theme that also paints a background (inferred theme is `@style/NormalTheme`)"
+        errorLine1="    android:background=&quot;?scrim&quot;"
+        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/layout/fragment_create_xiaomi_shortcut.xml"
             line="11"
             column="5"/>
     </issue>
@@ -1914,7 +1866,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/arrays.xml"
-            line="39"
+            line="44"
             column="13"/>
     </issue>
 
@@ -1925,7 +1877,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/arrays.xml"
-            line="40"
+            line="45"
             column="13"/>
     </issue>
 
@@ -1936,7 +1888,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/arrays.xml"
-            line="41"
+            line="46"
             column="13"/>
     </issue>
 
@@ -1947,7 +1899,7 @@
         errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/arrays.xml"
-            line="42"
+            line="47"
             column="19"/>
     </issue>
 
@@ -2002,11 +1954,30 @@
             column="1"/>
     </issue>
 
+    <issue id="UnusedResources"
+        message="The resource R.drawable.ic_onboarding_customize_toolbar appears to be unused">
+        <location file="src/main/res/drawable/ic_onboarding_customize_toolbar.xml" />
+    </issue>
+
+    <issue id="UnusedResources"
+        message="The resource R.drawable.ic_onboarding_bottom_toolbar appears to be unused">
+        <location file="src/main/res/drawable/ic_onboarding_bottom_toolbar.xml" />
+    </issue>
+
+    <issue id="UnusedResources"
+        message="The resource R.drawable.ic_onboarding_top_toolbar appears to be unused">
+        <location file="src/main/res/drawable/ic_onboarding_top_toolbar.xml" />
+    </issue>
+
     <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_home` appears to be unused">
+        id="UseOfNonLambdaOffsetOverload"
+        message="State backed values should use the lambda overload of Modifier.offset"
+        errorLine1="            .offset(y = offsetState),"
+        errorLine2="             ~~~~~~">
         <location
-            file="src/main/res/drawable/ic_home.xml"/>
+            file="src/main/java/org/mozilla/fenix/experiments/view/ResearchSurfaceSurvey.kt"
+            line="75"
+            column="14"/>
     </issue>
 
     <issue
@@ -2176,7 +2147,7 @@
         errorLine2="                ^">
         <location
             file="src/main/java/org/mozilla/fenix/search/SearchDialogFragment.kt"
-            line="373"
+            line="367"
             column="17"/>
     </issue>
 
@@ -2187,7 +2158,29 @@
         errorLine2="                                                         ^">
         <location
             file="src/main/java/org/mozilla/fenix/search/SearchDialogFragment.kt"
-            line="373"
+            line="367"
+            column="58"/>
+    </issue>
+
+    <issue
+        id="ClickableViewAccessibility"
+        message="Custom view ``SearchDialogFragmentConstraintLayout`` has `setOnTouchListener` called on it but does not override `performClick`"
+        errorLine1="                binding.searchWrapper.setOnTouchListener { _, _ ->"
+        errorLine2="                ^">
+        <location
+            file="src/main/java/org/mozilla/fenix/search/SearchDialogFragment.kt"
+            line="377"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="ClickableViewAccessibility"
+        message="`onTouch` lambda should call `View#performClick` when a click is detected"
+        errorLine1="                binding.searchWrapper.setOnTouchListener { _, _ ->"
+        errorLine2="                                                         ^">
+        <location
+            file="src/main/java/org/mozilla/fenix/search/SearchDialogFragment.kt"
+            line="377"
             column="58"/>
     </issue>
 
@@ -2210,28 +2203,6 @@
         <location
             file="src/main/java/org/mozilla/fenix/search/SearchDialogFragment.kt"
             line="383"
-            column="58"/>
-    </issue>
-
-    <issue
-        id="ClickableViewAccessibility"
-        message="Custom view ``SearchDialogFragmentConstraintLayout`` has `setOnTouchListener` called on it but does not override `performClick`"
-        errorLine1="                binding.searchWrapper.setOnTouchListener { _, _ ->"
-        errorLine2="                ^">
-        <location
-            file="src/main/java/org/mozilla/fenix/search/SearchDialogFragment.kt"
-            line="389"
-            column="17"/>
-    </issue>
-
-    <issue
-        id="ClickableViewAccessibility"
-        message="`onTouch` lambda should call `View#performClick` when a click is detected"
-        errorLine1="                binding.searchWrapper.setOnTouchListener { _, _ ->"
-        errorLine2="                                                         ^">
-        <location
-            file="src/main/java/org/mozilla/fenix/search/SearchDialogFragment.kt"
-            line="389"
             column="58"/>
     </issue>
 
@@ -2247,25 +2218,14 @@
     </issue>
 
     <issue
-        id="ContentDescription"
-        message="Missing `contentDescription` attribute on image"
-        errorLine1="            &lt;ImageView"
-        errorLine2="             ~~~~~~~~~">
+        id="AccessibilityFocus"
+        message="Do not force accessibility focus, as this interferes with screen readers and gives an inconsistent user experience, especially across apps"
+        errorLine1="                            performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null)"
+        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/res/layout/fragment_home.xml"
-            line="184"
-            column="14"/>
-    </issue>
-
-    <issue
-        id="ContentDescription"
-        message="Missing `contentDescription` attribute on image"
-        errorLine1="            &lt;ImageView"
-        errorLine2="             ~~~~~~~~~">
-        <location
-            file="src/main/res/layout/fragment_home.xml"
-            line="197"
-            column="14"/>
+            file="src/main/java/org/mozilla/fenix/downloads/dialog/StartDownloadDialog.kt"
+            line="195"
+            column="29"/>
     </issue>
 
     <issue
@@ -2310,6 +2270,26 @@
             file="src/main/res/layout/activity_privacy_content_display.xml"
             line="25"
             column="21"/>
+    </issue>
+
+    <issue id="UnusedResources"
+        message="The resource R.drawable.ic_pick_a_theme appears to be unused">
+        <location file="src/main/res/drawable/ic_pick_a_theme.xml" />
+    </issue>
+
+    <issue id="UnusedResources"
+        message="The resource R.drawable.ic_pick_a_theme_dark appears to be unused">
+        <location file="src/main/res/drawable/ic_pick_a_theme_dark.xml" />
+    </issue>
+
+    <issue id="UnusedResources"
+        message="The resource R.drawable.ic_pick_a_theme_light appears to be unused">
+        <location file="src/main/res/drawable/ic_pick_a_theme_light.xml" />
+    </issue>
+
+    <issue id="UnusedResources"
+        message="The resource R.drawable.ic_pick_a_theme_system_auto appears to be unused">
+        <location file="src/main/res/drawable/ic_pick_a_theme_system_auto.xml" />
     </issue>
 
 </issues>

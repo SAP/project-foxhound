@@ -24,6 +24,7 @@ const gActionDescrMap = {
 };
 
 async function testActions(browser, docAcc, id, expectedActions, domEvents) {
+  info(`Testing element ${id}`);
   const acc = findAccessibleChildByID(docAcc, id);
   is(acc.actionCount, expectedActions.length, "Correct action count");
 
@@ -54,7 +55,6 @@ async function testActions(browser, docAcc, id, expectedActions, domEvents) {
           const listener = e => {
             if (e.target.id == _id) {
               content.removeEventListener(evtName, listener);
-              content.evtPromise = null;
               resolve(42);
             }
           };
@@ -68,6 +68,7 @@ async function testActions(browser, docAcc, id, expectedActions, domEvents) {
 
   let eventFired = await invokeContentTask(browser, [], async () => {
     await content.evtPromise;
+    content.evtPromise = null;
     return true;
   });
 
@@ -113,6 +114,14 @@ addAccessibleTask(
   </div>
 
   <div onclick=""><p id="p_in_clickable_div">p in clickable div</p></div>
+
+  <img id="map_img" usemap="#map" src="http://example.com/a11y/accessible/tests/mochitest/moz.png" alt="map_img">
+  <map name="map">
+    <!-- These coords are deliberately small so that the area does not include
+      the center of the image.
+      -->
+    <area id="area" href="#" shape="rect" coords="0,0,2,2" alt="area">
+  </map>
   `,
   async function (browser, docAcc) {
     is(docAcc.actionCount, 0, "Doc should not have any actions");
@@ -140,6 +149,7 @@ addAccessibleTask(
     await _testActions("link7img", ["clickAncestor"], gClickEvents);
     await _testActions("label1", ["click"], gClickEvents);
     await _testActions("p_in_clickable_div", ["clickAncestor"], gClickEvents);
+    await _testActions("area", ["jump"], gClickEvents);
 
     await invokeContentTask(browser, [], () => {
       content.document

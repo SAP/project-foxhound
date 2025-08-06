@@ -161,6 +161,7 @@ windows-launch-on-login =
     .label = Open { -brand-short-name } automatically when your computer starts up
     .accesskey = O
 windows-launch-on-login-disabled = This preference has been disabled in Windows. To change, visit <a data-l10n-name="startup-link">Startup Apps</a> in System settings.
+windows-launch-on-login-profile-disabled = Enable this preference by checking “{ profile-manager-use-selected.label }” in the “Choose User Profile” window.
 
 startup-restore-warn-on-quit =
     .label = Warn you when quitting the browser
@@ -768,10 +769,9 @@ search-show-suggestions-url-bar-option =
 
 
 # With this option enabled, on the search results page
-# the URL will be replaced by the search terms in the address bar
-# when using the current default search engine.
-search-show-search-term-option =
-    .label = Show search terms instead of URL on default search engine results page
+# the URL will be replaced by the search terms in the address bar.
+search-show-search-term-option-2 =
+    .label = Show search terms in the address bar on results pages
 
 
 # This string describes what the user will observe when the system
@@ -926,21 +926,19 @@ sync-currently-syncing-payment-methods = Payment methods
 sync-currently-syncing-addons = Add-ons
 sync-currently-syncing-settings = Settings
 
-sync-change-options =
-    .label = Change…
-    .accesskey = C
+sync-manage-options =
+    .label = Manage sync…
+    .accesskey = M
 
 ## The "Choose what to sync" dialog.
 
-sync-choose-what-to-sync-dialog3 =
-    .title = Choose What To Sync
+sync-choose-what-to-sync-dialog4 =
+    .title = Manage what syncs on all your connected devices
     .style = min-width: 36em;
-    .buttonlabelaccept = Save Changes
+    .buttonlabelaccept = Save
     .buttonaccesskeyaccept = S
     .buttonlabelextra2 = Disconnect…
     .buttonaccesskeyextra2 = D
-
-sync-choose-dialog-subtitle = Changes to the list of items to sync will be reflected across all your connected devices.
 
 sync-engine-bookmarks =
     .label = Bookmarks
@@ -1213,7 +1211,7 @@ sitedata-cookies-exceptions =
 
 cookie-banner-blocker-header = Cookie Banner Blocker
 cookie-banner-blocker-description = When a site asks if they can use cookies in private browsing mode, { -brand-short-name } automatically refuses for you. Only on supported sites.
-cookie-banner-learn-more = Learn More
+cookie-banner-learn-more = Learn more
 cookie-banner-blocker-checkbox-label =
     .label = Automatically refuse cookie banners
 

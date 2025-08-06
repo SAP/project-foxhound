@@ -150,6 +150,9 @@ scheme host and port.""")
     # TODO use an empty string argument for the default subsuite
     test_selection_group.add_argument("--subsuite", action="append", dest="subsuites",
                                       help="Subsuite names to run. Runs all subsuites when omitted.")
+    test_selection_group.add_argument("--small-subsuite-size", default=50, type=int,
+                                      help="Maximum number of tests a subsuite can have to be treated as small subsuite."
+                                      "Tests from a small subsuite will be grouped in one group.")
     test_selection_group.add_argument("--include", action="append",
                                       help="URL prefix to include")
     test_selection_group.add_argument("--include-file", action="store",
@@ -221,6 +224,12 @@ scheme host and port.""")
                                  help="Path to stackwalker program used to analyse minidumps.")
     debugging_group.add_argument("--pdb", action="store_true",
                                  help="Drop into pdb on python exception")
+    debugging_group.add_argument("--leak-check", dest="leak_check", action="store_true", default=None,
+                                 help=("Enable leak checking for supported browsers "
+                                       "(Gecko: enabled by default for debug builds, "
+                                       "silently ignored for opt, mobile)"))
+    debugging_group.add_argument("--no-leak-check", dest="leak_check", action="store_false", default=None,
+                                 help="Disable leak checking")
 
     android_group = parser.add_argument_group("Android specific arguments")
     android_group.add_argument("--adb-binary", action="store",
@@ -281,6 +290,9 @@ scheme host and port.""")
     config_group.add_argument("--no-suppress-handler-traceback", action="store_false",
                               dest="supress_handler_traceback",
                               help="Write the stacktrace for exceptions in server handlers")
+    config_group.add_argument("--ws-extra", action="append", default=None,
+                              dest="ws_extra",
+                              help="Extra paths containing websockets handlers")
 
     build_type = parser.add_mutually_exclusive_group()
     build_type.add_argument("--debug-build", dest="debug", action="store_true",
@@ -334,11 +346,6 @@ scheme host and port.""")
     gecko_group.add_argument("--setpref", dest="extra_prefs", action='append',
                              default=[], metavar="PREF=VALUE",
                              help="Defines an extra user preference (overrides those in prefs_root)")
-    gecko_group.add_argument("--leak-check", dest="leak_check", action="store_true", default=None,
-                             help="Enable leak checking (enabled by default for debug builds, "
-                             "silently ignored for opt, mobile)")
-    gecko_group.add_argument("--no-leak-check", dest="leak_check", action="store_false", default=None,
-                             help="Disable leak checking")
     gecko_group.add_argument("--reftest-internal", dest="reftest_internal", action="store_true",
                              default=None, help="Enable reftest runner implemented inside Marionette")
     gecko_group.add_argument("--reftest-external", dest="reftest_internal", action="store_false",
@@ -465,24 +472,31 @@ def set_from_config(kwargs):
 
     kwargs["product"] = products.Product(kwargs["config"], kwargs["product"])
 
-    keys = {"paths": [("prefs", "prefs_root", True),
-                      ("run_info", "run_info", True)],
-            "web-platform-tests": [("remote_url", "remote_url", False),
-                                   ("branch", "branch", False),
-                                   ("sync_path", "sync_path", True)],
-            "SSL": [("openssl_binary", "openssl_binary", True),
-                    ("certutil_binary", "certutil_binary", True),
-                    ("ca_cert_path", "ca_cert_path", True),
-                    ("host_cert_path", "host_cert_path", True),
-                    ("host_key_path", "host_key_path", True)]}
+    keys = {"paths": [("prefs", "prefs_root", "path"),
+                      ("run_info", "run_info", "path"),
+                      ("ws_extra", "ws_extra", "paths")],
+            "web-platform-tests": [("remote_url", "remote_url", "str"),
+                                   ("branch", "branch", "str"),
+                                   ("sync_path", "sync_path", "path")],
+            "SSL": [("openssl_binary", "openssl_binary", "path"),
+                    ("certutil_binary", "certutil_binary", "path"),
+                    ("ca_cert_path", "ca_cert_path", "path"),
+                    ("host_cert_path", "host_cert_path", "path"),
+                    ("host_key_path", "host_key_path", "path")]}
+
+    getters = {
+        "str": "get",
+        "path": "get_path",
+        "paths": "get_paths"
+    }
 
     for section, values in keys.items():
-        for config_value, kw_value, is_path in values:
+        for config_value, kw_value, prop_type in values:
+            if prop_type not in getters:
+                raise ValueError(f"Unknown config property type {prop_type}")
+            getter_name = getters[prop_type]
             if kw_value in kwargs and kwargs[kw_value] is None:
-                if not is_path:
-                    new_value = kwargs["config"].get(section, config.ConfigDict({})).get(config_value)
-                else:
-                    new_value = kwargs["config"].get(section, config.ConfigDict({})).get_path(config_value)
+                new_value = getattr(kwargs["config"].get(section, config.ConfigDict({})), getter_name)(config_value)
                 kwargs[kw_value] = new_value
 
     test_paths = get_test_paths(kwargs["config"],

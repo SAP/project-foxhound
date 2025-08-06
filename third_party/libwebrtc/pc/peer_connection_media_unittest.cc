@@ -17,6 +17,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -25,7 +26,6 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/types/optional.h"
 #include "api/audio_options.h"
 #include "api/jsep.h"
 #include "api/media_types.h"
@@ -84,7 +84,7 @@ using ::testing::Values;
 cricket::MediaSendChannelInterface* SendChannelInternal(
     rtc::scoped_refptr<RtpTransceiverInterface> transceiver) {
   auto transceiver_with_internal = static_cast<
-      rtc::RefCountedObject<RtpTransceiverProxyWithInternal<RtpTransceiver>>*>(
+      RefCountedObject<RtpTransceiverProxyWithInternal<RtpTransceiver>>*>(
       transceiver.get());
   auto transceiver_internal =
       static_cast<RtpTransceiver*>(transceiver_with_internal->internal());
@@ -94,7 +94,7 @@ cricket::MediaSendChannelInterface* SendChannelInternal(
 cricket::MediaReceiveChannelInterface* ReceiveChannelInternal(
     rtc::scoped_refptr<RtpTransceiverInterface> transceiver) {
   auto transceiver_with_internal = static_cast<
-      rtc::RefCountedObject<RtpTransceiverProxyWithInternal<RtpTransceiver>>*>(
+      RefCountedObject<RtpTransceiverProxyWithInternal<RtpTransceiver>>*>(
       transceiver.get());
   auto transceiver_internal =
       static_cast<RtpTransceiver*>(transceiver_with_internal->internal());
@@ -614,7 +614,7 @@ TEST_P(PeerConnectionMediaTest, RawPacketizationNotSetInOffer) {
   auto* offer_description =
       cricket::GetFirstVideoContentDescription(offer->description());
   for (const auto& codec : offer_description->codecs()) {
-    EXPECT_EQ(codec.packetization, absl::nullopt);
+    EXPECT_EQ(codec.packetization, std::nullopt);
   }
 }
 
@@ -691,7 +691,7 @@ TEST_P(PeerConnectionMediaTest,
   auto* answer_description =
       cricket::GetFirstVideoContentDescription(answer->description());
   for (const auto& codec : answer_description->codecs()) {
-    EXPECT_EQ(codec.packetization, absl::nullopt);
+    EXPECT_EQ(codec.packetization, std::nullopt);
   }
 
   ASSERT_TRUE(caller->SetRemoteDescription(std::move(answer)));

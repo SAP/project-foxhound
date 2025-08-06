@@ -858,7 +858,7 @@ void nsFrameConstructorState::PushAbsoluteContainingBlock(
       // containing block (for mathml for example).
       return &mAbsoluteList;
     }
-    if (aPositionedFrame->StyleDisplay()->mTopLayer == StyleTopLayer::Top) {
+    if (aPositionedFrame->StyleDisplay()->mTopLayer == StyleTopLayer::Auto) {
       // If our new CB is in the top layer, and isn't a fixed CB itself, we also
       // escape the usual containment.
       return &mRealFixedList;
@@ -946,8 +946,8 @@ nsContainerFrame* nsFrameConstructorState::GetGeometricParent(
   }
 
   if (aStyleDisplay.mTopLayer != StyleTopLayer::None) {
-    MOZ_ASSERT(aStyleDisplay.mTopLayer == StyleTopLayer::Top,
-               "-moz-top-layer should be either none or top");
+    MOZ_ASSERT(aStyleDisplay.mTopLayer == StyleTopLayer::Auto,
+               "-moz-top-layer should be either none or auto");
     MOZ_ASSERT(aStyleDisplay.IsAbsolutelyPositionedStyle(),
                "Top layer items should always be absolutely positioned");
     if (aStyleDisplay.mPosition == StylePositionProperty::Fixed) {
@@ -1070,7 +1070,7 @@ AbsoluteFrameList* nsFrameConstructorState::GetOutOfFlowFrameList(
 
 void nsFrameConstructorState::ConstructBackdropFrameFor(nsIContent* aContent,
                                                         nsIFrame* aFrame) {
-  MOZ_ASSERT(aFrame->StyleDisplay()->mTopLayer == StyleTopLayer::Top);
+  MOZ_ASSERT(aFrame->StyleDisplay()->mTopLayer == StyleTopLayer::Auto);
   nsContainerFrame* frame = do_QueryFrame(aFrame);
   if (!frame) {
     NS_WARNING("Cannot create backdrop frame for non-container frame");
@@ -1082,7 +1082,7 @@ void nsFrameConstructorState::ConstructBackdropFrameFor(nsIContent* aContent,
       mPresShell->StyleSet()->ResolvePseudoElementStyle(
           *aContent->AsElement(), PseudoStyleType::backdrop, nullptr,
           parentStyle);
-  MOZ_ASSERT(style->StyleDisplay()->mTopLayer == StyleTopLayer::Top);
+  MOZ_ASSERT(style->StyleDisplay()->mTopLayer == StyleTopLayer::Auto);
   nsContainerFrame* parentFrame =
       GetGeometricParent(*style->StyleDisplay(), nullptr);
 
@@ -2071,10 +2071,11 @@ nsIFrame* nsCSSFrameConstructor::ConstructTable(nsFrameConstructorState& aState,
   // Create the table wrapper frame which holds the caption and inner table
   // frame
   nsContainerFrame* newFrame;
-  if (isMathMLContent)
+  if (isMathMLContent) {
     newFrame = NS_NewMathMLmtableOuterFrame(mPresShell, outerComputedStyle);
-  else
+  } else {
     newFrame = NS_NewTableWrapperFrame(mPresShell, outerComputedStyle);
+  }
 
   nsContainerFrame* geometricParent = aState.GetGeometricParent(
       *outerComputedStyle->StyleDisplay(), aParentFrame);
@@ -2084,10 +2085,11 @@ nsIFrame* nsCSSFrameConstructor::ConstructTable(nsFrameConstructorState& aState,
 
   // Create the inner table frame
   nsContainerFrame* innerFrame;
-  if (isMathMLContent)
+  if (isMathMLContent) {
     innerFrame = NS_NewMathMLmtableFrame(mPresShell, computedStyle);
-  else
+  } else {
     innerFrame = NS_NewTableFrame(mPresShell, computedStyle);
+  }
 
   InitAndRestoreFrame(aState, content, newFrame, innerFrame);
   innerFrame->AddStateBits(NS_FRAME_OWNS_ANON_BOXES);
@@ -2168,10 +2170,11 @@ nsIFrame* nsCSSFrameConstructor::ConstructTableRowOrRowGroup(
 
   nsContainerFrame* newFrame;
   if (aDisplay->mDisplay == StyleDisplay::TableRow) {
-    if (content->IsMathMLElement())
+    if (content->IsMathMLElement()) {
       newFrame = NS_NewMathMLmtrFrame(mPresShell, computedStyle);
-    else
+    } else {
       newFrame = NS_NewTableRowFrame(mPresShell, computedStyle);
+    }
   } else {
     newFrame = NS_NewTableRowGroupFrame(mPresShell, computedStyle);
   }
@@ -2686,7 +2689,8 @@ void nsCSSFrameConstructor::SetUpDocElementContainingBlock(
         ScrollContainerFrame (if needed)
           nsCanvasFrame [abs-cb]
             root element frame (nsBlockFrame, SVGOuterSVGFrame,
-                                nsTableWrapperFrame, nsPlaceholderFrame)
+                                nsTableWrapperFrame, nsPlaceholderFrame,
+                                nsFlexContainerFrame, nsGridContainerFrame)
 
   Print presentation, non-XUL
 
@@ -2698,7 +2702,9 @@ void nsCSSFrameConstructor::SetUpDocElementContainingBlock(
                 nsPageContentFrame [fixed-cb]
                   nsCanvasFrame [abs-cb]
                     root element frame (nsBlockFrame, SVGOuterSVGFrame,
-                                        nsTableWrapperFrame, nsPlaceholderFrame)
+                                        nsTableWrapperFrame, nsPlaceholderFrame,
+                                        nsFlexContainerFrame,
+                                        nsGridContainerFrame)
 
   Print-preview presentation, non-XUL
 
@@ -2712,7 +2718,9 @@ void nsCSSFrameConstructor::SetUpDocElementContainingBlock(
                     nsCanvasFrame [abs-cb]
                       root element frame (nsBlockFrame, SVGOuterSVGFrame,
                                           nsTableWrapperFrame,
-                                          nsPlaceholderFrame)
+                                          nsPlaceholderFrame,
+                                          nsFlexContainerFrame,
+                                          nsGridContainerFrame)
 
   Print/print preview of XUL is not supported.
   [fixed-cb]: the default containing block for fixed-pos content
@@ -3289,8 +3297,9 @@ static nsIFrame* FindAncestorWithGeneratedContentPseudo(nsIFrame* aFrame) {
                  "should not have exited generated content");
     auto pseudo = f->Style()->GetPseudoType();
     if (pseudo == PseudoStyleType::before || pseudo == PseudoStyleType::after ||
-        pseudo == PseudoStyleType::marker)
+        pseudo == PseudoStyleType::marker) {
       return f;
+    }
   }
   return nullptr;
 }
@@ -3482,7 +3491,7 @@ nsCSSFrameConstructor::FindHTMLData(const Element& aElement,
       SIMPLE_TAG_CHAIN(details, nsCSSFrameConstructor::FindDetailsData),
   };
 
-  return FindDataByTag(aElement, aStyle, sHTMLData, ArrayLength(sHTMLData));
+  return FindDataByTag(aElement, aStyle, sHTMLData, std::size(sHTMLData));
 }
 
 /* static */
@@ -3605,7 +3614,7 @@ nsCSSFrameConstructor::FindInputData(const Element& aElement,
   }
 
   return FindDataByInt(int32_t(controlType), aElement, aStyle, sInputData,
-                       ArrayLength(sInputData));
+                       std::size(sInputData));
 }
 
 /* static */
@@ -3631,7 +3640,7 @@ nsCSSFrameConstructor::FindObjectData(const Element& aElement,
   };
 
   return FindDataByInt((int32_t)type, aElement, aStyle, sObjectData,
-                       ArrayLength(sObjectData));
+                       std::size(sObjectData));
 }
 
 /* static */
@@ -4127,7 +4136,7 @@ nsCSSFrameConstructor::FindXULTagData(const Element& aElement,
       {nsGkAtoms::tooltip, kPopupData},
   };
 
-  return FindDataByTag(aElement, aStyle, sXULTagData, ArrayLength(sXULTagData));
+  return FindDataByTag(aElement, aStyle, sXULTagData, std::size(sXULTagData));
 }
 
 /* static */
@@ -4625,7 +4634,7 @@ nsCSSFrameConstructor::FindMathMLData(const Element& aElement,
       SIMPLE_MATHML_CREATE(mfenced_, NS_NewMathMLmrowFrame),
       SIMPLE_MATHML_CREATE(mmultiscripts_, NS_NewMathMLmmultiscriptsFrame),
       SIMPLE_MATHML_CREATE(mstyle_, NS_NewMathMLmrowFrame),
-      SIMPLE_MATHML_CREATE(msqrt_, NS_NewMathMLmsqrtFrame),
+      SIMPLE_MATHML_CREATE(msqrt_, NS_NewMathMLmrootFrame),
       SIMPLE_MATHML_CREATE(mroot_, NS_NewMathMLmrootFrame),
       SIMPLE_MATHML_CREATE(maction_, NS_NewMathMLmrowFrame),
       SIMPLE_MATHML_CREATE(mrow_, NS_NewMathMLmrowFrame),
@@ -4633,7 +4642,7 @@ nsCSSFrameConstructor::FindMathMLData(const Element& aElement,
       SIMPLE_MATHML_CREATE(menclose_, NS_NewMathMLmencloseFrame),
       SIMPLE_MATHML_CREATE(semantics_, NS_NewMathMLmrowFrame)};
 
-  return FindDataByTag(aElement, aStyle, sMathMLData, ArrayLength(sMathMLData));
+  return FindDataByTag(aElement, aStyle, sMathMLData, std::size(sMathMLData));
 }
 
 nsContainerFrame* nsCSSFrameConstructor::ConstructFrameWithAnonymousChild(
@@ -4940,7 +4949,7 @@ nsCSSFrameConstructor::FindSVGData(const Element& aElement,
       SIMPLE_SVG_CREATE(feTurbulence, NS_NewSVGFELeafFrame)};
 
   const FrameConstructionData* data =
-      FindDataByTag(aElement, aStyle, sSVGData, ArrayLength(sSVGData));
+      FindDataByTag(aElement, aStyle, sSVGData, std::size(sSVGData));
 
   if (!data) {
     data = &sContainerData;
@@ -5347,28 +5356,32 @@ bool nsCSSFrameConstructor::AtLineBoundary(FCItemIterator& aIter) {
 
   if (aIter.AtStart()) {
     if (aIter.List()->HasLineBoundaryAtStart() &&
-        !aIter.item().mContent->GetPreviousSibling())
+        !aIter.item().mContent->GetPreviousSibling()) {
       return true;
+    }
   } else {
     FCItemIterator prev = aIter;
     prev.Prev();
     if (prev.item().IsLineBoundary() &&
         !prev.item().mSuppressWhiteSpaceOptimizations &&
-        aIter.item().mContent->GetPreviousSibling() == prev.item().mContent)
+        aIter.item().mContent->GetPreviousSibling() == prev.item().mContent) {
       return true;
+    }
   }
 
   FCItemIterator next = aIter;
   next.Next();
   if (next.IsDone()) {
     if (aIter.List()->HasLineBoundaryAtEnd() &&
-        !aIter.item().mContent->GetNextSibling())
+        !aIter.item().mContent->GetNextSibling()) {
       return true;
+    }
   } else {
     if (next.item().IsLineBoundary() &&
         !next.item().mSuppressWhiteSpaceOptimizations &&
-        aIter.item().mContent->GetNextSibling() == next.item().mContent)
+        aIter.item().mContent->GetNextSibling() == next.item().mContent) {
       return true;
+    }
   }
 
   return false;
@@ -5400,8 +5413,10 @@ void nsCSSFrameConstructor::ConstructFramesFromItem(
         !(aState.mAdditionalStateBits & NS_FRAME_GENERATED_CONTENT) &&
         (item.mFCData->mBits & FCDATA_IS_LINE_PARTICIPANT) &&
         !(item.mFCData->mBits & FCDATA_IS_SVG_TEXT) &&
-        !mAlwaysCreateFramesForIgnorableWhitespace && item.IsWhitespace(aState))
+        !mAlwaysCreateFramesForIgnorableWhitespace &&
+        item.IsWhitespace(aState)) {
       return;
+    }
 
     ConstructTextFrame(item.mFCData, aState, item.mContent, aParentFrame,
                        computedStyle, aFrameList);

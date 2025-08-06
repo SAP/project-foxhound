@@ -170,7 +170,9 @@ async function onTargetAvailable({ targetFront }) {
 
   // Initialize the event breakpoints on the thread up front so that
   // they are active once attached.
-  actions.addEventListenerBreakpoints([]).catch(e => console.error(e));
+  actions
+    .addEventListenerBreakpoints("breakpoint", [])
+    .catch(e => console.error(e));
 
   await actions.addTarget(targetFront);
 }
@@ -213,7 +215,11 @@ async function onTracingStateAvailable(resources) {
       continue;
     }
     const threadFront = await resource.targetFront.getFront("thread");
-    await actions.tracingToggled(threadFront.actor, resource.enabled);
+    await actions.tracingToggled(
+      threadFront.actor,
+      resource.enabled,
+      resource.traceValues
+    );
   }
 }
 
@@ -222,9 +228,8 @@ async function onTracingToggled() {
   if (!tracerCommand.isTracingEnabled) {
     return;
   }
-
   // We only notify about global enabling of the tracer in order to clear data
-  await actions.clearTracerData();
+  actions.clearTracerData();
 }
 
 function onDocumentEventAvailable(events) {

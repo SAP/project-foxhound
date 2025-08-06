@@ -26,6 +26,8 @@ add_task(
     await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -49,6 +51,8 @@ add_task(
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -69,6 +73,8 @@ add_task(
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -89,6 +95,8 @@ add_task(
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -109,6 +117,8 @@ add_task(
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -120,14 +130,16 @@ add_task(
       "The FullPageTranslationsPanel still has an item for Japanese in the to-menu-list."
     );
 
-    await FullPageTranslationsTestUtils.changeSelectedToLanguage("ja");
+    await FullPageTranslationsTestUtils.changeSelectedToLanguage({
+      langTag: "ja",
+    });
     await FullPageTranslationsTestUtils.clickTranslateButton();
 
-    await FullPageTranslationsTestUtils.assertPageIsTranslated(
-      "es",
-      "ja",
-      runInPage
-    );
+    await FullPageTranslationsTestUtils.assertPageIsTranslated({
+      fromLanguage: "es",
+      toLanguage: "ja",
+      runInPage,
+    });
 
     await cleanup();
   }

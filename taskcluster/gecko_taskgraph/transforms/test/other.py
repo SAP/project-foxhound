@@ -293,8 +293,12 @@ def setup_raptor_external_browser_platforms(config, tasks):
             continue
 
         if is_external_browser(task["try-name"]):
-            task["build-platform"] = "linux64/opt"
-            task["build-label"] = "build-linux64/opt"
+            if "win" in task["build-label"]:
+                task["build-platform"] = "windows2012-64/opt"
+                task["build-label"] = "build-win64/opt"
+            else:
+                task["build-platform"] = "linux64/opt"
+                task["build-label"] = "build-linux64/opt"
 
         yield task
 
@@ -395,35 +399,29 @@ def setup_browsertime(config, tasks):
 
         cd_fetches = {
             "android.*": [
-                "linux64-chromedriver-126",
-                "linux64-chromedriver-127",
+                "linux64-chromedriver-130",
+                "linux64-chromedriver-131",
             ],
             "linux.*": [
-                "linux64-chromedriver-126",
-                "linux64-chromedriver-127",
+                "linux64-chromedriver-130",
+                "linux64-chromedriver-131",
             ],
             "macosx1015.*": [
-                "mac64-chromedriver-126",
-                "mac64-chromedriver-127",
+                "mac64-chromedriver-130",
+                "mac64-chromedriver-131",
             ],
             "macosx1400.*": [
-                "mac-arm-chromedriver-126",
-                "mac-arm-chromedriver-127",
-            ],
-            "windows.*aarch64.*": [
-                "win32-chromedriver-121",
-                "win32-chromedriver-122",
-                "win32-chromedriver-123",
+                "mac-arm-chromedriver-130",
+                "mac-arm-chromedriver-131",
             ],
             "windows.*-64.*": [
-                "win64-chromedriver-126",
-                "win64-chromedriver-127",
+                "win64-chromedriver-130",
+                "win64-chromedriver-131",
             ],
         }
 
         chromium_fetches = {
             "linux.*": ["linux64-cft-chromedriver"],
-            "macosx1015.*": ["mac-cft-chromedriver"],
             "macosx1400.*": ["mac-cft-chromedriver-arm"],
             "windows.*-64.*": ["win64-cft-chromedriver"],
             "android.*": ["linux64-cft-chromedriver"],
@@ -454,7 +452,7 @@ def setup_browsertime(config, tasks):
 
         # Disable the Raptor install step
         if "--app=chrome-m" in extra_options or "--app=cstm-car-m" in extra_options:
-            extra_options.append("--noinstall")
+            extra_options.append("--no-install")
 
         task.setdefault("fetches", {}).setdefault("fetch", []).extend(
             evaluate_keyed_by(fs, "fetches.fetch", task)
@@ -784,7 +782,15 @@ def disable_try_only_platforms(config, tasks):
 def ensure_spi_disabled_on_all_but_spi(config, tasks):
     for task in tasks:
         variant = task["attributes"].get("unittest_variant", "")
-        has_no_setpref = ("gtest", "cppunit", "jittest", "junit", "raptor")
+        has_no_setpref = (
+            "gtest",
+            "cppunit",
+            "jittest",
+            "junit",
+            "raptor",
+            "reftest",
+            "web-platform-tests",
+        )
 
         if (
             all(s not in task["suite"] for s in has_no_setpref)

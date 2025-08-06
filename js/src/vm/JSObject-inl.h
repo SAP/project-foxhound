@@ -9,6 +9,7 @@
 
 #include "vm/JSObject.h"
 
+#include "gc/Zone.h"
 #include "js/Object.h"  // JS::GetBuiltinClass
 #include "vm/ArrayObject.h"
 #include "vm/BoundFunctionObject.h"
@@ -88,7 +89,7 @@ inline void JSObject::finalize(JS::GCContext* gcx) {
   MOZ_ASSERT(isTenured());
   if (!IsBackgroundFinalized(asTenured().getAllocKind())) {
     /* Assert we're on the main thread. */
-    MOZ_ASSERT(CurrentThreadCanAccessZone(zone()));
+    MOZ_ASSERT(js::CurrentThreadCanAccessZone(zone()));
   }
 #endif
 
@@ -137,6 +138,12 @@ inline bool JSObject::isUnqualifiedVarObj() const {
     return as<js::DebugEnvironmentProxy>().environment().isUnqualifiedVarObj();
   }
   return is<js::GlobalObject>() || is<js::NonSyntacticVariablesObject>();
+}
+
+inline bool JSObject::setQualifiedVarObj(
+    JSContext* cx, JS::Handle<js::WithEnvironmentObject*> obj) {
+  MOZ_ASSERT(!obj->isSyntactic());
+  return setFlag(cx, obj, js::ObjectFlag::QualifiedVarObj);
 }
 
 inline bool JSObject::canHaveFixedElements() const {
@@ -362,6 +369,11 @@ NativeObject* NewObjectWithGivenTaggedProto(JSContext* cx, const JSClass* clasp,
                                             NewObjectKind newKind,
                                             ObjectFlags objFlags);
 
+NativeObject* NewObjectWithGivenTaggedProtoAndAllocSite(
+    JSContext* cx, const JSClass* clasp, Handle<TaggedProto> proto,
+    gc::AllocKind allocKind, NewObjectKind newKind, ObjectFlags objFlags,
+    gc::AllocSite* site);
+
 template <NewObjectKind NewKind>
 inline NativeObject* NewObjectWithGivenTaggedProto(JSContext* cx,
                                                    const JSClass* clasp,
@@ -370,6 +382,15 @@ inline NativeObject* NewObjectWithGivenTaggedProto(JSContext* cx,
   gc::AllocKind allocKind = gc::GetGCObjectKind(clasp);
   return NewObjectWithGivenTaggedProto(cx, clasp, proto, allocKind, NewKind,
                                        objFlags);
+}
+
+template <NewObjectKind NewKind>
+inline NativeObject* NewObjectWithGivenTaggedProtoAndAllocSite(
+    JSContext* cx, const JSClass* clasp, Handle<TaggedProto> proto,
+    ObjectFlags objFlags, gc::AllocSite* site) {
+  gc::AllocKind allocKind = gc::GetGCObjectKind(clasp);
+  return NewObjectWithGivenTaggedProtoAndAllocSite(cx, clasp, proto, allocKind,
+                                                   NewKind, objFlags, site);
 }
 
 namespace detail {
@@ -398,6 +419,13 @@ inline NativeObject* NewObjectWithGivenProto(JSContext* cx,
       cx, clasp, AsTaggedProto(proto), ObjectFlags());
 }
 
+inline NativeObject* NewObjectWithGivenProtoAndAllocSite(
+    JSContext* cx, const JSClass* clasp, HandleObject proto,
+    js::gc::AllocSite* site) {
+  return NewObjectWithGivenTaggedProtoAndAllocSite<GenericObject>(
+      cx, clasp, AsTaggedProto(proto), ObjectFlags(), site);
+}
+
 inline NativeObject* NewTenuredObjectWithGivenProto(
     JSContext* cx, const JSClass* clasp, HandleObject proto,
     ObjectFlags objFlags = ObjectFlags()) {
@@ -422,7 +450,7 @@ inline T* NewObjectWithGivenProtoAndKinds(JSContext* cx, HandleObject proto,
                                           gc::AllocKind allocKind,
                                           NewObjectKind newKind) {
   JSObject* obj = NewObjectWithGivenTaggedProto(
-      cx, &T::class_, AsTaggedProto(proto), allocKind, newKind);
+      cx, &T::class_, AsTaggedProto(proto), allocKind, newKind, ObjectFlags());
   return obj ? &obj->as<T>() : nullptr;
 }
 

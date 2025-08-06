@@ -8,6 +8,7 @@ import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
@@ -37,10 +38,10 @@ class PwaTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(externalLinksPWAPage.toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("Misc Link Types")
         }.openThreeDotMenu {
-        }.clickInstall {
-            clickAddAutomaticallyButton()
+        }.clickAddAppToHomeScreen {
+            clickSystemHomeScreenShortcutAddButton()
         }.openHomeScreenShortcut(shortcutTitle) {
             clickPageObject(itemContainingText("External link"))
         }
@@ -57,8 +58,8 @@ class PwaTest : TestSetup() {
         }.enterURLAndEnterToBrowser(externalLinksPWAPage.toUri()) {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
         }.openThreeDotMenu {
-        }.clickInstall {
-            clickAddAutomaticallyButton()
+        }.clickAddAppToHomeScreen {
+            clickSystemHomeScreenShortcutAddButton()
         }.openHomeScreenShortcut(shortcutTitle) {
         }
 
@@ -78,8 +79,8 @@ class PwaTest : TestSetup() {
         }.enterURLAndEnterToBrowser(pwaPage.toUri()) {
             verifyPageContent("Login Form")
         }.openThreeDotMenu {
-        }.clickInstall {
-            clickAddAutomaticallyButton()
+        }.clickAddAppToHomeScreen {
+            clickSystemHomeScreenShortcutAddButton()
         }.openHomeScreenShortcut("TEST_APP") {
             mDevice.waitForIdle()
             verifyNavURLBarHidden()

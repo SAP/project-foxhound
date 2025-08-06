@@ -7,7 +7,7 @@
  * @module actions/sources
  */
 
-import { setSymbols } from "./symbols";
+import { setSymbols } from "../sources/symbols";
 import { setInScopeLines } from "../ast/index";
 import { prettyPrintAndSelectSource } from "./prettyPrint";
 import { addTab, closeTab } from "../tabs";
@@ -37,18 +37,22 @@ import {
   hasPrettyTab,
   isSourceActorWithSourceMap,
   getSourceByActorId,
+  getSelectedFrame,
+  getCurrentThread,
 } from "../../selectors/index";
 
 // This is only used by jest tests (and within this module)
 export const setSelectedLocation = (
   location,
   shouldSelectOriginalLocation,
-  shouldHighlightSelectedLocation
+  shouldHighlightSelectedLocation,
+  shouldScrollToSelectedLocation
 ) => ({
   type: "SET_SELECTED_LOCATION",
   location,
   shouldSelectOriginalLocation,
   shouldHighlightSelectedLocation,
+  shouldScrollToSelectedLocation,
 });
 
 // This is only used by jest tests (and within this module)
@@ -216,10 +220,13 @@ async function mayBeSelectMappedSource(location, keepContext, thunkArgs) {
  * @param {boolean} options.highlight
  *        True by default. To be set to false in order to preveng highlighting the selected location in the editor.
  *        We will only show the location, but do not put a special background on the line.
+ * @param {boolean} options.scroll
+ *        True by default. Is set to false to stop the editor from scrolling to the location that has been selected.
+ *        e.g is when clicking in the editor to just show the selected line / column in the footer
  */
 export function selectLocation(
   location,
-  { keepContext = true, highlight = true } = {}
+  { keepContext = true, highlight = true, scroll = true } = {}
 ) {
   return async thunkArgs => {
     const { dispatch, getState, client } = thunkArgs;
@@ -273,7 +280,12 @@ export function selectLocation(
     }
 
     dispatch(
-      setSelectedLocation(location, shouldSelectOriginalLocation, highlight)
+      setSelectedLocation(
+        location,
+        shouldSelectOriginalLocation,
+        highlight,
+        scroll
+      )
     );
 
     await dispatch(loadSourceText(source, sourceActor));
@@ -310,15 +322,28 @@ export function selectLocation(
       dispatch(closeTab(loadedSource));
     }
 
-    await dispatch(setSymbols(location));
+    const selectedFrame = getSelectedFrame(
+      getState(),
+      getCurrentThread(getState())
+    );
+    if (
+      selectedFrame &&
+      (selectedFrame.location.source.id == location.source.id ||
+        selectedFrame.generatedLocation.source.id == location.source.id)
+    ) {
+      // This is done from selectLocation and not from paused and selectFrame actions
+      // because we may select either original or generated location while being paused
+      // and we would like to also fetch the symbols.
+      await dispatch(setSymbols(location));
 
-    // Stop the async work if we started selecting another location
-    if (getSelectedLocation(getState()) != location) {
-      return;
+      // Stop the async work if we started selecting another location
+      if (getSelectedLocation(getState()) != location) {
+        return;
+      }
+
+      // /!\ we don't historicaly wait for this async action
+      dispatch(setInScopeLines());
     }
-
-    // /!\ we don't historicaly wait for this async action
-    dispatch(setInScopeLines());
 
     // When we select a generated source which has a sourcemap,
     // asynchronously fetch the related original location in order to display

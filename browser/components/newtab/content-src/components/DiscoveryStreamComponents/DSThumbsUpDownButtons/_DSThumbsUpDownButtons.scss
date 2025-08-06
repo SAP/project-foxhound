@@ -1,8 +1,16 @@
 .card-stp-thumbs-buttons-wrapper {
-  margin-top: var(--space-medium);
+  margin-block-start: var(--space-medium);
   z-index: 1;
   visibility: hidden;
   opacity: 0;
+
+  .sections-card-ui & {
+    margin-block-start: 0;
+    position: absolute;
+    inset-inline-end: 0;
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+  }
 
   .card-stp-thumbs-buttons {
     display: flex;
@@ -16,6 +24,7 @@
     pointer-events: auto;
     opacity: 0.8;
     -moz-context-properties: fill;
+    cursor: pointer;
 
     &:hover,
     &:focus-visible {
@@ -31,11 +40,11 @@
     background-size: var(--icon-size-default);
     background-position: center;
     padding: var(--space-small);
-    fill: light-dark(var(--color-gray-70), var(--color-gray-05));
+    fill: var(--icon-color);
     transition: fill 0.3s ease-in-out;
 
     &:hover {
-      fill: light-dark(var(--color-gray-100), var(--text-color));
+      fill: var(--text-color-deemphasized);
     }
 
     &:hover:active {
@@ -80,7 +89,7 @@
 
   // Edge case for if search is turned off
   &.no-search main {
-    margin-top: var(--space-xxlarge);
+    margin-block-start: var(--space-xxlarge);
   }
 
   section {
@@ -96,15 +105,25 @@
   // _Search.scss
   .search-wrapper {
     padding: 0;
-    margin: var(--space-xxlarge) 0;
+    margin-block: var(--space-xxlarge);
 
     .logo-and-wordmark {
-      margin-bottom: var(--space-xxlarge);
+      margin-block-end: var(--space-xxlarge);
+    }
+
+    .logo-and-wordmark-wrapper {
+      margin-block-end: var(--space-xxlarge);
+
+      // Bug 1934636 - Logo is positioned absolutely and
+      // does not need a bottom margin applied
+      .layout-variant-b & {
+        margin-block-end: 0;
+      }
     }
 
     @media (height <=700px) {
       padding: 0;
-      margin-top: 0;
+      margin-block-start: 0;
     }
 
     @media (height > 700px) {
@@ -113,11 +132,16 @@
   }
 
   &.fixed-search .search-wrapper {
-    margin-top: 0;
+    margin-block-start: 0;
   }
 
   // _TopSites.scss
   .top-site-outer {
     margin-block-end: 0;
+
+    .layout-variant-a,
+    .layout-variant-b & {
+      margin-block-end: var(--space-medium);
+    }
   }
 }

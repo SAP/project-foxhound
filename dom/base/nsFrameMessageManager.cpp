@@ -21,6 +21,7 @@
 #include "js/CallAndConstruct.h"  // JS::IsCallable, JS_CallFunctionValue
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
+#include "js/EnvironmentChain.h"  // JS::EnvironmentChain
 #include "js/experimental/JSStencil.h"
 #include "js/GCVector.h"
 #include "js/JSON.h"
@@ -541,21 +542,9 @@ void nsFrameMessageManager::SendSyncMessage(JSContext* aCx,
 
   nsTArray<StructuredCloneData> retval;
 
-  TimeStamp start = TimeStamp::Now();
   sSendingSyncMessage = true;
   bool ok = mCallback->DoSendBlockingMessage(aMessageName, data, &retval);
   sSendingSyncMessage = false;
-
-  uint32_t latencyMs = round((TimeStamp::Now() - start).ToMilliseconds());
-  if (latencyMs >= kMinTelemetrySyncMessageManagerLatencyMs) {
-    NS_ConvertUTF16toUTF8 messageName(aMessageName);
-    // NOTE: We need to strip digit characters from the message name in order to
-    // avoid a large number of buckets due to generated names from addons (such
-    // as "ublock:sb:{N}"). See bug 1348113 comment 10.
-    messageName.StripTaggedASCII(ASCIIMask::Mask0to9());
-    Telemetry::Accumulate(Telemetry::IPC_SYNC_MESSAGE_MANAGER_LATENCY_MS,
-                          messageName, latencyMs);
-  }
 
   if (!ok) {
     return;
@@ -1224,7 +1213,7 @@ void nsMessageManagerScriptExecutor::LoadScriptInternal(
         }
       } else {
         JS::Rooted<JS::Value> rval(cx);
-        JS::RootedVector<JSObject*> envChain(cx);
+        JS::EnvironmentChain envChain(cx, JS::SupportUnscopables::No);
         if (!envChain.append(aMessageManager)) {
           return;
         }
@@ -1633,8 +1622,6 @@ nsSameProcessAsyncMessageBase::nsSameProcessAsyncMessageBase()
 nsresult nsSameProcessAsyncMessageBase::Init(const nsAString& aMessage,
                                              StructuredCloneData& aData) {
   if (!mData.Copy(aData)) {
-    Telemetry::Accumulate(Telemetry::IPC_SAME_PROCESS_MESSAGE_COPY_OOM_KB,
-                          aData.DataLength());
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

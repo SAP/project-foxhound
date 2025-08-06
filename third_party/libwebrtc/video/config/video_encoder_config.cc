@@ -24,7 +24,7 @@ VideoStream::VideoStream()
       max_bitrate_bps(-1),
       scale_resolution_down_by(-1.),
       max_qp(-1),
-      num_temporal_layers(absl::nullopt),
+      num_temporal_layers(std::nullopt),
       active(true) {}
 VideoStream::VideoStream(const VideoStream& other) = default;
 
@@ -59,7 +59,8 @@ VideoEncoderConfig::VideoEncoderConfig()
       bitrate_priority(1.0),
       number_of_streams(0),
       legacy_conference_mode(false),
-      is_quality_scaling_allowed(false) {}
+      is_quality_scaling_allowed(false),
+      max_qp(-1) {}
 
 VideoEncoderConfig::VideoEncoderConfig(VideoEncoderConfig&&) = default;
 
@@ -85,6 +86,15 @@ std::string VideoEncoderConfig::ToString() const {
   ss << ", min_transmit_bitrate_bps: " << min_transmit_bitrate_bps;
   ss << '}';
   return ss.str();
+}
+
+bool VideoEncoderConfig::HasRequestedResolution() const {
+  for (const VideoStream& simulcast_layer : simulcast_layers) {
+    if (simulcast_layer.requested_resolution.has_value()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 VideoEncoderConfig::VideoEncoderConfig(const VideoEncoderConfig&) = default;

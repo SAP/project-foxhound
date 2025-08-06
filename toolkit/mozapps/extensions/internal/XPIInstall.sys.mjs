@@ -741,7 +741,7 @@ var loadManifest = async function (aPackage, aLocation, aOldAddon) {
     // Always report when there is an attempt to install a blocked add-on.
     // (transitions from STATE_BLOCKED to STATE_NOT_BLOCKED are checked
     //  in the individual AddonInstall subclasses).
-    if (addon.blocklistState == nsIBlocklistService.STATE_BLOCKED) {
+    if (addon.blocklistState > nsIBlocklistService.STATE_NOT_BLOCKED) {
       addon.recordAddonBlockChangeTelemetry(
         aOldAddon ? "addon_update" : "addon_install"
       );
@@ -887,6 +887,7 @@ function getSignedStatus(aRv, aCert, aAddonID) {
     default:
       // Any other error indicates that either the add-on isn't signed or it
       // is signed by a signature that doesn't chain to the trusted root.
+      logger.warn(`Failed to verify signature for ${aAddonID}: ${aRv}`);
       return AddonManager.SIGNEDSTATE_UNKNOWN;
   }
 }
@@ -2254,7 +2255,7 @@ var LocalAddonInstall = class extends AddonInstall {
 
     // Report if blocked add-on becomes unblocked through this install.
     if (
-      addon?.blocklistState === nsIBlocklistService.STATE_BLOCKED &&
+      addon?.blocklistState > nsIBlocklistService.STATE_NOT_BLOCKED &&
       this.addon.blocklistState === nsIBlocklistService.STATE_NOT_BLOCKED
     ) {
       this.addon.recordAddonBlockChangeTelemetry("addon_install");
@@ -2262,6 +2263,14 @@ var LocalAddonInstall = class extends AddonInstall {
 
     if (this.addon.blocklistState === nsIBlocklistService.STATE_BLOCKED) {
       this.error = AddonManager.ERROR_BLOCKLISTED;
+    }
+
+    if (this.addon.blocklistState === nsIBlocklistService.STATE_SOFTBLOCKED) {
+      // We show a different error message to the user and so we need a separate
+      // error code (translated into the related localized error message from
+      // browser-addons.js on Firefox Desktop and from WebExtensionPromptFeature.kt
+      // on Firefox for Android).
+      this.error = AddonManager.ERROR_SOFT_BLOCKED;
     }
 
     if (!this.addon.isCompatible) {
@@ -2752,7 +2761,7 @@ var DownloadAddonInstall = class extends AddonInstall {
 
     // Report if blocked add-on becomes unblocked through this install/update.
     if (
-      aAddon?.blocklistState === nsIBlocklistService.STATE_BLOCKED &&
+      aAddon?.blocklistState > nsIBlocklistService.STATE_NOT_BLOCKED &&
       this.addon.blocklistState === nsIBlocklistService.STATE_NOT_BLOCKED
     ) {
       this.addon.recordAddonBlockChangeTelemetry(
@@ -2762,6 +2771,14 @@ var DownloadAddonInstall = class extends AddonInstall {
 
     if (this.addon.blocklistState === nsIBlocklistService.STATE_BLOCKED) {
       this.error = AddonManager.ERROR_BLOCKLISTED;
+    } else if (
+      this.addon.blocklistState === nsIBlocklistService.STATE_SOFTBLOCKED
+    ) {
+      // We show a different error message to the user and so we need a separate
+      // error code (translated into the related localized error message from
+      // browser-addons.js on Firefox Desktop and from WebExtensionPromptFeature.kt
+      // on Firefox for Android).
+      this.error = AddonManager.ERROR_SOFT_BLOCKED;
     } else if (!this.addon.isCompatible) {
       this.error = AddonManager.ERROR_INCOMPATIBLE;
     }

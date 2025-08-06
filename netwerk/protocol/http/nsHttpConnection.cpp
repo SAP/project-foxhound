@@ -17,6 +17,7 @@
 #include "NSSErrorsService.h"
 #include "TLSTransportLayer.h"
 #include "mozilla/ChaosMode.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "mozpkix/pkixnss.h"
@@ -62,8 +63,6 @@ nsHttpConnection::nsHttpConnection() : mHttpHandler(gHttpHandler) {
   mIdleTimeout = (k5Sec < gHttpHandler->IdleTimeout())
                      ? k5Sec
                      : gHttpHandler->IdleTimeout();
-
-  mThroughCaptivePortal = gHttpHandler->GetThroughCaptivePortal();
 }
 
 nsHttpConnection::~nsHttpConnection() {
@@ -84,8 +83,8 @@ nsHttpConnection::~nsHttpConnection() {
 
     MOZ_ASSERT(ci);
     if (ci->GetIsTrrServiceChannel()) {
-      Telemetry::Accumulate(Telemetry::DNS_TRR_REQUEST_PER_CONN,
-                            mHttp1xTransactionCount);
+      mozilla::glean::networking::trr_request_count_per_conn.Get("h1"_ns).Add(
+          static_cast<int32_t>(mHttp1xTransactionCount));
     }
   }
 
@@ -96,20 +95,6 @@ nsHttpConnection::~nsHttpConnection() {
     Telemetry::Accumulate(mEverUsedSpdy ? Telemetry::SPDY_KBREAD_PER_CONN2
                                         : Telemetry::HTTP_KBREAD_PER_CONN2,
                           totalKBRead);
-  }
-
-  if (mThroughCaptivePortal) {
-    if (mTotalBytesRead || mTotalBytesWritten) {
-      auto total =
-          Clamp<uint32_t>((mTotalBytesRead >> 10) + (mTotalBytesWritten >> 10),
-                          0, std::numeric_limits<uint32_t>::max());
-      Telemetry::ScalarAdd(
-          Telemetry::ScalarID::NETWORKING_DATA_TRANSFERRED_CAPTIVE_PORTAL,
-          total);
-    }
-
-    Telemetry::ScalarAdd(
-        Telemetry::ScalarID::NETWORKING_HTTP_CONNECTIONS_CAPTIVE_PORTAL, 1);
   }
 
   if (mForceSendTimer) {
@@ -561,6 +546,9 @@ nsresult nsHttpConnection::Activate(nsAHttpTransaction* trans, uint32_t caps,
     }
   }
 
+  // take ownership of the transaction
+  mTransaction = trans;
+
   // Update security callbacks
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
   trans->GetSecurityCallbacks(getter_AddRefs(callbacks));
@@ -572,9 +560,6 @@ nsresult nsHttpConnection::Activate(nsAHttpTransaction* trans, uint32_t caps,
   } else {
     ChangeConnectionState(ConnectionState::TLS_HANDSHAKING);
   }
-
-  // take ownership of the transaction
-  mTransaction = trans;
 
   nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
   if (NS_SUCCEEDED(mSocketTransport->GetTlsSocketControl(
@@ -2282,6 +2267,11 @@ void nsHttpConnection::CheckForTraffic(bool check) {
 }
 
 void nsHttpConnection::SetEvent(nsresult aStatus) {
+  LOG(("nsHttpConnection::SetEvent [this=%p status=%" PRIx32 "]\n", this,
+       static_cast<uint32_t>(aStatus)));
+  if (!mBootstrappedTimingsSet) {
+    mBootstrappedTimingsSet = true;
+  }
   switch (aStatus) {
     case NS_NET_STATUS_RESOLVING_HOST:
       mBootstrappedTimings.domainLookupStart = TimeStamp::Now();
@@ -2429,6 +2419,17 @@ void nsHttpConnection::HandshakeDoneInternal() {
   DebugOnly<nsresult> rvDebug = securityInfo->GetNegotiatedNPN(negotiatedNPN);
   MOZ_ASSERT(NS_SUCCEEDED(rvDebug));
 
+  nsAutoCString transactionNPN;
+  transactionNPN = mConnInfo->GetNPNToken();
+  LOG(("negotiatedNPN: %s - transactionNPN: %s", negotiatedNPN.get(),
+       transactionNPN.get()));
+  if (!transactionNPN.IsEmpty() && negotiatedNPN != transactionNPN) {
+    LOG(("Resetting connection due to mismatched NPN token"));
+    DontReuse();
+    mTransaction->Close(NS_ERROR_NET_RESET);
+    return;
+  }
+
   bool earlyDataAccepted = false;
   if (mTlsHandshaker->EarlyDataUsed()) {
     // Check if early data has been accepted.
@@ -2525,8 +2526,6 @@ void nsHttpConnection::HandshakeDoneInternal() {
       StartSpdy(tlsSocketControl, mSpdySession->SpdyVersion());
     }
   }
-
-  Telemetry::Accumulate(Telemetry::SPDY_NPN_CONNECT, UsingSpdy());
 
   mTlsHandshaker->FinishNPNSetup(true, true);
   Unused << ResumeSend();

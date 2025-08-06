@@ -59,10 +59,7 @@ if (rtc_enable_protobuf) {
       "../../rtc_base/network:received_packet",
       "../../rtc_base/synchronization:mutex",
       "../../rtc_base/system:no_unique_address",
-    ]
-    absl_deps = [
       "//third_party/abseil-cpp/absl/functional:any_invocable",
-      "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
 
@@ -178,8 +175,8 @@ if (is_android) {
       "../../rtc_base:threading",
     ]
 
-    suppressed_configs += [ "//build/config/android:hide_all_but_jni_onload" ]
-    configs += [ "//build/config/android:hide_all_but_jni" ]
+    suppressed_configs += [ "//chromium/build/config/android:hide_all_but_jni_onload" ]
+    configs += [ "//chromium/build/config/android:hide_all_but_jni" ]
 
     output_extension = "so"
   }

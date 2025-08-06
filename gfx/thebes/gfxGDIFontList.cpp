@@ -411,7 +411,7 @@ int CALLBACK GDIFontFamily::FamilyAddStylesProc(
   }
 
   // Some fonts claim to support things > 900, but we don't so clamp the sizes
-  logFont.lfWeight = clamped(logFont.lfWeight, LONG(100), LONG(900));
+  logFont.lfWeight = std::clamp(logFont.lfWeight, LONG(100), LONG(900));
 
   gfxWindowsFontType feType =
       GDIFontEntry::DetermineFontType(metrics, fontType);
@@ -543,7 +543,7 @@ nsresult gfxGDIFontList::GetFontSubstitutes() {
 
   for (i = 0, rv = ERROR_SUCCESS; rv != ERROR_NO_MORE_ITEMS; i++) {
     aliasName[0] = 0;
-    lenAlias = ArrayLength(aliasName);
+    lenAlias = std::size(aliasName);
     actualName[0] = 0;
     lenActual = sizeof(actualName);
     rv = RegEnumValueW(hKey, i, aliasName, &lenAlias, nullptr, &valueType,

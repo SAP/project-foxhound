@@ -574,6 +574,7 @@ pub struct PrimitiveTemplate {
 impl PatternBuilder for PrimitiveTemplate {
     fn build(
         &self,
+        _sub_rect: Option<DeviceRect>,
         ctx: &PatternBuilderContext,
         _state: &mut PatternBuilderState,
     ) -> crate::pattern::Pattern {
@@ -584,6 +585,24 @@ impl PatternBuilder for PrimitiveTemplate {
                 Pattern::color(color)
             }
         }
+    }
+
+    fn get_base_color(
+        &self,
+        ctx: &PatternBuilderContext,
+    ) -> ColorF {
+        match self.kind {
+            PrimitiveTemplateKind::Clear => ColorF::BLACK,
+            PrimitiveTemplateKind::Rectangle { ref color, .. } => {
+                ctx.scene_properties.resolve_color(color)
+            }
+        }
+    }
+
+    fn use_shared_pattern(
+        &self,
+    ) -> bool {
+        true
     }
 }
 
@@ -1361,31 +1380,32 @@ impl PrimitiveScratchBuffer {
             WorldPoint::new(rect.min.x + stroke_width, rect.min.y),
             WorldPoint::new(rect.max.x - stroke_width, rect.min.y + stroke_width)
         );
-        self.push_debug_rect(top_edge * DevicePixelScale::new(1.0), border, border);
+        self.push_debug_rect(top_edge * DevicePixelScale::new(1.0), 1, border, border);
 
         let bottom_edge = WorldRect::new(
             WorldPoint::new(rect.min.x + stroke_width, rect.max.y - stroke_width),
             WorldPoint::new(rect.max.x - stroke_width, rect.max.y)
         );
-        self.push_debug_rect(bottom_edge * DevicePixelScale::new(1.0), border, border);
+        self.push_debug_rect(bottom_edge * DevicePixelScale::new(1.0), 1, border, border);
 
         let right_edge = WorldRect::new(
             WorldPoint::new(rect.max.x - stroke_width, rect.min.y),
             rect.max
         );
-        self.push_debug_rect(right_edge * DevicePixelScale::new(1.0), border, border);
+        self.push_debug_rect(right_edge * DevicePixelScale::new(1.0), 1, border, border);
 
         let left_edge = WorldRect::new(
             rect.min,
             WorldPoint::new(rect.min.x + stroke_width, rect.max.y)
         );
-        self.push_debug_rect(left_edge * DevicePixelScale::new(1.0), border, border);
+        self.push_debug_rect(left_edge * DevicePixelScale::new(1.0), 1, border, border);
     }
 
     #[allow(dead_code)]
     pub fn push_debug_rect(
         &mut self,
         rect: DeviceRect,
+        thickness: i32,
         outer_color: ColorF,
         inner_color: ColorF,
     ) {
@@ -1393,6 +1413,7 @@ impl PrimitiveScratchBuffer {
             rect,
             outer_color,
             inner_color,
+            thickness,
         });
     }
 

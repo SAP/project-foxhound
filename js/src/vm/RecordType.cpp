@@ -14,7 +14,7 @@
 #include "js/Array.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "vm/ArrayObject.h"
 #include "vm/EqualityOperations.h"
 #include "vm/JSAtomUtils.h"  // AtomizeString, EnsureAtomized
@@ -47,7 +47,8 @@ const ClassSpec RecordType::classSpec_ = {
     nullptr,
     nullptr,
     nullptr,
-    nullptr};
+    nullptr,
+};
 
 Shape* RecordType::getInitialShape(JSContext* cx) {
   return SharedShape::getInitialShape(cx, &RecordType::class_, cx->realm(),

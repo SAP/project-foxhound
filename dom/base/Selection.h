@@ -54,7 +54,84 @@ class DocGroup;
 
 namespace mozilla {
 
+enum class SelectionScrollMode : uint8_t {
+  // Don't scroll synchronously. We'll flush when the scroll event fires so we
+  // make sure to scroll to the right place.
+  Async,
+  // Scroll synchronously, without flushing layout.
+  SyncNoFlush,
+  // Scroll synchronously, flushing layout. You MUST hold a strong ref on
+  // 'this' for the duration of this call.  This might destroy arbitrary
+  // layout objects.
+  SyncFlush,
+};
+
 namespace dom {
+
+/**
+ * This cache allows to store all selected nodes during a reflow operation.
+ *
+ * All fully selected nodes are stored in a hash set per-selection instance.
+ * This allows fast paths in `nsINode::IsSelected()` and
+ * `Selection::LookupSelection()`. For partially selected nodes, the old
+ * mechanisms are used. This is okay, because for partially selected nodes
+ * no expensive node traversal is necessary.
+ *
+ * This cache is designed to be used in a context where no script is allowed
+ * to run. It assumes that the selection itself, or any range therein, does not
+ * change during its lifetime.
+ *
+ * By design, this class can only be instantiated in the `PresShell`.
+ */
+class MOZ_RAII SelectionNodeCache final {
+ public:
+  ~SelectionNodeCache();
+  /**
+   * Returns true if `aNode` is fully selected by any of the given selections.
+   *
+   * This method will collect all fully selected nodes of `aSelections` and
+   * store them internally (therefore this method isn't const).
+   */
+  bool MaybeCollectNodesAndCheckIfFullySelectedInAnyOf(
+      const nsINode* aNode, const nsTArray<Selection*>& aSelections);
+
+  /**
+   * Returns true if `aNode` is fully selected by any range in `aSelection`.
+   *
+   * This method collects all fully selected nodes from `aSelection` and store
+   * them internally.
+   */
+  bool MaybeCollectNodesAndCheckIfFullySelected(const nsINode* aNode,
+                                                const Selection* aSelection) {
+    return MaybeCollect(aSelection).Contains(aNode);
+  }
+
+ private:
+  /**
+   * This class is supposed to be only created by the PresShell.
+   */
+  friend PresShell;
+  explicit SelectionNodeCache(PresShell& aOwningPresShell);
+  /**
+   * Collects all nodes from a given list of selections.
+   *
+   * This method assumes that the selections itself won't change during this
+   * object's lifetime. It's not possible to 'update' the cached selected ranges
+   * by calling this method again.
+   */
+  void MaybeCollect(const nsTArray<Selection*>& aSelections);
+  /**
+   * Iterates all ranges in `aSelection` and collects its fully selected nodes
+   * into a hash set, which is also returned.
+   *
+   * If `aSelection` is already cached, the hash set is returned directly.
+   */
+  const nsTHashSet<const nsINode*>& MaybeCollect(const Selection* aSelection);
+
+  nsTHashMap<const Selection*, nsTHashSet<const nsINode*>> mSelectedNodes;
+
+  PresShell& mOwningPresShell;
+};
 
 // Note, the ownership of mozilla::dom::Selection depends on which way the
 // object is created. When nsFrameSelection has created Selection,
@@ -155,25 +232,14 @@ class Selection final : public nsSupportsWeakReference,
                                          nsRect* aRect);
 
   nsresult PostScrollSelectionIntoViewEvent(SelectionRegion aRegion,
-                                            int32_t aFlags,
+                                            ScrollFlags aFlags,
                                             ScrollAxis aVertical,
                                             ScrollAxis aHorizontal);
-  enum {
-    SCROLL_SYNCHRONOUS = 1 << 1,
-    SCROLL_FIRST_ANCESTOR_ONLY = 1 << 2,
-    SCROLL_DO_FLUSH =
-        1 << 3,  // only matters if SCROLL_SYNCHRONOUS is passed too
-    SCROLL_OVERFLOW_HIDDEN = 1 << 5,
-    SCROLL_FOR_CARET_MOVE = 1 << 6
-  };
-  // If aFlags doesn't contain SCROLL_SYNCHRONOUS, then we'll flush when
-  // the scroll event fires so we make sure to scroll to the right place.
-  // Otherwise, if SCROLL_DO_FLUSH is also in aFlags, then this method will
-  // flush layout and you MUST hold a strong ref on 'this' for the duration
-  // of this call.  This might destroy arbitrary layout objects.
-  MOZ_CAN_RUN_SCRIPT nsresult
-  ScrollIntoView(SelectionRegion aRegion, ScrollAxis aVertical = ScrollAxis(),
-                 ScrollAxis aHorizontal = ScrollAxis(), int32_t aFlags = 0);
+
+  MOZ_CAN_RUN_SCRIPT nsresult ScrollIntoView(
+      SelectionRegion, ScrollAxis aVertical = ScrollAxis(),
+      ScrollAxis aHorizontal = ScrollAxis(), ScrollFlags = ScrollFlags::None,
+      SelectionScrollMode = SelectionScrollMode::Async);
 
  private:
   static bool IsUserSelectionCollapsed(
@@ -839,7 +905,7 @@ class Selection final : public nsSupportsWeakReference,
 
     ScrollSelectionIntoViewEvent(Selection* aSelection, SelectionRegion aRegion,
                                  ScrollAxis aVertical, ScrollAxis aHorizontal,
-                                 int32_t aFlags)
+                                 ScrollFlags aFlags)
         : Runnable("dom::Selection::ScrollSelectionIntoViewEvent"),
           mSelection(aSelection),
           mRegion(aRegion),
@@ -855,7 +921,7 @@ class Selection final : public nsSupportsWeakReference,
     SelectionRegion mRegion;
     ScrollAxis mVerticalScroll;
     ScrollAxis mHorizontalScroll;
-    int32_t mFlags;
+    ScrollFlags mFlags;
   };
 
   /**
@@ -1163,28 +1229,28 @@ class MOZ_RAII AutoHideSelectionChanges final {
 
 }  // namespace dom
 
-inline bool IsValidRawSelectionType(RawSelectionType aRawSelectionType) {
+constexpr bool IsValidRawSelectionType(RawSelectionType aRawSelectionType) {
   return aRawSelectionType >= nsISelectionController::SELECTION_NONE &&
-         aRawSelectionType <= nsISelectionController::SELECTION_URLSTRIKEOUT;
+         aRawSelectionType <= nsISelectionController::SELECTION_TARGET_TEXT;
 }
 
-inline SelectionType ToSelectionType(RawSelectionType aRawSelectionType) {
+constexpr SelectionType ToSelectionType(RawSelectionType aRawSelectionType) {
   if (!IsValidRawSelectionType(aRawSelectionType)) {
     return SelectionType::eInvalid;
   }
   return static_cast<SelectionType>(aRawSelectionType);
 }
 
-inline RawSelectionType ToRawSelectionType(SelectionType aSelectionType) {
+constexpr RawSelectionType ToRawSelectionType(SelectionType aSelectionType) {
   MOZ_ASSERT(aSelectionType != SelectionType::eInvalid);
   return static_cast<RawSelectionType>(aSelectionType);
 }
 
-inline RawSelectionType ToRawSelectionType(TextRangeType aTextRangeType) {
+constexpr RawSelectionType ToRawSelectionType(TextRangeType aTextRangeType) {
   return ToRawSelectionType(ToSelectionType(aTextRangeType));
 }
 
-inline SelectionTypeMask ToSelectionTypeMask(SelectionType aSelectionType) {
+constexpr SelectionTypeMask ToSelectionTypeMask(SelectionType aSelectionType) {
   MOZ_ASSERT(aSelectionType != SelectionType::eInvalid);
   return aSelectionType == SelectionType::eNone
              ? 0
@@ -1209,5 +1275,27 @@ inline std::ostream& operator<<(
 }
 
 }  // namespace mozilla
+
+inline nsresult nsISelectionController::ScrollSelectionIntoView(
+    mozilla::SelectionType aType, SelectionRegion aRegion,
+    const mozilla::ScrollAxis& aVertical = mozilla::ScrollAxis(),
+    const mozilla::ScrollAxis& aHorizontal = mozilla::ScrollAxis(),
+    mozilla::ScrollFlags aScrollFlags = mozilla::ScrollFlags::None,
+    mozilla::SelectionScrollMode aMode = mozilla::SelectionScrollMode::Async) {
+  RefPtr selection = GetSelection(mozilla::RawSelectionType(aType));
+  if (!selection) {
+    return NS_ERROR_FAILURE;
+  }
+  return selection->ScrollIntoView(aRegion, aVertical, aHorizontal,
+                                   aScrollFlags, aMode);
+}
+
+inline nsresult nsISelectionController::ScrollSelectionIntoView(
+    mozilla::SelectionType aType, SelectionRegion aRegion,
+    mozilla::SelectionScrollMode aMode) {
+  return ScrollSelectionIntoView(aType, aRegion, mozilla::ScrollAxis(),
+                                 mozilla::ScrollAxis(),
+                                 mozilla::ScrollFlags::None, aMode);
+}
 
 #endif  // mozilla_Selection_h__

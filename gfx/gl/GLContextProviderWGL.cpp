@@ -30,7 +30,7 @@ namespace gl {
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
 
-WGLLibrary sWGLLib;
+MOZ_RUNINIT WGLLibrary sWGLLib;
 
 /*
 ScopedWindow::~ScopedWindow()
@@ -472,7 +472,24 @@ already_AddRefed<GLContext> GLContextProviderWGL::CreateHeadless(
   int chosenFormat;
   UINT foundFormats = 0;
 
-  if (!foundFormats) {
+  bool forbidHardware =
+      static_cast<bool>(desc.flags & CreateContextFlags::FORBID_HARDWARE);
+  if (!foundFormats && forbidHardware) {
+    const int kAttribs[] = {LOCAL_WGL_DRAW_TO_PBUFFER_ARB,
+                            true,
+                            LOCAL_WGL_SUPPORT_OPENGL_ARB,
+                            true,
+                            LOCAL_WGL_ACCELERATION_ARB,
+                            LOCAL_WGL_NO_ACCELERATION_ARB,
+                            0};
+    if (!wgl.mSymbols.fChoosePixelFormat(wgl.RootDc(), kAttribs, nullptr, 1,
+                                         &chosenFormat, &foundFormats)) {
+      foundFormats = 0;
+      return nullptr;
+    }
+  }
+
+  if (!foundFormats && !forbidHardware) {
     const int kAttribs[] = {LOCAL_WGL_DRAW_TO_PBUFFER_ARB,
                             true,
                             LOCAL_WGL_SUPPORT_OPENGL_ARB,

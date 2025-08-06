@@ -613,7 +613,7 @@ class MDefinition : public MNode {
   // Dump any other stuff the node wants to have printed in `extras`.  The
   // added strings are copied, with the `ExtrasCollector` taking ownership of
   // the copies.
-  virtual void getExtras(ExtrasCollector* extras) {}
+  virtual void getExtras(ExtrasCollector* extras) const {}
 #endif
 
   // Also for LICM. Test whether this definition is likely to be a call, which
@@ -1347,6 +1347,42 @@ class MLimitedTruncate : public MUnaryInstruction,
   void setTruncateKind(TruncateKind kind) { truncate_ = kind; }
 };
 
+// Truncation barrier. This is intended for protecting its input against
+// follow-up truncation optimizations.
+class MIntPtrLimitedTruncate : public MUnaryInstruction,
+                               public NoTypePolicy::Data {
+  explicit MIntPtrLimitedTruncate(MDefinition* input)
+      : MUnaryInstruction(classOpcode, input) {
+    MOZ_ASSERT(input->type() == MIRType::IntPtr);
+    setResultType(MIRType::IntPtr);
+    setMovable();
+  }
+
+ public:
+  INSTRUCTION_HEADER(IntPtrLimitedTruncate)
+  TRIVIAL_NEW_WRAPPERS
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+};
+
+// Truncation barrier. This is intended for protecting its input against
+// follow-up truncation optimizations.
+class MInt64LimitedTruncate : public MUnaryInstruction,
+                              public NoTypePolicy::Data {
+  explicit MInt64LimitedTruncate(MDefinition* input)
+      : MUnaryInstruction(classOpcode, input) {
+    MOZ_ASSERT(input->type() == MIRType::Int64);
+    setResultType(MIRType::Int64);
+    setMovable();
+  }
+
+ public:
+  INSTRUCTION_HEADER(Int64LimitedTruncate)
+  TRIVIAL_NEW_WRAPPERS
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+};
+
 // A constant js::Value.
 class MConstant : public MNullaryInstruction {
   struct Payload {
@@ -1744,11 +1780,11 @@ class MGoto : public MAryControlInstruction<0, 1>, public NoTypePolicy::Data {
 
   static constexpr size_t TargetIndex = 0;
 
-  MBasicBlock* target() { return getSuccessor(TargetIndex); }
+  MBasicBlock* target() const { return getSuccessor(TargetIndex); }
   AliasSet getAliasSet() const override { return AliasSet::None(); }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     SprintfLiteral(buf, "Block%u", GetMBasicBlockId(target()));
     extras->add(buf);
@@ -1803,7 +1839,7 @@ class MTest : public MAryControlInstruction<1, 2>, public TestPolicy::Data {
 #endif
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     char buf[64];
     SprintfLiteral(buf, "true->Block%u false->Block%u",
                    GetMBasicBlockId(ifTrue()), GetMBasicBlockId(ifFalse()));
@@ -2308,7 +2344,8 @@ class MCall : public MCallBase {
   static MCall* New(TempAllocator& alloc, WrappedFunction* target,
                     size_t maxArgc, size_t numActualArgs, bool construct,
                     bool ignoresReturnValue, bool isDOMCall,
-                    mozilla::Maybe<DOMObjectKind> objectKind);
+                    mozilla::Maybe<DOMObjectKind> objectKind,
+                    mozilla::Maybe<gc::Heap> initialHeap);
 
   bool needsClassCheck() const { return needsClassCheck_; }
   void disableClassCheck() { needsClassCheck_ = false; }
@@ -2351,9 +2388,14 @@ class MCallDOMNative : public MCall {
 
   DOMObjectKind objectKind_;
 
+  // Allow wrapper pre-tenuring
+  gc::Heap initialHeap_ = gc::Heap::Default;
+
   MCallDOMNative(WrappedFunction* target, uint32_t numActualArgs,
-                 DOMObjectKind objectKind)
-      : MCall(target, numActualArgs, false, false), objectKind_(objectKind) {
+                 DOMObjectKind objectKind, gc::Heap initialHeap)
+      : MCall(target, numActualArgs, false, false),
+        objectKind_(objectKind),
+        initialHeap_(initialHeap) {
     MOZ_ASSERT(getJitInfo()->type() != JSJitInfo::InlinableNative);
 
     // If our jitinfo is not marked eliminatable, that means that our C++
@@ -2370,7 +2412,8 @@ class MCallDOMNative : public MCall {
   friend MCall* MCall::New(TempAllocator& alloc, WrappedFunction* target,
                            size_t maxArgc, size_t numActualArgs, bool construct,
                            bool ignoresReturnValue, bool isDOMCall,
-                           mozilla::Maybe<DOMObjectKind> objectKind);
+                           mozilla::Maybe<DOMObjectKind> objectKind,
+                           mozilla::Maybe<gc::Heap> initalHeap);
 
   const JSJitInfo* getJitInfo() const;
 
@@ -2384,6 +2427,8 @@ class MCallDOMNative : public MCall {
   virtual bool isCallDOMNative() const override { return true; }
 
   virtual void computeMovable() override;
+
+  gc::Heap initialHeap() { return initialHeap_; }
 };
 
 // Used to invoke a JSClass call/construct hook.
@@ -2697,6 +2742,9 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
     // Int64 compared as unsigneds.
     Compare_UInt64,
 
+    // IntPtr compared to IntPtr.
+    Compare_IntPtr,
+
     // IntPtr compared as unsigneds.
     Compare_UIntPtr,
 
@@ -2815,6 +2863,9 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
   [[nodiscard]] MDefinition* tryFoldStringCompare(TempAllocator& alloc);
   [[nodiscard]] MDefinition* tryFoldStringSubstring(TempAllocator& alloc);
   [[nodiscard]] MDefinition* tryFoldStringIndexOf(TempAllocator& alloc);
+  [[nodiscard]] MDefinition* tryFoldBigInt64(TempAllocator& alloc);
+  [[nodiscard]] MDefinition* tryFoldBigIntPtr(TempAllocator& alloc);
+  [[nodiscard]] MDefinition* tryFoldBigInt(TempAllocator& alloc);
 
  public:
   bool congruentTo(const MDefinition* ins) const override {
@@ -2846,6 +2897,7 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
 
       case Compare_Int64:
       case Compare_UInt64:
+      case Compare_IntPtr:
       case Compare_UIntPtr:
       case Compare_WasmAnyRef:
         return false;
@@ -2854,7 +2906,7 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
   }
 
 #ifdef JS_JITSPEW
-  void getExtras(ExtrasCollector* extras) override {
+  void getExtras(ExtrasCollector* extras) const override {
     const char* ty = nullptr;
     switch (compareType_) {
       case Compare_Undefined:
@@ -2874,6 +2926,9 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
         break;
       case Compare_UInt64:
         ty = "UInt64";
+        break;
+      case Compare_IntPtr:
+        ty = "IntPtr";
         break;
       case Compare_UIntPtr:
         ty = "UIntPtr";
@@ -3843,8 +3898,10 @@ class MTruncateBigIntToInt64 : public MUnaryInstruction,
 
 // Takes an Int64 and returns a fresh BigInt pointer.
 class MInt64ToBigInt : public MUnaryInstruction, public NoTypePolicy::Data {
-  explicit MInt64ToBigInt(MDefinition* def)
-      : MUnaryInstruction(classOpcode, def) {
+  bool isSigned_;
+
+  MInt64ToBigInt(MDefinition* def, bool isSigned)
+      : MUnaryInstruction(classOpcode, def), isSigned_(isSigned) {
     MOZ_ASSERT(def->type() == MIRType::Int64);
     setResultType(MIRType::BigInt);
     setMovable();
@@ -3855,12 +3912,68 @@ class MInt64ToBigInt : public MUnaryInstruction, public NoTypePolicy::Data {
   TRIVIAL_NEW_WRAPPERS
 
   bool congruentTo(const MDefinition* ins) const override {
+    return congruentIfOperandsEqual(ins) &&
+           ins->toInt64ToBigInt()->isSigned() == isSigned();
+  }
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+
+  bool isSigned() const { return isSigned_; }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MInt64ToBigInt)
+};
+
+// Takes an Int64 and returns a IntPtr.
+class MInt64ToIntPtr : public MUnaryInstruction, public NoTypePolicy::Data {
+  bool isSigned_;
+
+  MInt64ToIntPtr(MDefinition* def, bool isSigned)
+      : MUnaryInstruction(classOpcode, def), isSigned_(isSigned) {
+    MOZ_ASSERT(def->type() == MIRType::Int64);
+    setResultType(MIRType::IntPtr);
+    setMovable();
+  }
+
+ public:
+  INSTRUCTION_HEADER(Int64ToIntPtr)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool congruentTo(const MDefinition* ins) const override {
+    return congruentIfOperandsEqual(ins) &&
+           ins->toInt64ToIntPtr()->isSigned() == isSigned();
+  }
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+
+  bool isSigned() const { return isSigned_; }
+
+  ALLOW_CLONE(MInt64ToIntPtr)
+};
+
+// Takes a IntPtr and returns an Int64.
+class MIntPtrToInt64 : public MUnaryInstruction, public NoTypePolicy::Data {
+  explicit MIntPtrToInt64(MDefinition* def)
+      : MUnaryInstruction(classOpcode, def) {
+    MOZ_ASSERT(def->type() == MIRType::IntPtr);
+    setResultType(MIRType::Int64);
+    setMovable();
+  }
+
+ public:
+  INSTRUCTION_HEADER(IntPtrToInt64)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool congruentTo(const MDefinition* ins) const override {
     return congruentIfOperandsEqual(ins);
   }
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
 
-  ALLOW_CLONE(MInt64ToBigInt)
+  ALLOW_CLONE(MIntPtrToInt64)
 };
 
 // Converts any type to a string
@@ -3937,11 +4050,10 @@ class MToString : public MUnaryInstruction, public ToStringPolicy::Data {
 };
 
 class MBitNot : public MUnaryInstruction, public BitwisePolicy::Data {
-  explicit MBitNot(MDefinition* input) : MUnaryInstruction(classOpcode, input) {
-    setResultType(MIRType::Int32);
-    if (input->type() == MIRType::Int64) {
-      setResultType(MIRType::Int64);
-    }
+  MBitNot(MDefinition* input, MIRType type)
+      : MUnaryInstruction(classOpcode, input) {
+    MOZ_ASSERT(type == MIRType::Int32 || type == MIRType::Int64);
+    setResultType(type);
     setMovable();
   }
 
@@ -3959,7 +4071,7 @@ class MBitNot : public MUnaryInstruction, public BitwisePolicy::Data {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MBitNot)
 };
@@ -4088,7 +4200,7 @@ class MBitAnd : public MBinaryBitwiseInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MBitAnd)
 };
@@ -4117,7 +4229,7 @@ class MBitOr : public MBinaryBitwiseInstruction {
   void computeRange(TempAllocator& alloc) override;
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MBitOr)
 };
@@ -4142,7 +4254,7 @@ class MBitXor : public MBinaryBitwiseInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MBitXor)
 };
@@ -4176,7 +4288,7 @@ class MLsh : public MShiftInstruction {
   void computeRange(TempAllocator& alloc) override;
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MLsh)
 };
@@ -4198,7 +4310,7 @@ class MRsh : public MShiftInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   MDefinition* foldsTo(TempAllocator& alloc) override;
 
@@ -4237,7 +4349,7 @@ class MUrsh : public MShiftInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MUrsh)
 };
@@ -4251,6 +4363,7 @@ class MSignExtendInt32 : public MUnaryInstruction, public NoTypePolicy::Data {
 
   MSignExtendInt32(MDefinition* op, Mode mode)
       : MUnaryInstruction(classOpcode, op), mode_(mode) {
+    MOZ_ASSERT(op->type() == MIRType::Int32);
     setResultType(MIRType::Int32);
     setMovable();
   }
@@ -4266,7 +4379,7 @@ class MSignExtendInt32 : public MUnaryInstruction, public NoTypePolicy::Data {
     if (!congruentIfOperandsEqual(ins)) {
       return false;
     }
-    return ins->isSignExtendInt32() && ins->toSignExtendInt32()->mode_ == mode_;
+    return ins->toSignExtendInt32()->mode_ == mode_;
   }
   AliasSet getAliasSet() const override { return AliasSet::None(); }
 
@@ -4286,6 +4399,7 @@ class MSignExtendInt64 : public MUnaryInstruction, public NoTypePolicy::Data {
 
   MSignExtendInt64(MDefinition* op, Mode mode)
       : MUnaryInstruction(classOpcode, op), mode_(mode) {
+    MOZ_ASSERT(op->type() == MIRType::Int64);
     setResultType(MIRType::Int64);
     setMovable();
   }
@@ -4301,11 +4415,43 @@ class MSignExtendInt64 : public MUnaryInstruction, public NoTypePolicy::Data {
     if (!congruentIfOperandsEqual(ins)) {
       return false;
     }
-    return ins->isSignExtendInt64() && ins->toSignExtendInt64()->mode_ == mode_;
+    return ins->toSignExtendInt64()->mode_ == mode_;
   }
   AliasSet getAliasSet() const override { return AliasSet::None(); }
 
   ALLOW_CLONE(MSignExtendInt64)
+};
+
+class MSignExtendIntPtr : public MUnaryInstruction, public NoTypePolicy::Data {
+ public:
+  enum Mode { Byte, Half, Word };
+
+ private:
+  Mode mode_;
+
+  MSignExtendIntPtr(MDefinition* op, Mode mode)
+      : MUnaryInstruction(classOpcode, op), mode_(mode) {
+    MOZ_ASSERT(op->type() == MIRType::IntPtr);
+    setResultType(MIRType::IntPtr);
+    setMovable();
+  }
+
+ public:
+  INSTRUCTION_HEADER(SignExtendIntPtr)
+  TRIVIAL_NEW_WRAPPERS
+
+  Mode mode() const { return mode_; }
+
+  MDefinition* foldsTo(TempAllocator& alloc) override;
+  bool congruentTo(const MDefinition* ins) const override {
+    if (!congruentIfOperandsEqual(ins)) {
+      return false;
+    }
+    return ins->toSignExtendIntPtr()->mode_ == mode_;
+  }
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+
+  ALLOW_CLONE(MSignExtendIntPtr)
 };
 
 class MBinaryArithInstruction : public MBinaryInstruction,
@@ -4870,7 +5016,7 @@ class MAdd : public MBinaryArithInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MAdd)
 };
@@ -4907,7 +5053,7 @@ class MSub : public MBinaryArithInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MSub)
 };
@@ -5000,7 +5146,7 @@ class MMul : public MBinaryArithInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   ALLOW_CLONE(MMul)
 };
@@ -5055,7 +5201,11 @@ class MDiv : public MBinaryArithInstruction {
 
   double getIdentity() override { MOZ_CRASH("not used"); }
 
-  bool canBeNegativeZero() const { return canBeNegativeZero_; }
+  bool canBeNegativeZero() const {
+    // This flag is only valid for integer division.
+    MOZ_ASSERT(type() == MIRType::Int32);
+    return canBeNegativeZero_;
+  }
   void setCanBeNegativeZero(bool negativeZero) {
     canBeNegativeZero_ = negativeZero;
   }
@@ -5110,7 +5260,7 @@ class MDiv : public MBinaryArithInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   bool congruentTo(const MDefinition* ins) const override {
     if (!MBinaryArithInstruction::congruentTo(ins)) {
@@ -5197,7 +5347,7 @@ class MMod : public MBinaryArithInstruction {
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override { return type() != MIRType::Int64; }
 
   bool fallible() const;
 
@@ -5393,6 +5543,8 @@ class MBigIntPow : public MBigIntBinaryArithInstruction {
     return AliasSet::None();
   }
 
+  MDefinition* foldsTo(TempAllocator& alloc) override;
+
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
   bool canRecoverOnBailout() const override { return !canBeNegativeExponent(); }
@@ -5574,6 +5726,288 @@ class MBigIntBitNot : public MBigIntUnaryArithInstruction {
   bool canRecoverOnBailout() const override { return true; }
 
   ALLOW_CLONE(MBigIntBitNot)
+};
+
+class MBigIntPtrBinaryArithInstruction : public MBinaryInstruction,
+                                         public NoTypePolicy::Data {
+ protected:
+  MBigIntPtrBinaryArithInstruction(Opcode op, MDefinition* left,
+                                   MDefinition* right)
+      : MBinaryInstruction(op, left, right) {
+    MOZ_ASSERT(left->type() == MIRType::IntPtr);
+    MOZ_ASSERT(right->type() == MIRType::IntPtr);
+    setResultType(MIRType::IntPtr);
+    setMovable();
+  }
+
+  static bool isMaybeZero(MDefinition* ins);
+  static bool isMaybeNegative(MDefinition* ins);
+
+ public:
+  bool congruentTo(const MDefinition* ins) const override {
+    return binaryCongruentTo(ins);
+  }
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+};
+
+class MBigIntPtrAdd : public MBigIntPtrBinaryArithInstruction {
+  MBigIntPtrAdd(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryArithInstruction(classOpcode, left, right) {
+    setCommutative();
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrAdd)
+  TRIVIAL_NEW_WRAPPERS
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrAdd)
+};
+
+class MBigIntPtrSub : public MBigIntPtrBinaryArithInstruction {
+  MBigIntPtrSub(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryArithInstruction(classOpcode, left, right) {}
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrSub)
+  TRIVIAL_NEW_WRAPPERS
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrSub)
+};
+
+class MBigIntPtrMul : public MBigIntPtrBinaryArithInstruction {
+  MBigIntPtrMul(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryArithInstruction(classOpcode, left, right) {
+    setCommutative();
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrMul)
+  TRIVIAL_NEW_WRAPPERS
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrMul)
+};
+
+class MBigIntPtrDiv : public MBigIntPtrBinaryArithInstruction {
+  bool canBeDivideByZero_;
+
+  MBigIntPtrDiv(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryArithInstruction(classOpcode, left, right) {
+    canBeDivideByZero_ = isMaybeZero(right);
+
+    // Bails when the divisor is zero.
+    if (canBeDivideByZero_) {
+      setGuard();
+    }
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrDiv)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool canBeDivideByZero() const { return canBeDivideByZero_; }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrDiv)
+};
+
+class MBigIntPtrMod : public MBigIntPtrBinaryArithInstruction {
+  bool canBeDivideByZero_;
+
+  MBigIntPtrMod(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryArithInstruction(classOpcode, left, right) {
+    canBeDivideByZero_ = isMaybeZero(right);
+
+    // Bails when the divisor is zero.
+    if (canBeDivideByZero_) {
+      setGuard();
+    }
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrMod)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool canBeDivideByZero() const { return canBeDivideByZero_; }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrMod)
+};
+
+class MBigIntPtrPow : public MBigIntPtrBinaryArithInstruction {
+  bool canBeNegativeExponent_;
+
+  MBigIntPtrPow(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryArithInstruction(classOpcode, left, right) {
+    canBeNegativeExponent_ = isMaybeNegative(right);
+
+    // Bails when the exponent is negative.
+    if (canBeNegativeExponent_) {
+      setGuard();
+    }
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrPow)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool canBeNegativeExponent() const { return canBeNegativeExponent_; }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrPow)
+};
+
+class MBigIntPtrBinaryBitwiseInstruction : public MBinaryInstruction,
+                                           public NoTypePolicy::Data {
+ protected:
+  MBigIntPtrBinaryBitwiseInstruction(Opcode op, MDefinition* left,
+                                     MDefinition* right)
+      : MBinaryInstruction(op, left, right) {
+    MOZ_ASSERT(left->type() == MIRType::IntPtr);
+    MOZ_ASSERT(right->type() == MIRType::IntPtr);
+    setResultType(MIRType::IntPtr);
+    setMovable();
+  }
+
+ public:
+  bool congruentTo(const MDefinition* ins) const override {
+    return binaryCongruentTo(ins);
+  }
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+};
+
+class MBigIntPtrBitAnd : public MBigIntPtrBinaryBitwiseInstruction {
+  MBigIntPtrBitAnd(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryBitwiseInstruction(classOpcode, left, right) {
+    setCommutative();
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrBitAnd)
+  TRIVIAL_NEW_WRAPPERS
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrBitAnd)
+};
+
+class MBigIntPtrBitOr : public MBigIntPtrBinaryBitwiseInstruction {
+  MBigIntPtrBitOr(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryBitwiseInstruction(classOpcode, left, right) {
+    setCommutative();
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrBitOr)
+  TRIVIAL_NEW_WRAPPERS
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrBitOr)
+};
+
+class MBigIntPtrBitXor : public MBigIntPtrBinaryBitwiseInstruction {
+  MBigIntPtrBitXor(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryBitwiseInstruction(classOpcode, left, right) {
+    setCommutative();
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrBitXor)
+  TRIVIAL_NEW_WRAPPERS
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrBitXor)
+};
+
+class MBigIntPtrLsh : public MBigIntPtrBinaryBitwiseInstruction {
+  MBigIntPtrLsh(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryBitwiseInstruction(classOpcode, left, right) {}
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrLsh)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool fallible() const {
+    return !rhs()->isConstant() || rhs()->toConstant()->toIntPtr() > 0;
+  }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrLsh)
+};
+
+class MBigIntPtrRsh : public MBigIntPtrBinaryBitwiseInstruction {
+  MBigIntPtrRsh(MDefinition* left, MDefinition* right)
+      : MBigIntPtrBinaryBitwiseInstruction(classOpcode, left, right) {}
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrRsh)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool fallible() const {
+    return !rhs()->isConstant() || rhs()->toConstant()->toIntPtr() < 0;
+  }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrRsh)
+};
+
+class MBigIntPtrBitNot : public MUnaryInstruction, public NoTypePolicy::Data {
+  explicit MBigIntPtrBitNot(MDefinition* input)
+      : MUnaryInstruction(classOpcode, input) {
+    MOZ_ASSERT(input->type() == MIRType::IntPtr);
+    setResultType(MIRType::IntPtr);
+    setMovable();
+  }
+
+ public:
+  INSTRUCTION_HEADER(BigIntPtrBitNot)
+  TRIVIAL_NEW_WRAPPERS
+
+  bool congruentTo(const MDefinition* ins) const override {
+    return congruentIfOperandsEqual(ins);
+  }
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override { return true; }
+
+  ALLOW_CLONE(MBigIntPtrBitNot)
 };
 
 class MConcat : public MBinaryInstruction,
@@ -6249,7 +6683,9 @@ class MNot : public MUnaryInstruction, public TestPolicy::Data {
   }
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override { return true; }
+  bool canRecoverOnBailout() const override {
+    return type() == MIRType::Boolean;
+  }
 };
 
 // Bailout if index + minimum < 0 or index + maximum >= length. The length used
@@ -8753,8 +9189,8 @@ class MAtomicIsLockFree : public MUnaryInstruction,
 
 class MCompareExchangeTypedArrayElement
     : public MQuaternaryInstruction,
-      public MixPolicy<TruncateToInt32OrToBigIntPolicy<2>,
-                       TruncateToInt32OrToBigIntPolicy<3>>::Data {
+      public MixPolicy<TruncateToInt32OrToInt64Policy<2>,
+                       TruncateToInt32OrToInt64Policy<3>>::Data {
   Scalar::Type arrayType_;
 
   explicit MCompareExchangeTypedArrayElement(MDefinition* elements,
@@ -8785,7 +9221,7 @@ class MCompareExchangeTypedArrayElement
 
 class MAtomicExchangeTypedArrayElement
     : public MTernaryInstruction,
-      public TruncateToInt32OrToBigIntPolicy<2>::Data {
+      public TruncateToInt32OrToInt64Policy<2>::Data {
   Scalar::Type arrayType_;
 
   MAtomicExchangeTypedArrayElement(MDefinition* elements, MDefinition* index,
@@ -8814,7 +9250,7 @@ class MAtomicExchangeTypedArrayElement
 
 class MAtomicTypedArrayElementBinop
     : public MTernaryInstruction,
-      public TruncateToInt32OrToBigIntPolicy<2>::Data {
+      public TruncateToInt32OrToInt64Policy<2>::Data {
  private:
   AtomicOp op_;
   Scalar::Type arrayType_;

@@ -3,9 +3,7 @@ use crate::{
         queue::{EncoderInFlight, SubmittedWorkDoneClosure, TempResource},
         DeviceError, DeviceLostClosure,
     },
-    hal_api::HalApi,
-    id,
-    resource::{self, Buffer, Labeled, Trackable},
+    resource::{self, Buffer, Texture, Trackable},
     snatch::SnatchGuard,
     SubmissionIndex,
 };
@@ -23,7 +21,7 @@ use thiserror::Error;
 ///
 /// [`wgpu_hal`]: hal
 /// [`ResourceInfo::submission_index`]: crate::resource::ResourceInfo
-struct ActiveSubmission<A: HalApi> {
+struct ActiveSubmission {
     /// The index of the submission we track.
     ///
     /// When `Device::fence`'s value is greater than or equal to this, our queue
@@ -31,10 +29,10 @@ struct ActiveSubmission<A: HalApi> {
     index: SubmissionIndex,
 
     /// Temporary resources to be freed once this queue submission has completed.
-    temp_resources: Vec<TempResource<A>>,
+    temp_resources: Vec<TempResource>,
 
     /// Buffers to be mapped once this submission has completed.
-    mapped: Vec<Arc<Buffer<A>>>,
+    mapped: Vec<Arc<Buffer>>,
 
     /// Command buffers used by this submission, and the encoder that owns them.
     ///
@@ -48,11 +46,63 @@ struct ActiveSubmission<A: HalApi> {
     /// the command encoder is recycled.
     ///
     /// [`wgpu_hal::Queue::submit`]: hal::Queue::submit
-    encoders: Vec<EncoderInFlight<A>>,
+    encoders: Vec<EncoderInFlight>,
 
     /// List of queue "on_submitted_work_done" closures to be called once this
     /// submission has completed.
     work_done_closures: SmallVec<[SubmittedWorkDoneClosure; 1]>,
+}
+
+impl ActiveSubmission {
+    /// Returns true if this submission contains the given buffer.
+    ///
+    /// This only uses constant-time operations.
+    pub fn contains_buffer(&self, buffer: &Buffer) -> bool {
+        for encoder in &self.encoders {
+            // The ownership location of buffers depends on where the command encoder
+            // came from. If it is the staging command encoder on the queue, it is
+            // in the pending buffer list. If it came from a user command encoder,
+            // it is in the tracker.
+
+            if encoder.trackers.buffers.contains(buffer) {
+                return true;
+            }
+
+            if encoder
+                .pending_buffers
+                .contains_key(&buffer.tracker_index())
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Returns true if this submission contains the given texture.
+    ///
+    /// This only uses constant-time operations.
+    pub fn contains_texture(&self, texture: &Texture) -> bool {
+        for encoder in &self.encoders {
+            // The ownership location of textures depends on where the command encoder
+            // came from. If it is the staging command encoder on the queue, it is
+            // in the pending buffer list. If it came from a user command encoder,
+            // it is in the tracker.
+
+            if encoder.trackers.textures.contains(texture) {
+                return true;
+            }
+
+            if encoder
+                .pending_textures
+                .contains_key(&texture.tracker_index())
+            {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 #[derive(Clone, Debug, Error)]
@@ -60,8 +110,8 @@ struct ActiveSubmission<A: HalApi> {
 pub enum WaitIdleError {
     #[error(transparent)]
     Device(#[from] DeviceError),
-    #[error("Tried to wait using a submission index from the wrong device. Submission index is from device {0:?}. Called poll on device {1:?}.")]
-    WrongSubmissionIndex(id::QueueId, id::DeviceId),
+    #[error("Tried to wait using a submission index ({0}) that has not been returned by a successful submission (last successful submission: {1})")]
+    WrongSubmissionIndex(SubmissionIndex, SubmissionIndex),
     #[error("GPU got stuck :(")]
     StuckGpu,
 }
@@ -76,46 +126,31 @@ pub enum WaitIdleError {
 /// -   Each buffer's `ResourceInfo::submission_index` records the index of the
 ///     most recent queue submission that uses that buffer.
 ///
-/// -   Calling `Global::buffer_map_async` adds the buffer to
-///     `self.mapped`, and changes `Buffer::map_state` to prevent it
-///     from being used in any new submissions.
-///
 /// -   When the device is polled, the following `LifetimeTracker` methods decide
 ///     what should happen next:
 ///
-///     1)  `triage_mapped` drains `self.mapped`, checking the submission index
-///         of each buffer against the queue submissions that have finished
-///         execution. Buffers used by submissions still in flight go in
-///         `self.active[index].mapped`, and the rest go into
-///         `self.ready_to_map`.
-///
-///     2)  `triage_submissions` moves entries in `self.active[i]` for completed
+///     1)  `triage_submissions` moves entries in `self.active[i]` for completed
 ///         submissions to `self.ready_to_map`.  At this point, both
 ///         `self.active` and `self.ready_to_map` are up to date with the given
 ///         submission index.
 ///
-///     3)  `handle_mapping` drains `self.ready_to_map` and actually maps the
+///     2)  `handle_mapping` drains `self.ready_to_map` and actually maps the
 ///         buffers, collecting a list of notification closures to call.
 ///
 /// Only calling `Global::buffer_map_async` clones a new `Arc` for the
 /// buffer. This new `Arc` is only dropped by `handle_mapping`.
-pub(crate) struct LifetimeTracker<A: HalApi> {
-    /// Buffers for which a call to [`Buffer::map_async`] has succeeded, but
-    /// which haven't been examined by `triage_mapped` yet to decide when they
-    /// can be mapped.
-    mapped: Vec<Arc<Buffer<A>>>,
-
+pub(crate) struct LifetimeTracker {
     /// Resources used by queue submissions still in flight. One entry per
     /// submission, with older submissions appearing before younger.
     ///
     /// Entries are added by `track_submission` and drained by
     /// `LifetimeTracker::triage_submissions`. Lots of methods contribute data
     /// to particular entries.
-    active: Vec<ActiveSubmission<A>>,
+    active: Vec<ActiveSubmission>,
 
     /// Buffers the user has asked us to map, and which are not used by any
     /// queue submission still in flight.
-    ready_to_map: Vec<Arc<Buffer<A>>>,
+    ready_to_map: Vec<Arc<Buffer>>,
 
     /// Queue "on_submitted_work_done" closures that were initiated for while there is no
     /// currently pending submissions. These cannot be immediately invoked as they
@@ -129,10 +164,9 @@ pub(crate) struct LifetimeTracker<A: HalApi> {
     pub device_lost_closure: Option<DeviceLostClosure>,
 }
 
-impl<A: HalApi> LifetimeTracker<A> {
+impl LifetimeTracker {
     pub fn new() -> Self {
         Self {
-            mapped: Vec::new(),
             active: Vec::new(),
             ready_to_map: Vec::new(),
             work_done_closures: SmallVec::new(),
@@ -149,8 +183,8 @@ impl<A: HalApi> LifetimeTracker<A> {
     pub fn track_submission(
         &mut self,
         index: SubmissionIndex,
-        temp_resources: impl Iterator<Item = TempResource<A>>,
-        encoders: Vec<EncoderInFlight<A>>,
+        temp_resources: impl Iterator<Item = TempResource>,
+        encoders: Vec<EncoderInFlight>,
     ) {
         self.active.push(ActiveSubmission {
             index,
@@ -161,8 +195,52 @@ impl<A: HalApi> LifetimeTracker<A> {
         });
     }
 
-    pub(crate) fn map(&mut self, value: &Arc<Buffer<A>>) {
-        self.mapped.push(value.clone());
+    pub(crate) fn map(&mut self, buffer: &Arc<Buffer>) -> Option<SubmissionIndex> {
+        // Determine which buffers are ready to map, and which must wait for the GPU.
+        let submission = self
+            .active
+            .iter_mut()
+            .rev()
+            .find(|a| a.contains_buffer(buffer));
+
+        let maybe_submission_index = submission.as_ref().map(|s| s.index);
+
+        submission
+            .map_or(&mut self.ready_to_map, |a| &mut a.mapped)
+            .push(buffer.clone());
+
+        maybe_submission_index
+    }
+
+    /// Returns the submission index of the most recent submission that uses the
+    /// given buffer.
+    pub fn get_buffer_latest_submission_index(&self, buffer: &Buffer) -> Option<SubmissionIndex> {
+        // We iterate in reverse order, so that we can bail out early as soon
+        // as we find a hit.
+        self.active.iter().rev().find_map(|submission| {
+            if submission.contains_buffer(buffer) {
+                Some(submission.index)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns the submission index of the most recent submission that uses the
+    /// given texture.
+    pub fn get_texture_latest_submission_index(
+        &self,
+        texture: &Texture,
+    ) -> Option<SubmissionIndex> {
+        // We iterate in reverse order, so that we can bail out early as soon
+        // as we find a hit.
+        self.active.iter().rev().find_map(|submission| {
+            if submission.contains_texture(texture) {
+                Some(submission.index)
+            } else {
+                None
+            }
+        })
     }
 
     /// Sort out the consequences of completed submissions.
@@ -183,7 +261,7 @@ impl<A: HalApi> LifetimeTracker<A> {
     pub fn triage_submissions(
         &mut self,
         last_done: SubmissionIndex,
-        command_allocator: &crate::command::CommandAllocator<A>,
+        command_allocator: &crate::command::CommandAllocator,
     ) -> SmallVec<[SubmittedWorkDoneClosure; 1]> {
         profiling::scope!("triage_submissions");
 
@@ -197,7 +275,6 @@ impl<A: HalApi> LifetimeTracker<A> {
 
         let mut work_done_closures: SmallVec<_> = self.work_done_closures.drain(..).collect();
         for a in self.active.drain(..done_count) {
-            log::debug!("Active submission {} is done", a.index);
             self.ready_to_map.extend(a.mapped);
             for encoder in a.encoders {
                 let raw = unsafe { encoder.land() };
@@ -211,7 +288,7 @@ impl<A: HalApi> LifetimeTracker<A> {
 
     pub fn schedule_resource_destruction(
         &mut self,
-        temp_resource: TempResource<A>,
+        temp_resource: TempResource,
         last_submit_index: SubmissionIndex,
     ) {
         let resources = self
@@ -224,44 +301,21 @@ impl<A: HalApi> LifetimeTracker<A> {
         }
     }
 
-    pub fn add_work_done_closure(&mut self, closure: SubmittedWorkDoneClosure) {
+    pub fn add_work_done_closure(
+        &mut self,
+        closure: SubmittedWorkDoneClosure,
+    ) -> Option<SubmissionIndex> {
         match self.active.last_mut() {
             Some(active) => {
                 active.work_done_closures.push(closure);
+                Some(active.index)
             }
             // We must defer the closure until all previously occurring map_async closures
             // have fired. This is required by the spec.
             None => {
                 self.work_done_closures.push(closure);
+                None
             }
-        }
-    }
-}
-
-impl<A: HalApi> LifetimeTracker<A> {
-    /// Determine which buffers are ready to map, and which must wait for the
-    /// GPU.
-    ///
-    /// See the documentation for [`LifetimeTracker`] for details.
-    pub(crate) fn triage_mapped(&mut self) {
-        if self.mapped.is_empty() {
-            return;
-        }
-
-        for buffer in self.mapped.drain(..) {
-            let submit_index = buffer.submission_index();
-            log::trace!(
-                "Mapping of {} at submission {:?} gets assigned to active {:?}",
-                buffer.error_ident(),
-                submit_index,
-                self.active.iter().position(|a| a.index == submit_index)
-            );
-
-            self.active
-                .iter_mut()
-                .find(|a| a.index == submit_index)
-                .map_or(&mut self.ready_to_map, |a| &mut a.mapped)
-                .push(buffer);
         }
     }
 
@@ -273,7 +327,7 @@ impl<A: HalApi> LifetimeTracker<A> {
     #[must_use]
     pub(crate) fn handle_mapping(
         &mut self,
-        raw: &A::Device,
+        raw: &dyn hal::DynDevice,
         snatch_guard: &SnatchGuard,
     ) -> Vec<super::BufferMapPendingClosure> {
         if self.ready_to_map.is_empty() {
@@ -283,8 +337,6 @@ impl<A: HalApi> LifetimeTracker<A> {
             Vec::with_capacity(self.ready_to_map.len());
 
         for buffer in self.ready_to_map.drain(..) {
-            let tracker_index = buffer.tracker_index();
-
             // This _cannot_ be inlined into the match. If it is, the lock will be held
             // open through the whole match, resulting in a deadlock when we try to re-lock
             // the buffer back to active.
@@ -305,7 +357,6 @@ impl<A: HalApi> LifetimeTracker<A> {
                 _ => panic!("No pending mapping."),
             };
             let status = if pending_mapping.range.start != pending_mapping.range.end {
-                log::debug!("Buffer {tracker_index:?} map state -> Active");
                 let host = pending_mapping.op.host;
                 let size = pending_mapping.range.end - pending_mapping.range.start;
                 match super::map_buffer(
@@ -316,10 +367,10 @@ impl<A: HalApi> LifetimeTracker<A> {
                     host,
                     snatch_guard,
                 ) {
-                    Ok(ptr) => {
+                    Ok(mapping) => {
                         *buffer.map_state.lock() = resource::BufferMapState::Active {
-                            ptr,
-                            range: pending_mapping.range.start..pending_mapping.range.start + size,
+                            mapping,
+                            range: pending_mapping.range.clone(),
                             host,
                         };
                         Ok(())
@@ -331,7 +382,10 @@ impl<A: HalApi> LifetimeTracker<A> {
                 }
             } else {
                 *buffer.map_state.lock() = resource::BufferMapState::Active {
-                    ptr: std::ptr::NonNull::dangling(),
+                    mapping: hal::BufferMapping {
+                        ptr: std::ptr::NonNull::dangling(),
+                        is_coherent: true,
+                    },
                     range: pending_mapping.range,
                     host: pending_mapping.op.host,
                 };

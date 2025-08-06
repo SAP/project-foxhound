@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from pipes import quote as shell_quote
+from shlex import quote as shell_quote
 
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
 from taskgraph.util import path
@@ -82,7 +82,7 @@ def configure_gradlew(config, job, taskdesc):
         {
             "ANDROID_SDK_ROOT": path.join(fetches_dir, "android-sdk-linux"),
             "GRADLE_USER_HOME": path.join(
-                topsrc_dir, "mobile/android/gradle/dotgradle-online"
+                topsrc_dir, "mobile/android/gradle/dotgradle-offline"
             ),
             "MOZ_BUILD_DATE": config.params["moz_build_date"],
         }
@@ -111,9 +111,9 @@ def configure_gradlew(config, job, taskdesc):
             "POST_GRADLEW": _convert_commands_to_string(run.pop("post-gradlew", [])),
         }
     )
-    run[
-        "command"
-    ] = "/builds/worker/checkouts/gecko/taskcluster/scripts/builder/build-android.sh"
+    run["command"] = (
+        "/builds/worker/checkouts/gecko/taskcluster/scripts/builder/build-android.sh"
+    )
     _inject_secrets_scopes(run, taskdesc)
     _set_run_task_attributes(job)
     configure_taskdesc_for_run(config, job, taskdesc, job["worker"]["implementation"])

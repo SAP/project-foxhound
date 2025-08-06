@@ -77,12 +77,6 @@ function PlacesController(aView) {
     return Services.dirsvc.get("ProfD", Ci.nsIFile).leafName;
   });
 
-  XPCOMUtils.defineLazyPreferenceGetter(
-    this,
-    "forgetSiteClearByBaseDomain",
-    "places.forgetThisSite.clearByBaseDomain",
-    false
-  );
   ChromeUtils.defineESModuleGetters(this, {
     ForgetAboutSite: "resource://gre/modules/ForgetAboutSite.sys.mjs",
   });
@@ -465,17 +459,7 @@ PlacesController.prototype = {
    *          and the item can be displayed, false otherwise.
    */
   _shouldShowMenuItem(aMenuItem, aMetaData) {
-    if (
-      aMenuItem.hasAttribute("hide-if-private-browsing") &&
-      !PrivateBrowsingUtils.enabled
-    ) {
-      return false;
-    }
-
-    if (
-      aMenuItem.hasAttribute("hide-if-usercontext-disabled") &&
-      !Services.prefs.getBoolPref("privacy.userContext.enabled", false)
-    ) {
+    if (PlacesUIUtils.shouldHideOpenMenuItem(aMenuItem)) {
       return false;
     }
 
@@ -566,8 +550,12 @@ PlacesController.prototype = {
    *     menuitem when there's no insertion point. An insertion point represents
    *     a point in the view where a new item can be inserted.
    *  9) The boolean `hide-if-private-browsing` attribute may be set to hide a
-   *     menuitem in private browsing mode
-   * 10) The boolean `hide-if-single-click-opens` attribute may be set to hide a
+   *     menuitem in private browsing mode.
+   * 10) The boolean `hide-if-disabled-private-browsing` attribute may be set to
+   *     hide a menuitem if private browsing is not enabled.
+   * 11) The boolean `hide-if-usercontext-disabled` attribute may be set to
+   *     hide a menuitem if containers are disabled.
+   * 12) The boolean `hide-if-single-click-opens` attribute may be set to hide a
    *     menuitem in views opening entries with a single click.
    *
    * @param {object} aPopup
@@ -593,9 +581,6 @@ PlacesController.prototype = {
           item.getAttribute("hide-if-no-insertion-point") == "true" &&
           noIp &&
           !(ip && ip.isTag && item.id == "placesContext_paste");
-        let hideIfPrivate =
-          item.getAttribute("hide-if-private-browsing") == "true" &&
-          PrivateBrowsingUtils.isWindowPrivate(window);
         // Hide `Open` if the primary action on click is opening.
         let hideIfSingleClickOpens =
           item.getAttribute("hide-if-single-click-opens") == "true" &&
@@ -610,7 +595,6 @@ PlacesController.prototype = {
 
         let shouldHideItem =
           hideIfNoIP ||
-          hideIfPrivate ||
           hideIfSingleClickOpens ||
           hideIfNotSearch ||
           !this._shouldShowMenuItem(item, metadata);
@@ -1424,11 +1408,7 @@ PlacesController.prototype = {
       return;
     }
 
-    if (this.forgetSiteClearByBaseDomain) {
-      await this.ForgetAboutSite.removeDataFromBaseDomain(host);
-    } else {
-      await this.ForgetAboutSite.removeDataFromDomain(host);
-    }
+    await this.ForgetAboutSite.removeDataFromBaseDomain(host);
   },
 
   showInFolder(aBookmarkGuid) {

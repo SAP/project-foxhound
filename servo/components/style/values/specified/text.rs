@@ -6,13 +6,15 @@
 
 use crate::parser::{Parse, ParserContext};
 use crate::properties::longhands::writing_mode::computed_value::T as SpecifiedWritingMode;
+use crate::values::computed;
 use crate::values::computed::text::TextEmphasisStyle as ComputedTextEmphasisStyle;
 use crate::values::computed::{Context, ToComputedValue};
 use crate::values::generics::text::{
-    GenericInitialLetter, GenericTextDecorationLength, GenericTextIndent, Spacing,
+    GenericInitialLetter, GenericTextDecorationLength, GenericTextIndent,
 };
-use crate::values::specified::length::{Length, LengthPercentage};
+use crate::values::specified::length::LengthPercentage;
 use crate::values::specified::{AllowQuirks, Integer, Number};
+use crate::Zero;
 use cssparser::Parser;
 use icu_segmenter::GraphemeClusterSegmenter;
 use std::fmt::{self, Write};
@@ -23,11 +25,72 @@ use style_traits::{KeywordsCollectFn, SpecifiedValueInfo};
 /// A specified type for the `initial-letter` property.
 pub type InitialLetter = GenericInitialLetter<Number, Integer>;
 
+/// A spacing value used by either the `letter-spacing` or `word-spacing` properties.
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+pub enum Spacing {
+    /// `normal`
+    Normal,
+    /// `<value>`
+    Value(LengthPercentage),
+}
+
+impl Parse for Spacing {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        if input
+            .try_parse(|i| i.expect_ident_matching("normal"))
+            .is_ok()
+        {
+            return Ok(Spacing::Normal);
+        }
+        LengthPercentage::parse_quirky(context, input, AllowQuirks::Yes).map(Spacing::Value)
+    }
+}
+
 /// A specified value for the `letter-spacing` property.
-pub type LetterSpacing = Spacing<Length>;
+#[derive(Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+pub struct LetterSpacing(pub Spacing);
+
+impl ToComputedValue for LetterSpacing {
+    type ComputedValue = computed::LetterSpacing;
+
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        use computed::text::GenericLetterSpacing;
+        match self.0 {
+            Spacing::Normal => GenericLetterSpacing(computed::LengthPercentage::zero()),
+            Spacing::Value(ref v) => GenericLetterSpacing(v.to_computed_value(context)),
+        }
+    }
+
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        if computed.0.is_zero() {
+            return LetterSpacing(Spacing::Normal);
+        }
+        LetterSpacing(Spacing::Value(ToComputedValue::from_computed_value(&computed.0)))
+    }
+}
+
 
 /// A specified value for the `word-spacing` property.
-pub type WordSpacing = Spacing<LengthPercentage>;
+#[derive(Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+pub struct WordSpacing(pub Spacing);
+
+impl ToComputedValue for WordSpacing {
+    type ComputedValue = computed::WordSpacing;
+
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        match self.0 {
+            Spacing::Normal => computed::LengthPercentage::zero(),
+            Spacing::Value(ref v) => v.to_computed_value(context),
+        }
+    }
+
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        WordSpacing(Spacing::Value(ToComputedValue::from_computed_value(computed)))
+    }
+}
 
 /// A value for the `hyphenate-character` property.
 #[derive(
@@ -66,28 +129,6 @@ impl Parse for InitialLetter {
             .try_parse(|i| Integer::parse_positive(context, i))
             .unwrap_or_else(|_| crate::Zero::zero());
         Ok(Self { size, sink })
-    }
-}
-
-impl Parse for LetterSpacing {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        Spacing::parse_with(context, input, |c, i| {
-            Length::parse_quirky(c, i, AllowQuirks::Yes)
-        })
-    }
-}
-
-impl Parse for WordSpacing {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        Spacing::parse_with(context, input, |c, i| {
-            LengthPercentage::parse_quirky(c, i, AllowQuirks::Yes)
-        })
     }
 }
 
@@ -692,6 +733,7 @@ impl Parse for TextEmphasisStyle {
 )]
 #[repr(C)]
 #[css(bitflags(
+    single = "auto",
     mixed = "over,under,left,right",
     validate_mixed = "Self::validate_and_simplify"
 ))]
@@ -700,23 +742,27 @@ impl Parse for TextEmphasisStyle {
 pub struct TextEmphasisPosition(u8);
 bitflags! {
     impl TextEmphasisPosition: u8 {
-        /// Draws marks to the right of the text in vertical writing mode.
-        const OVER = 1 << 0;
+        /// Automatically choose mark position based on language.
+        const AUTO = 1 << 0;
+        /// Draw marks over the text in horizontal writing mode.
+        const OVER = 1 << 1;
         /// Draw marks under the text in horizontal writing mode.
-        const UNDER = 1 << 1;
+        const UNDER = 1 << 2;
         /// Draw marks to the left of the text in vertical writing mode.
-        const LEFT = 1 << 2;
-        /// Draws marks to the right of the text in vertical writing mode.
-        const RIGHT = 1 << 3;
+        const LEFT = 1 << 3;
+        /// Draw marks to the right of the text in vertical writing mode.
+        const RIGHT = 1 << 4;
     }
 }
 
 impl TextEmphasisPosition {
     fn validate_and_simplify(&mut self) -> bool {
+        // Require one but not both of 'over' and 'under'.
         if self.intersects(Self::OVER) == self.intersects(Self::UNDER) {
             return false;
         }
 
+        // If 'left' is present, 'right' must be absent.
         if self.intersects(Self::LEFT) {
             return !self.intersects(Self::RIGHT);
         }

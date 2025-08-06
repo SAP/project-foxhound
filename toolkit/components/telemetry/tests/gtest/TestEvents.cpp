@@ -40,28 +40,23 @@ TEST_F(TelemetryTestFixture, RecordEventNative) {
       "this extra value is much too long and must be truncated to fit in the "
       "limit which at time of writing was 80 bytes.");
 
-  // Try recording before category's enabled.
-  Telemetry::RecordEvent(Telemetry::EventID::TelemetryTest_Test1_Object1,
-                         Nothing(), Nothing());
-
-  // Ensure "telemetry.test" is enabled
-  Telemetry::SetEventRecordingEnabled(category, true);
-
-  // Try recording after it's enabled.
-  Telemetry::RecordEvent(Telemetry::EventID::TelemetryTest_Test2_Object1,
-                         Nothing(), Nothing());
+  // Try recording.
+  TelemetryEvent::RecordEventNative(
+      Telemetry::EventID::TelemetryTest_Test2_Object1, Nothing(), Nothing());
 
   // Try recording with normal value, extra
   CopyableTArray<EventExtraEntry> extra(
       {EventExtraEntry{extraKey, extraValue}});
-  Telemetry::RecordEvent(Telemetry::EventID::TelemetryTest_Test1_Object2,
-                         mozilla::Some(value), mozilla::Some(extra));
+  TelemetryEvent::RecordEventNative(
+      Telemetry::EventID::TelemetryTest_Test1_Object2, mozilla::Some(value),
+      mozilla::Some(extra));
 
   // Try recording with too-long value, extra
   CopyableTArray<EventExtraEntry> longish(
       {EventExtraEntry{extraKey, extraValueLong}});
-  Telemetry::RecordEvent(Telemetry::EventID::TelemetryTest_Test2_Object2,
-                         mozilla::Some(valueLong), mozilla::Some(longish));
+  TelemetryEvent::RecordEventNative(
+      Telemetry::EventID::TelemetryTest_Test2_Object2, mozilla::Some(valueLong),
+      mozilla::Some(longish));
 
   JS::Rooted<JS::Value> eventsSnapshot(cx.GetJSContext());
   GetEventSnapshot(cx.GetJSContext(), &eventsSnapshot);
@@ -131,7 +126,6 @@ TEST_F(TelemetryTestFixture, GIFFTValue) {
   const nsCString category("telemetry.test");
   const nsCString method("mirror_with_extra");
   const nsCString object("object1");
-  Telemetry::SetEventRecordingEnabled(category, true);
 
   // Record in Glean.
   // We include an extra extra key (extra1, here) to ensure there's always six

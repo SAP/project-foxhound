@@ -106,7 +106,7 @@ NS_IMPL_ISUPPORTS(nsDNSRecord, nsIDNSRecord, nsIDNSAddrRecord)
 NS_IMETHODIMP
 nsDNSRecord::GetCanonicalName(nsACString& result) {
   // this method should only be called if we have a CNAME
-  NS_ENSURE_TRUE(mHostRecord->flags & nsHostResolver::RES_CANON_NAME,
+  NS_ENSURE_TRUE(mHostRecord->flags & nsIDNSService::RESOLVE_CANONICAL_NAME,
                  NS_ERROR_NOT_AVAILABLE);
 
   MutexAutoLock lock(mHostRecord->addr_info_lock);
@@ -418,13 +418,24 @@ nsDNSByTypeRecord::GetServiceModeRecord(bool aNoHttp2, bool aNoHttp3,
 }
 
 NS_IMETHODIMP
+nsDNSByTypeRecord::GetServiceModeRecordWithCname(bool aNoHttp2, bool aNoHttp3,
+                                                 const nsACString& aCname,
+                                                 nsISVCBRecord** aRecord) {
+  return mHostRecord->GetServiceModeRecordWithCname(aNoHttp2, aNoHttp3, aCname,
+                                                    aRecord);
+}
+
+NS_IMETHODIMP
+nsDNSByTypeRecord::IsTRR(bool* aResult) { return mHostRecord->IsTRR(aResult); }
+
+NS_IMETHODIMP
 nsDNSByTypeRecord::GetAllRecordsWithEchConfig(
-    bool aNoHttp2, bool aNoHttp3, bool* aAllRecordsHaveEchConfig,
-    bool* aAllRecordsInH3ExcludedList,
+    bool aNoHttp2, bool aNoHttp3, const nsACString& aCname,
+    bool* aAllRecordsHaveEchConfig, bool* aAllRecordsInH3ExcludedList,
     nsTArray<RefPtr<nsISVCBRecord>>& aResult) {
   return mHostRecord->GetAllRecordsWithEchConfig(
-      aNoHttp2, aNoHttp3, aAllRecordsHaveEchConfig, aAllRecordsInH3ExcludedList,
-      aResult);
+      aNoHttp2, aNoHttp3, aCname, aAllRecordsHaveEchConfig,
+      aAllRecordsInH3ExcludedList, aResult);
 }
 
 NS_IMETHODIMP
@@ -1657,6 +1668,7 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
   static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PROXY == 46);
   static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_NRPT == 47);
   static_assert(TRRSkippedReason::TRR_BAD_URL == 48);
+  static_assert(TRRSkippedReason::TRR_SYSTEM_SLEEP_MODE == 49);
 
   switch (aReason) {
     case TRRSkippedReason::TRR_UNSET:
@@ -1805,6 +1817,9 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
       break;
     case TRRSkippedReason::TRR_BAD_URL:
       aName = "TRR_BAD_URL"_ns;
+      break;
+    case TRRSkippedReason::TRR_SYSTEM_SLEEP_MODE:
+      aName = "TRR_SYSTEM_SLEEP_MODE"_ns;
       break;
     default:
       MOZ_ASSERT(false, "Unknown value");

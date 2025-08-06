@@ -10,7 +10,6 @@
 
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPrefsBase.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/extensions/StreamFilterParent.h"
 #include "mozilla/net/HttpBaseChannel.h"
@@ -32,8 +31,6 @@
 #include "nsIMultiPartChannel.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "mozilla/net/DNS.h"
-
-using mozilla::Telemetry::LABELS_HTTP_CHILD_OMT_STATS_2;
 
 class nsIEventTarget;
 class nsIInterceptedBodyCallback;
@@ -97,6 +94,7 @@ class HttpChannelChild final : public PHttpChannelChild,
                               const nsACString& aValue, bool aMerge) override;
   NS_IMETHOD SetEmptyRequestHeader(const nsACString& aHeader) override;
   NS_IMETHOD RedirectTo(nsIURI* newURI) override;
+  NS_IMETHOD TransparentRedirectTo(nsIURI* newURI) override;
   NS_IMETHOD UpgradeToSecure() override;
   NS_IMETHOD GetProtocolVersion(nsACString& aProtocolVersion) override;
   void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() override;
@@ -108,6 +106,11 @@ class HttpChannelChild final : public PHttpChannelChild,
 
   NS_IMETHOD SetResponseOverride(
       nsIReplacedHttpResponse* aReplacedHttpResponse) override {
+    return NS_OK;
+  }
+
+  NS_IMETHOD SetResponseStatus(uint32_t aStatus,
+                               const nsACString& aStatusText) override {
     return NS_OK;
   }
   // nsISupportsPriority
@@ -322,11 +325,6 @@ class HttpChannelChild final : public PHttpChannelChild,
 
   uint64_t mCacheEntryId{0};
 
-  // The result of RetargetDeliveryTo for this channel.
-  // |notRequested| represents OMT is not requested by the channel owner.
-  Atomic<LABELS_HTTP_CHILD_OMT_STATS_2, mozilla::Relaxed> mOMTResult{
-      LABELS_HTTP_CHILD_OMT_STATS_2::notRequested};
-
   uint32_t mCacheKey{0};
   int32_t mCacheFetchCount{0};
   uint32_t mCacheExpirationTime{
@@ -464,9 +462,6 @@ class HttpChannelChild final : public PHttpChannelChild,
                                        const nsHttpResponseHead* responseHead,
                                        const uint32_t& redirectFlags,
                                        nsIChannel** outChannel);
-
-  // Collect telemetry for the successful rate of OMT.
-  void CollectOMTTelemetry();
 
   // Collect telemetry for mixed content.
   void CollectMixedContentTelemetry();

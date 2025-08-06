@@ -218,8 +218,6 @@ already_AddRefed<nsIDocShell> nsObjectLoadingContent::SetupDocShell(
     return nullptr;
   }
 
-  MaybeStoreCrossOriginFeaturePolicy();
-
   return docShell.forget();
 }
 
@@ -238,8 +236,7 @@ nsObjectLoadingContent::nsObjectLoadingContent()
       mIsStopping(false),
       mIsLoading(false),
       mScriptRequested(false),
-      mRewrittenYoutubeEmbed(false),
-      mLoadingSyntheticDocument(false) {}
+      mRewrittenYoutubeEmbed(false) {}
 
 nsObjectLoadingContent::~nsObjectLoadingContent() {
   // Should have been unbound from the tree at this point, and
@@ -675,6 +672,11 @@ bool nsObjectLoadingContent::CheckProcessPolicy(int16_t* aContentPolicy) {
   return true;
 }
 
+bool nsObjectLoadingContent::IsSyntheticImageDocument() const {
+  return mType == ObjectType::Document &&
+         imgLoader::SupportImageWithMimeType(mContentType);
+}
+
 nsObjectLoadingContent::ParameterUpdateFlags
 nsObjectLoadingContent::UpdateObjectParameters() {
   Element* el = AsElement();
@@ -702,7 +704,7 @@ nsObjectLoadingContent::UpdateObjectParameters() {
   // already opened a channel or tried to instantiate content, whereas channel
   // parameter changes require re-opening the channel even if we haven't gotten
   // that far.
-  nsObjectLoadingContent::ParameterUpdateFlags retval = eParamNoChange;
+  ParameterUpdateFlags retval = eParamNoChange;
 
   ///
   /// Initial MIME Type
@@ -766,6 +768,7 @@ nsObjectLoadingContent::UpdateObjectParameters() {
   }
 
   mRewrittenYoutubeEmbed = false;
+
   // Note that the baseURI changing could affect the newURI, even if uriStr did
   // not change.
   if (!uriStr.IsEmpty()) {
@@ -956,9 +959,6 @@ nsObjectLoadingContent::UpdateObjectParameters() {
     newType = ObjectType::Fallback;
     LOG(("OBJLC [%p]: NewType #4: %u", this, uint32_t(newType)));
   }
-
-  mLoadingSyntheticDocument = newType == ObjectType::Document &&
-                              imgLoader::SupportImageWithMimeType(newMime);
 
   ///
   /// Handle existing channels
@@ -1464,6 +1464,8 @@ nsresult nsObjectLoadingContent::OpenChannel() {
     auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
     loadState->SetReferrerInfo(referrerInfo);
 
+    loadState->SetShouldCheckForRecursion(true);
+
     chan =
         DocumentChannel::CreateForObject(loadState, loadInfo, loadFlags, shim);
     MOZ_ASSERT(chan);
@@ -1552,6 +1554,7 @@ void nsObjectLoadingContent::Destroy() {
 void nsObjectLoadingContent::Traverse(nsObjectLoadingContent* tmp,
                                       nsCycleCollectionTraversalCallback& cb) {
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFrameLoader);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFeaturePolicy);
 }
 
 /* static */
@@ -1560,6 +1563,7 @@ void nsObjectLoadingContent::Unlink(nsObjectLoadingContent* tmp) {
     tmp->mFrameLoader->Destroy();
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFrameLoader);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mFeaturePolicy);
 }
 
 void nsObjectLoadingContent::UnloadObject(bool aResetState) {
@@ -1618,6 +1622,8 @@ nsObjectLoadingContent::ObjectType nsObjectLoadingContent::GetTypeOfContent(
   Element* el = AsElement();
   NS_ASSERTION(el, "must be a content");
 
+  Document* doc = el->OwnerDoc();
+
   // Images and documents are always supported.
   MOZ_ASSERT((GetCapabilities() & (eSupportImages | eSupportDocuments)) ==
              (eSupportImages | eSupportDocuments));
@@ -1626,8 +1632,9 @@ nsObjectLoadingContent::ObjectType nsObjectLoadingContent::GetTypeOfContent(
       ("OBJLC [%p]: calling HtmlObjectContentTypeForMIMEType: aMIMEType: %s - "
        "el: %p\n",
        this, aMIMEType.get(), el));
-  auto ret = static_cast<ObjectType>(
-      nsContentUtils::HtmlObjectContentTypeForMIMEType(aMIMEType));
+  auto ret =
+      static_cast<ObjectType>(nsContentUtils::HtmlObjectContentTypeForMIMEType(
+          aMIMEType, doc->GetSandboxFlags()));
   LOG(("OBJLC [%p]: called HtmlObjectContentTypeForMIMEType\n", this));
   return ret;
 }
@@ -1718,6 +1725,13 @@ nsObjectLoadingContent::UpgradeLoadToDocument(
     return NS_ERROR_FAILURE;
   }
 
+  // At this point we know that we have a browsing context, so it's time to make
+  // sure that that browsing context gets the correct container feature policy.
+  // This is needed for `DocumentLoadListener::MaybeTriggerProcessSwitch` to be
+  // able to start loading the document with the correct container feature
+  // policy in the load info.
+  RefreshFeaturePolicy();
+
   bc.forget(aBrowsingContext);
   return NS_OK;
 }
@@ -1799,8 +1813,6 @@ void nsObjectLoadingContent::SubdocumentIntrinsicSizeOrRatioChanged(
 
 void nsObjectLoadingContent::SubdocumentImageLoadComplete(nsresult aResult) {
   ObjectType oldType = mType;
-  mLoadingSyntheticDocument = false;
-
   if (NS_FAILED(aResult)) {
     UnloadObject();
     mType = ObjectType::Fallback;
@@ -1818,6 +1830,9 @@ void nsObjectLoadingContent::SubdocumentImageLoadComplete(nsresult aResult) {
 
 void nsObjectLoadingContent::MaybeStoreCrossOriginFeaturePolicy() {
   MOZ_DIAGNOSTIC_ASSERT(mFrameLoader);
+  if (!mFrameLoader) {
+    return;
+  }
 
   // If the browsingContext is not ready (because docshell is dead), don't try
   // to create one.
@@ -1831,15 +1846,54 @@ void nsObjectLoadingContent::MaybeStoreCrossOriginFeaturePolicy() {
     return;
   }
 
-  Element* el = AsElement();
+  auto* el = nsGenericHTMLElement::FromNode(AsElement());
   if (!el->IsInComposedDoc()) {
     return;
   }
 
-  FeaturePolicy* featurePolicy = el->OwnerDoc()->FeaturePolicy();
-
-  if (ContentChild* cc = ContentChild::GetSingleton(); cc && featurePolicy) {
+  if (ContentChild* cc = ContentChild::GetSingleton()) {
     Unused << cc->SendSetContainerFeaturePolicy(
-        browsingContext, Some(featurePolicy->ToFeaturePolicyInfo()));
+        browsingContext, Some(mFeaturePolicy->ToFeaturePolicyInfo()));
   }
+}
+
+/* static */ already_AddRefed<nsIPrincipal>
+nsObjectLoadingContent::GetFeaturePolicyDefaultOrigin(nsINode* aNode) {
+  auto* el = nsGenericHTMLElement::FromNode(aNode);
+  nsCOMPtr<nsIURI> nodeURI;
+  // Different elements keep this in various locations
+  if (el->NodeInfo()->Equals(nsGkAtoms::object)) {
+    el->GetURIAttr(nsGkAtoms::data, nullptr, getter_AddRefs(nodeURI));
+  } else if (el->NodeInfo()->Equals(nsGkAtoms::embed)) {
+    el->GetURIAttr(nsGkAtoms::src, nullptr, getter_AddRefs(nodeURI));
+  }
+
+  nsCOMPtr<nsIPrincipal> principal;
+  if (nodeURI) {
+    principal = BasePrincipal::CreateContentPrincipal(
+        nodeURI,
+        BasePrincipal::Cast(el->NodePrincipal())->OriginAttributesRef());
+  } else {
+    principal = el->NodePrincipal();
+  }
+
+  return principal.forget();
+}
+
+void nsObjectLoadingContent::RefreshFeaturePolicy() {
+  if (mType != ObjectType::Document) {
+    return;
+  }
+
+  if (!mFeaturePolicy) {
+    mFeaturePolicy = MakeAndAddRef<FeaturePolicy>(AsElement());
+  }
+
+  // The origin can change if 'src' or 'data' attributes change.
+  nsCOMPtr<nsIPrincipal> origin = GetFeaturePolicyDefaultOrigin(AsElement());
+  MOZ_ASSERT(origin);
+  mFeaturePolicy->SetDefaultOrigin(origin);
+
+  mFeaturePolicy->InheritPolicy(AsElement()->OwnerDoc()->FeaturePolicy());
+  MaybeStoreCrossOriginFeaturePolicy();
 }

@@ -48,22 +48,25 @@ impl IngestBenchmark {
 pub struct InputType(SuggestStoreInner<RemoteSettingsBenchmarkClient>);
 
 impl BenchmarkWithInput for IngestBenchmark {
-    type Input = InputType;
+    type GlobalInput = ();
+    type IterationInput = InputType;
 
-    fn generate_input(&self) -> Self::Input {
+    fn global_input(&self) -> Self::GlobalInput {}
+
+    fn iteration_input(&self) -> Self::IterationInput {
         let data_path = self.temp_dir.path().join(unique_db_filename());
         let store = SuggestStoreInner::new(data_path, vec![], self.client.clone());
         store.ensure_db_initialized();
         if self.reingest {
-            store.benchmark_ingest_records_by_type(self.record_type);
+            store.ingest_records_by_type(self.record_type);
             store.force_reingest();
         }
         InputType(store)
     }
 
-    fn benchmarked_code(&self, input: Self::Input) {
+    fn benchmarked_code(&self, _: &Self::GlobalInput, input: Self::IterationInput) {
         let InputType(store) = input;
-        store.benchmark_ingest_records_by_type(self.record_type);
+        store.ingest_records_by_type(self.record_type);
     }
 }
 
@@ -170,17 +173,24 @@ pub fn print_debug_ingestion_sizes() {
     let table_row_counts = store.table_row_counts();
     let db_size = store.db_size();
     let client = store.into_settings_client();
-    let total_attachment_size: usize = client.attachments.values().map(|a| a.len()).sum();
-
+    println!("Attachment sizes");
+    println!("-------------------------");
+    let attachment_sizes = client.attachment_size_by_record_type();
+    let total_attachment_size: usize = attachment_sizes.iter().map(|(_, size)| size).sum();
+    for (record_type, size) in attachment_sizes {
+        println!("{:30} {}kb", record_type.as_str(), (size + 500) / 1000)
+    }
+    println!();
     println!(
         "Total attachment size: {}kb",
         (total_attachment_size + 500) / 1000
     );
-    println!("Total database size: {}kb", (db_size + 500) / 1000);
-    println!();
+
     println!("Database table row counts");
     println!("-------------------------");
     for (name, count) in table_row_counts {
-        println!("{name:30}: {count}");
+        println!("{name:30} {count}");
     }
+    println!();
+    println!("Total database size: {}kb", (db_size + 500) / 1000);
 }

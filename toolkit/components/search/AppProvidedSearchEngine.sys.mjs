@@ -4,9 +4,12 @@
 
 /* eslint no-shadow: error, mozilla/no-aArgs: error */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+
 import {
   SearchEngine,
   EngineURL,
+  QueryParameter,
 } from "resource://gre/modules/SearchEngine.sys.mjs";
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
@@ -14,6 +17,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
@@ -24,6 +28,13 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/widget/useridleservice;1",
   "nsIUserIdleService"
 );
+
+ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
+  return console.createInstance({
+    prefix: "SearchEngine",
+    maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
+  });
+});
 
 // After the user has been idle for 30s, we'll update icons if we need to.
 const ICON_UPDATE_ON_IDLE_DELAY = 30;
@@ -257,6 +268,100 @@ class IconHandler {
 }
 
 /**
+ * A simple class to handle caching of preferences that may be read from
+ * parameters.
+ */
+const ParamPreferenceCache = {
+  QueryInterface: ChromeUtils.generateQI([
+    "nsIObserver",
+    "nsISupportsWeakReference",
+  ]),
+
+  initCache() {
+    // Preference params are normally only on the default branch to avoid these being easily changed.
+    // We allow them on the normal branch in nightly builds to make testing easier.
+    let branchFetcher = AppConstants.NIGHTLY_BUILD
+      ? "getBranch"
+      : "getDefaultBranch";
+    this.branch = Services.prefs[branchFetcher](
+      lazy.SearchUtils.BROWSER_SEARCH_PREF + "param."
+    );
+    this.cache = new Map();
+    this.nimbusCache = new Map();
+    for (let prefName of this.branch.getChildList("")) {
+      this.cache.set(prefName, this.branch.getCharPref(prefName, null));
+    }
+    this.branch.addObserver("", this, true);
+
+    this.onNimbusUpdate = this.onNimbusUpdate.bind(this);
+    this.onNimbusUpdate();
+    lazy.NimbusFeatures.search.onUpdate(this.onNimbusUpdate);
+    lazy.NimbusFeatures.search.ready().then(this.onNimbusUpdate);
+  },
+
+  observe(subject, topic, data) {
+    this.cache.set(data, this.branch.getCharPref(data, null));
+  },
+
+  onNimbusUpdate() {
+    let extraParams =
+      lazy.NimbusFeatures.search.getVariable("extraParams") || [];
+    this.nimbusCache.clear();
+    // The try catch ensures that if the params were incorrect for some reason,
+    // the search service can still startup properly.
+    try {
+      for (const { key, value } of extraParams) {
+        this.nimbusCache.set(key, value);
+      }
+    } catch (ex) {
+      console.error("Failed to load nimbus variables for extraParams:", ex);
+    }
+  },
+
+  getPref(prefName) {
+    if (!this.cache) {
+      this.initCache();
+    }
+    return this.nimbusCache.has(prefName)
+      ? this.nimbusCache.get(prefName)
+      : this.cache.get(prefName);
+  },
+};
+
+/**
+ * Represents a special paramater that can be set by preferences. The
+ * value is read from the 'browser.search.param.*' default preference
+ * branch.
+ */
+class QueryPreferenceParameter extends QueryParameter {
+  /**
+   * @param {string} name
+   *   The name of the parameter as injected into the query string.
+   * @param {string} prefName
+   *   The name of the preference to read from the branch.
+   */
+  constructor(name, prefName) {
+    super(name, prefName);
+  }
+
+  get value() {
+    const prefValue = ParamPreferenceCache.getPref(this._value);
+    return prefValue ? encodeURIComponent(prefValue) : null;
+  }
+
+  toJSON() {
+    lazy.logConsole.warn(
+      "QueryPreferenceParameter should only exist for app provided engines which are never saved as JSON"
+    );
+    return {
+      condition: "pref",
+      name: this.name,
+      pref: this._value,
+    };
+  }
+}
+
+/**
  * AppProvidedSearchEngine represents a search engine defined by the
  * search configuration.
  */
@@ -265,6 +370,7 @@ export class AppProvidedSearchEngine extends SearchEngine {
     ["search", lazy.SearchUtils.URL_TYPE.SEARCH],
     ["suggestions", lazy.SearchUtils.URL_TYPE.SUGGEST_JSON],
     ["trending", lazy.SearchUtils.URL_TYPE.TRENDING_JSON],
+    ["searchForm", lazy.SearchUtils.URL_TYPE.SEARCH_FORM],
   ]);
   static iconHandler = new IconHandler();
 
@@ -299,21 +405,11 @@ export class AppProvidedSearchEngine extends SearchEngine {
    *   The saved settings for the user.
    */
   constructor({ config, settings }) {
-    // TODO Bug 1875912 - Remove the webextension.id and webextension.locale when
-    // we're ready to remove old search-config and use search-config-v2 for all
-    // clients. The id in appProvidedSearchEngine should be changed to
-    // engine.identifier.
-    let extensionId = config.webExtension.id;
-    let id = config.webExtension.id + config.webExtension.locale;
-
     super({
-      loadPath: "[app]" + extensionId,
+      loadPath: "[app]" + config.identifier,
       isAppProvided: true,
-      id,
+      id: config.identifier,
     });
-
-    this._extensionID = extensionId;
-    this._locale = config.webExtension.locale;
 
     this.#configurationId = config.identifier;
     this.#init(config);
@@ -342,32 +438,10 @@ export class AppProvidedSearchEngine extends SearchEngine {
    * @param {object} options.configuration
    *   The search engine configuration for application provided engines.
    */
-  update({ configuration } = {}) {
+  update({ configuration }) {
     this._urls = [];
     this.#init(configuration);
     lazy.SearchUtils.notifyAction(this, lazy.SearchUtils.MODIFIED_TYPE.CHANGED);
-  }
-
-  /**
-   * This will update the application provided search engine if there is no
-   * name change.
-   *
-   * @param {object} options
-   *   The options object.
-   * @param {object} [options.configuration]
-   *   The search engine configuration for application provided engines.
-   * @param {string} [options.locale]
-   *   The locale to use for getting details of the search engine.
-   * @returns {boolean}
-   *   Returns true if the engine was updated, false otherwise.
-   */
-  async updateIfNoNameChange({ configuration, locale }) {
-    if (this.name != configuration.name.trim()) {
-      return false;
-    }
-
-    this.update({ locale, configuration });
-    return true;
   }
 
   /**
@@ -479,7 +553,7 @@ export class AppProvidedSearchEngine extends SearchEngine {
   /**
    * Initializes the engine.
    *
-   * @param {object} [engineConfig]
+   * @param {object} engineConfig
    *   The search engine configuration for application provided engines.
    */
   #init(engineConfig) {
@@ -543,40 +617,25 @@ export class AppProvidedSearchEngine extends SearchEngine {
             );
             break;
           case "experimentConfig" in param:
-            engineURL._addMozParam({
-              name: param.name,
-              pref: param.experimentConfig,
-              condition: "pref",
-            });
-            break;
-          case "searchAccessPoint" in param:
-            for (const [key, value] of Object.entries(
-              param.searchAccessPoint
-            )) {
-              engineURL.addParam(
-                param.name,
-                value,
-                key == "addressbar" ? "keyword" : key
-              );
-            }
+            engineURL.addQueryParameter(
+              new QueryPreferenceParameter(param.name, param.experimentConfig)
+            );
             break;
         }
       }
-    }
-
-    if (
-      !("searchTermParamName" in urlData) &&
-      !urlData.base.includes("{searchTerms}") &&
-      !urlType.includes("trending")
-    ) {
-      throw new Error("Search terms missing from engine URL.");
     }
 
     if ("searchTermParamName" in urlData) {
       // The search term parameter is always added last, which will add it to the
       // end of the URL. This is because in the past we have seen users trying to
       // modify their searches by altering the end of the URL.
-      engineURL.addParam(urlData.searchTermParamName, "{searchTerms}");
+      engineURL.setSearchTermParamName(urlData.searchTermParamName);
+    } else if (
+      !urlData.base.includes("{searchTerms}") &&
+      (urlType == lazy.SearchUtils.URL_TYPE.SEARCH ||
+        urlType == lazy.SearchUtils.URL_TYPE.SUGGEST_JSON)
+    ) {
+      throw new Error("Search terms missing from engine URL.");
     }
 
     this._urls.push(engineURL);

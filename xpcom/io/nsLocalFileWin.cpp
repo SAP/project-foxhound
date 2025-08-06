@@ -139,7 +139,7 @@ nsresult nsLocalFile::RevealFile(const nsString& aResolvedPath) {
     }
 
     LPCITEMIDLIST selection[] = {dir};
-    UINT count = ArrayLength(selection);
+    UINT count = std::size(selection);
 
     // Perform the open of the directory.
     hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
@@ -169,7 +169,7 @@ nsresult nsLocalFile::RevealFile(const nsString& aResolvedPath) {
     }
 
     LPCITEMIDLIST selection[] = {item};
-    UINT count = ArrayLength(selection);
+    UINT count = std::size(selection);
 
     // Perform the selection of the file.
     hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
@@ -2774,11 +2774,12 @@ nsLocalFile::GetDiskSpaceAvailable(int64_t* aDiskSpaceAvailable) {
   }
 
   if (mFileInfo.type == PR_FILE_FILE) {
-    // Since GetDiskFreeSpaceExW works only on directories, use the parent.
+    // Since GetDiskFreeSpaceExW works only on directories, use the parent
+    // which must exist if we are a file.
     nsCOMPtr<nsIFile> parent;
-    if (NS_SUCCEEDED(GetParent(getter_AddRefs(parent))) && parent) {
-      return parent->GetDiskSpaceAvailable(aDiskSpaceAvailable);
-    }
+    rv = GetParent(getter_AddRefs(parent));
+    NS_ENSURE_SUCCESS(rv, rv);
+    return parent->GetDiskSpaceAvailable(aDiskSpaceAvailable);
   }
 
   int64_t dummy = 0;
@@ -3017,7 +3018,7 @@ nsresult nsLocalFile::LookupExtensionIn(const char* const* aExtensionsArray,
 
 NS_IMETHODIMP
 nsLocalFile::IsExecutable(bool* aResult) {
-  return LookupExtensionIn(sExecutableExts, ArrayLength(sExecutableExts),
+  return LookupExtensionIn(sExecutableExts, std::size(sExecutableExts),
                            aResult);
 }
 
@@ -3414,7 +3415,7 @@ nsLocalFile::Launch() {
   static const char* const onlyExeExt[] = {".exe"};
   bool isExecutable;
   nsresult rv =
-      LookupExtensionIn(onlyExeExt, ArrayLength(onlyExeExt), &isExecutable);
+      LookupExtensionIn(onlyExeExt, std::size(onlyExeExt), &isExecutable);
   if (NS_FAILED(rv)) {
     isExecutable = false;
   }
@@ -3447,8 +3448,7 @@ nsLocalFile::Launch() {
   return NS_OK;
 }
 
-nsresult NS_NewLocalFile(const nsAString& aPath, bool aFollowLinks,
-                         nsIFile** aResult) {
+nsresult NS_NewLocalFile(const nsAString& aPath, nsIFile** aResult) {
   RefPtr<nsLocalFile> file = new nsLocalFile();
 
   if (!aPath.IsEmpty()) {
@@ -3621,15 +3621,14 @@ nsLocalFile::GetNativeTarget(nsACString& aResult) {
   return rv;
 }
 
-nsresult NS_NewNativeLocalFile(const nsACString& aPath, bool aFollowLinks,
-                               nsIFile** aResult) {
+nsresult NS_NewNativeLocalFile(const nsACString& aPath, nsIFile** aResult) {
   nsAutoString buf;
   nsresult rv = NS_CopyNativeToUnicode(aPath, buf);
   if (NS_FAILED(rv)) {
     *aResult = nullptr;
     return rv;
   }
-  return NS_NewLocalFile(buf, aFollowLinks, aResult);
+  return NS_NewLocalFile(buf, aResult);
 }
 
 void nsLocalFile::EnsureShortPath() {
@@ -3638,12 +3637,12 @@ void nsLocalFile::EnsureShortPath() {
   }
 
   WCHAR shortPath[MAX_PATH + 1];
-  DWORD lengthNeeded = ::GetShortPathNameW(mWorkingPath.get(), shortPath,
-                                           ArrayLength(shortPath));
+  DWORD lengthNeeded =
+      ::GetShortPathNameW(mWorkingPath.get(), shortPath, std::size(shortPath));
   // If an error occurred then lengthNeeded is set to 0 or the length of the
   // needed buffer including null termination.  If it succeeds the number of
   // wide characters not including null termination is returned.
-  if (lengthNeeded != 0 && lengthNeeded < ArrayLength(shortPath)) {
+  if (lengthNeeded != 0 && lengthNeeded < std::size(shortPath)) {
     mShortWorkingPath.Assign(shortPath);
   } else {
     mShortWorkingPath.Assign(mWorkingPath);

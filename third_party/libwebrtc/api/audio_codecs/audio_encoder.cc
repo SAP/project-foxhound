@@ -10,6 +10,15 @@
 
 #include "api/audio_codecs/audio_encoder.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+
+#include "api/array_view.h"
+#include "api/call/bitrate_allocation.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/trace_event.h"
 
@@ -87,12 +96,12 @@ void AudioEncoder::OnReceivedUplinkRecoverablePacketLossFraction(
 }
 
 void AudioEncoder::OnReceivedTargetAudioBitrate(int target_audio_bitrate_bps) {
-  OnReceivedUplinkBandwidth(target_audio_bitrate_bps, absl::nullopt);
+  OnReceivedUplinkBandwidth(target_audio_bitrate_bps, std::nullopt);
 }
 
 void AudioEncoder::OnReceivedUplinkBandwidth(
     int target_audio_bitrate_bps,
-    absl::optional<int64_t> bwe_period_ms) {}
+    std::optional<int64_t> bwe_period_ms) {}
 
 void AudioEncoder::OnReceivedUplinkAllocation(BitrateAllocationUpdate update) {
   OnReceivedUplinkBandwidth(update.target_bitrate.bps(),

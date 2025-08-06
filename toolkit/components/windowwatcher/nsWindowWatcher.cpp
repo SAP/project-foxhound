@@ -365,10 +365,10 @@ NS_IMETHODIMP
 nsWindowWatcher::OpenWindow2(
     mozIDOMWindowProxy* aParent, nsIURI* aUri, const nsACString& aName,
     const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
-    bool aCalledFromScript, bool aDialog, bool aNavigate,
-    nsISupports* aArguments, bool aIsPopupSpam, bool aForceNoOpener,
-    bool aForceNoReferrer, PrintKind aPrintKind,
-    nsDocShellLoadState* aLoadState, BrowsingContext** aResult) {
+    bool aCalledFromScript, bool aDialog, bool aNavigate, nsIArray* aArguments,
+    bool aIsPopupSpam, bool aForceNoOpener, bool aForceNoReferrer,
+    PrintKind aPrintKind, nsDocShellLoadState* aLoadState,
+    BrowsingContext** aResult) {
   nsCOMPtr<nsIArray> argv = ConvertArgsToArray(aArguments);
 
   uint32_t argc = 0;
@@ -599,7 +599,6 @@ nsWindowWatcher::OpenWindowWithRemoteTab(
   MOZ_ASSERT(chromeContext->UseRemoteTabs());
 
   MaybeDisablePersistence(sizeSpec, chromeTreeOwner);
-
   SizeOpenedWindow(chromeTreeOwner, parentWindowOuter, false, sizeSpec);
 
   nsCOMPtr<nsIRemoteTab> newBrowserParent;
@@ -1199,6 +1198,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
     nsCOMPtr<nsIDocShellTreeOwner> newTreeOwner;
     targetDocShell->GetTreeOwner(getter_AddRefs(newTreeOwner));
     MaybeDisablePersistence(sizeSpec, newTreeOwner);
+    SizeOpenedWindow(newTreeOwner, aParent, isCallerChrome, sizeSpec);
   }
 
   if (aDialog && aArgv) {
@@ -1411,12 +1411,6 @@ nsresult nsWindowWatcher::OpenWindowInternal(
 
     // Should this pay attention to errors returned by LoadURI?
     targetBC->LoadURI(aLoadState);
-  }
-
-  if (isNewToplevelWindow) {
-    nsCOMPtr<nsIDocShellTreeOwner> newTreeOwner;
-    targetDocShell->GetTreeOwner(getter_AddRefs(newTreeOwner));
-    SizeOpenedWindow(newTreeOwner, aParent, isCallerChrome, sizeSpec);
   }
 
   if (windowIsModal) {
@@ -2230,7 +2224,7 @@ SizeSpec CalcSizeSpec(const WindowFeatures& aFeatures, bool aHasChromeParent,
   }
 
   // NOTE: The value is handled only on chrome-priv code.
-  // See nsWindowWatcher::SizeOpenedWindow.
+  // See SizeOpenedWindow.
   result.mLockAspectRatio =
       aFeatures.GetBoolWithDefault("lockaspectratio", false);
   return result;

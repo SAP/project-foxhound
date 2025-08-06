@@ -44,6 +44,11 @@ loader.lazyRequireGetter(
   true
 );
 
+const { WEBEXTENSION_FALLBACK_DOC_URL } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
+  { global: "contextual" }
+);
+
 const BGSCRIPT_STATUSES = {
   RUNNING: "RUNNING",
   STOPPED: "STOPPED",
@@ -59,7 +64,12 @@ const BGSCRIPT_STATUSES = {
  * uninstalled completely) and connects to the child extension process using a `browser`
  * element provided by the extension internals (it is not related to any single extension,
  * but it will be created automatically to the currently selected "WebExtensions OOP mode"
- * and it persist across the extension reloads (it is destroyed once the actor exits).
+ * and it persist across the extension reloads.
+ *
+ * The descriptor will also be persisted when the target actor is destroyed, so
+ * that we can reuse the same descriptor for several remote debugging toolboxes
+ * from about:debugging.
+ *
  * WebExtensionDescriptorActor is a child of RootActor, it can be retrieved via
  * RootActor.listAddons request.
  *
@@ -75,8 +85,9 @@ class WebExtensionDescriptorActor extends Actor {
     this.addonId = addon.id;
     this._childFormPromise = null;
 
-    this._onChildExit = this._onChildExit.bind(this);
     this.destroy = this.destroy.bind(this);
+    this._onChildExit = this._onChildExit.bind(this);
+
     lazy.AddonManager.addAddonListener(this);
   }
 
@@ -109,6 +120,9 @@ class WebExtensionDescriptorActor extends Actor {
         supportsReloadDescriptor: true,
         // Supports the Watcher actor. Can be removed as part of Bug 1680280.
         watcher: true,
+        // @backward-compat { version 133 } Firefox 133 started supporting server targets by default.
+        // Once this is the only supported version, we can remove the traits and consider it always true in the frontend.
+        isServerTargetSwitchingEnabled: true,
       },
       url: this.addon.sourceURI ? this.addon.sourceURI.spec : undefined,
       warnings: lazy.ExtensionParent.DebugUtils.getExtensionManifestWarnings(
@@ -124,15 +138,15 @@ class WebExtensionDescriptorActor extends Actor {
    */
   async getWatcher(config = {}) {
     if (!this.watcher) {
-      // Ensure connecting to the webextension frame in order to populate this._form
-      await this._extensionFrameConnect();
+      // Spawn an empty document so that we always have an active WindowGlobal,
+      // so that we can always instantiate a top level WindowGlobal target to the frontend.
+      await this.#createFallbackDocument();
+
       this.watcher = new WatcherActor(
         this.conn,
         createWebExtensionSessionContext(
           {
             addonId: this.addonId,
-            browsingContextID: this._form.browsingContextID,
-            innerWindowId: this._form.innerWindowId,
           },
           config
         )
@@ -140,6 +154,61 @@ class WebExtensionDescriptorActor extends Actor {
       this.manage(this.watcher);
     }
     return this.watcher;
+  }
+
+  /**
+   * Create an empty document to circumvant the lack of any WindowGlobal/document
+   * running for this addon.
+   *
+   * For now DevTools always expect at least one Target to be functional,
+   * and we need a document to spawn a target actor.
+   */
+  async #createFallbackDocument() {
+    if (this._browser) {
+      return;
+    }
+
+    // The extension process browser will only be released on descriptor destruction and can
+    // be reused for subsequent watchers if we close and reopen a toolbox from about:debugging.
+    //
+    // Note that this `getExtensionProcessBrowser` will register the DevTools to the extension codebase.
+    // If we stop creating a fallback document, we should register DevTools by some other means.
+    this._browser =
+      await lazy.ExtensionParent.DebugUtils.getExtensionProcessBrowser(this);
+
+    // As "load" event isn't fired on the <browser> element, use a Web Progress Listener
+    // in order to wait for the full loading of that fallback document.
+    // It prevents having to deal with the initial about:blank document in the content processes.
+    // We have various checks to identify the fallback document based on its URL.
+    // It also ensure that the fallback document is created before the watcher starts
+    // and helps spawning the target for that document first.
+    const onLocationChanged = new Promise(resolve => {
+      const listener = {
+        onLocationChange: () => {
+          this._browser.webProgress.removeProgressListener(listener);
+          resolve();
+        },
+        QueryInterface: ChromeUtils.generateQI([
+          "nsIWebProgressListener",
+          "nsISupportsWeakReference",
+        ]),
+      };
+
+      this._browser.webProgress.addProgressListener(
+        listener,
+        Ci.nsIWebProgress.NOTIFY_LOCATION
+      );
+    });
+
+    // Add the addonId in the URL to retrieve this information in other devtools
+    // helpers. The addonId is usually populated in the principal, but this will
+    // not be the case for the fallback window because it is loaded from chrome://
+    // instead of moz-extension://${addonId}
+    this._browser.setAttribute(
+      "src",
+      `${WEBEXTENSION_FALLBACK_DOC_URL}#${this.addonId}`
+    );
+    await onLocationChanged;
   }
 
   async getTarget() {
@@ -162,12 +231,17 @@ class WebExtensionDescriptorActor extends Actor {
       return this._form;
     }
 
-    this._browser =
-      await lazy.ExtensionParent.DebugUtils.getExtensionProcessBrowser(this);
+    if (!this._browser) {
+      // The extension process browser will only be released on destroy and can
+      // be reused for subsequent targets.
+      this._browser =
+        await lazy.ExtensionParent.DebugUtils.getExtensionProcessBrowser(this);
+    }
 
     const policy = lazy.ExtensionParent.WebExtensionPolicy.getByID(
       this.addonId
     );
+
     this._form = await connectToFrame(this.conn, this._browser, this.destroy, {
       addonId: this.addonId,
       addonBrowsingContextGroupId: policy.browsingContextGroupId,
@@ -187,10 +261,9 @@ class WebExtensionDescriptorActor extends Actor {
       );
     }
 
-    this._childActorID = this._form.actor;
-
-    // Exit the proxy child actor if the child actor has been destroyed.
     this._mm.addMessageListener("debug:webext_child_exit", this._onChildExit);
+
+    this._childActorID = this._form.actor;
 
     return this._form;
   }
@@ -286,7 +359,10 @@ class WebExtensionDescriptorActor extends Actor {
       return;
     }
 
-    this.destroy();
+    // Cleanup internal variables so that a new target will be recreated upon
+    // calling getTarget/getWatcher again.
+    delete this._form;
+    delete this._childActorID;
   }
 
   // AddonManagerListener callbacks.
@@ -322,6 +398,10 @@ class WebExtensionDescriptorActor extends Actor {
       });
 
       lazy.ExtensionParent.DebugUtils.releaseExtensionProcessBrowser(this);
+    }
+
+    if (this.watcher) {
+      this.watcher = null;
     }
 
     this._browser = null;

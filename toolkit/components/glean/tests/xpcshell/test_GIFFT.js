@@ -218,8 +218,6 @@ add_task(function test_gifft_string_list_works() {
 });
 
 add_task(function test_gifft_events() {
-  Telemetry.setEventRecordingEnabled("telemetry.test", true);
-
   Glean.testOnlyIpc.noExtraEvent.record();
   var events = Glean.testOnlyIpc.noExtraEvent.testGetValue();
   Assert.equal(1, events.length);
@@ -236,8 +234,10 @@ add_task(function test_gifft_events() {
   let { extra1, extra2 } = extra;
   let telExtra = { extra1, extra2 };
   Glean.testOnlyIpc.anEvent.record(extra);
+  // Also test a value of "".
+  Glean.testOnlyIpc.anEvent.record({ value: "" });
   events = Glean.testOnlyIpc.anEvent.testGetValue();
-  Assert.equal(1, events.length);
+  Assert.equal(2, events.length);
   Assert.equal("test_only.ipc", events[0].category);
   Assert.equal("an_event", events[0].name);
   Assert.deepEqual(extra, events[0].extra);
@@ -246,6 +246,7 @@ add_task(function test_gifft_events() {
     [
       ["telemetry.test", "not_expired_optout", "object1", undefined, undefined],
       ["telemetry.test", "mirror_with_extra", "object1", extra.value, telExtra],
+      ["telemetry.test", "mirror_with_extra", "object1", "", undefined],
     ],
     { category: "telemetry.test" }
   );
@@ -305,8 +306,8 @@ add_task(async function test_gifft_timespan() {
   Glean.testOnly.mirrorTime.stop();
 
   const NANOS_IN_MILLIS = 1e6;
-  // bug 1701949 - Sleep gets close, but sometimes doesn't wait long enough.
-  const EPSILON = 40000;
+  // bug 1931539 - Sleep gets close, but sometimes doesn't wait long enough.
+  const EPSILON = 50000;
   Assert.greater(
     Glean.testOnly.mirrorTime.testGetValue(),
     10 * NANOS_IN_MILLIS - EPSILON
@@ -625,5 +626,37 @@ add_task(async function test_gifft_labeled_timing_dist() {
     2,
     Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
     "Only two samples"
+  );
+});
+
+add_task(async function test_gifft_labeled_quantity() {
+  Assert.equal(
+    undefined,
+    Glean.testOnly.buttonJars.pants.testGetValue(),
+    "New labels with no values should return undefined"
+  );
+  Glean.testOnly.buttonJars.pants.set(42);
+  Glean.testOnly.buttonJars.whoseGot.set(1);
+  Assert.equal(42, Glean.testOnly.buttonJars.pants.testGetValue());
+  Assert.equal(1, Glean.testOnly.buttonJars.whoseGot.testGetValue());
+  // What about invalid/__other__?
+  Assert.equal(undefined, Glean.testOnly.buttonJars.__other__.testGetValue());
+  Glean.testOnly.buttonJars["1".repeat(72)].set(9000);
+  Assert.throws(
+    () => Glean.testOnly.buttonJars.__other__.testGetValue(),
+    /DataError/,
+    "Should throw because of a recording error."
+  );
+
+  info(JSON.stringify(Telemetry.getSnapshotForKeyedScalars()));
+  // In Telemetry there is no invalid label
+  let value = keyedScalarValue("telemetry.test.mirror_for_labeled_quantity");
+  Assert.deepEqual(
+    {
+      pants: 42,
+      whoseGot: 1,
+      ["1".repeat(72)]: 9000,
+    },
+    value
   );
 });

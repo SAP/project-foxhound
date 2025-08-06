@@ -178,7 +178,8 @@ bool HttpChannelParent::Init(const HttpChannelCreationArgs& aArgs) {
           a.handleFetchEventStart(), a.handleFetchEventEnd(),
           a.forceMainDocumentChannel(), a.navigationStartTimeStamp(),
           a.earlyHintPreloaderId(), a.classicScriptHintCharset(),
-          a.documentCharacterSet(), a.isUserAgentHeaderModified());
+          a.documentCharacterSet(), a.isUserAgentHeaderModified(),
+          a.initiatorType());
     }
     case HttpChannelCreationArgs::THttpChannelConnectArgs: {
       const HttpChannelConnectArgs& cArgs = aArgs.get_HttpChannelConnectArgs();
@@ -446,7 +447,7 @@ bool HttpChannelParent::DoAsyncOpen(
     const uint64_t& aEarlyHintPreloaderId,
     const nsAString& aClassicScriptHintCharset,
     const nsAString& aDocumentCharacterSet,
-    const bool& aIsUserAgentHeaderModified) {
+    const bool& aIsUserAgentHeaderModified, const nsString& aInitiatorType) {
   MOZ_ASSERT(aURI, "aURI should not be NULL");
 
   if (aEarlyHintPreloaderId) {
@@ -478,7 +479,8 @@ bool HttpChannelParent::DoAsyncOpen(
        " browserid=%" PRIx64 "]\n",
        this, aURI->GetSpecOrDefault().get(), aChannelId, aBrowserId));
 
-  PROFILER_MARKER("Receive AsyncOpen in Parent", NETWORK, {}, ChannelMarker,
+  PROFILER_MARKER("Receive AsyncOpen in Parent", NETWORK,
+                  MarkerThreadId::MainThread(), ChannelMarker,
                   aURI->GetSpecOrDefault(), aChannelId);
 
   nsresult rv;
@@ -528,7 +530,6 @@ bool HttpChannelParent::DoAsyncOpen(
   if (httpChannelImpl) {
     httpChannelImpl->SetWarningReporter(this);
   }
-  httpChannel->SetTimingEnabled(true);
   if (mPBOverride != kPBOverride_Unset) {
     httpChannel->SetPrivate(mPBOverride == kPBOverride_Private);
   }
@@ -580,6 +581,8 @@ bool HttpChannelParent::DoAsyncOpen(
   }
 
   httpChannel->SetIsUserAgentHeaderModified(aIsUserAgentHeaderModified);
+
+  httpChannel->SetInitiatorType(aInitiatorType);
 
   RefPtr<ParentChannelListener> parentListener = new ParentChannelListener(
       this, mBrowserParent ? mBrowserParent->GetBrowsingContext() : nullptr);

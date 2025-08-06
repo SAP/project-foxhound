@@ -14,20 +14,24 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/fec_controller_override.h"
 #include "api/scoped_refptr.h"
 #include "api/test/mock_video_encoder.h"
+#include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
-#include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_bitrate_allocator.h"
+#include "api/video/video_codec_type.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_frame_buffer.h"
+#include "api/video/video_frame_type.h"
 #include "api/video/video_rotation.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
@@ -93,10 +97,11 @@ class VideoEncoderSoftwareFallbackWrapperTestBase : public ::testing::Test {
   VideoEncoderSoftwareFallbackWrapperTestBase(
       const Environment& env,
       std::unique_ptr<VideoEncoder> sw_encoder)
-      : fake_encoder_(new CountingFakeEncoder()),
+      : env_(env),
+        fake_encoder_(new CountingFakeEncoder()),
         wrapper_initialized_(false),
         fallback_wrapper_(CreateVideoEncoderSoftwareFallbackWrapper(
-            env,
+            env_,
             std::move(sw_encoder),
             std::unique_ptr<VideoEncoder>(fake_encoder_),
             false)) {}
@@ -159,7 +164,7 @@ class VideoEncoderSoftwareFallbackWrapperTestBase : public ::testing::Test {
     bool supports_native_handle_ = false;
     bool is_qp_trusted_ = false;
     std::string implementation_name_ = "fake-encoder";
-    absl::optional<VideoFrame> last_video_frame_;
+    std::optional<VideoFrame> last_video_frame_;
   };
 
   void InitEncode();
@@ -172,6 +177,7 @@ class VideoEncoderSoftwareFallbackWrapperTestBase : public ::testing::Test {
               fallback_wrapper_->GetEncoderInfo().implementation_name);
   }
 
+  const Environment env_;
   FakeEncodedImageCallback callback_;
   // `fake_encoder_` is owned and released by `fallback_wrapper_`.
   CountingFakeEncoder* fake_encoder_;
@@ -232,7 +238,7 @@ void VideoEncoderSoftwareFallbackWrapperTestBase::InitEncode() {
   codec_.width = kWidth;
   codec_.height = kHeight;
   codec_.VP8()->numberOfTemporalLayers = 1;
-  rate_allocator_.reset(new SimulcastRateAllocator(codec_));
+  rate_allocator_ = std::make_unique<SimulcastRateAllocator>(env_, codec_);
 
   if (wrapper_initialized_) {
     fallback_wrapper_->Release();
@@ -263,7 +269,7 @@ void VideoEncoderSoftwareFallbackWrapperTestBase::UtilizeFallbackEncoder() {
   codec_.width = kWidth;
   codec_.height = kHeight;
   codec_.VP8()->numberOfTemporalLayers = 1;
-  rate_allocator_.reset(new SimulcastRateAllocator(codec_));
+  rate_allocator_ = std::make_unique<SimulcastRateAllocator>(env_, codec_);
 
   if (wrapper_initialized_) {
     fallback_wrapper_->Release();
@@ -291,7 +297,7 @@ void VideoEncoderSoftwareFallbackWrapperTestBase::FallbackFromEncodeRequest() {
   codec_.width = kWidth;
   codec_.height = kHeight;
   codec_.VP8()->numberOfTemporalLayers = 1;
-  rate_allocator_.reset(new SimulcastRateAllocator(codec_));
+  rate_allocator_ = std::make_unique<SimulcastRateAllocator>(env_, codec_);
   if (wrapper_initialized_) {
     fallback_wrapper_->Release();
   }
@@ -514,7 +520,7 @@ class ForcedFallbackTest : public VideoEncoderSoftwareFallbackWrapperTestBase {
     codec_.VP8()->numberOfTemporalLayers = 1;
     codec_.VP8()->automaticResizeOn = true;
     codec_.SetFrameDropEnabled(true);
-    rate_allocator_.reset(new SimulcastRateAllocator(codec_));
+    rate_allocator_ = std::make_unique<SimulcastRateAllocator>(env_, codec_);
   }
 
   void InitEncode(int width, int height) {

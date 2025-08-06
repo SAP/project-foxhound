@@ -96,7 +96,7 @@ class MOZ_RAII WarpCacheIRTranspiler : public WarpBuilderShared {
 #endif
   }
 
-  // Bypasses all checks in addEffectful. Only used for testing functions.
+  // Bypasses all checks in addEffectful. Use with caution!
   inline void addEffectfulUnsafe(MInstruction* ins) {
     MOZ_ASSERT(ins->isEffectful());
     addUnchecked(ins);
@@ -238,6 +238,11 @@ class MOZ_RAII WarpCacheIRTranspiler : public WarpBuilderShared {
   template <typename T>
   [[nodiscard]] bool emitBigIntUnaryArithResult(BigIntOperandId inputId);
 
+  template <typename T>
+  [[nodiscard]] bool emitBigIntPtrBinaryArith(IntPtrOperandId lhsId,
+                                              IntPtrOperandId rhsId,
+                                              IntPtrOperandId resultId);
+
   [[nodiscard]] bool emitCompareResult(JSOp op, OperandId lhsId,
                                        OperandId rhsId,
                                        MCompare::CompareType compareType);
@@ -280,10 +285,10 @@ class MOZ_RAII WarpCacheIRTranspiler : public WarpBuilderShared {
 
   [[nodiscard]] bool updateCallInfo(MDefinition* callee, CallFlags flags);
 
-  [[nodiscard]] bool emitCallFunction(ObjOperandId calleeId,
-                                      Int32OperandId argcId,
-                                      mozilla::Maybe<ObjOperandId> thisObjId,
-                                      CallFlags flags, CallKind kind);
+  [[nodiscard]] bool emitCallFunction(
+      ObjOperandId calleeId, Int32OperandId argcId,
+      mozilla::Maybe<ObjOperandId> thisObjId, CallFlags flags, CallKind kind,
+      mozilla::Maybe<uint32_t> siteOffset = mozilla::Nothing());
   [[nodiscard]] bool emitFunApplyArgsObj(WrappedFunction* wrappedTarget,
                                          CallFlags flags);
 
@@ -351,13 +356,22 @@ bool WarpCacheIRTranspiler::transpile(
     }
   } while (reader.more());
 
-  // Effectful instructions should have a resume point. MIonToWasmCall is an
-  // exception: we can attach the resume point to the MInt64ToBigInt instruction
-  // instead. Other exceptions are MResizableTypedArrayLength and
-  // MResizableDataViewByteLength, and MGrowableSharedArrayBufferByteLength,
-  // which add the resume point to MPostIntPtrConversion.
+  // Effectful instructions should have a resume point. We allow a limited
+  // number of exceptions:
+  // - MIonToWasmCall: Resumes after MInt64ToBigInt
+  // - MLoadUnboxedScalar: Resumes after MInt64ToBigInt
+  // - MAtomicTypedArrayElementBinop: Resumes after MInt64ToBigInt
+  // - MAtomicExchangeTypedArrayElement: Resumes after MInt64ToBigInt
+  // - MCompareExchangeTypedArrayElement: Resumes after MInt64ToBigInt
+  // - MResizableTypedArrayLength: Resumes after MPostIntPtrConversion
+  // - MResizableDataViewByteLength: Resumes after MPostIntPtrConversion
+  // - MGrowableSharedArrayBufferByteLength: Resumes after MPostIntPtrConversion
   MOZ_ASSERT_IF(effectful_,
                 effectful_->resumePoint() || effectful_->isIonToWasmCall() ||
+                    effectful_->isLoadUnboxedScalar() ||
+                    effectful_->isAtomicTypedArrayElementBinop() ||
+                    effectful_->isAtomicExchangeTypedArrayElement() ||
+                    effectful_->isCompareExchangeTypedArrayElement() ||
                     effectful_->isResizableTypedArrayLength() ||
                     effectful_->isResizableDataViewByteLength() ||
                     effectful_->isGrowableSharedArrayBufferByteLength());
@@ -431,6 +445,7 @@ const JSClass* WarpCacheIRTranspiler::classForGuardClassKind(
     case GuardClassKind::Set:
     case GuardClassKind::Map:
     case GuardClassKind::BoundFunction:
+    case GuardClassKind::Date:
       return ClassFor(kind);
     case GuardClassKind::WindowProxy:
       return mirGen().runtime->maybeWindowProxyClass();
@@ -467,11 +482,45 @@ bool WarpCacheIRTranspiler::emitGuardShape(ObjOperandId objId,
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitGuardFuse(RealmFuses::FuseIndex fuseIndex) {
-  auto* ins = MGuardFuse::New(alloc(), fuseIndex);
-  add(ins);
+template <auto FuseMember>
+struct RealmFuseDependency final : public CompilationDependency {
+  RealmFuseDependency();
 
-  return true;
+  virtual bool registerDependency(JSContext* cx, HandleScript script) override {
+    MOZ_ASSERT(checkDependency(cx));
+
+    return (cx->realm()->realmFuses.*FuseMember).addFuseDependency(cx, script);
+  }
+
+  virtual UniquePtr<CompilationDependency> clone() override {
+    return MakeUnique<RealmFuseDependency<FuseMember>>();
+  }
+
+  virtual bool checkDependency(JSContext* cx) override {
+    return (cx->realm()->realmFuses.*FuseMember).intact();
+  }
+
+  virtual bool operator==(CompilationDependency& dep) override {
+    return dep.type == type;
+  }
+};
+
+using GetIteratorDependency =
+    RealmFuseDependency<&RealmFuses::optimizeGetIteratorFuse>;
+template <>
+GetIteratorDependency::RealmFuseDependency()
+    : CompilationDependency(CompilationDependency::Type::GetIterator) {}
+
+bool WarpCacheIRTranspiler::emitGuardFuse(RealmFuses::FuseIndex fuseIndex) {
+  if (fuseIndex != RealmFuses::FuseIndex::OptimizeGetIteratorFuse) {
+    auto* ins = MGuardFuse::New(alloc(), fuseIndex);
+    add(ins);
+    return true;
+  }
+
+  // Register the compilation dependency.
+  GetIteratorDependency dep;
+  return mirGen().tracker.addDependency(dep);
 }
 
 bool WarpCacheIRTranspiler::emitGuardMultipleShapes(ObjOperandId objId,
@@ -2251,7 +2300,7 @@ static MIRType MIRTypeForArrayBufferViewRead(Scalar::Type arrayType,
       return MIRType::Double;
     case Scalar::BigInt64:
     case Scalar::BigUint64:
-      return MIRType::BigInt;
+      return MIRType::Int64;
     default:
       break;
   }
@@ -2288,7 +2337,14 @@ bool WarpCacheIRTranspiler::emitLoadTypedArrayElementResult(
       MIRTypeForArrayBufferViewRead(elementType, forceDoubleForUint32));
   add(load);
 
-  pushResult(load);
+  MInstruction* result = load;
+  if (Scalar::isBigIntType(elementType)) {
+    result = MInt64ToBigInt::New(alloc(), load,
+                                 Scalar::isSignedIntType(elementType));
+    add(result);
+  }
+
+  pushResult(result);
   return true;
 }
 
@@ -2449,6 +2505,28 @@ bool WarpCacheIRTranspiler::emitLoadStringCodePointResult(
 
   pushResult(codePoint);
   return true;
+}
+
+bool WarpCacheIRTranspiler::emitNewMapObjectResult(
+    uint32_t templateObjectOffset) {
+  JSObject* templateObj = tenuredObjectStubField(templateObjectOffset);
+
+  auto* obj = MNewMapObject::New(alloc(), templateObj);
+  addEffectful(obj);
+
+  pushResult(obj);
+  return resumeAfter(obj);
+}
+
+bool WarpCacheIRTranspiler::emitNewSetObjectResult(
+    uint32_t templateObjectOffset) {
+  JSObject* templateObj = tenuredObjectStubField(templateObjectOffset);
+
+  auto* obj = MNewSetObject::New(alloc(), templateObj);
+  addEffectful(obj);
+
+  pushResult(obj);
+  return resumeAfter(obj);
 }
 
 bool WarpCacheIRTranspiler::emitNewStringObjectResult(
@@ -2913,7 +2991,14 @@ bool WarpCacheIRTranspiler::emitLoadDataViewValueResult(
       MIRTypeForArrayBufferViewRead(elementType, forceDoubleForUint32);
   load->setResultType(knownType);
 
-  pushResult(load);
+  MInstruction* result = load;
+  if (Scalar::isBigIntType(elementType)) {
+    result = MInt64ToBigInt::New(alloc(), load,
+                                 Scalar::isSignedIntType(elementType));
+    add(result);
+  }
+
+  pushResult(result);
   return true;
 }
 
@@ -3027,7 +3112,7 @@ bool WarpCacheIRTranspiler::emitDoubleNegationResult(NumberOperandId inputId) {
 bool WarpCacheIRTranspiler::emitInt32NotResult(Int32OperandId inputId) {
   MDefinition* input = getOperand(inputId);
 
-  auto* ins = MBitNot::New(alloc(), input);
+  auto* ins = MBitNot::New(alloc(), input, MIRType::Int32);
   add(ins);
 
   pushResult(ins);
@@ -3274,6 +3359,154 @@ bool WarpCacheIRTranspiler::emitBigIntNegationResult(BigIntOperandId inputId) {
 
 bool WarpCacheIRTranspiler::emitBigIntNotResult(BigIntOperandId inputId) {
   return emitBigIntUnaryArithResult<MBigIntBitNot>(inputId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntToIntPtr(BigIntOperandId inputId,
+                                               IntPtrOperandId resultId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* ins = MBigIntToIntPtr::New(alloc(), input);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitIntPtrToBigIntResult(IntPtrOperandId inputId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* ins = MIntPtrToBigInt::New(alloc(), input);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
+template <typename T>
+bool WarpCacheIRTranspiler::emitBigIntPtrBinaryArith(IntPtrOperandId lhsId,
+                                                     IntPtrOperandId rhsId,
+                                                     IntPtrOperandId resultId) {
+  MDefinition* lhs = getOperand(lhsId);
+  MDefinition* rhs = getOperand(rhsId);
+
+  auto* ins = T::New(alloc(), lhs, rhs);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrAdd(IntPtrOperandId lhsId,
+                                             IntPtrOperandId rhsId,
+                                             IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrAdd>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrSub(IntPtrOperandId lhsId,
+                                             IntPtrOperandId rhsId,
+                                             IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrSub>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrMul(IntPtrOperandId lhsId,
+                                             IntPtrOperandId rhsId,
+                                             IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrMul>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrDiv(IntPtrOperandId lhsId,
+                                             IntPtrOperandId rhsId,
+                                             IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrDiv>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrMod(IntPtrOperandId lhsId,
+                                             IntPtrOperandId rhsId,
+                                             IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrMod>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrPow(IntPtrOperandId lhsId,
+                                             IntPtrOperandId rhsId,
+                                             IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrPow>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrBitOr(IntPtrOperandId lhsId,
+                                               IntPtrOperandId rhsId,
+                                               IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrBitOr>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrBitXor(IntPtrOperandId lhsId,
+                                                IntPtrOperandId rhsId,
+                                                IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrBitXor>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrBitAnd(IntPtrOperandId lhsId,
+                                                IntPtrOperandId rhsId,
+                                                IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrBitAnd>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrLeftShift(IntPtrOperandId lhsId,
+                                                   IntPtrOperandId rhsId,
+                                                   IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrLsh>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrRightShift(IntPtrOperandId lhsId,
+                                                    IntPtrOperandId rhsId,
+                                                    IntPtrOperandId resultId) {
+  return emitBigIntPtrBinaryArith<MBigIntPtrRsh>(lhsId, rhsId, resultId);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrInc(IntPtrOperandId inputId,
+                                             IntPtrOperandId resultId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* constOne = MConstant::NewIntPtr(alloc(), 1);
+  add(constOne);
+
+  auto* ins = MBigIntPtrAdd::New(alloc(), input, constOne);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrDec(IntPtrOperandId inputId,
+                                             IntPtrOperandId resultId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* constOne = MConstant::NewIntPtr(alloc(), 1);
+  add(constOne);
+
+  auto* ins = MBigIntPtrSub::New(alloc(), input, constOne);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrNegation(IntPtrOperandId inputId,
+                                                  IntPtrOperandId resultId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* constNegOne = MConstant::NewIntPtr(alloc(), -1);
+  add(constNegOne);
+
+  auto* ins = MBigIntPtrMul::New(alloc(), input, constNegOne);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitBigIntPtrNot(IntPtrOperandId inputId,
+                                             IntPtrOperandId resultId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* ins = MBigIntPtrBitNot::New(alloc(), input);
+  add(ins);
+
+  return defineOperand(resultId, ins);
 }
 
 bool WarpCacheIRTranspiler::emitCallStringConcatResult(StringOperandId lhsId,
@@ -4574,12 +4807,11 @@ bool WarpCacheIRTranspiler::emitObjectCreateResult(
 }
 
 bool WarpCacheIRTranspiler::emitNewArrayFromLengthResult(
-    uint32_t templateObjectOffset, Int32OperandId lengthId) {
+    uint32_t templateObjectOffset, Int32OperandId lengthId,
+    uint32_t siteOffset) {
   JSObject* templateObj = tenuredObjectStubField(templateObjectOffset);
   MDefinition* length = getOperand(lengthId);
-
-  // TODO: support pre-tenuring.
-  gc::Heap heap = gc::Heap::Default;
+  gc::Heap heap = allocSiteInitialHeapField(siteOffset);
 
   if (length->isConstant()) {
     int32_t lenInt32 = length->toConstant()->toInt32();
@@ -4696,8 +4928,19 @@ bool WarpCacheIRTranspiler::emitAtomicsCompareExchangeResult(
   cas->setResultType(knownType);
   addEffectful(cas);
 
-  pushResult(cas);
-  return resumeAfter(cas);
+  MInstruction* result = cas;
+  if (Scalar::isBigIntType(elementType)) {
+    result =
+        MInt64ToBigInt::New(alloc(), cas, Scalar::isSignedIntType(elementType));
+
+    // Make non-movable so we can attach a resume point.
+    result->setNotMovable();
+
+    add(result);
+  }
+
+  pushResult(result);
+  return resumeAfterUnchecked(result);
 }
 
 bool WarpCacheIRTranspiler::emitAtomicsExchangeResult(
@@ -4723,8 +4966,19 @@ bool WarpCacheIRTranspiler::emitAtomicsExchangeResult(
   exchange->setResultType(knownType);
   addEffectful(exchange);
 
-  pushResult(exchange);
-  return resumeAfter(exchange);
+  MInstruction* result = exchange;
+  if (Scalar::isBigIntType(elementType)) {
+    result = MInt64ToBigInt::New(alloc(), exchange,
+                                 Scalar::isSignedIntType(elementType));
+
+    // Make non-movable so we can attach a resume point.
+    result->setNotMovable();
+
+    add(result);
+  }
+
+  pushResult(result);
+  return resumeAfterUnchecked(result);
 }
 
 bool WarpCacheIRTranspiler::emitAtomicsBinaryOp(
@@ -4753,12 +5007,24 @@ bool WarpCacheIRTranspiler::emitAtomicsBinaryOp(
   }
   addEffectful(binop);
 
-  if (!forEffect) {
-    pushResult(binop);
-  } else {
+  if (forEffect) {
     pushResult(constant(UndefinedValue()));
+    return resumeAfter(binop);
   }
-  return resumeAfter(binop);
+
+  MInstruction* result = binop;
+  if (Scalar::isBigIntType(elementType)) {
+    result = MInt64ToBigInt::New(alloc(), binop,
+                                 Scalar::isSignedIntType(elementType));
+
+    // Make non-movable so we can attach a resume point.
+    result->setNotMovable();
+
+    add(result);
+  }
+
+  pushResult(result);
+  return resumeAfterUnchecked(result);
 }
 
 bool WarpCacheIRTranspiler::emitAtomicsAddResult(
@@ -4818,8 +5084,19 @@ bool WarpCacheIRTranspiler::emitAtomicsLoadResult(
   load->setResultType(knownType);
   addEffectful(load);
 
-  pushResult(load);
-  return resumeAfter(load);
+  MInstruction* result = load;
+  if (Scalar::isBigIntType(elementType)) {
+    result = MInt64ToBigInt::New(alloc(), load,
+                                 Scalar::isSignedIntType(elementType));
+
+    // Make non-movable so we can attach a resume point.
+    result->setNotMovable();
+
+    add(result);
+  }
+
+  pushResult(result);
+  return resumeAfterUnchecked(result);
 }
 
 bool WarpCacheIRTranspiler::emitAtomicsStoreResult(
@@ -4853,6 +5130,14 @@ bool WarpCacheIRTranspiler::emitAtomicsIsLockFreeResult(
   add(ilf);
 
   pushResult(ilf);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitAtomicsPauseResult() {
+  auto* ins = MAtomicPause::New(alloc());
+  add(ins);
+
+  pushResult(constant(UndefinedValue()));
   return true;
 }
 
@@ -4995,6 +5280,30 @@ bool WarpCacheIRTranspiler::emitSetHasResult(ObjOperandId setId,
 
   pushResult(ins);
   return true;
+}
+
+bool WarpCacheIRTranspiler::emitSetDeleteResult(ObjOperandId setId,
+                                                ValOperandId keyId) {
+  MDefinition* set = getOperand(setId);
+  MDefinition* key = getOperand(keyId);
+
+  auto* ins = MSetObjectDelete::New(alloc(), set, key);
+  addEffectful(ins);
+
+  pushResult(ins);
+  return resumeAfter(ins);
+}
+
+bool WarpCacheIRTranspiler::emitSetAddResult(ObjOperandId setId,
+                                             ValOperandId keyId) {
+  MDefinition* set = getOperand(setId);
+  MDefinition* key = getOperand(keyId);
+
+  auto* ins = MSetObjectAdd::New(alloc(), set, key);
+  addEffectful(ins);
+
+  pushResult(set);
+  return resumeAfter(ins);
 }
 
 bool WarpCacheIRTranspiler::emitSetSizeResult(ObjOperandId setId) {
@@ -5215,10 +5524,81 @@ bool WarpCacheIRTranspiler::emitMapGetResult(ObjOperandId mapId,
   return true;
 }
 
+bool WarpCacheIRTranspiler::emitMapDeleteResult(ObjOperandId mapId,
+                                                ValOperandId keyId) {
+  MDefinition* map = getOperand(mapId);
+  MDefinition* key = getOperand(keyId);
+
+  auto* ins = MMapObjectDelete::New(alloc(), map, key);
+  addEffectful(ins);
+
+  pushResult(ins);
+  return resumeAfter(ins);
+}
+
+bool WarpCacheIRTranspiler::emitMapSetResult(ObjOperandId mapId,
+                                             ValOperandId keyId,
+                                             ValOperandId valId) {
+  MDefinition* map = getOperand(mapId);
+  MDefinition* key = getOperand(keyId);
+  MDefinition* val = getOperand(valId);
+
+  auto* ins = MMapObjectSet::New(alloc(), map, key, val);
+  addEffectful(ins);
+
+  pushResult(map);
+  return resumeAfter(ins);
+}
+
 bool WarpCacheIRTranspiler::emitMapSizeResult(ObjOperandId mapId) {
   MDefinition* map = getOperand(mapId);
 
   auto* ins = MMapObjectSize::New(alloc(), map);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitDateFillLocalTimeSlots(ObjOperandId dateId) {
+  MDefinition* date = getOperand(dateId);
+
+  // MDateFillLocalTimeSlots is effectful because it can store into fixed slots,
+  // but it's safe to repeat this action after a bailout, therefore it's okay to
+  // use |addEffectfulUnsafe|.
+  auto* ins = MDateFillLocalTimeSlots::New(alloc(), date);
+  addEffectfulUnsafe(ins);
+
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitDateHoursFromSecondsIntoYearResult(
+    ValOperandId secondsIntoYearId) {
+  MDefinition* secondsIntoYear = getOperand(secondsIntoYearId);
+
+  auto* ins = MDateHoursFromSecondsIntoYear::New(alloc(), secondsIntoYear);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitDateMinutesFromSecondsIntoYearResult(
+    ValOperandId secondsIntoYearId) {
+  MDefinition* secondsIntoYear = getOperand(secondsIntoYearId);
+
+  auto* ins = MDateMinutesFromSecondsIntoYear::New(alloc(), secondsIntoYear);
+  add(ins);
+
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitDateSecondsFromSecondsIntoYearResult(
+    ValOperandId secondsIntoYearId) {
+  MDefinition* secondsIntoYear = getOperand(secondsIntoYearId);
+
+  auto* ins = MDateSecondsFromSecondsIntoYear::New(alloc(), secondsIntoYear);
   add(ins);
 
   pushResult(ins);
@@ -5556,7 +5936,8 @@ bool WarpCacheIRTranspiler::maybeCreateThis(MDefinition* callee,
 
 bool WarpCacheIRTranspiler::emitCallFunction(
     ObjOperandId calleeId, Int32OperandId argcId,
-    mozilla::Maybe<ObjOperandId> thisObjId, CallFlags flags, CallKind kind) {
+    mozilla::Maybe<ObjOperandId> thisObjId, CallFlags flags, CallKind kind,
+    mozilla::Maybe<uint32_t> siteOffset) {
   MDefinition* callee = getOperand(calleeId);
   if (kind == CallKind::Scripted && callInfo_ && callInfo_->isInlined()) {
     // We are transpiling to generate the correct guards. We also
@@ -5625,8 +6006,14 @@ bool WarpCacheIRTranspiler::emitCallFunction(
 
   switch (callInfo_->argFormat()) {
     case CallInfo::ArgFormat::Standard: {
+      gc::Heap initialHeap = gc::Heap::Default;
+      if (siteOffset) {
+        MOZ_ASSERT(kind == CallKind::DOM);
+        MOZ_ASSERT(readStubWord(*siteOffset) <= (uintptr_t)(gc::Heap::Tenured));
+        initialHeap = static_cast<gc::Heap>(readStubWord(*siteOffset));
+      }
       MCall* call = makeCall(*callInfo_, needsThisCheck, wrappedTarget,
-                             kind == CallKind::DOM);
+                             kind == CallKind::DOM, initialHeap);
       if (!call) {
         return false;
       }
@@ -5707,6 +6094,13 @@ bool WarpCacheIRTranspiler::emitCallDOMFunction(ObjOperandId calleeId,
   return emitCallFunction(calleeId, argcId, mozilla::Some(thisObjId), flags,
                           CallKind::DOM);
 }
+
+bool WarpCacheIRTranspiler::emitCallDOMFunctionWithAllocSite(
+    ObjOperandId calleeId, Int32OperandId argcId, ObjOperandId thisObjId,
+    CallFlags flags, uint32_t argcFixed, uint32_t siteOffset) {
+  return emitCallFunction(calleeId, argcId, mozilla::Some(thisObjId), flags,
+                          CallKind::DOM, mozilla::Some(siteOffset));
+}
 #else
 bool WarpCacheIRTranspiler::emitCallNativeFunction(ObjOperandId calleeId,
                                                    Int32OperandId argcId,
@@ -5722,6 +6116,14 @@ bool WarpCacheIRTranspiler::emitCallDOMFunction(
     CallFlags flags, uint32_t argcFixed, uint32_t targetOffset) {
   return emitCallFunction(calleeId, argcId, mozilla::Some(thisObjId), flags,
                           CallKind::DOM);
+}
+
+bool WarpCacheIRTranspiler::emitCallDOMFunctionWithAllocSite(
+    ObjOperandId calleeId, Int32OperandId argcId, ObjOperandId thisObjId,
+    CallFlags flags, uint32_t argcFixed, uint32_t siteOffset,
+    uint32_t targetOffset) {
+  return emitCallFunction(calleeId, argcId, mozilla::Some(thisObjId), flags,
+                          CallKind::DOM, mozilla::Some(siteOffset));
 }
 #endif
 
@@ -6052,7 +6454,8 @@ bool WarpCacheIRTranspiler::emitCallWasmFunction(
     switch (results[0].kind()) {
       case wasm::ValType::I64:
         // JS expects a BigInt from I64 types.
-        postConversion = MInt64ToBigInt::New(alloc(), call);
+        postConversion =
+            MInt64ToBigInt::New(alloc(), call, /* isSigned = */ true);
 
         // Make non-movable so we can attach a resume point.
         postConversion->setNotMovable();
@@ -6312,6 +6715,17 @@ bool WarpCacheIRTranspiler::emitAssertPropertyLookup(ObjOperandId objId,
   return true;
 }
 
+bool WarpCacheIRTranspiler::emitAssertFloat32Result(ValOperandId valId,
+                                                    bool mustBeFloat32) {
+  MDefinition* val = getOperand(valId);
+
+  auto* assert = MAssertFloat32::New(alloc(), val, mustBeFloat32);
+  addEffectful(assert);
+
+  pushResult(constant(UndefinedValue()));
+  return resumeAfter(assert);
+}
+
 bool WarpCacheIRTranspiler::emitAssertRecoveredOnBailoutResult(
     ValOperandId valId, bool mustBeRecovered) {
   MDefinition* val = getOperand(valId);
@@ -6413,10 +6827,9 @@ bool WarpCacheIRTranspiler::emitCloseIterScriptedResult(ObjOperandId iterId,
   bool constructing = false;
   bool ignoresRval = false;
   bool needsThisCheck = false;
-  bool isDOMCall = false;
   CallInfo callInfo(alloc(), constructing, ignoresRval);
   callInfo.initForCloseIter(iter, callee);
-  MCall* call = makeCall(callInfo, needsThisCheck, wrappedTarget, isDOMCall);
+  MCall* call = makeCall(callInfo, needsThisCheck, wrappedTarget);
   if (!call) {
     return false;
   }

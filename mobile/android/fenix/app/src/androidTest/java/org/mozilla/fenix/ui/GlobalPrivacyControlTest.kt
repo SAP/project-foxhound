@@ -23,8 +23,6 @@ class GlobalPrivacyControlTest : TestSetup() {
 
     @get:Rule
     val activityTestRule = HomeActivityIntentTestRule(
-        isJumpBackInCFREnabled = false,
-        isTCPCFREnabled = false,
         isWallpaperOnboardingEnabled = false,
         skipOnboarding = true,
     )

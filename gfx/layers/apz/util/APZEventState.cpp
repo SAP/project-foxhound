@@ -169,7 +169,7 @@ PreventDefaultResult APZEventState::FireContextmenuEvents(
       ViewportUtils::VisualToLayout(CSSPoint::ToAppUnits(aPoint), aPresShell));
   PreventDefaultResult preventDefaultResult =
       APZCCallbackHelper::DispatchMouseEvent(
-          aPresShell, u"contextmenu"_ns, point, 2, 1,
+          aPresShell, u"contextmenu"_ns, point, MouseButton::ePrimary, 1,
           WidgetModifiersToDOMModifiers(aModifiers),
           dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH,
           0 /* Use the default value here. */);
@@ -497,7 +497,6 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
           nsLayoutUtils::FindScrollContainerFrameFor(aViewId);
       if (sf) {
         sf->SetTransformingByAPZ(true);
-        sf->ScrollbarActivityStarted();
       }
 
       nsIContent* content = nsLayoutUtils::FindContentFor(aViewId);
@@ -514,7 +513,6 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
           nsLayoutUtils::FindScrollContainerFrameFor(aViewId);
       if (sf) {
         sf->SetTransformingByAPZ(false);
-        sf->ScrollbarActivityStopped();
       }
 
       nsIContent* content = nsLayoutUtils::FindContentFor(aViewId);

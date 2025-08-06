@@ -317,13 +317,11 @@ std::unique_ptr<VideoEncoder> VideoQualityTest::CreateVideoEncoder(
     const SdpVideoFormat& format,
     VideoAnalyzer* analyzer) {
   std::unique_ptr<VideoEncoder> encoder;
-  if (format.name == "VP8") {
-    encoder = std::make_unique<SimulcastEncoderAdapter>(
-        env, encoder_factory_.get(), nullptr, format);
-  } else if (format.name == "FakeCodec") {
+  if (format.name == "FakeCodec") {
     encoder = FakeVideoEncoderFactory().Create(env, format);
   } else {
-    encoder = encoder_factory_->Create(env, format);
+    encoder = std::make_unique<SimulcastEncoderAdapter>(
+        env, encoder_factory_.get(), nullptr, format);
   }
 
   std::vector<FileWrapper> encoded_frame_dump_files;
@@ -619,9 +617,7 @@ void VideoQualityTest::FillScalabilitySettings(
     encoder_config.spatial_layers = params->ss[video_idx].spatial_layers;
     encoder_config.simulcast_layers = std::vector<VideoStream>(num_streams);
     encoder_config.video_stream_factory =
-        rtc::make_ref_counted<cricket::EncoderStreamFactory>(
-            params->video[video_idx].codec, cricket::kDefaultVideoMaxQpVpx,
-            params->screenshare[video_idx].enabled, true, encoder_info);
+        rtc::make_ref_counted<cricket::EncoderStreamFactory>(encoder_info);
     params->ss[video_idx].streams =
         encoder_config.video_stream_factory->CreateEncoderStreams(
             env().field_trials(), params->video[video_idx].width,
@@ -801,11 +797,6 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       video_encoder_configs_[video_idx].simulcast_layers =
           params_.ss[video_idx].streams;
     }
-    video_encoder_configs_[video_idx].video_stream_factory =
-        rtc::make_ref_counted<cricket::EncoderStreamFactory>(
-            params_.video[video_idx].codec,
-            params_.ss[video_idx].streams[0].max_qp,
-            params_.screenshare[video_idx].enabled, true, encoder_info);
 
     video_encoder_configs_[video_idx].spatial_layers =
         params_.ss[video_idx].spatial_layers;
@@ -814,7 +805,7 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
 
     decode_all_receive_streams = params_.ss[video_idx].selected_stream ==
                                  params_.ss[video_idx].streams.size();
-    absl::optional<int> decode_sub_stream;
+    std::optional<int> decode_sub_stream;
     if (!decode_all_receive_streams)
       decode_sub_stream = params_.ss[video_idx].selected_stream;
     CreateMatchingVideoReceiveConfigs(
@@ -825,6 +816,7 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       // Fill out codec settings.
       video_encoder_configs_[video_idx].content_type =
           VideoEncoderConfig::ContentType::kScreen;
+      video_encoder_configs_[video_idx].legacy_conference_mode = true;
       degradation_preference_ = DegradationPreference::MAINTAIN_RESOLUTION;
       if (params_.video[video_idx].codec == "VP8") {
         VideoCodecVP8 vp8_settings = VideoEncoder::GetDefaultVp8Settings();
@@ -986,10 +978,10 @@ void VideoQualityTest::SetupThumbnails(Transport* send_transport,
     thumbnail_encoder_configs_.push_back(thumbnail_encoder_config.Copy());
     thumbnail_send_configs_.push_back(thumbnail_send_config.Copy());
 
-    AddMatchingVideoReceiveConfigs(
-        &thumbnail_receive_configs_, thumbnail_send_config, send_transport,
-        &video_decoder_factory_, absl::nullopt, false,
-        test::VideoTestConstants::kNackRtpHistoryMs);
+    AddMatchingVideoReceiveConfigs(&thumbnail_receive_configs_,
+                                   thumbnail_send_config, send_transport,
+                                   &video_decoder_factory_, std::nullopt, false,
+                                   test::VideoTestConstants::kNackRtpHistoryMs);
   }
   for (size_t i = 0; i < thumbnail_send_configs_.size(); ++i) {
     thumbnail_send_streams_.push_back(receiver_call_->CreateVideoSendStream(
@@ -1027,7 +1019,7 @@ void VideoQualityTest::SetupThumbnailCapturers(size_t num_thumbnail_streams) {
             clock_,
             test::CreateSquareFrameGenerator(static_cast<int>(thumbnail.width),
                                              static_cast<int>(thumbnail.height),
-                                             absl::nullopt, absl::nullopt),
+                                             std::nullopt, std::nullopt),
             thumbnail.max_framerate, *task_queue_factory_);
     EXPECT_TRUE(frame_generator_capturer->Init());
     thumbnail_capturers_.push_back(std::move(frame_generator_capturer));
@@ -1094,23 +1086,23 @@ void VideoQualityTest::CreateCapturers() {
     } else if (params_.video[video_idx].clip_path == "Generator") {
       frame_generator = test::CreateSquareFrameGenerator(
           static_cast<int>(params_.video[video_idx].width),
-          static_cast<int>(params_.video[video_idx].height), absl::nullopt,
-          absl::nullopt);
+          static_cast<int>(params_.video[video_idx].height), std::nullopt,
+          std::nullopt);
     } else if (params_.video[video_idx].clip_path == "GeneratorI420A") {
       frame_generator = test::CreateSquareFrameGenerator(
           static_cast<int>(params_.video[video_idx].width),
           static_cast<int>(params_.video[video_idx].height),
-          test::FrameGeneratorInterface::OutputType::kI420A, absl::nullopt);
+          test::FrameGeneratorInterface::OutputType::kI420A, std::nullopt);
     } else if (params_.video[video_idx].clip_path == "GeneratorI010") {
       frame_generator = test::CreateSquareFrameGenerator(
           static_cast<int>(params_.video[video_idx].width),
           static_cast<int>(params_.video[video_idx].height),
-          test::FrameGeneratorInterface::OutputType::kI010, absl::nullopt);
+          test::FrameGeneratorInterface::OutputType::kI010, std::nullopt);
     } else if (params_.video[video_idx].clip_path == "GeneratorNV12") {
       frame_generator = test::CreateSquareFrameGenerator(
           static_cast<int>(params_.video[video_idx].width),
           static_cast<int>(params_.video[video_idx].height),
-          test::FrameGeneratorInterface::OutputType::kNV12, absl::nullopt);
+          test::FrameGeneratorInterface::OutputType::kNV12, std::nullopt);
     } else if (params_.video[video_idx].clip_path.empty()) {
       video_sources_[video_idx] = test::CreateVideoCapturer(
           params_.video[video_idx].width, params_.video[video_idx].height,
@@ -1122,8 +1114,8 @@ void VideoQualityTest::CreateCapturers() {
         // Failed to get actual camera, use chroma generator as backup.
         frame_generator = test::CreateSquareFrameGenerator(
             static_cast<int>(params_.video[video_idx].width),
-            static_cast<int>(params_.video[video_idx].height), absl::nullopt,
-            absl::nullopt);
+            static_cast<int>(params_.video[video_idx].height), std::nullopt,
+            std::nullopt);
       }
     } else {
       frame_generator = test::CreateFromYuvFileFrameGenerator(
@@ -1249,7 +1241,7 @@ void VideoQualityTest::RunWithAnalyzer(const Params& params) {
       InitializeAudioDevice(&send_call_config, &recv_call_config,
                             params_.audio.use_real_adm);
 
-    CreateCalls(send_call_config, recv_call_config);
+    CreateCalls(std::move(send_call_config), std::move(recv_call_config));
     send_transport = CreateSendTransport();
     recv_transport = CreateReceiveTransport();
   });
@@ -1476,7 +1468,7 @@ void VideoQualityTest::RunWithRenderers(const Params& params) {
       InitializeAudioDevice(&send_call_config, &recv_call_config,
                             params_.audio.use_real_adm);
 
-    CreateCalls(send_call_config, recv_call_config);
+    CreateCalls(std::move(send_call_config), std::move(recv_call_config));
 
     // TODO(minyue): consider if this is a good transport even for audio only
     // calls.

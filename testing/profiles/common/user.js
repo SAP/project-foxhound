@@ -67,6 +67,11 @@ user_pref("media.block-autoplay-until-in-foreground", false);
 user_pref("toolkit.telemetry.coverage.endpoint.base", "http://localhost");
 // Don't ask for a request in testing unless explicitly set this as true.
 user_pref("media.geckoview.autoplay.request", false);
+// No need to delay wakelock releasing for testing
+user_pref("media.wakelock.audio.delay-releasing.ms", 0);
+// Don't use SCContentSharingPicker in tests as it will block on user
+// interaction.
+user_pref("media.getdisplaymedia.screencapturekit.picker.enabled", false);
 user_pref("geo.provider.network.compare.url", "");
 user_pref("browser.region.network.url", "");
 // Do not unload tabs on low memory when testing

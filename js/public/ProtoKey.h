@@ -121,6 +121,7 @@
   REAL_IF_INTL(Collator, OCLASP(Collator))                                  \
   REAL_IF_INTL(DateTimeFormat, OCLASP(DateTimeFormat))                      \
   REAL_IF_INTL(DisplayNames, OCLASP(DisplayNames))                          \
+  REAL_IF_INTL(DurationFormat, OCLASP(DurationFormat))                      \
   REAL_IF_INTL(ListFormat, OCLASP(ListFormat))                              \
   REAL_IF_INTL(Locale, OCLASP(Locale))                                      \
   REAL_IF_INTL(NumberFormat, OCLASP(NumberFormat))                          \
@@ -152,8 +153,9 @@
   REAL(AsyncIterator, OCLASP(AsyncIterator))                                \
   IF_EXPLICIT_RESOURCE_MANAGEMENT(                                          \
       REAL(DisposableStack, OCLASP(DisposableStack)))                       \
+  IF_EXPLICIT_RESOURCE_MANAGEMENT(                                          \
+      REAL(AsyncDisposableStack, OCLASP(AsyncDisposableStack)))             \
   REAL_IF_TEMPORAL(Temporal, OCLASP(temporal::Temporal))                    \
-  REAL_IF_TEMPORAL(Calendar, OCLASP(temporal::Calendar))                    \
   REAL_IF_TEMPORAL(Duration, OCLASP(temporal::Duration))                    \
   REAL_IF_TEMPORAL(Instant, OCLASP(temporal::Instant))                      \
   REAL_IF_TEMPORAL(PlainDate, OCLASP(temporal::PlainDate))                  \
@@ -162,7 +164,6 @@
   REAL_IF_TEMPORAL(PlainYearMonth, OCLASP(temporal::PlainYearMonth))        \
   REAL_IF_TEMPORAL(PlainTime, OCLASP(temporal::PlainTime))                  \
   REAL_IF_TEMPORAL(TemporalNow, OCLASP(temporal::TemporalNow))              \
-  REAL_IF_TEMPORAL(TimeZone, OCLASP(temporal::TimeZone))                    \
   REAL_IF_TEMPORAL(ZonedDateTime, OCLASP(temporal::ZonedDateTime))          \
   IF_RECORD_TUPLE(REAL(Record, (&RecordType::class_)))                      \
   IF_RECORD_TUPLE(REAL(Tuple, (&TupleType::class_)))

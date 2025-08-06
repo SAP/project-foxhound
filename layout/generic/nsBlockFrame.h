@@ -17,6 +17,7 @@
 #include "nsLineBox.h"
 #include "nsCSSPseudoElements.h"
 #include "nsFloatManager.h"
+#include "mozilla/IntrinsicISizesCache.h"
 
 enum class LineReflowStatus {
   // The line was completely reflowed and fit in available width, and we should
@@ -229,24 +230,20 @@ class nsBlockFrame : public nsContainerFrame {
   bool IsEmpty() override;
   bool CachedIsEmpty() override;
   bool IsSelfEmpty() override;
+  bool LinesAreEmpty() const;
 
   // Given that we have a ::marker frame, does it actually draw something, i.e.,
   // do we have either a 'list-style-type' or 'list-style-image' that is
   // not 'none', and no 'content'?
-  bool MarkerIsEmpty() const;
+  // This is expected to be used only for outside markers, and when the caller
+  // already has a pointer to the marker frame.
+  bool MarkerIsEmpty(const nsIFrame* aMarker) const;
 
   // Return true if this frame has a ::marker frame.
-  bool HasMarker() const { return HasOutsideMarker() || HasInsideMarker(); }
-
-  // Return true if this frame has an inside ::marker frame.
-  bool HasInsideMarker() const {
-    return HasAnyStateBits(NS_BLOCK_HAS_INSIDE_MARKER);
-  }
+  bool HasMarker() const { return HasAnyStateBits(NS_BLOCK_HAS_MARKER); }
 
   // Return true if this frame has an outside ::marker frame.
-  bool HasOutsideMarker() const {
-    return HasAnyStateBits(NS_BLOCK_HAS_OUTSIDE_MARKER);
-  }
+  bool HasOutsideMarker() const;
 
   /**
    * @return the first-letter frame or nullptr if we don't have one.
@@ -266,6 +263,12 @@ class nsBlockFrame : public nsContainerFrame {
 
   void CheckIntrinsicCacheAgainstShrinkWrapState();
 
+  nsRect ComputePaddingInflatedScrollableOverflow(
+      const nsRect& aInFlowChildBounds) const;
+  Maybe<nsRect> GetLineFrameInFlowBounds(const nsLineBox& aLine,
+                                         const nsIFrame& aLineChildFrame,
+                                         bool aConsiderMargins = true) const;
+
   template <typename LineIteratorType>
   Maybe<nscoord> GetBaselineBOffset(LineIteratorType aStart,
                                     LineIteratorType aEnd,
@@ -273,12 +276,13 @@ class nsBlockFrame : public nsContainerFrame {
                                     BaselineSharingGroup aBaselineGroup,
                                     BaselineExportContext aExportContext) const;
 
+ protected:
   // MinISize() and PrefISize() are helpers to implement IntrinsicISize().
-  nscoord MinISize(gfxContext* aContext);
-  nscoord PrefISize(gfxContext* aContext);
+  nscoord MinISize(const mozilla::IntrinsicSizeInput& aInput);
+  nscoord PrefISize(const mozilla::IntrinsicSizeInput& aInput);
 
  public:
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) override;
 
   nsRect ComputeTightBounds(DrawTarget* aDrawTarget) const override;
@@ -438,6 +442,13 @@ class nsBlockFrame : public nsContainerFrame {
                                 : nullptr;
   }
 
+  void SetLineCursorForDisplay(nsLineBox* aLine) {
+    MOZ_ASSERT(aLine, "must have a line");
+    MOZ_ASSERT(!mLines.empty(), "aLine isn't my line");
+    SetProperty(LineCursorPropertyDisplay(), aLine);
+    AddStateBits(NS_BLOCK_HAS_LINE_CURSOR);
+  }
+
   nsLineBox* NewLineBox(nsIFrame* aFrame, bool aIsBlock) {
     return NS_NewLineBox(PresShell(), aFrame, aIsBlock);
   }
@@ -494,16 +505,7 @@ class nsBlockFrame : public nsContainerFrame {
    * children, and includes them into aOverflowAreas.
    */
   void ComputeOverflowAreas(mozilla::OverflowAreas& aOverflowAreas,
-                            nscoord aBEndEdgeOfChildren,
                             const nsStyleDisplay* aDisplay) const;
-
-  /**
-   * Helper method for ComputeOverflowAreas(). Incorporates aBEndEdgeOfChildren
-   * into the aOverflowAreas.
-   */
-  void ConsiderBlockEndEdgeOfChildren(mozilla::OverflowAreas& aOverflowAreas,
-                                      nscoord aBEndEdgeOfChildren,
-                                      const nsStyleDisplay* aDisplay) const;
 
   /**
    * Add the frames in aFrameList to this block after aPrevSibling.
@@ -630,7 +632,7 @@ class nsBlockFrame : public nsContainerFrame {
 
   bool ComputeCustomOverflow(mozilla::OverflowAreas&) override;
 
-  void UnionChildOverflow(mozilla::OverflowAreas&) override;
+  void UnionChildOverflow(mozilla::OverflowAreas&, bool aAsIfScrolled) override;
 
   /**
    * Load all of aFrame's floats into the float manager iff aFrame is not a
@@ -665,15 +667,40 @@ class nsBlockFrame : public nsContainerFrame {
    * whether this block is in a block formatting-context whose root block has
    * -webkit-line-clamp: <n>.
    */
-  bool IsInLineClampContext() const;
+  bool IsInLineClampContext() const { return !!GetLineClampRoot(); }
 
   /**
    * @return false iff this block does not have a float on any child list.
    * This function is O(1).
    */
   bool MaybeHasFloats() const;
+  /**
+   * This indicates that exactly one line in this block has the
+   * LineClampEllipsis flag set, and that such a line must be found
+   * and have that flag cleared when reflowing this element's nearest legacy box
+   * container.
+   */
+  bool HasLineClampEllipsis() const {
+    return HasAnyStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS);
+  }
+  /**
+   * This indicates that we have a descendant in our block formatting context
+   * that has such a line.
+   */
+  bool HasLineClampEllipsisDescendant() const {
+    return HasAnyStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS_DESCENDANT);
+  }
+  void SetHasLineClampEllipsis(bool aValue) {
+    AddOrRemoveStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS, aValue);
+  }
+  void SetHasLineClampEllipsisDescendant(bool aValue) {
+    AddOrRemoveStateBits(NS_BLOCK_HAS_LINE_CLAMP_ELLIPSIS_DESCENDANT, aValue);
+  }
 
  protected:
+  nsBlockFrame* GetLineClampRoot() const;
+  nscoord ApplyLineClamp(nscoord aContentBlockEndEdge);
+
   /** grab overflow lines from this block's prevInFlow, and make them
    * part of this block's mLines list.
    * @return true if any lines were drained.
@@ -1011,8 +1038,7 @@ class nsBlockFrame : public nsContainerFrame {
   int32_t GetDepth() const;
 #endif
 
-  nscoord mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
-  nscoord mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
+  mozilla::IntrinsicISizesCache mCachedIntrinsics;
 
   nsLineList mLines;
 

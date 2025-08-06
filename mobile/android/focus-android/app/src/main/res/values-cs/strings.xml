@@ -84,7 +84,6 @@
     <string name="share_dialog_title">Sdílet přes</string>
 
     <string name="notification_erase_title_android_14">Vymazat historii prohlížení?</string>
-    <string name="notification_erase_text_android_14" moz:RemovedIn="124" tools:ignore="UnusedResources">Klepnutím na toto oznámení nebo jeho smazáním bezpečně vymažete svou historii prohlížení.</string>
 
     <!-- Text shown in the notification description that pops up to remind the user that a browsing session is active
     for Android 14+. -->
@@ -123,23 +122,23 @@
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
          Focus is hard coded since we can't use variables in this context.
          Do not translate or transliterate Focus.-->
-    <string name="text_selection_search_action_focus">Vyhledat ve Focusu</string>
+    <string name="text_selection_search_action_focus" tools:ignore="BrandUsage">Vyhledat ve Focusu</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
              Klar is hard coded since we can't use variables in this context.
              Do not translate or transliterate Klar.-->
-    <string name="text_selection_search_action_klar">Vyhledat v Klaru</string>
+    <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Vyhledat v Klaru</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
             Focus Beta is hard coded since we can't use variables in this context.
             Do not translate or transliterate Focus Beta.-->
-    <string name="text_selection_search_action_focus_beta">Vyhledat v betaverzi Focusu</string>
+    <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Vyhledat v betaverzi Focusu</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
           Focus Nightly is hard coded since we can't use variables in this context.
           Do not translate or transliterate Focus Nightly.-->
-    <string name="text_selection_search_action_focus_nightly">Vyhledat ve Focusu Nightly</string>
+    <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Vyhledat ve Focusu Nightly</string>
 
     <!-- Content of about focus. Argument 1 is the app name (Firefox Focus/Firefox Klar/etc).
          Argument 2 is the url for the learn-more link. -->
-    <string name="about_content"><![CDATA[<p>%1$s vám dává kontrolu.</p>
+    <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vám dává kontrolu.</p>
 <p>Používejte ho jako soukromý prohlížeč:
   <ul>
     <li>Vyhledávejte a prohlížejte přímo v aplikaci</li>
@@ -516,7 +515,7 @@
 
 
   <!-- Content description (not visible, for screen readers etc.): This is the description for the close button from the new onboarding flow screen one and two -->
-    <string name="onboarding_close_button_content_description">Zavřít</string>
+    <string name="onboarding_close_button_content_description" moz:removedIn="133" tools:ignore="UnusedResources">Zavřít</string>
 
     <!-- New Onboarding flow first screen title -->
     <!-- %1$s will be replaced by the app name and build variant(e.g. Firefox Focus, Firefox Klar Nightly) -->
@@ -606,9 +605,12 @@
     <!-- Label for a button in the "tabs tray" to erase the browsing history (closes all tabs and removes associated data). -->
     <string name="tabs_tray_action_erase">Vymazat historii prohlížení</string>
 
+    <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
+    <string name="tabs_tray_action_erase_other">Zavřít ostatní panely</string>
+
     <!-- If the user decides to open the current page in another browser and if Firefox is not installed then we show this
       item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play). -->
-    <string name="download_firefox">Stáhnout Firefox</string>
+    <string name="download_firefox" tools:ignore="BrandUsage">Stáhnout Firefox</string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)-->
@@ -620,23 +622,23 @@
   <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/) -->
-    <string name="your_rights_content2"><![CDATA[%1$s vám je zpřístupněn za podmínek <a href="%2$s">Mozilla Public License</a> a jiných open source licencí.]]></string>
+    <string name="your_rights_content2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s vám je zpřístupněn za podmínek <a href="%2$s">Mozilla Public License</a> a jiných open source licencí.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/) -->
-    <string name="your_rights_content3"><![CDATA[Nejsou vám však podstoupena žádná práva ani licence k ochranným známkám Mozilla Foundation či dalších stran, a to zejména k logům a názvům Mozilla, Firefox nebo %1$s. Podrobnější informace o ochranných známkách jsou dostupné <a href="%2$s">zde</a>.]]></string>
+    <string name="your_rights_content3" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[Nejsou vám však podstoupena žádná práva ani licence k ochranným známkám Mozilla Foundation či dalších stran, a to zejména k logům a názvům Mozilla, Firefox nebo %1$s. Podrobnější informace o ochranných známkách jsou dostupné <a href="%2$s">zde</a>.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.-->
-    <string name="your_rights_content4"><![CDATA[Další zdrojové kódy pro %1$s jsou dostupné pod dalšími různými <a href="%2$s">licencemi</a> svobodného softwaru.]]></string>
+    <string name="your_rights_content4" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[Další zdrojové kódy pro %1$s jsou dostupné pod dalšími různými <a href="%2$s">licencemi</a> svobodného softwaru.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the GPL
     %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists) -->
-    <string name="your_rights_content5"><![CDATA[%1$s také používá seznamy společnosti Disconnect, Inc. poskytnuté jako samostatná a nezávislá díla pod licencí <a href="%2$s">GNU General Public License v3</a> a dostupné <a href="%3$s">zde</a>.]]></string>
+    <string name="your_rights_content5" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s také používá seznamy společnosti Disconnect, Inc. poskytnuté jako samostatná a nezávislá díla pod licencí <a href="%2$s">GNU General Public License v3</a> a dostupné <a href="%3$s">zde</a>.]]></string>
 
     <!-- Text shown in prompts for GeckoView -->
     <string name="gv_prompt_username_hint">Uživatelské jméno</string>
@@ -827,7 +829,7 @@
     <string name="preference_studies">Studie</string>
 
     <!-- Preference for studies summary-->
-    <string name="preference_studies_summary">Firefox může čas od času instalovat a spouštět studie.</string>
+    <string name="preference_studies_summary" tools:ignore="BrandUsage">Firefox může čas od času instalovat a spouštět studie.</string>
 
     <!-- Learn more link for studies, links to an article for more information about studies. -->
     <string name="studies_learn_more">Zjistit více</string>
@@ -921,9 +923,6 @@
 
     <!-- Label for the button in the snackbar that switches to the newly opened tab -->
     <string name="open_new_tab_snackbar">Přepnout</string>
-
-    <!-- Text displayed in a notification when the user enters full screen mode -->
-    <string name="full_screen_notification" moz:removedIn="130" tools:ignore="UnusedResources">Spuštěn režim celé obrazovky</string>
 
     <!-- Preference for switching to a new tab immediately after opening -->
     <string name="preference_open_new_tab">Přepnout ihned na odkaz v novém panelu</string>
@@ -1032,7 +1031,7 @@
 
     <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will get replaced with the name of the app (e.g. "Firefox Focus").
         Contains a button that will redirect the user to Privacy & Security Screen-->
-    <string name="errorpage_httpsonly_message2"><![CDATA[%1$s se pro větší bezpečnost pokouší používat zabezpečené připojení skrze protokol HTTPS vždy, kdy je to možné.
+    <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s se pro větší bezpečnost pokouší používat zabezpečené připojení skrze protokol HTTPS vždy, kdy je to možné.
 <a href="%2$s">Dozvědět se více</a><br/><br/>
 Toto nastavení můžete změnit v části Nastavení -> Soukromí a zabezpečení > Zabezpečení.]]></string>
 
@@ -1113,7 +1112,14 @@ Toto nastavení můžete změnit v části Nastavení -> Soukromí a zabezpečen
 
     <!-- Messages explaining how to exit fullscreen mode -->
     <!-- Message shown to explain how to exit fullscreen mode when gesture navigation is enabled -->
-    <string name="exit_fullscreen_with_gesture">Pro ukončení režimu celé obrazovky přetáhněte prst shora a použijte gesto Zpět</string>
+    <string name="exit_fullscreen_with_gesture" moz:removedIn="132" tools:ignore="UnusedResources">Pro ukončení režimu celé obrazovky přetáhněte prst shora a použijte gesto Zpět</string>
     <!-- Message shown to explain how to exit fullscreen mode when using back button navigation -->
-    <string name="exit_fullscreen_with_back_button">Pro ukončení režimu celé obrazovky přetáhněte prst seshora a stiskněte zpět</string>
+    <string name="exit_fullscreen_with_back_button" moz:removedIn="132" tools:ignore="UnusedResources">Pro ukončení režimu celé obrazovky přetáhněte prst seshora a stiskněte zpět</string>
+
+    <!-- Message shown to explain how to exit fullscreen mode when gesture navigation is enabled. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_gesture_short">Pro ukončení potáhněte shora a použijte gesto zpět</string>
+    <!-- Message shown to explain how to exit fullscreen mode when using back button navigation. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_back_button_short">Pro ukončení potáhněte shora a stiskněte zpět</string>
 </resources>

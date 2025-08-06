@@ -42,24 +42,22 @@ head = "head_addressComponent.js"
 ["test_addressDataLoader.js"]
 
 ["test_addressRecords.js"]
-skip-if = ["apple_silicon"] # bug 1729554
+skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # bug 1729554
 
 ["test_autofillFormFields.js"]
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]
 
 ["test_autofill_ios_library.js"]
-
-["test_collectFormFields.js"]
 
 ["test_createRecords.js"]
 
 ["test_creditCardRecords.js"]
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]
 
 ["test_extractLabelStrings.js"]
@@ -74,15 +72,15 @@ skip-if = [
 
 ["test_getCreditCardLogo.js"]
 
-["test_getFormInputDetails.js"]
-
 ["test_getInfo.js"]
 
 ["test_getRecords.js"]
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]
+
+["test_inspectFields.js"]
 
 ["test_isAddressAutofillAvailable.js"]
 
@@ -110,7 +108,7 @@ skip-if = ["tsan"] # Times out, bug 1612707
 ["test_reconcile.js"]
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]
 
 ["test_savedFieldNames.js"]
@@ -118,7 +116,7 @@ skip-if = [
 ["test_storage_remove.js"]
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]
 
 ["test_storage_syncfields.js"]
@@ -126,7 +124,7 @@ skip-if = [
 ["test_storage_tombstones.js"]
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]
 
 ["test_sync.js"]
@@ -140,7 +138,7 @@ head = "head.js ../../../../../services/sync/tests/unit/head_appinfo.js ../../..
 head = "head.js ../../../../../services/sync/tests/unit/head_appinfo.js ../../../../../services/common/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_http_server.js"
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]
 
 ["test_toOneLineAddress.js"]
@@ -148,5 +146,5 @@ skip-if = [
 ["test_transformFields.js"]
 skip-if = [
   "tsan", # Times out, bug 1612707
-  "apple_silicon", # bug 1729554
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729554
 ]

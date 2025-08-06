@@ -5,6 +5,7 @@
 package mozilla.components.tooling.lint
 
 import com.android.tools.lint.client.api.IssueRegistry
+import com.android.tools.lint.client.api.Vendor
 import com.android.tools.lint.detector.api.Issue
 
 /**
@@ -21,5 +22,14 @@ class LintIssueRegistry : IssueRegistry() {
         FactCollectDetector.ISSUE_FACT_COLLECT_CALLED,
         NotificationManagerChecks.ISSUE_NOTIFICATION_USAGE,
         ConceptFetchDetector.ISSUE_FETCH_RESPONSE_CLOSE,
+        StringLintXmlDetector.ISSUE_BLANK_STRING,
+        StringLintXmlDetector.ISSUE_INCORRECT_ELLIPSIS,
+        StringLintXmlDetector.ISSUE_STRAIGHT_QUOTE_USAGE,
+        StringLintXmlDetector.ISSUE_STRAIGHT_DOUBLE_QUOTE_USAGE,
+        StringLintXmlDetector.ISSUE_BRAND_USAGE,
+    )
+    override val vendor: Vendor = Vendor(
+        vendorName = "Mozilla",
+        identifier = "mozilla-android-components",
     )
 }

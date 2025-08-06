@@ -8,12 +8,11 @@
  *
  */
 
+// ServiceWorkersEnabled internalizes the SecureContext check because we have a
+// devtools affordance that allows this to pass on http as well as a test pref.
 [Func="ServiceWorkersEnabled",
- Exposed=Window]
+ Exposed=(Window,Worker)]
 interface ServiceWorkerContainer : EventTarget {
-  // FIXME(nsm):
-  // https://github.com/slightlyoff/ServiceWorker/issues/198
-  // and discussion at https://etherpad.mozilla.org/serviceworker07apr
   readonly attribute ServiceWorker? controller;
 
   [Throws]
@@ -34,12 +33,6 @@ interface ServiceWorkerContainer : EventTarget {
   attribute EventHandler oncontrollerchange;
   attribute EventHandler onmessage;
   attribute EventHandler onmessageerror;
-};
-
-// Testing only.
-partial interface ServiceWorkerContainer {
-  [Throws,Pref="dom.serviceWorkers.testing.enabled"]
-  DOMString getScopeForUrl(DOMString url);
 };
 
 dictionary RegistrationOptions {

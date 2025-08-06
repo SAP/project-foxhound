@@ -65,7 +65,7 @@ static nsStaticAtom* const kRelationAttrs[] = {
     nsGkAtoms::aria_errormessage, nsGkAtoms::_for,
     nsGkAtoms::control,           nsGkAtoms::popovertarget};
 
-static const uint32_t kRelationAttrsLen = ArrayLength(kRelationAttrs);
+static const uint32_t kRelationAttrsLen = std::size(kRelationAttrs);
 
 static nsStaticAtom* const kSingleElementRelationIdlAttrs[] = {
     nsGkAtoms::popovertarget};
@@ -354,8 +354,26 @@ void DocAccessible::DocType(nsAString& aType) const {
   if (docType) docType->GetPublicId(aType);
 }
 
-void DocAccessible::QueueCacheUpdate(LocalAccessible* aAcc,
-                                     uint64_t aNewDomain) {
+// Certain cache domain updates might require updating other cache domains.
+// This function takes the given cache domains and returns those cache domains
+// plus any other required associated cache domains. Made for use with
+// QueueCacheUpdate.
+static uint64_t GetCacheDomainsQueueUpdateSuperset(uint64_t aCacheDomains) {
+  // Text domain updates imply updates to the TextOffsetAttributes and
+  // TextBounds domains.
+  if (aCacheDomains & CacheDomain::Text) {
+    aCacheDomains |= CacheDomain::TextOffsetAttributes;
+    aCacheDomains |= CacheDomain::TextBounds;
+  }
+  // Bounds domain updates imply updates to the TextBounds domain.
+  if (aCacheDomains & CacheDomain::Bounds) {
+    aCacheDomains |= CacheDomain::TextBounds;
+  }
+  return aCacheDomains;
+}
+
+void DocAccessible::QueueCacheUpdate(LocalAccessible* aAcc, uint64_t aNewDomain,
+                                     bool aBypassActiveDomains) {
   if (!mIPCDoc) {
     return;
   }
@@ -378,9 +396,32 @@ void DocAccessible::QueueCacheUpdate(LocalAccessible* aAcc,
         // LocalAccessible twice.
         return entry.Insert(index);
       });
+
+  // We may need to bypass the active domain restriction when populating domains
+  // for the first time. In that case, queue cache updates regardless of domain.
+  if (aBypassActiveDomains) {
+    auto& [arrayAcc, domain] = mQueuedCacheUpdatesArray[arrayIndex];
+    MOZ_ASSERT(arrayAcc == aAcc);
+    domain |= aNewDomain;
+    Controller()->ScheduleProcessing();
+    return;
+  }
+
+  // Potentially queue updates for required related domains.
+  const uint64_t newDomains = GetCacheDomainsQueueUpdateSuperset(aNewDomain);
+
+  // Only queue cache updates for domains that are active.
+  const uint64_t domainsToUpdate =
+      nsAccessibilityService::GetActiveCacheDomains() & newDomains;
+
+  // Avoid queueing cache updates if we have no domains to update.
+  if (domainsToUpdate == CacheDomain::None) {
+    return;
+  }
+
   auto& [arrayAcc, domain] = mQueuedCacheUpdatesArray[arrayIndex];
   MOZ_ASSERT(arrayAcc == aAcc);
-  domain |= aNewDomain;
+  domain |= domainsToUpdate;
   Controller()->ScheduleProcessing();
 }
 
@@ -819,6 +860,13 @@ void DocAccessible::AttributeChanged(dom::Element* aElement,
     } else {
       ContentInserted(aElement, aElement->GetNextSibling());
     }
+    return;
+  }
+
+  if (aAttribute == nsGkAtoms::slot &&
+      !aElement->GetFlattenedTreeParentNode() && aElement != mContent) {
+    // Element is inside a shadow host but is no longer slotted.
+    mDoc->ContentRemoved(aElement);
     return;
   }
 
@@ -1375,20 +1423,19 @@ bool DocAccessible::PruneOrInsertSubtree(nsIContent* aRoot) {
       return true;
     }
 
-    // This check *must* come before the broken image check below.
     if (frame && frame->IsReplaced() && frame->AccessibleType() == eImageType &&
         !aRoot->IsHTMLElement(nsGkAtoms::img)) {
       // This is an image specified using the CSS content property which
       // replaces the content of the node. Its frame might be reconstructed,
       // which means its alt text might have changed. We expose the alt text
       // as the name, so fire a name change event.
+      // We will schedule this for reinsertion below, and prune any children if
+      // they exist.
       FireDelayedEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, acc);
-      return false;
-    }
-
-    // It is a broken image that is being reframed because it either got
-    // or lost an `alt` tag that would rerender this node as text.
-    if (frame && (acc->IsImage() != (frame->AccessibleType() == eImageType))) {
+    } else if (frame &&
+               (acc->IsImage() != (frame->AccessibleType() == eImageType))) {
+      // It is a broken image that is being reframed because it either got
+      // or lost an `alt` tag that would rerender this node as text.
       ContentRemoved(aRoot);
       return true;
     }
@@ -1526,7 +1573,7 @@ void DocAccessible::ProcessInvalidationList() {
   mInvalidationList.Clear();
 }
 
-void DocAccessible::ProcessQueuedCacheUpdates() {
+void DocAccessible::ProcessQueuedCacheUpdates(uint64_t aInitialDomains) {
   AUTO_PROFILER_MARKER_TEXT("DocAccessible::ProcessQueuedCacheUpdates", A11Y,
                             {}, ""_ns);
   PerfStats::AutoMetricRecording<
@@ -1537,8 +1584,8 @@ void DocAccessible::ProcessQueuedCacheUpdates() {
   nsTArray<CacheData> data;
   for (auto [acc, domain] : mQueuedCacheUpdatesArray) {
     if (acc && acc->IsInDocument() && !acc->IsDefunct()) {
-      RefPtr<AccAttributes> fields =
-          acc->BundleFieldsForCache(domain, CacheUpdateType::Update);
+      RefPtr<AccAttributes> fields = acc->BundleFieldsForCache(
+          domain, CacheUpdateType::Update, aInitialDomains);
 
       if (fields->Count()) {
         data.AppendElement(CacheData(
@@ -1698,7 +1745,8 @@ void DocAccessible::DoInitialUpdate() {
       // Send an initial update for this document and its attributes. Each acc
       // contained in this doc will have its initial update sent in
       // `InsertIntoIpcTree`.
-      SendCache(CacheDomain::All, CacheUpdateType::Initial);
+      SendCache(nsAccessibilityService::GetActiveCacheDomains(),
+                CacheUpdateType::Initial);
 
       for (auto idx = 0U; idx < mChildren.Length(); idx++) {
         ipcDoc->InsertIntoIpcTree(mChildren.ElementAt(idx), true);

@@ -150,6 +150,10 @@ ABSL_FLAG(float,
           agc2_fixed_gain_db,
           kParameterNotSpecifiedValue,
           "AGC2 fixed gain (dB) to apply");
+ABSL_FLAG(int,
+          agc2_enable_input_volume_controller,
+          kParameterNotSpecifiedValue,
+          "Activate (1) or deactivate (0) the AGC2 input volume adjustments");
 ABSL_FLAG(float,
           pre_amplifier_gain_factor,
           kParameterNotSpecifiedValue,
@@ -335,19 +339,19 @@ const char kUsageDescription[] =
     "protobuf debug dump recordings.\n";
 
 void SetSettingIfSpecified(absl::string_view value,
-                           absl::optional<std::string>* parameter) {
+                           std::optional<std::string>* parameter) {
   if (value.compare("") != 0) {
     *parameter = std::string(value);
   }
 }
 
-void SetSettingIfSpecified(int value, absl::optional<int>* parameter) {
+void SetSettingIfSpecified(int value, std::optional<int>* parameter) {
   if (value != kParameterNotSpecifiedValue) {
     *parameter = value;
   }
 }
 
-void SetSettingIfSpecified(float value, absl::optional<float>* parameter) {
+void SetSettingIfSpecified(float value, std::optional<float>* parameter) {
   constexpr float kFloatParameterNotSpecifiedValue =
       kParameterNotSpecifiedValue;
   if (value != kFloatParameterNotSpecifiedValue) {
@@ -355,7 +359,7 @@ void SetSettingIfSpecified(float value, absl::optional<float>* parameter) {
   }
 }
 
-void SetSettingIfFlagSet(int32_t flag, absl::optional<bool>* parameter) {
+void SetSettingIfFlagSet(int32_t flag, std::optional<bool>* parameter) {
   if (flag == 0) {
     *parameter = false;
   } else if (flag == 1) {
@@ -429,9 +433,10 @@ SimulationSettings CreateSettings() {
                         &settings.agc_compression_gain);
   SetSettingIfFlagSet(absl::GetFlag(FLAGS_agc2_enable_adaptive_gain),
                       &settings.agc2_use_adaptive_gain);
-
   SetSettingIfSpecified(absl::GetFlag(FLAGS_agc2_fixed_gain_db),
                         &settings.agc2_fixed_gain_db);
+  SetSettingIfFlagSet(absl::GetFlag(FLAGS_agc2_enable_input_volume_controller),
+                      &settings.agc2_use_input_volume_controller);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_pre_amplifier_gain_factor),
                         &settings.pre_amplifier_gain_factor);
   SetSettingIfSpecified(absl::GetFlag(FLAGS_pre_gain_factor),
@@ -502,14 +507,14 @@ SimulationSettings CreateSettings() {
                         &settings.dump_end_frame);
 
   constexpr int kFramesPerSecond = 100;
-  absl::optional<float> start_seconds;
+  std::optional<float> start_seconds;
   SetSettingIfSpecified(absl::GetFlag(FLAGS_dump_start_seconds),
                         &start_seconds);
   if (start_seconds) {
     settings.dump_start_frame = *start_seconds * kFramesPerSecond;
   }
 
-  absl::optional<float> end_seconds;
+  std::optional<float> end_seconds;
   SetSettingIfSpecified(absl::GetFlag(FLAGS_dump_end_seconds), &end_seconds);
   if (end_seconds) {
     settings.dump_end_frame = *end_seconds * kFramesPerSecond;

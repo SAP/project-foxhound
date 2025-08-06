@@ -66,6 +66,11 @@ already_AddRefed<SVGAnimatedRect> SVGPatternElement::ViewBox() {
   return mViewBox.ToSVGAnimatedRect(this);
 }
 
+bool SVGPatternElement::IsAttributeMapped(const nsAtom* aAttribute) const {
+  return aAttribute == nsGkAtoms::patternTransform ||
+         SVGPatternElementBase::IsAttributeMapped(aAttribute);
+}
+
 already_AddRefed<DOMSVGAnimatedPreserveAspectRatio>
 SVGPatternElement::PreserveAspectRatio() {
   return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
@@ -133,11 +138,11 @@ bool SVGPatternElement::HasValidDimensions() const {
 
 SVGElement::LengthAttributesInfo SVGPatternElement::GetLengthInfo() {
   return LengthAttributesInfo(mLengthAttributes, sLengthInfo,
-                              ArrayLength(sLengthInfo));
+                              std::size(sLengthInfo));
 }
 
 SVGElement::EnumAttributesInfo SVGPatternElement::GetEnumInfo() {
-  return EnumAttributesInfo(mEnumAttributes, sEnumInfo, ArrayLength(sEnumInfo));
+  return EnumAttributesInfo(mEnumAttributes, sEnumInfo, std::size(sEnumInfo));
 }
 
 SVGAnimatedViewBox* SVGPatternElement::GetAnimatedViewBox() {
@@ -151,7 +156,7 @@ SVGPatternElement::GetAnimatedPreserveAspectRatio() {
 
 SVGElement::StringAttributesInfo SVGPatternElement::GetStringInfo() {
   return StringAttributesInfo(mStringAttributes, sStringInfo,
-                              ArrayLength(sStringInfo));
+                              std::size(sStringInfo));
 }
 
 }  // namespace mozilla::dom

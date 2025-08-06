@@ -355,7 +355,8 @@ class TextInputSelectionController final : public nsSupportsWeakReference,
                                     Selection** aSelection) override;
   Selection* GetSelection(RawSelectionType aRawSelectionType) override;
   NS_IMETHOD ScrollSelectionIntoView(RawSelectionType aRawSelectionType,
-                                     int16_t aRegion, int16_t aFlags) override;
+                                     SelectionRegion aRegion,
+                                     ControllerScrollFlags aFlags) override;
   NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
   nsresult RepaintSelection(nsPresContext* aPresContext,
                             SelectionType aSelectionType);
@@ -381,6 +382,7 @@ class TextInputSelectionController final : public nsSupportsWeakReference,
   NS_IMETHOD ScrollCharacter(bool aRight) override;
   void SelectionWillTakeFocus() override;
   void SelectionWillLoseFocus() override;
+  using nsISelectionController::ScrollSelectionIntoView;
 
  private:
   RefPtr<nsFrameSelection> mFrameSelection;
@@ -482,7 +484,8 @@ Selection* TextInputSelectionController::GetSelection(
 
 NS_IMETHODIMP
 TextInputSelectionController::ScrollSelectionIntoView(
-    RawSelectionType aRawSelectionType, int16_t aRegion, int16_t aFlags) {
+    RawSelectionType aRawSelectionType, SelectionRegion aRegion,
+    ControllerScrollFlags aFlags) {
   if (!mFrameSelection) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -667,11 +670,9 @@ TextInputSelectionController::PageMove(bool aForward, bool aExtend) {
   // Similarly, if there is no scrollable frame, we should move the editor
   // frame into the view for making it clearer which element handles
   // PageDown/PageUp.
-  return ScrollSelectionIntoView(
-      nsISelectionController::SELECTION_NORMAL,
-      nsISelectionController::SELECTION_FOCUS_REGION,
-      nsISelectionController::SCROLL_SYNCHRONOUS |
-          nsISelectionController::SCROLL_FOR_CARET_MOVE);
+  return ScrollSelectionIntoView(SelectionType::eNormal,
+                                 nsISelectionController::SELECTION_FOCUS_REGION,
+                                 SelectionScrollMode::SyncFlush);
 }
 
 NS_IMETHODIMP
@@ -1793,7 +1794,7 @@ nsresult TextControlState::PrepareEditor(const nsAString* aValue) {
 
     // What follows is a bit of a hack.  The editor uses the public DOM APIs
     // for its content manipulations, and it causes it to fail some security
-    // checks deep inside when initializing. So we explictly make it clear that
+    // checks deep inside when initializing. So we explicitly make it clear that
     // we're native code.
     // Note that any script that's directly trying to access our value
     // has to be going through some scriptable object to do that and that

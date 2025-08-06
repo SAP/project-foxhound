@@ -7,7 +7,7 @@
 use crate::parser::{Parse, ParserContext};
 use crate::properties::{NonCustomPropertyId, PropertyId, ShorthandId};
 use crate::values::generics::animation as generics;
-use crate::values::specified::{LengthPercentage, NonNegativeNumber};
+use crate::values::specified::{LengthPercentage, NonNegativeNumber, Time};
 use crate::values::{CustomIdent, DashedIdent, KeyframesName};
 use crate::Atom;
 use cssparser::Parser;
@@ -147,6 +147,24 @@ impl TransitionBehavior {
     #[inline]
     pub fn is_normal(&self) -> bool {
         matches!(*self, Self::Normal)
+    }
+}
+
+/// A specified value for the `animation-duration` property.
+pub type AnimationDuration = generics::GenericAnimationDuration<Time>;
+
+impl Parse for AnimationDuration {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        if static_prefs::pref!("layout.css.scroll-driven-animations.enabled")
+            && input.try_parse(|i| i.expect_ident_matching("auto")).is_ok()
+        {
+            return Ok(Self::auto());
+        }
+
+        Time::parse_non_negative(context, input).map(AnimationDuration::Time)
     }
 }
 
@@ -568,7 +586,7 @@ impl Parse for TimelineName {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
         if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
-            return Ok(Self::none())
+            return Ok(Self::none());
         }
 
         DashedIdent::parse(context, input).map(TimelineName)
@@ -581,7 +599,7 @@ impl ToCss for TimelineName {
         W: Write,
     {
         if self.is_none() {
-            return dest.write_str("none")
+            return dest.write_str("none");
         }
 
         self.0.to_css(dest)
@@ -644,5 +662,69 @@ impl Parse for ViewTimelineInset {
         };
 
         Ok(Self { start, end })
+    }
+}
+
+/// The view-transition-name: `none | <custom-ident>`.
+///
+/// https://drafts.csswg.org/css-view-transitions-1/#view-transition-name-prop
+///
+/// We use a single atom for this. Empty atom represents `none`.
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    MallocSizeOf,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(C)]
+pub struct ViewTransitionName(Atom);
+
+impl ViewTransitionName {
+    /// Returns the `none` value.
+    pub fn none() -> Self {
+        Self(atom!(""))
+    }
+
+    /// Returns whether this is the special `none` value.
+    pub fn is_none(&self) -> bool {
+        self.0 == atom!("")
+    }
+}
+
+impl Parse for ViewTransitionName {
+    fn parse<'i, 't>(
+        _: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let location = input.current_source_location();
+        let ident = input.expect_ident()?;
+        if ident.eq_ignore_ascii_case("none") {
+            return Ok(Self::none());
+        }
+
+        // We check none already, so don't need to exclude none here.
+        // Note: The values none and auto are excluded from <custom-ident> here.
+        Ok(Self(CustomIdent::from_ident(location, ident, &["auto"])?.0))
+    }
+}
+
+impl ToCss for ViewTransitionName {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        use crate::values::serialize_atom_identifier;
+
+        if self.is_none() {
+            return dest.write_str("none");
+        }
+
+        serialize_atom_identifier(&self.0, dest)
     }
 }

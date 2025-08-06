@@ -26,7 +26,6 @@ FrameTitle.propTypes = {
   frame: PropTypes.object.isRequired,
   options: PropTypes.object.isRequired,
   l10n: PropTypes.object.isRequired,
-  showFrameContextMenu: PropTypes.func.isRequired,
 };
 
 function getFrameLocation(frame, shouldDisplayOriginalLocation) {
@@ -102,6 +101,7 @@ export default class FrameComponent extends Component {
       panel: PropTypes.oneOf(["debugger", "webconsole"]).isRequired,
       selectFrame: PropTypes.func.isRequired,
       selectedFrame: PropTypes.object,
+      isTracerFrameSelected: PropTypes.bool.isRequired,
       shouldMapDisplayName: PropTypes.bool.isRequired,
       shouldDisplayOriginalLocation: PropTypes.bool.isRequired,
       showFrameContextMenu: PropTypes.func.isRequired,
@@ -144,6 +144,7 @@ export default class FrameComponent extends Component {
     const {
       frame,
       selectedFrame,
+      isTracerFrameSelected,
       hideLocation,
       shouldMapDisplayName,
       displayFullUrl,
@@ -155,7 +156,15 @@ export default class FrameComponent extends Component {
     const { l10n } = this.context;
 
     const className = classnames("frame", {
-      selected: selectedFrame && selectedFrame.id === frame.id,
+      selected:
+        !isTracerFrameSelected &&
+        selectedFrame &&
+        selectedFrame.id === frame.id,
+      // When a JS Tracer frame is selected, the frame will still be considered as selected,
+      // and switch from a blue to a grey background. It will still be considered as selected
+      // from the point of view of stepping buttons.
+      inactive:
+        isTracerFrameSelected && selectedFrame && selectedFrame.id === frame.id,
     });
 
     const location = getFrameLocation(frame, shouldDisplayOriginalLocation);

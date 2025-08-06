@@ -102,6 +102,7 @@ specific_include_rules = {
 
   "packet_socket_factory\.h": [
     "+rtc_base/async_packet_socket.h",
+    "+rtc_base/socket_address.h",
   ],
 
   "peer_connection_interface\.h": [
@@ -116,6 +117,7 @@ specific_include_rules = {
     "+rtc_base/rtc_certificate.h",
     "+rtc_base/rtc_certificate_generator.h",
     "+rtc_base/socket_address.h",
+    "+rtc_base/socket_factory.h",
     "+rtc_base/ssl_certificate.h",
     "+rtc_base/ssl_stream_adapter.h",
     "+rtc_base/thread.h",
@@ -140,6 +142,7 @@ specific_include_rules = {
   ],
 
   "legacy_stats_types\.h": [
+    "+rtc_base/thread_annotations.h",
     "+rtc_base/thread_checker.h",
   ],
 
@@ -169,6 +172,11 @@ specific_include_rules = {
 
   "notifier\.h": [
     "+rtc_base/system/no_unique_address.h",
+    "+rtc_base/thread_annotations.h",
+  ],
+
+  "priority\.h": [
+    "+rtc_base/strong_alias.h",
   ],
 
   "simulated_network\.h": [
@@ -190,14 +198,6 @@ specific_include_rules = {
 
   "sequence_checker\.h": [
     "+rtc_base/synchronization/sequence_checker_internal.h",
-    "+rtc_base/thread_annotations.h",
-  ],
-
-  "wrapping_async_dns_resolver\.h": [
-    "+rtc_base/async_resolver.h",
-    "+rtc_base/async_resolver_interface.h",
-    "+rtc_base/socket_address.h",
-    "+rtc_base/third_party/sigslot/sigslot.h",
     "+rtc_base/thread_annotations.h",
   ],
 

@@ -14,13 +14,21 @@ edition = "2021"
 name = "interrupt-support"
 version = "0.1.0"
 authors = ["Sync Team <sync-team@mozilla.com>"]
+build = "build.rs"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 readme = "README.md"
 license = "MPL-2.0"
+
+[lib]
+name = "interrupt_support"
+path = "src/lib.rs"
 
 [dependencies]
 lazy_static = "1.4"
 parking_lot = ">=0.11,<=0.12"
-uniffi = "0.27.1"
 
 [dependencies.rusqlite]
 version = "0.31.0"
@@ -31,6 +39,9 @@ features = [
     "unlock_notify",
 ]
 
+[dependencies.uniffi]
+version = "0.28.2"
+
 [build-dependencies.uniffi]
-version = "0.27.1"
+version = "0.28.2"
 features = ["build"]

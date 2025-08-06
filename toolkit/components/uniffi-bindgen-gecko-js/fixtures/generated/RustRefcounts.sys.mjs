@@ -154,11 +154,25 @@ class ArrayBufferDataStream {
       return value;
     }
 
+    readBytes() {
+      const size = this.readInt32();
+      const bytes = new Uint8Array(this.dataView.buffer, this.pos, size);
+      this.pos += size;
+      return bytes
+    }
+
+    writeBytes(uint8Array) {
+      this.writeUint32(uint8Array.length);
+      value.forEach((elt) => {
+        dataStream.writeUint8(elt);
+      })
+    }
+
     // Reads a SingletonObject pointer from the data stream
     // UniFFI Pointers are **always** 8 bytes long. That is enforced
     // by the C++ and Rust Scaffolding code.
     readPointerSingletonObject() {
-        const pointerId = 7; // refcounts:SingletonObject
+        const pointerId = 9; // refcounts:SingletonObject
         const res = UniFFIScaffolding.readPointer(pointerId, this.dataView.buffer, this.pos);
         this.pos += 8;
         return res;
@@ -168,7 +182,7 @@ class ArrayBufferDataStream {
     // UniFFI Pointers are **always** 8 bytes long. That is enforced
     // by the C++ and Rust Scaffolding code.
     writePointerSingletonObject(value) {
-        const pointerId = 7; // refcounts:SingletonObject
+        const pointerId = 9; // refcounts:SingletonObject
         UniFFIScaffolding.writePointer(pointerId, value, this.dataView.buffer, this.pos);
         this.pos += 8;
     }
@@ -301,6 +315,9 @@ export class FfiConverterString extends FfiConverter {
     }
 }
 
+/**
+ * SingletonObject
+ */
 export class SingletonObject {
     // Use `init` to instantiate this class.
     // DO NOT USE THIS CONSTRUCTOR DIRECTLY
@@ -315,12 +332,15 @@ export class SingletonObject {
         this[uniffiObjectPtr] = opts[constructUniffiObject];
     }
 
+    /**
+     * method
+     */
     method() {
         const liftResult = (result) => undefined;
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                66, // refcounts:uniffi_uniffi_fixture_refcounts_fn_method_singletonobject_method
+                82, // refcounts:uniffi_uniffi_fixture_refcounts_fn_method_singletonobject_method
                 FfiConverterTypeSingletonObject.lower(this),
             )
         }
@@ -362,25 +382,33 @@ export class FfiConverterTypeSingletonObject extends FfiConverter {
 
 
 
+/**
+ * getJsRefcount
+ * @returns {number}
+ */
 export function getJsRefcount() {
 
         const liftResult = (result) => FfiConverterI32.lift(result);
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                67, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_js_refcount
+                80, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_js_refcount
             )
         }
         return handleRustResult(functionCall(), liftResult, liftError);
 }
 
+/**
+ * getSingleton
+ * @returns {SingletonObject}
+ */
 export function getSingleton() {
 
         const liftResult = (result) => FfiConverterTypeSingletonObject.lift(result);
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                68, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_singleton
+                81, // refcounts:uniffi_uniffi_fixture_refcounts_fn_func_get_singleton
             )
         }
         return handleRustResult(functionCall(), liftResult, liftError);

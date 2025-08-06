@@ -10,7 +10,7 @@
 project_flag(
     env="MOZ_APP_ID",
     nargs=1,
-    help='used for application.ini\'s "ID" field, and crash reporter server url',
+    help='Used for application.ini\'s "ID" field, and crash reporter server url',
 )
 
 
@@ -23,14 +23,14 @@ def check_moz_app_id(moz_app_id, build_project):
 project_flag(
     env="MOZ_APP_VENDOR",
     nargs=1,
-    help='used for application.ini\'s "Vendor" field, which also impacts profile location and user-visible fields',
+    help='Used for application.ini\'s "Vendor" field, which also impacts profile location and user-visible fields',
 )
 
 project_flag(
     env="MOZ_APP_UA_NAME",
     default="",
     nargs=1,
-    help="application name in the User Agent string",
+    help="Application name in the User Agent string",
 )
 
 project_flag(
@@ -38,20 +38,20 @@ project_flag(
     default="server",
     choices=("all", "server"),
     nargs=1,
-    help="which devtools version should be built",
+    help="Which devtools version should be built",
 )
 
 
 option(
     env="MOZ_STUB_INSTALLER",
-    help="produce a stub installer",
+    help="Produce a stub installer",
 )
 set_config("MOZ_STUB_INSTALLER", True, when="MOZ_STUB_INSTALLER")
 
 
 project_flag(
     env="MOZ_PROFILE_MIGRATOR",
-    help="enable profile migrator",
+    help="Enable profile migrator",
 )
 
 project_flag(
@@ -59,7 +59,7 @@ project_flag(
     default="",
     nargs=1,
     set_as_define=True,
-    help="markup for a single browser window",
+    help="Markup for a single browser window",
 )
 set_define(
     "BROWSER_CHROME_URL_QUOTED",
@@ -68,16 +68,16 @@ set_define(
 
 # External builds (specifically Ubuntu) may drop the hg repo information, so we allow to
 # explicitly set the repository and changeset information in.
-option(env="MOZ_SOURCE_REPO", nargs=1, help="project source repository")
+option(env="MOZ_SOURCE_REPO", nargs=1, help="Project source repository")
 set_config("MOZ_SOURCE_REPO", depends_if("MOZ_SOURCE_REPO")(lambda src: src[0]))
-option(env="MOZ_SOURCE_CHANGESET", nargs=1, help="source changeset")
+option(env="MOZ_SOURCE_CHANGESET", nargs=1, help="Source changeset")
 set_config("MOZ_SOURCE_CHANGESET", depends_if("MOZ_SOURCE_CHANGESET")(lambda v: v[0]))
 
 option(
     env="MOZ_INCLUDE_SOURCE_INFO",
     # Build revisions should always be present in official builds
     default=mozilla_official,
-    help="include build repository informations",
+    help="Include build repository informations",
 )
 set_config("MOZ_INCLUDE_SOURCE_INFO", True, when="MOZ_INCLUDE_SOURCE_INFO")
 
@@ -163,23 +163,6 @@ set_config("MOZ_FOLD_LIBS", fold_libs)
 # ==============================================================
 # Some of the options here imply an option from js/moz.configure,
 # so, need to be declared before the include.
-
-option(
-    "--enable-jprof",
-    env="MOZ_JPROF",
-    help="Enable jprof profiling tool (needs mozilla/tools/jprof)",
-)
-
-
-@depends("--enable-jprof")
-def jprof(value):
-    if value:
-        return True
-
-
-set_config("MOZ_JPROF", jprof)
-set_define("MOZ_JPROF", jprof)
-imply_option("--enable-profiling", jprof)
 
 option("--disable-gecko-profiler", help="Disable the Gecko profiler")
 
@@ -457,7 +440,7 @@ set_config("MOZ_WASAPI", imply_wasapi, when="--enable-audio-backends")
 option(
     "--enable-alsa",
     env="MOZ_ALSA",
-    help="Enable ALSA audio backend.",
+    help="Enable ALSA audio backend",
     when=use_pkg_config,
 )
 
@@ -482,7 +465,7 @@ set_define("MOZ_ALSA", True, when="--enable-alsa")
 system_lib_option(
     "--enable-jack",
     env="MOZ_JACK",
-    help="Enable JACK audio backend.",
+    help="Enable JACK audio backend",
     when=use_pkg_config,
 )
 
@@ -495,7 +478,7 @@ set_config("MOZ_JACK", depends_if(jack)(lambda _: True))
 option(
     "--enable-pulseaudio",
     env="MOZ_PULSEAUDIO",
-    help="{Enable|Disable} PulseAudio audio backend.",
+    help="{Enable|Disable} PulseAudio audio backend",
     when=use_pkg_config,
 )
 
@@ -509,7 +492,7 @@ set_define("MOZ_PULSEAUDIO", depends_if(pulseaudio)(lambda _: True))
 system_lib_option(
     "--enable-sndio",
     env="MOZ_SNDIO",
-    help="Enable sndio audio backend.",
+    help="Enable sndio audio backend",
     when=use_pkg_config,
 )
 
@@ -614,7 +597,6 @@ def toolkit(toolkit):
 
 
 set_config("MOZ_WIDGET_TOOLKIT", toolkit)
-add_old_configure_assignment("MOZ_WIDGET_TOOLKIT", toolkit)
 
 
 @depends(toolkit)
@@ -743,24 +725,6 @@ def pdf_printing(toolkit):
 set_config("MOZ_PDF_PRINTING", pdf_printing)
 set_define("MOZ_PDF_PRINTING", pdf_printing)
 
-
-# Event loop instrumentation
-# ==============================================================
-option(env="MOZ_INSTRUMENT_EVENT_LOOP", help="Force-enable event loop instrumentation")
-
-
-@depends("MOZ_INSTRUMENT_EVENT_LOOP", toolkit)
-def instrument_event_loop(value, toolkit):
-    if value or (
-        toolkit in ("windows", "gtk", "cocoa", "android") and value.origin == "default"
-    ):
-        return True
-
-
-set_config("MOZ_INSTRUMENT_EVENT_LOOP", instrument_event_loop)
-set_define("MOZ_INSTRUMENT_EVENT_LOOP", instrument_event_loop)
-
-
 # Fontconfig Freetype
 # ==============================================================
 option(env="USE_FC_FREETYPE", help="Force-enable the use of fontconfig freetype")
@@ -885,7 +849,7 @@ def av1(value):
 
 @depends(target, when=av1 & compile_environment)
 def dav1d_asm(target):
-    if target.cpu in ("aarch64", "x86", "x86_64"):
+    if target.cpu in ("arm", "aarch64", "x86", "x86_64"):
         return True
 
 
@@ -1003,7 +967,7 @@ set_define("MOZ_WMF_CDM", True, when=wmfcdm)
 
 option(
     name="--enable-chrome-format",
-    help="Select FORMAT of chrome files during packaging.",
+    help="Select FORMAT of chrome files during packaging",
     nargs=1,
     choices=("omni", "jar", "flat"),
     default="omni",
@@ -1035,7 +999,7 @@ def enable_minify_default(is_android, debug, is_nightly):
 
 option(
     name="--enable-minify",
-    help="Select types of files to minify during packaging.",
+    help="Select types of files to minify during packaging",
     nargs="*",
     choices=("properties", "js"),
     default=enable_minify_default,
@@ -1128,16 +1092,10 @@ with only_when(target_is_osx):
 
 # Profile Management
 # ==============================================================
-# Selectable profiles are temporarily gated behind a build flag
-# while we build and stabilize the backend (bug 1893315).
+# Selectable profiles are enabled by default.
 
-option(
-    env="MOZ_SELECTABLE_PROFILES",
-    help="Enable experimental and unstable profile groups",
-)
-
-set_define("MOZ_SELECTABLE_PROFILES", True, when="MOZ_SELECTABLE_PROFILES")
-set_config("MOZ_SELECTABLE_PROFILES", True, when="MOZ_SELECTABLE_PROFILES")
+set_define("MOZ_SELECTABLE_PROFILES", True)
+set_config("MOZ_SELECTABLE_PROFILES", True)
 
 project_flag(
     "MOZ_DEDICATED_PROFILES",
@@ -1175,26 +1133,6 @@ def telemetry_on_by_default(reporting, is_nightly):
 
 
 set_define("MOZ_TELEMETRY_ON_BY_DEFAULT", True, when=telemetry_on_by_default)
-
-
-# gpsd support
-# ==============================================================
-system_lib_option(
-    "--enable-gpsd",
-    env="MOZ_GPSD",
-    help="Enable gpsd support",
-    when=use_pkg_config,
-)
-
-
-@depends("--enable-gpsd", when=use_pkg_config)
-def gpsd(value):
-    return bool(value)
-
-
-system_gpsd = pkg_check_modules("MOZ_GPSD", "libgps >= 3.11", when=gpsd)
-
-set_config("MOZ_GPSD", depends_if(system_gpsd)(lambda _: True))
 
 # Miscellaneous programs
 # ==============================================================
@@ -3021,6 +2959,7 @@ def pdbstr_paths(valid_windows_sdk_dir, host):
     vc_host = {
         "x86": "x86",
         "x86_64": "x64",
+        "aarch64": "arm64",
     }.get(host.cpu)
 
     return [
@@ -3161,7 +3100,7 @@ option(
     nargs=1,
     help="Used for the internal program name, which affects profile name "
     "and remoting. If not set, defaults to MOZ_APP_NAME if the update channel "
-    "is release, and MOZ_APP_NAME-MOZ_UPDATE_CHANNEL otherwise.",
+    "is release, and MOZ_APP_NAME-MOZ_UPDATE_CHANNEL otherwise",
 )
 
 
@@ -3197,7 +3136,7 @@ set_config("ANDROID_PACKAGE_NAME", android_package_name)
 
 # Miscellaneous options
 # ==============================================================
-option(env="MOZ_WINCONSOLE", nargs="?", help="Whether we can create a console window.")
+option(env="MOZ_WINCONSOLE", nargs="?", help="Whether we can create a console window")
 set_define("MOZ_WINCONSOLE", True, when=depends("MOZ_WINCONSOLE")(lambda x: x))
 
 
@@ -3487,7 +3426,7 @@ with only_when(target_is_osx):
     option(
         "--with-macbundlename-prefix",
         nargs=1,
-        help="prefix for the mac bundle name",
+        help="Prefix for the mac bundle name",
     )
 
     @depends_if("--with-macbundlename-prefix")
@@ -3505,7 +3444,7 @@ with only_when(target_is_osx):
 
 option(
     env="MOZ_PACKAGE_JSSHELL",
-    help="whether the installer bundles the JS shell",
+    help="Whether the installer bundles the JS shell",
 )
 set_config("MOZ_PACKAGE_JSSHELL", depends_if("MOZ_PACKAGE_JSSHELL")(lambda x: bool(x)))
 
@@ -3533,9 +3472,6 @@ option(
 
 set_config("MOZ_SANDBOX", True, when="--enable-sandbox")
 set_define("MOZ_SANDBOX", True, when="--enable-sandbox")
-
-with only_when(depends(target.kernel)(lambda k: k not in ("Darwin", "WINNT"))):
-    set_define("MOZ_CONTENT_TEMP_DIR", True, when="--enable-sandbox")
 
 # Searching of system directories for extensions.
 # ==============================================================
@@ -3746,7 +3682,7 @@ set_config("MOZ_SYSTEM_POLICIES", True, when="--enable-system-policies")
 option(
     "--disable-legacy-profile-creation",
     help="Disable the creation a legacy profile, to be used by old versions "
-    "of Firefox, when no profiles exist.",
+    "of Firefox, when no profiles exist",
 )
 
 set_config("MOZ_CREATE_LEGACY_PROFILE", True, when="--enable-legacy-profile-creation")
@@ -3821,8 +3757,9 @@ with only_when(need_perl):
 # a directory given via the mozbuild config, or bootstrapped.
 #
 # Unfortunately, doing `include!(mozbuild::windows_rs_path!("src/lib.rs"))`
-# in the crate's lib.rs doesn't work because of
-# https://github.com/rust-lang/rust/issues/66920.
+# in the crate's lib.rs, where `mozbuild::windows_rs_path!()` builds
+# a path relative to MOZ_WINDOWS_RS_DIR defined below, doesn't work
+# because of https://github.com/rust-lang/rust/issues/66920.
 #
 # Previous versions of the windows crate had submodules declared
 # directly in lib.rs. Annotating each of them with
@@ -3834,6 +3771,19 @@ with only_when(need_perl):
 # `include!` at the end of lib.rs, so we can get away with simply
 # replacing it with an `include!` that uses `mozbuild::windows_rs_path!`.
 #
+# Well, that was only true up to a certain point, and even newer versions
+# are back to using a submodule declared directly in lib.rs.
+# To work around that, we use a macro in the mozbuild crate that
+# expands to
+# ```
+# #[path = "/full/path/to/windows-rs/src/lib.rs"]
+# mod lib;
+# pub use lib::*;
+# ```
+# where the path is generated at build time instead of relying on more
+# macros. This creates a submodule and re-exports everything it contains,
+# making the crate appear as the original crate to its users.
+#
 # We ensure that the in-tree contents match what we expect based on
 # the original crate.
 # The expectations are as such:
@@ -3841,15 +3791,6 @@ with only_when(need_perl):
 #   following two lines at the end (after an empty line):
 #     [dependencies.mozbuild]
 #     version = "0.1"
-# - src/lib.rs is mostly identical to the original one, with two notable
-#   differences:
-#   - the addition of `#![allow(warnings)]` on the first line, because if
-#     the crate had been vendored normally, it would not be affected by
-#     `-D warnings`, and `#![allow(warnings)]` mimicks that.
-#   - the replacement of any
-#     `include!("path/file.rs")`
-#     with
-#     `include!(mozbuild::windows_rs_path!("src/path/file.rs"))`
 with only_when(target_is_windows & compile_environment):
     option(
         env="MOZ_WINDOWS_RS_DIR",
@@ -3904,16 +3845,6 @@ with only_when(target_is_windows & compile_environment):
             configure_error("In-tree windows crate is missing dependency on mozbuild")
         if raw_cargo_toml[: -len(DEPENDENCIES)] != raw_cargo_toml_orig:
             configure_error("In-tree windows crate Cargo.toml doesn't match original")
-
-        lib_rs = open(os.path.join(topsrcdir, "build/rust/windows/src/lib.rs")).read()
-        lib_rs_orig = open(os.path.join(dir, "src/lib.rs")).read()
-        lib_rs_expected = "#![allow(warnings)]\n" + re.sub(
-            r'include!\("([^"]*)"\)',
-            r'include!(mozbuild::windows_rs_path!("src/\1"))',
-            lib_rs_orig,
-        )
-        if lib_rs != lib_rs_expected:
-            configure_error("In-tree windows crate lib.rs doesn't match original")
 
         return dir
 

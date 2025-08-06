@@ -181,6 +181,45 @@ var gIdentityHandler = {
       let wrapper = document.getElementById("template-identity-popup");
       wrapper.replaceWith(wrapper.content);
       this._popupInitialized = true;
+      this._initializePopupListeners();
+    }
+  },
+
+  _initializePopupListeners() {
+    let popup = this._identityPopup;
+    popup.addEventListener("popupshown", event => {
+      this.onPopupShown(event);
+    });
+    popup.addEventListener("popuphidden", event => {
+      this.onPopupHidden(event);
+    });
+
+    const COMMANDS = {
+      "identity-popup-security-button": () => {
+        this.showSecuritySubView();
+      },
+      "identity-popup-security-httpsonlymode-menulist": () => {
+        this.changeHttpsOnlyPermission();
+      },
+      "identity-popup-clear-sitedata-button": event => {
+        this.clearSiteData(event);
+      },
+      "identity-popup-remove-cert-exception": () => {
+        this.removeCertException();
+      },
+      "identity-popup-disable-mixed-content-blocking": () => {
+        this.disableMixedContentProtection();
+      },
+      "identity-popup-enable-mixed-content-blocking": () => {
+        this.enableMixedContentProtection();
+      },
+      "identity-popup-more-info": event => {
+        this.handleMoreInfoClick(event);
+      },
+    };
+
+    for (let [id, handler] of Object.entries(COMMANDS)) {
+      document.getElementById(id).addEventListener("command", handler);
     }
   },
 
@@ -859,6 +898,7 @@ var gIdentityHandler = {
           warnTextOnInsecure
         ) {
           icon_label = gNavigatorBundle.getString("identity.notSecure.label");
+          tooltip = gNavigatorBundle.getString("identity.notSecure.tooltip");
           this._identityBox.classList.add("notSecureText");
         }
       } else if (this._isMixedActiveContentBlocked) {

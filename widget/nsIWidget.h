@@ -333,6 +333,7 @@ struct AutoObserverNotifier {
  */
 class nsIWidget : public nsISupports {
  protected:
+  friend class nsBaseWidget;
   typedef mozilla::dom::BrowserChild BrowserChild;
 
  public:
@@ -398,13 +399,7 @@ class nsIWidget : public nsISupports {
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IWIDGET_IID)
 
-  nsIWidget()
-      : mLastChild(nullptr),
-        mPrevSibling(nullptr),
-        mOnDestroyCalled(false),
-        mWindowType(WindowType::Child) {
-    ClearNativeTouchSequence(nullptr);
-  }
+  nsIWidget() = default;
 
   /**
    * Create and initialize a widget.
@@ -421,8 +416,7 @@ class nsIWidget : public nsISupports {
    * calling code must handle paint messages and clear the background
    * itself.
    *
-   * In practice at least one of aParent and aNativeParent will be null. If
-   * both are null the widget isn't parented (e.g. context menus or
+   * If aParent is null, the widget isn't parented (e.g. context menus or
    * independent top level windows).
    *
    * The dimensions given in aRect are specified in the parent's
@@ -432,13 +426,11 @@ class nsIWidget : public nsISupports {
    * method is provided for these.
    *
    * @param     aParent       parent nsIWidget
-   * @param     aNativeParent native parent widget
    * @param     aRect         the widget dimension
    * @param     aInitData     data that is used for widget initialization
    *
    */
   [[nodiscard]] virtual nsresult Create(nsIWidget* aParent,
-                                        nsNativeWidget aNativeParent,
                                         const LayoutDeviceIntRect& aRect,
                                         InitData* = nullptr) = 0;
 
@@ -451,12 +443,11 @@ class nsIWidget : public nsISupports {
    * desktop pixel values directly.
    */
   [[nodiscard]] virtual nsresult Create(nsIWidget* aParent,
-                                        nsNativeWidget aNativeParent,
                                         const DesktopIntRect& aRect,
                                         InitData* aInitData = nullptr) {
     LayoutDeviceIntRect devPixRect =
         RoundedToInt(aRect * GetDesktopToDeviceScale());
-    return Create(aParent, aNativeParent, devPixRect, aInitData);
+    return Create(aParent, devPixRect, aInitData);
   }
 
   /**
@@ -469,15 +460,9 @@ class nsIWidget : public nsISupports {
    * This interface exists to support the PuppetWidget backend,
    * which is entirely non-native.  All other params are the same as
    * for |Create()|.
-   *
-   * |aForceUseIWidgetParent| forces |CreateChild()| to only use the
-   * |nsIWidget*| this, not its native widget (if it exists), when
-   * calling |Create()|.  This is a timid hack around poorly
-   * understood code, and shouldn't be used in new code.
    */
   virtual already_AddRefed<nsIWidget> CreateChild(
-      const LayoutDeviceIntRect& aRect, InitData* = nullptr,
-      bool aForceUseIWidgetParent = false) = 0;
+      const LayoutDeviceIntRect& aRect, InitData&) = 0;
 
   /**
    * Attach to a top level widget.
@@ -539,7 +524,7 @@ class nsIWidget : public nsISupports {
    *
    * @param     aNewParent   new parent
    */
-  virtual void SetParent(nsIWidget* aNewParent) = 0;
+  void SetParent(nsIWidget* aNewParent);
 
   /**
    * Return the parent Widget of this Widget or nullptr if this is a
@@ -548,24 +533,22 @@ class nsIWidget : public nsISupports {
    * @return the parent widget or nullptr if it does not have a parent
    *
    */
-  virtual nsIWidget* GetParent(void) = 0;
+  nsIWidget* GetParent() const { return mParent; }
+
+  /** Gets called when mParent changes after creation. */
+  virtual void DidChangeParent(nsIWidget* aOldParent) {}
 
   /**
    * Return the top level Widget of this Widget
    *
-   * @return the top level widget
+   * @return the closest top level widget, as in IsTopLevelWidget().
    */
-  virtual nsIWidget* GetTopLevelWidget() = 0;
-
-  /**
-   * Return the top (non-sheet) parent of this Widget if it's a sheet,
-   * or nullptr if this isn't a sheet (or some other error occurred).
-   * Sheets are only supported on some platforms (currently only macOS).
-   *
-   * @return the top (non-sheet) parent widget or nullptr
-   *
-   */
-  virtual nsIWidget* GetSheetWindowParent(void) = 0;
+  nsIWidget* GetTopLevelWidget();
+  bool IsTopLevelWidget() const {
+    return mWindowType == WindowType::TopLevel ||
+           mWindowType == WindowType::Dialog ||
+           mWindowType == WindowType::Invisible;
+  }
 
   /**
    * Return the physical DPI of the screen containing the window ...
@@ -1030,8 +1013,8 @@ class nsIWidget : public nsISupports {
   virtual void SetWindowTransform(const mozilla::gfx::Matrix& aTransform) {}
 
   /**
-   * Set the preferred color-scheme for the widget.
-   * Ignored on non-Mac platforms.
+   * Set the preferred color-scheme for the widget. Nothing() means system
+   * default. Implemented on Windows and macOS.
    */
   virtual void SetColorScheme(const mozilla::Maybe<mozilla::ColorScheme>&) {}
 
@@ -1219,15 +1202,15 @@ class nsIWidget : public nsISupports {
   /**
    * Internal methods
    */
-
-  //@{
-  virtual void AddChild(nsIWidget* aChild) = 0;
-  virtual void RemoveChild(nsIWidget* aChild) = 0;
   virtual void* GetNativeData(uint32_t aDataType) = 0;
   virtual void FreeNativeData(void* data, uint32_t aDataType) = 0;  //~~~
 
-  //@}
+ protected:
+  void AddToChildList(nsIWidget* aChild);
+  void RemoveFromChildList(nsIWidget* aChild);
+  void RemoveAllChildren();
 
+ public:
   /**
    * Set the widget's title.
    * Must be called after Create.
@@ -1684,8 +1667,8 @@ class nsIWidget : public nsISupports {
    * Get safe area insets except to cutout.
    * See https://drafts.csswg.org/css-env-1/#safe-area-insets.
    */
-  virtual mozilla::ScreenIntMargin GetSafeAreaInsets() const {
-    return mozilla::ScreenIntMargin();
+  virtual mozilla::LayoutDeviceIntMargin GetSafeAreaInsets() const {
+    return mozilla::LayoutDeviceIntMargin();
   }
 
  private:
@@ -1859,13 +1842,6 @@ class nsIWidget : public nsISupports {
       BrowserChild* aBrowserChild);
 
   static already_AddRefed<nsIWidget> CreateHeadlessWidget();
-
-  /**
-   * Reparent this widget's native widget.
-   * @param aNewParent the native widget of aNewParent is the new native
-   *                   parent widget
-   */
-  virtual void ReparentNativeWidget(nsIWidget* aNewParent) = 0;
 
   /**
    * Return true if widget has it's own GL context
@@ -2064,6 +2040,16 @@ class nsIWidget : public nsISupports {
    */
   virtual double GetDefaultScaleInternal() { return 1.0; }
 
+  // On a given platform, we might have three kinds of widgets:
+  //   In the parent process, we might have native, puppet, or headless widgets.
+  //   In child processes, we only have Puppet widgets.
+  enum class WidgetType : uint8_t {
+    Native,
+    Headless,
+    Puppet,
+  };
+  bool IsPuppetWidget() const { return mWidgetType == WidgetType::Puppet; }
+
   using WindowButtonType = mozilla::WindowButtonType;
 
   /**
@@ -2090,12 +2076,15 @@ class nsIWidget : public nsISupports {
   // lastchild pointers are weak, which is fine as long as they are
   // maintained properly.
   nsCOMPtr<nsIWidget> mFirstChild;
-  nsIWidget* MOZ_NON_OWNING_REF mLastChild;
+  nsIWidget* MOZ_NON_OWNING_REF mLastChild = nullptr;
   nsCOMPtr<nsIWidget> mNextSibling;
-  nsIWidget* MOZ_NON_OWNING_REF mPrevSibling;
+  nsIWidget* MOZ_NON_OWNING_REF mPrevSibling = nullptr;
+  // Keeps us alive.
+  nsIWidget* MOZ_NON_OWNING_REF mParent = nullptr;
   // When Destroy() is called, the sub class should set this true.
-  bool mOnDestroyCalled;
-  WindowType mWindowType;
+  bool mOnDestroyCalled = false;
+  WindowType mWindowType = WindowType::Child;
+  WidgetType mWidgetType = WidgetType::Native;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIWidget, NS_IWIDGET_IID)

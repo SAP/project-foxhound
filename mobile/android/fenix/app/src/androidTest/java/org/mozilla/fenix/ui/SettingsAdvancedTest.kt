@@ -14,10 +14,10 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.TestAssetHelper
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.clickPageObject
 import org.mozilla.fenix.ui.robots.homeScreen
@@ -81,7 +81,6 @@ class SettingsAdvancedTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
             clickPageObject(playStoreLink)
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyUrl(playStoreUrl)
         }
     }
@@ -109,7 +108,6 @@ class SettingsAdvancedTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
             clickPageObject(playStoreLink)
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyUrl(playStoreUrl)
         }
     }
@@ -171,6 +169,7 @@ class SettingsAdvancedTest : TestSetup() {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
             clickPageObject(youTubeSchemaLink)
             verifyOpenLinkInAnotherAppPrompt()
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResIdAndText("android:id/button1", "OPEN"))
             mDevice.waitForIdle()
             assertYoutubeAppOpens()
@@ -245,6 +244,7 @@ class SettingsAdvancedTest : TestSetup() {
                 url = "youtube",
                 pageObject = youTubeSchemaLink,
             )
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResIdAndText("android:id/button1", "OPEN"))
             mDevice.waitForIdle()
             assertYoutubeAppOpens()
@@ -289,7 +289,7 @@ class SettingsAdvancedTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser("https://m.youtube.com/".toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("youtube")
             verifyOpenLinksInAppsCFRExists(true)
             clickOpenLinksInAppsDismissCFRButton()
             verifyOpenLinksInAppsCFRExists(false)
@@ -305,7 +305,7 @@ class SettingsAdvancedTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser("https://m.youtube.com/".toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("youtube")
             verifyOpenLinksInAppsCFRExists(true)
         }.clickOpenLinksInAppsGoToSettingsCFRButton {
             verifyOpenLinksInAppsButton()

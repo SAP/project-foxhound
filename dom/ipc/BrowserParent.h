@@ -468,7 +468,8 @@ class BrowserParent final : public PBrowserParent,
 
   bool Show(const OwnerShowInfo&);
 
-  void UpdateDimensions(const nsIntRect& aRect, const ScreenIntSize& aSize);
+  void UpdateDimensions(const LayoutDeviceIntRect& aRect,
+                        const LayoutDeviceIntSize& aSize);
 
   DimensionInfo GetDimensionInfo();
 
@@ -487,6 +488,7 @@ class BrowserParent final : public PBrowserParent,
 #if defined(MOZ_WIDGET_ANDROID)
   void DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight);
   void DynamicToolbarOffsetChanged(ScreenIntCoord aOffset);
+  void KeyboardHeightChanged(ScreenIntCoord aHeight);
 #endif
 
   void Activate(uint64_t aActionId);
@@ -612,7 +614,10 @@ class BrowserParent final : public PBrowserParent,
 
   bool HandleQueryContentEvent(mozilla::WidgetQueryContentEvent& aEvent);
 
-  bool SendInsertText(const nsString& aStringToInsert);
+  bool SendSimpleContentCommandEvent(
+      const mozilla::WidgetContentCommandEvent& aEvent);
+  bool SendInsertText(const mozilla::WidgetContentCommandEvent& aEvent);
+  bool SendReplaceText(const mozilla::WidgetContentCommandEvent& aEvent);
 
   bool SendPasteTransferable(IPCTransferable&& aTransferable);
 
@@ -918,8 +923,8 @@ class BrowserParent final : public PBrowserParent,
   };
   nsTArray<SentKeyEventData> mWaitingReplyKeyboardEvents;
 
-  nsIntRect mRect;
-  ScreenIntSize mDimensions;
+  LayoutDeviceIntRect mRect;
+  LayoutDeviceIntSize mDimensions;
   float mDPI;
   int32_t mRounding;
   CSSToLayoutDeviceScale mDefaultScale;

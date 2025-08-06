@@ -14,7 +14,6 @@ import androidx.test.espresso.action.ViewActions.swipeUp
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.contrib.RecyclerViewActions
 import androidx.test.espresso.matcher.RootMatchers
-import androidx.test.espresso.matcher.ViewMatchers
 import androidx.test.espresso.matcher.ViewMatchers.Visibility
 import androidx.test.espresso.matcher.ViewMatchers.hasDescendant
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -198,7 +197,7 @@ class ThreeDotMenuMainRobot {
         )
     }
 
-    fun verifyHomeThreeDotMainMenuItems(isRequestDesktopSiteEnabled: Boolean) {
+    fun verifyHomeThreeDotMainMenuItems() {
         assertUIObjectExists(
             bookmarksButton(),
             historyButton(),
@@ -207,12 +206,10 @@ class ThreeDotMenuMainRobot {
             addOnsButton(),
             // Disabled step due to https://github.com/mozilla-mobile/fenix/issues/26788
             // syncAndSaveDataButton,
-            desktopSiteButton(),
             whatsNewButton(),
             helpButton(),
             customizeHomeButton(),
             settingsButton(),
-            desktopSiteToggle(isRequestDesktopSiteEnabled),
         )
     }
 
@@ -244,10 +241,26 @@ class ThreeDotMenuMainRobot {
     }
 
     fun verifyTrackersBlockedByUblock() {
-        assertUIObjectExists(itemWithResId("$packageName:id/badge_text"))
-        Log.i(TAG, "verifyTrackersBlockedByUblock: Trying to verify that the count of trackers blocked is greater than 0")
-        assertTrue("$TAG: The count of trackers blocked is not greater than 0", itemWithResId("$packageName:id/badge_text").text.toInt() > 0)
-        Log.i(TAG, "verifyTrackersBlockedByUblock: Verified that the count of trackers blocked is greater than 0")
+        for (i in 1..RETRY_COUNT) {
+            Log.i(TAG, "verifyTrackersBlockedByUblock: Started try #$i")
+            try {
+                assertUIObjectExists(itemWithResId("$packageName:id/badge_text"))
+                Log.i(TAG, "verifyTrackersBlockedByUblock: Trying to verify that the count of trackers blocked is greater than 0")
+                assertTrue("$TAG: The count of trackers blocked is not greater than 0", itemWithResId("$packageName:id/badge_text").text.toInt() > 0)
+                Log.i(TAG, "verifyTrackersBlockedByUblock: Verified that the count of trackers blocked is greater than 0")
+
+                break
+            } catch (e: NumberFormatException) {
+                Log.i(TAG, "verifyTrackersBlockedByUblock: NumberFormatException caught, executing fallback methods")
+                Log.i(TAG, "verifyTrackersBlockedByUblock: Trying to click the device back button")
+                mDevice.pressBack()
+                Log.i(TAG, "verifyTrackersBlockedByUblock: Clicked the device back button")
+                browserScreen {
+                }.openThreeDotMenu {
+                    openAddonsSubList()
+                }
+            }
+        }
     }
 
     fun clickQuit() {
@@ -289,6 +302,18 @@ class ThreeDotMenuMainRobot {
 
             DownloadRobot().interact()
             return DownloadRobot.Transition()
+        }
+
+        fun openPasswords(interact: SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.() -> Unit): SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition {
+            Log.i(TAG, "openPasswords: Trying to perform swipe down action on the three dot menu")
+            threeDotMenuRecyclerView().perform(swipeDown())
+            Log.i(TAG, "openPasswords: Performed swipe down action on the three dot menu")
+            Log.i(TAG, "openPasswords: Trying to click the \"Passwords\" button")
+            passwordsButton().click()
+            Log.i(TAG, "openPasswords: Clicked the \"Passwords\" button")
+
+            SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot().interact()
+            return SettingsSubMenuLoginsAndPasswordsSavedLoginsRobot.Transition()
         }
 
         fun openSyncSignIn(interact: SyncSignInRobot.() -> Unit): SyncSignInRobot.Transition {
@@ -432,6 +457,13 @@ class ThreeDotMenuMainRobot {
         }
 
         fun refreshPage(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            if (stopLoadingButton().exists()) {
+                Log.i(TAG, "refreshPage: Trying to click the \"Stop\" button")
+                stopLoadingButton().click()
+                Log.i(TAG, "refreshPage: Clicked the \"Stop\" button")
+                browserScreen {
+                }.openThreeDotMenu {}
+            }
             refreshButton().also {
                 Log.i(TAG, "refreshPage: Waiting for $waitingTime ms for the \"Refresh\" button to exist")
                 it.waitForExists(waitingTime)
@@ -572,16 +604,16 @@ class ThreeDotMenuMainRobot {
             return AddToHomeScreenRobot.Transition()
         }
 
-        fun clickInstall(interact: AddToHomeScreenRobot.() -> Unit): AddToHomeScreenRobot.Transition {
+        fun clickAddAppToHomeScreen(interact: AddToHomeScreenRobot.() -> Unit): AddToHomeScreenRobot.Transition {
             Log.i(TAG, "clickInstall: Trying to perform swipe up action on the three dot menu")
             threeDotMenuRecyclerView().perform(swipeUp())
             Log.i(TAG, "clickInstall: Performed swipe up action on the three dot menu")
             Log.i(TAG, "clickInstall: Trying to perform swipe up action on the three dot menu")
             threeDotMenuRecyclerView().perform(swipeUp())
             Log.i(TAG, "clickInstall: Performed swipe up action on the three dot menu")
-            Log.i(TAG, "clickInstall: Trying to click the \"Install\" button")
-            installPWAButton().click()
-            Log.i(TAG, "clickInstall: Clicked the \"Install\" button")
+            Log.i(TAG, "clickInstall: Trying to click the \"Add app to Home screen\" button")
+            addAppToHomeScreenButton().click()
+            Log.i(TAG, "clickInstall: Clicked the \"Add app to Home screen\" button")
 
             AddToHomeScreenRobot().interact()
             return AddToHomeScreenRobot.Transition()
@@ -681,7 +713,7 @@ private fun threeDotMenuRecyclerView() =
 
 private fun editBookmarkButton() = onView(withText("Edit"))
 
-private fun stopLoadingButton() = onView(ViewMatchers.withContentDescription("Stop"))
+private fun stopLoadingButton() = itemWithDescription("Stop")
 
 private fun closeAllTabsButton() = onView(allOf(withText("Close all tabs"))).inRoot(RootMatchers.isPlatformPopup())
 
@@ -695,8 +727,8 @@ private fun readerViewAppearanceToggle() =
 private fun removeFromShortcutsButton() =
     onView(allOf(withText(R.string.browser_menu_remove_from_shortcuts)))
 
-private fun installPWAButton() =
-    itemContainingText(getStringResource(R.string.browser_menu_add_to_homescreen))
+private fun addAppToHomeScreenButton() =
+    itemContainingText(getStringResource(R.string.browser_menu_add_app_to_homescreen))
 
 private fun openInAppButton() =
     onView(
@@ -755,7 +787,7 @@ private fun addBookmarkButton() =
     )
 private fun findInPageButton() = itemContainingText(getStringResource(R.string.browser_menu_find_in_page))
 private fun translateButton() = itemContainingText(getStringResource(R.string.browser_menu_translations))
-private fun reportSiteIssueButton() = itemContainingText("Report Site Issue")
+private fun reportSiteIssueButton() = itemContainingText("Report broken site")
 private fun addToHomeScreenButton() = itemContainingText(getStringResource(R.string.browser_menu_add_to_homescreen))
 private fun addToShortcutsButton() = itemContainingText(getStringResource(R.string.browser_menu_add_to_shortcuts))
 private fun saveToCollectionButton() = itemContainingText(getStringResource(R.string.browser_menu_save_to_collection_2))

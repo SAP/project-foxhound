@@ -13,56 +13,14 @@ class FenixDependenciesPlugin : Plugin<Settings> {
 }
 
 object FenixVersions {
-    const val osslicenses_plugin = "0.10.4"
-
-    const val falcon = "2.2.0"
-    const val fastlane = "2.1.1"
-
-    const val androidx_benchmark = "1.2.4"
-    const val androidx_profileinstaller = "1.3.1"
-    const val androidx_splash_screen = "1.0.1"
-    const val androidx_viewpager2 = "1.1.0"
-    const val google_accompanist = "0.34.0"
-
     const val adjust = "4.38.2"
     const val installreferrer = "2.2"
-
-    const val junit = "5.10.2"
-    const val mockk = "1.13.12"
-
-    // keep in sync with the versions used in AS.
-    const val protobuf = "3.21.10"
-    const val protobuf_plugin = "0.9.4"
 }
 
 @Suppress("unused")
 object FenixDependencies {
-    const val tools_benchmarkgradle = "androidx.benchmark:benchmark-gradle-plugin:${FenixVersions.androidx_benchmark}"
-
-    const val osslicenses_plugin = "com.google.android.gms:oss-licenses-plugin:${FenixVersions.osslicenses_plugin}"
-
-    const val androidx_benchmark_junit4 = "androidx.benchmark:benchmark-junit4:${FenixVersions.androidx_benchmark}"
-    const val androidx_benchmark_macro_junit4 = "androidx.benchmark:benchmark-macro-junit4:${FenixVersions.androidx_benchmark}"
-    const val androidx_core_splashscreen = "androidx.core:core-splashscreen:${FenixVersions.androidx_splash_screen}"
-    const val androidx_profileinstaller = "androidx.profileinstaller:profileinstaller:${FenixVersions.androidx_profileinstaller}"
-    const val androidx_viewpager2 = "androidx.viewpager2:viewpager2:${FenixVersions.androidx_viewpager2}"
-
-    const val google_accompanist_drawablepainter = "com.google.accompanist:accompanist-drawablepainter:${FenixVersions.google_accompanist}"
-
-    const val protobuf_javalite = "com.google.protobuf:protobuf-javalite:${FenixVersions.protobuf}"
-    const val protobuf_compiler = "com.google.protobuf:protoc:${FenixVersions.protobuf}"
-
     const val adjust = "com.adjust.sdk:adjust-android:${FenixVersions.adjust}"
     const val installreferrer = "com.android.installreferrer:installreferrer:${FenixVersions.installreferrer}"
-
-    const val mockk = "io.mockk:mockk:${FenixVersions.mockk}"
-    const val mockk_android = "io.mockk:mockk-android:${FenixVersions.mockk}"
-    const val falcon = "com.jraska:falcon:${FenixVersions.falcon}"
-    const val fastlane = "tools.fastlane:screengrab:${FenixVersions.fastlane}"
-
-    const val junitApi = "org.junit.jupiter:junit-jupiter-api:${FenixVersions.junit}"
-    const val junitParams = "org.junit.jupiter:junit-jupiter-params:${FenixVersions.junit}"
-    const val junitEngine = "org.junit.jupiter:junit-jupiter-engine:${FenixVersions.junit}"
 }
 
 /**

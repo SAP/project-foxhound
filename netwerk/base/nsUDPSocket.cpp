@@ -228,6 +228,7 @@ nsUDPMessage::GetRawData(JSContext* cx, JS::MutableHandle<JS::Value> aRawData) {
   if (!mJsobj) {
     ErrorResult error;
     mJsobj = dom::Uint8Array::Create(cx, nullptr, mData, error);
+    error.WouldReportJSException();
     if (error.Failed()) {
       return error.StealNSResult();
     }
@@ -256,9 +257,14 @@ nsUDPSocket::nsUDPSocket() {
 
 nsUDPSocket::~nsUDPSocket() { CloseSocket(); }
 
-void nsUDPSocket::AddOutputBytes(int32_t aBytes) {
+void nsUDPSocket::AddOutputBytes(uint32_t aBytes) {
   mByteWriteCount += aBytes;
   profiler_count_bandwidth_written_bytes(aBytes);
+}
+
+void nsUDPSocket::AddInputBytes(uint32_t aBytes) {
+  mByteReadCount += aBytes;
+  profiler_count_bandwidth_read_bytes(aBytes);
 }
 
 void nsUDPSocket::OnMsgClose() {
@@ -429,8 +435,7 @@ void nsUDPSocket::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
         ("nsUDPSocket::OnSocketReady: PR_RecvFrom failed [this=%p]\n", this));
     return;
   }
-  mByteReadCount += count;
-  profiler_count_bandwidth_read_bytes(count);
+  this->AddInputBytes(count);
 
   FallibleTArray<uint8_t> data;
   if (!data.AppendElements(buff, count, fallible)) {
@@ -1237,8 +1242,8 @@ nsUDPSocket::RecvWithAddr(NetAddr* addr, nsTArray<uint8_t>& aData) {
         ("nsUDPSocket::RecvWithAddr: PR_RecvFrom failed [this=%p]\n", this));
     return NS_OK;
   }
-  mByteReadCount += count;
-  profiler_count_bandwidth_read_bytes(count);
+
+  this->AddInputBytes(count);
   PRNetAddrToNetAddr(&prAddr, addr);
 
   if (!aData.AppendElements(buff, count, fallible)) {

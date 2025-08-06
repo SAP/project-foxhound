@@ -266,9 +266,17 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   InsertParagraphSeparatorAsAction(nsIPrincipal* aPrincipal = nullptr);
 
-  MOZ_CAN_RUN_SCRIPT nsresult
-  InsertElementAtSelectionAsAction(Element* aElement, bool aDeleteSelection,
-                                   nsIPrincipal* aPrincipal = nullptr);
+  enum class InsertElementOption {
+    // Delete selection if set, otherwise, insert aElement at start or end of
+    // selection.
+    DeleteSelection,
+    // Whether split all inline ancestors or not.
+    SplitAncestorInlineElements,
+  };
+  using InsertElementOptions = EnumSet<InsertElementOption>;
+  MOZ_CAN_RUN_SCRIPT nsresult InsertElementAtSelectionAsAction(
+      Element* aElement, const InsertElementOptions aOptions,
+      nsIPrincipal* aPrincipal = nullptr);
 
   MOZ_CAN_RUN_SCRIPT nsresult InsertLinkAroundSelectionAsAction(
       Element* aAnchorElement, nsIPrincipal* aPrincipal = nullptr);
@@ -1051,7 +1059,7 @@ class HTMLEditor final : public EditorBase,
    *       ignore those types of selections.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
-  EnsureCaretNotAfterInvisibleBRElement();
+  EnsureCaretNotAfterInvisibleBRElement(const Element& aEditingHost);
 
   /**
    * MaybeCreatePaddingBRElementForEmptyEditor() creates padding <br> element
@@ -1725,12 +1733,14 @@ class HTMLEditor final : public EditorBase,
    *                                    attributes will be removed.
    * @param aSelectAllOfCurrentList     Yes if this should treat all of
    *                                    ancestor list element at selection.
+   * @param aEditingHost                The editing host.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult>
   MakeOrChangeListAndListItemAsSubAction(
       const nsStaticAtom& aListElementOrListItemElementTagName,
       const nsAString& aBulletType,
-      SelectAllOfCurrentList aSelectAllOfCurrentList);
+      SelectAllOfCurrentList aSelectAllOfCurrentList,
+      const Element& aEditingHost);
 
   /**
    * DeleteTextAndTextNodesWithTransaction() removes text or text nodes in
@@ -3140,9 +3150,10 @@ class HTMLEditor final : public EditorBase,
    *
    * @param aClipboardType      nsIClipboard::kGlobalClipboard or
    *                            nsIClipboard::kSelectionClipboard.
+   * @param aEditingHost        The editing host.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  PasteInternal(nsIClipboard::ClipboardType aClipboardType);
+  MOZ_CAN_RUN_SCRIPT nsresult PasteInternal(
+      nsIClipboard::ClipboardType aClipboardType, const Element& aEditingHost);
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   InsertWithQuotationsAsSubAction(const nsAString& aQuotedText) final;
@@ -3160,11 +3171,12 @@ class HTMLEditor final : public EditorBase,
    *                        source.
    *                        false if aQuotedText should be treated as plain
    *                        text.
+   * @param aEditingHost    The editing host.
    * @param aNodeInserted   [OUT] The new <blockquote> element.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult InsertAsCitedQuotationInternal(
       const nsAString& aQuotedText, const nsAString& aCitation,
-      bool aInsertHTML, nsINode** aNodeInserted);
+      bool aInsertHTML, const Element& aEditingHost, nsINode** aNodeInserted);
 
   /**
    * InsertNodeIntoProperAncestorWithTransaction() attempts to insert aNode
@@ -3196,8 +3208,8 @@ class HTMLEditor final : public EditorBase,
    * with <span _moz_quote="true">, and each chunk not starting with ">" is
    * inserted as normal text.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  InsertTextWithQuotationsInternal(const nsAString& aStringToInsert);
+  MOZ_CAN_RUN_SCRIPT nsresult InsertTextWithQuotationsInternal(
+      const nsAString& aStringToInsert, const Element& aEditingHost);
 
   /**
    * ReplaceContainerWithTransactionInternal() is implementation of
@@ -3293,10 +3305,12 @@ class HTMLEditor final : public EditorBase,
    *
    * @param aStylesToSet        The styles which should be applied to the
    *                            selected content.
+   * @param aEditingHost        The editing host.
    */
   template <size_t N>
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult SetInlinePropertiesAsSubAction(
-      const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet);
+      const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet,
+      const Element& aEditingHost);
 
   /**
    * SetInlinePropertiesAroundRanges() applying the styles to the ranges even if
@@ -3314,9 +3328,11 @@ class HTMLEditor final : public EditorBase,
    * removing the style.
    *
    * @param aStylesToRemove     Styles to remove from the selected contents.
+   * @param aEditingHost        The editing host.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult RemoveInlinePropertiesAsSubAction(
-      const nsTArray<EditorInlineStyle>& aStylesToRemove);
+      const nsTArray<EditorInlineStyle>& aStylesToRemove,
+      const Element& aEditingHost);
 
   /**
    * Helper method to call RemoveInlinePropertiesAsSubAction().  If you want to
@@ -3402,7 +3418,8 @@ class HTMLEditor final : public EditorBase,
     MOZ_CAN_RUN_SCRIPT BlobReader(dom::BlobImpl* aBlob, HTMLEditor* aHTMLEditor,
                                   SafeToInsertData aSafeToInsertData,
                                   const EditorDOMPoint& aPointToInsert,
-                                  DeleteSelectedContent aDeleteSelectedContent);
+                                  DeleteSelectedContent aDeleteSelectedContent,
+                                  const Element& aEditingHost);
 
     NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(BlobReader)
     NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(BlobReader)
@@ -3415,6 +3432,7 @@ class HTMLEditor final : public EditorBase,
 
     RefPtr<dom::BlobImpl> mBlob;
     RefPtr<HTMLEditor> mHTMLEditor;
+    RefPtr<const Element> mEditingHost;
     RefPtr<dom::DataTransfer> mDataTransfer;
     EditorDOMPoint mPointToInsert;
     EditAction mEditAction;
@@ -3716,20 +3734,23 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult SetSelectionAtDocumentStart();
 
   // Methods for handling plaintext quotations
-  MOZ_CAN_RUN_SCRIPT nsresult
-  PasteAsPlaintextQuotation(nsIClipboard::ClipboardType aSelectionType);
+  MOZ_CAN_RUN_SCRIPT nsresult PasteAsPlaintextQuotation(
+      nsIClipboard::ClipboardType aSelectionType, const Element& aEditingHost);
 
+  enum class AddCites { No, Yes };
   /**
    * Insert a string as quoted text, replacing the selected text (if any).
    * @param aQuotedText     The string to insert.
    * @param aAddCites       Whether to prepend extra ">" to each line
    *                        (usually true, unless those characters
    *                        have already been added.)
+   * @param aEditingHost    The editing host.
    * @return aNodeInserted  The node spanning the insertion, if applicable.
    *                        If aAddCites is false, this will be null.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult InsertAsPlaintextQuotation(
-      const nsAString& aQuotedText, bool aAddCites, nsINode** aNodeInserted);
+      const nsAString& aQuotedText, AddCites aAddCites,
+      const Element& aEditingHost, nsINode** aNodeInserted = nullptr);
 
   /**
    * InsertObject() inserts given object at aPointToInsert.
@@ -3740,15 +3761,18 @@ class HTMLEditor final : public EditorBase,
   MOZ_CAN_RUN_SCRIPT nsresult InsertObject(
       const nsACString& aType, nsISupports* aObject,
       SafeToInsertData aSafeToInsertData, const EditorDOMPoint& aPointToInsert,
-      DeleteSelectedContent aDeleteSelectedContent);
+      DeleteSelectedContent aDeleteSelectedContent,
+      const Element& aEditingHost);
 
   class HTMLTransferablePreparer;
-  nsresult PrepareHTMLTransferable(nsITransferable** aTransferable) const;
+  nsresult PrepareHTMLTransferable(nsITransferable** aTransferable,
+                                   const Element* aEditingHost) const;
 
   enum class HavePrivateHTMLFlavor { No, Yes };
   MOZ_CAN_RUN_SCRIPT nsresult InsertFromTransferableAtSelection(
       nsITransferable* aTransferable, const nsAString& aContextStr,
-      const nsAString& aInfoStr, HavePrivateHTMLFlavor aHavePrivateHTMLFlavor);
+      const nsAString& aInfoStr, HavePrivateHTMLFlavor aHavePrivateHTMLFlavor,
+      const Element& aEditingHost);
 
   /**
    * InsertFromDataTransfer() is called only when user drops data into
@@ -3759,7 +3783,8 @@ class HTMLEditor final : public EditorBase,
   MOZ_CAN_RUN_SCRIPT nsresult InsertFromDataTransfer(
       const dom::DataTransfer* aDataTransfer, uint32_t aIndex,
       nsIPrincipal* aSourcePrincipal, const EditorDOMPoint& aDroppedAt,
-      DeleteSelectedContent aDeleteSelectedContent);
+      DeleteSelectedContent aDeleteSelectedContent,
+      const Element& aEditingHost);
 
   static HavePrivateHTMLFlavor ClipboardHasPrivateHTMLFlavor(
       nsIClipboard* clipboard);
@@ -3879,9 +3904,11 @@ class HTMLEditor final : public EditorBase,
    *                            nsGkAtoms::dt nor nsGkAtoms::dd.
    * @param aFormatBlockMode    Whether HTML formatBlock command or XUL
    *                            paragraphState command.
+   * @param aEditingHost        The editing host.
    */
   MOZ_CAN_RUN_SCRIPT nsresult FormatBlockContainerAsSubAction(
-      const nsStaticAtom& aTagName, FormatBlockMode aFormatBlockMode);
+      const nsStaticAtom& aTagName, FormatBlockMode aFormatBlockMode,
+      const Element& aEditingHost);
 
   /**
    * Increase/decrease the font size of selection.
@@ -4001,7 +4028,8 @@ class HTMLEditor final : public EditorBase,
       const nsAString& aInfoStr, const nsAString& aFlavor,
       SafeToInsertData aSafeToInsertData, const EditorDOMPoint& aPointToInsert,
       DeleteSelectedContent aDeleteSelectedContent,
-      InlineStylesAtInsertionPoint aInlineStylesAtInsertionPoint);
+      InlineStylesAtInsertionPoint aInlineStylesAtInsertionPoint,
+      const Element& aEditingHost);
 
   /**
    * sets the position of an element; warning it does NOT check if the

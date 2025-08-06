@@ -373,7 +373,7 @@ nsIFrame::SizeComputationResult nsVideoFrame::ComputeSize(
           AspectRatioUsage::None};
 }
 
-nscoord nsVideoFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsVideoFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                      IntrinsicISizeType aType) {
   // <audio> / <video> has the same min / pref ISize.
   return GetIntrinsicSize().ISize(GetWritingMode()).valueOr(0);
@@ -684,7 +684,9 @@ class nsDisplayVideo : public nsPaintedDisplayItem {
 
 void nsVideoFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                     const nsDisplayListSet& aLists) {
-  if (!IsVisibleForPainting()) return;
+  if (!IsVisibleForPainting()) {
+    return;
+  }
 
   DO_GLOBAL_REFLOW_COUNT_DSP("nsVideoFrame");
 

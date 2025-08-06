@@ -5,6 +5,7 @@
 package org.mozilla.fenix.ui
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -36,12 +37,13 @@ class CollectionTest : TestSetup() {
         AndroidComposeTestRule(
             HomeActivityIntentTestRule(
                 isHomeOnboardingDialogEnabled = false,
-                isJumpBackInCFREnabled = false,
                 isRecentTabsFeatureEnabled = false,
                 isRecentlyVisitedFeatureEnabled = false,
                 isPocketEnabled = false,
                 isWallpaperOnboardingEnabled = false,
-                isTCPCFREnabled = false,
+                // workaround for toolbar at top position by default
+                // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
+                shouldUseBottomToolbar = true,
             ),
         ) { it.activity }
 
@@ -70,7 +72,7 @@ class CollectionTest : TestSetup() {
 
         composeTabDrawer(composeTestRule) {
             verifySnackBarText("Collection saved!")
-            clickSnackbarButton("VIEW")
+            clickSnackbarButton(composeTestRule, "VIEW")
         }
 
         homeScreen {
@@ -102,7 +104,7 @@ class CollectionTest : TestSetup() {
         }.enterURLAndEnterToBrowser(webPage.url) {
         }.openTabDrawer(composeTestRule) {
             createCollection(webPage.title, collectionName = collectionName)
-            clickSnackbarButton("VIEW")
+            clickSnackbarButton(composeTestRule, "VIEW")
         }
 
         homeScreen {
@@ -208,6 +210,7 @@ class CollectionTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/343428
     // Test running on beta/release builds in CI:
     // caution when making changes to it, so they don't block the builds
+    @Ignore("Disabled: https://bugzilla.mozilla.org/show_bug.cgi?id=1932862")
     @SmokeTest
     @Test
     fun deleteCollectionTest() {
@@ -217,7 +220,7 @@ class CollectionTest : TestSetup() {
         }.enterURLAndEnterToBrowser(webPage.url) {
         }.openTabDrawer(composeTestRule) {
             createCollection(webPage.title, collectionName = collectionName)
-            clickSnackbarButton("VIEW")
+            clickSnackbarButton(composeTestRule, "VIEW")
         }
 
         homeScreen {
@@ -229,7 +232,7 @@ class CollectionTest : TestSetup() {
 
         homeScreen {
             verifySnackBarText("Collection deleted")
-            clickSnackbarButton("UNDO")
+            clickSnackbarButton(composeTestRule, "UNDO")
             verifyCollectionIsDisplayed(collectionName, true)
         }
 
@@ -369,7 +372,7 @@ class CollectionTest : TestSetup() {
         }
         homeScreen {
             verifySnackBarText("Collection deleted")
-            clickSnackbarButton("UNDO")
+            clickSnackbarButton(composeTestRule, "UNDO")
             verifyCollectionIsDisplayed(collectionName)
         }.expandCollection(collectionName) {
             verifyTabSavedInCollection(webPage.title, true)
@@ -405,7 +408,7 @@ class CollectionTest : TestSetup() {
         }
         homeScreen {
             verifySnackBarText("Collection deleted")
-            clickSnackbarButton("UNDO")
+            clickSnackbarButton(composeTestRule, "UNDO")
             verifyCollectionIsDisplayed(collectionName)
         }.expandCollection(collectionName) {
             verifyTabSavedInCollection(testPage.title, true)
@@ -438,7 +441,7 @@ class CollectionTest : TestSetup() {
         }
         homeScreen {
             verifySnackBarText("Collection deleted")
-            clickSnackbarButton("UNDO")
+            clickSnackbarButton(composeTestRule, "UNDO")
             verifyCollectionIsDisplayed(collectionName)
         }.expandCollection(collectionName) {
             verifyTabSavedInCollection(testPage.title, true)

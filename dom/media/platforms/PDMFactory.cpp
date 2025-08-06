@@ -409,15 +409,19 @@ PDMFactory::CreateDecoderWithPDM(PlatformDecoderModule* aPDM,
   }
 
   if (config.IsAudio()) {
+    if (MP4Decoder::IsAAC(config.mMimeType) && !aParams.mUseNullDecoder.mUse &&
+        aParams.mWrappers.contains(media::Wrapper::MediaChangeMonitor)) {
+      // If AudioTrimmer is needed, MediaChangeMonitor will request it.
+      return MediaChangeMonitor::Create(this, aParams);
+    }
     RefPtr<PlatformDecoderModule::CreateDecoderPromise> p;
     p = aPDM->AsyncCreateDecoder(aParams)->Then(
         GetCurrentSerialEventTarget(), __func__,
         [params = CreateDecoderParamsForAsync(aParams)](
             RefPtr<MediaDataDecoder>&& aDecoder) {
           RefPtr<MediaDataDecoder> decoder = std::move(aDecoder);
-          if (!params.mNoWrapper.mDontUseWrapper) {
-            decoder =
-                new AudioTrimmer(decoder.forget(), CreateDecoderParams(params));
+          if (params.mWrappers.contains(media::Wrapper::AudioTrimmer)) {
+            decoder = new AudioTrimmer(decoder.forget());
           }
           return PlatformDecoderModule::CreateDecoderPromise::CreateAndResolve(
               decoder, __func__);
@@ -444,7 +448,8 @@ PDMFactory::CreateDecoderWithPDM(PlatformDecoderModule* aPDM,
 #endif
        VPXDecoder::IsVPX(config.mMimeType) ||
        MP4Decoder::IsHEVC(config.mMimeType)) &&
-      !aParams.mUseNullDecoder.mUse && !aParams.mNoWrapper.mDontUseWrapper) {
+      !aParams.mUseNullDecoder.mUse &&
+      aParams.mWrappers.contains(media::Wrapper::MediaChangeMonitor)) {
     return MediaChangeMonitor::Create(this, aParams);
   }
   return aPDM->AsyncCreateDecoder(aParams);

@@ -214,11 +214,8 @@ echo_log "Save patch-stack"
     --target-branch-head $MOZ_TARGET_UPSTREAM_BRANCH_HEAD \
     2>&1| tee -a $LOOP_OUTPUT_LOG
 
-MODIFIED_BUILD_RELATED_FILE_CNT=`hg diff -c tip --stat \
-    --include 'third_party/libwebrtc/**BUILD.gn' \
-    --include 'third_party/libwebrtc/webrtc.gni' \
-    | grep -v "files changed" \
-    | wc -l | tr -d " " || true`
+MODIFIED_BUILD_RELATED_FILE_CNT=`bash $SCRIPT_DIR/get_build_file_changes.sh \
+    | wc -l | tr -d " "`
 ERROR_HELP=$"
 Generating build files has failed.  This likely means changes to one or more
 BUILD.gn files are required.  Commit those changes following the instructions
@@ -235,7 +232,7 @@ Then complete these steps:
 After a successful build, you may resume this script:
     bash $SCRIPT_DIR/loop-ff.sh
 "
-echo_log "Modified BUILD.gn (or webrtc.gni) files: $MODIFIED_BUILD_RELATED_FILE_CNT"
+echo_log "Modified .gn, **/BUILD.gn, or **/*.gni files: $MODIFIED_BUILD_RELATED_FILE_CNT"
 MOZ_BUILD_CHANGE_CNT=0
 if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
   echo_log "Regenerate build files"

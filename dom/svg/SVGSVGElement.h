@@ -9,6 +9,7 @@
 
 #include "SVGAnimatedEnumeration.h"
 #include "SVGViewportElement.h"
+#include "mozilla/SVGImageContext.h"
 
 nsresult NS_NewSVGSVGElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
@@ -183,6 +184,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
 
   // invalidate viewbox -> viewport xform & inform frames
   void InvalidateTransformNotifyFrame();
+  void DidChangeSVGView();
 
   // Methods for <image> elements to override my "PreserveAspectRatio" value.
   // These are private so that only our friends
@@ -197,7 +199,6 @@ class SVGSVGElement final : public SVGSVGElementBase {
   bool ClearPreserveAspectRatioProperty();
 
   const SVGAnimatedViewBox& GetViewBoxInternal() const override;
-  SVGAnimatedTransformList* GetTransformInternal() const override;
 
   EnumAttributesInfo GetEnumInfo() override;
 

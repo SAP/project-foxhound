@@ -56,7 +56,7 @@
 #include "js/String.h"
 #include "js/Wrapper.h"
 #include "util/DifferentialTesting.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "util/Text.h"
 #include "vm/ErrorReporting.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
@@ -90,7 +90,6 @@ using namespace js::wasm;
 using JS::AsmJSOption;
 using JS::AutoStableStringChars;
 using JS::GenericNaN;
-using JS::SourceOwnership;
 using JS::SourceText;
 using mozilla::Abs;
 using mozilla::AsVariant;
@@ -99,6 +98,7 @@ using mozilla::HashGeneric;
 using mozilla::IsNegativeZero;
 using mozilla::IsPositiveZero;
 using mozilla::IsPowerOfTwo;
+using mozilla::Maybe;
 using mozilla::Nothing;
 using mozilla::PodZero;
 using mozilla::PositiveInfinity;
@@ -1406,7 +1406,7 @@ class MOZ_STACK_CLASS ModuleValidatorShared {
         moduleFunctionNode_(moduleFunctionNode),
         moduleFunctionName_(FunctionName(moduleFunctionNode)),
         standardLibraryMathNames_(fc),
-        validationLifo_(VALIDATION_LIFO_DEFAULT_CHUNK_SIZE),
+        validationLifo_(VALIDATION_LIFO_DEFAULT_CHUNK_SIZE, js::MallocArena),
         funcDefs_(fc),
         tables_(fc),
         globalMap_(fc),
@@ -2043,7 +2043,7 @@ class MOZ_STACK_CLASS ModuleValidator : public ModuleValidatorShared {
   bool declareFuncPtrTable(FuncType&& sig, TaggedParserAtomIndex name,
                            uint32_t firstUse, uint32_t mask,
                            uint32_t* tableIndex) {
-    if (mask > MaxTableLength) {
+    if (mask > MaxTableElemsRuntime) {
       return failCurrentOffset("function pointer table too big");
     }
 
@@ -2124,7 +2124,7 @@ class MOZ_STACK_CLASS ModuleValidator : public ModuleValidatorShared {
                                                            : Shareable::False;
       limits.initial = memory_.minPages();
       limits.maximum = Nothing();
-      limits.indexType = IndexType::I32;
+      limits.addressType = AddressType::I32;
       if (!codeMeta_->memories.append(MemoryDesc(limits))) {
         return nullptr;
       }
@@ -2186,9 +2186,9 @@ class MOZ_STACK_CLASS ModuleValidator : public ModuleValidatorShared {
       codeSectionSize += func.bytes().length();
     }
 
-    codeMeta_->codeSection.emplace();
-    codeMeta_->codeSection->start = 0;
-    codeMeta_->codeSection->size = codeSectionSize;
+    codeMeta_->codeSectionRange.emplace();
+    codeMeta_->codeSectionRange->start = 0;
+    codeMeta_->codeSectionRange->size = codeSectionSize;
 
     // asm.js does not have any wasm bytecode to save; view-source is
     // provided through the ScriptSource.
@@ -2222,7 +2222,7 @@ class MOZ_STACK_CLASS ModuleValidator : public ModuleValidatorShared {
     }
 
     return mg.finishModule(*bytes, moduleMeta_,
-                           /*maybeTier2Listener=*/nullptr);
+                           /*maybeCompleteTier2Listener=*/nullptr);
   }
 };
 
@@ -7387,7 +7387,7 @@ bool js::IsValidAsmJSHeapLength(size_t length) {
   }
 
   // The heap length is limited by what a wasm memory32 can handle.
-  if (length > MaxMemoryBytes(IndexType::I32)) {
+  if (length > MaxMemoryBytes(AddressType::I32)) {
     return false;
   }
 

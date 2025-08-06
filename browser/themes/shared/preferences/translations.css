@@ -49,6 +49,7 @@
 
 .translations-settings-language {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   padding: var(--space-small) 0;
   border-top: 1px solid var(--in-content-border-color);
@@ -57,13 +58,14 @@
   }
 }
 .translations-settings-language-error {
-  flex: 100%;
+  display: inline-block;
+  flex: 0 1 100%;
 }
 .translations-settings-download-icon[type~="icon"]::part(button) {
   background-image: url(chrome://browser/skin/downloads/downloads.svg);
 }
 
-.translations-settings-delete-icon[type~="icon"]::part(button) {
+.translations-settings-remove-icon[type~="icon"]::part(button) {
   background-image: url(chrome://global/skin/icons/delete.svg);
 }
 
@@ -72,5 +74,5 @@
 }
 
 .translations-settings-download-size {
-  color: var(--color-gray-60);
+  color: var(--text-color-deemphasized);
 }

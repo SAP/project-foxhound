@@ -140,6 +140,9 @@ support-files = [
   "test-network-exceptions.html",
   "test-network-request.html",
   "test-network.html",
+  "test-json-mime.html",
+  "test-json-mime.json",
+  "test-json-mime.json^headers^",
   "test-non-javascript-mime.html",
   "test-non-javascript-mime.js",
   "test-non-javascript-mime.js^headers^",
@@ -270,6 +273,8 @@ skip-if = ["true"] # Bug 1405250
 
 ["browser_webconsole_console_api_iframe.js"]
 
+["browser_webconsole_console_detection.js"]
+
 ["browser_webconsole_console_dir.js"]
 
 ["browser_webconsole_console_dir_uninspectable.js"]
@@ -286,7 +291,7 @@ skip-if = [
   "tsan", # Bug 1767724
   "release_or_beta", # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
   "os == 'linux'", # Bug 1767724
-  "apple_catalina && debug", # Bug 1767724
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1767724
 ]
 
 ["browser_webconsole_console_profile_unavailable.js"]
@@ -319,7 +324,7 @@ skip-if = [
 ["browser_webconsole_context_menu_copy_link_location.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux'", # bug 1473120
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # bug 1473120
   "http3", # Bug 1829298
   "http2",
 ]
@@ -330,7 +335,7 @@ skip-if = [
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_webconsole_context_menu_copy_object.js"]
-skip-if = ["apple_catalina"] # Bug 1713158
+skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64'"] # Bug 1713158
 
 ["browser_webconsole_context_menu_export_console_output.js"]
 
@@ -346,7 +351,7 @@ skip-if = [
 ["browser_webconsole_context_menu_reveal_in_inspector.js"]
 
 ["browser_webconsole_context_menu_store_as_global.js"]
-skip-if = ["apple_catalina"] # Bug 1713158
+skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64'"] # Bug 1713158
 
 ["browser_webconsole_cors_errors.js"]
 https_first_disabled = true
@@ -409,8 +414,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_webconsole_eval_in_debugger_stackframe2.js"]
 skip-if = [
-  "!debug && os == 'linux'", #Bug 1598205
-  "!debug && os == 'win'", #Bug 1598205
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", #Bug 1598205
+  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && opt", #Bug 1598205
 ]
 
 ["browser_webconsole_eval_sources.js"]
@@ -533,7 +538,7 @@ skip-if = ["a11y_checks"] # Bug 1849028 and 1849179 for causing crashes
 ["browser_webconsole_network_messages_expand_before_updates.js"]
 skip-if = [
   "os == 'win'", # Bug 1689101
-  "os == 'linux'", # Bug 1689101
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1689101
 ]
 
 ["browser_webconsole_network_messages_html_preview.js"]
@@ -564,13 +569,15 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_webconsole_non_javascript_mime_warning.js"]
 
+["browser_webconsole_json_mime_warning.js"]
+
 ["browser_webconsole_non_javascript_mime_worker_error.js"]
 
 ["browser_webconsole_non_standard_doctype_errors.js"]
 
 ["browser_webconsole_object_ctrl_click.js"]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
-skip-if = ["apple_catalina"] # Bug 1713158
+skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64'"] # Bug 1713158
 
 ["browser_webconsole_object_in_sidebar_keyboard_nav.js"]
 

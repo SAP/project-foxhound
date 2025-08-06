@@ -5,10 +5,12 @@
 package org.mozilla.fenix.components.appstate
 
 import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.sync.TabData
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.lib.crash.Crash.NativeCodeCrash
+import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.lib.state.Action
 import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.service.nimbus.messaging.MessageSurfaceId
@@ -40,6 +42,14 @@ sealed class AppAction : Action {
      * @property expanded The updated boolean to [AppState.inactiveTabsExpanded]
      */
     data class UpdateInactiveExpanded(val expanded: Boolean) : AppAction()
+
+    /**
+     * Updates whether the native default browser prompt was shown to the user during this session.
+     *
+     * @property wasShown The updated boolean to [AppState.wasNativeDefaultBrowserPromptShown]
+     * This will be true if the prompt was shown, otherwise false.
+     */
+    data class UpdateWasNativeDefaultBrowserPromptShown(val wasShown: Boolean) : AppAction()
 
     /**
      * Updates whether the first frame of the homescreen has been [drawn].
@@ -76,6 +86,11 @@ sealed class AppAction : Action {
     data class RemoveRecentTab(val recentTab: RecentTab) : AppAction()
 
     /**
+     * The orientation of the application has changed.
+     */
+    data class OrientationChange(val orientation: OrientationMode) : AppAction()
+
+    /**
      * The list of bookmarks displayed on the home screen has changed.
      */
     data class BookmarksChange(val bookmarks: List<Bookmark>) : AppAction()
@@ -89,31 +104,6 @@ sealed class AppAction : Action {
     data class DisbandSearchGroupAction(val searchTerm: String) : AppAction()
 
     /**
-     * Indicates the given [categoryName] was selected by the user.
-     */
-    data class SelectPocketStoriesCategory(val categoryName: String) : AppAction()
-
-    /**
-     * Indicates the given [categoryName] was deselected by the user.
-     */
-    data class DeselectPocketStoriesCategory(val categoryName: String) : AppAction()
-
-    /**
-     * Indicates the given [storiesShown] were seen by the user.
-     */
-    data class PocketStoriesShown(val storiesShown: List<PocketStory>) : AppAction()
-
-    /**
-     * Cleans all in-memory data about Pocket stories and categories.
-     */
-    object PocketStoriesClean : AppAction()
-
-    /**
-     * Replaces the current list of Pocket sponsored stories.
-     */
-    data class PocketSponsoredStoriesChange(val sponsoredStories: List<PocketSponsoredStory>) : AppAction()
-
-    /**
      * Adds a set of items marked for removal to the app state, to be hidden in the UI.
      */
     data class AddPendingDeletionSet(val historyItems: Set<PendingDeletionHistory>) : AppAction()
@@ -123,20 +113,7 @@ sealed class AppAction : Action {
      */
     data class UndoPendingDeletionSet(val historyItems: Set<PendingDeletionHistory>) : AppAction()
 
-    /**
-     * Replaces the list of available Pocket recommended stories categories.
-     */
-    data class PocketStoriesCategoriesChange(val storiesCategories: List<PocketRecommendedStoriesCategory>) :
-        AppAction()
-
-    /**
-     * Restores the list of Pocket recommended stories categories selections.
-     */
-    data class PocketStoriesCategoriesSelectionsChange(
-        val storiesCategories: List<PocketRecommendedStoriesCategory>,
-        val categoriesSelected: List<PocketRecommendedStoriesSelectedCategory>,
-    ) : AppAction()
-    object RemoveCollectionsPlaceholder : AppAction()
+    data object RemoveCollectionsPlaceholder : AppAction()
 
     /**
      * Action dispatched when the user has authenticated with their account.
@@ -369,6 +346,11 @@ sealed class AppAction : Action {
     }
 
     /**
+     * An wrapper action for delegating [CrashAction]s to the appropriate Reducers and Middleware in the tree.
+     */
+    data class CrashActionWrapper(val inner: CrashAction) : AppAction()
+
+    /**
      * [AppAction]s related to translations.
      */
     sealed class TranslationsAction : AppAction() {
@@ -389,8 +371,12 @@ sealed class AppAction : Action {
          * [BookmarkAction] dispatched when a bookmark is added.
          *
          * @property guidToEdit The guid of the newly added bookmark or null.
+         * @property parentNode The [BookmarkNode] representing the folder the bookmark was added to, if any.
          */
-        data class BookmarkAdded(val guidToEdit: String?) : BookmarkAction()
+        data class BookmarkAdded(
+            val guidToEdit: String?,
+            val parentNode: BookmarkNode?,
+        ) : BookmarkAction()
 
         /**
          * [BookmarkAction] dispatched when a bookmark is removed.
@@ -519,5 +505,53 @@ sealed class AppAction : Action {
          * state.
          */
         data object Reset : ReaderViewAction()
+    }
+
+    /**
+     * [AppAction]s related to the content recommendations feature.
+     */
+    sealed class ContentRecommendationsAction : AppAction() {
+        /**
+         * Indicates the given [categoryName] was selected by the user.
+         */
+        data class SelectPocketStoriesCategory(val categoryName: String) :
+            ContentRecommendationsAction()
+
+        /**
+         * Indicates the given [categoryName] was deselected by the user.
+         */
+        data class DeselectPocketStoriesCategory(val categoryName: String) :
+            ContentRecommendationsAction()
+
+        /**
+         * Indicates the given [storiesShown] were seen by the user.
+         */
+        data class PocketStoriesShown(val storiesShown: List<PocketStory>) :
+            ContentRecommendationsAction()
+
+        /**
+         * Cleans all in-memory data about Pocket stories and categories.
+         */
+        data object PocketStoriesClean : ContentRecommendationsAction()
+
+        /**
+         * Replaces the current list of Pocket sponsored stories.
+         */
+        data class PocketSponsoredStoriesChange(val sponsoredStories: List<PocketSponsoredStory>) :
+            ContentRecommendationsAction()
+
+        /**
+         * Replaces the list of available Pocket recommended stories categories.
+         */
+        data class PocketStoriesCategoriesChange(val storiesCategories: List<PocketRecommendedStoriesCategory>) :
+            ContentRecommendationsAction()
+
+        /**
+         * Restores the list of Pocket recommended stories categories selections.
+         */
+        data class PocketStoriesCategoriesSelectionsChange(
+            val storiesCategories: List<PocketRecommendedStoriesCategory>,
+            val categoriesSelected: List<PocketRecommendedStoriesSelectedCategory>,
+        ) : ContentRecommendationsAction()
     }
 }

@@ -16,12 +16,14 @@
 #include "nsIScriptSecurityManager.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "nsArray.h"
+#include "nsBaseClipboard.h"
 #include "nsError.h"
 #include "nsIDragService.h"
 #include "nsIClipboard.h"
 #include "nsIXPConnect.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
+#include "nsIContentAnalysis.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIStorageStream.h"
@@ -33,6 +35,8 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsQueryObject.h"
 #include "nsVariant.h"
+#include "mozilla/ClipboardContentAnalysisChild.h"
+#include "mozilla/ClipboardReadRequestChild.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DataTransferBinding.h"
 #include "mozilla/dom/DataTransferItemList.h"
@@ -283,7 +287,7 @@ void DataTransfer::SetEffectAllowed(const nsAString& aEffectAllowed) {
   static_assert(nsIDragService::DRAGDROP_ACTION_LINK == 4,
                 "DRAGDROP_ACTION_LINK constant is wrong");
 
-  for (uint32_t e = 0; e < ArrayLength(sEffects); e++) {
+  for (uint32_t e = 0; e < std::size(sEffects); e++) {
     if (aEffectAllowed.EqualsASCII(sEffects[e])) {
       mEffectAllowed = e;
       break;
@@ -625,12 +629,61 @@ already_AddRefed<DataTransfer> DataTransfer::MozCloneForEvent(
 // The order of the types matters. `kFileMime` needs to be one of the first two
 // types. And the order should be the same as the types order defined in
 // MandatoryDataTypesAsCStrings() for Clipboard API.
-static const nsCString kNonPlainTextExternalFormats[] = {
+static constexpr nsLiteralCString kNonPlainTextExternalFormats[] = {
     nsLiteralCString(kCustomTypesMime), nsLiteralCString(kFileMime),
     nsLiteralCString(kHTMLMime),        nsLiteralCString(kRTFMime),
     nsLiteralCString(kURLMime),         nsLiteralCString(kURLDataMime),
     nsLiteralCString(kTextMime),        nsLiteralCString(kPNGImageMime),
     nsLiteralCString(kPDFJSMime)};
+
+namespace {
+nsresult GetClipboardDataSnapshotWithContentAnalysisSync(
+    const nsTArray<nsCString>& aFormats,
+    const nsIClipboard::ClipboardType& aClipboardType,
+    WindowContext* aWindowContext,
+    nsIClipboardDataSnapshot** aClipboardDataSnapshot) {
+  MOZ_ASSERT(aWindowContext);
+  MOZ_ASSERT(nsIContentAnalysis::MightBeActive());
+  nsresult rv;
+  nsCOMPtr<nsITransferable> trans =
+      do_CreateInstance("@mozilla.org/widget/transferable;1", &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+  trans->Init(nullptr);
+  // Before anything reads the clipboard contents, do a full
+  // content analysis on the clipboard contents (and cache it). This
+  // prevents multiple content analysis dialogs from appearing
+  // when multiple formats are read (see bug 1915351)
+  RefPtr<ClipboardContentAnalysisChild> contentAnalysis =
+      ClipboardContentAnalysisChild::GetOrCreate();
+  IPCTransferableDataOrError ipcTransferableDataOrError;
+  bool result = contentAnalysis->SendGetAllClipboardDataSync(
+      aFormats, aClipboardType, aWindowContext->InnerWindowId(),
+      &ipcTransferableDataOrError);
+  NS_ENSURE_TRUE(result, NS_ERROR_FAILURE);
+  if (ipcTransferableDataOrError.type() ==
+      IPCTransferableDataOrError::Tnsresult) {
+    rv = ipcTransferableDataOrError.get_nsresult();
+    // This class expects clipboardDataSnapshot to be non-null, so
+    // return an empty one
+    if (rv == NS_ERROR_CONTENT_BLOCKED) {
+      auto emptySnapshot =
+          mozilla::MakeRefPtr<nsBaseClipboard::ClipboardPopulatedDataSnapshot>(
+              trans);
+      emptySnapshot.forget(aClipboardDataSnapshot);
+    }
+    return rv;
+  }
+  rv = nsContentUtils::IPCTransferableDataToTransferable(
+      ipcTransferableDataOrError.get_IPCTransferableData(),
+      true /* aAddDataFlavor */, trans, false /* aFilterUnknownFlavors */);
+  NS_ENSURE_SUCCESS(rv, rv);
+  auto snapshot =
+      mozilla::MakeRefPtr<nsBaseClipboard::ClipboardPopulatedDataSnapshot>(
+          trans);
+  snapshot.forget(aClipboardDataSnapshot);
+  return rv;
+}
+}  // namespace
 
 void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
                                                nsTArray<nsCString>& aResult) {
@@ -658,25 +711,46 @@ void DataTransfer::GetExternalClipboardFormats(const bool& aPlainTextOnly,
   }
 
   nsresult rv = NS_ERROR_FAILURE;
+  // If we're in the parent process already this content is exempt from
+  // content analysis (i.e. pasting into the URL bar)
+  bool doContentAnalysis = MOZ_UNLIKELY(nsIContentAnalysis::MightBeActive()) &&
+                           XRE_IsContentProcess();
+
   nsCOMPtr<nsIClipboardDataSnapshot> clipboardDataSnapshot;
   if (aPlainTextOnly) {
-    rv = clipboard->GetDataSnapshotSync(
-        AutoTArray<nsCString, 1>{nsLiteralCString(kTextMime)}, *mClipboardType,
-        wc, getter_AddRefs(clipboardDataSnapshot));
+    AutoTArray<nsCString, 1> formats{nsLiteralCString(kTextMime)};
+    if (doContentAnalysis) {
+      rv = GetClipboardDataSnapshotWithContentAnalysisSync(
+          formats, *mClipboardType, wc, getter_AddRefs(clipboardDataSnapshot));
+    } else {
+      rv = clipboard->GetDataSnapshotSync(
+          formats, *mClipboardType, wc, getter_AddRefs(clipboardDataSnapshot));
+    }
   } else {
-    AutoTArray<nsCString, ArrayLength(kNonPlainTextExternalFormats)> formats;
-    formats.AppendElements(Span<const nsCString>(kNonPlainTextExternalFormats));
-    rv = clipboard->GetDataSnapshotSync(formats, *mClipboardType, wc,
-                                        getter_AddRefs(clipboardDataSnapshot));
+    AutoTArray<nsCString, std::size(kNonPlainTextExternalFormats)> formats;
+    formats.AppendElements(
+        Span<const nsLiteralCString>(kNonPlainTextExternalFormats));
+    if (doContentAnalysis) {
+      rv = GetClipboardDataSnapshotWithContentAnalysisSync(
+          formats, *mClipboardType, wc, getter_AddRefs(clipboardDataSnapshot));
+    } else {
+      rv = clipboard->GetDataSnapshotSync(
+          formats, *mClipboardType, wc, getter_AddRefs(clipboardDataSnapshot));
+    }
   }
 
   if (NS_FAILED(rv) || !clipboardDataSnapshot) {
+    if (rv == NS_ERROR_CONTENT_BLOCKED) {
+      // Use the empty snapshot created in
+      // GetClipboardDataSnapshotWithContentAnalysisSync()
+      mClipboardDataSnapshot = clipboardDataSnapshot;
+    }
     return;
   }
 
   // Order is important for DataTransfer; ensure the returned list items follow
   // the sequence specified in kNonPlainTextExternalFormats.
-  AutoTArray<nsCString, ArrayLength(kNonPlainTextExternalFormats)> flavors;
+  AutoTArray<nsCString, std::size(kNonPlainTextExternalFormats)> flavors;
   clipboardDataSnapshot->GetFlavorList(flavors);
   for (const auto& format : kNonPlainTextExternalFormats) {
     if (flavors.Contains(format)) {
@@ -1369,7 +1443,7 @@ void DataTransfer::CacheExternalDragFormats() {
       FillInExternalCustomTypes(c, sysPrincipal);
     }
 
-    for (uint32_t f = 0; f < ArrayLength(formats); f++) {
+    for (uint32_t f = 0; f < std::size(formats); f++) {
       // IsDataFlavorSupported doesn't take an index as an argument and just
       // checks if any of the items support a particular flavor, even though
       // the GetData method does take an index. Here, we just assume that
@@ -1476,29 +1550,23 @@ void DataTransfer::FillInExternalCustomTypes(uint32_t aIndex,
   FillInExternalCustomTypes(variant, aIndex, aPrincipal);
 }
 
-void DataTransfer::FillInExternalCustomTypes(nsIVariant* aData, uint32_t aIndex,
-                                             nsIPrincipal* aPrincipal) {
-  char* chrs;
-  uint32_t len = 0;
-  nsresult rv = aData->GetAsStringWithSize(&len, &chrs);
-  if (NS_FAILED(rv)) {
-    return;
-  }
-
-  CheckedInt<int32_t> checkedLen(len);
+/* static */ void DataTransfer::ParseExternalCustomTypesString(
+    mozilla::Span<const char> aString,
+    std::function<void(ParseExternalCustomTypesStringData&&)>&& aCallback) {
+  CheckedInt<int32_t> checkedLen(aString.Length());
   if (!checkedLen.isValid()) {
     return;
   }
 
   nsCOMPtr<nsIInputStream> stringStream;
-  NS_NewByteInputStream(getter_AddRefs(stringStream),
-                        Span(chrs, checkedLen.value()), NS_ASSIGNMENT_ADOPT);
+  NS_NewByteInputStream(getter_AddRefs(stringStream), aString,
+                        NS_ASSIGNMENT_DEPEND);
 
   nsCOMPtr<nsIObjectInputStream> stream = NS_NewObjectInputStream(stringStream);
 
   uint32_t type;
   do {
-    rv = stream->Read32(&type);
+    nsresult rv = stream->Read32(&type);
     NS_ENSURE_SUCCESS_VOID(rv);
     if (type == eCustomClipboardTypeId_String) {
       uint32_t formatLength;
@@ -1521,13 +1589,33 @@ void DataTransfer::FillInExternalCustomTypes(nsIVariant* aData, uint32_t aIndex,
       data.Adopt(reinterpret_cast<char16_t*>(dataBytes),
                  dataLength / sizeof(char16_t));
 
-      RefPtr<nsVariantCC> variant = new nsVariantCC();
-      rv = variant->SetAsAString(data);
-      NS_ENSURE_SUCCESS_VOID(rv);
-
-      SetDataWithPrincipal(format, variant, aIndex, aPrincipal);
+      aCallback(ParseExternalCustomTypesStringData(std::move(format),
+                                                   std::move(data)));
     }
   } while (type != eCustomClipboardTypeId_None);
+}
+
+void DataTransfer::FillInExternalCustomTypes(nsIVariant* aData, uint32_t aIndex,
+                                             nsIPrincipal* aPrincipal) {
+  char* chrs;
+  uint32_t len = 0;
+  nsresult rv = aData->GetAsStringWithSize(&len, &chrs);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+  auto freeChrs = MakeScopeExit([&]() { free(chrs); });
+
+  ParseExternalCustomTypesString(
+      mozilla::Span(chrs, len),
+      [&](ParseExternalCustomTypesStringData&& aData) {
+        auto [format, data] = std::move(aData);
+        RefPtr<nsVariantCC> variant = new nsVariantCC();
+        if (NS_FAILED(variant->SetAsAString(data))) {
+          return;
+        }
+
+        SetDataWithPrincipal(format, variant, aIndex, aPrincipal);
+      });
 }
 
 void DataTransfer::SetMode(DataTransfer::Mode aMode) {

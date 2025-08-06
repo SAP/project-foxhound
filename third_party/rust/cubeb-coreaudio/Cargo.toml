@@ -16,14 +16,21 @@ authors = [
     "Chun-Min Chang <chun.m.chang@gmail.com>",
     "Paul Adenot <paul@paul.cx>",
 ]
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
 readme = "README.md"
 license = "ISC"
 
 [lib]
+name = "cubeb_coreaudio"
 crate-type = [
     "staticlib",
     "rlib",
 ]
+path = "src/lib.rs"
 
 [dependencies]
 atomic = "0.4"

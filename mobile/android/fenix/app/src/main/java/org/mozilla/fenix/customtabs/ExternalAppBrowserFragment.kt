@@ -7,10 +7,10 @@ package org.mozilla.fenix.customtabs
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.coordinatorlayout.widget.CoordinatorLayout
-import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.navArgs
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +29,8 @@ import mozilla.components.feature.pwa.feature.WebAppHideToolbarFeature
 import mozilla.components.feature.pwa.feature.WebAppSiteControlsFeature
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.android.arch.lifecycle.addObservers
+import mozilla.telemetry.glean.private.NoExtras
+import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BaseBrowserFragment
 import org.mozilla.fenix.browser.ContextMenuSnackbarDelegate
@@ -47,6 +49,7 @@ import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.Theme
 
 /**
  * Fragment used for browsing the web within external apps.
@@ -61,8 +64,6 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
 
     private val isNavBarEnabled
         get() = requireContext().settings().navigationToolbarEnabled
-    private val isNavbarVisible
-        get() = requireContext().shouldAddNavigationBar()
 
     @Suppress("LongMethod", "ComplexMethod")
     override fun initializeUI(view: View, tab: SessionState) {
@@ -76,24 +77,22 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
             requireComponents.core.webAppManifestStorage.getManifestCache(url)
         }
 
-        // Updating the contents of the bottomToolbarContainer with CustomTabNavBar. The container gets initialized
-        // during the super.initializeUI call with BrowserNavBar.
-        // A follow up: https://bugzilla.mozilla.org/show_bug.cgi?id=1888300
-        if (isNavbarVisible) {
-            initializeNavBar()
-        }
+        initializeNavBar()
 
         customTabsIntegration.set(
             feature = CustomTabsIntegration(
+                context = requireContext(),
                 store = requireComponents.core.store,
+                appStore = requireComponents.appStore,
                 useCases = requireComponents.useCases.customTabsUseCases,
-                toolbar = browserToolbarView.view,
+                browserToolbarView = browserToolbarView,
                 sessionId = customTabSessionId,
                 activity = activity,
-                onItemTapped = { browserToolbarInteractor.onBrowserToolbarMenuItemTapped(it) },
+                interactor = browserToolbarInteractor,
                 isPrivate = tab.content.private,
                 shouldReverseItems = !activity.settings().shouldUseBottomToolbar,
                 isSandboxCustomTab = args.isSandboxCustomTab,
+                isMenuRedesignEnabled = requireContext().settings().enableMenuRedesign,
                 isNavBarEnabled = isNavBarEnabled,
             ),
             owner = this,
@@ -119,47 +118,10 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                     tabId = customTabSessionId,
                     manifest = manifest,
                 ) { toolbarVisible ->
-
-                    browserToolbarView.view.isVisible = toolbarVisible
                     webAppToolbarShouldBeVisible = toolbarVisible
-                    if (requireContext().shouldAddNavigationBar()) {
-                        bottomToolbarContainerView.toolbarContainerView.isVisible = toolbarVisible
-                    }
-
-                    val browserEngine = binding.swipeRefresh.layoutParams as CoordinatorLayout.LayoutParams
-                    val settings = activity.settings()
-                    val isToolbarAtBottom = settings.toolbarPosition == ToolbarPosition.BOTTOM
-
-                    if (!toolbarVisible) {
-                        binding.engineView.setDynamicToolbarMaxHeight(0)
-                        if (isToolbarAtBottom) {
-                            browserEngine.bottomMargin = 0
-                        } else {
-                            browserEngine.topMargin = 0
-                            // The value of translationY of swipeRefresh was changed in EngineViewClippingBehavior.
-                            binding.swipeRefresh.translationY = 0f
-
-                            if (isNavBarEnabled) {
-                                browserEngine.bottomMargin = 0
-                            }
-                        }
-                    } else {
-                        val bottomToolbarHeight = settings.getBottomToolbarHeight(requireContext())
-                        val topToolbarHeight = settings.getTopToolbarHeight(false)
-                        binding.engineView.setDynamicToolbarMaxHeight(topToolbarHeight + bottomToolbarHeight)
-                        val isToolbarDynamic = !settings.shouldUseFixedTopToolbar && settings.isDynamicToolbarEnabled
-
-                        if (!isToolbarDynamic) {
-                            if (isToolbarAtBottom) {
-                                browserEngine.bottomMargin = bottomToolbarHeight
-                            } else {
-                                browserEngine.topMargin = topToolbarHeight
-
-                                if (isNavBarEnabled) {
-                                    browserEngine.bottomMargin = bottomToolbarHeight
-                                }
-                            }
-                        }
+                    when (toolbarVisible) {
+                        true -> collapseBrowserView()
+                        false -> expandBrowserView()
                     }
                 },
                 owner = this,
@@ -218,9 +180,7 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
 
     override fun onUpdateToolbarForConfigurationChange(toolbar: BrowserToolbarView) {
         super.onUpdateToolbarForConfigurationChange(toolbar)
-        if (isNavbarVisible) {
-            initializeNavBar()
-        }
+        initializeNavBar()
     }
 
     override fun removeSessionIfNeeded(): Boolean {
@@ -267,7 +227,15 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
         ContextMenuSnackbarDelegate(),
     )
 
+    @Suppress("LongMethod")
     private fun initializeNavBar() {
+        // Update the contents of the bottomToolbarContainer with the CustomTabNavBar configuration
+        // only if a navbar should be used and it was initialized in the parent.
+        // Follow up: https://bugzilla.mozilla.org/show_bug.cgi?id=1888300
+        if (context?.shouldAddNavigationBar() != true || _bottomToolbarContainerView == null) {
+            return
+        }
+
         val customTabSessionId = customTabSessionId ?: return
 
         val navbarIntegration = CustomTabsNavigationBarIntegration(
@@ -276,11 +244,22 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
             customTabSessionId = customTabSessionId,
             toolbar = browserToolbarView,
         )
+        navbarIntegration.navbarMenu.apply {
+            recordClickEvent = { NavigationBar.customMenuTapped.record(NoExtras()) }
+        }
 
+        val openLinkInPrivate = requireContext().settings().openLinksInAPrivateTab
         val isToolbarAtBottom = requireComponents.settings.toolbarPosition == ToolbarPosition.BOTTOM
         bottomToolbarContainerView.updateContent {
-            FirefoxTheme {
-                Column {
+            val customTabTheme = if (openLinkInPrivate) {
+                Theme.Private
+            } else {
+                Theme.getTheme()
+            }
+            FirefoxTheme(theme = customTabTheme) {
+                Column(
+                    modifier = Modifier.background(FirefoxTheme.colors.layer1),
+                ) {
                     if (isToolbarAtBottom) {
                         // If the toolbar is reinitialized - for example after the screen is rotated
                         // the toolbar might have been already set.
@@ -295,41 +274,50 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                         browserStore = requireComponents.core.store,
                         menuButton = navbarIntegration.navbarMenu,
                         onBackButtonClick = {
+                            NavigationBar.customBackTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
                                 ToolbarMenu.Item.Back(viewHistory = false),
                             )
                         },
                         onBackButtonLongPress = {
+                            NavigationBar.customBackLongTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
                                 ToolbarMenu.Item.Back(viewHistory = true),
                             )
                         },
                         onForwardButtonClick = {
+                            NavigationBar.customForwardTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
                                 ToolbarMenu.Item.Forward(viewHistory = false),
                             )
                         },
                         onForwardButtonLongPress = {
+                            NavigationBar.customForwardLongTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
                                 ToolbarMenu.Item.Forward(viewHistory = true),
                             )
                         },
                         onOpenInBrowserButtonClick = {
+                            NavigationBar.customOpenInFenixTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
                                 ToolbarMenu.Item.OpenInFenix,
                             )
                         },
                         onMenuButtonClick = {
+                            NavigationBar.customMenuTapped.record(NoExtras())
                             nav(
                                 R.id.externalAppBrowserFragment,
                                 ExternalAppBrowserFragmentDirections.actionGlobalMenuDialogFragment(
                                     accesspoint = MenuAccessPoint.External,
                                     customTabSessionId = customTabSessionId,
+                                    isSandboxCustomTab = args.isSandboxCustomTab,
                                 ),
                             )
                         },
-                        backgroundColor = navbarIntegration.backgroundColor,
-                        buttonTint = navbarIntegration.buttonTint,
+                        isSandboxCustomTab = args.isSandboxCustomTab,
+                        onVisibilityUpdated = {
+                            configureEngineViewWithDynamicToolbarsMaxHeight()
+                        },
                     )
                 }
             }

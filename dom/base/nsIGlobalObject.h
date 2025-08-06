@@ -10,6 +10,7 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/OriginTrials.h"
 #include "nsContentUtils.h"
@@ -30,7 +31,9 @@
   }
 
 class nsCycleCollectionTraversalCallback;
+class nsICookieJarSettings;
 class nsIPrincipal;
+class nsIURI;
 class nsPIDOMWindowInner;
 
 namespace mozilla {
@@ -49,6 +52,7 @@ class Report;
 class ReportBody;
 class ReportingObserver;
 class ServiceWorker;
+class ServiceWorkerContainer;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationDescriptor;
 class StorageManager;
@@ -193,7 +197,12 @@ class nsIGlobalObject : public nsISupports {
     return nullptr;
   }
 
+  // For globals with a concept of a Base URI (windows, workers), the base URI,
+  // nullptr otherwise.
+  virtual nsIURI* GetBaseURI() const;
+
   virtual mozilla::Maybe<mozilla::dom::ClientInfo> GetClientInfo() const;
+  virtual mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const;
 
   virtual mozilla::Maybe<nsID> GetAgentClusterId() const;
 
@@ -203,6 +212,9 @@ class nsIGlobalObject : public nsISupports {
 
   virtual mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor> GetController()
       const;
+
+  virtual already_AddRefed<mozilla::dom::ServiceWorkerContainer>
+  GetServiceWorkerContainer();
 
   // Get the DOM object for the given descriptor or attempt to create one.
   // Creation can still fail and return nullptr during shutdown, etc.
@@ -229,6 +241,10 @@ class nsIGlobalObject : public nsISupports {
    * this method in your subclass of this class!
    */
   virtual mozilla::StorageAccess GetStorageAccess();
+
+  // For globals with cookie jars (windows, workers), the cookie jar settings;
+  // will likely be null on other global types.
+  virtual nsICookieJarSettings* GetCookieJarSettings();
 
   // Returns the set of active origin trials for this global.
   virtual mozilla::OriginTrials Trials() const = 0;
@@ -300,6 +316,43 @@ class nsIGlobalObject : public nsISupports {
   virtual bool IsBackgroundInternal() const { return false; }
   virtual mozilla::dom::TimeoutManager* GetTimeoutManager() { return nullptr; }
   virtual bool IsRunningTimeout() { return false; }
+
+  virtual bool IsXPCSandbox() { return false; }
+
+  /**
+   * Report a localized error message to the error console.  Currently this
+   * amounts to a wrapper around nsContentUtils::ReportToConsole for window
+   * globals and a runnable bounced to the main thread to call
+   * nsContentUtils::ReportToConsole for workers but the intent is to migrate
+   * towards logging the messages to the `dom::Console` for the global.  See
+   * bug 1900706 for more context.
+   *
+   * This method returns void because there is no reasonable action for a caller
+   * for dynamic failure and we can assert on things like erroneous message
+   * names.
+   *
+   *   @param aErrorFlags See nsIScriptError.
+   *   @param aCategory Name of module reporting error.
+   *   @param aFile Properties file containing localized message.
+   *   @param aMessageName Name of localized message.
+   *   @param [aParams=empty-array] (Optional) Parameters to be substituted into
+   *          localized message.
+   *   @param [aURI=nullptr] (Optional) URI of resource containing error; if
+   *          omitted, an attempt will be made to use the URI associated with
+   *          the global (ex: the document URI).
+   *   @param [aSourceLine=u""_ns] (Optional) The text of the line that
+   *          contains the error (may be empty).
+   *   @param [aLineNumber=0] (Optional) Line number within resource
+   *          containing error.
+   *   @param [aColumnNumber=0] (Optional) Column number within resource
+   *          containing error.
+   */
+  virtual void ReportToConsole(
+      uint32_t aErrorFlags, const nsCString& aCategory,
+      nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
+      const nsTArray<nsString>& aParams = nsTArray<nsString>(),
+      const mozilla::SourceLocation& aLocation =
+          mozilla::JSCallingLocation::Get());
 
  protected:
   virtual ~nsIGlobalObject();

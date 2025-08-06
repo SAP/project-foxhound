@@ -54,6 +54,14 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   movslq(src, dest.reg);
 }
 
+void MacroAssembler::move8SignExtendToPtr(Register src, Register dest) {
+  movsbq(Operand(src), dest);
+}
+
+void MacroAssembler::move16SignExtendToPtr(Register src, Register dest) {
+  movswq(Operand(src), dest);
+}
+
 void MacroAssembler::move32SignExtendToPtr(Register src, Register dest) {
   movslq(src, dest);
 }
@@ -333,6 +341,21 @@ void MacroAssembler::lshiftPtr(Register shift, Register srcDest) {
   shlq_cl(srcDest);
 }
 
+void MacroAssembler::flexibleLshiftPtr(Register shift, Register srcDest) {
+  if (HasBMI2()) {
+    shlxq(srcDest, shift, srcDest);
+    return;
+  }
+  if (shift == rcx) {
+    shlq_cl(srcDest);
+  } else {
+    // Shift amount must be in rcx.
+    xchg(shift, rcx);
+    shlq_cl(shift == srcDest ? rcx : srcDest == rcx ? shift : srcDest);
+    xchg(shift, rcx);
+  }
+}
+
 void MacroAssembler::lshift64(Imm32 imm, Register64 dest) {
   MOZ_ASSERT(0 <= imm.value && imm.value < 64);
   lshiftPtr(imm, dest.reg);
@@ -361,6 +384,21 @@ void MacroAssembler::rshiftPtr(Register shift, Register srcDest) {
   shrq_cl(srcDest);
 }
 
+void MacroAssembler::flexibleRshiftPtr(Register shift, Register srcDest) {
+  if (HasBMI2()) {
+    shrxq(srcDest, shift, srcDest);
+    return;
+  }
+  if (shift == rcx) {
+    shrq_cl(srcDest);
+  } else {
+    // Shift amount must be in rcx.
+    xchg(shift, rcx);
+    shrq_cl(shift == srcDest ? rcx : srcDest == rcx ? shift : srcDest);
+    xchg(shift, rcx);
+  }
+}
+
 void MacroAssembler::rshift64(Imm32 imm, Register64 dest) {
   rshiftPtr(imm, dest.reg);
 }
@@ -377,6 +415,31 @@ void MacroAssembler::rshift64(Register shift, Register64 srcDest) {
 void MacroAssembler::rshiftPtrArithmetic(Imm32 imm, Register dest) {
   MOZ_ASSERT(0 <= imm.value && imm.value < 64);
   sarq(imm, dest);
+}
+
+void MacroAssembler::rshiftPtrArithmetic(Register shift, Register srcDest) {
+  if (Assembler::HasBMI2()) {
+    sarxq(srcDest, shift, srcDest);
+    return;
+  }
+  MOZ_ASSERT(shift == rcx);
+  sarq_cl(srcDest);
+}
+
+void MacroAssembler::flexibleRshiftPtrArithmetic(Register shift,
+                                                 Register srcDest) {
+  if (HasBMI2()) {
+    sarxq(srcDest, shift, srcDest);
+    return;
+  }
+  if (shift == rcx) {
+    sarq_cl(srcDest);
+  } else {
+    // Shift amount must be in rcx.
+    xchg(shift, rcx);
+    sarq_cl(shift == srcDest ? rcx : srcDest == rcx ? shift : srcDest);
+    xchg(shift, rcx);
+  }
 }
 
 void MacroAssembler::rshift64Arithmetic(Imm32 imm, Register64 dest) {
@@ -451,6 +514,21 @@ void MacroAssembler::rotateRight64(Imm32 count, Register64 src, Register64 dest,
 // ===============================================================
 // Condition functions
 
+void MacroAssembler::cmp64Set(Condition cond, Register64 lhs, Register64 rhs,
+                              Register dest) {
+  cmpPtrSet(cond, lhs.reg, rhs.reg, dest);
+}
+
+void MacroAssembler::cmp64Set(Condition cond, Register64 lhs, Imm64 rhs,
+                              Register dest) {
+  cmpPtrSet(cond, lhs.reg, ImmWord(static_cast<uintptr_t>(rhs.value)), dest);
+}
+
+void MacroAssembler::cmp64Set(Condition cond, Address lhs, Register64 rhs,
+                              Register dest) {
+  cmpPtrSet(cond, lhs, rhs.reg, dest);
+}
+
 void MacroAssembler::cmp64Set(Condition cond, Address lhs, Imm64 rhs,
                               Register dest) {
   cmpPtrSet(cond, lhs, ImmWord(static_cast<uintptr_t>(rhs.value)), dest);
@@ -458,37 +536,38 @@ void MacroAssembler::cmp64Set(Condition cond, Address lhs, Imm64 rhs,
 
 template <typename T1, typename T2>
 void MacroAssembler::cmpPtrSet(Condition cond, T1 lhs, T2 rhs, Register dest) {
+  bool destIsZero = maybeEmitSetZeroByteRegister(lhs, rhs, dest);
   cmpPtr(lhs, rhs);
-  emitSet(cond, dest);
+  emitSet(cond, dest, destIsZero);
 }
 
 // ===============================================================
 // Bit counting functions
 
-void MacroAssembler::clz64(Register64 src, Register dest) {
+void MacroAssembler::clz64(Register64 src, Register64 dest) {
   if (AssemblerX86Shared::HasLZCNT()) {
-    lzcntq(src.reg, dest);
+    lzcntq(src.reg, dest.reg);
     return;
   }
 
   Label nonzero;
-  bsrq(src.reg, dest);
+  bsrq(src.reg, dest.reg);
   j(Assembler::NonZero, &nonzero);
-  movq(ImmWord(0x7F), dest);
+  movq(ImmWord(0x7F), dest.reg);
   bind(&nonzero);
-  xorq(Imm32(0x3F), dest);
+  xorq(Imm32(0x3F), dest.reg);
 }
 
-void MacroAssembler::ctz64(Register64 src, Register dest) {
+void MacroAssembler::ctz64(Register64 src, Register64 dest) {
   if (AssemblerX86Shared::HasBMI1()) {
-    tzcntq(src.reg, dest);
+    tzcntq(src.reg, dest.reg);
     return;
   }
 
   Label nonzero;
-  bsfq(src.reg, dest);
+  bsfq(src.reg, dest.reg);
   j(Assembler::NonZero, &nonzero);
-  movq(ImmWord(64), dest);
+  movq(ImmWord(64), dest.reg);
   bind(&nonzero);
 }
 
@@ -498,10 +577,11 @@ void MacroAssembler::popcnt64(Register64 src64, Register64 dest64,
   Register dest = dest64.reg;
 
   if (AssemblerX86Shared::HasPOPCNT()) {
-    MOZ_ASSERT(tmp == InvalidReg);
     popcntq(src, dest);
     return;
   }
+
+  MOZ_ASSERT(tmp != InvalidReg);
 
   if (src != dest) {
     movq(src, dest);
@@ -606,19 +686,37 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs, Imm64 val,
-                              Label* label) {
-  MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal,
+                              Label* success, Label* fail) {
+  MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal ||
+                 cond == Assembler::LessThan ||
+                 cond == Assembler::LessThanOrEqual ||
+                 cond == Assembler::GreaterThan ||
+                 cond == Assembler::GreaterThanOrEqual ||
+                 cond == Assembler::Below || cond == Assembler::BelowOrEqual ||
+                 cond == Assembler::Above || cond == Assembler::AboveOrEqual,
              "other condition codes not supported");
 
-  branchPtr(cond, lhs, ImmWord(val.value), label);
+  branchPtr(cond, lhs, ImmWord(val.value), success);
+  if (fail) {
+    jump(fail);
+  }
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs,
-                              Register64 rhs, Label* label) {
-  MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal,
+                              Register64 rhs, Label* success, Label* fail) {
+  MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal ||
+                 cond == Assembler::LessThan ||
+                 cond == Assembler::LessThanOrEqual ||
+                 cond == Assembler::GreaterThan ||
+                 cond == Assembler::GreaterThanOrEqual ||
+                 cond == Assembler::Below || cond == Assembler::BelowOrEqual ||
+                 cond == Assembler::Above || cond == Assembler::AboveOrEqual,
              "other condition codes not supported");
 
-  branchPtr(cond, lhs, rhs.reg, label);
+  branchPtr(cond, lhs, rhs.reg, success);
+  if (fail) {
+    jump(fail);
+  }
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs,
@@ -729,6 +827,14 @@ void MacroAssembler::branchTruncateDoubleToInt32(FloatRegister src,
   movl(dest, dest);  // Zero upper 32-bits.
 }
 
+void MacroAssembler::branchInt64NotInPtrRange(Register64 src, Label* label) {
+  // No-op on 64-bit platforms.
+}
+
+void MacroAssembler::branchUInt64NotInPtrRange(Register64 src, Label* label) {
+  branchTest64(Assembler::Signed, src, src, label);
+}
+
 void MacroAssembler::branchTest32(Condition cond, const AbsoluteAddress& lhs,
                                   Imm32 rhs, Label* label) {
   if (X86Encoding::IsAddressImmediate(lhs.addr)) {
@@ -741,10 +847,27 @@ void MacroAssembler::branchTest32(Condition cond, const AbsoluteAddress& lhs,
   j(cond, label);
 }
 
-template <class L>
+void MacroAssembler::branchTestPtr(Condition cond, Register lhs, ImmWord rhs,
+                                   Label* label) {
+  testPtr(lhs, rhs);
+  j(cond, label);
+}
+
 void MacroAssembler::branchTest64(Condition cond, Register64 lhs,
-                                  Register64 rhs, Register temp, L label) {
-  branchTestPtr(cond, lhs.reg, rhs.reg, label);
+                                  Register64 rhs, Register temp, Label* success,
+                                  Label* fail) {
+  branchTestPtr(cond, lhs.reg, rhs.reg, success);
+  if (fail) {
+    jump(fail);
+  }
+}
+
+void MacroAssembler::branchTest64(Condition cond, Register64 lhs, Imm64 rhs,
+                                  Label* success, Label* fail) {
+  branchTestPtr(cond, lhs.reg, ImmWord(rhs.value), success);
+  if (fail) {
+    jump(fail);
+  }
 }
 
 void MacroAssembler::branchTestBooleanTruthy(bool truthy,
@@ -769,6 +892,12 @@ void MacroAssembler::branchTestValue(Condition cond, const BaseIndex& lhs,
 
 void MacroAssembler::branchToComputedAddress(const BaseIndex& address) {
   jmp(Operand(address));
+}
+
+void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs, Imm32 rhs,
+                                   Register src, Register dest) {
+  cmpPtr(lhs, rhs);
+  cmovCCq(cond, src, dest);
 }
 
 void MacroAssembler::cmpPtrMovePtr(Condition cond, Register lhs, Register rhs,
@@ -801,6 +930,13 @@ void MacroAssembler::test32LoadPtr(Condition cond, const Address& addr,
                                    Register dest) {
   MOZ_ASSERT(cond == Assembler::Zero || cond == Assembler::NonZero);
   test32(addr, mask);
+  cmovCCq(cond, Operand(src), dest);
+}
+
+void MacroAssembler::test32MovePtr(Condition cond, Register operand, Imm32 mask,
+                                   Register src, Register dest) {
+  MOZ_ASSERT(cond == Assembler::Zero || cond == Assembler::NonZero);
+  test32(operand, mask);
   cmovCCq(cond, Operand(src), dest);
 }
 

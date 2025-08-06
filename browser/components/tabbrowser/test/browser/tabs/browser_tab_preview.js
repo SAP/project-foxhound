@@ -342,6 +342,68 @@ add_task(async function thumbnailTests() {
 });
 
 /**
+ * Verify that non-selected tabs display a wireframe in their preview
+ * when enabled, and the tab is unable to provide a thumbnail (e.g. unloaded).
+ */
+add_task(async function wireframeTests() {
+  const { TabStateFlusher } = ChromeUtils.importESModule(
+    "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
+  );
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.tabs.hoverPreview.showThumbnails", true],
+      ["browser.history.collectWireframes", true],
+    ],
+  });
+
+  const tab1 = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "data:text/html,<html><head><title>First New Tab</title></head><body>Hello</body></html>"
+  );
+  const tab2 = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:blank"
+  );
+
+  // Discard the first tab so it can't provide a thumbnail image
+  await TabStateFlusher.flush(tab1.linkedBrowser);
+  gBrowser.discardBrowser(tab1, true);
+
+  const previewPanel = document.getElementById("tab-preview-panel");
+
+  let thumbnailUpdated = BrowserTestUtils.waitForEvent(
+    previewPanel,
+    "previewThumbnailUpdated",
+    false,
+    evt => evt.detail.thumbnail
+  );
+  await openPreview(tab1);
+  await thumbnailUpdated;
+  Assert.ok(
+    previewPanel.querySelectorAll(".tab-preview-thumbnail-container svg")
+      .length,
+    "Tab1 preview contains wireframe"
+  );
+
+  const previewHidden = BrowserTestUtils.waitForPopupEvent(
+    previewPanel,
+    "hidden"
+  );
+
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
+  await SpecialPowers.popPrefEnv();
+
+  // Removing the tab should close the preview.
+  await previewHidden;
+
+  // Move the mouse outside of the tab strip.
+  EventUtils.synthesizeMouseAtCenter(document.documentElement, {
+    type: "mouseover",
+  });
+});
+
+/**
  * make sure delay is applied when mouse leaves tabstrip
  * but not when moving between tabs on the tabstrip
  */
@@ -688,7 +750,7 @@ add_task(async function wheelTests() {
   );
 
   let scrollOverflowEvent = BrowserTestUtils.waitForEvent(
-    document.getElementById("tabbrowser-arrowscrollbox"),
+    gBrowser.tabContainer.arrowScrollbox,
     "overflow"
   );
   BrowserTestUtils.overflowTabs(registerCleanupFunction, window, {
@@ -754,6 +816,37 @@ add_task(async function tabContentChangeTests() {
     previewPanel.querySelector(".tab-preview-title").innerText,
     "New Tab Title",
     "Preview of tab shows new tab title"
+  );
+
+  await closePreviews();
+  BrowserTestUtils.removeTab(tab);
+});
+
+/**
+ * In vertical tabs mode, tab preview should be displayed to the side
+ * and not beneath the tab.
+ */
+add_task(async function tabPreview_verticalTabsPositioning() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["sidebar.revamp", true],
+      ["sidebar.verticalTabs", true],
+    ],
+  });
+
+  const previewPanel = document.getElementById("tab-preview-panel");
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:blank"
+  );
+  await openPreview(tab);
+
+  let tabRect = tab.getBoundingClientRect();
+  let panelRect = previewPanel.getBoundingClientRect();
+
+  Assert.ok(
+    Math.abs(tabRect.top - panelRect.top) < 5,
+    "Preview panel not displayed beneath tab"
   );
 
   await closePreviews();

@@ -13,8 +13,24 @@ var testPage =
 let mockCA = makeMockContentAnalysis();
 
 add_setup(async function test_setup() {
-  mockCA = mockContentAnalysisService(mockCA);
+  mockCA = await mockContentAnalysisService(mockCA);
 });
+
+function setClipboardHTMLData(htmlString) {
+  const trans = Cc["@mozilla.org/widget/transferable;1"].createInstance(
+    Ci.nsITransferable
+  );
+  trans.init(null);
+  trans.addDataFlavor("text/html");
+  const str = Cc["@mozilla.org/supports-string;1"].createInstance(
+    Ci.nsISupportsString
+  );
+  str.data = htmlString;
+  trans.setTransferData("text/html", str);
+
+  // Write to clipboard.
+  Services.clipboard.setData(trans, null, Ci.nsIClipboard.kGlobalClipboard);
+}
 
 async function testClipboardWithContentAnalysis(allowPaste) {
   mockCA.setupForTest(allowPaste);
@@ -85,24 +101,26 @@ async function testClipboardWithContentAnalysis(allowPaste) {
             let clipboardData = event.clipboardData;
             Assert.equal(
               clipboardData.mozItemCount,
-              1,
-              "One item on clipboard"
+              allowPaste ? 1 : 0,
+              "Items on clipboard"
             );
             Assert.equal(
               clipboardData.types.length,
-              2,
-              "Two types on clipboard"
+              allowPaste ? 2 : 0,
+              "Types on clipboard"
             );
-            Assert.equal(
-              clipboardData.types[0],
-              "text/html",
-              "text/html on clipboard"
-            );
-            Assert.equal(
-              clipboardData.types[1],
-              "text/plain",
-              "text/plain on clipboard"
-            );
+            if (allowPaste) {
+              Assert.equal(
+                clipboardData.types[0],
+                "text/html",
+                "text/html on clipboard"
+              );
+              Assert.equal(
+                clipboardData.types[1],
+                "text/plain",
+                "text/plain on clipboard"
+              );
+            }
             Assert.equal(
               clipboardData.getData("text/html"),
               allowPaste
@@ -127,18 +145,13 @@ async function testClipboardWithContentAnalysis(allowPaste) {
 
   await sendKey("v");
   await pastePromise;
-  // 3 calls because there are three formats on the clipboard
-  is(mockCA.calls.length, 3, "Correct number of calls to Content Analysis");
+  // Check that the number of calls matches the number of
+  // kKnownClipboardTypes on the clipboard.
+  is(mockCA.calls.length, 2, "Correct number of calls to Content Analysis");
+  assertContentAnalysisRequest(mockCA.calls[0], "t Bold");
   assertContentAnalysisRequest(
-    mockCA.calls[0],
+    mockCA.calls[1],
     htmlPrefix + "t <b>Bold</b>" + htmlPostfix
-  );
-  assertContentAnalysisRequest(mockCA.calls[1], "t Bold");
-  assertContentAnalysisRequest(mockCA.calls[2], null);
-  // This is a complicated format, just make sure it has the text we expect
-  ok(
-    mockCA.calls[2].textContent.includes("t <b>Bold</b>"),
-    "request textContent should contain HTML"
   );
   mockCA.clearCalls();
 
@@ -192,24 +205,26 @@ async function testClipboardWithContentAnalysis(allowPaste) {
             let clipboardData = event.clipboardData;
             Assert.equal(
               clipboardData.mozItemCount,
-              1,
-              "One item on clipboard 2"
+              allowPaste ? 1 : 0,
+              "Items on clipboard 2"
             );
             Assert.equal(
               clipboardData.types.length,
-              2,
-              "Two types on clipboard 2"
+              allowPaste ? 2 : 0,
+              "Types on clipboard 2"
             );
-            Assert.equal(
-              clipboardData.types[0],
-              "text/html",
-              "text/html on clipboard 2"
-            );
-            Assert.equal(
-              clipboardData.types[1],
-              "text/plain",
-              "text/plain on clipboard 2"
-            );
+            if (allowPaste) {
+              Assert.equal(
+                clipboardData.types[0],
+                "text/html",
+                "text/html on clipboard 2"
+              );
+              Assert.equal(
+                clipboardData.types[1],
+                "text/plain",
+                "text/plain on clipboard 2"
+              );
+            }
             Assert.equal(
               clipboardData.getData("text/html"),
               allowPaste
@@ -234,18 +249,12 @@ async function testClipboardWithContentAnalysis(allowPaste) {
 
   await sendKey("v");
   await pastePromise;
-  // 3 calls because there are three formats on the clipboard
-  is(mockCA.calls.length, 3, "Correct number of calls to Content Analysis");
+  // 2 calls because there are two formats on the clipboard
+  is(mockCA.calls.length, 2, "Correct number of calls to Content Analysis");
+  assertContentAnalysisRequest(mockCA.calls[0], "Some text");
   assertContentAnalysisRequest(
-    mockCA.calls[0],
+    mockCA.calls[1],
     htmlPrefix + "<i>Italic</i> " + htmlPostfix
-  );
-  assertContentAnalysisRequest(mockCA.calls[1], "Some text");
-  assertContentAnalysisRequest(mockCA.calls[2], null);
-  // This is a complicated format, just make sure it has the text we expect
-  ok(
-    mockCA.calls[2].textContent.includes("<i>Italic</i>"),
-    "request textContent should contain HTML"
   );
   mockCA.clearCalls();
 
@@ -260,23 +269,10 @@ async function testClipboardWithContentAnalysis(allowPaste) {
     );
   });
 
-  // Next, check that the Copy Image command works.
-
-  // The context menu needs to be opened to properly initialize for the copy
-  // image command to run.
-  let contextMenu = document.getElementById("contentAreaContextMenu");
-  let contextMenuShown = promisePopupShown(contextMenu);
-  BrowserTestUtils.synthesizeMouseAtCenter(
-    "#img",
-    { type: "contextmenu", button: 2 },
-    gBrowser.selectedBrowser
+  // Next, put some HTML data on the clipboard
+  setClipboardHTMLData(
+    '<img id="img" tabindex="1" src="http://example.org/browser/browser/base/content/test/general/moz.png">'
   );
-  await contextMenuShown;
-
-  document.getElementById("context-copyimage-contents").doCommand();
-
-  contextMenu.hidePopup();
-  await promisePopupHidden(contextMenu);
 
   // Focus the content again
   await SimpleTest.promiseFocus(browser);
@@ -324,21 +320,12 @@ async function testClipboardWithContentAnalysis(allowPaste) {
   await SpecialPowers.spawn(browser, [], () => {});
   await sendKey("v");
   await pastePromise;
-  is(mockCA.calls.length, 2, "Correct number of calls to Content Analysis");
+  is(mockCA.calls.length, 1, "Correct number of calls to Content Analysis");
   assertContentAnalysisRequest(
     mockCA.calls[0],
     htmlPrefix +
       '<img id="img" tabindex="1" src="http://example.org/browser/browser/base/content/test/general/moz.png">' +
       htmlPostfix
-  );
-  // This is the CF_HTML format
-  assertContentAnalysisRequest(mockCA.calls[1], null);
-  // This is a complicated format, just make sure it has the text we expect
-  ok(
-    mockCA.calls[1].textContent.includes(
-      '<img id="img" tabindex="1" src="http://example.org/browser/browser/base/content/test/general/moz.png">'
-    ),
-    "request textContent should contain HTML"
   );
   mockCA.clearCalls();
 
@@ -360,10 +347,11 @@ async function testClipboardWithContentAnalysis(allowPaste) {
 }
 
 function assertContentAnalysisRequest(request, expectedText) {
-  is(
-    request.url.spec,
-    "data:text/html," + escape(testPage),
-    "request has correct URL"
+  // This page is loaded via a data: URL which has a null principal,
+  // so the URL will reflect this.
+  ok(
+    request.url.spec.startsWith("moz-nullprincipal:"),
+    "request has correct moz-nullprincipal URL, got " + request.url.spec
   );
   is(
     request.analysisType,

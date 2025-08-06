@@ -22,7 +22,7 @@ const {
 
 loader.lazyRequireGetter(
   this,
-  "getColor",
+  "getCssVariableColor",
   "resource://devtools/client/shared/theme.js",
   true
 );
@@ -79,9 +79,6 @@ const TOOLTIP_FONTFAMILY_TYPE = "font-family";
 const TOOLTIP_IMAGE_TYPE = "image";
 const TOOLTIP_INACTIVE_CSS = "inactive-css";
 const TOOLTIP_VARIABLE_TYPE = "variable";
-
-// Telemetry
-const TOOLTIP_SHOWN_SCALAR = "devtools.tooltip.shown";
 
 /**
  * Manages all tooltips in the style-inspector.
@@ -347,12 +344,23 @@ TooltipsOverlay.prototype = {
       type === TOOLTIP_VARIABLE_TYPE &&
       nodeInfo.value.value.startsWith("--")
     ) {
-      const { variable, registeredProperty, startingStyleVariable } =
-        nodeInfo.value;
+      const {
+        variable,
+        registeredProperty,
+        startingStyleVariable,
+        variableComputed,
+        outputParserOptions,
+        cssProperties,
+        value,
+      } = nodeInfo.value;
       await this._setVariablePreviewTooltip({
         topSectionText: variable,
+        computed: variableComputed,
         registeredProperty,
         startingStyle: startingStyleVariable,
+        outputParserOptions,
+        cssProperties,
+        variableName: value,
       });
 
       this.sendOpenScalarToTelemetry(type);
@@ -456,7 +464,7 @@ TooltipsOverlay.prototype = {
    *        The node type from `devtools/client/inspector/shared/node-types` or the Tooltip type.
    */
   sendOpenScalarToTelemetry(type) {
-    this.view.inspector.telemetry.keyedScalarAdd(TOOLTIP_SHOWN_SCALAR, type, 1);
+    Glean.devtoolsTooltip.shown[type].add(1);
   },
 
   /**
@@ -519,7 +527,10 @@ TooltipsOverlay.prototype = {
     font = font.replace("!important", "");
     font = font.trim();
 
-    const fillStyle = getColor("body-color");
+    const fillStyle = getCssVariableColor(
+      "--theme-body-color",
+      this.view.inspector.panelWin
+    );
     const { data, size: maxDim } = await nodeFront.getFontFamilyDataURL(
       font,
       fillStyle

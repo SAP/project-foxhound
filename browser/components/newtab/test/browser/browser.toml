@@ -27,7 +27,6 @@ prefs = [
 ["browser_context_menu_item.js"]
 
 ["browser_customize_menu_content.js"]
-skip-if = ["os == 'linux' && tsan"] #Bug 1687896
 https_first_disabled = true
 
 ["browser_customize_menu_render.js"]
@@ -64,13 +63,12 @@ skip-if = ["verify"] # bug 1834620 - order of events not stable
 ["browser_newtab_trigger.js"]
 
 ["browser_open_tab_focus.js"]
-skip-if = ["os == 'linux'"] # Test setup only implemented for OSX and Windows
+run-if = [
+  "os == 'win'", # Test setup only implemented for OSX and Windows
+  "os == 'mac'", # Test setup only implemented for OSX and Windows
+]
 
 ["browser_topsites_annotation.js"]
-skip-if = [
-  "os == 'linux' && debug", # Bug 1785005
-  "os == 'linux' && asan", # Bug 1785005
-]
 
 ["browser_topsites_contextMenu_options.js"]
 

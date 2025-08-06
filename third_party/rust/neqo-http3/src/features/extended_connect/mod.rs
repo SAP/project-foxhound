@@ -4,8 +4,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(clippy::module_name_repetitions)]
-
 pub(crate) mod webtransport_session;
 pub(crate) mod webtransport_streams;
 
@@ -70,7 +68,7 @@ pub(crate) enum ExtendedConnectType {
 impl ExtendedConnectType {
     #[must_use]
     #[allow(clippy::unused_self)] // This will change when we have more features using ExtendedConnectType.
-    pub const fn string(&self) -> &str {
+    pub const fn string(self) -> &'static str {
         "webtransport"
     }
 

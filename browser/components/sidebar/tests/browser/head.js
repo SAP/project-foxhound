@@ -14,6 +14,16 @@ function imageBufferFromDataURI(encodedImageData) {
   return Uint8Array.from(decodedImageData, byte => byte.charCodeAt(0)).buffer;
 }
 
+const kPrefCustomizationState = "browser.uiCustomization.state";
+const kPrefCustomizationHorizontalTabstrip =
+  "browser.uiCustomization.horizontalTabstrip";
+const kPrefCustomizationVerticalNavBar =
+  "browser.uiCustomization.verticalNavBar";
+// Ensure we clear any previous uiCustomization pref values
+Services.prefs.clearUserPref(kPrefCustomizationState);
+Services.prefs.clearUserPref(kPrefCustomizationHorizontalTabstrip);
+Services.prefs.clearUserPref(kPrefCustomizationVerticalNavBar);
+
 /* global browser */
 const extData = {
   manifest: {
@@ -113,10 +123,8 @@ function openAndWaitForContextMenu(popup, button, onShown, onHidden) {
 
     button.scrollIntoView();
     const eventDetails = { type: "contextmenu", button: 2 };
-    EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouseAtCenter(
       button,
-      5,
-      2,
       eventDetails,
       // eslint-disable-next-line mozilla/use-ownerGlobal
       button.ownerDocument.defaultView

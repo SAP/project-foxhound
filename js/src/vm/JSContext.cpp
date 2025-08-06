@@ -31,8 +31,12 @@
 #include "jstypes.h"
 
 #include "builtin/RegExp.h"  // js::RegExpSearcherLastLimitSentinel
+#ifdef MOZ_EXECUTION_TRACING
+#  include "debugger/ExecutionTracer.h"
+#endif
 #include "frontend/FrontendContext.h"
 #include "gc/GC.h"
+#include "gc/PublicIterators.h"  // js::RealmsIter
 #include "irregexp/RegExpAPI.h"
 #include "jit/Simulator.h"
 #include "js/CallAndConstruct.h"  // JS::Call
@@ -238,8 +242,7 @@ bool AutoResolving::alreadyStartedSlow() const {
   AutoResolving* cursor = link;
   do {
     MOZ_ASSERT(this != cursor);
-    if (object.get() == cursor->object && id.get() == cursor->id &&
-        kind == cursor->kind) {
+    if (object.get() == cursor->object && id.get() == cursor->id) {
       return true;
     }
   } while (!!(cursor = cursor->link));
@@ -969,7 +972,6 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       isolate(this, nullptr),
       activation_(this, nullptr),
       profilingActivation_(nullptr),
-      entryMonitor(this, nullptr),
       noExecuteDebuggerTop(this, nullptr),
 #ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
       inUnsafeCallWithABI(this, false),
@@ -1005,13 +1007,15 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       isEvaluatingModule(this, 0),
       frontendCollectionPool_(this),
       suppressProfilerSampling(false),
-      tempLifoAlloc_(this, (size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+      tempLifoAlloc_(this, (size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE,
+                     js::MallocArena),
       debuggerMutations(this, 0),
       status(this, JS::ExceptionStatus::None),
       unwrappedException_(this),
       unwrappedExceptionStack_(this),
 #ifdef DEBUG
       hadResourceExhaustion_(this, false),
+      hadUncatchableException_(this, false),
 #endif
       reportGranularity(this, JS_DEFAULT_JITREPORT_GRANULARITY),
       resolvingList(this, nullptr),
@@ -1363,6 +1367,71 @@ void ExternalValueArray::trace(JSTracer* trc) {
     TraceRootRange(trc, length(), vp, "js::ExternalValueArray");
   }
 }
+
+#ifdef MOZ_EXECUTION_TRACING
+
+bool JSContext::enableExecutionTracing() {
+  if (!executionTracer_) {
+    for (RealmsIter realm(runtime()); !realm.done(); realm.next()) {
+      if (realm->debuggerObservesCoverage()) {
+        JS_ReportErrorNumberASCII(
+            this, GetErrorMessage, nullptr,
+            JSMSG_DEBUG_EXCLUSIVE_EXECUTION_TRACE_COVERAGE);
+        return false;
+      }
+    }
+
+    executionTracer_ = js::MakeUnique<ExecutionTracer>();
+
+    if (!executionTracer_) {
+      return false;
+    }
+
+    if (!executionTracer_->init()) {
+      executionTracer_ = nullptr;
+      return false;
+    }
+
+    for (RealmsIter realm(runtime()); !realm.done(); realm.next()) {
+      if (realm->isSystem()) {
+        continue;
+      }
+      realm->enableExecutionTracing();
+    }
+  }
+
+  executionTracerSuspended_ = false;
+  return true;
+}
+
+void JSContext::cleanUpExecutionTracingState() {
+  MOZ_ASSERT(executionTracer_);
+
+  for (RealmsIter realm(runtime()); !realm.done(); realm.next()) {
+    if (realm->isSystem()) {
+      continue;
+    }
+    realm->disableExecutionTracing();
+  }
+
+  caches().tracingCaches.clearAll();
+}
+
+void JSContext::disableExecutionTracing() {
+  if (executionTracer_) {
+    cleanUpExecutionTracingState();
+    executionTracer_ = nullptr;
+  }
+}
+
+void JSContext::suspendExecutionTracing() {
+  if (executionTracer_) {
+    cleanUpExecutionTracingState();
+    executionTracerSuspended_ = true;
+  }
+}
+
+#endif
 
 #ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
 

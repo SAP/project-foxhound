@@ -22,8 +22,6 @@
 
 namespace js {
 struct ClassSpec;
-class PlainObject;
-class PropertyName;
 }  // namespace js
 
 namespace js::temporal {
@@ -121,8 +119,6 @@ constexpr Increment MaximumTemporalDurationRoundingIncrement(
   // Steps 4-5.
   return Increment{1000};
 }
-
-PropertyName* TemporalUnitToString(JSContext* cx, TemporalUnit unit);
 
 enum class TemporalUnitGroup {
   // Allow date units: "year", "month", "week", "day".
@@ -318,6 +314,20 @@ enum class ShowOffset { Auto, Never };
 bool GetTemporalShowOffsetOption(JSContext* cx, JS::Handle<JSObject*> options,
                                  ShowOffset* result);
 
+enum class Direction { Next, Previous };
+
+/**
+ * GetDirectionOption ( options )
+ */
+bool GetDirectionOption(JSContext* cx, JS::Handle<JSObject*> options,
+                        Direction* result);
+
+/**
+ * GetDirectionOption ( options )
+ */
+bool GetDirectionOption(JSContext* cx, JS::Handle<JSString*> direction,
+                        Direction* result);
+
 /**
  * IsPartialTemporalObject ( object )
  *
@@ -338,31 +348,6 @@ bool ToPositiveIntegerWithTruncation(JSContext* cx, JS::Handle<JS::Value> value,
 bool ToIntegerWithTruncation(JSContext* cx, JS::Handle<JS::Value> value,
                              const char* name, double* result);
 
-/**
- * GetMethod ( V, P )
- */
-JSObject* GetMethod(JSContext* cx, JS::Handle<JSObject*> object,
-                    JS::Handle<PropertyName*> name);
-
-/**
- * SnapshotOwnProperties ( source, proto [ , excludedKeys [ , excludedValues ] ]
- * )
- */
-PlainObject* SnapshotOwnProperties(JSContext* cx, JS::Handle<JSObject*> source);
-
-/**
- * SnapshotOwnProperties ( source, proto [ , excludedKeys [ , excludedValues ] ]
- * )
- */
-PlainObject* SnapshotOwnPropertiesIgnoreUndefined(JSContext* cx,
-                                                  JS::Handle<JSObject*> source);
-
-/**
- * CopyDataProperties ( target, source, excludedKeys [ , excludedValues ] )
- */
-bool CopyDataProperties(JSContext* cx, JS::Handle<PlainObject*> target,
-                        JS::Handle<JSObject*> source);
-
 enum class TemporalDifference { Since, Until };
 
 inline const char* ToName(TemporalDifference difference) {
@@ -381,7 +366,7 @@ struct DifferenceSettings final {
  * fallbackSmallestUnit, smallestLargestDefaultUnit )
  */
 bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
-                           JS::Handle<PlainObject*> options,
+                           JS::Handle<JSObject*> options,
                            TemporalUnitGroup unitGroup,
                            TemporalUnit smallestAllowedUnit,
                            TemporalUnit fallbackSmallestUnit,
@@ -393,7 +378,7 @@ bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
  * fallbackSmallestUnit, smallestLargestDefaultUnit )
  */
 inline bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
-                                  JS::Handle<PlainObject*> options,
+                                  JS::Handle<JSObject*> options,
                                   TemporalUnitGroup unitGroup,
                                   TemporalUnit fallbackSmallestUnit,
                                   TemporalUnit smallestLargestDefaultUnit,
@@ -402,11 +387,6 @@ inline bool GetDifferenceSettings(JSContext* cx, TemporalDifference operation,
                                TemporalUnit::Nanosecond, fallbackSmallestUnit,
                                smallestLargestDefaultUnit, result);
 }
-
-/**
- * Sets |result| to `true` when array iteration is still in its initial state.
- */
-bool IsArrayIterationSane(JSContext* cx, bool* result);
 
 } /* namespace js::temporal */
 

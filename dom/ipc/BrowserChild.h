@@ -284,6 +284,9 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvDynamicToolbarOffsetChanged(
       const mozilla::ScreenIntCoord& aOffset);
 
+  mozilla::ipc::IPCResult RecvKeyboardHeightChanged(
+      const mozilla::ScreenIntCoord& aHeight);
+
   mozilla::ipc::IPCResult RecvActivate(uint64_t aActionId);
 
   mozilla::ipc::IPCResult RecvDeactivate(uint64_t aActionId);
@@ -397,6 +400,12 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvNormalPrioritySelectionEvent(
       const mozilla::WidgetSelectionEvent& aEvent);
 
+  mozilla::ipc::IPCResult RecvSimpleContentCommandEvent(
+      const mozilla::EventMessage& aMessage);
+
+  mozilla::ipc::IPCResult RecvNormalPrioritySimpleContentCommandEvent(
+      const mozilla::EventMessage& aMessage);
+
   mozilla::ipc::IPCResult RecvInsertText(const nsAString& aStringToInsert);
 
   mozilla::ipc::IPCResult RecvUpdateRemoteStyle(
@@ -427,7 +436,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       const IPCTabContext& aContext);
 
   mozilla::ipc::IPCResult RecvSafeAreaInsetsChanged(
-      const mozilla::ScreenIntMargin& aSafeAreaInsets);
+      const mozilla::LayoutDeviceIntMargin& aSafeAreaInsets);
 
 #ifdef ACCESSIBILITY
   PDocAccessibleChild* AllocPDocAccessibleChild(
@@ -552,13 +561,14 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   ScreenIntCoord GetDynamicToolbarMaxHeight() const {
     return mDynamicToolbarMaxHeight;
   };
+  mozilla::ScreenIntCoord GetKeyboardHeight() const { return mKeyboardHeight; }
 
   bool IPCOpen() const { return mIPCOpen; }
 
   const mozilla::layers::CompositorOptions& GetCompositorOptions() const;
   bool AsyncPanZoomEnabled() const;
 
-  ScreenIntSize GetInnerSize();
+  LayoutDeviceIntSize GetInnerSize();
   CSSSize GetUnscaledInnerSize() { return mUnscaledInnerSize; }
 
   Maybe<nsRect> GetVisibleRect() const;
@@ -693,6 +703,15 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       const mozilla::LayoutDeviceIntPoint& aEndDragPoint,
       const uint32_t& aKeyModifiers, const uint32_t& aDropEffect);
 
+  mozilla::ipc::IPCResult RecvStoreDropTargetAndDelayEndDragSession(
+      const LayoutDeviceIntPoint& aPt, uint32_t aDropEffect,
+      uint32_t aDragAction, nsIPrincipal* aPrincipal,
+      nsIContentSecurityPolicy* aCsp);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvDispatchToDropTargetAndResumeEndDragSession(
+      bool aShouldDrop);
+
  protected:
   virtual ~BrowserChild();
 
@@ -739,7 +758,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   bool HasValidInnerSize();
 
-  ScreenIntRect GetOuterRect();
+  LayoutDeviceIntRect GetOuterRect();
 
   void SetUnscaledInnerSize(const CSSSize& aSize) {
     mUnscaledInnerSize = aSize;
@@ -818,7 +837,12 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   // NOTE: This value is valuable only for the top level browser.
   LayoutDeviceIntPoint mChromeOffset;
   ScreenIntCoord mDynamicToolbarMaxHeight;
+  // The software keyboard height.
+  ScreenIntCoord mKeyboardHeight;
   TabId mUniqueId;
+
+  // Position of a delayed drop event.
+  LayoutDeviceIntPoint mDelayedDropPoint;
 
   bool mDidFakeShow : 1;
   bool mTriedBrowserInit : 1;

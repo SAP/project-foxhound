@@ -153,6 +153,20 @@ class ArrayBufferDataStream {
       this.pos += size;
       return value;
     }
+
+    readBytes() {
+      const size = this.readInt32();
+      const bytes = new Uint8Array(this.dataView.buffer, this.pos, size);
+      this.pos += size;
+      return bytes
+    }
+
+    writeBytes(uint8Array) {
+      this.writeUint32(uint8Array.length);
+      value.forEach((elt) => {
+        dataStream.writeUint8(elt);
+      })
+    }
 }
 
 function handleRustResult(result, liftCallback, liftErrCallback) {
@@ -307,9 +321,15 @@ export class FfiConverterString extends FfiConverter {
 
 
 
+/**
+ * ArithmeticError
+ */
 export class ArithmeticError extends Error {}
 
 
+/**
+ * INTEGER_OVERFLOW
+ */
 export class IntegerOverflow extends ArithmeticError {
 
     constructor(message, ...params) {
@@ -354,6 +374,10 @@ export class FfiConverterTypeArithmeticError extends FfiConverterArrayBuffer {
 
 
 
+/**
+ * add
+ * @returns {number}
+ */
 export function add(a,b) {
 
         const liftResult = (result) => FfiConverterU64.lift(result);
@@ -375,8 +399,8 @@ export function add(a,b) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                58, // arithmetic:uniffi_arithmetical_fn_func_add
+            return UniFFIScaffolding.callAsyncWrapper(
+                68, // arithmetic:uniffi_arithmetical_fn_func_add
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )
@@ -388,6 +412,10 @@ export function add(a,b) {
         }
 }
 
+/**
+ * div
+ * @returns {number}
+ */
 export function div(dividend,divisor) {
 
         const liftResult = (result) => FfiConverterU64.lift(result);
@@ -409,8 +437,8 @@ export function div(dividend,divisor) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                59, // arithmetic:uniffi_arithmetical_fn_func_div
+            return UniFFIScaffolding.callAsyncWrapper(
+                69, // arithmetic:uniffi_arithmetical_fn_func_div
                 FfiConverterU64.lower(dividend),
                 FfiConverterU64.lower(divisor),
             )
@@ -422,6 +450,10 @@ export function div(dividend,divisor) {
         }
 }
 
+/**
+ * equal
+ * @returns {Boolean}
+ */
 export function equal(a,b) {
 
         const liftResult = (result) => FfiConverterBool.lift(result);
@@ -443,8 +475,8 @@ export function equal(a,b) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                60, // arithmetic:uniffi_arithmetical_fn_func_equal
+            return UniFFIScaffolding.callAsyncWrapper(
+                70, // arithmetic:uniffi_arithmetical_fn_func_equal
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )
@@ -456,6 +488,10 @@ export function equal(a,b) {
         }
 }
 
+/**
+ * sub
+ * @returns {number}
+ */
 export function sub(a,b) {
 
         const liftResult = (result) => FfiConverterU64.lift(result);
@@ -477,8 +513,8 @@ export function sub(a,b) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                61, // arithmetic:uniffi_arithmetical_fn_func_sub
+            return UniFFIScaffolding.callAsyncWrapper(
+                71, // arithmetic:uniffi_arithmetical_fn_func_sub
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )

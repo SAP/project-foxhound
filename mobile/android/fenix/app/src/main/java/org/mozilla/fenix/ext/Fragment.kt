@@ -83,13 +83,6 @@ fun Fragment.redirectToReAuth(
         // https://issuetracker.google.com/issues/37125819
         activity?.invalidateOptionsMenu()
         when (currentLocation) {
-            R.id.loginDetailFragment,
-            R.id.editLoginFragment,
-            R.id.addLoginFragment,
-            R.id.savedLoginsFragment,
-            -> {
-                findNavController().popBackStack(R.id.savedLoginsAuthFragment, false)
-            }
             R.id.creditCardEditorFragment,
             R.id.creditCardsManagementFragment,
             -> {
@@ -156,8 +149,8 @@ fun Fragment.registerForActivityResult(
 /**
  *  Checks whether the current fragment is running on a tablet.
  */
-fun Fragment.isTablet(): Boolean {
-    return resources.getBoolean(R.bool.tablet)
+fun Fragment.isLargeWindow(): Boolean {
+    return requireContext().isLargeWindow()
 }
 
 /**

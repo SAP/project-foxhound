@@ -531,7 +531,9 @@ export class FxAccounts {
    *        {
    *          email: String: The user's email address
    *          uid: String: The user's unique id
-   *          verified: Boolean: email verification status
+   *          verified: Boolean: Firefox verification status. If false, the account should
+   *                    be considered partially logged-in to this Firefox. This may be false
+   *                    even if the underying account verfied status is true.
    *          displayName: String or null if not known.
    *          avatar: URL of the avatar for the user. May be the default
    *                  avatar, or null in edge-cases (eg, if there's an account
@@ -543,13 +545,21 @@ export class FxAccounts {
    *        or null if no user is signed in. This function never fails except
    *        in pathological cases (eg, file-system errors, etc)
    */
-  getSignedInUser() {
+  getSignedInUser(addnFields = []) {
     // Note we don't return the session token, but use it to see if we
-    // should fetch the profile.
-    const ACCT_DATA_FIELDS = ["email", "uid", "verified", "sessionToken"];
+    // should fetch the profile. Ditto scopedKeys re verified.
+    const ACCT_DATA_FIELDS = [
+      "email",
+      "uid",
+      "verified",
+      "scopedKeys",
+      "sessionToken",
+    ];
     const PROFILE_FIELDS = ["displayName", "avatar", "avatarDefault"];
     return this._withCurrentAccountState(async currentState => {
-      const data = await currentState.getUserAccountData(ACCT_DATA_FIELDS);
+      const data = await currentState.getUserAccountData(
+        ACCT_DATA_FIELDS.concat(addnFields)
+      );
       if (!data) {
         return null;
       }
@@ -557,12 +567,22 @@ export class FxAccounts {
         await this.signOut();
         return null;
       }
-      if (!this._internal.isUserEmailVerified(data) && !lazy.oauthEnabled) {
+      if (lazy.oauthEnabled) {
+        // data.verified is the sessionToken status. oauth cares only about whether it has the keys.
+        // (Note that this never forces `.verified` to `true` even if we *do* have the keys, which
+        // seems slightly odd)
+        // Note that is the primary-password is locked we can't get the scopedKeys even if they exist, so
+        // we don't want to pretend the user is unverified in that case.
+        if (Services.logins.isLoggedIn && !data.scopedKeys) {
+          data.verified = false;
+        }
+      } else if (!data.verified) {
         // If the email is not verified, start polling for verification,
         // but return null right away.  We don't want to return a promise
         // that might not be fulfilled for a long time.
         this._internal.startVerifiedCheck(data);
       }
+      delete data.scopedKeys;
 
       let profileData = null;
       if (data.sessionToken) {
@@ -796,7 +816,7 @@ FxAccountsInternal.prototype = {
         throw this._error(ERROR_NO_ACCOUNT);
       }
 
-      if (!this.isUserEmailVerified(data)) {
+      if (!data.verified) {
         // Signed-in user has not verified email
         throw this._error(ERROR_UNVERIFIED_ACCOUNT);
       }
@@ -812,7 +832,7 @@ FxAccountsInternal.prototype = {
       throw this._error(ERROR_NO_ACCOUNT);
     }
 
-    if (mustBeVerified && !this.isUserEmailVerified(data)) {
+    if (mustBeVerified && !data.verified) {
       // Signed-in user has not verified email
       throw this._error(ERROR_UNVERIFIED_ACCOUNT);
     }
@@ -1012,7 +1032,7 @@ FxAccountsInternal.prototype = {
     // the background? Already does for updateAccountData ;)
     await currentAccountState.promiseInitialized;
     // Starting point for polling if new user
-    if (!this.isUserEmailVerified(credentials) && !lazy.oauthEnabled) {
+    if (!lazy.oauthEnabled && !credentials.verified) {
       this.startVerifiedCheck(credentials);
     }
     await this.notifyObservers(ONLOGIN_NOTIFICATION);
@@ -1171,10 +1191,6 @@ FxAccountsInternal.prototype = {
     return this.currentAccountState.getUserAccountData(fieldNames);
   },
 
-  isUserEmailVerified: function isUserEmailVerified(data) {
-    return !!(data && data.verified);
-  },
-
   /**
    * Setup for and if necessary do email verification polling.
    */
@@ -1182,12 +1198,14 @@ FxAccountsInternal.prototype = {
     let currentState = this.currentAccountState;
     return currentState.getUserAccountData().then(data => {
       if (data) {
-        if (!this.isUserEmailVerified(data)) {
-          this.startPollEmailStatus(
-            currentState,
-            data.sessionToken,
-            "browser-startup"
-          );
+        if (!lazy.oauthEnabled) {
+          if (!data.verified) {
+            this.startPollEmailStatus(
+              currentState,
+              data.sessionToken,
+              "browser-startup"
+            );
+          }
         }
       }
       return data;
@@ -1276,6 +1294,10 @@ FxAccountsInternal.prototype = {
   // since verification polling continues in the background.
   async pollEmailStatus(currentState, sessionToken, why) {
     log.debug("entering pollEmailStatus: " + why);
+    if (lazy.oauthEnabled) {
+      log.debug("not polling for verification because oauth is enabled");
+      return;
+    }
     let nextPollMs;
     try {
       const response = await this.checkEmailStatus(sessionToken, {
@@ -1345,7 +1367,6 @@ FxAccountsInternal.prototype = {
       await currentState.updateUserAccountData({ verified: true });
       const accountData = await currentState.getUserAccountData();
       this._setLastUserPref(accountData.email);
-      // Now that the user is verified, we can proceed to fetch keys
       if (currentState.whenVerifiedDeferred) {
         currentState.whenVerifiedDeferred.resolve(accountData);
         delete currentState.whenVerifiedDeferred;
@@ -1485,6 +1506,7 @@ FxAccountsInternal.prototype = {
    **/
   async setUserVerified() {
     await this.withCurrentAccountState(async currentState => {
+      // TODO: setting `verified` is unnecessary if oauthEnabled - it looks at our key state.
       const userData = await currentState.getUserAccountData();
       if (!userData.verified) {
         await currentState.updateUserAccountData({ verified: true });
@@ -1499,7 +1521,7 @@ FxAccountsInternal.prototype = {
       // No signed-in user
       throw this._error(ERROR_NO_ACCOUNT);
     }
-    if (!this.isUserEmailVerified(data)) {
+    if (!data.verified) {
       // Signed-in user has not verified email
       throw this._error(ERROR_UNVERIFIED_ACCOUNT);
     }

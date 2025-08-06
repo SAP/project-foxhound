@@ -24,7 +24,7 @@ cleanup_xvfb() {
 # number.  Up to 5 attempts will be made to start xvfb with a short delay
 # between retries
 try_xvfb() {
-    screen -dmS xvfb Xvfb :$2 -nolisten tcp -screen 0 $1 \
+    screen -dmS xvfb Xvfb :$2 -nolisten tcp -noreset -screen 0 $1 \
        > ~/artifacts/xvfb/xvfb.log 2>&1
     export DISPLAY=:$2
 
@@ -36,7 +36,7 @@ try_xvfb() {
     local max_retries=5
     xvfb_test=0
     until [ $retry_count -gt $max_retries ]; do
-        xvinfo || xvfb_test=$?
+        xvinfo; xvfb_test=$?
         if [ $xvfb_test != 255 ]; then
             retry_count=$(($max_retries + 1))
         else

@@ -36,17 +36,12 @@ interface nsISearchEngine : nsISupports
    *   The MIME type that we'd like to receive in response
    *   to this submission.  If null, will default to "text/html".
    *
-   * @param purpose [optional]
-   *   A string that indicates the context of the search request. This may then
-   *   be used to provide different submission data depending on the context.
-   *
    * @returns nsISearchSubmission
    *   The submission data. If no appropriate submission can be determined for
    *   the request type, this may be null.
    */
   nsISearchSubmission getSubmission(in AString searchTerms,
-                                    [optional] in AString responseType,
-                                    [optional] in AString purpose);
+                                    [optional] in AString responseType);
   /**
    * Returns the search term of a possible search result URI if and only if:
    * - The URI has the same scheme, host, and path as the engine.
@@ -74,7 +69,7 @@ interface nsISearchEngine : nsISupports
    * URL of type `SearchUtils.URL_TYPE.SEARCH`.
    *
    * @returns A string which is the name of the parameter, or empty string
-   *          if no parameter cannot be found or is not supported (e.g. POST).
+   *          if no parameter can be found or is not supported (e.g. POST).
    */
   readonly attribute AString searchUrlQueryParamName;
 
@@ -205,6 +200,15 @@ interface nsISearchEngine : nsISupports
    * @return the reporting URL.
    */
   readonly attribute AString clickUrl;
+
+  /**
+   * The URL of the homepage of the engine. Defaults to the pre path
+   * of the search URL but search engines can specify an arbitrary URL.
+   *
+   * @return the URL of the search engine home page.
+   */
+  readonly attribute AString searchForm;
+
 };
 
 [scriptable, uuid(0dc93e51-a7bf-4a16-862d-4b3469ff6206)]
@@ -414,6 +418,23 @@ interface nsISearchService : nsISupports
    * @returns an array of nsISearchEngine objects.
    */
   Promise getEnginesByExtensionID(in AString extensionID);
+
+  /**
+   * Returns an engine definition if it's search url matches the host provided.
+   *
+   * @param   host
+   *          The host to search for.
+   * @returns An nsISearchEngine engine object if one matched.
+   */
+  Promise findContextualSearchEngineByHost(in AString host);
+
+  /**
+   * Installs an engine into the users engine list.
+   *
+   * @param   engine
+   *          An engine configuration definition.
+   */
+  Promise addContextualSearchEngine(in jsval engine);
 
   /**
    * Moves a visible search engine.

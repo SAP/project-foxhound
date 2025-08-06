@@ -2,6 +2,8 @@
 head = "head.js"
 skip-if = ["os == 'android'"]
 
+["test_async_flush.js"]
+
 ["test_check_backup.js"]
 
 ["test_claim_locked.js"]
@@ -13,6 +15,8 @@ skip-if = ["os == 'android'"]
 ["test_conflict_profiles.js"]
 
 ["test_create_default.js"]
+
+["test_delete_dirs.js"]
 
 ["test_fix_directory_case.js"]
 
@@ -37,6 +41,8 @@ skip-if = ["os == 'android'"]
 ["test_remove.js"]
 
 ["test_remove_default.js"]
+
+["test_restore_storeID.js"]
 
 ["test_select_backgroundtasks_ephemeral.js"]
 

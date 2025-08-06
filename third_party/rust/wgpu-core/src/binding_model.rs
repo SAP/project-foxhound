@@ -2,13 +2,12 @@ use crate::{
     device::{
         bgl, Device, DeviceError, MissingDownlevelFlags, MissingFeatures, SHADER_STAGE_COUNT,
     },
-    hal_api::HalApi,
     id::{BindGroupLayoutId, BufferId, SamplerId, TextureViewId},
     init_tracker::{BufferInitTrackerAction, TextureInitTrackerAction},
     pipeline::{ComputePipeline, RenderPipeline},
     resource::{
-        Buffer, DestroyedResourceError, Labeled, MissingBufferUsageError, MissingTextureUsageError,
-        ResourceErrorIdent, Sampler, TextureView, TrackingData,
+        Buffer, DestroyedResourceError, InvalidResourceError, Labeled, MissingBufferUsageError,
+        MissingTextureUsageError, ResourceErrorIdent, Sampler, TextureView, TrackingData,
     },
     resource_log,
     snatch::{SnatchGuard, Snatchable},
@@ -18,7 +17,6 @@ use crate::{
 
 use arrayvec::ArrayVec;
 
-use once_cell::sync::OnceCell;
 #[cfg(feature = "serde")]
 use serde::Deserialize;
 #[cfg(feature = "serde")]
@@ -26,8 +24,9 @@ use serde::Serialize;
 
 use std::{
     borrow::Cow,
+    mem::ManuallyDrop,
     ops::Range,
-    sync::{Arc, Weak},
+    sync::{Arc, OnceLock, Weak},
 };
 
 use thiserror::Error;
@@ -79,14 +78,6 @@ pub enum CreateBindGroupLayoutError {
 pub enum CreateBindGroupError {
     #[error(transparent)]
     Device(#[from] DeviceError),
-    #[error("Bind group layout is invalid")]
-    InvalidLayout,
-    #[error("BufferId {0:?} is invalid")]
-    InvalidBufferId(BufferId),
-    #[error("TextureViewId {0:?} is invalid")]
-    InvalidTextureViewId(TextureViewId),
-    #[error("SamplerId {0:?} is invalid")]
-    InvalidSamplerId(SamplerId),
     #[error(transparent)]
     DestroyedResource(#[from] DestroyedResourceError),
     #[error(
@@ -188,6 +179,8 @@ pub enum CreateBindGroupError {
     StorageReadNotSupported(wgt::TextureFormat),
     #[error(transparent)]
     ResourceUsageCompatibility(#[from] ResourceUsageCompatibilityError),
+    #[error(transparent)]
+    InvalidResource(#[from] InvalidResourceError),
 }
 
 #[derive(Clone, Debug, Error)]
@@ -379,10 +372,6 @@ impl BindingTypeMaxCountValidator {
             limits.max_sampled_textures_per_shader_stage,
             BindingTypeMaxCountErrorKind::SampledTextures,
         )?;
-        self.storage_buffers.validate(
-            limits.max_storage_buffers_per_shader_stage,
-            BindingTypeMaxCountErrorKind::StorageBuffers,
-        )?;
         self.samplers.validate(
             limits.max_samplers_per_shader_stage,
             BindingTypeMaxCountErrorKind::Samplers,
@@ -416,12 +405,12 @@ pub struct BindGroupEntry<'a> {
 
 /// Bindable resource and the slot to bind it to.
 #[derive(Clone, Debug)]
-pub struct ResolvedBindGroupEntry<'a, A: HalApi> {
+pub struct ResolvedBindGroupEntry<'a> {
     /// Slot for which binding provides resource. Corresponds to an entry of the same
     /// binding index in the [`BindGroupLayoutDescriptor`].
     pub binding: u32,
     /// Resource to attach to the binding
-    pub resource: ResolvedBindingResource<'a, A>,
+    pub resource: ResolvedBindingResource<'a>,
 }
 
 /// Describes a group of bindings and the resources to be bound.
@@ -440,15 +429,15 @@ pub struct BindGroupDescriptor<'a> {
 
 /// Describes a group of bindings and the resources to be bound.
 #[derive(Clone, Debug)]
-pub struct ResolvedBindGroupDescriptor<'a, A: HalApi> {
+pub struct ResolvedBindGroupDescriptor<'a> {
     /// Debug label of the bind group.
     ///
     /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
     /// The [`BindGroupLayout`] that corresponds to this bind group.
-    pub layout: Arc<BindGroupLayout<A>>,
+    pub layout: Arc<BindGroupLayout>,
     /// The resources to bind to this bind group.
-    pub entries: Cow<'a, [ResolvedBindGroupEntry<'a, A>]>,
+    pub entries: Cow<'a, [ResolvedBindGroupEntry<'a>]>,
 }
 
 /// Describes a [`BindGroupLayout`].
@@ -467,13 +456,13 @@ pub struct BindGroupLayoutDescriptor<'a> {
 /// used with a specific pipeline. This constraint only happens when
 /// the BGLs have been derived from a pipeline without a layout.
 #[derive(Debug)]
-pub(crate) enum ExclusivePipeline<A: HalApi> {
+pub(crate) enum ExclusivePipeline {
     None,
-    Render(Weak<RenderPipeline<A>>),
-    Compute(Weak<ComputePipeline<A>>),
+    Render(Weak<RenderPipeline>),
+    Compute(Weak<ComputePipeline>),
 }
 
-impl<A: HalApi> std::fmt::Display for ExclusivePipeline<A> {
+impl std::fmt::Display for ExclusivePipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExclusivePipeline::None => f.write_str("None"),
@@ -497,9 +486,9 @@ impl<A: HalApi> std::fmt::Display for ExclusivePipeline<A> {
 
 /// Bind group layout.
 #[derive(Debug)]
-pub struct BindGroupLayout<A: HalApi> {
-    pub(crate) raw: Option<A::BindGroupLayout>,
-    pub(crate) device: Arc<Device<A>>,
+pub struct BindGroupLayout {
+    pub(crate) raw: ManuallyDrop<Box<dyn hal::DynBindGroupLayout>>,
+    pub(crate) device: Arc<Device>,
     pub(crate) entries: bgl::EntryMap,
     /// It is very important that we know if the bind group comes from the BGL pool.
     ///
@@ -508,25 +497,23 @@ pub struct BindGroupLayout<A: HalApi> {
     /// We cannot unconditionally remove from the pool, as BGLs that don't come from the pool
     /// (derived BGLs) must not be removed.
     pub(crate) origin: bgl::Origin,
-    pub(crate) exclusive_pipeline: OnceCell<ExclusivePipeline<A>>,
+    pub(crate) exclusive_pipeline: OnceLock<ExclusivePipeline>,
     #[allow(unused)]
     pub(crate) binding_count_validator: BindingTypeMaxCountValidator,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
-    pub(crate) tracking_data: TrackingData,
 }
 
-impl<A: HalApi> Drop for BindGroupLayout<A> {
+impl Drop for BindGroupLayout {
     fn drop(&mut self) {
+        resource_log!("Destroy raw {}", self.error_ident());
         if matches!(self.origin, bgl::Origin::Pool) {
             self.device.bgl_pool.remove(&self.entries);
         }
-        if let Some(raw) = self.raw.take() {
-            resource_log!("Destroy raw {}", self.error_ident());
-            unsafe {
-                use hal::Device;
-                self.device.raw().destroy_bind_group_layout(raw);
-            }
+        // SAFETY: We are in the Drop impl and we don't use self.raw anymore after this point.
+        let raw = unsafe { ManuallyDrop::take(&mut self.raw) };
+        unsafe {
+            self.device.raw().destroy_bind_group_layout(raw);
         }
     }
 }
@@ -535,11 +522,10 @@ crate::impl_resource_type!(BindGroupLayout);
 crate::impl_labeled!(BindGroupLayout);
 crate::impl_parent_device!(BindGroupLayout);
 crate::impl_storage_item!(BindGroupLayout);
-crate::impl_trackable!(BindGroupLayout);
 
-impl<A: HalApi> BindGroupLayout<A> {
-    pub(crate) fn raw(&self) -> &A::BindGroupLayout {
-        self.raw.as_ref().unwrap()
+impl BindGroupLayout {
+    pub(crate) fn raw(&self) -> &dyn hal::DynBindGroupLayout {
+        self.raw.as_ref()
     }
 }
 
@@ -548,8 +534,6 @@ impl<A: HalApi> BindGroupLayout<A> {
 pub enum CreatePipelineLayoutError {
     #[error(transparent)]
     Device(#[from] DeviceError),
-    #[error("BindGroupLayoutId {0:?} is invalid")]
-    InvalidBindGroupLayoutId(BindGroupLayoutId),
     #[error(
         "Push constant at index {index} has range bound {bound} not aligned to {}",
         wgt::PUSH_CONSTANT_ALIGNMENT
@@ -573,6 +557,8 @@ pub enum CreatePipelineLayoutError {
     TooManyBindings(BindingTypeMaxCountError),
     #[error("Bind group layout count {actual} exceeds device bind group limit {max}")]
     TooManyGroups { actual: usize, max: usize },
+    #[error(transparent)]
+    InvalidResource(#[from] InvalidResourceError),
 }
 
 #[derive(Clone, Debug, Error)]
@@ -633,14 +619,14 @@ pub struct PipelineLayoutDescriptor<'a> {
 ///
 /// A `PipelineLayoutDescriptor` can be used to create a pipeline layout.
 #[derive(Debug)]
-pub struct ResolvedPipelineLayoutDescriptor<'a, A: HalApi> {
+pub struct ResolvedPipelineLayoutDescriptor<'a> {
     /// Debug label of the pipeline layout.
     ///
     /// This will show up in graphics debuggers for easy identification.
     pub label: Label<'a>,
     /// Bind groups that this pipeline uses. The first entry will provide all the bindings for
     /// "set = 0", second entry will provide all the bindings for "set = 1" etc.
-    pub bind_group_layouts: Cow<'a, [Arc<BindGroupLayout<A>>]>,
+    pub bind_group_layouts: Cow<'a, [Arc<BindGroupLayout>]>,
     /// Set of push constant ranges this pipeline uses. Each shader stage that
     /// uses push constants must define the range in push constant memory that
     /// corresponds to its single `layout(push_constant)` uniform block.
@@ -652,31 +638,29 @@ pub struct ResolvedPipelineLayoutDescriptor<'a, A: HalApi> {
 }
 
 #[derive(Debug)]
-pub struct PipelineLayout<A: HalApi> {
-    pub(crate) raw: Option<A::PipelineLayout>,
-    pub(crate) device: Arc<Device<A>>,
+pub struct PipelineLayout {
+    pub(crate) raw: ManuallyDrop<Box<dyn hal::DynPipelineLayout>>,
+    pub(crate) device: Arc<Device>,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
-    pub(crate) tracking_data: TrackingData,
-    pub(crate) bind_group_layouts: ArrayVec<Arc<BindGroupLayout<A>>, { hal::MAX_BIND_GROUPS }>,
+    pub(crate) bind_group_layouts: ArrayVec<Arc<BindGroupLayout>, { hal::MAX_BIND_GROUPS }>,
     pub(crate) push_constant_ranges: ArrayVec<wgt::PushConstantRange, { SHADER_STAGE_COUNT }>,
 }
 
-impl<A: HalApi> Drop for PipelineLayout<A> {
+impl Drop for PipelineLayout {
     fn drop(&mut self) {
-        if let Some(raw) = self.raw.take() {
-            resource_log!("Destroy raw {}", self.error_ident());
-            unsafe {
-                use hal::Device;
-                self.device.raw().destroy_pipeline_layout(raw);
-            }
+        resource_log!("Destroy raw {}", self.error_ident());
+        // SAFETY: We are in the Drop impl and we don't use self.raw anymore after this point.
+        let raw = unsafe { ManuallyDrop::take(&mut self.raw) };
+        unsafe {
+            self.device.raw().destroy_pipeline_layout(raw);
         }
     }
 }
 
-impl<A: HalApi> PipelineLayout<A> {
-    pub(crate) fn raw(&self) -> &A::PipelineLayout {
-        self.raw.as_ref().unwrap()
+impl PipelineLayout {
+    pub(crate) fn raw(&self) -> &dyn hal::DynPipelineLayout {
+        self.raw.as_ref()
     }
 
     pub(crate) fn get_binding_maps(&self) -> ArrayVec<&bgl::EntryMap, { hal::MAX_BIND_GROUPS }> {
@@ -769,7 +753,6 @@ crate::impl_resource_type!(PipelineLayout);
 crate::impl_labeled!(PipelineLayout);
 crate::impl_parent_device!(PipelineLayout);
 crate::impl_storage_item!(PipelineLayout);
-crate::impl_trackable!(PipelineLayout);
 
 #[repr(C)]
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
@@ -781,8 +764,8 @@ pub struct BufferBinding {
 }
 
 #[derive(Clone, Debug)]
-pub struct ResolvedBufferBinding<A: HalApi> {
-    pub buffer: Arc<Buffer<A>>,
+pub struct ResolvedBufferBinding {
+    pub buffer: Arc<Buffer>,
     pub offset: wgt::BufferAddress,
     pub size: Option<wgt::BufferSize>,
 }
@@ -803,13 +786,13 @@ pub enum BindingResource<'a> {
 // Note: Duplicated in `wgpu-rs` as `BindingResource`
 // They're different enough that it doesn't make sense to share a common type
 #[derive(Debug, Clone)]
-pub enum ResolvedBindingResource<'a, A: HalApi> {
-    Buffer(ResolvedBufferBinding<A>),
-    BufferArray(Cow<'a, [ResolvedBufferBinding<A>]>),
-    Sampler(Arc<Sampler<A>>),
-    SamplerArray(Cow<'a, [Arc<Sampler<A>>]>),
-    TextureView(Arc<TextureView<A>>),
-    TextureViewArray(Cow<'a, [Arc<TextureView<A>>]>),
+pub enum ResolvedBindingResource<'a> {
+    Buffer(ResolvedBufferBinding),
+    BufferArray(Cow<'a, [ResolvedBufferBinding]>),
+    Sampler(Arc<Sampler>),
+    SamplerArray(Cow<'a, [Arc<Sampler>]>),
+    TextureView(Arc<TextureView>),
+    TextureViewArray(Cow<'a, [Arc<TextureView>]>),
 }
 
 #[derive(Clone, Debug, Error)]
@@ -890,40 +873,49 @@ pub(crate) fn buffer_binding_type_alignment(
     }
 }
 
+pub(crate) fn buffer_binding_type_bounds_check_alignment(
+    alignments: &hal::Alignments,
+    binding_type: wgt::BufferBindingType,
+) -> wgt::BufferAddress {
+    match binding_type {
+        wgt::BufferBindingType::Uniform => alignments.uniform_bounds_check_alignment.get(),
+        wgt::BufferBindingType::Storage { .. } => wgt::COPY_BUFFER_ALIGNMENT,
+    }
+}
+
 #[derive(Debug)]
-pub struct BindGroup<A: HalApi> {
-    pub(crate) raw: Snatchable<A::BindGroup>,
-    pub(crate) device: Arc<Device<A>>,
-    pub(crate) layout: Arc<BindGroupLayout<A>>,
+pub struct BindGroup {
+    pub(crate) raw: Snatchable<Box<dyn hal::DynBindGroup>>,
+    pub(crate) device: Arc<Device>,
+    pub(crate) layout: Arc<BindGroupLayout>,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
     pub(crate) tracking_data: TrackingData,
-    pub(crate) used: BindGroupStates<A>,
-    pub(crate) used_buffer_ranges: Vec<BufferInitTrackerAction<A>>,
-    pub(crate) used_texture_ranges: Vec<TextureInitTrackerAction<A>>,
+    pub(crate) used: BindGroupStates,
+    pub(crate) used_buffer_ranges: Vec<BufferInitTrackerAction>,
+    pub(crate) used_texture_ranges: Vec<TextureInitTrackerAction>,
     pub(crate) dynamic_binding_info: Vec<BindGroupDynamicBindingData>,
     /// Actual binding sizes for buffers that don't have `min_binding_size`
     /// specified in BGL. Listed in the order of iteration of `BGL.entries`.
     pub(crate) late_buffer_binding_sizes: Vec<wgt::BufferSize>,
 }
 
-impl<A: HalApi> Drop for BindGroup<A> {
+impl Drop for BindGroup {
     fn drop(&mut self) {
         if let Some(raw) = self.raw.take() {
             resource_log!("Destroy raw {}", self.error_ident());
             unsafe {
-                use hal::Device;
                 self.device.raw().destroy_bind_group(raw);
             }
         }
     }
 }
 
-impl<A: HalApi> BindGroup<A> {
+impl BindGroup {
     pub(crate) fn try_raw<'a>(
         &'a self,
         guard: &'a SnatchGuard,
-    ) -> Result<&A::BindGroup, DestroyedResourceError> {
+    ) -> Result<&dyn hal::DynBindGroup, DestroyedResourceError> {
         // Clippy insist on writing it this way. The idea is to return None
         // if any of the raw buffer is not valid anymore.
         for buffer in &self.used_buffer_ranges {
@@ -935,6 +927,7 @@ impl<A: HalApi> BindGroup<A> {
 
         self.raw
             .get(guard)
+            .map(|raw| raw.as_ref())
             .ok_or_else(|| DestroyedResourceError(self.error_ident()))
     }
 
@@ -999,10 +992,10 @@ crate::impl_trackable!(BindGroup);
 #[derive(Clone, Debug, Error)]
 #[non_exhaustive]
 pub enum GetBindGroupLayoutError {
-    #[error("Pipeline is invalid")]
-    InvalidPipeline,
     #[error("Invalid group index {0}")]
     InvalidGroupIndex(u32),
+    #[error(transparent)]
+    InvalidResource(#[from] InvalidResourceError),
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]

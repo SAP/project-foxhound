@@ -23,8 +23,20 @@ class QATests(SnapTestsBase):
         self._dir = "qa_tests"
 
         super(QATests, self).__init__(
-            exp=os.path.join(self._dir, "qa_expectations.json")
+            exp=os.path.join(
+                self._dir, "qa_expectations_{}.json".format(self._distro_release())
+            )
         )
+
+    def _distro_release(self):
+        with open("/etc/lsb-release") as lsb_release:
+            f = list(
+                filter(
+                    lambda x: x.startswith("DISTRIB_RELEASE"),
+                    lsb_release.read().split(),
+                )
+            )
+            return f[0].split("=")[1].replace(".", "")
 
     def _test_audio_playback(
         self, url, iframe_selector=None, click_to_play=False, video_selector=None
@@ -46,7 +58,7 @@ class QATests(SnapTestsBase):
                 (By.CSS_SELECTOR, video_selector or "video")
             )
         )
-        self._wait.until(lambda d: type(video.get_property("duration")) == float)
+        self._wait.until(lambda d: type(video.get_property("duration")) is float)
         assert video.get_property("duration") > 0.0, "<video> duration null"
 
         # For HE-AAC page, Google Drive does not like SPACE
@@ -568,9 +580,11 @@ class QATests(SnapTestsBase):
             EC.visibility_of_element_located(
                 (
                     By.ID,
-                    "context-copyimage-contents"
-                    if mime_type.startswith("image/")
-                    else "context-copy",
+                    (
+                        "context-copyimage-contents"
+                        if mime_type.startswith("image/")
+                        else "context-copy"
+                    ),
                 )
             )
         )
@@ -753,8 +767,18 @@ class QATests(SnapTestsBase):
         ), "download directory from pref should match new directory"
 
     def open_lafibre(self):
-        download_site = self.open_tab("https://ip.lafibre.info/test-debit.php")
+        download_site = self.open_tab("https://ip.lafibre.info/connectivite.php")
         return download_site
+
+    def get_lafibre_1M(self):
+        return self._wait.until(
+            EC.presence_of_element_located(
+                (
+                    By.CSS_SELECTOR,
+                    ".tableau tbody tr td a",
+                )
+            )
+        )
 
     def test_download_folder_change(self, exp):
         """
@@ -762,14 +786,7 @@ class QATests(SnapTestsBase):
         """
 
         download_site = self.open_lafibre()
-        extra_small = self._wait.until(
-            EC.presence_of_element_located(
-                (
-                    By.CSS_SELECTOR,
-                    ".tableau > tbody:nth-child(1) > tr:nth-child(6) > td:nth-child(2) > a:nth-child(1)",
-                )
-            )
-        )
+        extra_small = self.get_lafibre_1M()
         self._driver.execute_script("arguments[0].click();", extra_small)
 
         download_name = self.accept_download()
@@ -789,7 +806,9 @@ class QATests(SnapTestsBase):
         )
         if not os.path.isabs(previous_folder):
             previous_folder = os.path.join(os.environ.get("HOME", ""), previous_folder)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(
+            dir=os.environ.get("HOME"), prefix="snap-test-download"
+        ) as tmpdir:
             assert os.path.isdir(tmpdir), "tmpdir download should exists"
 
             download_1 = os.path.abspath(os.path.join(previous_folder, download_name))
@@ -815,16 +834,11 @@ class QATests(SnapTestsBase):
         """
 
         download_site = self.open_lafibre()
-        extra_small = self._wait.until(
-            EC.presence_of_element_located(
-                (
-                    By.CSS_SELECTOR,
-                    ".tableau > tbody:nth-child(1) > tr:nth-child(6) > td:nth-child(2) > a:nth-child(1)",
-                )
-            )
-        )
+        extra_small = self.get_lafibre_1M()
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(
+            dir=os.environ.get("HOME"), prefix="snap-test-download-rm"
+        ) as tmpdir:
             self.change_download_folder(None, tmpdir)
 
             self._driver.switch_to.window(download_site)

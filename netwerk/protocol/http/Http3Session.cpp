@@ -19,6 +19,7 @@
 #include "mozilla/RandomNum.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/net/DNS.h"
 #include "nsHttpHandler.h"
 #include "nsIHttpActivityObserver.h"
@@ -69,7 +70,6 @@ Http3Session::Http3Session() {
   LOG(("Http3Session::Http3Session [this=%p]", this));
 
   mCurrentBrowserId = gHttpHandler->ConnMgr()->CurrentBrowserId();
-  mThroughCaptivePortal = gHttpHandler->GetThroughCaptivePortal();
 }
 
 static nsresult RawBytesToNetAddr(uint16_t aFamily, const uint8_t* aRemoteAddr,
@@ -212,9 +212,11 @@ nsresult Http3Session::Init(const nsHttpConnectionInfo* aConnInfo,
     }
   }
 
+#ifndef ANDROID
   if (mState != ZERORTT) {
     ZeroRttTelemetry(ZeroRttOutcome::NOT_USED);
   }
+#endif
 
   auto config = mConnInfo->GetEchConfig();
   if (config.IsEmpty()) {
@@ -275,6 +277,7 @@ void Http3Session::Shutdown() {
 
   bool isEchRetry = mError == mozilla::psm::GetXPCOMFromNSSError(
                                   SSL_ERROR_ECH_RETRY_WITH_ECH);
+  bool isNSSError = psm::IsNSSErrorCode(-1 * NS_ERROR_GET_CODE(mError));
   bool allowToRetryWithDifferentIPFamily =
       mBeforeConnectedError &&
       gHttpHandler->ConnMgr()->AllowToRetryDifferentIPFamilyForHttp3(mConnInfo,
@@ -283,11 +286,12 @@ void Http3Session::Shutdown() {
        allowToRetryWithDifferentIPFamily));
   if ((mBeforeConnectedError ||
        (mError == NS_ERROR_NET_HTTP3_PROTOCOL_ERROR)) &&
-      (mError !=
-       mozilla::psm::GetXPCOMFromNSSError(SSL_ERROR_BAD_CERT_DOMAIN)) &&
-      !isEchRetry && !mConnInfo->GetWebTransport() &&
+      !isNSSError && !isEchRetry && !mConnInfo->GetWebTransport() &&
       !allowToRetryWithDifferentIPFamily && !mDontExclude) {
     gHttpHandler->ExcludeHttp3(mConnInfo);
+    if (mFirstHttpTransaction) {
+      mFirstHttpTransaction->DisableHttp3(false);
+    }
   }
 
   for (const auto& stream : mStreamTransactionHash.Values()) {
@@ -299,6 +303,8 @@ void Http3Session::Shutdown() {
       if (isEchRetry) {
         // We have to propagate this error to nsHttpTransaction, so the
         // transaction will be restarted with a new echConfig.
+        stream->Close(mError);
+      } else if (isNSSError) {
         stream->Close(mError);
       } else {
         if (allowToRetryWithDifferentIPFamily && mNetAddr) {
@@ -367,8 +373,9 @@ void Http3Session::Shutdown() {
 
 Http3Session::~Http3Session() {
   LOG3(("Http3Session::~Http3Session %p", this));
-
+#ifndef ANDROID
   EchOutcomeTelemetry();
+#endif
   Telemetry::Accumulate(Telemetry::HTTP3_REQUEST_PER_CONN, mTransactionCount);
   Telemetry::Accumulate(Telemetry::HTTP3_BLOCKED_BY_STREAM_LIMIT_PER_CONN,
                         mBlockedByStreamLimitCount);
@@ -379,21 +386,16 @@ Http3Session::~Http3Session() {
       Telemetry::HTTP3_TRANS_SENDING_BLOCKED_BY_FLOW_CONTROL_PER_CONN,
       mTransactionsSenderBlockedByFlowControlCount);
 
-  if (mThroughCaptivePortal) {
-    if (mTotalBytesRead || mTotalBytesWritten) {
-      auto total =
-          Clamp<uint32_t>((mTotalBytesRead >> 10) + (mTotalBytesWritten >> 10),
-                          0, std::numeric_limits<uint32_t>::max());
-      Telemetry::ScalarAdd(
-          Telemetry::ScalarID::NETWORKING_DATA_TRANSFERRED_CAPTIVE_PORTAL,
-          total);
-    }
-
-    Telemetry::ScalarAdd(
-        Telemetry::ScalarID::NETWORKING_HTTP_CONNECTIONS_CAPTIVE_PORTAL, 1);
-  }
-
   Shutdown();
+
+  // We only record the average interval for performance reason.
+  if (mTotelReadInterval) {
+    nsAutoCString key(mServer.EqualsLiteral("cloudflare") ? "cloudflare"_ns
+                                                          : "others"_ns);
+    glean::network::http3_avg_read_interval.Get(key).AccumulateRawDuration(
+        TimeDuration::FromMilliseconds(
+            static_cast<double>(mTotelReadInterval / mTotelReadIntervalCount)));
+  }
 }
 
 // This function may return a socket error.
@@ -409,6 +411,15 @@ nsresult Http3Session::ProcessInput(nsIUDPSocket* socket) {
   LOG(("Http3Session::ProcessInput writer=%p [this=%p state=%d]",
        mUdpConn.get(), this, mState));
 
+  PRIntervalTime now = PR_IntervalNow();
+  if (!mLastReadTime) {
+    mLastReadTime = now;
+  } else {
+    mTotelReadInterval +=
+        PR_IntervalToMilliseconds(PR_IntervalNow() - mLastReadTime);
+    mTotelReadIntervalCount++;
+    mLastReadTime = now;
+  }
   if (mUseNSPRForIO) {
     while (true) {
       nsTArray<uint8_t> data;
@@ -443,6 +454,7 @@ nsresult Http3Session::ProcessInput(nsIUDPSocket* socket) {
     return rv.result;
   }
   mTotalBytesRead += rv.bytes_read;
+  socket->AddInputBytes(rv.bytes_read);
 
   return NS_OK;
 }
@@ -600,6 +612,7 @@ nsresult Http3Session::ProcessEvents() {
         if (!mAuthenticationStarted) {
           mAuthenticationStarted = true;
           LOG(("Http3Session::ProcessEvents - AuthenticationNeeded called"));
+          OnTransportStatus(nullptr, NS_NET_STATUS_TLS_HANDSHAKE_STARTING, 0);
           CallCertVerification(Nothing());
         }
         break;
@@ -609,7 +622,9 @@ nsresult Http3Session::ProcessEvents() {
           mState = INITIALIZING;
           mTransactionCount = 0;
           Finish0Rtt(true);
+#ifndef ANDROID
           ZeroRttTelemetry(ZeroRttOutcome::USED_REJECTED);
+#endif
         }
         break;
       case Http3Event::Tag::ResumptionToken: {
@@ -633,13 +648,14 @@ nsresult Http3Session::ProcessEvents() {
         mSocketControl->HandshakeCompleted();
         if (was0RTT) {
           Finish0Rtt(false);
+#ifndef ANDROID
           ZeroRttTelemetry(ZeroRttOutcome::USED_SUCCEEDED);
+#endif
         }
 
-        OnTransportStatus(mSocketTransport, NS_NET_STATUS_CONNECTED_TO, 0);
+        OnTransportStatus(nullptr, NS_NET_STATUS_CONNECTED_TO, 0);
         // Also send the NS_NET_STATUS_TLS_HANDSHAKE_ENDED event.
-        OnTransportStatus(mSocketTransport, NS_NET_STATUS_TLS_HANDSHAKE_ENDED,
-                          0);
+        OnTransportStatus(nullptr, NS_NET_STATUS_TLS_HANDSHAKE_ENDED, 0);
 
         ReportHttp3Connection();
         // Maybe call ResumeSend:
@@ -996,6 +1012,7 @@ nsresult Http3Session::ProcessOutput(nsIUDPSocket* socket) {
   if (rv.bytes_written != 0) {
     mTotalBytesWritten += rv.bytes_written;
     mLastWriteTime = PR_IntervalNow();
+    socket->AddOutputBytes(rv.bytes_written);
   }
 
   return NS_OK;
@@ -1021,7 +1038,7 @@ nsresult Http3Session::ProcessOutputAndEvents(nsIUDPSocket* socket) {
   if (NS_FAILED(rv)) {
     return rv;
   }
-  return ProcessEvents();
+  return NS_OK;
 }
 
 void Http3Session::SetupTimer(uint64_t aTimeout) {
@@ -1484,13 +1501,6 @@ void Http3Session::OnTransportStatus(nsITransport* aTransport, nsresult aStatus,
                                      int64_t aProgress) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
-  if ((aStatus == NS_NET_STATUS_CONNECTED_TO) && !IsConnected()) {
-    // We should ignore the event. This is sent by the nsSocketTranpsort
-    // and it does not mean that HTTP3 session is connected.
-    // We will use this event to mark start of TLS handshake
-    aStatus = NS_NET_STATUS_TLS_HANDSHAKE_STARTING;
-  }
-
   switch (aStatus) {
       // These should appear only once, deliver to the first
       // transaction on the session.
@@ -1618,6 +1628,11 @@ nsresult Http3Session::SendData(nsIUDPSocket* socket) {
   if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
     rv = NS_OK;
   }
+
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  rv = ProcessEvents();
 
   // Let the connection know we sent some app data successfully.
   if (stream && NS_SUCCEEDED(rv)) {
@@ -1748,10 +1763,12 @@ void Http3Session::CloseInternal(bool aCallNeqoClose) {
     mBeforeConnectedError = true;
   }
 
+#ifndef ANDROID
   if (mState == ZERORTT) {
     ZeroRttTelemetry(aCallNeqoClose ? ZeroRttOutcome::USED_CONN_CLOSED_BY_NECKO
                                     : ZeroRttOutcome::USED_CONN_ERROR);
   }
+#endif
 
   mState = CLOSING;
   Shutdown();
@@ -1893,12 +1910,13 @@ void Http3Session::CloseStreamInternal(Http3StreamBase* aStream,
       MOZ_ASSERT(mConnectionIdleStart);
       MOZ_ASSERT(mConnectionIdleEnd);
 
+#ifndef ANDROID
       if (mConnectionIdleStart) {
-        Telemetry::AccumulateTimeDelta(
-            Telemetry::HTTP3_TIME_TO_REUSE_IDLE_CONNECTTION_MS,
-            NS_SUCCEEDED(aResult) ? "succeeded"_ns : "failed"_ns,
-            mConnectionIdleStart, mConnectionIdleEnd);
+        mozilla::glean::netwerk::http3_time_to_reuse_idle_connection
+            .Get(NS_SUCCEEDED(aResult) ? "succeeded"_ns : "failed"_ns)
+            .AccumulateRawDuration(mConnectionIdleEnd - mConnectionIdleStart);
       }
+#endif
 
       mConnectionIdleStart = TimeStamp();
       mConnectionIdleEnd = TimeStamp();
@@ -2269,6 +2287,24 @@ void Http3Session::Authenticated(int32_t aError) {
       mError = psm::GetXPCOMFromNSSError(aError);
       LOG(("Http3Session::Authenticated psm-error=0x%" PRIx32 " [this=%p].",
            static_cast<uint32_t>(mError), this));
+    } else if (StaticPrefs::
+                   network_http_http3_disable_when_third_party_roots_found()) {
+      // In test, we use another perf value to override the value of
+      // hasThirdPartyRoots.
+      bool hasThirdPartyRoots =
+          (xpc::IsInAutomation() || PR_GetEnv("XPCSHELL_TEST_PROFILE_DIR"))
+              ? StaticPrefs::
+                    network_http_http3_has_third_party_roots_found_in_automation()
+              : !mSocketControl->IsBuiltCertChainRootBuiltInRoot();
+      LOG(("Http3Session::Authenticated [this=%p, hasThirdPartyRoots=%d]", this,
+           hasThirdPartyRoots));
+      if (hasThirdPartyRoots) {
+        if (mFirstHttpTransaction) {
+          mFirstHttpTransaction->DisableHttp3(false);
+        }
+        mUdpConn->CloseTransaction(this, NS_ERROR_NET_RESET);
+        return;
+      }
     }
     mHttp3Connection->PeerAuthenticated(aError);
 
@@ -2500,6 +2536,7 @@ void Http3Session::ReportHttp3Connection() {
   }
 }
 
+#ifndef ANDROID
 void Http3Session::EchOutcomeTelemetry() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
@@ -2521,8 +2558,6 @@ void Http3Session::EchOutcomeTelemetry() {
 }
 
 void Http3Session::ZeroRttTelemetry(ZeroRttOutcome aOutcome) {
-  Telemetry::Accumulate(Telemetry::HTTP3_0RTT_STATE, aOutcome);
-
   nsAutoCString key;
 
   switch (aOutcome) {
@@ -2542,12 +2577,18 @@ void Http3Session::ZeroRttTelemetry(ZeroRttOutcome aOutcome) {
       break;
   }
 
-  if (!key.IsEmpty()) {
+  if (key.IsEmpty()) {
+    mozilla::glean::netwerk::http3_0rtt_state.Get("not_used"_ns).Add(1);
+  } else {
     MOZ_ASSERT(mZeroRttStarted);
-    Telemetry::AccumulateTimeDelta(Telemetry::HTTP3_0RTT_STATE_DURATION, key,
-                                   mZeroRttStarted, TimeStamp::Now());
+    mozilla::TimeStamp zeroRttEnded = mozilla::TimeStamp::Now();
+    mozilla::glean::netwerk::http3_0rtt_state_duration.Get(key)
+        .AccumulateRawDuration(zeroRttEnded - mZeroRttStarted);
+
+    mozilla::glean::netwerk::http3_0rtt_state.Get(key).Add(1);
   }
 }
+#endif
 
 nsresult Http3Session::GetTransactionTLSSocketControl(
     nsITLSSocketControl** tlsSocketControl) {

@@ -49,14 +49,25 @@ class BounceTrackingState : public nsIWebProgressListener,
   // Reset state for all BounceTrackingState instances this includes resetting
   // BounceTrackingRecords and cancelling any running timers.
   static void ResetAll();
+
+  // Resets and destroys all BounceTrackingState objects. This is used when the
+  // feature gets disabled.
+  static void DestroyAll();
+
+  // Reset BounceTrackingState objects matching OriginAttributes.
   static void ResetAllForOriginAttributes(
       const OriginAttributes& aOriginAttributes);
+  // Same as above but for a pattern.
   static void ResetAllForOriginAttributesPattern(
       const OriginAttributesPattern& aPattern);
 
   const Maybe<BounceTrackingRecord>& GetBounceTrackingRecord();
 
   void ResetBounceTrackingRecord();
+
+  // The top level BrowsingContext and its BrowsingContextWebProgress are
+  // discarded (e.g. tab closed).
+  void OnBrowsingContextDiscarded();
 
   // Callback for when we received a response from the server and are about to
   // create a document for the response. Calls into

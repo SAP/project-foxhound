@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys.mjs";
+import { RootBiDiModule } from "chrome://remote/content/webdriver-bidi/modules/RootBiDiModule.sys.mjs";
 
 const lazy = {};
 
@@ -156,7 +156,7 @@ const WaitCondition = {
   Complete: "complete",
 };
 
-class BrowsingContextModule extends Module {
+class BrowsingContextModule extends RootBiDiModule {
   #contextListener;
   #navigationListener;
   #promptListener;
@@ -175,8 +175,6 @@ class BrowsingContextModule extends Module {
     this.#contextListener.on("attached", this.#onContextAttached);
     this.#contextListener.on("discarded", this.#onContextDiscarded);
 
-    // Create the navigation listener and listen to "fragment-navigated" and
-    // "navigation-started" events.
     this.#navigationListener = new lazy.NavigationListener(
       this.messageHandler.navigationManager
     );
@@ -211,6 +209,7 @@ class BrowsingContextModule extends Module {
       "fragment-navigated",
       this.#onFragmentNavigated
     );
+    this.#navigationListener.off("navigation-failed", this.#onNavigationFailed);
     this.#navigationListener.off(
       "navigation-started",
       this.#onNavigationStarted
@@ -1025,20 +1024,17 @@ class BrowsingContextModule extends Module {
       );
     }
 
-    const result = await this.messageHandler.forwardCommand({
-      moduleName: "browsingContext",
-      commandName: "_locateNodes",
-      destination: {
-        type: lazy.WindowGlobalMessageHandler.type,
-        id: context.id,
-      },
-      params: {
+    const result = await this._forwardToWindowGlobal(
+      "_locateNodes",
+      context.id,
+      {
         locator,
         maxNodeCount,
         serializationOptions: serializationOptionsWithDefaults,
         startNodes,
       },
-    });
+      { retryOnAbort: true }
+    );
 
     return {
       nodes: result.serializedNodes,
@@ -1133,6 +1129,7 @@ class BrowsingContextModule extends Module {
         });
       },
       {
+        targetURI,
         wait,
       }
     );
@@ -1452,19 +1449,23 @@ class BrowsingContextModule extends Module {
     }
 
     if (targetHeight !== currentHeight || targetWidth !== currentWidth) {
+      if (!context.isActive) {
+        // Force a synchronous update of the remote browser dimensions so that
+        // background tabs get resized.
+        browser.ownerDocument.synchronouslyUpdateRemoteBrowserDimensions(
+          /* aIncludeInactive = */ true
+        );
+      }
       // Wait until the viewport has been resized
-      await this.messageHandler.forwardCommand({
-        moduleName: "browsingContext",
-        commandName: "_awaitViewportDimensions",
-        destination: {
-          type: lazy.WindowGlobalMessageHandler.type,
-          id: context.id,
-        },
-        params: {
+      await this._forwardToWindowGlobal(
+        "_awaitViewportDimensions",
+        context.id,
+        {
           height: targetHeight,
           width: targetWidth,
         },
-      });
+        { retryOnAbort: true }
+      );
     }
   }
 
@@ -1493,6 +1494,12 @@ class BrowsingContextModule extends Module {
     );
 
     const context = this.#getBrowsingContext(contextId);
+
+    if (context.parent) {
+      throw new lazy.error.InvalidArgumentError(
+        `Browsing Context with id ${contextId} is not top-level`
+      );
+    }
 
     lazy.assert.integer(
       delta,
@@ -1539,6 +1546,8 @@ class BrowsingContextModule extends Module {
    * @param {Function} startNavigationFn
    *     A callback that starts a navigation.
    * @param {object} options
+   * @param {string=} options.targetURI
+   *     The target URI for the navigation.
    * @param {WaitCondition} options.wait
    *     The WaitCondition to use to wait for the navigation.
    *
@@ -1546,7 +1555,7 @@ class BrowsingContextModule extends Module {
    *     A Promise that resolves to navigate results when the navigation is done.
    */
   async #awaitNavigation(webProgress, startNavigationFn, options) {
-    const { wait } = options;
+    const { targetURI, wait } = options;
 
     const context = webProgress.browsingContext;
     const browserId = context.browserId;
@@ -1554,7 +1563,9 @@ class BrowsingContextModule extends Module {
     const resolveWhenStarted = wait === WaitCondition.None;
     const listener = new lazy.ProgressListener(webProgress, {
       expectNavigation: true,
+      navigationManager: this.messageHandler.navigationManager,
       resolveWhenStarted,
+      targetURI,
       // In case the webprogress is already navigating, always wait for an
       // explicit start flag.
       waitForExplicitStart: true,
@@ -1586,86 +1597,14 @@ class BrowsingContextModule extends Module {
       );
     }
 
-    // If WaitCondition is Complete, we should try to wait for the corresponding
-    // responseCompleted event to be received.
-    let onNavigationRequestCompleted;
-
-    // However, a navigation will not necessarily have network events.
-    // For instance: same document navigation, or when using file or data
-    // protocols (for which we don't have network events yet).
-    // Therefore we will not unconditionally wait for a navigation request and
-    // this flag should only be set when a responseCompleted event should be
-    // expected.
-    let shouldWaitForNavigationRequest = false;
-
-    // Cleaning up the listeners will be done at the end of this method.
-    let unsubscribeNavigationListeners;
-
-    if (wait === WaitCondition.Complete) {
-      let resolveOnNetworkEvent;
-      onNavigationRequestCompleted = new Promise(
-        r => (resolveOnNetworkEvent = r)
-      );
-      const onBeforeRequestSent = (name, data) => {
-        if (data.navigation) {
-          shouldWaitForNavigationRequest = true;
-        }
-      };
-      const onNetworkRequestCompleted = (name, data) => {
-        if (data.navigation) {
-          resolveOnNetworkEvent();
-        }
-      };
-
-      // The network request can either end with _responseCompleted or _fetchError
-      await this.messageHandler.eventsDispatcher.on(
-        "network._beforeRequestSent",
-        contextDescriptor,
-        onBeforeRequestSent
-      );
-      await this.messageHandler.eventsDispatcher.on(
-        "network._responseCompleted",
-        contextDescriptor,
-        onNetworkRequestCompleted
-      );
-      await this.messageHandler.eventsDispatcher.on(
-        "network._fetchError",
-        contextDescriptor,
-        onNetworkRequestCompleted
-      );
-
-      unsubscribeNavigationListeners = async () => {
-        await this.messageHandler.eventsDispatcher.off(
-          "network._beforeRequestSent",
-          contextDescriptor,
-          onBeforeRequestSent
-        );
-        await this.messageHandler.eventsDispatcher.off(
-          "network._responseCompleted",
-          contextDescriptor,
-          onNetworkRequestCompleted
-        );
-        await this.messageHandler.eventsDispatcher.off(
-          "network._fetchError",
-          contextDescriptor,
-          onNetworkRequestCompleted
-        );
-      };
-    }
-
-    const navigated = listener.start();
+    const navigationId = lazy.registerNavigationId({
+      contextDetails: { context: webProgress.browsingContext },
+    });
+    const navigated = listener.start(navigationId);
 
     try {
-      const navigationId = lazy.registerNavigationId({
-        contextDetails: { context: webProgress.browsingContext },
-      });
-
       await startNavigationFn();
       await navigated;
-
-      if (shouldWaitForNavigationRequest) {
-        await onNavigationRequestCompleted;
-      }
 
       let url;
       if (wait === WaitCondition.None) {
@@ -1684,6 +1623,7 @@ class BrowsingContextModule extends Module {
       if (listener.isStarted) {
         listener.stop();
       }
+      listener.destroy();
 
       if (wait === WaitCondition.Interactive) {
         await this.messageHandler.eventsDispatcher.off(
@@ -1691,11 +1631,6 @@ class BrowsingContextModule extends Module {
           contextDescriptor,
           onDocumentInteractive
         );
-      } else if (
-        wait === WaitCondition.Complete &&
-        shouldWaitForNavigationRequest
-      ) {
-        await unsubscribeNavigationListeners();
       }
     }
   }
@@ -1733,9 +1668,9 @@ class BrowsingContextModule extends Module {
    * @param {BrowsingContext} context
    *     The browsing context to get the information from.
    * @param {object=} options
-   * @param {boolean=} options.isRoot
-   *     Flag that indicates if this browsing context is the root of all the
-   *     browsing contexts to be returned. Defaults to true.
+   * @param {boolean=} options.includeParentId
+   *     Flag that indicates if the parent ID should be included.
+   *     Defaults to true.
    * @param {number=} options.maxDepth
    *     Depth of the browsing context tree to traverse. If not specified
    *     the whole tree is returned.
@@ -1743,14 +1678,14 @@ class BrowsingContextModule extends Module {
    *     The information about the browsing context.
    */
   #getBrowsingContextInfo(context, options = {}) {
-    const { isRoot = true, maxDepth = null } = options;
+    const { includeParentId = true, maxDepth = null } = options;
 
     let children = null;
     if (maxDepth === null || maxDepth > 0) {
       children = context.children.map(context =>
         this.#getBrowsingContextInfo(context, {
           maxDepth: maxDepth === null ? maxDepth : maxDepth - 1,
-          isRoot: false,
+          includeParentId: false,
         })
       );
     }
@@ -1772,7 +1707,7 @@ class BrowsingContextModule extends Module {
       userContext,
     };
 
-    if (isRoot) {
+    if (includeParentId) {
       // Only emit the parent id for the top-most browsing context.
       const parentId = lazy.TabManager.getIdForBrowsingContext(context.parent);
       contextInfo.parent = parentId;
@@ -1807,17 +1742,10 @@ class BrowsingContextModule extends Module {
         }
       );
 
-      // This event is emitted from the parent process but for a given browsing
-      // context. Set the event's contextInfo to the message handler corresponding
-      // to this browsing context.
-      const contextInfo = {
-        contextId: browsingContext.id,
-        type: lazy.WindowGlobalMessageHandler.type,
-      };
-      this.emitEvent(
+      this._emitEventForBrowsingContext(
+        browsingContext.id,
         "browsingContext.contextCreated",
-        browsingContextInfo,
-        contextInfo
+        browsingContextInfo
       );
     }
   };
@@ -1857,17 +1785,10 @@ class BrowsingContextModule extends Module {
         }
       );
 
-      // This event is emitted from the parent process but for a given browsing
-      // context. Set the event's contextInfo to the message handler corresponding
-      // to this browsing context.
-      const contextInfo = {
-        contextId: browsingContext.id,
-        type: lazy.WindowGlobalMessageHandler.type,
-      };
-      this.emitEvent(
+      this._emitEventForBrowsingContext(
+        browsingContext.id,
         "browsingContext.contextDestroyed",
-        browsingContextInfo,
-        contextInfo
+        browsingContextInfo
       );
     }
   };
@@ -1877,19 +1798,16 @@ class BrowsingContextModule extends Module {
     const context = this.#getBrowsingContext(navigableId);
 
     if (this.#subscribedEvents.has("browsingContext.fragmentNavigated")) {
-      const contextInfo = {
-        contextId: context.id,
-        type: lazy.WindowGlobalMessageHandler.type,
+      const browsingContextInfo = {
+        context: navigableId,
+        navigation: navigationId,
+        timestamp: Date.now(),
+        url,
       };
-      this.emitEvent(
+      this._emitEventForBrowsingContext(
+        context.id,
         "browsingContext.fragmentNavigated",
-        {
-          context: navigableId,
-          navigation: navigationId,
-          timestamp: Date.now(),
-          url,
-        },
-        contextInfo
+        browsingContextInfo
       );
     }
   };
@@ -1903,22 +1821,17 @@ class BrowsingContextModule extends Module {
         return;
       }
 
-      // This event is emitted from the parent process but for a given browsing
-      // context. Set the event's contextInfo to the message handler corresponding
-      // to this browsing context.
-      const contextInfo = {
-        contextId,
-        type: lazy.WindowGlobalMessageHandler.type,
-      };
-
       const params = {
         context: contextId,
         accepted: detail.accepted,
         type: detail.promptType,
         userText: detail.userText,
       };
-
-      this.emitEvent("browsingContext.userPromptClosed", params, contextInfo);
+      this._emitEventForBrowsingContext(
+        contextId,
+        "browsingContext.userPromptClosed",
+        params
+      );
     }
   };
 
@@ -1934,13 +1847,6 @@ class BrowsingContextModule extends Module {
       }
 
       const contextId = lazy.TabManager.getIdForBrowser(contentBrowser);
-      // This event is emitted from the parent process but for a given browsing
-      // context. Set the event's contextInfo to the message handler corresponding
-      // to this browsing context.
-      const contextInfo = {
-        contextId,
-        type: lazy.WindowGlobalMessageHandler.type,
-      };
 
       const session = lazy.getWebDriverSessionById(
         this.messageHandler.sessionId
@@ -1958,10 +1864,10 @@ class BrowsingContextModule extends Module {
         eventPayload.defaultValue = await prompt.getInputText();
       }
 
-      this.emitEvent(
+      this._emitEventForBrowsingContext(
+        contextId,
         "browsingContext.userPromptOpened",
-        eventPayload,
-        contextInfo
+        eventPayload
       );
     }
   };
@@ -1970,20 +1876,16 @@ class BrowsingContextModule extends Module {
     const { navigableId, navigationId, url, contextId } = data;
 
     if (this.#subscribedEvents.has("browsingContext.navigationFailed")) {
-      const contextInfo = {
-        contextId,
-        type: lazy.WindowGlobalMessageHandler.type,
+      const eventPayload = {
+        context: navigableId,
+        navigation: navigationId,
+        timestamp: Date.now(),
+        url,
       };
-
-      this.emitEvent(
+      this._emitEventForBrowsingContext(
+        contextId,
         "browsingContext.navigationFailed",
-        {
-          context: navigableId,
-          navigation: navigationId,
-          timestamp: Date.now(),
-          url,
-        },
-        contextInfo
+        eventPayload
       );
     }
   };
@@ -1993,20 +1895,16 @@ class BrowsingContextModule extends Module {
     const context = this.#getBrowsingContext(navigableId);
 
     if (this.#subscribedEvents.has("browsingContext.navigationStarted")) {
-      const contextInfo = {
-        contextId: context.id,
-        type: lazy.WindowGlobalMessageHandler.type,
+      const eventPayload = {
+        context: navigableId,
+        navigation: navigationId,
+        timestamp: Date.now(),
+        url,
       };
-
-      this.emitEvent(
+      this._emitEventForBrowsingContext(
+        context.id,
         "browsingContext.navigationStarted",
-        {
-          context: navigableId,
-          navigation: navigationId,
-          timestamp: Date.now(),
-          url,
-        },
-        contextInfo
+        eventPayload
       );
     }
   };
@@ -2103,18 +2001,12 @@ class BrowsingContextModule extends Module {
   }
 
   #waitForVisibilityChange(browsingContext) {
-    return this.messageHandler.forwardCommand({
-      moduleName: "browsingContext",
-      commandName: "_awaitVisibilityState",
-      destination: {
-        type: lazy.WindowGlobalMessageHandler.type,
-        id: browsingContext.id,
-      },
-      params: {
-        value: "hidden",
-      },
-      retryOnAbort: true,
-    });
+    return this._forwardToWindowGlobal(
+      "_awaitVisibilityState",
+      browsingContext.id,
+      { value: "hidden" },
+      { retryOnAbort: true }
+    );
   }
 
   /**

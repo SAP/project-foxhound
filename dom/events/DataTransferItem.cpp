@@ -94,7 +94,7 @@ void DataTransferItem::SetData(nsIVariant* aData) {
     MOZ_ASSERT(!mType.EqualsASCII(kNativeImageMime));
 
     mKind = KIND_STRING;
-    for (uint32_t i = 0; i < ArrayLength(kFileMimeNameMap); ++i) {
+    for (uint32_t i = 0; i < std::size(kFileMimeNameMap); ++i) {
       if (mType.EqualsASCII(kFileMimeNameMap[i].mMimeName)) {
         mKind = KIND_FILE;
         break;
@@ -172,21 +172,12 @@ void DataTransferItem::FillInExternalData() {
         return;
       }
 
-      nsCOMPtr<nsIClipboard> clipboard =
-          do_GetService("@mozilla.org/widget/clipboard;1");
-      if (!clipboard) {
+      nsCOMPtr<nsIClipboardDataSnapshot> clipboardDataSnapshot =
+          mDataTransfer->GetClipboardDataSnapshot();
+      if (!clipboardDataSnapshot) {
         return;
       }
-
-      nsCOMPtr<nsIGlobalObject> global = mDataTransfer->GetGlobal();
-      WindowContext* windowContext = nullptr;
-      if (global) {
-        const auto* innerWindow = global->GetAsInnerWindow();
-        windowContext = innerWindow ? innerWindow->GetWindowContext() : nullptr;
-      }
-      MOZ_ASSERT(windowContext);
-      nsresult rv = clipboard->GetData(trans, *mDataTransfer->ClipboardType(),
-                                       windowContext);
+      nsresult rv = clipboardDataSnapshot->GetDataSync(trans);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         if (rv == NS_ERROR_CONTENT_BLOCKED) {
           // If the load of this content was blocked by Content Analysis,
@@ -392,8 +383,7 @@ already_AddRefed<FileSystemEntry> DataTransferItem::GetAsEntry(
     nsCOMPtr<nsIFile> directoryFile;
     // fullPath is already in unicode, we don't have to use
     // NS_NewNativeLocalFile.
-    nsresult rv =
-        NS_NewLocalFile(fullpath, true, getter_AddRefs(directoryFile));
+    nsresult rv = NS_NewLocalFile(fullpath, getter_AddRefs(directoryFile));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return nullptr;
     }
@@ -416,7 +406,7 @@ already_AddRefed<FileSystemEntry> DataTransferItem::GetAsEntry(
 already_AddRefed<File> DataTransferItem::CreateFileFromInputStream(
     nsIInputStream* aStream) {
   const char* key = nullptr;
-  for (uint32_t i = 0; i < ArrayLength(kFileMimeNameMap); ++i) {
+  for (uint32_t i = 0; i < std::size(kFileMimeNameMap); ++i) {
     if (mType.EqualsASCII(kFileMimeNameMap[i].mMimeName)) {
       key = kFileMimeNameMap[i].mFileName;
       break;

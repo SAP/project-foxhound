@@ -593,9 +593,12 @@ impl ToCss for CustomIdent {
     MallocSizeOf,
     PartialEq,
     SpecifiedValueInfo,
+    ToAnimatedValue,
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    Serialize,
+    Deserialize,
 )]
 pub struct DashedIdent(pub Atom);
 

@@ -1,5 +1,6 @@
 [DEFAULT]
 prefs = [
+  "dom.viewTransitions.enabled=true",
   "gfx.omta.background-color=true",
   "gfx.font_loader.delay=0",
   "layout.css.motion-path-url.enabled=true",
@@ -15,6 +16,7 @@ prefs = [
   "layout.css.transform-box-content-stroke.enabled=true",
   "layout.css.transition-behavior.enabled=true",
   "layout.css.field-sizing.enabled=true",
+  "layout.css.anchor-positioning.enabled=true",
 ]
 support-files = [
   "animation_utils.js",

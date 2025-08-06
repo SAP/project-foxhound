@@ -198,6 +198,11 @@ data class Addon(
          * The [Addon] was disabled because it isn't compatible with the application version.
          */
         INCOMPATIBLE,
+
+        /**
+         * The [Addon] was disabled because it is soft-blocked.
+         */
+        SOFT_BLOCKED,
     }
 
     /**
@@ -266,6 +271,12 @@ data class Addon(
     fun isDisabledAsBlocklisted() = installedState?.disabledReason == DisabledReason.BLOCKLISTED
 
     /**
+     * Returns whether this [Addon] is currently soft-blocked. While we're cheking the
+     * disabled reason, the user still has the opportunity to re-enable the [Addon].
+     */
+    fun isSoftBlocked() = installedState?.disabledReason == DisabledReason.SOFT_BLOCKED
+
+    /**
      * Returns whether this [Addon] is currently disabled because it isn't correctly signed.
      */
     fun isDisabledAsNotCorrectlySigned() = installedState?.disabledReason == DisabledReason.NOT_CORRECTLY_SIGNED
@@ -328,6 +339,8 @@ data class Addon(
             "sessions" to R.string.mozac_feature_addons_permissions_sessions_description,
             "tabHide" to R.string.mozac_feature_addons_permissions_tab_hide_description,
             "topSites" to R.string.mozac_feature_addons_permissions_top_sites_description,
+            "trialML" to R.string.mozac_feature_addons_permissions_trial_ml_description,
+            "userScripts" to R.string.mozac_feature_addons_permissions_user_scripts_description,
             "devtools" to R.string.mozac_feature_addons_permissions_devtools_description,
         )
 
@@ -500,7 +513,6 @@ data class Addon(
             return updatedAt
         }
 
-        @Suppress("MaxLineLength")
         internal fun localizedURLAccessPermissions(context: Context, accessPermissions: List<String>): List<String> {
             val localizedSiteAccessPermissions = mutableListOf<String>()
             val permissionsToTranslations = mutableMapOf<String, Int>()
@@ -513,7 +525,9 @@ data class Addon(
             }
 
             if (permissionsToTranslations.values.any { it.isAllURLsPermission() }) {
-                localizedSiteAccessPermissions.add(context.getString(R.string.mozac_feature_addons_permissions_all_urls_description))
+                localizedSiteAccessPermissions.add(
+                    context.getString(R.string.mozac_feature_addons_permissions_all_urls_description),
+                )
             } else {
                 formatURLAccessPermission(permissionsToTranslations, localizedSiteAccessPermissions, context)
             }

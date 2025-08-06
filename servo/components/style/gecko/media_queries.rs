@@ -17,7 +17,7 @@ use crate::properties::ComputedValues;
 use crate::string_cache::Atom;
 use crate::values::computed::font::GenericFontFamily;
 use crate::values::computed::{ColorScheme, Length, NonNegativeLength};
-use crate::values::specified::color::SystemColor;
+use crate::values::specified::color::{ColorSchemeFlags, ForcedColors, SystemColor};
 use crate::values::specified::font::{FONT_MEDIUM_LINE_HEIGHT_PX, FONT_MEDIUM_PX};
 use crate::values::specified::ViewportVariant;
 use crate::values::{CustomIdent, KeyframesName};
@@ -28,8 +28,6 @@ use servo_arc::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::{cmp, fmt};
 use style_traits::{CSSPixel, DevicePixel};
-
-use super::media_features::ForcedColors;
 
 /// The `Device` in Gecko wraps a pres context, has a default values computed,
 /// and contains all the viewport rule state.
@@ -500,40 +498,21 @@ impl Device {
     /// Returns whether document colors are enabled.
     #[inline]
     pub fn forced_colors(&self) -> ForcedColors {
-        if self.document().mIsBeingUsedAsImage() {
-            // SVG images never force colors.
-            return ForcedColors::None;
-        }
-        let prefs = self.pref_sheet_prefs();
-        if !prefs.mUseDocumentColors {
-            return ForcedColors::Active;
-        }
-        // On Windows, having a high contrast theme also means that the OS is requesting the
-        // colors to be forced. This is mostly convenience for the front-end, which wants to
-        // reuse the forced-colors styles for chrome in this case as well, and it's a lot
-        // more convenient to use `(forced-colors)` than
-        // `(forced-colors) or ((-moz-platform: windows) and (prefers-contrast))`.
-        //
-        // TODO(emilio): We might want to factor in here the lwtheme attribute in the root element
-        // and so on.
-        if cfg!(target_os = "windows") && prefs.mUseAccessibilityTheme && prefs.mIsChrome {
-            return ForcedColors::Requested;
-        }
-        ForcedColors::None
+        self.pres_context().map_or(ForcedColors::None, |pc| pc.mForcedColors)
     }
 
     /// Computes a system color and returns it as an nscolor.
     pub(crate) fn system_nscolor(
         &self,
         system_color: SystemColor,
-        color_scheme: &ColorScheme,
+        color_scheme: ColorSchemeFlags,
     ) -> u32 {
-        unsafe { bindings::Gecko_ComputeSystemColor(system_color, self.document(), color_scheme) }
+        unsafe { bindings::Gecko_ComputeSystemColor(system_color, self.document(), &color_scheme) }
     }
 
     /// Returns whether the used color-scheme for `color-scheme` should be dark.
-    pub(crate) fn is_dark_color_scheme(&self, color_scheme: &ColorScheme) -> bool {
-        unsafe { bindings::Gecko_IsDarkColorScheme(self.document(), color_scheme) }
+    pub(crate) fn is_dark_color_scheme(&self, color_scheme: ColorSchemeFlags) -> bool {
+        unsafe { bindings::Gecko_IsDarkColorScheme(self.document(), &color_scheme) }
     }
 
     /// Returns the default background color.
@@ -541,16 +520,14 @@ impl Device {
     /// This is only for forced-colors/high-contrast, so looking at light colors
     /// is ok.
     pub fn default_background_color(&self) -> AbsoluteColor {
-        let normal = ColorScheme::normal();
-        convert_nscolor_to_absolute_color(self.system_nscolor(SystemColor::Canvas, &normal))
+        convert_nscolor_to_absolute_color(self.system_nscolor(SystemColor::Canvas, ColorScheme::normal().bits))
     }
 
     /// Returns the default foreground color.
     ///
     /// See above for looking at light colors only.
     pub fn default_color(&self) -> AbsoluteColor {
-        let normal = ColorScheme::normal();
-        convert_nscolor_to_absolute_color(self.system_nscolor(SystemColor::Canvastext, &normal))
+        convert_nscolor_to_absolute_color(self.system_nscolor(SystemColor::Canvastext, ColorScheme::normal().bits))
     }
 
     /// Returns the current effective text zoom.

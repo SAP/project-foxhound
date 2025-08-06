@@ -1401,12 +1401,6 @@ void MediaFormatReader::ReadUpdatedMetadata(MediaInfo* aInfo) {
     MutexAutoLock lock(mAudio.mMutex);
     if (HasAudio()) {
       aInfo->mAudio = *mAudio.GetWorkingInfo()->GetAsAudioInfo();
-      Maybe<nsCString> audioProcessPerCodecName = GetAudioProcessPerCodec();
-      if (audioProcessPerCodecName.isSome()) {
-        Telemetry::ScalarAdd(
-            Telemetry::ScalarID::MEDIA_AUDIO_PROCESS_PER_CODEC_NAME,
-            NS_ConvertUTF8toUTF16(*audioProcessPerCodecName), 1);
-      }
     }
   }
 }
@@ -1801,18 +1795,21 @@ void MediaFormatReader::NotifyNewOutput(
             wasHardwareAccelerated != decoder.mIsHardwareAccelerated) {
           decoder.mHasReportedVideoHardwareSupportTelemtry = true;
           VideoData* videoData = sample->As<VideoData>();
-          Telemetry::ScalarSet(
-              Telemetry::ScalarID::MEDIA_VIDEO_HARDWARE_DECODING_SUPPORT,
-              NS_ConvertUTF8toUTF16(decoder.GetCurrentInfo()->mMimeType),
-              !!decoder.mIsHardwareAccelerated);
+          glean::media::video_hardware_decoding_support
+              .Get(decoder.GetCurrentInfo()->mMimeType)
+              .Set(!!decoder.mIsHardwareAccelerated);
           static constexpr gfx::IntSize HD_VIDEO_SIZE{1280, 720};
           if (videoData->mDisplay.width >= HD_VIDEO_SIZE.Width() &&
               videoData->mDisplay.height >= HD_VIDEO_SIZE.Height()) {
-            Telemetry::ScalarSet(
-                Telemetry::ScalarID::MEDIA_VIDEO_HD_HARDWARE_DECODING_SUPPORT,
-                NS_ConvertUTF8toUTF16(decoder.GetCurrentInfo()->mMimeType),
-                !!decoder.mIsHardwareAccelerated);
+            glean::media::video_hd_hardware_decoding_support
+                .Get(decoder.GetCurrentInfo()->mMimeType)
+                .Set(!!decoder.mIsHardwareAccelerated);
           }
+        }
+        // As the real video decoder creation might be delayed, we want to
+        // update the decoder name again, instead of using the wrong name.
+        if (decoder.mNumSamplesOutput == 1) {
+          decoder.mDescription = mVideo.mDecoder->GetDescriptionName();
         }
       }
       decoder.mDecodePerfRecorder->Record(
@@ -2426,9 +2423,14 @@ void MediaFormatReader::Update(TrackType aTrack) {
     } else if (decoder.HasFatalError()) {
       nsCString mimeType = decoder.GetCurrentInfo()->mMimeType;
       if (!mimeType.IsEmpty()) {
-        Telemetry::ScalarAdd(
-            Telemetry::ScalarID::MEDIA_DECODE_ERROR_PER_MIME_TYPE,
-            NS_ConvertUTF8toUTF16(mimeType), 1 /* error count */);
+        glean::media_playback::DecodeErrorExtra extraData;
+        extraData.mimeType = Some(mimeType);
+        extraData.errorName = Some(decoder.mError->ErrorName());
+        if (mCDMProxy) {
+          extraData.keySystem =
+              Some(NS_ConvertUTF16toUTF8(mCDMProxy->KeySystem()));
+        }
+        glean::media_playback::decode_error.Record(Some(extraData));
       }
       LOG("Rejecting %s promise for %s : DECODE_ERROR", TrackTypeToStr(aTrack),
           mimeType.get());
@@ -3314,31 +3316,6 @@ RefPtr<GenericPromise> MediaFormatReader::RequestDebugInfo(
   return GenericPromise::CreateAndResolve(true, __func__);
 }
 
-Maybe<nsCString> MediaFormatReader::GetAudioProcessPerCodec() {
-  if (mAudio.mDescription == "uninitialized"_ns) {
-    return Nothing();
-  }
-
-  MOZ_ASSERT(mAudio.mProcessName.Length() > 0,
-             "Should have had a process name");
-  MOZ_ASSERT(mAudio.mCodecName.Length() > 0, "Should have had a codec name");
-
-  nsCString processName = mAudio.mProcessName;
-  nsCString audioProcessPerCodecName(processName + ","_ns + mAudio.mCodecName);
-  if (processName != "utility"_ns) {
-    if (!StaticPrefs::media_rdd_process_enabled()) {
-      audioProcessPerCodecName += ",rdd-disabled"_ns;
-    }
-    if (!StaticPrefs::media_utility_process_enabled()) {
-      audioProcessPerCodecName += ",utility-disabled"_ns;
-    }
-    if (StaticPrefs::media_allow_audio_non_utility()) {
-      audioProcessPerCodecName += ",allow-non-utility"_ns;
-    }
-  }
-  return Some(audioProcessPerCodecName);
-}
-
 void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {
   MOZ_ASSERT(OnTaskQueue(),
              "Don't call this off the task queue, it's going to touch a lot of "
@@ -3359,35 +3336,29 @@ void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {
     aInfo.mAudioState.mHasPromise = mAudio.HasPromise();
     aInfo.mAudioState.mWaitingPromise = !mAudio.mWaitingPromise.IsEmpty();
     aInfo.mAudioState.mHasDemuxRequest = mAudio.mDemuxRequest.Exists();
-    aInfo.mAudioState.mDemuxQueueSize =
-        AssertedCast<int>(mAudio.mQueuedSamples.Length());
+    aInfo.mAudioState.mDemuxQueueSize = mAudio.mQueuedSamples.Length();
     aInfo.mAudioState.mHasDecoder = mAudio.mDecodeRequest.Exists();
     aInfo.mAudioState.mTimeTreshold =
         mAudio.mTimeThreshold ? mAudio.mTimeThreshold.ref().Time().ToSeconds()
                               : -1.0;
     aInfo.mAudioState.mTimeTresholdHasSeeked =
         mAudio.mTimeThreshold ? mAudio.mTimeThreshold.ref().mHasSeeked : false;
-    aInfo.mAudioState.mNumSamplesInput =
-        AssertedCast<int64_t>(mAudio.mNumSamplesInput);
-    aInfo.mAudioState.mNumSamplesOutput =
-        AssertedCast<int64_t>(mAudio.mNumSamplesOutput);
-    aInfo.mAudioState.mQueueSize =
-        AssertedCast<int32_t>(size_t(mAudio.mSizeOfQueue));
-    aInfo.mAudioState.mPending = AssertedCast<int>(mAudio.mOutput.Length());
+    aInfo.mAudioState.mNumSamplesInput = mAudio.mNumSamplesInput;
+    aInfo.mAudioState.mNumSamplesOutput = mAudio.mNumSamplesOutput;
+    aInfo.mAudioState.mQueueSize = mAudio.mSizeOfQueue;
+    aInfo.mAudioState.mPending = mAudio.mOutput.Length();
     aInfo.mAudioState.mWaitingForData = !!mAudio.mWaitingForDataStartTime;
     aInfo.mAudioState.mDemuxEOS = mAudio.mDemuxEOS;
     aInfo.mAudioState.mDrainState = int32_t(mAudio.mDrainState);
     aInfo.mAudioState.mWaitingForKey = mAudio.mWaitingForKey;
-    aInfo.mAudioState.mLastStreamSourceID =
-        AssertedCast<int64_t>(mAudio.mLastStreamSourceID);
+    aInfo.mAudioState.mLastStreamSourceID = mAudio.mLastStreamSourceID;
   }
 
   CopyUTF8toUTF16(audioDecoderName, aInfo.mAudioDecoderName);
   CopyUTF8toUTF16(audioType, aInfo.mAudioType);
-  aInfo.mAudioChannels = AssertedCast<int32_t>(audioInfo.mChannels);
+  aInfo.mAudioChannels = audioInfo.mChannels;
   aInfo.mAudioRate = audioInfo.mRate;
-  aInfo.mAudioFramesDecoded =
-      AssertedCast<int64_t>(mAudio.mNumSamplesOutputTotal);
+  aInfo.mAudioFramesDecoded = mAudio.mNumSamplesOutputTotal;
 
   VideoInfo videoInfo;
   if (HasVideo()) {
@@ -3399,27 +3370,22 @@ void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {
     aInfo.mVideoState.mHasPromise = mVideo.HasPromise();
     aInfo.mVideoState.mWaitingPromise = !mVideo.mWaitingPromise.IsEmpty();
     aInfo.mVideoState.mHasDemuxRequest = mVideo.mDemuxRequest.Exists();
-    aInfo.mVideoState.mDemuxQueueSize =
-        AssertedCast<int32_t>(mVideo.mQueuedSamples.Length());
+    aInfo.mVideoState.mDemuxQueueSize = mVideo.mQueuedSamples.Length();
     aInfo.mVideoState.mHasDecoder = mVideo.mDecodeRequest.Exists();
     aInfo.mVideoState.mTimeTreshold =
         mVideo.mTimeThreshold ? mVideo.mTimeThreshold.ref().Time().ToSeconds()
                               : -1.0;
     aInfo.mVideoState.mTimeTresholdHasSeeked =
         mVideo.mTimeThreshold ? mVideo.mTimeThreshold.ref().mHasSeeked : false;
-    aInfo.mVideoState.mNumSamplesInput =
-        AssertedCast<int64_t>(mVideo.mNumSamplesInput);
-    aInfo.mVideoState.mNumSamplesOutput =
-        AssertedCast<int64_t>(mVideo.mNumSamplesOutput);
-    aInfo.mVideoState.mQueueSize =
-        AssertedCast<int32_t>(size_t(mVideo.mSizeOfQueue));
-    aInfo.mVideoState.mPending = AssertedCast<int32_t>(mVideo.mOutput.Length());
+    aInfo.mVideoState.mNumSamplesInput = mVideo.mNumSamplesInput;
+    aInfo.mVideoState.mNumSamplesOutput = mVideo.mNumSamplesOutput;
+    aInfo.mVideoState.mQueueSize = mVideo.mSizeOfQueue;
+    aInfo.mVideoState.mPending = mVideo.mOutput.Length();
     aInfo.mVideoState.mWaitingForData = !!mVideo.mWaitingForDataStartTime;
     aInfo.mVideoState.mDemuxEOS = mVideo.mDemuxEOS;
     aInfo.mVideoState.mDrainState = int32_t(mVideo.mDrainState);
     aInfo.mVideoState.mWaitingForKey = mVideo.mWaitingForKey;
-    aInfo.mVideoState.mLastStreamSourceID =
-        AssertedCast<int64_t>(mVideo.mLastStreamSourceID);
+    aInfo.mVideoState.mLastStreamSourceID = mVideo.mLastStreamSourceID;
     aInfo.mTotalReadMetadataTimeMs = mReadMetaDataTime.ToMilliseconds();
     aInfo.mTotalWaitingForVideoDataTimeMs =
         mTotalWaitingForVideoDataTime.ToMilliseconds();
@@ -3433,19 +3399,14 @@ void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {
       videoInfo.mDisplay.height < 0 ? 0 : videoInfo.mDisplay.height;
   aInfo.mVideoRate = mVideo.mMeanRate.Mean();
   aInfo.mVideoHardwareAccelerated = VideoIsHardwareAccelerated();
-  aInfo.mVideoNumSamplesOutputTotal =
-      AssertedCast<int64_t>(mVideo.mNumSamplesOutputTotal);
-  aInfo.mVideoNumSamplesSkippedTotal =
-      AssertedCast<int64_t>(mVideo.mNumSamplesSkippedTotal);
+  aInfo.mVideoNumSamplesOutputTotal = mVideo.mNumSamplesOutputTotal;
+  aInfo.mVideoNumSamplesSkippedTotal = mVideo.mNumSamplesSkippedTotal;
 
   // Looking at dropped frames
   FrameStatisticsData stats = mFrameStats->GetFrameStatisticsData();
-  aInfo.mFrameStats.mDroppedDecodedFrames =
-      AssertedCast<int64_t>(stats.mDroppedDecodedFrames);
-  aInfo.mFrameStats.mDroppedSinkFrames =
-      AssertedCast<int64_t>(stats.mDroppedSinkFrames);
-  aInfo.mFrameStats.mDroppedCompositorFrames =
-      AssertedCast<int64_t>(stats.mDroppedCompositorFrames);
+  aInfo.mFrameStats.mDroppedDecodedFrames = stats.mDroppedDecodedFrames;
+  aInfo.mFrameStats.mDroppedSinkFrames = stats.mDroppedSinkFrames;
+  aInfo.mFrameStats.mDroppedCompositorFrames = stats.mDroppedCompositorFrames;
 }
 
 void MediaFormatReader::SetVideoNullDecode(bool aIsNullDecode) {

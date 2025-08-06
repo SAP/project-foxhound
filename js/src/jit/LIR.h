@@ -1177,7 +1177,7 @@ class LInstructionHelper
     operands_[index] = alloc.value();
 #endif
   }
-  const LInt64Allocation getInt64Operand(size_t offset) {
+  LInt64Allocation getInt64Operand(size_t offset) const {
 #if JS_BITS_PER_WORD == 32
     return LInt64Allocation(operands_[offset + INT64HIGH_INDEX],
                             operands_[offset + INT64LOW_INDEX]);
@@ -1922,10 +1922,15 @@ class LIRGraph {
   uint32_t numVirtualRegisters_;
   uint32_t numInstructions_;
 
+  // Number of call-instructions in this LIR graph.
+  uint32_t numCallInstructions_ = 0;
+
   // Size of stack slots needed for local spills.
   uint32_t localSlotsSize_;
   // Number of JS::Value stack slots needed for argument construction for calls.
   uint32_t argumentSlotCount_;
+  // Count the number of extra times a single safepoint would be encoded.
+  uint32_t extraSafepointUses_;
 
   MIRGraph& mir_;
 
@@ -1955,6 +1960,10 @@ class LIRGraph {
   }
   uint32_t getInstructionId() { return numInstructions_++; }
   uint32_t numInstructions() const { return numInstructions_; }
+
+  void incNumCallInstructions() { numCallInstructions_++; }
+  uint32_t numCallInstructions() const { return numCallInstructions_; }
+
   void setLocalSlotsSize(uint32_t localSlotsSize) {
     localSlotsSize_ = localSlotsSize;
   }
@@ -1963,6 +1972,8 @@ class LIRGraph {
     argumentSlotCount_ = argumentSlotCount;
   }
   uint32_t argumentSlotCount() const { return argumentSlotCount_; }
+  void addExtraSafepointUses(uint32_t extra) { extraSafepointUses_ += extra; }
+  uint32_t extraSafepointUses() const { return extraSafepointUses_; }
   [[nodiscard]] bool addConstantToPool(const Value& v, uint32_t* index);
   size_t numConstants() const { return constantPool_.length(); }
   Value* constantPool() { return &constantPool_[0]; }

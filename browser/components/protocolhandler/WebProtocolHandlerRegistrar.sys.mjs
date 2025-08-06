@@ -111,11 +111,14 @@ WebProtocolHandlerRegistrar.prototype = {
       lazy.NimbusFeatures.mailto.getVariable("dualPrompt.onLocationChange")
     ) {
       this._ensureWebmailerCache();
-      observers.forEach(o => {
-        this._addedObservers++;
-        Services.obs.addObserver(this, o);
-      });
-      lazy.log.debug(`mailto observers activated: [${observers}]`);
+      // Make sure, that our local observers are never registered twice:
+      if (0 == this._addedObservers) {
+        observers.forEach(o => {
+          this._addedObservers++;
+          Services.obs.addObserver(this, o);
+        });
+        lazy.log.debug(`mailto observers activated: [${observers}]`);
+      }
     } else {
       // With `dualPrompt` and `dualPrompt.onLocationChange` toggled on we get
       // up to two notifications when we turn the feature off again, but we
@@ -507,6 +510,7 @@ WebProtocolHandlerRegistrar.prototype = {
     }
     if (lazy.NimbusFeatures.mailto.getVariable("dualPrompt")) {
       if ("mailto" === aProtocol) {
+        lazy.NimbusFeatures.mailto.recordExposureEvent();
         this._askUserToSetMailtoHandler(browser, aProtocol, aURI, aTitle);
         return;
       }
@@ -664,6 +668,7 @@ WebProtocolHandlerRegistrar.prototype = {
                   1000 +
                   Date.now()
               );
+              Glean.protocolhandlerMailto.promptClicked.dismiss_os_default.add();
             }
           },
         },
@@ -683,11 +688,6 @@ WebProtocolHandlerRegistrar.prototype = {
               if (this._canSetOSDefault(aProtocol)) {
                 if (this._setOSDefault(aProtocol)) {
                   Glean.protocolhandlerMailto.promptClicked.set_os_default.add();
-                  Services.telemetry.keyedScalarSet(
-                    "os.environment.is_default_handler",
-                    "mailto",
-                    true
-                  );
                   newitem.messageL10nId =
                     "protocolhandler-mailto-handler-confirm";
                   newitem.removeChild(newitem.buttonContainer);
@@ -699,11 +699,6 @@ WebProtocolHandlerRegistrar.prototype = {
                 // if anything goes wrong with setting the OS default, we want
                 // to be informed so that we can fix it.
                 Glean.protocolhandlerMailto.promptClicked.set_os_default_error.add();
-                Services.telemetry.keyedScalarSet(
-                  "os.environment.is_default_handler",
-                  "mailto",
-                  false
-                );
                 return false;
               }
 
@@ -731,6 +726,7 @@ WebProtocolHandlerRegistrar.prototype = {
                   1000 +
                   Date.now()
               );
+              Glean.protocolhandlerMailto.promptClicked.dismiss_os_default.add();
               return false;
             },
           },

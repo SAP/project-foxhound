@@ -37,6 +37,7 @@
 #  include "builtin/intl/FormatBuffer.h"
 #endif
 #include "builtin/RegExp.h"
+#include "gc/GC.h"
 #include "jit/InlinableNatives.h"
 #include "js/Array.h"
 #include "js/Conversions.h"
@@ -50,7 +51,7 @@
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
 #include "js/UniquePtr.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "util/Unicode.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
@@ -67,9 +68,6 @@
 #include "vm/StringType-inl.h"
 
 using namespace js;
-
-using JS::Symbol;
-using JS::SymbolCode;
 
 using mozilla::AsciiAlphanumericToNumber;
 using mozilla::CheckedInt;
@@ -574,7 +572,7 @@ static inline bool Unhex2(const RangedPtr<const CharT> chars,
 }
 
 template <typename CharT>
-static bool Unescape(StringBuffer& sb,
+static bool Unescape(StringBuilder& sb,
                      const mozilla::Range<const CharT> chars, const StringTaint& inTaint, StringTaint* outTaint) {
   // Step 2.
   uint32_t length = chars.length();
@@ -814,7 +812,9 @@ const JSClass StringObject::class_ = {
     "String",
     JSCLASS_HAS_RESERVED_SLOTS(StringObject::RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_String),
-    &StringObjectClassOps, &StringObject::classSpec_};
+    &StringObjectClassOps,
+    &StringObject::classSpec_,
+};
 
 /*
  * Perform the initial |RequireObjectCoercible(thisv)| and |ToString(thisv)|
@@ -984,72 +984,51 @@ JSString* js::SubstringKernel(JSContext* cx, HandleString str, int32_t beginInt,
   if (str->isRope()) {
     JSRope* rope = &str->asRope();
 
-    /* Substring is totally in leftChild of rope. */
+    if (rope->length() == len) {
+      // Substring is the full rope.
+      MOZ_ASSERT(begin == 0);
+      return rope;
+    }
+
     if (begin + len <= rope->leftChild()->length()) {
+      // Substring is fully contained within the rope's left child.
       return NewDependentString(cx, rope->leftChild(), begin, len);
     }
 
-    /* Substring is totally in rightChild of rope. */
     if (begin >= rope->leftChild()->length()) {
+      // Substring is fully contained within the rope's right child.
       begin -= rope->leftChild()->length();
       return NewDependentString(cx, rope->rightChild(), begin, len);
     }
 
-    /*
-     * Requested substring is partly in the left and partly in right child.
-     * Create a rope of substrings for both childs.
-     */
+    // The substring spans both children. Avoid flattening the rope if the
+    // children are both linear and the substring fits in an inline string.
+    //
+    // Note: we could handle longer substrings by allocating a new rope here,
+    // but this can result in a lot more rope flattening later on. It's safer to
+    // flatten the rope in this case. See bug 1922926.
+
     MOZ_ASSERT(begin < rope->leftChild()->length() &&
                begin + len > rope->leftChild()->length());
 
-    size_t lhsLength = rope->leftChild()->length() - begin;
-    size_t rhsLength = begin + len - rope->leftChild()->length();
+    bool fitsInline = rope->hasLatin1Chars()
+                          ? JSInlineString::lengthFits<Latin1Char>(len)
+                          : JSInlineString::lengthFits<char16_t>(len);
+    if (fitsInline && rope->leftChild()->isLinear() &&
+        rope->rightChild()->isLinear()) {
+      Rooted<JSLinearString*> left(cx, &rope->leftChild()->asLinear());
+      Rooted<JSLinearString*> right(cx, &rope->rightChild()->asLinear());
 
-    Rooted<JSLinearString*> left(cx, rope->leftChild()->ensureLinear(cx));
-    if (!left) {
-      return nullptr;
-    }
+      size_t lhsLength = left->length() - begin;
+      size_t rhsLength = len - lhsLength;
 
-    Rooted<JSLinearString*> right(cx, rope->rightChild()->ensureLinear(cx));
-    if (!right) {
-      return nullptr;
-    }
-
-    if (rope->hasLatin1Chars()) {
-      if (JSInlineString::lengthFits<Latin1Char>(len)) {
+      if (rope->hasLatin1Chars()) {
         return SubstringInlineString<Latin1Char>(cx, left, right, begin,
                                                  lhsLength, rhsLength, newTaint);
       }
-    } else {
-      if (JSInlineString::lengthFits<char16_t>(len)) {
-        return SubstringInlineString<char16_t>(cx, left, right, begin,
-                                               lhsLength, rhsLength, newTaint);
-      }
+      return SubstringInlineString<char16_t>(cx, left, right, begin, lhsLength,
+                                             rhsLength);
     }
-
-    left = NewDependentString(cx, left, begin, lhsLength);
-    if (!left) {
-      return nullptr;
-    }
-
-    right = NewDependentString(cx, right, 0, rhsLength);
-    if (!right) {
-      return nullptr;
-    }
-
-    // The dependent string of a two-byte string can be a Latin-1 string, so
-    // check again if the result fits into an inline string.
-    if (left->hasLatin1Chars() && right->hasLatin1Chars()) {
-      if (JSInlineString::lengthFits<Latin1Char>(len)) {
-        MOZ_ASSERT(str->hasTwoByteChars(), "Latin-1 ropes are handled above");
-        return SubstringInlineString<Latin1Char>(cx, left, right, 0, lhsLength,
-                                                 rhsLength, newTaint);
-      }
-    }
-
-    JSString* res = JSRope::new_<CanGC>(cx, left, right, len);
-    res->setTaint(cx, newTaint);
-    return res;
   }
 
   JSString* res = NewDependentString(cx, str, begin, len);
@@ -2818,7 +2797,7 @@ bool js::str_includes(JSContext* cx, unsigned argc, Value* vp) {
       if (!ToInteger(cx, args[1], &d)) {
         return false;
       }
-      pos = uint32_t(std::min(std::max(d, 0.0), double(UINT32_MAX)));
+      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
     }
   }
 
@@ -2882,7 +2861,7 @@ bool js::str_indexOf(JSContext* cx, unsigned argc, Value* vp) {
       if (!ToInteger(cx, args[1], &d)) {
         return false;
       }
-      pos = uint32_t(std::min(std::max(d, 0.0), double(UINT32_MAX)));
+      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
     }
   }
 
@@ -3135,7 +3114,7 @@ bool js::str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
       if (!ToInteger(cx, args[1], &d)) {
         return false;
       }
-      pos = uint32_t(std::min(std::max(d, 0.0), double(UINT32_MAX)));
+      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
     }
   }
 
@@ -3222,7 +3201,7 @@ bool js::str_endsWith(JSContext* cx, unsigned argc, Value* vp) {
       if (!ToInteger(cx, args[1], &d)) {
         return false;
       }
-      pos = uint32_t(std::min(std::max(d, 0.0), double(UINT32_MAX)));
+      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
     }
   }
 
@@ -3528,7 +3507,7 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
 }
 
 template <typename CharT>
-static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
+static bool AppendDollarReplacement(StringBuilder& newReplaceChars,
                                     size_t firstDollarIndex, size_t matchStart,
                                     size_t matchLimit,
                                     const JSLinearString* text,
@@ -3660,7 +3639,7 @@ static JSLinearString* InterpretDollarReplacement(
 template <typename StrChar, typename RepChar>
 static bool StrFlatReplaceGlobal(JSContext* cx, const JSLinearString* str,
                                  const JSLinearString* pat,
-                                 const JSLinearString* rep, StringBuffer& sb) {
+                                 const JSLinearString* rep, StringBuilder& sb) {
   MOZ_ASSERT(str->length() > 0);
 
   AutoCheckCannotGC nogc;
@@ -4180,7 +4159,13 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // Step 3 (reordered).
-  RootedValueVector splits(cx);
+  Rooted<ArrayObject*> substrings(cx, NewDenseEmptyArray(cx));
+  if (!substrings) {
+    return nullptr;
+  }
+
+  // Switch to allocating in the tenured heap if we fill the nursery.
+  AutoSelectGCHeap gcHeap(cx);
 
   // Step 8 (reordered).
   size_t lastEndIndex = 0;
@@ -4228,10 +4213,11 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
 
     // Step 14.c.ii.1.
     size_t subLength = size_t(endIndex - sepLength - lastEndIndex);
-    JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength);
+    JSString* sub =
+        NewDependentString(cx, str, lastEndIndex, subLength, gcHeap);
 
     // Steps 14.c.ii.2-4.
-    if (!sub || !splits.append(StringValue(sub))) {
+    if (!sub || !NewbornArrayPush(cx, substrings, StringValue(sub))) {
       return nullptr;
     }
 
@@ -4242,8 +4228,8 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
     }
 
     // Step 14.c.ii.5.
-    if (splits.length() == limit) {
-      return NewDenseCopiedArray(cx, splits.length(), splits.begin());
+    if (substrings->length() == limit) {
+      return substrings;
     }
 
     // Step 14.c.ii.6.
@@ -4254,11 +4240,11 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // Step 15.
-  JSString* sub =
-      NewDependentString(cx, str, lastEndIndex, strLength - lastEndIndex);
+  size_t subLength = strLength - lastEndIndex;
+  JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength, gcHeap);
 
   // Steps 16-17.
-  if (!sub || !splits.append(StringValue(sub))) {
+  if (!sub || !NewbornArrayPush(cx, substrings, StringValue(sub))) {
     return nullptr;
   }
 
@@ -4268,7 +4254,7 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // Step 18.
-  return NewDenseCopiedArray(cx, splits.length(), splits.begin());
+  return substrings;
 }
 
 // Fast-path for splitting a string into a character array via split("").
@@ -4864,8 +4850,10 @@ const ClassSpec StringObject::classSpec_ = {
     string_static_methods,
     nullptr,
     string_methods,
-    string_taint_properties,
-    StringClassFinish};
+    nullptr,
+    string_taint_properties,    
+    StringClassFinish,
+};
 
 #define ____ false
 
@@ -4969,7 +4957,7 @@ enum EncodeResult { Encode_Failure, Encode_BadUri, Encode_Success };
 // caller Encode function. Annotate both functions with MOZ_NEVER_INLINE resp.
 // MOZ_ALWAYS_INLINE to ensure we get the desired inlining behavior.
 template <typename CharT>
-static MOZ_NEVER_INLINE EncodeResult Encode(StringBuffer& sb,
+static MOZ_NEVER_INLINE EncodeResult Encode(StringBuilder& sb,
                                             const CharT* chars, size_t length,
                                             const bool* unescapedSet,
                                             const StringTaint& taint) {
@@ -5116,7 +5104,7 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, Handle<JSLinearString*> str,
 enum DecodeResult { Decode_Failure, Decode_BadUri, Decode_Success };
 
 template <typename CharT>
-static DecodeResult Decode(StringBuffer& sb, const CharT* chars, size_t length,
+static DecodeResult Decode(StringBuilder& sb, const CharT* chars, size_t length,
                            const bool* reservedSet, const StringTaint& taint) {
   auto appendRange = [&sb, &taint, chars](size_t start, size_t end) {
     MOZ_ASSERT(start <= end);

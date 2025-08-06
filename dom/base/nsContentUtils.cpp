@@ -148,6 +148,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/CacheExpirationTime.h"
 #include "mozilla/dom/CallbackFunction.h"
 #include "mozilla/dom/CallbackObject.h"
 #include "mozilla/dom/ChromeMessageBroadcaster.h"
@@ -202,6 +203,7 @@
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/ViewTransition.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
@@ -223,7 +225,6 @@
 #include "mozilla/Tokenizer.h"
 #include "mozilla/widget/IMEData.h"
 #include "nsAboutProtocolUtils.h"
-#include "nsAlgorithm.h"
 #include "nsArrayUtils.h"
 #include "nsAtomHashKeys.h"
 #include "nsAttrName.h"
@@ -430,6 +431,7 @@ nsIXPConnect* nsContentUtils::sXPConnect;
 nsIScriptSecurityManager* nsContentUtils::sSecurityManager;
 nsIPrincipal* nsContentUtils::sSystemPrincipal;
 nsIPrincipal* nsContentUtils::sNullSubjectPrincipal;
+nsIPrincipal* nsContentUtils::sFingerprintingProtectionPrincipal;
 nsIConsoleService* nsContentUtils::sConsoleService;
 
 static nsTHashMap<RefPtr<nsAtom>, EventNameMapping>* sAtomEventTable;
@@ -829,6 +831,15 @@ nsresult nsContentUtils::Init() {
 
   nullPrincipal.forget(&sNullSubjectPrincipal);
 
+  RefPtr<nsIPrincipal> fingerprintingProtectionPrincipal =
+      BasePrincipal::CreateContentPrincipal(
+          "about:fingerprintingprotection"_ns);
+  if (!fingerprintingProtectionPrincipal) {
+    return NS_ERROR_FAILURE;
+  }
+
+  fingerprintingProtectionPrincipal.forget(&sFingerprintingProtectionPrincipal);
+
   if (!InitializeEventTable()) return NS_ERROR_FAILURE;
 
   if (!sEventListenerManagersHash) {
@@ -1031,13 +1042,13 @@ bool nsContentUtils::InitializeEventTable() {
       {nullptr}};
 
   sAtomEventTable =
-      new nsTHashMap<RefPtr<nsAtom>, EventNameMapping>(ArrayLength(eventArray));
-  sStringEventTable = new nsTHashMap<nsStringHashKey, EventNameMapping>(
-      ArrayLength(eventArray));
+      new nsTHashMap<RefPtr<nsAtom>, EventNameMapping>(std::size(eventArray));
+  sStringEventTable =
+      new nsTHashMap<nsStringHashKey, EventNameMapping>(std::size(eventArray));
   sUserDefinedEvents = new nsTArray<RefPtr<nsAtom>>(64);
 
   // Subtract one from the length because of the trailing null
-  for (uint32_t i = 0; i < ArrayLength(eventArray) - 1; ++i) {
+  for (uint32_t i = 0; i < std::size(eventArray) - 1; ++i) {
     MOZ_ASSERT(!sAtomEventTable->Contains(eventArray[i].mAtom),
                "Double-defining event name; fix your EventNameList.h");
     sAtomEventTable->InsertOrUpdate(eventArray[i].mAtom, eventArray[i]);
@@ -1062,7 +1073,7 @@ void nsContentUtils::InitializeTouchEventTable() {
 #undef EVENT
         {nullptr}};
     // Subtract one from the length because of the trailing null
-    for (uint32_t i = 0; i < ArrayLength(touchEventArray) - 1; ++i) {
+    for (uint32_t i = 0; i < std::size(touchEventArray) - 1; ++i) {
       sAtomEventTable->InsertOrUpdate(touchEventArray[i].mAtom,
                                       touchEventArray[i]);
       sStringEventTable->InsertOrUpdate(
@@ -1935,7 +1946,7 @@ int32_t nsContentUtils::ParseLegacyFontSize(const nsAString& aValue) {
     }
   }
 
-  return clamped(value, 1, 7);
+  return std::clamp(value, 1, 7);
 }
 
 /* static */
@@ -2008,6 +2019,7 @@ void nsContentUtils::Shutdown() {
   NS_IF_RELEASE(sSecurityManager);
   NS_IF_RELEASE(sSystemPrincipal);
   NS_IF_RELEASE(sNullSubjectPrincipal);
+  NS_IF_RELEASE(sFingerprintingProtectionPrincipal);
 
   sBidiKeyboard = nullptr;
 
@@ -3967,87 +3979,11 @@ nsPresContext* nsContentUtils::GetContextForContent(
 }
 
 // static
-bool nsContentUtils::CanLoadImage(nsIURI* aURI, nsINode* aNode,
-                                  Document* aLoadingDocument,
-                                  nsIPrincipal* aLoadingPrincipal) {
-  MOZ_ASSERT(aURI, "Must have a URI");
-  MOZ_ASSERT(aLoadingDocument, "Must have a document");
-  MOZ_ASSERT(aLoadingPrincipal, "Must have a loading principal");
-
-  nsresult rv;
-
-  auto appType = nsIDocShell::APP_TYPE_UNKNOWN;
-
-  {
-    nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem =
-        aLoadingDocument->GetDocShell();
-    if (docShellTreeItem) {
-      nsCOMPtr<nsIDocShellTreeItem> root;
-      docShellTreeItem->GetInProcessRootTreeItem(getter_AddRefs(root));
-
-      nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(root));
-
-      if (docShell) {
-        appType = docShell->GetAppType();
-      }
-    }
-  }
-
-  if (appType != nsIDocShell::APP_TYPE_EDITOR) {
-    // Editor apps get special treatment here, editors can load images
-    // from anywhere.  This allows editor to insert images from file://
-    // into documents that are being edited.
-    rv = sSecurityManager->CheckLoadURIWithPrincipal(
-        aLoadingPrincipal, aURI, nsIScriptSecurityManager::ALLOW_CHROME,
-        aLoadingDocument->InnerWindowID());
-    if (NS_FAILED(rv)) {
-      return false;
-    }
-  }
-
-  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new mozilla::net::LoadInfo(
-      aLoadingPrincipal,
-      aLoadingPrincipal,  // triggering principal
-      aNode, nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
-      nsIContentPolicy::TYPE_INTERNAL_IMAGE);
-
-  int16_t decision = nsIContentPolicy::ACCEPT;
-
-  rv = NS_CheckContentLoadPolicy(aURI, secCheckLoadInfo, &decision,
-                                 GetContentPolicy());
-
-  return NS_SUCCEEDED(rv) && NS_CP_ACCEPTED(decision);
-}
-
-// static
-bool nsContentUtils::IsInPrivateBrowsing(const Document* aDoc) {
-  if (!aDoc) {
-    return false;
-  }
-
-  nsCOMPtr<nsILoadGroup> loadGroup = aDoc->GetDocumentLoadGroup();
-  // See duplicated code below in IsInPrivateBrowsing(nsILoadGroup*)
-  // and Document::Reset/ResetToURI
-  if (loadGroup) {
-    nsCOMPtr<nsIInterfaceRequestor> callbacks;
-    loadGroup->GetNotificationCallbacks(getter_AddRefs(callbacks));
-    if (callbacks) {
-      nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(callbacks);
-      if (loadContext) {
-        return loadContext->UsePrivateBrowsing();
-      }
-    }
-  }
-
-  nsCOMPtr<nsIChannel> channel = aDoc->GetChannel();
-  return channel && NS_UsePrivateBrowsing(channel);
-}
-
-// static
 bool nsContentUtils::IsInPrivateBrowsing(nsILoadGroup* aLoadGroup) {
   if (!aLoadGroup) {
     return false;
   }
+  // See duplicated code in Document::Reset/ResetToURI
   bool isPrivate = false;
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
   aLoadGroup->GetNotificationCallbacks(getter_AddRefs(callbacks));
@@ -4079,7 +4015,7 @@ imgLoader* nsContentUtils::GetImgLoaderForDocument(Document* aDoc) {
   if (!aDoc) {
     return imgLoader::NormalLoader();
   }
-  bool isPrivate = IsInPrivateBrowsing(aDoc);
+  const bool isPrivate = aDoc->IsInPrivateBrowsing();
   return isPrivate ? imgLoader::PrivateBrowsingLoader()
                    : imgLoader::NormalLoader();
 }
@@ -4441,13 +4377,17 @@ bool nsContentUtils::SpoofLocaleEnglish() {
   return StaticPrefs::privacy_spoof_english() == 2;
 }
 
+/* static */
+bool nsContentUtils::SpoofLocaleEnglish(const Document* aDocument) {
+  return SpoofLocaleEnglish() && (!aDocument || !aDocument->AllowsL10n());
+}
+
 static nsContentUtils::PropertiesFile GetMaybeSpoofedPropertiesFile(
     nsContentUtils::PropertiesFile aFile, const char* aKey,
     Document* aDocument) {
   // When we spoof English, use en-US properties in strings that are accessible
   // by content.
-  bool spoofLocale = nsContentUtils::SpoofLocaleEnglish() &&
-                     (!aDocument || !aDocument->AllowsL10n());
+  bool spoofLocale = nsContentUtils::SpoofLocaleEnglish(aDocument);
   if (spoofLocale) {
     switch (aFile) {
       case nsContentUtils::eFORMS_PROPERTIES:
@@ -5228,6 +5168,10 @@ bool nsContentUtils::HasNonEmptyAttr(const nsIContent* aContent,
 bool nsContentUtils::WantMutationEvents(nsINode* aNode, uint32_t aType,
                                         nsINode* aTargetForSubtreeModified) {
   Document* doc = aNode->OwnerDoc();
+  if (!doc->MutationEventsEnabled()) {
+    return false;
+  }
+
   if (!doc->FireMutationEvents()) {
     return false;
   }
@@ -6136,8 +6080,7 @@ bool nsContentUtils::CombineResourcePrincipals(
 
 /* static */
 void nsContentUtils::TriggerLink(nsIContent* aContent, nsIURI* aLinkURI,
-                                 const nsString& aTargetSpec, bool aClick,
-                                 bool aIsTrusted) {
+                                 const nsString& aTargetSpec, bool aClick) {
   MOZ_ASSERT(aLinkURI, "No link URI");
 
   if (aContent->IsEditable() || !aContent->OwnerDoc()->LinkHandlingEnabled()) {
@@ -6191,7 +6134,7 @@ void nsContentUtils::TriggerLink(nsIContent* aContent, nsIURI* aLinkURI,
     }
     nsDocShell::Cast(docShell)->OnLinkClick(
         aContent, aLinkURI, fileName.IsVoid() ? aTargetSpec : u""_ns, fileName,
-        nullptr, nullptr, UserActivation::IsHandlingUserInput(), aIsTrusted,
+        nullptr, nullptr, UserActivation::IsHandlingUserInput(),
         triggeringPrincipal, csp);
   }
 }
@@ -6222,7 +6165,7 @@ const nsDependentString nsContentUtils::GetLocalizedEllipsis() {
       nsAutoString tmp;
       Preferences::GetLocalizedString("intl.ellipsis", tmp);
       uint32_t len =
-          std::min(uint32_t(tmp.Length()), uint32_t(ArrayLength(sBuf) - 1));
+          std::min(uint32_t(tmp.Length()), uint32_t(std::size(sBuf) - 1));
       CopyUnicodeTo(tmp, 0, sBuf, len);
     }
     if (!sBuf[0]) sBuf[0] = char16_t(0x2026);
@@ -6400,7 +6343,12 @@ already_AddRefed<nsIDragSession> nsContentUtils::GetDragSession(
 /* static */
 already_AddRefed<nsIDragSession> nsContentUtils::GetDragSession(
     nsPresContext* aPC) {
-  return GetDragSession(aPC->GetRootWidget());
+  NS_ENSURE_TRUE(aPC, nullptr);
+  auto* widget = aPC->GetRootWidget();
+  if (!widget) {
+    return nullptr;
+  }
+  return GetDragSession(widget);
 }
 
 /* static */
@@ -8065,6 +8013,20 @@ bool nsContentUtils::IsJavascriptMIMEType(const nsACString& aMIMEType) {
   return false;
 }
 
+bool nsContentUtils::IsJsonMimeType(const nsAString& aMimeType) {
+  // Table ordered from most to least likely JSON MIME types.
+  static constexpr std::string_view jsonTypes[] = {"application/json",
+                                                   "text/json"};
+
+  for (std::string_view type : jsonTypes) {
+    if (aMimeType.LowerCaseEqualsASCII(type.data(), type.length())) {
+      return true;
+    }
+  }
+
+  return StringEndsWith(aMimeType, u"+json"_ns);
+}
+
 bool nsContentUtils::PrefetchPreloadEnabled(nsIDocShell* aDocShell) {
   //
   // SECURITY CHECK: disable prefetching and preloading from mailnews!
@@ -8149,11 +8111,13 @@ uint64_t nsContentUtils::GetInnerWindowID(nsILoadGroup* aLoadGroup) {
 // static
 void nsContentUtils::MaybeFixIPv6Host(nsACString& aHost) {
   if (aHost.FindChar(':') != -1) {  // Escape IPv6 address
-    MOZ_ASSERT(!aHost.Length() ||
-               (aHost[0] != '[' && aHost[aHost.Length() - 1] != ']'));
-    aHost.Insert('[', 0);
-    aHost.Taint().shift(0, 1);
-    aHost.Append(']');
+    MOZ_ASSERT(!aHost.IsEmpty());
+    if (aHost.Length() >= 2 && aHost[0] != '[' &&
+        aHost[aHost.Length() - 1] != ']') {
+      aHost.Insert('[', 0);
+      aHost.Taint().shift(0, 1);
+      aHost.Append(']');
+    }
   }
 }
 
@@ -8882,7 +8846,8 @@ nsresult nsContentUtils::SendMouseEvent(
     msg = eMouseLongTap;
   } else if (aType.EqualsLiteral("contextmenu")) {
     msg = eContextMenu;
-    contextMenuKey = (aButton == 0);
+    contextMenuKey = !aButton && aInputSourceArg !=
+                                     dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH;
   } else if (aType.EqualsLiteral("MozMouseHittest")) {
     msg = eMouseHitTest;
   } else if (aType.EqualsLiteral("MozMouseExploreByTouch")) {
@@ -8977,9 +8942,9 @@ void nsContentUtils::FirePageHideEventForFrameLoaderSwap(
   MOZ_DIAGNOSTIC_ASSERT(aItem);
   MOZ_DIAGNOSTIC_ASSERT(aChromeEventHandler);
 
-  RefPtr<Document> doc = aItem->GetDocument();
-  NS_ASSERTION(doc, "What happened here?");
-  doc->OnPageHide(true, aChromeEventHandler, aOnlySystemGroup);
+  if (RefPtr<Document> doc = aItem->GetDocument()) {
+    doc->OnPageHide(true, aChromeEventHandler, aOnlySystemGroup);
+  }
 
   int32_t childCount = 0;
   aItem->GetInProcessChildCount(&childCount);
@@ -9547,8 +9512,8 @@ static void AppendEncodedCharacters(const nsTextFragment* aText,
     // eg < in it. We subtract 1 for the null terminator, then 1 more for the
     // existing character that will be replaced.
     constexpr uint32_t maxCharExtraSpace =
-        std::max({ArrayLength("&lt;"), ArrayLength("&gt;"),
-                  ArrayLength("&amp;"), ArrayLength("&nbsp;")}) -
+        std::max({std::size("&lt;"), std::size("&gt;"), std::size("&amp;"),
+                  std::size("&nbsp;")}) -
         2;
     static_assert(maxCharExtraSpace < 100, "Possible underflow");
     CheckedInt<uint32_t> maxExtraSpace =
@@ -9588,8 +9553,7 @@ static CheckedInt<uint32_t> ExtraSpaceNeededForAttrEncoding(
   // & in it. We subtract 1 for the null terminator, then 1 more for the
   // existing character that will be replaced.
   constexpr uint32_t maxCharExtraSpace =
-      std::max({ArrayLength("&quot;"), ArrayLength("&amp;"),
-                ArrayLength("&nbsp;")}) -
+      std::max({std::size("&quot;"), std::size("&amp;"), std::size("&nbsp;")}) -
       2;
   static_assert(maxCharExtraSpace < 100, "Possible underflow");
   return CheckedInt<uint32_t>(numEncodedChars) * maxCharExtraSpace;
@@ -10606,6 +10570,15 @@ void nsContentUtils::AppendNativeAnonymousChildren(const nsIContent* aContent,
       }
     }
 
+    // View transition pseudos.
+    if (aContent->IsRootElement()) {
+      if (auto* vt = aContent->OwnerDoc()->GetActiveViewTransition()) {
+        if (auto* root = vt->GetRoot()) {
+          aKids.AppendElement(root);
+        }
+      }
+    }
+
     // Get manually created NAC (editor resize handles, etc.).
     if (auto nac = static_cast<ManualNACArray*>(
             aContent->GetProperty(nsGkAtoms::manualNACProperty))) {
@@ -10616,7 +10589,7 @@ void nsContentUtils::AppendNativeAnonymousChildren(const nsIContent* aContent,
   // The root scroll frame is not the primary frame of the root element.
   // Detect and handle this case.
   if (!(aFlags & nsIContent::eSkipDocumentLevelNativeAnonymousContent) &&
-      aContent == aContent->OwnerDoc()->GetRootElement()) {
+      aContent->IsRootElement()) {
     AppendDocumentLevelNativeAnonymousContentTo(aContent->OwnerDoc(), aKids);
   }
 }
@@ -10854,7 +10827,7 @@ static bool HtmlObjectContentSupportsDocument(const nsCString& aMimeType) {
 
 /* static */
 uint32_t nsContentUtils::HtmlObjectContentTypeForMIMEType(
-    const nsCString& aMIMEType) {
+    const nsCString& aMIMEType, bool aIsSandboxed) {
   if (aMIMEType.IsEmpty()) {
     return nsIObjectLoadingContent::TYPE_FALLBACK;
   }
@@ -10865,8 +10838,11 @@ uint32_t nsContentUtils::HtmlObjectContentTypeForMIMEType(
 
   // Faking support of the PDF content as a document for EMBED tags
   // when internal PDF viewer is enabled.
-  if (aMIMEType.LowerCaseEqualsLiteral("application/pdf") && IsPDFJSEnabled()) {
-    return nsIObjectLoadingContent::TYPE_DOCUMENT;
+  if (aMIMEType.LowerCaseEqualsLiteral(APPLICATION_PDF) && IsPDFJSEnabled()) {
+    // Sandboxed iframes are just never allowed to display plugins. In the
+    // modern world, this just means "application/pdf".
+    return aIsSandboxed ? nsIObjectLoadingContent::TYPE_FALLBACK
+                        : nsIObjectLoadingContent::TYPE_DOCUMENT;
   }
 
   if (HtmlObjectContentSupportsDocument(aMIMEType)) {
@@ -11348,13 +11324,13 @@ bool nsContentUtils::IsURIInList(nsIURI* aURI, const nsCString& aList) {
     return false;
   }
 
-  nsAutoCString scheme;
-  aURI->GetScheme(scheme);
-  if (!scheme.EqualsLiteral("http") && !scheme.EqualsLiteral("https")) {
+  if (aList.IsEmpty()) {
     return false;
   }
 
-  if (aList.IsEmpty()) {
+  nsAutoCString scheme;
+  aURI->GetScheme(scheme);
+  if (!scheme.EqualsLiteral("http") && !scheme.EqualsLiteral("https")) {
     return false;
   }
 
@@ -11414,8 +11390,8 @@ bool nsContentUtils::IsURIInList(nsIURI* aURI, const nsCString& aList) {
 }
 
 /* static */
-ScreenIntMargin nsContentUtils::GetWindowSafeAreaInsets(
-    nsIScreen* aScreen, const ScreenIntMargin& aSafeAreaInsets,
+LayoutDeviceIntMargin nsContentUtils::GetWindowSafeAreaInsets(
+    nsIScreen* aScreen, const LayoutDeviceIntMargin& aSafeAreaInsets,
     const LayoutDeviceIntRect& aWindowRect) {
   // This calculates safe area insets of window from screen rectangle, window
   // rectangle and safe area insets of screen.
@@ -11431,28 +11407,15 @@ ScreenIntMargin nsContentUtils::GetWindowSafeAreaInsets(
   // |  +-------------------------------+     |
   // +----------------------------------------+
   //
-  ScreenIntMargin windowSafeAreaInsets;
-
+  LayoutDeviceIntMargin windowSafeAreaInsets;
   if (windowSafeAreaInsets == aSafeAreaInsets) {
     // no safe area insets.
     return windowSafeAreaInsets;
   }
 
-  int32_t screenLeft, screenTop, screenWidth, screenHeight;
-  nsresult rv =
-      aScreen->GetRect(&screenLeft, &screenTop, &screenWidth, &screenHeight);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return windowSafeAreaInsets;
-  }
-
-  const ScreenIntRect screenRect(screenLeft, screenTop, screenWidth,
-                                 screenHeight);
-
-  ScreenIntRect safeAreaRect = screenRect;
+  const LayoutDeviceIntRect screenRect = aScreen->GetRect();
+  LayoutDeviceIntRect safeAreaRect = screenRect;
   safeAreaRect.Deflate(aSafeAreaInsets);
-
-  ScreenIntRect windowRect = ViewAs<ScreenPixel>(
-      aWindowRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
 
   // FIXME(bug 1754323): This can trigger because the screen rect is not
   // orientation-aware.
@@ -11460,7 +11423,7 @@ ScreenIntMargin nsContentUtils::GetWindowSafeAreaInsets(
   //            "Screen doesn't contain window rect? Something seems off");
 
   // window's rect of safe area
-  safeAreaRect = safeAreaRect.Intersect(windowRect);
+  safeAreaRect = safeAreaRect.Intersect(aWindowRect);
 
   windowSafeAreaInsets.top = safeAreaRect.y - aWindowRect.y;
   windowSafeAreaInsets.left = safeAreaRect.x - aWindowRect.x;
@@ -11469,7 +11432,7 @@ ScreenIntMargin nsContentUtils::GetWindowSafeAreaInsets(
   windowSafeAreaInsets.bottom = aWindowRect.y + aWindowRect.height -
                                 (safeAreaRect.y + safeAreaRect.height);
 
-  windowSafeAreaInsets.EnsureAtLeast(ScreenIntMargin());
+  windowSafeAreaInsets.EnsureAtLeast(LayoutDeviceIntMargin());
   // This shouldn't be needed, but it wallpapers orientation issues, see bug
   // 1754323.
   windowSafeAreaInsets.EnsureAtMost(aSafeAreaInsets);
@@ -11485,7 +11448,9 @@ nsContentUtils::GetSubresourceCacheValidationInfo(nsIRequest* aRequest,
   if (nsCOMPtr<nsICacheInfoChannel> cache = do_QueryInterface(aRequest)) {
     uint32_t value = 0;
     if (NS_SUCCEEDED(cache->GetCacheTokenExpirationTime(&value))) {
-      info.mExpirationTime.emplace(value);
+      // NOTE: If the cache doesn't expire, the value should be
+      // nsICacheEntry::NO_EXPIRATION_TIME.
+      info.mExpirationTime.emplace(CacheExpirationTime::ExpireAt(value));
     }
   }
 
@@ -11522,10 +11487,22 @@ nsContentUtils::GetSubresourceCacheValidationInfo(nsIRequest* aRequest,
   if (knownCacheable) {
     MOZ_ASSERT(!info.mExpirationTime);
     MOZ_ASSERT(!info.mMustRevalidate);
-    info.mExpirationTime = Some(0);  // 0 means "doesn't expire".
+    info.mExpirationTime = Some(CacheExpirationTime::Never());
   }
 
   return info;
+}
+
+CacheExpirationTime nsContentUtils::GetSubresourceCacheExpirationTime(
+    nsIRequest* aRequest, nsIURI* aURI) {
+  auto info = GetSubresourceCacheValidationInfo(aRequest, aURI);
+
+  // For now, we never cache entries that we have to revalidate, or whose
+  // channel don't support caching.
+  if (info.mMustRevalidate || !info.mExpirationTime) {
+    return CacheExpirationTime::AlreadyExpired();
+  }
+  return *info.mExpirationTime;
 }
 
 /* static */

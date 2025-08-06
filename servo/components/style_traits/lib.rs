@@ -135,6 +135,10 @@ pub enum StyleParseErrorKind<'i> {
     UnexpectedFunction(CowRcStr<'i>),
     /// Error encountered parsing a @property's `syntax` descriptor
     PropertySyntaxField(PropertySyntaxParseError),
+    /// Error encountered parsing a @property's `inherits` descriptor.
+    ///
+    /// TODO(zrhoffman, bug 1920365): Include the custom property name in error messages.
+    PropertyInheritsField(PropertyInheritsParseError),
     /// @namespace must be before any rule but @charset and @import
     UnexpectedNamespaceRule,
     /// @import must be before any rule but @charset
@@ -163,13 +167,8 @@ pub enum StyleParseErrorKind<'i> {
     InvalidFilter(CowRcStr<'i>, Token<'i>),
     /// The property declaration contained an invalid value.
     OtherInvalidValue(CowRcStr<'i>),
-    /// The declaration contained an animation property, and we were parsing
-    /// this as a keyframe block (so that property should be ignored).
-    ///
-    /// See: https://drafts.csswg.org/css-animations/#keyframes
-    AnimationPropertyInKeyframeBlock,
-    /// The property is not allowed within a page rule.
-    NotAllowedInPageRule,
+    /// `!important` declarations are disallowed in `@position-try` or keyframes.
+    UnexpectedImportantDeclaration,
 }
 
 impl<'i> From<ValueParseErrorKind<'i>> for StyleParseErrorKind<'i> {
@@ -221,6 +220,11 @@ impl<'i> StyleParseErrorKind<'i> {
 /// Errors that can be encountered while parsing the @property rule's syntax descriptor.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PropertySyntaxParseError {
+    /// The syntax descriptor is required for the @property rule to be valid; if it’s missing, the
+    /// @property rule is invalid.
+    ///
+    /// <https://drafts.css-houdini.org/css-properties-values-api-1/#ref-for-descdef-property-syntax②>
+    NoSyntax,
     /// The string's length was 0.
     EmptyInput,
     /// A non-whitespace, non-pipe character was fount after parsing a component.
@@ -243,6 +247,19 @@ pub enum PropertySyntaxParseError {
     UnknownDataTypeName,
 }
 
+/// Errors that can be encountered while parsing the @property rule's inherits descriptor.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PropertyInheritsParseError {
+    /// The inherits descriptor is required for the @property rule to be valid; if it’s missing,
+    /// the @property rule is invalid.
+    ///
+    /// <https://drafts.css-houdini.org/css-properties-values-api-1/#ref-for-descdef-property-inherits②>
+    NoInherits,
+
+    /// The inherits descriptor must successfully parse as `true` or `false`.
+    InvalidInherits,
+}
+
 bitflags! {
     /// The mode to use when parsing values.
     #[derive(Clone, Copy, Eq, PartialEq)]
@@ -261,7 +278,7 @@ bitflags! {
         /// In CSS Properties and Values, the initial value must be computationally
         /// independent.
         /// <https://drafts.css-houdini.org/css-properties-values-api-1/#ref-for-computationally-independent%E2%91%A0>
-        const DISALLOW_FONT_RELATIVE = 1 << 2;
+        const DISALLOW_COMPUTATIONALLY_DEPENDENT = 1 << 2;
     }
 }
 
@@ -278,10 +295,10 @@ impl ParsingMode {
         self.intersects(ParsingMode::ALLOW_ALL_NUMERIC_VALUES)
     }
 
-    /// Whether the parsing mode allows font-relative units.
+    /// Whether the parsing mode allows units or functions that are not computationally independent.
     #[inline]
-    pub fn allows_font_relative_lengths(&self) -> bool {
-        !self.intersects(ParsingMode::DISALLOW_FONT_RELATIVE)
+    pub fn allows_computational_dependence(&self) -> bool {
+        !self.intersects(ParsingMode::DISALLOW_COMPUTATIONALLY_DEPENDENT)
     }
 }
 

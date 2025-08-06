@@ -7,8 +7,6 @@
 
 "use strict";
 
-const { TELEMETRY_SCALARS } = UrlbarProviderQuickSuggest;
-
 const REMOTE_SETTINGS_RESULT = {
   id: 1,
   url: "https://example.com/nonsponsored",
@@ -62,19 +60,6 @@ add_tasks_with_rust(async function nonsponsored() {
       suggestion: REMOTE_SETTINGS_RESULT,
       // impression-only
       impressionOnly: {
-        scalars: {
-          [TELEMETRY_SCALARS.IMPRESSION_NONSPONSORED]: position,
-        },
-        event: {
-          category: QuickSuggest.TELEMETRY_EVENT_CATEGORY,
-          method: "engagement",
-          object: "impression_only",
-          extra: {
-            suggestion_type,
-            match_type,
-            position: position.toString(),
-          },
-        },
         ping: {
           type: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
           payload: {
@@ -93,20 +78,6 @@ add_tasks_with_rust(async function nonsponsored() {
       },
       // click
       click: {
-        scalars: {
-          [TELEMETRY_SCALARS.IMPRESSION_NONSPONSORED]: position,
-          [TELEMETRY_SCALARS.CLICK_NONSPONSORED]: position,
-        },
-        event: {
-          category: QuickSuggest.TELEMETRY_EVENT_CATEGORY,
-          method: "engagement",
-          object: "click",
-          extra: {
-            suggestion_type,
-            match_type,
-            position: position.toString(),
-          },
-        },
         pings: [
           {
             type: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
@@ -143,20 +114,6 @@ add_tasks_with_rust(async function nonsponsored() {
         // dismiss
         {
           command: "dismiss",
-          scalars: {
-            [TELEMETRY_SCALARS.IMPRESSION_NONSPONSORED]: position,
-            [TELEMETRY_SCALARS.BLOCK_NONSPONSORED]: position,
-          },
-          event: {
-            category: QuickSuggest.TELEMETRY_EVENT_CATEGORY,
-            method: "engagement",
-            object: "block",
-            extra: {
-              suggestion_type,
-              match_type,
-              position: position.toString(),
-            },
-          },
           pings: [
             {
               type: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
@@ -192,19 +149,6 @@ add_tasks_with_rust(async function nonsponsored() {
         // manage
         {
           command: "manage",
-          scalars: {
-            [TELEMETRY_SCALARS.IMPRESSION_NONSPONSORED]: position,
-          },
-          event: {
-            category: QuickSuggest.TELEMETRY_EVENT_CATEGORY,
-            method: "engagement",
-            object: "other",
-            extra: {
-              suggestion_type,
-              match_type,
-              position: position.toString(),
-            },
-          },
           pings: [
             {
               type: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,

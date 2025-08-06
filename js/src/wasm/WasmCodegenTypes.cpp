@@ -140,7 +140,7 @@ size_t TrapSiteVectorArray::sumOfLengths() const {
 }
 
 size_t TrapSiteVectorArray::sizeOfExcludingThis(
-    MallocSizeOf mallocSizeOf) const {
+    mozilla::MallocSizeOf mallocSizeOf) const {
   size_t ret = 0;
   for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
     ret += (*this)[trap].sizeOfExcludingThis(mallocSizeOf);
@@ -184,6 +184,7 @@ CodeRange::CodeRange(Kind kind, CallableOffsets offsets)
     case DebugStub:
     case BuiltinThunk:
     case RequestTierUpStub:
+    case UpdateCallRefMetricsStub:
       break;
     default:
       MOZ_CRASH("should use more specific constructor");

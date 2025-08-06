@@ -709,7 +709,7 @@ class Certificate(object):
             time = datetime.datetime.strptime(match.group(2), "%Y%m%d")
             tbsCertificate = self.getTBSCertificate()
             tbsDER = encoder.encode(tbsCertificate)
-            sct = pyct.SCT(key, time, tbsDER, self.issuerKey)
+            sct = pyct.SCT(key, time, pyct.PrecertEntry(tbsDER, self.issuerKey))
             signed = sct.signAndEncode()
             lengthPrefix = pack("!H", len(signed))
             encodedSCTs.append(lengthPrefix + signed)
@@ -757,9 +757,9 @@ class Certificate(object):
         tbsCertificate["issuer"] = self.getIssuer()
         tbsCertificate["validity"] = self.getValidity()
         tbsCertificate["subject"] = self.getSubject()
-        tbsCertificate[
-            "subjectPublicKeyInfo"
-        ] = self.subjectKey.asSubjectPublicKeyInfo()
+        tbsCertificate["subjectPublicKeyInfo"] = (
+            self.subjectKey.asSubjectPublicKeyInfo()
+        )
         if self.extensions:
             extensions = rfc2459.Extensions().subtype(
                 explicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 3)

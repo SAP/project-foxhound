@@ -56,16 +56,6 @@ class BackgroundParentImpl : public PBackgroundParent {
       const PersistenceType& aPersistenceType,
       const PrincipalInfo& aPrincipalInfo) override;
 
-  already_AddRefed<PBackgroundLSDatabaseParent>
-  AllocPBackgroundLSDatabaseParent(const PrincipalInfo& aPrincipalInfo,
-                                   const uint32_t& aPrivateBrowsingId,
-                                   const uint64_t& aDatastoreId) override;
-
-  mozilla::ipc::IPCResult RecvPBackgroundLSDatabaseConstructor(
-      PBackgroundLSDatabaseParent* aActor, const PrincipalInfo& aPrincipalInfo,
-      const uint32_t& aPrivateBrowsingId,
-      const uint64_t& aDatastoreId) override;
-
   PBackgroundLSObserverParent* AllocPBackgroundLSObserverParent(
       const uint64_t& aObserverId) override;
 
@@ -139,6 +129,14 @@ class BackgroundParentImpl : public PBackgroundParent {
       Endpoint<PWebTransportParent>&& aParentEndpoint,
       CreateWebTransportParentResolver&& aResolver) override;
 
+  mozilla::ipc::IPCResult RecvCreateNotificationParent(
+      Endpoint<dom::notification::PNotificationParent>&& aParentEndpoint,
+      NotNull<nsIPrincipal*> aPrincipal,
+      NotNull<nsIPrincipal*> aEffectiveStoragePrincipal,
+      const bool& aIsSecureContext, const nsAString& aId,
+      const nsAString& aScope, const IPCNotificationOptions& aOptions,
+      CreateNotificationParentResolver&& aResolver) final;
+
   already_AddRefed<PIdleSchedulerParent> AllocPIdleSchedulerParent() override;
 
   PTemporaryIPCBlobParent* AllocPTemporaryIPCBlobParent() override;
@@ -191,6 +189,10 @@ class BackgroundParentImpl : public PBackgroundParent {
       const nsACString& origin, const nsAString& channel) override;
 
   bool DeallocPBroadcastChannelParent(PBroadcastChannelParent* aActor) override;
+
+  virtual PCookieStoreParent* AllocPCookieStoreParent() override;
+
+  virtual bool DeallocPCookieStoreParent(PCookieStoreParent* aActor) override;
 
   PServiceWorkerManagerParent* AllocPServiceWorkerManagerParent() override;
 
@@ -315,11 +317,13 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   already_AddRefed<PServiceWorkerRegistrationParent>
   AllocPServiceWorkerRegistrationParent(
-      const IPCServiceWorkerRegistrationDescriptor&) final;
+      const IPCServiceWorkerRegistrationDescriptor&,
+      const IPCClientInfo&) final;
 
   mozilla::ipc::IPCResult RecvPServiceWorkerRegistrationConstructor(
       PServiceWorkerRegistrationParent* aActor,
-      const IPCServiceWorkerRegistrationDescriptor& aDescriptor) override;
+      const IPCServiceWorkerRegistrationDescriptor& aDescriptor,
+      const IPCClientInfo& aForClient) override;
 
   PEndpointForReportParent* AllocPEndpointForReportParent(
       const nsAString& aGroupName,

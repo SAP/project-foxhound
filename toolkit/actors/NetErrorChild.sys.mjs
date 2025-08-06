@@ -21,7 +21,7 @@ export class NetErrorChild extends RemotePageChild {
       "RPMGetAppBuildID",
       "RPMGetInnerMostURI",
       "RPMAddToHistogram",
-      "RPMRecordTelemetryEvent",
+      "RPMRecordGleanEvent",
       "RPMCheckAlternateHostAvailable",
       "RPMGetHttpResponseHeader",
       "RPMIsTRROnlyFailure",
@@ -33,6 +33,7 @@ export class NetErrorChild extends RemotePageChild {
       "RPMIsSiteSpecificTRRError",
       "RPMSetTRRDisabledLoadFlags",
       "RPMGetCurrentTRRMode",
+      "RPMShowOSXLocalNetworkPermissionWarning",
     ];
     this.exportFunctions(exportableFunctions);
   }
@@ -82,8 +83,8 @@ export class NetErrorChild extends RemotePageChild {
     Services.telemetry.getHistogramById(histID).add(bin);
   }
 
-  RPMRecordTelemetryEvent(category, event, object, value, extra) {
-    Services.telemetry.recordEvent(category, event, object, value, extra);
+  RPMRecordGleanEvent(category, name, extra) {
+    Glean[category]?.[name]?.record(extra);
   }
 
   RPMCheckAlternateHostAvailable() {
@@ -240,5 +241,19 @@ export class NetErrorChild extends RemotePageChild {
   RPMSetTRRDisabledLoadFlags() {
     this.contentWindow.docShell.browsingContext.defaultLoadFlags |=
       Ci.nsIRequest.LOAD_TRR_DISABLED_MODE;
+  }
+
+  RPMShowOSXLocalNetworkPermissionWarning() {
+    if (!lazy.AppInfo.isMac) {
+      return false;
+    }
+
+    // Ideally we'd only show this error for local network loads
+    // but right now it's difficult to determine if the socket
+    // was blocked by the OS or if the target port was closed. (bug 1919889)
+    // For now we err on the side of displaying the warning message.
+    let version = parseInt(Services.sysinfo.getProperty("version"));
+    // We only show this error on Sequoia or later
+    return version >= 24;
   }
 }

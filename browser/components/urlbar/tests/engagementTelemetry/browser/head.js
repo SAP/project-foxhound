@@ -100,33 +100,21 @@ async function ensureQuickSuggestInit({ ...args } = {}) {
       {
         type: "data",
         attachment: [
-          {
-            id: 1,
-            url: "https://example.com/sponsored",
-            title: "Sponsored suggestion",
-            keywords: ["sponsored"],
-            click_url: "https://example.com/click",
-            impression_url: "https://example.com/impression",
-            advertiser: "TestAdvertiser",
-            iab_category: "22 - Shopping",
-            icon: "1234",
-          },
-          {
-            id: 2,
-            url: `https://example.com/nonsponsored`,
-            title: "Non-sponsored suggestion",
-            keywords: ["nonsponsored"],
-            click_url: "https://example.com/click",
-            impression_url: "https://example.com/impression",
-            advertiser: "Wikipedia",
-            iab_category: "5 - Education",
-            icon: "1234",
-          },
+          lazy.QuickSuggestTestUtils.ampRemoteSettings({
+            keywords: ["amp", "amp and wikipedia"],
+          }),
+          lazy.QuickSuggestTestUtils.wikipediaRemoteSettings({
+            keywords: ["wikipedia", "amp and wikipedia"],
+          }),
         ],
       },
+      lazy.QuickSuggestTestUtils.weatherRecord(),
       {
-        type: "weather",
-        weather: MerinoTestUtils.WEATHER_RS_DATA,
+        type: "exposure-suggestions",
+        suggestion_type: "aaa",
+        attachment: {
+          keywords: ["aaa keyword"],
+        },
       },
     ],
     ...args,
@@ -310,7 +298,6 @@ async function loadRemoteTab(url) {
       ["browser.urlbar.maxHistoricalSearchSuggestions", 0],
       ["browser.urlbar.autoFill", false],
       ["services.sync.username", "fake"],
-      ["services.sync.syncedTabs.showRemoteTabs", true],
     ],
   });
 
@@ -410,6 +397,7 @@ async function setup() {
       ["browser.urlbar.searchEngagementTelemetry.enabled", true],
       ["browser.urlbar.quickactions.enabled", true],
       ["browser.urlbar.secondaryActions.featureGate", true],
+      ["browser.urlbar.scotchBonnet.enableOverride", false],
     ],
   });
 

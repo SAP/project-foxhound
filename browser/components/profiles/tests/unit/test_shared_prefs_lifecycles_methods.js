@@ -3,83 +3,182 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { AppConstants } = ChromeUtils.importESModule(
-  "resource://gre/modules/AppConstants.sys.mjs"
-);
-const { SelectableProfileService } = ChromeUtils.importESModule(
-  "resource:///modules/profiles/SelectableProfileService.sys.mjs"
-);
-const { makeFakeAppDir } = ChromeUtils.importESModule(
-  "resource://testing-common/AppData.sys.mjs"
-);
-
 add_setup(async () => {
-  do_get_profile();
-  await makeFakeAppDir();
+  startProfileService();
+  const SelectableProfileService = getSelectableProfileService();
+
+  await SelectableProfileService.init();
+
+  Services.prefs.setIntPref("testPrefInt0", 5);
+  Services.prefs.setBoolPref("testBoolPref", true);
+  Services.prefs.setCharPref("testCharPref", "hello");
+
+  SelectableProfileService.constructor.initialSharedPrefs.splice(
+    0,
+    SelectableProfileService.constructor.initialSharedPrefs.length,
+    "testPrefInt0",
+    "testBoolPref",
+    "testCharPref"
+  );
+
+  await SelectableProfileService.maybeSetupDataStore();
 });
 
-add_task(
-  {
-    skip_if: () => !AppConstants.MOZ_SELECTABLE_PROFILES,
-  },
-  async function test_SharedPrefsLifecycle() {
-    let sps = new SelectableProfileService();
-    await sps.init();
+add_task(async function test_SharedPrefsLifecycle() {
+  const SelectableProfileService = getSelectableProfileService();
+  let prefs = await SelectableProfileService.getAllDBPrefs();
 
-    let prefs = await sps.getAllPrefs();
+  Assert.equal(
+    prefs.length,
+    3,
+    "Shoulds have stored the default prefs into the database."
+  );
 
-    Assert.ok(!prefs.length, "No shared prefs exist yet");
+  Assert.equal(
+    prefs.find(p => p.name == "testPrefInt0")?.value,
+    5,
+    "testPrefInt0 should be correct"
+  );
+  Assert.equal(
+    prefs.find(p => p.name == "testBoolPref")?.value,
+    true,
+    "testBoolPref should be correct"
+  );
+  Assert.equal(
+    prefs.find(p => p.name == "testCharPref")?.value,
+    "hello",
+    "testCharPref should be correct"
+  );
 
-    await sps.setIntPref("testPrefInt0", 0);
-    await sps.setIntPref("testPrefInt1", 1);
-    await sps.setPref("testPrefInt2", 2);
+  Services.prefs.setIntPref("testPrefInt0", 2);
+  await updateNotified();
 
-    await sps.setStringPref("testPrefString0", "Hello world!");
-    await sps.setPref("testPrefString1", "Hello world 2!");
+  Services.prefs.setBoolPref("testBoolPref", false);
+  await updateNotified();
 
-    await sps.setBoolPref("testPrefBoolTrue", true);
-    await sps.setPref("testPrefBoolFalse", false);
+  Services.prefs.setCharPref("testCharPref", "goodbye");
+  await updateNotified();
 
-    prefs = await sps.getAllPrefs();
+  prefs = await SelectableProfileService.getAllDBPrefs();
 
-    Assert.equal(prefs.length, 7, "7 shared prefs exist");
+  Assert.equal(
+    prefs.length,
+    3,
+    "Shoulds have stored the default prefs into the database."
+  );
 
-    Assert.equal(
-      await sps.getIntPref("testPrefInt0"),
-      0,
-      "testPrefInt0 value is 0"
-    );
-    Assert.equal(
-      await sps.getIntPref("testPrefInt1"),
-      1,
-      "testPrefInt1 value is 1"
-    );
-    Assert.equal(
-      await sps.getPref("testPrefInt2"),
-      2,
-      "testPrefInt2 value is 2"
-    );
-    Assert.equal(
-      await sps.getStringPref("testPrefString0"),
-      "Hello world!",
-      'testPrefString0 value is "Hello world!"'
-    );
-    Assert.equal(
-      await sps.getPref("testPrefString1"),
-      "Hello world 2!",
-      'testPrefString1 value is "Hello world 2!"'
-    );
-    Assert.equal(
-      await sps.getBoolPref("testPrefBoolTrue"),
-      true,
-      "testPrefBoolTrue value is true"
-    );
-    Assert.equal(
-      await sps.getPref("testPrefBoolFalse"),
-      false,
-      "testPrefBoolFalse value is false"
-    );
+  Assert.equal(
+    prefs.find(p => p.name == "testPrefInt0")?.value,
+    2,
+    "testPrefInt0 should be correct"
+  );
+  Assert.equal(
+    prefs.find(p => p.name == "testBoolPref")?.value,
+    false,
+    "testBoolPref should be correct"
+  );
+  Assert.equal(
+    prefs.find(p => p.name == "testCharPref")?.value,
+    "goodbye",
+    "testCharPref should be correct"
+  );
 
-    await sps.deleteProfileGroup();
-  }
-);
+  Services.prefs.setIntPref("testPrefInt0", 0);
+  Services.prefs.setIntPref("testPrefInt1", 1);
+  await SelectableProfileService.trackPref("testPrefInt1");
+  Services.prefs.setIntPref("testPrefInt2", 2);
+  await SelectableProfileService.trackPref("testPrefInt2");
+
+  // Notifications are deferred so we should only see one.
+  await updateNotified();
+
+  await Services.prefs.setCharPref("testPrefString0", "Hello world!");
+  await SelectableProfileService.trackPref("testPrefString0");
+  await Services.prefs.setCharPref("testPrefString1", "Hello world 2!");
+  await SelectableProfileService.trackPref("testPrefString1");
+
+  await Services.prefs.setBoolPref("testPrefBoolTrue", true);
+  await SelectableProfileService.trackPref("testPrefBoolTrue");
+  await Services.prefs.setBoolPref("testPrefBoolFalse", false);
+  await SelectableProfileService.trackPref("testPrefBoolFalse");
+
+  await updateNotified();
+
+  prefs = await SelectableProfileService.getAllDBPrefs();
+
+  Assert.equal(prefs.length, 9, "The right number of  shared prefs exist");
+
+  Assert.equal(
+    await SelectableProfileService.getDBPref("testPrefInt0"),
+    0,
+    "testPrefInt0 value is 0"
+  );
+  Assert.equal(
+    await SelectableProfileService.getDBPref("testPrefInt1"),
+    1,
+    "testPrefInt1 value is 1"
+  );
+  Assert.equal(
+    await SelectableProfileService.getDBPref("testPrefInt2"),
+    2,
+    "testPrefInt2 value is 2"
+  );
+  Assert.equal(
+    await SelectableProfileService.getDBPref("testPrefString0"),
+    "Hello world!",
+    'testPrefString0 value is "Hello world!"'
+  );
+  Assert.equal(
+    await SelectableProfileService.getDBPref("testPrefString1"),
+    "Hello world 2!",
+    'testPrefString1 value is "Hello world 2!"'
+  );
+  Assert.equal(
+    await SelectableProfileService.getDBPref("testPrefBoolTrue"),
+    true,
+    "testPrefBoolTrue value is true"
+  );
+  Assert.equal(
+    await SelectableProfileService.getDBPref("testPrefBoolFalse"),
+    false,
+    "testPrefBoolFalse value is false"
+  );
+
+  await SelectableProfileService.uninit();
+
+  // Make some changes to the database while the service is shutdown.
+  let db = await openDatabase();
+  await db.execute(
+    "UPDATE SharedPrefs SET value=NULL, isBoolean=FALSE WHERE name=:name;",
+    { name: "testPrefInt0" }
+  );
+  await db.execute(
+    "UPDATE SharedPrefs SET value=6, isBoolean=FALSE WHERE name=:name;",
+    { name: "testPrefInt1" }
+  );
+  await db.execute(
+    "UPDATE SharedPrefs SET value=FALSE, isBoolean=TRUE WHERE name=:name;",
+    { name: "testPrefBoolTrue" }
+  );
+  await db.close();
+
+  await SelectableProfileService.init();
+
+  Assert.equal(
+    Services.prefs.getPrefType("testPrefInt0"),
+    Ci.nsIPrefBranch.PREF_INVALID,
+    "Should have cleared the testPrefInt0 pref"
+  );
+  Assert.equal(
+    Services.prefs.getIntPref("testPrefInt1"),
+    6,
+    "Should have updated testPrefInt1"
+  );
+  Assert.equal(
+    Services.prefs.getBoolPref("testPrefBoolTrue"),
+    false,
+    "Should have updated testPrefBoolTrue"
+  );
+
+  await SelectableProfileService.deleteProfileGroup();
+});

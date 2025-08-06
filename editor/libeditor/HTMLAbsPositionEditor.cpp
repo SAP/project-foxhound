@@ -22,7 +22,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/EventTarget.h"
 #include "nsAString.h"
-#include "nsAlgorithm.h"
 #include "nsCOMPtr.h"
 #include "nsComputedDOMStyle.h"
 #include "nsDebug.h"
@@ -132,6 +131,12 @@ NS_IMETHODIMP HTMLEditor::GetAbsolutePositioningEnabled(bool* aIsEnabled) {
 
 NS_IMETHODIMP HTMLEditor::SetAbsolutePositioningEnabled(bool aIsEnabled) {
   EnableAbsolutePositionEditor(aIsEnabled);
+  return NS_OK;
+}
+
+NS_IMETHODIMP HTMLEditor::GetIsAbsolutePositioningActive(bool* aIsActive) {
+  MOZ_ASSERT(aIsActive);
+  *aIsActive = !!mAbsolutelyPositionedObject;
   return NS_OK;
 }
 

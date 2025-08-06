@@ -33,6 +33,11 @@ Opens the Firefox View pseudo-tab.
 
 Opens a new private browsing window.
 
+### `OPEN_SIDEBAR`
+
+* args: `string` id of the pane to open, e.g., viewHistorySidebar
+
+Opens a sidebar pane.
 
 ### `OPEN_URL`
 
@@ -110,9 +115,24 @@ Opens Firefox accounts sign-up page. Encodes some information that the origin wa
 }
 ```
 
+* example:
+```json
+"action": {
+  "type": "FXA_SIGNIN_FLOW",
+  "needsAwait": true,
+  "navigate": "actionResult",
+  "data": {
+    "entrypoint": "onboarding",
+    "extraParams": {
+      "utm_content": "migration-onboarding"
+    }
+  }
+}
+```
+
 Opens a Firefox accounts sign-up or sign-in page, and does the work of closing the resulting tab or window once
 sign-in completes. Returns a Promise that resolves to `true` if sign-in succeeded, or to `false` if the sign-in
-window or tab closed before sign-in could be completed.
+window or tab closed before sign-in could be completed. In messaging surfaces using `aboutwelcome` templates, setting `needsAwait` ensures that the UI will wait for the Promise to resolve. The `navigate` and `dismiss` properties should be assigned the string value "actionResult" for the UI to respect the resolved boolean value before proceeding to the next step.
 
 Encodes some information that the origin was from about:welcome by default.
 
@@ -345,3 +365,36 @@ Action for reloading the current browser.
 Focuses the urlbar in the window the message was displayed in
 
 * args: (none)
+
+### `BOOKMARK_CURRENT_TAB`
+
+Bookmarks the tab that was selected when the message was displayed
+
+- args:
+```ts
+{
+  // Whether the bookmark dialog should be visible or not.
+  shouldHideDialog?: boolean;
+  // Whether the bookmark confirmation hint should be visible or not.
+  shouldHideConfirmationHint?: boolean;
+}
+```
+
+### `SET_BOOKMARKS_TOOLBAR_VISIBILITY`
+
+Sets the visibility of the bookmarks toolbar.
+
+- args:
+```ts
+{
+  visibility?: string; // "always", "never", or "newtab"
+}
+```
+
+### `CREATE_NEW_SELECTABLE_PROFILE`
+
+Creates a new user profile and launches it in a separate instance.
+
+Any message that uses this action should have `canCreateSelectableProfiles` as part of the targeting, to ensure we don't accidentally show a message where the action will not work.
+
+- args: (none)

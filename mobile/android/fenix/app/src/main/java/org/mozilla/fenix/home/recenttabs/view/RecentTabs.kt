@@ -49,17 +49,17 @@ import androidx.compose.ui.unit.sp
 import mozilla.components.browser.icons.compose.Loader
 import mozilla.components.browser.icons.compose.Placeholder
 import mozilla.components.browser.icons.compose.WithIcon
-import mozilla.components.browser.state.state.ContentState
-import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.support.ktx.kotlin.trimmed
 import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.components.components
-import org.mozilla.fenix.compose.ContextualMenu
 import org.mozilla.fenix.compose.Image
-import org.mozilla.fenix.compose.MenuItem
 import org.mozilla.fenix.compose.TabThumbnail
 import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.inComposePreview
+import org.mozilla.fenix.compose.menu.DropdownMenu
+import org.mozilla.fenix.compose.menu.MenuItem
+import org.mozilla.fenix.compose.text.Text
+import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.theme.FirefoxTheme
 
@@ -195,14 +195,16 @@ private fun RecentTabItem(
                 }
             }
 
-            ContextualMenu(
-                showMenu = isMenuExpanded,
-                onDismissRequest = { isMenuExpanded = false },
-                menuItems = menuItems.map { item -> MenuItem(item.title) { item.onClick(tab) } },
+            DropdownMenu(
+                menuItems = menuItems.map { item ->
+                    MenuItem.TextItem(Text.String(item.title)) { item.onClick(tab) }
+                },
+                expanded = isMenuExpanded,
                 modifier = Modifier.semantics {
                     testTagsAsResourceId = true
                     testTag = "recent.tab.menu"
                 },
+                onDismissRequest = { isMenuExpanded = false },
             )
         }
     }
@@ -319,20 +321,9 @@ private fun PlaceHolderTabIcon(modifier: Modifier) {
 @LightDarkPreview
 @Composable
 private fun RecentTabsPreview() {
-    val tab = RecentTab.Tab(
-        TabSessionState(
-            id = "tabId",
-            content = ContentState(
-                url = "www.mozilla.com",
-            ),
-        ),
-    )
-
     FirefoxTheme {
         RecentTabs(
-            recentTabs = listOf(
-                tab,
-            ),
+            recentTabs = FakeHomepagePreview.recentTabs(),
             menuItems = listOf(
                 RecentTabMenuItem(
                     title = "Menu item",

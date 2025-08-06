@@ -156,6 +156,13 @@ enum class StructuredCloneScope : uint32_t {
   DifferentProcess,
 
   /**
+   * Values greater than this are temporary markers used when the actual scope
+   * is not yet known. The allowed scope will be resolved by the time
+   * readHeader() is complete.
+   */
+  LastResolvedScope = DifferentProcess,
+
+  /**
    * Handle a backwards-compatibility case with IndexedDB (bug 1434308): when
    * reading, this means to treat legacy SameProcess data as if it were
    * DifferentProcess.
@@ -750,6 +757,7 @@ class JS_PUBLIC_API JSAutoStructuredCloneBuffer {
 #define JS_SCERR_WASM_NO_TRANSFER 6
 #define JS_SCERR_NOT_CLONABLE 7
 #define JS_SCERR_NOT_CLONABLE_WITH_COOP_COEP 8
+#define JS_SCERR_TRANSFERABLE_TWICE 9
 
 JS_PUBLIC_API bool JS_ReadUint32Pair(JSStructuredCloneReader* r, uint32_t* p1,
                                      uint32_t* p2);

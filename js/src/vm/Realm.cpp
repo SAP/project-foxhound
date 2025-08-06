@@ -60,7 +60,8 @@ Realm::Realm(Compartment* comp, const JS::RealmOptions& options)
 
 Realm::~Realm() {
   MOZ_ASSERT(!hasBeenEnteredIgnoringJit());
-  MOZ_ASSERT(!isDebuggee());
+  MOZ_ASSERT(!localAllocSite);
+  MOZ_ASSERT_IF(isDebuggee(), isTracingExecution_);
 
   // Write the code coverage information in a file.
   if (lcovRealm_) {
@@ -69,6 +70,10 @@ Realm::~Realm() {
 
   if (allocationMetadataBuilder_) {
     forgetAllocationMetadataBuilder();
+  }
+
+  if (isTracingExecution_) {
+    disableExecutionTracing();
   }
 
   MOZ_ASSERT(runtime_->numRealms > 0);
@@ -90,6 +95,10 @@ void Realm::init(JSContext* cx, JSPrincipals* principals) {
     isSystem_ = (principals == cx->runtime()->trustedPrincipals());
     JS_HoldPrincipals(principals);
     principals_ = principals;
+  }
+
+  if (!isSystem_ && cx->hasExecutionTracer()) {
+    enableExecutionTracing();
   }
 }
 
@@ -166,27 +175,47 @@ ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx,
 }
 
 NonSyntacticLexicalEnvironmentObject*
-ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx,
-                                                       HandleObject enclosing) {
-  // If a wrapped WithEnvironmentObject was passed in, unwrap it, as we may
-  // be creating different WithEnvironmentObject wrappers each time.
-  RootedObject key(cx, enclosing);
-  if (enclosing->is<WithEnvironmentObject>()) {
-    MOZ_ASSERT(!enclosing->as<WithEnvironmentObject>().isSyntactic());
-    key = &enclosing->as<WithEnvironmentObject>().object();
-  }
+ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(
+    JSContext* cx, Handle<NonSyntacticVariablesObject*> enclosing) {
+  HandleObject key = enclosing;
 
   // NOTE: The default global |this| value is set to key for compatibility
   // with existing users of the lexical environment cache.
   //  - When used by shared-global JSM loader, |this| must be the
   //    NonSyntacticVariablesObject passed as enclosing.
-  //  - When used by SubscriptLoader, |this| must be the target object of
-  //    the WithEnvironmentObject wrapper.
-  //  - When used by XBL/DOM Events, we execute directly as a function and
-  //    do not access the |this| value.
   // See js::GetFunctionThis / js::GetNonSyntacticGlobalThis
   return getOrCreateNonSyntacticLexicalEnvironment(cx, enclosing, key,
                                                    /*thisv = */ key);
+}
+
+NonSyntacticLexicalEnvironmentObject*
+ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(
+    JSContext* cx, Handle<WithEnvironmentObject*> enclosing) {
+  MOZ_ASSERT(!enclosing->isSyntactic());
+
+  // If a wrapped WithEnvironmentObject was passed in, unwrap it, as we may
+  // be creating different WithEnvironmentObject wrappers each time.
+  RootedObject key(cx, &enclosing->as<WithEnvironmentObject>().object());
+
+  // NOTE: The default global |this| value is set to key for compatibility
+  // with existing users of the lexical environment cache.
+  //  - When used by SubscriptLoader, |this| must be the target object of
+  //    the WithEnvironmentObject wrapper.
+  //  - When used by DOM Events, we execute directly as a function and do not
+  //    access the |this| value.
+  // See js::GetFunctionThis / js::GetNonSyntacticGlobalThis
+  return getOrCreateNonSyntacticLexicalEnvironment(cx, enclosing, key,
+                                                   /*thisv = */ key);
+}
+
+NonSyntacticLexicalEnvironmentObject*
+ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(
+    JSContext* cx, Handle<WithEnvironmentObject*> enclosing,
+    Handle<NonSyntacticVariablesObject*> key) {
+  MOZ_ASSERT(!enclosing->isSyntactic());
+
+  RootedObject thisv(cx, &enclosing->object());
+  return getOrCreateNonSyntacticLexicalEnvironment(cx, enclosing, key, thisv);
 }
 
 NonSyntacticLexicalEnvironmentObject*
@@ -417,7 +446,8 @@ void Realm::updateDebuggerObservesFlag(unsigned flag) {
           : maybeGlobal();
   bool observes = false;
   if (flag == DebuggerObservesAllExecution) {
-    observes = DebugAPI::debuggerObservesAllExecution(global);
+    observes = (global && DebugAPI::debuggerObservesAllExecution(global)) ||
+               isTracingExecution_;
   } else if (flag == DebuggerObservesCoverage) {
     observes = DebugAPI::debuggerObservesCoverage(global);
   } else if (flag == DebuggerObservesAsmJS) {
@@ -685,6 +715,12 @@ JS_PUBLIC_API JS::Handle<JSObject*> JS::GetRealmObjectPrototypeHandle(
 JS_PUBLIC_API JSObject* JS::GetRealmFunctionPrototype(JSContext* cx) {
   CHECK_THREAD(cx);
   return &cx->global()->getFunctionPrototype();
+}
+
+JS_PUBLIC_API JS::Handle<JSObject*> JS::GetRealmFunctionPrototypeHandle(
+    JSContext* cx) {
+  CHECK_THREAD(cx);
+  return cx->global()->getFunctionPrototypeHandle();
 }
 
 JS_PUBLIC_API JSObject* JS::GetRealmArrayPrototype(JSContext* cx) {

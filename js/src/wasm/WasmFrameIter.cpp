@@ -91,7 +91,6 @@ WasmFrameIter::WasmFrameIter(JitActivation* activation, wasm::Frame* fp)
     lineOrBytecode_ = trapData.bytecodeOffset;
     failedUnwindSignatureMismatch_ = trapData.failedUnwindSignatureMismatch;
 
-#ifdef ENABLE_WASM_TAIL_CALLS
     // The debugEnabled() relies on valid value of resumePCinCurrentFrame_
     // to identify DebugFrame. Normally this field is updated at popFrame().
     // The only case when this can happend is during IndirectCallBadSig
@@ -102,7 +101,6 @@ WasmFrameIter::WasmFrameIter(JitActivation* activation, wasm::Frame* fp)
       MOZ_ASSERT(trapData.trap == Trap::IndirectCallBadSig);
       resumePCinCurrentFrame_ = (uint8_t*)unwoundPC;
     }
-#endif
 
     MOZ_ASSERT(!done());
     return;
@@ -305,6 +303,7 @@ void WasmFrameIter::popFrame() {
 #endif
 
   MOZ_ASSERT(code_ == &instance()->code());
+
   lineOrBytecode_ = callsite->lineOrBytecode();
   failedUnwindSignatureMismatch_ = false;
 
@@ -401,15 +400,9 @@ bool WasmFrameIter::debugEnabled() const {
     return false;
   }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
   // Debug frame is not present at the return stub.
   const CallSite* site = code_->lookupCallSite((void*)resumePCinCurrentFrame_);
-  if (site && site->kind() == CallSite::ReturnStub) {
-    return false;
-  }
-#endif
-
-  return true;
+  return !(site && site->kind() == CallSite::ReturnStub);
 }
 
 DebugFrame* WasmFrameIter::debugFrame() const {
@@ -718,6 +711,18 @@ static void GenerateCallableEpilogue(MacroAssembler& masm, unsigned framePushed,
 #endif
 
   MOZ_ASSERT_IF(!masm.oom(), PoppedFP == *ret - poppedFP);
+}
+
+// Generate the most minimal possible prologue: `push FP; FP := SP`.
+void wasm::GenerateMinimalPrologue(MacroAssembler& masm, uint32_t* entry) {
+  MOZ_ASSERT(masm.framePushed() == 0);
+  GenerateCallablePrologue(masm, entry);
+}
+
+// Generate the most minimal possible epilogue: `pop FP; return`.
+void wasm::GenerateMinimalEpilogue(MacroAssembler& masm, uint32_t* ret) {
+  MOZ_ASSERT(masm.framePushed() == 0);
+  GenerateCallableEpilogue(masm, /*framePushed=*/0, ExitReason::None(), ret);
 }
 
 void wasm::GenerateFunctionPrologue(MacroAssembler& masm,
@@ -1176,6 +1181,7 @@ void ProfilingFrameIterator::initFromExitFP(const Frame* fp) {
     case CodeRange::TrapExit:
     case CodeRange::DebugStub:
     case CodeRange::RequestTierUpStub:
+    case CodeRange::UpdateCallRefMetricsStub:
     case CodeRange::Throw:
     case CodeRange::FarJumpIsland:
       MOZ_CRASH("Unexpected CodeRange kind");
@@ -1336,6 +1342,7 @@ bool js::wasm::StartUnwinding(const RegisterState& registers,
     case CodeRange::BuiltinThunk:
     case CodeRange::DebugStub:
     case CodeRange::RequestTierUpStub:
+    case CodeRange::UpdateCallRefMetricsStub:
 #if defined(JS_CODEGEN_MIPS64)
       if (codeRange->isThunk()) {
         // The FarJumpIsland sequence temporary scrambles ra.
@@ -1689,6 +1696,7 @@ void ProfilingFrameIterator::operator++() {
     case CodeRange::TrapExit:
     case CodeRange::DebugStub:
     case CodeRange::RequestTierUpStub:
+    case CodeRange::UpdateCallRefMetricsStub:
     case CodeRange::FarJumpIsland: {
       stackAddress_ = callerFP_;
       const auto* frame = Frame::fromUntaggedWasmExitFP(callerFP_);
@@ -1800,6 +1808,10 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to asm.js native f64 Math.pow";
     case SymbolicAddress::ATan2D:
       return "call to asm.js native f64 Math.atan2";
+    case SymbolicAddress::ArrayMemMove:
+      return "call to native array.copy (data)";
+    case SymbolicAddress::ArrayRefsMove:
+      return "call to native array.copy (references)";
     case SymbolicAddress::MemoryGrowM32:
       return "call to native memory.grow m32 (in wasm)";
     case SymbolicAddress::MemoryGrowM64:
@@ -1933,6 +1945,8 @@ const char* ProfilingFrameIterator::label() const {
   static const char trapDescription[] = "trap handling (in wasm)";
   static const char debugStubDescription[] = "debug trap handling (in wasm)";
   static const char requestTierUpDescription[] = "tier-up request (in wasm)";
+  static const char updateCallRefMetricsDescription[] =
+      "update call_ref metrics (in wasm)";
 
   if (!exitReason_.isFixed()) {
     return ThunkedNativeToDescription(exitReason_.symbolic());
@@ -1974,6 +1988,8 @@ const char* ProfilingFrameIterator::label() const {
       return debugStubDescription;
     case CodeRange::RequestTierUpStub:
       return requestTierUpDescription;
+    case CodeRange::UpdateCallRefMetricsStub:
+      return updateCallRefMetricsDescription;
     case CodeRange::FarJumpIsland:
       return "interstitial (in wasm)";
     case CodeRange::Throw:

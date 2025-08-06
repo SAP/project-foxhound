@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys.mjs";
+import { RootBiDiModule } from "chrome://remote/content/webdriver-bidi/modules/RootBiDiModule.sys.mjs";
 
 const lazy = {};
 
@@ -15,6 +15,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/shared/NetworkDecodedBodySizeMap.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
+  Log: "chrome://remote/content/shared/Log.sys.mjs",
   matchURLPattern:
     "chrome://remote/content/shared/webdriver/URLPattern.sys.mjs",
   NetworkListener:
@@ -28,9 +29,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   truncate: "chrome://remote/content/shared/Format.sys.mjs",
   updateCacheBehavior:
     "chrome://remote/content/shared/NetworkCacheManager.sys.mjs",
-  WindowGlobalMessageHandler:
-    "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs",
 });
+
+ChromeUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.Log.get(lazy.Log.TYPES.WEBDRIVER_BIDI)
+);
 
 /**
  * @typedef {object} AuthChallenge
@@ -298,12 +301,22 @@ const SameSite = {
  */
 /* eslint-enable jsdoc/valid-types */
 
-class NetworkModule extends Module {
+// @see https://searchfox.org/mozilla-central/rev/527d691a542ccc0f333e36689bd665cb000360b2/netwerk/protocol/http/HttpBaseChannel.cpp#2083-2088
+const IMMUTABLE_RESPONSE_HEADERS = [
+  "content-encoding",
+  "content-length",
+  "content-type",
+  "trailer",
+  "transfer-encoding",
+];
+
+class NetworkModule extends RootBiDiModule {
   #beforeStopRequestListener;
   #blockedRequests;
   #decodedBodySizeMap;
   #interceptMap;
   #networkListener;
+  #redirectedRequests;
   #subscribedEvents;
 
   constructor(messageHandler) {
@@ -314,6 +327,11 @@ class NetworkModule extends Module {
 
     // Map of intercept id to InterceptProperties
     this.#interceptMap = new Map();
+
+    // Set of request ids which are being redirected using continueRequest with
+    // a url parameter. Those requests will lead to an additional beforeRequestSent
+    // event which needs to be filtered out.
+    this.#redirectedRequests = new Set();
 
     // Set of event names which have active subscriptions
     this.#subscribedEvents = new Set();
@@ -472,10 +490,9 @@ class NetworkModule extends Module {
    *     request.
    * @param {string=} options.method
    *     Optional string to replace the method of the request.
-   * @param {string=} options.url [unsupported]
+   * @param {string=} options.url
    *     Optional string to replace the url of the request. If the provided url
    *     is not a valid URL, an InvalidArgumentError will be thrown.
-   *     Support will be added in https://bugzilla.mozilla.org/show_bug.cgi?id=1898158
    *
    * @throws {InvalidArgumentError}
    *     Raised if an argument is of an invalid type or value.
@@ -538,9 +555,11 @@ class NetworkModule extends Module {
     if (url !== null) {
       lazy.assert.string(url, `Expected "url" to be a string, got ${url}`);
 
-      throw new lazy.error.UnsupportedOperationError(
-        `"url" not supported yet in network.continueRequest`
-      );
+      if (!URL.canParse(url)) {
+        throw new lazy.error.InvalidArgumentError(
+          `Expected "url" to be a valid URL, got ${url}`
+        );
+      }
     }
 
     if (!this.#blockedRequests.has(requestId)) {
@@ -564,7 +583,7 @@ class NetworkModule extends Module {
 
     if (headers !== null) {
       // Delete all existing request headers.
-      request.getHeadersList().forEach(([name]) => {
+      request.headers.forEach(([name]) => {
         request.clearRequestHeader(name);
       });
 
@@ -584,8 +603,7 @@ class NetworkModule extends Module {
       }
 
       let foundCookieHeader = false;
-      const requestHeaders = request.getHeadersList();
-      for (const [name] of requestHeaders) {
+      for (const [name] of request.headers) {
         if (name.toLowerCase() == "cookie") {
           // If there is already a cookie header, use merge: false to override
           // the value.
@@ -603,6 +621,13 @@ class NetworkModule extends Module {
     if (body !== null) {
       const value = deserializeBytesValue(body);
       request.setRequestBody(value);
+    }
+
+    if (url !== null) {
+      // Store the requestId in the redirectedRequests set to skip the extra
+      // beforeRequestSent event.
+      this.#redirectedRequests.add(requestId);
+      request.redirectTo(url);
     }
 
     request.wrappedChannel.resume();
@@ -659,31 +684,27 @@ class NetworkModule extends Module {
       for (const cookie of cookies) {
         this.#assertSetCookieHeader(cookie);
       }
-
-      throw new lazy.error.UnsupportedOperationError(
-        `"cookies" not supported yet in network.continueResponse`
-      );
     }
 
     if (credentials !== null) {
       this.#assertAuthCredentials(credentials);
     }
 
+    let deserializedHeaders = [];
     if (headers !== null) {
-      lazy.assert.array(
-        headers,
-        `Expected "headers" to be an array got ${headers}`
-      );
-
-      for (const header of headers) {
-        this.#assertHeader(
-          header,
-          `Expected values in "headers" to be network.Header, got ${header}`
-        );
-      }
-
-      throw new lazy.error.UnsupportedOperationError(
-        `"headers" not supported yet in network.continueResponse`
+      // For existing responses, are unable to update some response headers,
+      // so we skip them for the time being and log a warning.
+      // Bug 1914351 should remove this limitation.
+      deserializedHeaders = this.#deserializeHeaders(headers).filter(
+        ([name]) => {
+          if (IMMUTABLE_RESPONSE_HEADERS.includes(name.toLowerCase())) {
+            lazy.logger.warn(
+              `network.continueResponse cannot currently modify the header "${name}", skipping (see Bug 1914351).`
+            );
+            return false;
+          }
+          return true;
+        }
       );
     }
 
@@ -692,20 +713,12 @@ class NetworkModule extends Module {
         reasonPhrase,
         `Expected "reasonPhrase" to be a string, got ${reasonPhrase}`
       );
-
-      throw new lazy.error.UnsupportedOperationError(
-        `"reasonPhrase" not supported yet in network.continueResponse`
-      );
     }
 
     if (statusCode !== null) {
       lazy.assert.positiveInteger(
         statusCode,
         `Expected "statusCode" to be a positive integer, got ${statusCode}`
-      );
-
-      throw new lazy.error.UnsupportedOperationError(
-        `"statusCode" not supported yet in network.continueResponse`
       );
     }
 
@@ -715,8 +728,39 @@ class NetworkModule extends Module {
       );
     }
 
-    const { authCallbacks, phase, request, resolveBlockedEvent } =
+    const { authCallbacks, phase, request, resolveBlockedEvent, response } =
       this.#blockedRequests.get(requestId);
+
+    if (headers !== null) {
+      // Delete all existing response headers.
+      response.headers
+        .filter(
+          ([name]) =>
+            // All headers in IMMUTABLE_RESPONSE_HEADERS cannot be changed and
+            // will lead to a NS_ERROR_ILLEGAL_VALUE error.
+            // Bug 1914351 should remove this limitation.
+            !IMMUTABLE_RESPONSE_HEADERS.includes(name.toLowerCase())
+        )
+        .forEach(([name]) => response.clearResponseHeader(name));
+
+      for (const [name, value] of deserializedHeaders) {
+        response.setResponseHeader(name, value, { merge: true });
+      }
+    }
+
+    if (cookies !== null) {
+      for (const cookie of cookies) {
+        const headerValue = this.#serializeSetCookieHeader(cookie);
+        response.setResponseHeader("Set-Cookie", headerValue, { merge: true });
+      }
+    }
+
+    if (statusCode !== null || reasonPhrase !== null) {
+      response.setResponseStatus({
+        status: statusCode,
+        statusText: reasonPhrase,
+      });
+    }
 
     if (
       phase !== InterceptPhase.ResponseStarted &&
@@ -991,7 +1035,7 @@ class NetworkModule extends Module {
           replacedHttpResponse.setResponseHeader(
             "Set-Cookie",
             headerValue,
-            false
+            true
           );
         }
       }
@@ -1328,8 +1372,7 @@ class NetworkModule extends Module {
     }
 
     const challenges = [];
-
-    for (const [name, value] of response.getHeadersList()) {
+    for (const [name, value] of response.headers) {
       if (name.toLowerCase() === headerName) {
         // A single header can contain several challenges.
         const headerChallenges = lazy.parseChallengeHeader(value);
@@ -1365,13 +1408,6 @@ class NetworkModule extends Module {
     }
 
     return context;
-  }
-
-  #getContextInfo(browsingContext) {
-    return {
-      contextId: browsingContext.id,
-      type: lazy.WindowGlobalMessageHandler.type,
-    };
   }
 
   #getNetworkIntercepts(event, request, topContextId) {
@@ -1432,7 +1468,7 @@ class NetworkModule extends Module {
     const headers = [];
     const cookies = [];
 
-    for (const [name, value] of request.getHeadersList()) {
+    for (const [name, value] of request.headers) {
       headers.push(this.#serializeHeader(name, value));
       if (name.toLowerCase() == "cookie") {
         // TODO: Retrieve the actual cookies from the cookie store.
@@ -1450,7 +1486,9 @@ class NetworkModule extends Module {
       }
     }
 
-    const timings = request.getFetchTimings();
+    const destination = request.destination;
+    const initiatorType = request.initiatorType;
+    const timings = request.timings;
 
     return {
       request: requestId,
@@ -1460,6 +1498,8 @@ class NetworkModule extends Module {
       headersSize,
       headers,
       cookies,
+      destination,
+      initiatorType,
       timings,
     };
   }
@@ -1478,9 +1518,9 @@ class NetworkModule extends Module {
     // TODO: Ideally we should have a `isCacheStateLocal` getter
     // const fromCache = response.isCacheStateLocal();
     const fromCache = response.fromCache;
-    const mimeType = response.getComputedMimeType();
+    const mimeType = response.mimeType;
     const headers = [];
-    for (const [name, value] of response.getHeadersList()) {
+    for (const [name, value] of response.headers) {
       headers.push(this.#serializeHeader(name, value));
     }
 
@@ -1590,10 +1630,9 @@ class NetworkModule extends Module {
 
       const protocolEventName = "network.authRequired";
 
-      const isListening = this.messageHandler.eventsDispatcher.hasListener(
-        protocolEventName,
-        { contextId: request.contextId }
-      );
+      const isListening = this._hasListener(protocolEventName, {
+        contextId: request.contextId,
+      });
       if (!isListening) {
         // If there are no listeners subscribed to this event and this context,
         // bail out.
@@ -1611,10 +1650,10 @@ class NetworkModule extends Module {
         response: responseData,
       };
 
-      this.emitEvent(
+      this._emitEventForBrowsingContext(
+        browsingContext.id,
         protocolEventName,
-        authRequiredEvent,
-        this.#getContextInfo(browsingContext)
+        authRequiredEvent
       );
 
       if (authRequiredEvent.isBlocked) {
@@ -1645,6 +1684,14 @@ class NetworkModule extends Module {
   #onBeforeRequestSent = (name, data) => {
     const { request } = data;
 
+    if (this.#redirectedRequests.has(request.requestId)) {
+      // If this beforeRequestSent event corresponds to a request that has
+      // just been redirected using continueRequest, skip the event and remove
+      // it from the redirectedRequests set.
+      this.#redirectedRequests.delete(request.requestId);
+      return;
+    }
+
     const browsingContext = lazy.TabManager.getBrowsingContextById(
       request.contextId
     );
@@ -1654,26 +1701,11 @@ class NetworkModule extends Module {
       return;
     }
 
-    const internalEventName = "network._beforeRequestSent";
     const protocolEventName = "network.beforeRequestSent";
 
-    // Always emit internal events, they are used to support the browsingContext
-    // navigate command.
-    // Bug 1861922: Replace internal events with a Network listener helper
-    // directly using the NetworkObserver.
-    this.emitEvent(
-      internalEventName,
-      {
-        navigation: request.navigationId,
-        url: request.serializedURL,
-      },
-      this.#getContextInfo(browsingContext)
-    );
-
-    const isListening = this.messageHandler.eventsDispatcher.hasListener(
-      protocolEventName,
-      { contextId: request.contextId }
-    );
+    const isListening = this._hasListener(protocolEventName, {
+      contextId: request.contextId,
+    });
     if (!isListening) {
       // If there are no listeners subscribed to this event and this context,
       // bail out.
@@ -1695,13 +1727,12 @@ class NetworkModule extends Module {
       initiator,
     };
 
-    this.emitEvent(
+    this._emitEventForBrowsingContext(
+      browsingContext.id,
       protocolEventName,
-      beforeRequestSentEvent,
-      this.#getContextInfo(browsingContext)
+      beforeRequestSentEvent
     );
-
-    if (beforeRequestSentEvent.isBlocked) {
+    if (beforeRequestSentEvent.isBlocked && request.supportsInterception) {
       // TODO: Requests suspended in beforeRequestSent still reach the server at
       // the moment. https://bugzilla.mozilla.org/show_bug.cgi?id=1849686
       request.wrappedChannel.suspend(
@@ -1737,26 +1768,11 @@ class NetworkModule extends Module {
       return;
     }
 
-    const internalEventName = "network._fetchError";
     const protocolEventName = "network.fetchError";
 
-    // Always emit internal events, they are used to support the browsingContext
-    // navigate command.
-    // Bug 1861922: Replace internal events with a Network listener helper
-    // directly using the NetworkObserver.
-    this.emitEvent(
-      internalEventName,
-      {
-        navigation: request.navigationId,
-        url: request.serializedURL,
-      },
-      this.#getContextInfo(browsingContext)
-    );
-
-    const isListening = this.messageHandler.eventsDispatcher.hasListener(
-      protocolEventName,
-      { contextId: request.contextId }
-    );
+    const isListening = this._hasListener(protocolEventName, {
+      contextId: request.contextId,
+    });
     if (!isListening) {
       // If there are no listeners subscribed to this event and this context,
       // bail out.
@@ -1773,10 +1789,10 @@ class NetworkModule extends Module {
       errorText: request.errorText,
     };
 
-    this.emitEvent(
+    this._emitEventForBrowsingContext(
+      browsingContext.id,
       protocolEventName,
-      fetchErrorEvent,
-      this.#getContextInfo(browsingContext)
+      fetchErrorEvent
     );
   };
 
@@ -1797,28 +1813,9 @@ class NetworkModule extends Module {
         ? "network.responseStarted"
         : "network.responseCompleted";
 
-    const internalEventName =
-      name === "response-started"
-        ? "network._responseStarted"
-        : "network._responseCompleted";
-
-    // Always emit internal events, they are used to support the browsingContext
-    // navigate command.
-    // Bug 1861922: Replace internal events with a Network listener helper
-    // directly using the NetworkObserver.
-    this.emitEvent(
-      internalEventName,
-      {
-        navigation: request.navigationId,
-        url: request.serializedURL,
-      },
-      this.#getContextInfo(browsingContext)
-    );
-
-    const isListening = this.messageHandler.eventsDispatcher.hasListener(
-      protocolEventName,
-      { contextId: request.contextId }
-    );
+    const isListening = this._hasListener(protocolEventName, {
+      contextId: request.contextId,
+    });
     if (!isListening) {
       // If there are no listeners subscribed to this event and this context,
       // bail out.
@@ -1837,15 +1834,16 @@ class NetworkModule extends Module {
       response: responseData,
     };
 
-    this.emitEvent(
+    this._emitEventForBrowsingContext(
+      browsingContext.id,
       protocolEventName,
-      responseEvent,
-      this.#getContextInfo(browsingContext)
+      responseEvent
     );
 
     if (
       protocolEventName === "network.responseStarted" &&
-      responseEvent.isBlocked
+      responseEvent.isBlocked &&
+      request.supportsInterception
     ) {
       request.wrappedChannel.suspend(
         this.#getSuspendMarkerText(request, "responseStarted")
@@ -2024,6 +2022,12 @@ class NetworkModule extends Module {
         this.#subscribeEvent(value);
       }
     }
+  }
+
+  _sendEventsForCachedResource(params) {
+    this.#onBeforeRequestSent("beforerequest-sent", params);
+    this.#onResponseEvent("response-started", params);
+    this.#onResponseEvent("response-completed", params);
   }
 
   _setDecodedBodySize(params) {

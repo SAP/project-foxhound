@@ -8,7 +8,7 @@ support-files = [
 ]
 
 ["browser_CrashService_crash.js"]
-skip-if = ["!crashreporter"]
+run-if = ["crashreporter"]
 
 ["browser_ProcessPriorityManager.js"]
 # The Process Priority Manager is only enabled for Windows, Linux, and MacOS so far.
@@ -16,7 +16,6 @@ skip-if = ["!crashreporter"]
 # However, you can still run browser_ProcessPriorityManager.js locally on other
 # OSes. This will test the priority manager infrastructure but not actually
 # change the priority.
-skip-if = ["os == 'android'"]
 support-files = [
   "file_cross_frame.html",
   "file_dummy.html",
@@ -41,11 +40,12 @@ support-files = [
 ]
 
 ["browser_crash_oopiframe.js"]
+run-if = ["crashreporter"]
 skip-if = [
-  "!crashreporter",
   "verify",
-  "os == 'win'", # Bug 1775837
-  "os == 'linux'", # Bug 1775837
+  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && asan", # Bug 1775837
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && swgl && asan", # Bug 1775837
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && swgl && tsan", # Bug 1775837
 ]
 
 ["browser_domainPolicy.js"]
@@ -77,16 +77,19 @@ skip-if = ["true"]
 
 ["browser_very_fission.js"]
 support-files = ["file_dummy.html"]
-run-if = ["widget == 'gtk'"]
+run-if = ["os == 'linux'"]
+skip-if = [
+  "asan", # appears to hang the machine
+  "tsan", # appears to hang the machine
+]
 
 ["browser_wpi_isolate_everything.js"]
 support-files = ["browser_wpi_base.js"]
 
 ["browser_wpi_isolate_high_value.js"]
-skip-if = ["!fission"] # Only relevant for fission
 support-files = ["browser_wpi_base.js"]
 
 ["browser_wpi_isolate_nothing.js"]
-skip-if = ["apple_catalina && debug"] # Bug 1741763; high frequency intermittent; leaked 2 windows
+skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug 1741763; high frequency intermittent; leaked 2 windows
 
 support-files = ["browser_wpi_base.js"]

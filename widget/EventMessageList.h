@@ -287,6 +287,9 @@ NS_EVENT_MESSAGE(eQueryCharacterAtPoint)
 // Query if the DOM element under Event::mRefPoint belongs to our widget
 // or not.
 NS_EVENT_MESSAGE(eQueryDOMWidgetHittest)
+// Query for the DOM element under Event::mRefPoint that is the target of a
+// delayed drop event.
+NS_EVENT_MESSAGE(eQueryDropTargetHittest)
 
 // Video events
 NS_EVENT_MESSAGE(eLoadStart)
@@ -355,6 +358,8 @@ NS_EVENT_MESSAGE(eContentCommandLookUpDictionary)
 // scrollable ancestor element can only be scrolled vertically, and horizontal
 // scrolling is requested using this event, no scrolling will occur.
 NS_EVENT_MESSAGE(eContentCommandScroll)
+NS_EVENT_MESSAGE_FIRST_LAST(eContentCommandEvent, eContentCommandCut,
+                            eContentCommandScroll)
 
 // Event to gesture notification
 NS_EVENT_MESSAGE(eGestureNotify)
@@ -482,6 +487,10 @@ NS_EVENT_MESSAGE(eToggle)
 // Dialog element events.
 NS_EVENT_MESSAGE(eClose)
 NS_EVENT_MESSAGE(eCancel)
+
+// Media element events.
+NS_EVENT_MESSAGE(eEncrypted)
+NS_EVENT_MESSAGE(eWaitingForKey)
 
 NS_EVENT_MESSAGE(eScrollend)
 

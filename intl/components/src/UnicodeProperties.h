@@ -58,6 +58,7 @@ class UnicodeProperties final {
     HangulSyllableType,
     LineBreak,
     NumericType,
+    VerticalOrientation,
   };
 
   /**
@@ -81,6 +82,9 @@ class UnicodeProperties final {
         break;
       case IntProperty::NumericType:
         prop = UCHAR_NUMERIC_TYPE;
+        break;
+      case IntProperty::VerticalOrientation:
+        prop = UCHAR_VERTICAL_ORIENTATION;
         break;
     }
     return u_getIntPropertyValue(aCh, prop);
@@ -246,6 +250,16 @@ class UnicodeProperties final {
 
   static inline int32_t GetMaxNumberOfScripts() {
     return u_getIntPropertyMaxValue(UCHAR_SCRIPT);
+  }
+
+  // Return true if aChar belongs to a SEAsian script that is written without
+  // word spaces, so we need to use the "complex breaker" to find possible word
+  // boundaries. (https://en.wikipedia.org/wiki/Scriptio_continua)
+  static bool IsScriptioContinua(char16_t aChar) {
+    Script sc = GetScriptCode(aChar);
+    return sc == Script::THAI || sc == Script::MYANMAR || sc == Script::KHMER ||
+           sc == Script::JAVANESE || sc == Script::BALINESE ||
+           sc == Script::SUNDANESE || sc == Script::LAO;
   }
 
   // The code point which has the most script extensions is 0x0965, which has 21

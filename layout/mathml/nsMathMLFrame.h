@@ -28,7 +28,7 @@ class nsMathMLFrame : public nsIMathMLFrame {
  public:
   // nsIMathMLFrame ---
 
-  virtual bool IsSpaceLike() override {
+  bool IsSpaceLike() override {
     return NS_MATHML_IS_SPACE_LIKE(mPresentationData.flags);
   }
 
@@ -50,7 +50,7 @@ class nsMathMLFrame : public nsIMathMLFrame {
     return NS_OK;
   }
 
-  virtual eMathMLFrameType GetMathMLFrameType() override;
+  eMathMLFrameType GetMathMLFrameType() override;
 
   NS_IMETHOD
   Stretch(mozilla::gfx::DrawTarget* aDrawTarget,
@@ -268,13 +268,6 @@ class nsMathMLFrame : public nsIMathMLFrame {
                                    nscoord& aRadicalVerticalGap);
 
  protected:
-#if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
-  void DisplayBoundingMetrics(mozilla::nsDisplayListBuilder* aBuilder,
-                              nsIFrame* aFrame, const nsPoint& aPt,
-                              const nsBoundingMetrics& aMetrics,
-                              const nsDisplayListSet& aLists);
-#endif
-
   /**
    * Display a solid rectangle in the frame's text color. Used for drawing
    * fraction separators and root/sqrt overbars.

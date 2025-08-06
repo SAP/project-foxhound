@@ -20,6 +20,8 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = "toolkitprofile"
 
+EXPORTS += ["nsProfileLock.h"]
+
 UNIFIED_SOURCES += ["nsProfileLock.cpp"]
 
 if CONFIG["OS_ARCH"] == "WINNT":
@@ -33,6 +35,9 @@ UNIFIED_SOURCES += ["nsToolkitProfileService.cpp"]
 LOCAL_INCLUDES += [
     "../xre",
 ]
+
+if CONFIG["MOZ_HAS_REMOTE"]:
+    LOCAL_INCLUDES += ["../components/remote"]
 
 FINAL_LIBRARY = "xul"
 

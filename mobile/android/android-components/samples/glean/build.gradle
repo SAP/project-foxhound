@@ -72,13 +72,8 @@ dependencies {
 
     implementation project(':samples-glean-library')
 
-    constraints {
-        implementation (ComponentsDependencies.androidx_tracing) {
-            because 'AndroidX Test gets force-downgraded to 1.0.0 and breaks otherwise'
-        }
-    }
-
     androidTestImplementation ComponentsDependencies.androidx_test_core
+    androidTestImplementation ComponentsDependencies.androidx_test_monitor
     androidTestImplementation ComponentsDependencies.androidx_test_runner
     androidTestImplementation ComponentsDependencies.androidx_test_rules
     androidTestImplementation ComponentsDependencies.androidx_test_junit
@@ -88,5 +83,8 @@ dependencies {
     androidTestImplementation ComponentsDependencies.testing_mockwebserver
 }
 
-ext.gleanNamespace = "mozilla.telemetry.glean"
+ext {
+    gleanNamespace = "mozilla.telemetry.glean"
+    gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
+}
 apply plugin: "org.mozilla.telemetry.glean-gradle-plugin"

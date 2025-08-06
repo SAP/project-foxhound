@@ -23,7 +23,6 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
-#include "nsAlgorithm.h"
 #include "nsHttp.h"
 #include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
@@ -1025,13 +1024,17 @@ void Http2StreamBase::UpdatePriority(Http2Session* session) {
     nsHttp::NotifyActiveTabLoadOptimization();
   }
 
+  if (!StaticPrefs::network_http_http2_priority_updates()) {
+    return;
+  }
+
   nsHttpTransaction* trans = HttpTransaction();
   if (!trans) {
     return;
   }
 
-  uint8_t urgency =
-      nsHttpHandler::UrgencyFromCoSFlags(trans->GetClassOfService().Flags());
+  uint8_t urgency = nsHttpHandler::UrgencyFromCoSFlags(
+      trans->GetClassOfService().Flags(), trans->Priority());
   bool incremental = trans->GetClassOfService().Incremental();
   uint32_t streamID = GetWireStreamId();
 

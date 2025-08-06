@@ -3,6 +3,8 @@ Backend functions that export shader [`Module`](super::Module)s into binary and 
 */
 #![allow(dead_code)] // can be dead if none of the enabled backends need it
 
+use crate::proc::ExpressionKindTracker;
+
 #[cfg(dot_out)]
 pub mod dot;
 #[cfg(glsl_out)]
@@ -18,6 +20,9 @@ pub mod wgsl;
 
 #[cfg(any(hlsl_out, msl_out, spv_out, glsl_out))]
 pub mod pipeline_constants;
+
+#[cfg(any(hlsl_out, glsl_out))]
+mod continue_forward;
 
 /// Names of vector components.
 pub const COMPONENTS: &[char] = &['x', 'y', 'z', 'w'];
@@ -115,6 +120,8 @@ pub struct FunctionCtx<'a> {
     pub expressions: &'a crate::Arena<crate::Expression>,
     /// Map of expressions that have associated variable names
     pub named_expressions: &'a crate::NamedExpressions,
+    /// For constness checks
+    pub expr_kind_tracker: ExpressionKindTracker,
 }
 
 impl FunctionCtx<'_> {

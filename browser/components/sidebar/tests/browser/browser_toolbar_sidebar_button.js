@@ -40,6 +40,15 @@ add_setup(async () => {
     0,
     "sidebar-button"
   );
+  if (window.SidebarController.sidebarMain?.expanded) {
+    info("In setup, the sidebar is currently expanded. Collapsing it");
+    window.SidebarController.toggleExpanded(false);
+    await window.SidebarController.sidebarMain.updateComplete;
+  }
+  ok(
+    BrowserTestUtils.isVisible(window.SidebarController.sidebarMain),
+    "Sidebar launcher is visible at setup"
+  );
 });
 
 add_task(async function test_toolbar_sidebar_button() {
@@ -66,13 +75,19 @@ add_task(async function test_toolbar_sidebar_button() {
 });
 
 add_task(async function test_expanded_state_for_always_show() {
+  info(
+    `Current window's sidebarMain.expanded: ${window.SidebarController.sidebarMain?.expanded}`
+  );
   await SpecialPowers.pushPrefEnv({
     set: [[SIDEBAR_VISIBILITY_PREF, "always-show"]],
   });
   const win = await BrowserTestUtils.openNewBrowserWindow();
-  const {
-    SidebarController: { sidebarMain, toolbarButton },
-  } = win;
+
+  const { SidebarController, document } = win;
+  const { sidebarMain, toolbarButton } = SidebarController;
+
+  await SidebarController.promiseInitialized;
+  info(`New window's sidebarMain.expanded: ${sidebarMain?.expanded}`);
 
   const checkExpandedState = async (
     expanded,
@@ -89,19 +104,43 @@ add_task(async function test_expanded_state_for_always_show() {
         ? "Toolbar button is highlighted."
         : "Toolbar button is not highlighted."
     );
+    Assert.deepEqual(
+      document.l10n.getAttributes(button),
+      {
+        id: expanded
+          ? "sidebar-widget-collapse-sidebar"
+          : "sidebar-widget-expand-sidebar",
+        args: null,
+      },
+      "Toolbar button has the correct tooltip."
+    );
+    await TestUtils.waitForCondition(
+      () => button.hasAttribute("expanded") == expanded,
+      expanded
+        ? "Toolbar button expanded attribute is present."
+        : "Toolbar button expanded attribute is absent."
+    );
   };
 
   info("Check default expanded state.");
   await checkExpandedState(false);
-
+  ok(
+    BrowserTestUtils.isVisible(sidebarMain),
+    "The sidebar launcher is visible"
+  );
+  ok(
+    !toolbarButton.hasAttribute("checked"),
+    "The toolbar button is not checked."
+  );
   info("Toggle expanded state via toolbar button.");
   EventUtils.synthesizeMouseAtCenter(toolbarButton, {}, win);
   await checkExpandedState(true);
+  ok(toolbarButton.hasAttribute("checked"), "The toolbar button is checked.");
   EventUtils.synthesizeMouseAtCenter(toolbarButton, {}, win);
   await checkExpandedState(false);
 
   info("Collapse the sidebar by loading a tool.");
-  sidebarMain.expanded = true;
+  SidebarController.toggleExpanded(true);
   await sidebarMain.updateComplete;
   const toolButton = sidebarMain.toolButtons[0];
   EventUtils.synthesizeMouseAtCenter(toolButton, {}, win);
@@ -112,7 +151,7 @@ add_task(async function test_expanded_state_for_always_show() {
   await checkExpandedState(true);
 
   info("Load and unload a tool with the sidebar collapsed to begin with.");
-  sidebarMain.expanded = false;
+  SidebarController.toggleExpanded(false);
   await sidebarMain.updateComplete;
   EventUtils.synthesizeMouseAtCenter(toolButton, {}, win);
   await checkExpandedState(false);
@@ -120,7 +159,7 @@ add_task(async function test_expanded_state_for_always_show() {
   await checkExpandedState(false);
 
   info("Check expanded state on a new window.");
-  sidebarMain.expanded = true;
+  SidebarController.toggleExpanded(true);
   await sidebarMain.updateComplete;
   const newWin = await BrowserTestUtils.openNewBrowserWindow();
   await checkExpandedState(
@@ -159,6 +198,22 @@ add_task(async function test_states_for_hide_sidebar() {
     await TestUtils.waitForCondition(
       () => button.checked == !hidden,
       "Toolbar button state is correct."
+    );
+    Assert.deepEqual(
+      document.l10n.getAttributes(button),
+      {
+        id: hidden
+          ? "sidebar-widget-show-sidebar"
+          : "sidebar-widget-hide-sidebar",
+        args: null,
+      },
+      "Toolbar button has the correct tooltip."
+    );
+    await TestUtils.waitForCondition(
+      () => button.hasAttribute("expanded") == expanded,
+      expanded
+        ? "Toolbar button expanded attribute is present."
+        : "Toolbar button expanded attribute is absent."
     );
   };
 
@@ -201,4 +256,36 @@ add_task(async function test_states_for_hide_sidebar() {
   await BrowserTestUtils.closeWindow(win);
   await BrowserTestUtils.closeWindow(newWin);
   await SpecialPowers.popPrefEnv();
+}).skip(); //bug 1896421
+
+add_task(async function test_sidebar_button_runtime_pref_enabled() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+  let button = document.getElementById("sidebar-button");
+  Assert.ok(
+    BrowserTestUtils.isVisible(button),
+    "The sidebar button is visible"
+  );
+
+  CustomizableUI.removeWidgetFromArea("sidebar-button");
+  Assert.ok(
+    BrowserTestUtils.isHidden(button),
+    "The sidebar button is not visible after being removed"
+  );
+
+  // rever the pref change, this should cause the button to be placed in the nav-bar
+  await SpecialPowers.popPrefEnv();
+  button = document.getElementById("sidebar-button");
+  Assert.ok(
+    BrowserTestUtils.isVisible(button),
+    "The sidebar button is visible again when the pref is flipped"
+  );
+
+  let widgetPlacement = CustomizableUI.getPlacementOfWidget("sidebar-button");
+  Assert.equal(
+    widgetPlacement.area,
+    CustomizableUI.AREA_NAVBAR,
+    "The sidebar button is in the nav-bar"
+  );
 });

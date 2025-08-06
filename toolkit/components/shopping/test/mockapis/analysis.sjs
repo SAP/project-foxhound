@@ -22,6 +22,8 @@ let gResponses = new Map(
     INVALID123: { needs_analysis: false, grade: 0.85, adjusted_rating: 1.0 },
     HTTPERR503: { status: 503, error: "Service Unavailable" },
     HTTPERR429: { status: 429, error: "Too Many Requests" },
+    VWXYZAB012: { needs_analysis: false, grade: "B", adjusted_rating: 4.1 },
+    NOCURADS00: { needs_analysis: false, grade: "B", adjusted_rating: 4.1 },
   })
 );
 

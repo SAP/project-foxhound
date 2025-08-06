@@ -874,6 +874,8 @@ DCSurface* DCExternalSurfaceWrapper::EnsureSurfaceForExternalImage(
   // Apply color management.
 
   [&]() {
+    if (!StaticPrefs::gfx_webrender_dcomp_color_manage_with_filters()) return;
+
     const auto cmsMode = GfxColorManagementMode();
     if (cmsMode == CMSMode::Off) return;
 
@@ -1921,6 +1923,9 @@ bool DCSurfaceVideo::CallVideoProcessorBlt() {
       }
       mVpSuperResolutionFailed = true;
     }
+  } else if (gfx::gfxVars::WebRenderOverlayVpSuperResolution() &&
+             !useSuperResolution) {
+    SetVpSuperResolution(vendorId, videoContext, videoProcessor, false);
   }
 
   if (profiler_thread_is_being_profiled_for_markers() && vendorId == 0x10DE) {

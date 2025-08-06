@@ -8,6 +8,7 @@ import android.os.Build
 import android.view.autofill.AutofillManager
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
+import androidx.test.filters.SdkSuppress
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -154,7 +155,9 @@ class LoginsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(loginPage.toUri()) {
             setPageObjectText(itemWithResId("username"), userName)
+            waitForAppWindowToBeUpdated()
             setPageObjectText(itemWithResId("password"), password)
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Save"))
@@ -280,7 +283,9 @@ class LoginsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(loginPage.toUri()) {
             setPageObjectText(itemWithResId("username"), "mozilla")
+            waitForAppWindowToBeUpdated()
             setPageObjectText(itemWithResId("password"), "firefox")
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Save"))
@@ -347,7 +352,9 @@ class LoginsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(loginPage.toUri()) {
             setPageObjectText(itemWithResId("username"), "mozilla")
+            waitForAppWindowToBeUpdated()
             setPageObjectText(itemWithResId("password"), "firefox")
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Save"))
@@ -377,7 +384,9 @@ class LoginsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(loginPage.toUri()) {
             setPageObjectText(itemWithResId("username"), "mozilla")
+            waitForAppWindowToBeUpdated()
             setPageObjectText(itemWithResId("password"), "firefox")
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Save"))
@@ -408,7 +417,9 @@ class LoginsTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(loginPage.toUri()) {
             setPageObjectText(itemWithResId("username"), "mozilla")
+            waitForAppWindowToBeUpdated()
             setPageObjectText(itemWithResId("password"), "firefox")
+            waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
             clickPageObject(itemWithText("Save"))
@@ -555,7 +566,7 @@ class LoginsTest : TestSetup() {
             waitForAppWindowToBeUpdated()
             clickPageObject(itemWithResId("submit"))
             verifySaveLoginPromptIsDisplayed()
-            clickPageObject(itemWithText("Don’t update"))
+            clickPageObject(itemWithText("Not now"))
         }.openThreeDotMenu {
         }.openSettings {
         }.openLoginsAndPasswordSubMenu {
@@ -789,7 +800,9 @@ class LoginsTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2068215
+    // The snackbar is not displayed for devices running on Android <= 12
     @Test
+    @SdkSuppress(maxSdkVersion = 32)
     fun verifyCopyLoginCredentialsToClipboardTest() {
         val firstLoginPage = TestAssetHelper.getSaveLoginAsset(mockWebServer)
 

@@ -39,7 +39,7 @@
 #include "nsTArray.h"
 #include "nsString.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
-#include "mozilla/ipc/SharedMemoryBasic.h"
+#include "mozilla/ipc/SharedMemory.h"
 #include "TiedFields.h"
 
 // Manual reflection of WebIDL typedefs that are different from their
@@ -390,8 +390,10 @@ struct WebGLContextOptions final {
 
   dom::WebGLPowerPreference powerPreference =
       dom::WebGLPowerPreference::Default;
+  bool forceSoftwareRendering = false;
   bool shouldResistFingerprinting = true;
   bool enableDebugRendererInfo = false;
+  PaddingField<bool, 7> _padding;
 
   auto MutTiedFields() {
     // clang-format off
@@ -407,8 +409,10 @@ struct WebGLContextOptions final {
       xrCompatible,
 
       powerPreference,
+      forceSoftwareRendering,
       shouldResistFingerprinting,
-      enableDebugRendererInfo);
+      enableDebugRendererInfo,
+      _padding);
     // clang-format on
   }
 
@@ -706,24 +710,35 @@ struct Limits final {
 };
 
 // -
+namespace details {
+template <class T, size_t Padding>
+struct PaddedBase {
+ protected:
+  T val = {};
+
+ private:
+  uint8_t padding[Padding] = {};
+};
+
+template <class T>
+struct PaddedBase<T, 0> {
+ protected:
+  T val = {};
+};
+}  // namespace details
 
 template <class T, size_t PaddedSize>
-struct Padded {
- private:
-  T val = {};
-  uint8_t padding[PaddedSize - sizeof(T)] = {};
+struct Padded : details::PaddedBase<T, PaddedSize - sizeof(T)> {
+  operator T&() { return this->val; }
+  operator const T&() const { return this->val; }
 
- public:
-  operator T&() { return val; }
-  operator const T&() const { return val; }
+  auto& operator=(const T& rhs) { return this->val = rhs; }
+  auto& operator=(T&& rhs) { return this->val = std::move(rhs); }
 
-  auto& operator=(const T& rhs) { return val = rhs; }
-  auto& operator=(T&& rhs) { return val = std::move(rhs); }
-
-  auto& operator*() { return val; }
-  auto& operator*() const { return val; }
-  auto operator->() { return &val; }
-  auto operator->() const { return &val; }
+  auto& operator*() { return this->val; }
+  auto& operator*() const { return this->val; }
+  auto operator->() { return &this->val; }
+  auto operator->() const { return &this->val; }
 };
 
 // -

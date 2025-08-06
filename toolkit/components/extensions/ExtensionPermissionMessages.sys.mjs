@@ -53,6 +53,8 @@ export const PERMISSIONS_WITH_MESSAGE = new Set([
   "tabs",
   "tabHide",
   "topSites",
+  "trialML",
+  "userScripts",
   "webNavigation",
 ]);
 

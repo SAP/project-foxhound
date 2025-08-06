@@ -12,9 +12,6 @@ class AutofillTelemetryBase {
   EVENT_CATEGORY = null;
   EVENT_OBJECT_FORM_INTERACTION = null;
 
-  SCALAR_DETECTED_SECTION_COUNT = null;
-  SCALAR_SUBMITTED_SECTION_COUNT = null;
-
   HISTOGRAM_NUM_USES = null;
   HISTOGRAM_PROFILE_NUM_USES = null;
   HISTOGRAM_PROFILE_NUM_USES_KEY = null;
@@ -109,6 +106,10 @@ class AutofillTelemetryBase {
         true
       )
     );
+
+    try {
+      this.recordIframeLayoutDetection(flowId, fieldDetails);
+    } catch {}
   }
 
   recordPopupShown(flowId, fieldDetails) {
@@ -122,7 +123,9 @@ class AutofillTelemetryBase {
     const extra = this.#initFormEventExtra("unavailable");
 
     for (const fieldDetail of fieldDetails) {
-      let { filledState, value } = data[fieldDetail.elementId];
+      // It is possible that we don't autofill a field because it is cross-origin.
+      // When that happens, the data will not include that element.
+      let { filledState, filledValue } = data.get(fieldDetail.elementId) ?? {};
       switch (filledState) {
         case FIELD_STATES.AUTO_FILLED:
           filledState = "filled";
@@ -130,7 +133,7 @@ class AutofillTelemetryBase {
         case FIELD_STATES.NORMAL:
         default:
           filledState =
-            fieldDetail.tagName == "SELECT" || value.length
+            fieldDetail.localName == "select" || filledValue?.length
               ? "user_filled"
               : "not_filled";
           break;
@@ -152,7 +155,7 @@ class AutofillTelemetryBase {
     const extra = this.#initFormEventExtra("unavailable");
 
     for (const fieldDetail of fieldDetails) {
-      let { filledState, value } = data[fieldDetail.elementId];
+      let { filledState, filledValue } = data.get(fieldDetail.elementId) ?? {};
       switch (filledState) {
         case FIELD_STATES.AUTO_FILLED:
           filledState = "autofilled";
@@ -160,7 +163,7 @@ class AutofillTelemetryBase {
         case FIELD_STATES.NORMAL:
         default:
           filledState =
-            fieldDetail.tagName == "SELECT" || value.length
+            fieldDetail.localName == "select" || filledValue?.length
               ? "user_filled"
               : "not_filled";
           break;
@@ -181,14 +184,8 @@ class AutofillTelemetryBase {
     this.recordGleanFormEvent("formCleared", flowId, extra);
   }
 
-  recordFormEvent(method, flowId, extra) {
-    Services.telemetry.recordEvent(
-      this.EVENT_CATEGORY,
-      method,
-      this.EVENT_OBJECT_FORM_INTERACTION,
-      flowId,
-      extra
-    );
+  recordFormEvent(_method, _flowId, _extra) {
+    throw new Error("Not implemented.");
   }
 
   recordGleanFormEvent(_eventName, _flowId, _extra) {
@@ -217,11 +214,16 @@ class AutofillTelemetryBase {
   }
 
   recordDoorhangerEvent(method, object, flowId) {
-    Services.telemetry.recordEvent(this.EVENT_CATEGORY, method, object, flowId);
+    const eventName = `${method}_${object}`.replace(/(_[a-z])/g, c =>
+      c[1].toUpperCase()
+    );
+    Glean[this.EVENT_CATEGORY][eventName]?.record({ value: flowId });
   }
 
   recordManageEvent(method) {
-    Services.telemetry.recordEvent(this.EVENT_CATEGORY, method, "manage");
+    const eventName =
+      method.replace(/(_[a-z])/g, c => c[1].toUpperCase()) + "Manage";
+    Glean[this.EVENT_CATEGORY][eventName]?.record();
   }
 
   recordAutofillProfileCount(_count) {
@@ -229,19 +231,11 @@ class AutofillTelemetryBase {
   }
 
   recordDetectedSectionCount() {
-    if (!this.SCALAR_DETECTED_SECTION_COUNT) {
-      return;
-    }
-
-    Services.telemetry.scalarAdd(this.SCALAR_DETECTED_SECTION_COUNT, 1);
+    throw new Error("Not implemented.");
   }
 
-  recordSubmittedSectionCount(count) {
-    if (!this.SCALAR_SUBMITTED_SECTION_COUNT || !count) {
-      return;
-    }
-
-    Services.telemetry.scalarAdd(this.SCALAR_SUBMITTED_SECTION_COUNT, count);
+  recordSubmittedSectionCount(_count) {
+    throw new Error("Not implemented.");
   }
 
   recordNumberOfUse(records) {
@@ -254,19 +248,50 @@ class AutofillTelemetryBase {
       histogram.add(this.HISTOGRAM_PROFILE_NUM_USES_KEY, record.timesUsed);
     }
   }
+
+  recordIframeLayoutDetection(flowId, fieldDetails) {
+    const fieldsInMainFrame = [];
+    const fieldsInIframe = [];
+    const fieldsInSandboxedIframe = [];
+    const fieldsInCrossOrignIframe = [];
+
+    const iframes = new Set();
+    for (const fieldDetail of fieldDetails) {
+      const bc = BrowsingContext.get(fieldDetail.browsingContextId);
+      if (bc.top == bc) {
+        fieldsInMainFrame.push(fieldDetail);
+        continue;
+      }
+
+      iframes.add(bc);
+      fieldsInIframe.push(fieldDetail);
+      if (bc.sandboxFlags != 0) {
+        fieldsInSandboxedIframe.push(fieldDetail);
+      }
+
+      if (!FormAutofillUtils.isBCSameOriginWithTop(bc)) {
+        fieldsInCrossOrignIframe.push(fieldDetail);
+      }
+    }
+
+    const extra = {
+      category: this.EVENT_CATEGORY,
+      flow_id: flowId,
+      iframe_count: iframes.size,
+      main_frame: fieldsInMainFrame.map(f => f.fieldName).toString(),
+      iframe: fieldsInIframe.map(f => f.fieldName).toString(),
+      cross_origin: fieldsInCrossOrignIframe.map(f => f.fieldName).toString(),
+      sandboxed: fieldsInSandboxedIframe.map(f => f.fieldName).toString(),
+    };
+
+    Glean.formautofill.iframeLayoutDetection.record(extra);
+  }
 }
 
 export class AddressTelemetry extends AutofillTelemetryBase {
   EVENT_CATEGORY = "address";
-  EVENT_OBJECT_FORM_INTERACTION = "address_form";
-  EVENT_OBJECT_FORM_INTERACTION_EXT = "address_form_ext";
-
-  SCALAR_DETECTED_SECTION_COUNT =
-    "formautofill.addresses.detected_sections_count";
-  SCALAR_SUBMITTED_SECTION_COUNT =
-    "formautofill.addresses.submitted_sections_count";
-  SCALAR_AUTOFILL_PROFILE_COUNT =
-    "formautofill.addresses.autofill_profiles_count";
+  EVENT_OBJECT_FORM_INTERACTION = "AddressForm";
+  EVENT_OBJECT_FORM_INTERACTION_EXT = "AddressFormExt";
 
   HISTOGRAM_PROFILE_NUM_USES = "AUTOFILL_PROFILE_NUM_USES";
   HISTOGRAM_PROFILE_NUM_USES_KEY = "address";
@@ -328,38 +353,39 @@ export class AddressTelemetry extends AutofillTelemetryBase {
       }
     }
 
-    Services.telemetry.recordEvent(
-      this.EVENT_CATEGORY,
-      method,
-      this.EVENT_OBJECT_FORM_INTERACTION,
-      flowId,
-      extra
-    );
+    const eventMethod = method.replace(/(_[a-z])/g, c => c[1].toUpperCase());
+    Glean.address[eventMethod + this.EVENT_OBJECT_FORM_INTERACTION]?.record({
+      value: flowId,
+      ...extra,
+    });
 
     if (Object.keys(extExtra).length) {
-      Services.telemetry.recordEvent(
-        this.EVENT_CATEGORY,
-        method,
-        this.EVENT_OBJECT_FORM_INTERACTION_EXT,
-        flowId,
-        extExtra
-      );
+      Glean.address[
+        eventMethod + this.EVENT_OBJECT_FORM_INTERACTION_EXT
+      ]?.record({ value: flowId, ...extExtra });
     }
   }
 
   recordAutofillProfileCount(count) {
-    Services.telemetry.scalarSet(this.SCALAR_AUTOFILL_PROFILE_COUNT, count);
+    Glean.formautofillAddresses.autofillProfilesCount.set(count);
+  }
+
+  recordDetectedSectionCount() {
+    Glean.formautofillAddresses.detectedSectionsCount.add(1);
+  }
+
+  recordSubmittedSectionCount(count) {
+    if (!count) {
+      return;
+    }
+
+    Glean.formautofillAddresses.submittedSectionsCount.add(count);
   }
 }
 
 class CreditCardTelemetry extends AutofillTelemetryBase {
   EVENT_CATEGORY = "creditcard";
-  EVENT_OBJECT_FORM_INTERACTION = "cc_form_v2";
-
-  SCALAR_DETECTED_SECTION_COUNT =
-    "formautofill.creditCards.detected_sections_count";
-  SCALAR_SUBMITTED_SECTION_COUNT =
-    "formautofill.creditCards.submitted_sections_count";
+  EVENT_OBJECT_FORM_INTERACTION = "CcFormV2";
 
   HISTOGRAM_NUM_USES = "CREDITCARD_NUM_USES";
   HISTOGRAM_PROFILE_NUM_USES = "AUTOFILL_PROFILE_NUM_USES";
@@ -381,6 +407,15 @@ class CreditCardTelemetry extends AutofillTelemetryBase {
     Glean.formautofillCreditcards[eventName].record(extra);
   }
 
+  recordFormEvent(method, flowId, aExtra) {
+    // Don't modify the passed-in aExtra as it's reused.
+    const extra = Object.assign({ value: flowId }, aExtra);
+    const eventMethod = method.replace(/(_[a-z])/g, c => c[1].toUpperCase());
+    Glean.creditcard[eventMethod + this.EVENT_OBJECT_FORM_INTERACTION]?.record(
+      extra
+    );
+  }
+
   recordNumberOfUse(records) {
     super.recordNumberOfUse(records);
 
@@ -400,6 +435,18 @@ class CreditCardTelemetry extends AutofillTelemetryBase {
 
   recordAutofillProfileCount(count) {
     Glean.formautofillCreditcards.autofillProfilesCount.set(count);
+  }
+
+  recordDetectedSectionCount() {
+    Glean.formautofillCreditCards.detectedSectionsCount.add(1);
+  }
+
+  recordSubmittedSectionCount(count) {
+    if (!count) {
+      return;
+    }
+
+    Glean.formautofillCreditCards.submittedSectionsCount.add(count);
   }
 }
 

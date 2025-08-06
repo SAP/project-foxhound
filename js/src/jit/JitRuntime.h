@@ -164,9 +164,6 @@ class JitRuntime {
   WriteOnceData<uint32_t> shapePreBarrierOffset_{0};
   WriteOnceData<uint32_t> wasmAnyRefPreBarrierOffset_{0};
 
-  // Thunk to call malloc/free.
-  WriteOnceData<uint32_t> freeStubOffset_{0};
-
   // Thunk called to finish compilation of an IonScript.
   WriteOnceData<uint32_t> lazyLinkStubOffset_{0};
 
@@ -268,7 +265,6 @@ class JitRuntime {
   void generateInvalidator(MacroAssembler& masm, Label* bailoutTail);
   uint32_t generatePreBarrier(JSContext* cx, MacroAssembler& masm,
                               MIRType type);
-  void generateFreeStub(MacroAssembler& masm);
   void generateIonGenericCallStub(MacroAssembler& masm,
                                   IonGenericCallKind kind);
 
@@ -357,9 +353,16 @@ class JitRuntime {
     return trampolineCode(functionWrapperOffsets_[size_t(funId)]);
   }
 
-  JitCode* debugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
+  bool ensureDebugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
+  JitCode* debugTrapHandler(DebugTrapHandlerKind kind) const {
+    MOZ_ASSERT(debugTrapHandlers_[kind]);
+    return debugTrapHandlers_[kind];
+  }
 
   BaselineInterpreter& baselineInterpreter() { return baselineInterpreter_; }
+  const BaselineInterpreter& baselineInterpreter() const {
+    return baselineInterpreter_;
+  }
 
   TrampolinePtr getGenericBailoutHandler() const {
     return trampolineCode(bailoutHandlerOffset_);
@@ -422,8 +425,6 @@ class JitRuntime {
         MOZ_CRASH();
     }
   }
-
-  TrampolinePtr freeStub() const { return trampolineCode(freeStubOffset_); }
 
   TrampolinePtr lazyLinkStub() const {
     return trampolineCode(lazyLinkStubOffset_);

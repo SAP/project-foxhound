@@ -128,7 +128,6 @@ export class Downloader {
     this.folders = ["settings", bucketName, collectionName, ...subFolders];
     this.bucketName = bucketName;
     this.collectionName = collectionName;
-    this._cdnURLs = {};
   }
 
   /**
@@ -190,8 +189,11 @@ export class Downloader {
       return null;
     }
 
+    // Save attachments in bulks.
+    const BULK_SAVE_COUNT = 50;
+
     const url =
-      (await this._baseAttachmentsURL()) +
+      (await lazy.Utils.baseAttachmentsURL()) +
       `bundles/${this.bucketName}--${this.collectionName}.zip`;
     const tmpZipFilePath = PathUtils.join(
       PathUtils.tempDir,
@@ -216,10 +218,16 @@ export class Downloader {
         Ci.nsIZipReader
       );
 
-      let tmpZipFile = await IOUtils.getFile(tmpZipFilePath);
+      const tmpZipFile = await IOUtils.getFile(tmpZipFilePath);
       zipReader.open(tmpZipFile);
 
-      for (const entryName of zipReader.findEntries("*.meta.json")) {
+      const cacheEntries = [];
+      const zipFiles = Array.from(zipReader.findEntries("*.meta.json"));
+      allSuccess = !!zipFiles.length;
+
+      for (let i = 0; i < zipFiles.length; i++) {
+        const lastLoop = i == zipFiles.length - 1;
+        const entryName = zipFiles[i];
         try {
           // 3. Read the meta.json entry
           const recordZStream = zipReader.getInputStream(entryName);
@@ -246,17 +254,30 @@ export class Downloader {
           const fileBytes = stream.readBytes(dataLength);
           const blob = new Blob([fileBytes]);
 
-          // 5. Save to cache
-          await this.cacheImpl.set(record.id, { record, blob });
+          cacheEntries.push([record.id, { record, blob }]);
 
           stream.close();
           zStream.close();
         } catch (ex) {
           lazy.console.warn(
-            `${this.bucketName}/${this.collectionName}: Unable to save attachment entry for ${entryName}.`,
+            `${this.bucketName}/${this.collectionName}: Unable to extract attachment of ${entryName}.`,
             ex
           );
           allSuccess = false;
+        }
+
+        // 5. Save bulk to cache (last loop or reached count)
+        if (lastLoop || cacheEntries.length == BULK_SAVE_COUNT) {
+          try {
+            await this.cacheImpl.setMultiple(cacheEntries);
+          } catch (ex) {
+            lazy.console.warn(
+              `${this.bucketName}/${this.collectionName}: Unable to save attachments in cache`,
+              ex
+            );
+            allSuccess = false;
+          }
+          cacheEntries.splice(0); // start new bulk.
         }
       }
     } catch (ex) {
@@ -265,9 +286,6 @@ export class Downloader {
         ex
       );
       return false;
-    } finally {
-      // 6. Temp file cleanup
-      await IOUtils.remove(tmpZipFilePath, { ignoreAbsent: true });
     }
 
     return allSuccess;
@@ -558,7 +576,14 @@ export class Downloader {
       attachment: { location, hash, size },
     } = record;
 
-    const remoteFileUrl = (await this._baseAttachmentsURL()) + location;
+    let baseURL;
+    try {
+      baseURL = await lazy.Utils.baseAttachmentsURL();
+    } catch (error) {
+      throw new Downloader.ServerInfoError(error);
+    }
+
+    const remoteFileUrl = baseURL + location;
 
     const { retries = 3, checkHash = true } = options;
     let retried = 0;
@@ -607,28 +632,6 @@ export class Downloader {
     );
     await IOUtils.remove(path);
     await this._rmDirs();
-  }
-
-  async _baseAttachmentsURL() {
-    if (!this._cdnURLs[lazy.Utils.SERVER_URL]) {
-      const resp = await lazy.Utils.fetch(`${lazy.Utils.SERVER_URL}/`);
-      let serverInfo;
-      try {
-        serverInfo = await resp.json();
-      } catch (error) {
-        throw new Downloader.ServerInfoError(error);
-      }
-      // Server capabilities expose attachments configuration.
-      const {
-        capabilities: {
-          attachments: { base_url },
-        },
-      } = serverInfo;
-      // Make sure the URL always has a trailing slash.
-      this._cdnURLs[lazy.Utils.SERVER_URL] =
-        base_url + (base_url.endsWith("/") ? "" : "/");
-    }
-    return this._cdnURLs[lazy.Utils.SERVER_URL];
   }
 
   async _fetchAttachment(url) {

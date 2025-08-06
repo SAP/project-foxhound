@@ -9,6 +9,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/a11y/Accessible.h"
 #include "mozilla/a11y/AccTypes.h"
+#include "mozilla/a11y/CacheConstants.h"
 #include "mozilla/a11y/RelationType.h"
 #include "mozilla/a11y/States.h"
 
@@ -715,7 +716,8 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual bool IsRemote() const override { return false; }
 
   already_AddRefed<AccAttributes> BundleFieldsForCache(
-      uint64_t aCacheDomain, CacheUpdateType aUpdateType);
+      uint64_t aCacheDomain, CacheUpdateType aUpdateType,
+      uint64_t aInitialDomains = CacheDomain::None);
 
   /**
    * Push fields to cache.
@@ -895,18 +897,15 @@ class LocalAccessible : public nsISupports, public Accessible {
    *  invoke action of mozilla accessibles direclty (see bug 277888 for
    * details).
    *
-   * @param  aContent      [in, optional] element to click
    * @param  aActionIndex  [in, optional] index of accessible action
    */
-  void DoCommand(nsIContent* aContent = nullptr,
-                 uint32_t aActionIndex = 0) const;
+  void DoCommand(uint32_t aActionIndex = 0) const;
 
   /**
    * Dispatch click event.
    */
   MOZ_CAN_RUN_SCRIPT
-  virtual void DispatchClickEvent(nsIContent* aContent,
-                                  uint32_t aActionIndex) const;
+  virtual void DispatchClickEvent(uint32_t aActionIndex) const;
 
   //////////////////////////////////////////////////////////////////////////////
   // Helpers

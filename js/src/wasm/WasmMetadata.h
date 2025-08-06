@@ -7,7 +7,10 @@
 #ifndef wasm_WasmMetadata_h
 #define wasm_WasmMetadata_h
 
+#include "mozilla/Atomics.h"
+
 #include "wasm/WasmBinaryTypes.h"
+#include "wasm/WasmHeuristics.h"
 #include "wasm/WasmInstanceData.h"  // various of *InstanceData
 #include "wasm/WasmModuleTypes.h"
 #include "wasm/WasmProcess.h"  // IsHugeMemoryEnabled
@@ -15,89 +18,8 @@
 namespace js {
 namespace wasm {
 
-// A FuncExport represents a single function definition inside a wasm Module
-// that has been exported one or more times. A FuncExport represents an
-// internal entry point that can be called via function definition index by
-// Instance::callExport(). To allow O(log(n)) lookup of a FuncExport by
-// function definition index, the FuncExportVector is stored sorted by
-// function definition index.
-
-class FuncExport {
-  uint32_t funcIndex_;
-  uint32_t eagerInterpEntryOffset_;  // Machine code offset
-  bool hasEagerStubs_;
-
-  WASM_CHECK_CACHEABLE_POD(funcIndex_, eagerInterpEntryOffset_, hasEagerStubs_);
-
- public:
-  FuncExport() = default;
-  explicit FuncExport(uint32_t funcIndex, bool hasEagerStubs) {
-    funcIndex_ = funcIndex;
-    eagerInterpEntryOffset_ = UINT32_MAX;
-    hasEagerStubs_ = hasEagerStubs;
-  }
-  void initEagerInterpEntryOffset(uint32_t entryOffset) {
-    MOZ_ASSERT(eagerInterpEntryOffset_ == UINT32_MAX);
-    MOZ_ASSERT(hasEagerStubs());
-    eagerInterpEntryOffset_ = entryOffset;
-  }
-
-  bool hasEagerStubs() const { return hasEagerStubs_; }
-  uint32_t funcIndex() const { return funcIndex_; }
-  uint32_t eagerInterpEntryOffset() const {
-    MOZ_ASSERT(eagerInterpEntryOffset_ != UINT32_MAX);
-    MOZ_ASSERT(hasEagerStubs());
-    return eagerInterpEntryOffset_;
-  }
-  void offsetBy(uint32_t delta) { eagerInterpEntryOffset_ += delta; }
-};
-
-WASM_DECLARE_CACHEABLE_POD(FuncExport);
-
-using FuncExportVector = Vector<FuncExport, 0, SystemAllocPolicy>;
-
-// A FuncImport contains the runtime metadata needed to implement a call to an
-// imported function. Each function import has two call stubs: an optimized path
-// into JIT code and a slow path into the generic C++ js::Invoke and these
-// offsets of these stubs are stored so that function-import callsites can be
-// dynamically patched at runtime.
-
-class FuncImport {
- private:
-  uint32_t instanceOffset_;
-  uint32_t interpExitCodeOffset_;  // Machine code offset
-  uint32_t jitExitCodeOffset_;     // Machine code offset
-
-  WASM_CHECK_CACHEABLE_POD(instanceOffset_, interpExitCodeOffset_,
-                           jitExitCodeOffset_);
-
- public:
-  FuncImport()
-      : instanceOffset_(0), interpExitCodeOffset_(0), jitExitCodeOffset_(0) {}
-
-  explicit FuncImport(uint32_t instanceOffset) {
-    instanceOffset_ = instanceOffset;
-    interpExitCodeOffset_ = 0;
-    jitExitCodeOffset_ = 0;
-  }
-
-  void initInterpExitOffset(uint32_t off) {
-    MOZ_ASSERT(!interpExitCodeOffset_);
-    interpExitCodeOffset_ = off;
-  }
-  void initJitExitOffset(uint32_t off) {
-    MOZ_ASSERT(!jitExitCodeOffset_);
-    jitExitCodeOffset_ = off;
-  }
-
-  uint32_t instanceOffset() const { return instanceOffset_; }
-  uint32_t interpExitCodeOffset() const { return interpExitCodeOffset_; }
-  uint32_t jitExitCodeOffset() const { return jitExitCodeOffset_; }
-};
-
-WASM_DECLARE_CACHEABLE_POD(FuncImport)
-
-using FuncImportVector = Vector<FuncImport, 0, SystemAllocPolicy>;
+using BuiltinModuleFuncIdVector =
+    Vector<BuiltinModuleFuncId, 0, SystemAllocPolicy>;
 
 // ==== Printing of names
 //
@@ -132,6 +54,10 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
 
   // The number of imported functions in the module.
   uint32_t numFuncImports;
+  // A vector of the builtin func id (or 'none') for all imported functions.
+  // This may be empty for internally constructed modules which don't care
+  // about this information.
+  BuiltinModuleFuncIdVector knownFuncImports;
   // The number of imported globals in the module.
   uint32_t numGlobalImports;
 
@@ -149,7 +75,7 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
   GlobalDescVector globals;
 
   // The start function for the module, if any
-  Maybe<uint32_t> startFuncIndex;
+  mozilla::Maybe<uint32_t> startFuncIndex;
 
   // Info about elem segments needed only for validation and compilation.
   // Should have the same length as ModuleMetadata::elemSegments, and each
@@ -160,7 +86,12 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
   // The number of data segments this module will have. Pre-declared before the
   // code section so that we can validate instructions that reference data
   // segments.
-  Maybe<uint32_t> dataCount;
+  mozilla::Maybe<uint32_t> dataCount;
+
+  // A sorted vector of the index of every function that is exported from this
+  // module. An index into this vector is a 'exported function index' and can
+  // be used to lookup exported functions on an instance.
+  Uint32Vector exportedFuncIndices;
 
   // asm.js tables are homogenous and only store functions of the same type.
   // This maps from a function type to the table index to use for an indirect
@@ -171,41 +102,101 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
   BranchHintCollection branchHints;
 
   // Name section information
-  Maybe<Name> moduleName;
+  mozilla::Maybe<Name> moduleName;
   NameVector funcNames;
   // namePayload points at the name section's CustomSection::payload so that
   // the Names (which are use payload-relative offsets) can be used
   // independently of the Module without duplicating the name section.
   SharedBytes namePayload;
-  Maybe<uint32_t> nameCustomSectionIndex;
+  mozilla::Maybe<uint32_t> nameCustomSectionIndex;
 
   // Bytecode ranges for custom sections.
   CustomSectionRangeVector customSectionRanges;
 
   // Bytecode range for the code section.
-  MaybeSectionRange codeSection;
+  MaybeBytecodeRange codeSectionRange;
+  // The bytes for the code section. Only available if we're using lazy
+  // tiering, and after we've decoded the whole module. This means
+  // it is not available while doing a 'tier-1' or 'once' compilation.
+  SharedBytes codeSectionBytecode;
 
   // The ranges of every function defined in this module. This is only
   // accessible after we've decoded the code section. This means it is not
   // available while doing a 'tier-1' or 'once' compilation.
-  FuncDefRangeVector funcDefRanges;
+  BytecodeRangeVector funcDefRanges;
 
   // The feature usage for every function defined in this module. This is only
   // accessible after we've decoded the code section. This means it is not
   // available while doing a 'tier-1' or 'once' compilation.
   FeatureUsageVector funcDefFeatureUsages;
 
-  // The bytecode for this module. Only available for debuggable modules, or if
-  // doing lazy tiering. This is only accessible after we've decoded the whole
-  // module. This means it is not available while doing a 'tier-1' or 'once'
+  // Tracks the range of CallRefMetrics created for each function definition in
+  // this module. This is only accessible after we've decoded the code section.
+  // This means it is not available while doing a 'tier-1' or 'once'
   // compilation.
-  SharedBytes bytecode;
+  CallRefMetricsRangeVector funcDefCallRefs;
+
+  // The full bytecode for this module. Only available for debuggable modules.
+  // This is only accessible after we've decoded the whole module. This means
+  // it is not available while doing a 'tier-1' or 'once' compilation.
+  SharedBytes debugBytecode;
+
+  // An array of hints to use when compiling a call_ref. This is only
+  // accessible after we've decoded the code section. This means it is not
+  // available while doing a 'tier-1' or 'once' compilation.
+  //
+  // This is written into when an instance requests a function to be tiered up,
+  // and read from our function compilers.
+  MutableCallRefHints callRefHints;
 
   // Whether this module was compiled with debugging support.
   bool debugEnabled;
   // A SHA-1 hash of the module bytecode for use in display urls. Only
   // available if we're debugging.
   ModuleHash debugHash;
+
+  // Statistics collection for lazy tiering and inlining.
+  struct ProtectedOptimizationStats {
+    // ---- Stats for the complete tier ----
+    // number of funcs in the module
+    size_t completeNumFuncs = 0;
+    // total bytecode size for the module, excluding the body length fields
+    size_t completeBCSize = 0;
+    // ---- Stats for the partial tier ----
+    // number of funcs tiered up (that have completed tier-up)
+    size_t partialNumFuncs = 0;
+    // total bytecode size of tiered up funcs, excluding the body length fields
+    size_t partialBCSize = 0;
+    // number of direct-call / call-ref sites inlined
+    size_t partialNumFuncsInlinedDirect = 0;
+    size_t partialNumFuncsInlinedCallRef = 0;
+    // total extra bytecode size from direct-call / call-ref inlining
+    size_t partialBCInlinedSizeDirect = 0;
+    size_t partialBCInlinedSizeCallRef = 0;
+    // number of funcs for which inlining stopped due to budget overrun
+    size_t partialInlineBudgetOverruns = 0;
+    // total mapped addr space for p-tier code (a multiple of the page size)
+    size_t partialCodeBytesMapped = 0;
+    // total used space for p-tier code (will be less than the above)
+    size_t partialCodeBytesUsed = 0;
+    // The remaining inlining budget (in bytecode bytes) for the module as a
+    // whole.  Must be signed.  It will be negative if we have overrun the
+    // budget.
+    int64_t inliningBudget = 0;
+    WASM_CHECK_CACHEABLE_POD(completeNumFuncs, completeBCSize, partialNumFuncs,
+                             partialBCSize, partialNumFuncsInlinedDirect,
+                             partialNumFuncsInlinedCallRef,
+                             partialBCInlinedSizeDirect,
+                             partialBCInlinedSizeCallRef,
+                             partialInlineBudgetOverruns,
+                             partialCodeBytesMapped, partialCodeBytesUsed,
+                             inliningBudget);
+  };
+  using ReadGuard = RWExclusiveData<ProtectedOptimizationStats>::ReadGuard;
+  using WriteGuard = RWExclusiveData<ProtectedOptimizationStats>::WriteGuard;
+
+  // Statistics.  These are not thread-safe and require a lock for access.
+  RWExclusiveData<ProtectedOptimizationStats> stats;
 
   // ==== Instance layout fields
   //
@@ -215,6 +206,9 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
   // The start offset of the FuncImportInstanceData[] section of the instance
   // data. There is one entry for every imported function.
   uint32_t funcImportsOffsetStart;
+  // The start offset of the FuncExportInstanceData[] section of the instance
+  // data. There is one entry for every exported function.
+  uint32_t funcExportsOffsetStart;
   // The start offset of the TypeDefInstanceData[] section of the instance
   // data. There is one entry for every type.
   uint32_t typeDefsOffsetStart;
@@ -230,27 +224,37 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
   // The total size of the instance data.
   uint32_t instanceDataLength;
 
+  // The number of call ref metrics in Instance::callRefs_
+  uint32_t numCallRefMetrics;
+
   explicit CodeMetadata(const CompileArgs* compileArgs = nullptr,
                         ModuleKind kind = ModuleKind::Wasm)
       : kind(kind),
         compileArgs(compileArgs),
         numFuncImports(0),
         numGlobalImports(0),
+        callRefHints(nullptr),
         debugEnabled(false),
         debugHash(),
+        stats(mutexid::WasmCodeMetaStats),
         funcDefsOffsetStart(UINT32_MAX),
         funcImportsOffsetStart(UINT32_MAX),
+        funcExportsOffsetStart(UINT32_MAX),
         typeDefsOffsetStart(UINT32_MAX),
         memoriesOffsetStart(UINT32_MAX),
         tablesOffsetStart(UINT32_MAX),
         tagsOffsetStart(UINT32_MAX),
-        instanceDataLength(UINT32_MAX) {}
+        instanceDataLength(UINT32_MAX),
+        numCallRefMetrics(UINT32_MAX) {}
 
   [[nodiscard]] bool init() {
     MOZ_ASSERT(!types);
     types = js_new<TypeContext>();
     return types;
   }
+
+  void dumpStats() const;
+  ~CodeMetadata() { dumpStats(); }
 
   // Generates any new metadata necessary to compile this module. This must be
   // called after the 'module environment' (everything before the code section)
@@ -273,7 +277,7 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
 
   bool hugeMemoryEnabled(uint32_t memoryIndex) const {
     return !isAsmJS() && memoryIndex < memories.length() &&
-           IsHugeMemoryEnabled(memories[memoryIndex].indexType());
+           IsHugeMemoryEnabled(memories[memoryIndex].addressType());
   }
   bool usesSharedMemory(uint32_t memoryIndex) const {
     return memoryIndex < memories.length() && memories[memoryIndex].isShared();
@@ -305,17 +309,59 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
       return 0;
     }
     uint32_t funcDefIndex = funcIndex - numFuncImports;
-    return funcDefRanges[funcDefIndex].bytecodeOffset;
+    return funcDefRanges[funcDefIndex].start;
   }
-  const FuncDefRange& funcDefRange(uint32_t funcIndex) const {
+  const BytecodeRange& funcDefRange(uint32_t funcIndex) const {
     MOZ_ASSERT(funcIndex >= numFuncImports);
     uint32_t funcDefIndex = funcIndex - numFuncImports;
     return funcDefRanges[funcDefIndex];
+  }
+  BytecodeSpan funcDefBody(uint32_t funcIndex) const {
+    return funcDefRange(funcIndex)
+        .relativeTo(*codeSectionRange)
+        .toSpan(*codeSectionBytecode);
   }
   FeatureUsage funcDefFeatureUsage(uint32_t funcIndex) const {
     MOZ_ASSERT(funcIndex >= numFuncImports);
     uint32_t funcDefIndex = funcIndex - numFuncImports;
     return funcDefFeatureUsages[funcDefIndex];
+  }
+
+  BuiltinModuleFuncId knownFuncImport(uint32_t funcIndex) const {
+    MOZ_ASSERT(funcIndex < numFuncImports);
+    if (knownFuncImports.empty()) {
+      return BuiltinModuleFuncId::None;
+    }
+    return knownFuncImports[funcIndex];
+  }
+
+  CallRefMetricsRange getFuncDefCallRefs(uint32_t funcIndex) const {
+    MOZ_ASSERT(funcIndex >= numFuncImports);
+    uint32_t funcDefIndex = funcIndex - numFuncImports;
+    return funcDefCallRefs[funcDefIndex];
+  }
+
+  // Find the exported function index for a function index
+  uint32_t findFuncExportIndex(uint32_t funcIndex) const;
+
+  // The number of functions that are exported in this module
+  uint32_t numExportedFuncs() const { return exportedFuncIndices.length(); }
+
+  CallRefHint getCallRefHint(uint32_t callRefIndex) const {
+    if (!callRefHints) {
+      return CallRefHint::unknown();
+    }
+    return CallRefHint::fromRepr(callRefHints[callRefIndex]);
+  }
+  void setCallRefHint(uint32_t callRefIndex, CallRefHint hint) const {
+    callRefHints[callRefIndex] = hint.toRepr();
+  }
+
+  size_t codeSectionSize() const {
+    if (codeSectionRange) {
+      return codeSectionRange->size;
+    }
+    return 0;
   }
 
   // This gets names for wasm only.
@@ -332,6 +378,12 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
   uint32_t offsetOfFuncImportInstanceData(uint32_t funcIndex) const {
     MOZ_ASSERT(funcIndex < numFuncImports);
     return funcImportsOffsetStart + funcIndex * sizeof(FuncImportInstanceData);
+  }
+
+  uint32_t offsetOfFuncExportInstanceData(uint32_t funcExportIndex) const {
+    MOZ_ASSERT(funcExportIndex < exportedFuncIndices.length());
+    return funcExportsOffsetStart +
+           funcExportIndex * sizeof(FuncExportInstanceData);
   }
 
   uint32_t offsetOfTypeDefInstanceData(uint32_t typeIndex) const {
@@ -378,6 +430,8 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
 using MutableCodeMetadata = RefPtr<CodeMetadata>;
 using SharedCodeMetadata = RefPtr<const CodeMetadata>;
 
+WASM_DECLARE_CACHEABLE_POD(CodeMetadata::ProtectedOptimizationStats);
+
 // wasm::ModuleMetadata contains metadata whose lifetime ends at the same time
 // that the lifetime of wasm::Module ends.  In practice that means metadata
 // that is needed only for creating wasm::Instances.  Hence this metadata
@@ -422,10 +476,10 @@ struct ModuleMetadata : public ShareableBase<ModuleMetadata> {
     return !!codeMeta && codeMeta->init();
   }
 
-  bool addDefinedFunc(
-      ValTypeVector&& params, ValTypeVector&& results,
-      bool declareForRef = false,
-      Maybe<CacheableName>&& optionalExportedName = mozilla::Nothing());
+  bool addDefinedFunc(ValTypeVector&& params, ValTypeVector&& results,
+                      bool declareForRef = false,
+                      mozilla::Maybe<CacheableName>&& optionalExportedName =
+                          mozilla::Nothing());
   bool addImportedFunc(ValTypeVector&& params, ValTypeVector&& results,
                        CacheableName&& importModName,
                        CacheableName&& importFieldName);

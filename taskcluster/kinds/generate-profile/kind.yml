@@ -95,11 +95,11 @@ tasks:
             product: mobile
             job-name: android-x86-profile
         treeherder:
-            platform: android-5-0-x86/pgo
-        worker-type: t-linux-xlarge-pgo
+            platform: android-5-0-x86-shippable/opt
+        worker-type: b-linux-kvm-gcp
         worker:
             chain-of-trust: true
-            max-run-time: 3600
+            max-run-time: 2700
             docker-image: {in-tree: ubuntu1804-test}
             env:
                 WORKING_DIR: "/builds/worker"
@@ -137,11 +137,11 @@ tasks:
             product: mobile
             job-name: android-x86_64-profile
         treeherder:
-            platform: android-5-0-x86_64/pgo
-        worker-type: t-linux-xlarge-pgo
+            platform: android-5-0-x86_64-shippable/opt
+        worker-type: b-linux-kvm-gcp
         worker:
             chain-of-trust: true
-            max-run-time: 3600
+            max-run-time: 2700
             docker-image: {in-tree: ubuntu1804-test}
             env:
                 WORKING_DIR: "/builds/worker"
@@ -179,7 +179,7 @@ tasks:
             product: mobile
             job-name: android-aarch64-profile
         treeherder:
-            platform: android-5-0-aarch64/pgo
+            platform: android-5-0-aarch64-shippable/opt
         worker-type: b-linux-kvm-gcp
         worker:
             chain-of-trust: true
@@ -274,6 +274,36 @@ tasks:
                 - win64-clang-toolchain
                 - win32-minidump-stackwalk
 
+    win64-aarch64-shippable/opt:
+        description: "Win64 AArch64 Profile Generation"
+        shipping-phase: build
+        shipping-product: firefox
+        index:
+            product: firefox
+            job-name: win64-aarch64-profile
+        treeherder:
+            platform: windows2012-aarch64-shippable/opt
+        worker-type: b-win-aarch64
+        worker:
+            chain-of-trust: true
+            max-run-time: 2400
+            env:
+                UPLOAD_PATH: "artifacts"
+            artifacts:
+                - type: directory
+                  name: public/build
+                  path: build/src/artifacts/
+        run:
+            using: run-task
+            sparse-profile: profile-generate
+            cwd: '{checkout}'
+            command: ./taskcluster/scripts/misc/run-profileserver.sh
+        run-on-projects: ['release']
+        fetches:
+            toolchain:
+                - win64-clang-toolchain
+                - win32-minidump-stackwalk
+
     win64-nightlyasrelease/opt:
         description: "Win64 Nightly-as-release Profile Generation"
         shipping-phase: build
@@ -342,7 +372,7 @@ tasks:
             product: firefox
             job-name: macosx64-aarch64-profile
         treeherder:
-            platform: macosx1100-64-shippable/opt
+            platform: osx-aarch64-shippable/opt
         worker-type: b-osx-arm64
         worker:
             chain-of-trust: true

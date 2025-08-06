@@ -1214,6 +1214,20 @@ add_task(
   }
 );
 
+add_task(async function test_applyMenuMessagePolicy() {
+  info(
+    "TelemetryFeed.applyMenuMessagePolicy should set client_id and set pingType"
+  );
+  let instance = new TelemetryFeed();
+  let { ping, pingType } = await instance.applyMenuMessagePolicy({});
+
+  Assert.equal(
+    ping.client_id,
+    Services.prefs.getCharPref("toolkit.telemetry.cachedClientID")
+  );
+  Assert.equal(pingType, "menu");
+});
+
 add_task(async function test_applyUndesiredEventPolicy() {
   info(
     "TelemetryFeed.applyUndesiredEventPolicy should exclude client_id " +
@@ -1574,20 +1588,6 @@ add_task(
     sandbox.restore();
   }
 );
-
-add_task(async function test_uninit_calls_utEvents_uninit() {
-  info("TelemetryFeed.uninit should call .utEvents.uninit");
-  let sandbox = sinon.createSandbox();
-  let instance = new TelemetryFeed();
-  sandbox.stub(instance.utEvents, "uninit");
-
-  instance.uninit();
-  Assert.ok(
-    instance.utEvents.uninit.calledOnce,
-    "TelemetryFeed.utEvents.uninit should be called"
-  );
-  sandbox.restore();
-});
 
 add_task(async function test_uninit_deregisters_observer() {
   info(

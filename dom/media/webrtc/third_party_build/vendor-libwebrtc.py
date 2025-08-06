@@ -13,7 +13,7 @@ import tarfile
 import requests
 
 THIRDPARTY_USED_IN_FIREFOX = [
-    "abseil-cpp",
+    "crc32c",
     "pffft",
     "rnnoise",
 ]

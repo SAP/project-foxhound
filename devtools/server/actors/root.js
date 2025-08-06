@@ -135,8 +135,6 @@ class RootActor extends Actor {
             "dom.worker.console.dispatch_events_to_main_thread"
           )
         : true,
-      // @backward-compat { version 129 } The server started throttling ressource emission
-      throttledResources: true,
     };
   }
 
@@ -216,6 +214,17 @@ class RootActor extends Actor {
     this._globalActorPool = null;
     this._parameters = null;
   }
+
+  /**
+   * Method called by the client right after the root actor is communicated to it,
+   * with information about the frontend.
+   *
+   * For now this is used by Servo which implements different backend APIs,
+   * based on the frontend version. (backward compat to support many frontend versions
+   * on the same backend revision)
+   */
+  // eslint-disable-next-line no-unused-vars
+  connect({ frontendVersion }) {}
 
   /**
    * Gets the "root" form, which lists all the global actors that affect the entire

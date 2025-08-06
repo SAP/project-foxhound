@@ -76,6 +76,7 @@ include "mozilla/dom/BindingIPCUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
 include "mozilla/dom/FeaturePolicyUtils.h";
+include "mozilla/dom/GeolocationIPCUtils.h";
 include "mozilla/dom/MediaSessionIPCUtils.h";
 include "mozilla/dom/PageLoadEventUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
@@ -108,6 +109,7 @@ using mozilla::widget::ThemeChangeKind from "mozilla/widget/WidgetMessageUtils.h
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 [MoveOnly=data] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+using mozilla::OriginAttributesPattern from "mozilla/dom/quota/SerializationHelpers.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
 using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
@@ -117,6 +119,8 @@ using mozilla::Telemetry::ScalarAction from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::KeyedScalarAction from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::DynamicScalarDefinition from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::ChildEventData from "mozilla/TelemetryComms.h";
+using mozilla::dom::geolocation::SystemGeolocationPermissionBehavior from "mozilla/dom/GeolocationIPCUtils.h";
+using mozilla::dom::geolocation::GeolocationPermissionStatus from "mozilla/dom/GeolocationIPCUtils.h";
 
 #if defined(XP_WIN)
 [MoveOnly] using mozilla::UntrustedModulesData from "mozilla/UntrustedModulesData.h";
@@ -133,7 +137,7 @@ using mozilla::dom::BrowsingContextInitializer from "mozilla/dom/BrowsingContext
 using mozilla::dom::PermitUnloadResult from "nsIDocumentViewer.h";
 using mozilla::dom::MaybeDiscardedWindowContext from "mozilla/dom/WindowContext.h";
 using mozilla::dom::WindowContextTransaction from "mozilla/dom/WindowContext.h";
-[MoveOnly] using base::SharedMemoryHandle from "base/shared_memory.h";
+[MoveOnly] using mozilla::ipc::SharedMemoryHandle from "mozilla/ipc/SharedMemory.h";
 using gfxSparseBitSet from "gfxFontUtils.h";
 using FontVisibility from "gfxFontEntry.h";
 using mozilla::dom::MediaControlAction from "mozilla/dom/MediaControlKeySource.h";
@@ -397,7 +401,7 @@ struct VisitedQueryResult
 struct StringBundleDescriptor
 {
     nsCString bundleURL;
-    FileDescriptor mapFile;
+    SharedMemoryHandle mapHandle;
     uint32_t mapSize;
 };
 
@@ -406,24 +410,6 @@ struct IPCURLClassifierFeature
     nsCString featureName;
     nsCString[] tables;
     nsCString exceptionHostList;
-};
-
-// Transport structure for Notifications API notifications
-// (https://developer.mozilla.org/en-US/docs/Web/API/notification) instances
-// used exclusively by the NotificationEvent PContent method.
-struct NotificationEventData
-{
-    nsCString originSuffix;
-    nsCString scope;
-    nsString ID;
-    nsString title;
-    nsString dir;
-    nsString lang;
-    nsString body;
-    nsString tag;
-    nsString icon;
-    nsString data;
-    nsString behavior;
 };
 
 struct PostMessageData
@@ -660,15 +646,17 @@ child:
 
     async ClearImageCacheFromPrincipal(nullable nsIPrincipal aPrincipal);
 
-    async ClearImageCacheFromBaseDomain(nsCString aBaseDomain);
+    async ClearImageCacheFromSite(nsCString aSchemelessSite, OriginAttributesPattern aPattern);
 
     async ClearImageCache(bool privateLoader, bool chrome);
 
-    async ClearStyleSheetCache(nullable nsIPrincipal? aForPrincipal,
-                               nsCString? aBaseDomain);
+    async ClearStyleSheetCache(nullable nsIPrincipal? aPrincipal,
+                               nsCString? aSchemelessSite,
+                               OriginAttributesPattern? aPattern);
 
-    async ClearScriptCache(nullable nsIPrincipal? aForPrincipal,
-                           nsCString? aBaseDomain);
+    async ClearScriptCache(nullable nsIPrincipal? aPrincipal,
+                           nsCString? aSchemelessSite,
+                           OriginAttributesPattern? aPattern);
 
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
@@ -690,8 +678,6 @@ child:
     async CollectPerfStatsJSON() returns (nsCString aStats);
 
     async CollectScrollingMetrics() returns (uint32_t pixelsScrolled, uint32_t scrollDurationMS);
-
-    async NotifyAlertsObserver(nsCString topic, nsString data);
 
     async GeolocationUpdate(nullable nsIDOMGeoPosition aPosition);
 
@@ -744,7 +730,9 @@ child:
 
     async RegisterStringBundles(StringBundleDescriptor[] stringBundles);
 
-    async UpdateSharedData(FileDescriptor mapFile, uint32_t aSize,
+    async SimpleURIUnknownRemoteSchemes(nsCString[] remoteSchemes);
+
+    async UpdateSharedData(SharedMemoryHandle aMapHandle, uint32_t aSize,
                            IPCBlob[] blobs,
                            nsCString[] changedKeys);
 
@@ -761,14 +749,21 @@ child:
     async UnlinkGhosts();
 
     /**
-     * Start accessibility engine in content process.
+     * Start accessibility engine in content process. aDomains specifies the
+     * cache domains for which content processes should send info.
      */
-    async ActivateA11y();
+    async ActivateA11y(uint64_t aDomains);
 
     /**
      * Shutdown accessibility engine in content process (if not in use).
      */
     async ShutdownA11y();
+
+    /**
+     * Set accessibility cache domains, effectively requesting more or less
+     * cached information from the content process.
+     */
+    async SetCacheDomains(uint64_t aCacheDomains);
 
     async AppInfo(nsCString version, nsCString buildID, nsCString name, nsCString UAName,
                   nsCString ID, nsCString vendor, nsCString sourceURL, nsCString updateURL);
@@ -1142,31 +1137,7 @@ parent:
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
       returns (StructuredCloneData[] retval);
 
-    async ShowAlert(nullable nsIAlertNotification alert);
-
-    async CloseAlert(nsString name, bool contextClosed);
-
-    async DisableNotifications(nullable nsIPrincipal principal);
-
-    async OpenNotificationSettings(nullable nsIPrincipal principal);
-
     async AddSecurityState(MaybeDiscardedWindowContext aContext, uint32_t aStateFlags);
-
-    // Request that the ServiceWorkerManager in the parent process create a
-    // notification "click" or "close" event and dispatch it on the relevant
-    // ServiceWorker. This needs to happen because when a notification is
-    // created it is tied to a specific content process and when the user clicks
-    // on the notification, it will be that content process that is notified.
-    // However, even if the ServiceWorker lives in that process (it may no
-    // longer be in that process, or may have never lived there), the right/only
-    // way to talk through the ServiceWorker is through the parent.
-    //
-    // This happens on PContent because the ServiceWorkerManager lives on the
-    // main thread and bouncing this off of PBackground would be silly and
-    // complex. In the long run, the notification implementation will be
-    // overhauled to directly process the notification click/close and directly
-    // translate that to a ServiceWorker event.
-    async NotificationEvent(nsString type, NotificationEventData data);
 
     // Creates a helper for forwarding data from an nsExternalAppHandler
     // running in the content process, to one running in the parent
@@ -1184,8 +1155,6 @@ parent:
     //
     // Pass true for aForceSave to always save this content to disk, regardless of
     // nsIMIMEInfo and other such influences.
-    // Pass true for aShouldCloseWindow to specify that aContext was opened specifically
-    // for this load, and should be closed once we've handled it.
     async PExternalHelperApp(nullable nsIURI uri,
                              LoadInfoArgs loadInfoArgs,
                              nsCString aMimeContentType,
@@ -1196,8 +1165,7 @@ parent:
                              int64_t aContentLength,
                              bool aWasFileChannel,
                              nullable nsIURI aReferrer,
-                             MaybeDiscardedBrowsingContext aContext,
-                             bool aShouldCloseWindow);
+                             MaybeDiscardedBrowsingContext aContext);
 
     async PHandlerService();
 
@@ -1970,6 +1938,15 @@ parent:
     // format.  Not supported (or needed) on all platforms; see the
     // implementation in ContentParent::RecvGetSystemIcon for details.
     async GetSystemIcon(nullable nsIURI aURI) returns (nsresult aResult, ByteBuf? aData);
+
+    // Returns the status of the geolocation permission on this system.
+    // May not be accurate if the information is not known.
+    async GetSystemGeolocationPermissionBehavior() returns (SystemGeolocationPermissionBehavior permission);
+
+    // Opens system geolocation settings and posts a modal dialog dialog
+    // to the tab that requested geolocation.  Returns permission status
+    // after user has granted or canceled permission.
+    async RequestGeolocationPermissionFromUser(MaybeDiscardedBrowsingContext aBrowsingContext) returns (GeolocationPermissionStatus aStatus);
 
 #ifdef FUZZING_SNAPSHOT
     // Used by the child process to signal that it is ready to start fuzzing.

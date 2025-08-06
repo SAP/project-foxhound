@@ -99,7 +99,8 @@ AutoSaveLiveRegisters::~AutoSaveLiveRegisters() {
              "Must have pushed JitCode* pointer");
   compiler_.allocator.restoreIonLiveRegisters(compiler_.masm,
                                               compiler_.liveRegs_.ref());
-  MOZ_ASSERT(compiler_.masm.framePushed() == compiler_.ionScript_->frameSize());
+  MOZ_ASSERT_IF(!compiler_.masm.oom(), compiler_.masm.framePushed() ==
+                                           compiler_.ionScript_->frameSize());
 }
 
 }  // namespace jit
@@ -225,8 +226,8 @@ void CacheRegisterAllocator::saveIonLiveRegisters(MacroAssembler& masm,
   freePayloadSlots_.clear();
   freeValueSlots_.clear();
 
-  MOZ_ASSERT(masm.framePushed() ==
-             ionScript->frameSize() + sizeOfLiveRegsInBytes);
+  MOZ_ASSERT_IF(!masm.oom(), masm.framePushed() == ionScript->frameSize() +
+                                                       sizeOfLiveRegsInBytes);
 
   // Step 7. All live registers and non-input operands are stored on the stack
   // now, so at this point all registers except for the input registers are
@@ -566,7 +567,7 @@ bool IonCacheIRCompiler::init() {
     case CacheKind::TypeOf:
     case CacheKind::TypeOfEq:
     case CacheKind::ToBool:
-    case CacheKind::GetIntrinsic:
+    case CacheKind::LazyConstant:
     case CacheKind::NewArray:
     case CacheKind::NewObject:
       MOZ_CRASH("Unsupported IC");
@@ -680,7 +681,7 @@ void IonCacheIRCompiler::assertFloatRegisterAvailable(FloatRegister reg) {
     case CacheKind::TypeOf:
     case CacheKind::TypeOfEq:
     case CacheKind::ToBool:
-    case CacheKind::GetIntrinsic:
+    case CacheKind::LazyConstant:
     case CacheKind::NewArray:
     case CacheKind::NewObject:
       MOZ_CRASH("Unsupported IC");
@@ -2154,6 +2155,13 @@ bool IonCacheIRCompiler::emitCallDOMFunction(
     CallFlags flags, uint32_t argcFixed, uint32_t targetOffset) {
   MOZ_CRASH("Call ICs not used in ion");
 }
+
+bool IonCacheIRCompiler::emitCallDOMFunctionWithAllocSite(
+    ObjOperandId calleeId, Int32OperandId argcId, ObjOperandId thisObjId,
+    CallFlags flags, uint32_t argcFixed, uint32_t siteOffset,
+    uint32_t targetOffset) {
+  MOZ_CRASH("Call ICs not used in ion");
+}
 #else
 bool IonCacheIRCompiler::emitCallNativeFunction(ObjOperandId calleeId,
                                                 Int32OperandId argcId,
@@ -2168,6 +2176,12 @@ bool IonCacheIRCompiler::emitCallDOMFunction(ObjOperandId calleeId,
                                              ObjOperandId thisObjId,
                                              CallFlags flags,
                                              uint32_t argcFixed) {
+  MOZ_CRASH("Call ICs not used in ion");
+}
+
+bool IonCacheIRCompiler::emitCallDOMFunctionWithAllocSite(
+    ObjOperandId calleeId, Int32OperandId argcId, ObjOperandId thisObjId,
+    CallFlags flags, uint32_t argcFixed, uint32_t siteOffset) {
   MOZ_CRASH("Call ICs not used in ion");
 }
 #endif

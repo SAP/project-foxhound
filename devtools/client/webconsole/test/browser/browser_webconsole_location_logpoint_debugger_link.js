@@ -6,6 +6,9 @@
 
 "use strict";
 
+// Allow more time since we now wait for CM6 document updates to complete
+requestLongerTimeout(2);
+
 const TEST_URI =
   "https://example.com/browser/devtools/client/webconsole/" +
   "test/browser/test-location-debugger-link-logpoint.html";
@@ -29,14 +32,18 @@ add_task(async function () {
   const dbg = createDebuggerContext(toolbox);
   await selectSource(dbg, "test-location-debugger-link-logpoint-1.js");
 
+  // Wait a bit for CM6 to complete any updates so the log panel
+  // does not lose focus after the it has been opened
+  await waitForDocumentLoadComplete(dbg);
+
   info("Add a logpoint with an invalid expression");
   await setLogPoint(dbg, 7, "undefinedVariable");
 
   info("Add a logpoint with a valid expression");
   await setLogPoint(dbg, 8, "`a is ${a}`");
 
-  await assertEditorLogpoint(dbg, 7, { hasLog: true });
-  await assertEditorLogpoint(dbg, 8, { hasLog: true });
+  await assertLogBreakpoint(dbg, 7);
+  await assertLogBreakpoint(dbg, 8);
 
   info("Close the file in the debugger");
   await closeTab(dbg, "test-location-debugger-link-logpoint-1.js");
@@ -159,30 +166,3 @@ add_task(async function () {
     logPointExpr: "`c is ${c}`",
   });
 });
-
-async function setLogPoint(dbg, index, expression) {
-  rightClickElement(dbg, "gutter", index);
-  await waitForContextMenu(dbg);
-  selectContextMenuItem(
-    dbg,
-    `${selectors.addLogItem},${selectors.editLogItem}`
-  );
-  const onBreakpointSet = waitForDispatch(dbg.store, "SET_BREAKPOINT");
-  await typeInPanel(dbg, expression);
-  await onBreakpointSet;
-}
-
-function getLineEl(dbg, line) {
-  const lines = dbg.win.document.querySelectorAll(".CodeMirror-code > div");
-  return lines[line - 1];
-}
-
-function assertEditorLogpoint(dbg, line, { hasLog = false } = {}) {
-  const hasLogClass = getLineEl(dbg, line).classList.contains("has-log");
-
-  Assert.strictEqual(
-    hasLogClass,
-    hasLog,
-    `Breakpoint log ${hasLog ? "exists" : "does not exist"} on line ${line}`
-  );
-}

@@ -20,6 +20,154 @@ const isMSIX =
 
 const MESSAGES = () => [
   {
+    id: "SET_DEFAULT_SPOTLIGHT_TEST",
+    template: "spotlight",
+    content: {
+      template: "multistage",
+      id: "SET_DEFAULT_SPOTLIGHT",
+      screens: [
+        {
+          id: "PROMPT_CLONE",
+          content: {
+            width: "377px",
+            tiles: {
+              type: "multiselect",
+              style: {
+                flexDirection: "column",
+                alignItems: "flex-start",
+              },
+              data: [
+                {
+                  id: "checkbox-dont-show-again",
+                  type: "checkbox",
+                  defaultValue: false,
+                  style: {
+                    alignItems: "center",
+                  },
+                  label: {
+                    raw: "Don't show this message again",
+                    fontSize: "13px",
+                  },
+                  icon: {
+                    style: {
+                      width: "16px",
+                      height: "16px",
+                      marginInline: "0 8px",
+                    },
+                  },
+                  action: {
+                    type: "SET_PREF",
+                    data: {
+                      pref: {
+                        name: "browser.shell.checkDefaultBrowser",
+                        value: false,
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+            isSystemPromptStyleSpotlight: true,
+            title_logo: {
+              imageURL: "chrome://browser/content/assets/focus-logo.svg",
+              height: "16px",
+              width: "16px",
+            },
+            title: {
+              fontSize: "13px",
+              raw: "Make Nightly your default browser?",
+            },
+            subtitle: {
+              fontSize: "13px",
+              raw: "Keep Nightly at your fingertips — make it your default browser and keep it in your Dock.",
+            },
+            additional_button: {
+              label: {
+                raw: "Not now",
+              },
+              style: "secondary",
+              action: {
+                type: "MULTI_ACTION",
+                collectSelect: true,
+                data: {
+                  actions: [],
+                },
+                dismiss: true,
+              },
+            },
+            primary_button: {
+              label: {
+                raw: "Set as primary browser",
+              },
+              action: {
+                type: "MULTI_ACTION",
+                collectSelect: true,
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_AND_DEFAULT",
+                    },
+                  ],
+                },
+                dismiss: true,
+              },
+            },
+          },
+        },
+      ],
+    },
+  },
+  {
+    id: "NEW_PROFILE_SPOTLIGHT",
+    groups: [],
+    targeting: "canCreateSelectableProfiles && !hasSelectableProfiles",
+    trigger: {
+      id: "defaultBrowserCheck",
+    },
+    template: "spotlight",
+    content: {
+      template: "multistage",
+      modal: "tab",
+      screens: [
+        {
+          id: "SCREEN_1",
+          content: {
+            logo: {
+              imageURL:
+                "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/ms-images/a3c640c8-7594-4bb2-bc18-8b4744f3aaf2.gif",
+            },
+            title: {
+              raw: "Say hello to Firefox profiles",
+              paddingBlock: "8px",
+            },
+            subtitle: {
+              raw: "Easily switch between browsing for work and fun. Profiles keep your browsing info, including search history and passwords, totally separate so you can stay organized.",
+            },
+            dismiss_button: {
+              action: {
+                dismiss: true,
+              },
+            },
+            primary_button: {
+              label: "Create a profile",
+              action: {
+                navigate: true,
+                type: "CREATE_NEW_SELECTABLE_PROFILE",
+              },
+            },
+            secondary_button: {
+              label: "Not now",
+              action: {
+                dismiss: true,
+              },
+            },
+          },
+        },
+      ],
+      transitions: true,
+    },
+  },
+  {
     id: "WNP_THANK_YOU",
     template: "update_action",
     content: {
@@ -103,13 +251,32 @@ const MESSAGES = () => [
         raw: "Getting Started",
         tooltiptext: "Getting started with Firefox",
       },
+      logo: {
+        imageURL: "chrome://browser/content/assets/focus-logo.svg",
+      },
       action: {
-        type: "OPEN_URL",
-        data: {
-          args: "https://www.mozilla.org",
-          where: "tab",
-        },
+        type: "MULTI_ACTION",
         navigate: true,
+        data: {
+          actions: [
+            {
+              type: "SET_PREF",
+              data: {
+                pref: {
+                  name: "testpref.test.test",
+                  value: true,
+                },
+              },
+            },
+            {
+              type: "OPEN_URL",
+              data: {
+                args: "https://www.mozilla.org",
+                where: "tab",
+              },
+            },
+          ],
+        },
       },
     },
     frequency: { lifetime: 100 },
@@ -789,6 +956,44 @@ const MESSAGES = () => [
         },
       ],
     },
+  },
+  {
+    id: "FXA_ACCOUNTS_APPMENU_PROTECT_BROWSING_DATA",
+    template: "menu_message",
+    content: {
+      messageType: "fxa_cta",
+      primaryText: "Bounce between devices",
+      secondaryText:
+        "Sync and encrypt your bookmarks, passwords, and more on all your devices.",
+      primaryActionText: "Sign up",
+      primaryAction: {
+        type: "FXA_SIGNIN_FLOW",
+        data: {
+          where: "tab",
+          extraParams: {
+            utm_source: "firefox-desktop",
+            utm_medium: "product",
+            utm_campaign: "some-campaign",
+            utm_content: "some-content",
+          },
+          autoClose: false,
+        },
+      },
+      closeAction: {
+        type: "BLOCK_MESSAGE",
+        data: {
+          id: "FXA_ACCOUNTS_APPMENU_PROTECT_BROWSING_DATA",
+        },
+      },
+      imageURL:
+        "chrome://browser/content/asrouter/assets/fox-with-box-on-cloud.svg",
+      imageVerticalOffset: -20,
+    },
+    skip_in_tests: "TODO",
+    trigger: {
+      id: "menuOpened",
+    },
+    testingTriggerContext: "app_menu",
   },
 ];
 

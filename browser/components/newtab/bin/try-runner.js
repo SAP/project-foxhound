@@ -74,14 +74,8 @@ const tests = {
       "activity-stream-noscripts.html": {
         path: path.join("prerendered", "activity-stream-noscripts.html"),
       },
-      "activity-stream-linux.css": {
-        path: path.join("css", "activity-stream-linux.css"),
-      },
-      "activity-stream-mac.css": {
-        path: path.join("css", "activity-stream-mac.css"),
-      },
-      "activity-stream-windows.css": {
-        path: path.join("css", "activity-stream-windows.css"),
+      "activity-stream.css": {
+        path: path.join("css", "activity-stream.css"),
       },
       // These should get split out to their own try-runner eventually (bug 1866170).
       "about:welcome bundle": {
@@ -316,7 +310,7 @@ async function main() {
         test: {
           type: "string",
           isMultiple: true,
-          alias: "t",
+          shortFlag: "t",
         },
       },
     }

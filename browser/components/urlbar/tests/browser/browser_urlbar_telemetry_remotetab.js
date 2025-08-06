@@ -83,16 +83,12 @@ add_setup(async function () {
       ["browser.urlbar.autoFill", false],
       // Special prefs for remote tabs.
       ["services.sync.username", "fake"],
-      ["services.sync.syncedTabs.showRemoteTabs", true],
     ],
   });
 
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
-
-  // Enable event recording for the events tested here.
-  Services.telemetry.setEventRecordingEnabled("navigation", true);
 
   // Clear history so that history added by previous tests doesn't mess up this
   // test when it selects results in the urlbar.
@@ -150,7 +146,6 @@ add_setup(async function () {
     Services.telemetry.canRecordExtended = oldCanRecord;
     await PlacesUtils.history.clear();
     await PlacesUtils.bookmarks.eraseEverything();
-    Services.telemetry.setEventRecordingEnabled("navigation", false);
   });
 });
 

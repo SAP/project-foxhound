@@ -9,6 +9,7 @@ import android.hardware.camera2.CameraManager
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.espresso.Espresso
+import androidx.test.filters.SdkSuppress
 import mozilla.components.feature.sitepermissions.SitePermissionsRules
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -33,10 +34,11 @@ import org.mozilla.fenix.helpers.MockBrowserDataHelper.createTabItem
 import org.mozilla.fenix.helpers.MockBrowserDataHelper.setCustomSearchEngine
 import org.mozilla.fenix.helpers.SearchDispatcher
 import org.mozilla.fenix.helpers.TestAssetHelper
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper
+import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.clickContextMenuItem
 import org.mozilla.fenix.ui.robots.clickPageObject
@@ -68,11 +70,12 @@ class SearchTest : TestSetup() {
         HomeActivityTestRule(
             skipOnboarding = true,
             isPocketEnabled = false,
-            isJumpBackInCFREnabled = false,
             isRecentTabsFeatureEnabled = false,
-            isTCPCFREnabled = false,
             isWallpaperOnboardingEnabled = false,
             isLocationPermissionEnabled = SitePermissionsRules.Action.BLOCKED,
+            // workaround for toolbar at top position by default
+            // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
+            shouldUseBottomToolbar = true,
         ),
     ) { it.activity }
 
@@ -92,6 +95,7 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2154189
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifySearchBarItemsTest() {
         navigationToolbar {
@@ -103,6 +107,7 @@ class SearchTest : TestSetup() {
             verifyVoiceSearchButtonVisibility(enabled = true)
             verifySearchBarPlaceholder("Search or enter address")
             typeSearch("mozilla ")
+            waitForAppWindowToBeUpdated()
             verifyScanButtonVisibility(visible = false)
             verifyVoiceSearchButtonVisibility(enabled = true)
         }
@@ -280,10 +285,11 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1623441
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
     @SmokeTest
     @Test
     fun searchResultsOpenedInNewTabsGenerateSearchGroupsTest() {
+        val firstPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 1).url
+        val secondPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 2).url
         val searchEngineName = "TestSearchEngine"
         // setting our custom mockWebServer search URL
         setCustomSearchEngine(searchMockServer, searchEngineName)
@@ -294,13 +300,13 @@ class SearchTest : TestSetup() {
         }.submitQuery(queryString) {
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
             Espresso.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 2"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(secondPageUrl.toString())
         }.openTabDrawer(activityTestRule) {
         }.openThreeDotMenu {
         }.closeAllTabs {
@@ -325,23 +331,23 @@ class SearchTest : TestSetup() {
         }.submitQuery(queryString) {
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
             Espresso.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
             Espresso.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 2"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(secondPageUrl.toString())
             Espresso.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
         }.openTabDrawer(activityTestRule) {
         }.openThreeDotMenu {
         }.closeAllTabs {
@@ -354,7 +360,7 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1591782
-    @Ignore("Failing due to known bug, see https://github.com/mozilla-mobile/fenix/issues/23818")
+    @Ignore("Failing due to known bug, see https://bugzilla.mozilla.org/show_bug.cgi?id=1807294")
     @Test
     fun searchGroupIsGeneratedWhenNavigatingInTheSameTabTest() {
         // setting our custom mockWebServer search URL
@@ -410,7 +416,6 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1592269
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
     @SmokeTest
     @Test
     fun deleteIndividualHistoryItemsFromSearchGroupTest() {
@@ -426,13 +431,13 @@ class SearchTest : TestSetup() {
         }.submitQuery(queryString) {
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
             TestHelper.mDevice.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 2"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(secondPageUrl.toString())
         }.openTabDrawer(activityTestRule) {
         }.openThreeDotMenu {
         }.closeAllTabs {
@@ -453,10 +458,11 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1592242
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1922538")
     @Test
     fun deleteSearchGroupFromHomeScreenTest() {
         val firstPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 1).url
+        val secondPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 2).url
         // setting our custom mockWebServer search URL
         val searchEngineName = "TestSearchEngine"
         setCustomSearchEngine(searchMockServer, searchEngineName)
@@ -467,13 +473,13 @@ class SearchTest : TestSetup() {
         }.submitQuery(queryString) {
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
             TestHelper.mDevice.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 2"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(secondPageUrl.toString())
         }.openTabDrawer(activityTestRule) {
         }.openThreeDotMenu {
         }.closeAllTabs {
@@ -494,7 +500,6 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1592235
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
     @Test
     fun openAPageFromHomeScreenSearchGroupTest() {
         val firstPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 1).url
@@ -510,19 +515,20 @@ class SearchTest : TestSetup() {
         }.submitQuery(queryString) {
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
             TestHelper.mDevice.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 2"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(secondPageUrl.toString())
             waitForPageToLoad()
         }.openTabDrawer(activityTestRule) {
         }.openThreeDotMenu {
         }.closeAllTabs {
             verifyRecentlyVisitedSearchGroupDisplayed(shouldBeDisplayed = true, searchTerm = queryString, groupSize = 3)
         }.openRecentlyVisitedSearchGroupHistoryList(queryString) {
-        }.openWebsite(firstPageUrl) {
+        }.openWebsiteFromSearchGroup(firstPageUrl) {
             verifyUrl(firstPageUrl.toString())
         }.goToHomescreen {
         }.openRecentlyVisitedSearchGroupHistoryList(queryString) {
@@ -543,10 +549,10 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1592238
-    @Ignore("Test run timing out: https://github.com/mozilla-mobile/fenix/issues/27704")
     @Test
     fun shareAPageFromHomeScreenSearchGroupTest() {
         val firstPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 1).url
+        val secondPageUrl = TestAssetHelper.getGenericAsset(searchMockServer, 2).url
         // setting our custom mockWebServer search URL
         val searchEngineName = "TestSearchEngine"
         setCustomSearchEngine(searchMockServer, searchEngineName)
@@ -557,13 +563,13 @@ class SearchTest : TestSetup() {
         }.submitQuery(queryString) {
             longClickPageObject(MatcherHelper.itemWithText("Link 1"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(firstPageUrl.toString())
             TestHelper.mDevice.pressBack()
             longClickPageObject(MatcherHelper.itemWithText("Link 2"))
             clickContextMenuItem("Open link in new tab")
-            TestHelper.clickSnackbarButton("SWITCH")
-            waitForPageToLoad()
+            clickSnackbarButton(activityTestRule, "SWITCH")
+            verifyUrl(secondPageUrl.toString())
         }.openTabDrawer(activityTestRule) {
         }.openThreeDotMenu {
         }.closeAllTabs {
@@ -588,7 +594,7 @@ class SearchTest : TestSetup() {
         homeScreen {
         }.openSearch {
         }.submitQuery(queryString) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("google")
         }.openThreeDotMenu {
         }.openHistory {
             // Full URL no longer visible in the nav bar, so we'll check the history record
@@ -614,11 +620,10 @@ class SearchTest : TestSetup() {
             changeDefaultSearchEngine("Bing")
             exitMenu()
         }
-
         homeScreen {
         }.openSearch {
         }.submitQuery(queryString) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("mozilla")
         }.openThreeDotMenu {
         }.openHistory {
             // Full URL no longer visible in the nav bar, so we'll check the history record
@@ -647,7 +652,7 @@ class SearchTest : TestSetup() {
         homeScreen {
         }.openSearch {
         }.submitQuery(queryString) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("duckduckgo")
         }.openThreeDotMenu {
         }.openHistory {
             // Full URL no longer visible in the nav bar, so we'll check the history record
@@ -719,6 +724,7 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2154197
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyTabsSearchItemsTest() {
         navigationToolbar {
@@ -783,6 +789,7 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2154203
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyBookmarksSearchItemsTest() {
         navigationToolbar {
@@ -835,6 +842,7 @@ class SearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2154212
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyHistorySearchItemsTest() {
         navigationToolbar {
@@ -915,7 +923,7 @@ class SearchTest : TestSetup() {
     fun verifySearchEnginesFunctionalityUsingRTLLocaleTest() {
         val arabicLocale = Locale("ar", "AR")
 
-        AppAndSystemHelper.runWithSystemLocaleChanged(arabicLocale, activityTestRule.activityRule) {
+        AppAndSystemHelper.runWithAppLocaleChanged(arabicLocale, activityTestRule.activityRule) {
             homeScreen {
             }.openSearch {
                 verifyTranslatedFocusedNavigationToolbar("ابحث أو أدخِل عنوانا")

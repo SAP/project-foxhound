@@ -41,7 +41,7 @@ breakpointButton.appendChild(svg);
 class ColumnBreakpoints extends Component {
   static get propTypes() {
     return {
-      columnBreakpoints: PropTypes.array.isRequired,
+      columnBreakpoints: PropTypes.array,
       editor: PropTypes.object.isRequired,
       selectedSource: PropTypes.object,
       addBreakpoint: PropTypes.func,
@@ -93,6 +93,18 @@ class ColumnBreakpoints extends Component {
           this.onContextMenu(event, columnBreakpoint)
         );
         return breakpointNode;
+      },
+      getMarkerEqualityValue: (line, column) => {
+        const lineNumber = fromEditorLine(selectedSource.id, line);
+        const columnBreakpoint = columnBreakpoints.find(
+          bp => bp.location.line === lineNumber && bp.location.column === column
+        );
+        return {
+          id: columnBreakpoint?.breakpoint?.id,
+          condition: columnBreakpoint?.breakpoint?.options.condition,
+          log: columnBreakpoint?.breakpoint?.options.logValue,
+          disabled: columnBreakpoint?.breakpoint?.disabled,
+        };
       },
     });
   }

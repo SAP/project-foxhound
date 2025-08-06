@@ -102,6 +102,7 @@
     --color-cyan-30: #80ebff;
     --color-cyan-50: #00ddff;
     --color-gray-05: #fbfbfe;
+    --color-gray-30: #bac2ca;
     --color-gray-50: #bfbfc9;
     --color-gray-60: #8f8f9d;
     --color-gray-70: #5b5b66;
@@ -177,6 +178,7 @@
     --space-xxlarge: calc(8 * var(--space-xsmall));
 
     /** Text **/
+    --text-color-disabled: color-mix(in srgb, currentColor 40%, transparent);
     --text-color-deemphasized: color-mix(in srgb, currentColor 69%, transparent);
     --text-color-error: light-dark(var(--color-red-50), var(--color-red-20));
   }
@@ -201,6 +203,7 @@
 
       /** Border **/
       --border-color: var(--text-color);
+      --border-color-deemphasized: currentColor;
       --border-color-interactive: var(--text-color);
 
       /** Button **/
@@ -238,6 +241,7 @@
     :root,
     :host(.anonymous-content-host) {
       /** Border **/
+      --border-color-deemphasized: ButtonText;
       --border-color-interactive: ButtonText;
       --border-color-interactive-hover: SelectedItem;
       --border-color-interactive-active: ButtonText;
@@ -285,6 +289,9 @@
 
       /** Focus Outline **/
       --focus-outline-color: var(--text-color);
+
+      /** Text **/
+      --text-color-disabled: GrayText;
     }
   }
 }

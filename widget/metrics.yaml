@@ -1,0 +1,45 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new metric? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/glean/user/new_definitions_file.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+$tags:
+  - 'Core :: Widget'
+
+widget:
+  dark_mode:
+    type: boolean
+    description: >
+      Whether the OS theme is dark.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar widget.dark_mode.
+    bugs:
+      - https://bugzil.la/1601846
+    data_reviews:
+      - https://bugzil.la/1601846
+    notification_emails:
+      - layout-telemetry-alerts@mozilla.com
+      - cmccormack@mozilla.com
+    expires: never
+    telemetry_mirror: WIDGET_DARK_MODE
+
+  pointing_devices:
+    type: labeled_boolean
+    labels:
+      - mouse
+      - touch
+      - pen
+    description: >
+      Whether the system has any matching pointing device for each label.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907575
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907575
+    notification_emails:
+      - krosylight@mozilla.com
+      - dom-core@mozilla.com
+    expires: never

@@ -14,6 +14,7 @@ remote.jar:
 
   # shared modules (all protocols)
   content/shared/AppInfo.sys.mjs (shared/AppInfo.sys.mjs)
+  content/shared/AsyncQueue.sys.mjs (shared/AsyncQueue.sys.mjs)
   content/shared/Browser.sys.mjs (shared/Browser.sys.mjs)
   content/shared/Capture.sys.mjs (shared/Capture.sys.mjs)
   content/shared/ChallengeHeaderParser.sys.mjs (shared/ChallengeHeaderParser.sys.mjs)
@@ -42,6 +43,7 @@ remote.jar:
   content/shared/WindowManager.sys.mjs (shared/WindowManager.sys.mjs)
   content/shared/listeners/BeforeStopRequestListener.sys.mjs (shared/listeners/BeforeStopRequestListener.sys.mjs)
   content/shared/listeners/BrowsingContextListener.sys.mjs (shared/listeners/BrowsingContextListener.sys.mjs)
+  content/shared/listeners/CachedResourceListener.sys.mjs (shared/listeners/CachedResourceListener.sys.mjs)
   content/shared/listeners/ConsoleAPIListener.sys.mjs (shared/listeners/ConsoleAPIListener.sys.mjs)
   content/shared/listeners/ConsoleListener.sys.mjs (shared/listeners/ConsoleListener.sys.mjs)
   content/shared/listeners/ContextualIdentityListener.sys.mjs (shared/listeners/ContextualIdentityListener.sys.mjs)

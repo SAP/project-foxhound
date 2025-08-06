@@ -28,6 +28,7 @@
 #include "js/AllocPolicy.h"        // js::SystemAllocPolicy, ReportOutOfMemory
 #include "js/CharacterEncoding.h"  // JS_EncodeStringToUTF8
 #include "js/ColumnNumber.h"       // JS::ColumnNumberOneOrigin
+#include "js/EnvironmentChain.h"   // JS::SupportUnscopables
 #include "js/ErrorReport.h"        // JS_ReportErrorASCII
 #include "js/experimental/JSStencil.h"
 #include "js/GCVector.h"    // JS::StackGCVector
@@ -612,8 +613,8 @@ static WithEnvironmentObject* CreateExtraBindingsEnvironment(
   }
 
   JS::Rooted<JSObject*> globalLexical(cx, &cx->global()->lexicalEnvironment());
-  return WithEnvironmentObject::createNonSyntactic(cx, extraBindingsObj,
-                                                   globalLexical);
+  return WithEnvironmentObject::createNonSyntactic(
+      cx, extraBindingsObj, globalLexical, JS::SupportUnscopables::No);
 }
 
 JSScript* frontend::CompileGlobalScriptWithExtraBindings(
@@ -804,18 +805,15 @@ bool SourceAwareCompiler<Unit>::createSourceAndParser(FrontendContext* fc) {
              CanLazilyParse(compilationState_.input.options));
   if (compilationState_.canLazilyParse) {
     syntaxParser.emplace(fc_, options, sourceBuffer_.units(),
-                         sourceBuffer_.length(), sourceBuffer_.taint(),
-                         /* foldConstants = */ false, compilationState_,
+                         sourceBuffer_.length(), sourceBuffer_.taint(), compilationState_,
                          /* syntaxParser = */ nullptr);
     if (!syntaxParser->checkOptions()) {
       return false;
     }
   }
 
-  parser.emplace(fc_, options, sourceBuffer_.units(),
-                 sourceBuffer_.length(), sourceBuffer_.taint(),
-                 /* foldConstants = */ true, compilationState_,
-                 syntaxParser.ptrOr(nullptr));
+  parser.emplace(fc_, options, sourceBuffer_.units(), sourceBuffer_.length(), sourceBuffer_.taint(),
+                 compilationState_, syntaxParser.ptrOr(nullptr));
   parser->ss = compilationState_.source.get();
   return parser->checkOptions();
 }
@@ -1444,7 +1442,6 @@ static bool CompileLazyFunctionToStencilMaybeInstantiate(
   }
 
   Parser<FullParseHandler, Unit> parser(fc, input.options, units, length, EmptyTaint,
-                                        /* foldConstants = */ true,
                                         compilationState,
                                         /* syntaxParser = */ nullptr);
   if (!parser.checkOptions()) {

@@ -19,6 +19,7 @@
 #include "gfxPlatform.h"
 #include "SharedFontList.h"
 
+#include "base/process.h"
 #include "nsIMemoryReporter.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EnumeratedArray.h"
@@ -26,9 +27,8 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RangedArray.h"
 #include "mozilla/RecursiveMutex.h"
+#include "mozilla/ipc/SharedMemory.h"
 #include "nsLanguageAtomService.h"
-
-#include "base/shared_memory.h"
 
 namespace mozilla {
 namespace fontlist {
@@ -245,6 +245,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     return sPlatformFontList;
   }
 
+  void GetMissingFonts(nsTArray<nsCString>& aMissingFonts);
   void GetMissingFonts(nsCString& aMissingFonts);
 
   static bool Initialize(gfxPlatformFontList* aList);
@@ -355,18 +356,19 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // be shared to the given processId.
   void ShareFontListShmBlockToProcess(uint32_t aGeneration, uint32_t aIndex,
                                       base::ProcessId aPid,
-                                      base::SharedMemoryHandle* aOut);
+                                      mozilla::ipc::SharedMemory::Handle* aOut);
 
   // Populate the array aBlocks with the complete list of shmem handles ready
   // to be shared to the given processId.
-  void ShareFontListToProcess(nsTArray<base::SharedMemoryHandle>* aBlocks,
-                              base::ProcessId aPid);
+  void ShareFontListToProcess(
+      nsTArray<mozilla::ipc::SharedMemory::Handle>* aBlocks,
+      base::ProcessId aPid);
 
   void ShmBlockAdded(uint32_t aGeneration, uint32_t aIndex,
-                     base::SharedMemoryHandle aHandle);
+                     mozilla::ipc::SharedMemory::Handle aHandle);
 
-  base::SharedMemoryHandle ShareShmBlockToProcess(uint32_t aIndex,
-                                                  base::ProcessId aPid);
+  mozilla::ipc::SharedMemory::Handle ShareShmBlockToProcess(
+      uint32_t aIndex, base::ProcessId aPid);
 
   void SetCharacterMap(uint32_t aGeneration, uint32_t aFamilyIndex, bool aAlias,
                        uint32_t aFaceIndex, const gfxSparseBitSet& aMap);
@@ -867,6 +869,14 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
                                            WeightRange aWeightForEntry,
                                            StretchRange aStretchForEntry,
                                            SlantStyleRange aStyleForEntry)
+      MOZ_REQUIRES(mLock);
+
+  // Add an entry for aName to the local names table, but only if it is not
+  // already present, or aName and aData.mFamilyName look like a better match
+  // than the existing entry.
+  void MaybeAddToLocalNameTable(
+      const nsACString& aName,
+      const mozilla::fontlist::LocalFaceRec::InitData& aData)
       MOZ_REQUIRES(mLock);
 
   // load the bad underline blocklist from pref.

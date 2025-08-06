@@ -21,7 +21,9 @@
 #include "api/task_queue/task_queue_factory.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
+#include "api/video/encoded_image.h"
 #include "api/video/video_layers_allocation.h"
+#include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "rtc_base/synchronization/mutex.h"
 
 namespace webrtc {
@@ -31,7 +33,7 @@ namespace webrtc {
 class RTPVideoFrameSenderInterface {
  public:
   virtual bool SendVideo(int payload_type,
-                         absl::optional<VideoCodecType> codec_type,
+                         std::optional<VideoCodecType> codec_type,
                          uint32_t rtp_timestamp,
                          Timestamp capture_time,
                          rtc::ArrayView<const uint8_t> payload,
@@ -65,7 +67,7 @@ class RTPSenderVideoFrameTransformerDelegate : public TransformedFrameCallback {
 
   // Delegates the call to FrameTransformerInterface::TransformFrame.
   bool TransformFrame(int payload_type,
-                      absl::optional<VideoCodecType> codec_type,
+                      std::optional<VideoCodecType> codec_type,
                       uint32_t rtp_timestamp,
                       const EncodedImage& encoded_image,
                       RTPVideoHeader video_header,

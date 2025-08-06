@@ -1,3 +1,25 @@
+function promiseTabLoadEvent(tab, url) {
+  info("Wait tab event: load");
+
+  function handle(loadedUrl) {
+    if (loadedUrl === "about:blank" || (url && loadedUrl !== url)) {
+      info(`Skipping spurious load event for ${loadedUrl}`);
+      return false;
+    }
+
+    info("Tab event received: load");
+    return true;
+  }
+
+  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
+
+  if (url) {
+    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
+  }
+
+  return loaded;
+}
+
 function updateTabContextMenu(tab) {
   let menu = document.getElementById("tabContextMenu");
   if (!tab) {
@@ -561,4 +583,21 @@ function httpURL(filename, host = "https://example.com/") {
 
 function loadTestSubscript(filePath) {
   Services.scriptloader.loadSubScript(new URL(filePath, gTestPath).href, this);
+}
+
+/**
+ * Removes a tab group (along with its tabs). Resolves when the tab group
+ * is gone.
+ *
+ * @param {MozTabbrowserTabGroup} group
+ * @returns {Promise<void>}
+ */
+async function removeTabGroup(group) {
+  if (!group.parentNode) {
+    ok(false, "group was already removed");
+    return;
+  }
+  let removePromise = BrowserTestUtils.waitForEvent(group, "TabGroupRemoved");
+  group.ownerGlobal.gBrowser.removeTabGroup(group, { animate: false });
+  await removePromise;
 }

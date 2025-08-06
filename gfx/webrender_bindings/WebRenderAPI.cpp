@@ -138,7 +138,7 @@ class NewRenderer : public RendererEvent {
             gfx::gfxVars::UseWebRenderScissoredCacheClears(), swgl, gl,
             compositor->SurfaceOriginIsTopLeft(), progCache, shaders,
             aRenderThread.ThreadPool().Raw(),
-            aRenderThread.ThreadPoolLP().Raw(),
+            aRenderThread.ThreadPoolLP().Raw(), aRenderThread.MemoryChunkPool(),
             aRenderThread.GlyphRasterThread().Raw(), &WebRenderMallocSizeOf,
             &WebRenderMallocEnclosingSizeOf, 0, compositor.get(),
             compositor->ShouldUseNativeCompositor(),
@@ -179,6 +179,8 @@ class NewRenderer : public RendererEvent {
     aRenderThread.AddRenderer(aWindowId, std::move(renderer));
   }
 
+  const char* Name() override { return "NewRenderer"; }
+
  private:
   wr::DocumentHandle** mDocHandle;
   WebRenderBackend* mBackend;
@@ -209,6 +211,8 @@ class RemoveRenderer : public RendererEvent {
     aRenderThread.RemoveRenderer(aWindowId);
     layers::AutoCompleteTask complete(mTask);
   }
+
+  const char* Name() override { return "RemoveRenderer"; }
 
  private:
   layers::SynchronousTask* mTask;
@@ -703,6 +707,9 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
       layers::AutoCompleteTask complete(mTask);
     }
 
+    const char* Name() override { return "Readback"; }
+
+   private:
     layers::SynchronousTask* mTask;
     TimeStamp mStartTime;
     gfx::IntSize mSize;
@@ -772,15 +779,15 @@ void WebRenderAPI::Pause() {
       layers::AutoCompleteTask complete(mTask);
     }
 
+    const char* Name() override { return "PauseEvent"; }
+
+   private:
     layers::SynchronousTask* mTask;
   };
 
   layers::SynchronousTask task("Pause");
   auto event = MakeUnique<PauseEvent>(&task);
-  // This event will be passed from wr_backend thread to renderer thread. That
-  // implies that all frame data have been processed when the renderer runs this
-  // event.
-  RunOnRenderThread(std::move(event));
+  RenderThread::Get()->PostEvent(mId, std::move(event));
 
   task.Wait();
 }
@@ -800,6 +807,9 @@ bool WebRenderAPI::Resume() {
       layers::AutoCompleteTask complete(mTask);
     }
 
+    const char* Name() override { return "ResumeEvent"; }
+
+   private:
     layers::SynchronousTask* mTask;
     bool* mResult;
   };
@@ -807,10 +817,7 @@ bool WebRenderAPI::Resume() {
   bool result = false;
   layers::SynchronousTask task("Resume");
   auto event = MakeUnique<ResumeEvent>(&task, &result);
-  // This event will be passed from wr_backend thread to renderer thread. That
-  // implies that all frame data have been processed when the renderer runs this
-  // event.
-  RunOnRenderThread(std::move(event));
+  RenderThread::Get()->PostEvent(mId, std::move(event));
 
   task.Wait();
   return result;
@@ -844,6 +851,9 @@ void WebRenderAPI::WaitFlushed() {
       layers::AutoCompleteTask complete(mTask);
     }
 
+    const char* Name() override { return "WaitFlushedEvent"; }
+
+   private:
     layers::SynchronousTask* mTask;
   };
 
@@ -902,6 +912,8 @@ void WebRenderAPI::BeginRecording(const TimeStamp& aRecordingStart,
                                             mRootPipelineId);
     }
 
+    const char* Name() override { return "BeginRecordingEvent"; }
+
    private:
     TimeStamp mRecordingStart;
     wr::PipelineId mRootPipelineId;
@@ -933,6 +945,8 @@ RefPtr<WebRenderAPI::EndRecordingPromise> WebRenderAPI::EndRecording() {
     RefPtr<WebRenderAPI::EndRecordingPromise> GetPromise() {
       return mPromise.Ensure(__func__);
     }
+
+    const char* Name() override { return "EndRecordingEvent"; }
 
    private:
     MozPromiseHolder<WebRenderAPI::EndRecordingPromise> mPromise;
@@ -982,9 +996,11 @@ void TransactionBuilder::AddExternalImage(ImageKey key,
                                           const ImageDescriptor& aDescriptor,
                                           ExternalImageId aExtID,
                                           wr::ExternalImageType aImageType,
-                                          uint8_t aChannelIndex) {
+                                          uint8_t aChannelIndex,
+                                          bool aNormalizedUvs) {
   wr_resource_updates_add_external_image(mTxn, key, &aDescriptor, aExtID,
-                                         &aImageType, aChannelIndex);
+                                         &aImageType, aChannelIndex,
+                                         aNormalizedUvs);
 }
 
 void TransactionBuilder::AddExternalImageBuffer(
@@ -1014,17 +1030,20 @@ void TransactionBuilder::UpdateExternalImage(ImageKey aKey,
                                              const ImageDescriptor& aDescriptor,
                                              ExternalImageId aExtID,
                                              wr::ExternalImageType aImageType,
-                                             uint8_t aChannelIndex) {
+                                             uint8_t aChannelIndex,
+                                             bool aNormalizedUvs) {
   wr_resource_updates_update_external_image(mTxn, aKey, &aDescriptor, aExtID,
-                                            &aImageType, aChannelIndex);
+                                            &aImageType, aChannelIndex,
+                                            aNormalizedUvs);
 }
 
 void TransactionBuilder::UpdateExternalImageWithDirtyRect(
     ImageKey aKey, const ImageDescriptor& aDescriptor, ExternalImageId aExtID,
     wr::ExternalImageType aImageType, const wr::DeviceIntRect& aDirtyRect,
-    uint8_t aChannelIndex) {
+    uint8_t aChannelIndex, bool aNormalizedUvs) {
   wr_resource_updates_update_external_image_with_dirty_rect(
-      mTxn, aKey, &aDescriptor, aExtID, &aImageType, aChannelIndex, aDirtyRect);
+      mTxn, aKey, &aDescriptor, aExtID, &aImageType, aChannelIndex,
+      aNormalizedUvs, aDirtyRect);
 }
 
 void TransactionBuilder::SetBlobImageVisibleArea(
@@ -1038,6 +1057,14 @@ void TransactionBuilder::DeleteImage(ImageKey aKey) {
 
 void TransactionBuilder::DeleteBlobImage(BlobImageKey aKey) {
   wr_resource_updates_delete_blob_image(mTxn, aKey);
+}
+
+void TransactionBuilder::AddSnapshotImage(wr::SnapshotImageKey aKey) {
+  wr_resource_updates_add_snapshot_image(mTxn, aKey);
+}
+
+void TransactionBuilder::DeleteSnapshotImage(wr::SnapshotImageKey aKey) {
+  wr_resource_updates_delete_snapshot_image(mTxn, aKey);
 }
 
 void TransactionBuilder::AddRawFont(wr::FontKey aKey, wr::Vec<uint8_t>& aBytes,
@@ -1088,6 +1115,8 @@ class FrameStartTime : public RendererEvent {
       renderer->SetFrameStartTime(mTime);
     }
   }
+
+  const char* Name() override { return "FrameStartTime"; }
 
  private:
   TimeStamp mTime;
@@ -1549,6 +1578,20 @@ void DisplayListBuilder::PushP010Image(
     wr::ImageRendering aRendering, bool aPreferCompositorSurface,
     bool aSupportsExternalCompositing) {
   wr_dp_push_yuv_P010_image(
+      mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
+      &mCurrentSpaceAndClipChain, aImageChannel0, aImageChannel1, aColorDepth,
+      aColorSpace, aColorRange, aRendering, aPreferCompositorSurface,
+      aSupportsExternalCompositing);
+}
+
+void DisplayListBuilder::PushNV16Image(
+    const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+    bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
+    wr::ImageKey aImageChannel1, wr::WrColorDepth aColorDepth,
+    wr::WrYuvColorSpace aColorSpace, wr::WrColorRange aColorRange,
+    wr::ImageRendering aRendering, bool aPreferCompositorSurface,
+    bool aSupportsExternalCompositing) {
+  wr_dp_push_yuv_NV16_image(
       mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
       &mCurrentSpaceAndClipChain, aImageChannel0, aImageChannel1, aColorDepth,
       aColorSpace, aColorRange, aRendering, aPreferCompositorSurface,

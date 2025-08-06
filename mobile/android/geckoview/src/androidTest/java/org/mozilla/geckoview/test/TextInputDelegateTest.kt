@@ -191,6 +191,12 @@ class TextInputDelegateTest : BaseSessionTest() {
         )
         ic.commitText(text, newCursorPosition)
         promise.value
+
+        // In Gecko, commit text always set caret position to the end of committed text.
+        // So if the newCursorPosition isn't 1, Gecko may notify new position after committing text.
+        if (newCursorPosition != 1) {
+            mainSession.waitForJS("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        }
     }
 
     private fun deleteSurroundingText(ic: InputConnection, before: Int, after: Int) {
@@ -708,6 +714,7 @@ class TextInputDelegateTest : BaseSessionTest() {
 
     @WithDisplay(width = 512, height = 512)
     // Child process updates require having a display.
+    @Ignore("Failing frequently, see: https://bugzilla.mozilla.org/show_bug.cgi?id=1741790")
     @Test
     fun inputConnection_selectionByArrowKey() {
         setupContent("")
@@ -1280,6 +1287,48 @@ class TextInputDelegateTest : BaseSessionTest() {
                         "on" -> InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                         "sentences" -> InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                         "words" -> InputType.TYPE_TEXT_FLAG_CAP_WORDS
+                        else -> 0
+                    },
+                ),
+            )
+
+            mainSession.evaluateJS("document.querySelector('$id').blur()")
+            mainSession.waitUntilCalled(GeckoSession.TextInputDelegate::class, "restartInput")
+        }
+    }
+
+    @WithDisplay(width = 512, height = 512)
+    // Child process updates require having a display.
+    @Test
+    fun editorInfo_autocorrect() {
+        // design mode is always on.
+        assumeThat("Not in designmode", id, not(equalTo("#designmode")))
+
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.forms.autocorrect" to true))
+
+        mainSession.textInput.view = View(InstrumentationRegistry.getInstrumentation().targetContext)
+
+        mainSession.loadTestPath(INPUTS_PATH)
+        mainSession.waitForPageStop()
+
+        textContent = ""
+        val values = listOf("on", "off")
+        for (autocorrect in values) {
+            mainSession.evaluateJS(
+                """
+                document.querySelector('$id').setAttribute('autocorrect', '$autocorrect');
+                document.querySelector('$id').focus()""",
+            )
+            mainSession.waitUntilCalled(GeckoSession.TextInputDelegate::class, "restartInput")
+
+            val editorInfo = EditorInfo()
+            mainSession.textInput.onCreateInputConnection(editorInfo)
+            assertThat(
+                "EditorInfo.inputType by $autocorrect",
+                editorInfo.inputType and InputType.TYPE_TEXT_FLAG_AUTO_CORRECT,
+                equalTo(
+                    when (autocorrect) {
+                        "on" -> InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
                         else -> 0
                     },
                 ),

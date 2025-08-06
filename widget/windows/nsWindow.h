@@ -87,8 +87,56 @@ const CLSID CLSID_ImmersiveShell = {
  * Native WIN32 window wrapper.
  */
 
+namespace mozilla::widget {
+
+// Data manipulation: styles + ex-styles, and bitmasking operations thereupon.
+struct WindowStyles {
+  LONG_PTR style = 0;
+  LONG_PTR ex = 0;
+
+  static WindowStyles FromHWND(HWND);
+
+  constexpr bool operator==(WindowStyles const& that) const {
+    return style == that.style && ex == that.ex;
+  }
+  constexpr bool operator!=(WindowStyles const& that) const {
+    return !(*this == that);
+  }
+  constexpr WindowStyles operator|(WindowStyles const& that) const {
+    return WindowStyles{.style = style | that.style, .ex = ex | that.ex};
+  }
+  constexpr WindowStyles operator&(WindowStyles const& that) const {
+    return WindowStyles{.style = style & that.style, .ex = ex & that.ex};
+  }
+  constexpr WindowStyles operator~() const {
+    return WindowStyles{.style = ~style, .ex = ~ex};
+  }
+
+  explicit constexpr operator bool() const { return style || ex; }
+
+  // Compute a style-set which matches `zero` where the bits of `this` are 0
+  // and `one` where the bits of `this` are 1.
+  constexpr WindowStyles merge(WindowStyles zero, WindowStyles one) const {
+    WindowStyles const& mask = *this;
+    return (~mask & zero) | (mask & one);
+  }
+
+  // The dual of `merge`, above: returns a pair [zero, one] satisfying
+  // `a.merge(a.split(b)...) == b`. (Or its equivalent in valid C++.)
+  constexpr std::tuple<WindowStyles, WindowStyles> split(
+      WindowStyles data) const {
+    WindowStyles const& mask = *this;
+    return {~mask & data, mask & data};
+  }
+};
+
+void SetWindowStyles(HWND, const WindowStyles&);
+
+}  // namespace mozilla::widget
+
 class nsWindow final : public nsBaseWidget {
  public:
+  using Styles = mozilla::widget::WindowStyles;
   using WindowHook = mozilla::widget::WindowHook;
   using IMEContext = mozilla::widget::IMEContext;
   using WidgetEventTime = mozilla::WidgetEventTime;
@@ -139,22 +187,15 @@ class nsWindow final : public nsBaseWidget {
    */
   nsWindow* GetParentWindowBase(bool aIncludeOwner);
 
-  /*
-   * Return true if this is a top level widget.
-   */
-  bool IsTopLevelWidget() { return mIsTopWidgetWindow; }
-
   // nsIWidget interface
   using nsBaseWidget::Create;  // for Create signature not overridden here
   [[nodiscard]] nsresult Create(nsIWidget* aParent,
-                                nsNativeWidget aNativeParent,
                                 const LayoutDeviceIntRect& aRect,
                                 InitData* aInitData = nullptr) override;
   void Destroy() override;
-  void SetParent(nsIWidget* aNewParent) override;
-  nsIWidget* GetParent(void) override;
   float GetDPI() override;
   double GetDefaultScaleInternal() override;
+  void DidChangeParent(nsIWidget* aOldParent) override;
   int32_t LogToPhys(double aValue);
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() override {
     if (mozilla::widget::WinUtils::IsPerMonitorDPIAware()) {
@@ -338,8 +379,6 @@ class nsWindow final : public nsBaseWidget {
     mTaskbarPreview = do_GetWeakReference(preview);
   }
 
-  void ReparentNativeWidget(nsIWidget* aNewParent) override;
-
   // Open file picker tracking
   void PickerOpen();
   void PickerClosed();
@@ -452,8 +491,6 @@ class nsWindow final : public nsBaseWidget {
     void SetSizeModeInternal(nsSizeMode, DoShowWindow);
 
     nsSizeMode mSizeMode = nsSizeMode_Normal;
-    // XXX mLastSizeMode is rather bizarre and needs some documentation.
-    nsSizeMode mLastSizeMode = nsSizeMode_Normal;
     // The old size mode before going into fullscreen mode. This should never
     // be nsSizeMode_Fullscreen.
     nsSizeMode mPreFullscreenSizeMode = nsSizeMode_Normal;
@@ -515,7 +552,7 @@ class nsWindow final : public nsBaseWidget {
   bool UpdateNonClientMargins(bool aReflowWindow = true);
   void UpdateDarkModeToolbar();
   void ResetLayout();
-  void InvalidateNonClientRegion();
+  nsAutoRegion ComputeNonClientHRGN();
   HWND GetOwnerWnd() const { return ::GetWindow(mWnd, GW_OWNER); }
   bool IsOwnerForegroundWindow() const {
     HWND owner = GetOwnerWnd();
@@ -611,6 +648,8 @@ class nsWindow final : public nsBaseWidget {
   void UpdateOpaqueRegion(const LayoutDeviceIntRegion&) override;
   void UpdateOpaqueRegionInternal();
 
+  void SetColorScheme(const mozilla::Maybe<mozilla::ColorScheme>&) override;
+
   bool DispatchTouchEventFromWMPointer(UINT msg, LPARAM aLParam,
                                        const WinPointerInfo& aPointerInfo,
                                        mozilla::MouseButton aButton);
@@ -624,8 +663,7 @@ class nsWindow final : public nsBaseWidget {
   void StopFlashing();
   static HWND WindowAtMouse();
   static bool IsTopLevelMouseExit(HWND aWnd);
-  LayoutDeviceIntRegion GetRegionToPaint(bool aForceFullRepaint, PAINTSTRUCT ps,
-                                         HDC aDC);
+  LayoutDeviceIntRegion GetRegionToPaint(const PAINTSTRUCT& ps, HDC aDC) const;
   nsIWidgetListener* GetPaintListener();
 
   void CreateCompositor() override;
@@ -660,8 +698,8 @@ class nsWindow final : public nsBaseWidget {
   void OnCloakChanged(bool aCloaked);
 
 #ifdef DEBUG
-  virtual nsresult SetHiDPIMode(bool aHiDPI) override;
-  virtual nsresult RestoreHiDPIMode() override;
+  nsresult SetHiDPIMode(bool aHiDPI) override;
+  nsresult RestoreHiDPIMode() override;
 #endif
 
   // Get the orientation of the hidden taskbar, on the screen that this window
@@ -714,7 +752,6 @@ class nsWindow final : public nsBaseWidget {
 
   InputContext mInputContext;
 
-  nsCOMPtr<nsIWidget> mParent;
   nsIntSize mLastSize = nsIntSize(0, 0);
   nsIntPoint mLastPoint;
   HWND mWnd = nullptr;
@@ -722,19 +759,18 @@ class nsWindow final : public nsBaseWidget {
   mozilla::Maybe<WNDPROC> mPrevWndProc;
   IMEContext mDefaultIMC;
   HDEVNOTIFY mDeviceNotifyHandle = nullptr;
-  bool mIsTopWidgetWindow = false;
   bool mInDtor = false;
   bool mIsVisible = false;
   bool mIsCloaked = false;
   bool mTouchWindow = false;
   bool mDisplayPanFeedback = false;
   bool mHideChrome = false;
-  bool mIsRTL;
+  bool mIsRTL = false;
   bool mMousePresent = false;
   bool mSimulatedClientArea = false;
   bool mDestroyCalled = false;
-  bool mOpeningAnimationSuppressed;
-  bool mAlwaysOnTop;
+  bool mOpeningAnimationSuppressed = false;
+  bool mAlwaysOnTop = false;
   bool mIsEarlyBlankWindow = false;
   bool mIsShowingPreXULSkeletonUI = false;
   bool mResizable = false;
@@ -745,12 +781,7 @@ class nsWindow final : public nsBaseWidget {
   bool mIsAlert = false;
   bool mIsPerformingDwmFlushHack = false;
   bool mDraggingWindowWithMouse = false;
-  // Partial cached window-styles, for when going fullscreen. (Only window-
-  // decoration-related flags are saved here.)
-  struct WindowStyles {
-    LONG_PTR style, exStyle;
-  };
-  mozilla::Maybe<WindowStyles> mOldStyles;
+  mozilla::Maybe<Styles> mOldStyles;
   nsNativeDragTarget* mNativeDragTarget = nullptr;
   HKL mLastKeyboardLayout = 0;
   mozilla::CheckInvariantWrapper<FrameState> mFrameState;
@@ -772,7 +803,7 @@ class nsWindow final : public nsBaseWidget {
   // Pre-calculated outward offset applied to default frames
   LayoutDeviceIntMargin mNonClientOffset;
   // Margins set by the owner
-  LayoutDeviceIntMargin mNonClientMargins;
+  LayoutDeviceIntMargin mNonClientMargins{-1, -1, -1, -1};
   // Margins we'd like to set once chrome is reshown:
   LayoutDeviceIntMargin mFutureMarginsOnceChromeShows;
   // Indicates we need to apply margins once toggling chrome into showing:
@@ -888,9 +919,9 @@ class nsWindow final : public nsBaseWidget {
 
   mozilla::DataMutex<Desktop> mDesktopId;
 
-  // If set, indicates the edge of the NC region we should clear to black
-  // on next paint.  One of: ABE_TOP, ABE_BOTTOM, ABE_LEFT or ABE_RIGHT.
-  mozilla::Maybe<UINT> mClearNCEdge;
+  // If set, indicates the non-client-area region must be cleared to black on
+  // next paint.
+  bool mNeedsNCAreaClear = false;
 
   friend class nsWindowGfx;
 

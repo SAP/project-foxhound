@@ -51,8 +51,7 @@ RenderDXGITextureHost::RenderDXGITextureHost(
               mFormat != gfx::SurfaceFormat::P010 &&
               mFormat != gfx::SurfaceFormat::P016) ||
              (mSize.width % 2 == 0 && mSize.height % 2 == 0));
-  MOZ_ASSERT((aHandle && aGpuProcessTextureId.isNothing()) ||
-             (!aHandle && aGpuProcessTextureId.isSome()));
+  MOZ_ASSERT(!(!aHandle && aGpuProcessTextureId.isNothing()));
 }
 
 RenderDXGITextureHost::~RenderDXGITextureHost() {
@@ -381,10 +380,10 @@ wr::WrExternalImage RenderDXGITextureHost::Lock(uint8_t aChannelIndex,
     return InvalidToWrExternalImage();
   }
 
-  const auto uvs = GetUvCoords(GetSize(aChannelIndex));
-  return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), uvs.first.x,
-                                        uvs.first.y, uvs.second.x,
-                                        uvs.second.y);
+  const gfx::IntSize size = GetSize(aChannelIndex);
+  return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), 0.0, 0.0,
+                                        static_cast<float>(size.width),
+                                        static_cast<float>(size.height));
 }
 
 bool RenderDXGITextureHost::LockInternal() {
@@ -702,10 +701,10 @@ wr::WrExternalImage RenderDXGIYCbCrTextureHost::Lock(uint8_t aChannelIndex,
     return InvalidToWrExternalImage();
   }
 
-  const auto uvs = GetUvCoords(GetSize(aChannelIndex));
-  return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), uvs.first.x,
-                                        uvs.first.y, uvs.second.x,
-                                        uvs.second.y);
+  const gfx::IntSize size = GetSize(aChannelIndex);
+  return NativeTextureToWrExternalImage(GetGLHandle(aChannelIndex), 0.0, 0.0,
+                                        static_cast<float>(size.width),
+                                        static_cast<float>(size.height));
 }
 
 void RenderDXGIYCbCrTextureHost::Unlock() {

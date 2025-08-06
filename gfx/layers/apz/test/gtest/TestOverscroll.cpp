@@ -7,6 +7,7 @@
 #include "APZCBasicTester.h"
 #include "APZCTreeManagerTester.h"
 #include "APZTestCommon.h"
+#include "mozilla/ScrollPositionUpdate.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/WebRenderScrollDataWrapper.h"
 
@@ -2159,7 +2160,7 @@ TEST_F(APZCOverscrollTester, FillOutGutterWhilePanning) {
 }
 
 // Similar to FillOutGutterWhilePanning but expanding the content while an
-// overscroll animation is runnig.
+// overscroll animation is running.
 TEST_F(APZCOverscrollTester, FillOutGutterWhileAnimating) {
   SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
 
@@ -2211,5 +2212,84 @@ TEST_F(APZCOverscrollTester, FillOutGutterWhileAnimating) {
   EXPECT_EQ(apzc->GetScrollMetadata().GetMetrics().GetVisualScrollOffset().y,
             scrollOffset.y + overscrollY);
   EXPECT_FALSE(apzc->IsOverscrolled());
+}
+#endif
+
+// Test that a programmatic scroll animation does NOT trigger overscroll.
+TEST_F(APZCOverscrollTester, ProgrammaticScroll) {
+  SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
+
+  // Send a SmoothMsd scroll update to a destination far outside of the
+  // scroll range (here, y=100000). This probably shouldn't happen in the
+  // first place, but even if it does for whatever reason, the smooth scroll
+  // should not trigger overscroll.
+  ScrollMetadata metadata = apzc->GetScrollMetadata();
+  nsTArray<ScrollPositionUpdate> scrollUpdates;
+  scrollUpdates.AppendElement(ScrollPositionUpdate::NewSmoothScroll(
+      ScrollMode::SmoothMsd, ScrollOrigin::Other,
+      CSSPoint::ToAppUnits(CSSPoint(0, 100000)), ScrollTriggeredByScript::Yes,
+      nullptr));
+  metadata.SetScrollUpdates(scrollUpdates);
+  metadata.GetMetrics().SetScrollGeneration(
+      scrollUpdates.LastElement().GetGeneration());
+  apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
+                            /*aThisLayerTreeUpdated=*/true);
+
+  apzc->AssertStateIsSmoothMsdScroll();
+
+  while (SampleAnimationOneFrame()) {
+    EXPECT_FALSE(apzc->IsOverscrolled());
+  }
+}
+
+// A touchpad hold gesture should pause any ongoing overscroll animation (so
+// that the page is not moving while the fingers are down on the touchpad),
+// but should not cancel it. The animation should continue if the finger is
+// lifted.
+#ifndef MOZ_WIDGET_ANDROID  // Requires GenericOverscrollEffect
+TEST_F(APZCOverscrollTester, HoldGestureDuringOverscroll) {
+  SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
+
+  ScrollMetadata metadata;
+  FrameMetrics& metrics = metadata.GetMetrics();
+  metrics.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+  metrics.SetScrollableRect(CSSRect(0, 0, 100, 1000));
+  metrics.SetVisualScrollOffset(CSSPoint(0, 0));
+  apzc->SetFrameMetrics(metrics);
+
+  // Pan into overscroll at the top.
+  ScreenIntPoint panPoint(50, 50);
+  PanGesture(PanGestureInput::PANGESTURE_START, apzc, panPoint,
+             ScreenPoint(0, -1), mcc->Time());
+  mcc->AdvanceByMillis(10);
+  PanGesture(PanGestureInput::PANGESTURE_PAN, apzc, panPoint,
+             ScreenPoint(0, -100), mcc->Time());
+  EXPECT_TRUE(apzc->IsOverscrolled());
+  EXPECT_TRUE(apzc->GetOverscrollAmount().y < 0);  // overscrolled at top
+
+  // End the pan. This should start an overscroll animation.
+  mcc->AdvanceByMillis(10);
+  PanGesture(PanGestureInput::PANGESTURE_END, apzc, panPoint, ScreenPoint(0, 0),
+             mcc->Time());
+  EXPECT_TRUE(apzc->GetOverscrollAmount().y < 0);  // overscrolled at top
+  EXPECT_TRUE(apzc->IsOverscrollAnimationRunning());
+
+  // Start a hold gesture (represented using PANGESTURE_MAYSTART).
+  // This should interrupt the animation but not relieve overscroll yet.
+  ParentLayerPoint overscrollBefore = apzc->GetOverscrollAmount();
+  mcc->AdvanceByMillis(10);
+  PanGesture(PanGestureInput::PANGESTURE_MAYSTART, apzc, panPoint,
+             ScreenPoint(0, 0), mcc->Time());
+  EXPECT_FALSE(apzc->IsOverscrollAnimationRunning());
+  EXPECT_EQ(overscrollBefore, apzc->GetOverscrollAmount());
+
+  // End the hold gesture (represented using PANGESTURE_CANCELLED).
+  // This should start an overscroll animation again.
+  mcc->AdvanceByMillis(10);
+  PanGesture(PanGestureInput::PANGESTURE_CANCELLED, apzc, panPoint,
+             ScreenPoint(0, 0), mcc->Time());
+  EXPECT_TRUE(apzc->IsOverscrollAnimationRunning());
+
+  SampleAnimationUntilRecoveredFromOverscroll(ParentLayerPoint(0, 0));
 }
 #endif

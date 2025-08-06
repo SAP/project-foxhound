@@ -7,6 +7,8 @@ prefs = ["browser.download.useDownloadDir=true"]
 
 ["test_ChannelWrapper.js"]
 
+["test_ExtensionTaskScheduler.js"]
+
 ["test_QuarantinedDomains.js"]
 
 ["test_change_backgroundServiceWorker_enabled_pref_false.js"]
@@ -94,7 +96,8 @@ skip-if = ["appname == 'thunderbird'"]
 skip-if = [
   "appname == 'thunderbird'",
   "os == 'android'", # CP service is disabled on Android
-  "os == 'mac' && debug", # macosx1014/debug due to 1564534
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1564534
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug", # Bug 1564534
 ]
 run-sequentially = "node server exceptions dont replay well"
 
@@ -103,7 +106,8 @@ run-sequentially = "node server exceptions dont replay well"
 skip-if = [
   "appname == 'thunderbird'",
   "os == 'android'", # CP service is disabled on Android,
-  "os == 'mac' && debug", # macosx1014/debug due to 1564534
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1564534
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug", # Bug 1564534
 ]
 run-sequentially = "node server exceptions dont replay well"
 
@@ -121,14 +125,14 @@ skip-if = [
 ["test_ext_contentscript_context.js"]
 skip-if = [
   "tsan", # Bug 1683730
-  "apple_silicon", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
   "sessionHistoryInParent", # Bug 1762638
 ]
 
 ["test_ext_contentscript_context_isolation.js"]
 skip-if = [
   "tsan", # Bug 1683730
-  "apple_silicon", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
   "sessionHistoryInParent", # Bug 1762638
 ]
 
@@ -140,7 +144,8 @@ run-sequentially = "very high failure rate in parallel"
 ["test_ext_contentscript_css.js"]
 skip-if = [
   "os == 'linux' && fission", # Bug 1762638
-  "os == 'mac' && debug", # Bug 1762638
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1762638
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug", # Bug 1762638
 ]
 
 ["test_ext_contentscript_dynamic_registration.js"]
@@ -186,7 +191,7 @@ skip-if = [
 requesttimeoutfactor = 3 # deleteDatabase may take several minutes in slow environments, Android (bug 1896262)
 skip-if = [
   "appname == 'thunderbird'",
-  "apple_silicon", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
   "tsan", # Bug 1683730
 ]
 
@@ -204,6 +209,8 @@ skip-if = [
 
 ["test_ext_cookies_samesite.js"]
 
+["test_ext_cookies_sort.js"]
+
 ["test_ext_cors_mozextension.js"]
 
 ["test_ext_csp_frame_ancestors.js"]
@@ -211,6 +218,8 @@ skip-if = [
 ["test_ext_csp_upgrade_requests.js"]
 
 ["test_ext_debugging_utils.js"]
+
+["test_ext_dnr_across_redirects.js"]
 
 ["test_ext_dnr_allowAllRequests.js"]
 
@@ -368,9 +377,6 @@ skip-if = ["appname == 'thunderbird'"]
 
 ["test_ext_notifications_unsupported.js"]
 
-["test_ext_onmessage_removelistener.js"]
-skip-if = ["true"] # This test no longer tests what it is meant to test.
-
 ["test_ext_optional_host_permissions.js"]
 
 ["test_ext_permission_xhr.js"]
@@ -392,6 +398,8 @@ skip-if = [
   "appname == 'thunderbird'",
   "os == 'android'", # Bug 1350559
 ]
+
+["test_ext_permissions_optional_only.js"]
 
 ["test_ext_permissions_uninstall.js"]
 skip-if = [
@@ -493,7 +501,8 @@ run-sequentially = "very high failure rate in parallel"
 ["test_ext_scripting_contentScripts_css.js"]
 skip-if = [
   "os == 'linux' && debug && fission", # Bug 1762638
-  "os == 'mac' && debug && fission",  # Bug 1762638
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1762638
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug", # Bug 1762638
 ]
 run-sequentially = "very high failure rate in parallel"
 
@@ -591,7 +600,6 @@ skip-if = ["os == 'android'"] # Themes aren't supported on android.
 ["test_ext_theme_startupData.js"]
 skip-if = [
   "os == 'android'", # Themes aren't supported on android.
-  "os == 'win' && debug", # Bug 1905417 - Assertion failure: nsContentUtils::IsSafeToRunScript()
 ]
 
 ["test_ext_trustworthy_origin.js"]
@@ -606,6 +614,18 @@ run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_userScripts_exports.js"]
 run-sequentially = "very high failure rate in parallel"
+
+["test_ext_userScripts_mv3_availability.js"]
+
+["test_ext_userScripts_mv3_csp.js"]
+
+["test_ext_userScripts_mv3_injection.js"]
+
+["test_ext_userScripts_mv3_messaging.js"]
+
+["test_ext_userScripts_mv3_persistence.js"]
+
+["test_ext_userScripts_mv3_worlds.js"]
 
 ["test_ext_userScripts_register.js"]
 skip-if = [

@@ -188,18 +188,15 @@ void Theme::LookAndFeelChanged() {
   }
 }
 
-auto Theme::GetDPIRatio(nsPresContext* aPc,
-                        StyleAppearance aAppearance) -> DPIRatio {
-  // Widgets react to zoom, except scrollbars.
-  if (IsWidgetScrollbarPart(aAppearance)) {
-    return GetScrollbarDrawing().GetDPIRatioForScrollbarPart(aPc);
-  }
-  return DPIRatio(float(AppUnitsPerCSSPixel()) / aPc->AppUnitsPerDevPixel());
-}
-
 auto Theme::GetDPIRatio(nsIFrame* aFrame,
                         StyleAppearance aAppearance) -> DPIRatio {
-  return GetDPIRatio(aFrame->PresContext(), aAppearance);
+  // Widgets react to zoom, except scrollbars.
+  nsPresContext* pc = aFrame->PresContext();
+  if (IsWidgetScrollbarPart(aAppearance)) {
+    return GetScrollbarDrawing().GetDPIRatioForScrollbarPart(pc);
+  }
+  return DPIRatio(aFrame->Style()->EffectiveZoom().Zoom(
+      float(AppUnitsPerCSSPixel()) / pc->AppUnitsPerDevPixel()));
 }
 
 // Checkbox and radio need to preserve aspect-ratio for compat. We also snap the
@@ -674,6 +671,9 @@ void Theme::PaintCircleShadow(DrawTarget& aDrawTarget,
   Point destinationPointOfSourceRect = inflatedRect.TopLeft() + offset;
 
   IntSize dtSize = RoundedToInt(aBoxRect.Size().ToUnknownSize());
+  if (dtSize.IsEmpty()) {
+    return;
+  }
   RefPtr<DrawTarget> ellipseDT = aDrawTarget.CreateSimilarDrawTargetForFilter(
       dtSize, SurfaceFormat::A8, blurFilter, blurFilter,
       sourceRectInFilterSpace, destinationPointOfSourceRect);
@@ -722,7 +722,8 @@ void Theme::PaintRadioControl(PaintBackendData& aPaintData,
   }
 
   if (aState.HasState(ElementState::FOCUSRING)) {
-    PaintRoundedFocusRect(aPaintData, aRect, aColors, aDpiRatio, 5.0f, 1.0f);
+    auto radius = LayoutDeviceCoord(aRect.Size().width) / aDpiRatio;
+    PaintRoundedFocusRect(aPaintData, aRect, aColors, aDpiRatio, radius, 1.0f);
   }
 }
 
@@ -839,9 +840,9 @@ void Theme::PaintMenulistArrow(nsIFrame* aFrame, DrawTarget& aDrawTarget,
   }();
 
   const auto arrowColor = sRGBColor::FromABGR(
-      nsLayoutUtils::GetColor(aFrame, &nsStyleText::mWebkitTextFillColor));
+      nsLayoutUtils::GetTextColor(aFrame, &nsStyleText::mWebkitTextFillColor));
   ThemeDrawing::PaintArrow(aDrawTarget, aRect, xs, ys, kPolygonSize,
-                           ArrayLength(polygonX), arrowColor);
+                           std::size(polygonX), arrowColor);
 }
 
 void Theme::PaintSpinnerButton(nsIFrame* aFrame, DrawTarget& aDrawTarget,
@@ -867,7 +868,7 @@ void Theme::PaintSpinnerButton(nsIFrame* aFrame, DrawTarget& aDrawTarget,
   }
 
   ThemeDrawing::PaintArrow(aDrawTarget, aRect, kPolygonX, polygonY,
-                           kPolygonSize, ArrayLength(kPolygonX), borderColor);
+                           kPolygonSize, std::size(kPolygonX), borderColor);
 }
 
 template <typename PaintBackendData>
@@ -1157,13 +1158,12 @@ static ScrollbarDrawing::ScrollbarKind ComputeScrollbarKind(
   if (aIsHorizontal) {
     return ScrollbarDrawing::ScrollbarKind::Horizontal;
   }
-  nsIFrame* scrollbar = ScrollbarDrawing::GetParentScrollbarFrame(aFrame);
+  nsScrollbarFrame* scrollbar =
+      ScrollbarDrawing::GetParentScrollbarFrame(aFrame);
   if (NS_WARN_IF(!scrollbar)) {
     return ScrollbarDrawing::ScrollbarKind::VerticalRight;
   }
-  MOZ_ASSERT(scrollbar->IsScrollbarFrame());
-  nsIScrollbarMediator* sm =
-      static_cast<nsScrollbarFrame*>(scrollbar)->GetScrollbarMediator();
+  nsIScrollbarMediator* sm = scrollbar->GetScrollbarMediator();
   if (NS_WARN_IF(!sm)) {
     return ScrollbarDrawing::ScrollbarKind::VerticalRight;
   }
@@ -1310,16 +1310,6 @@ bool Theme::DoDrawWidgetBackground(PaintBackendData& aPaintData,
           aPaintData, devPxRect, kind, aFrame,
           *nsLayoutUtils::StyleForScrollbar(aFrame), elementState, docState,
           colors, dpiRatio);
-    }
-    case StyleAppearance::ScrollbartrackHorizontal:
-    case StyleAppearance::ScrollbartrackVertical: {
-      bool isHorizontal =
-          aAppearance == StyleAppearance::ScrollbartrackHorizontal;
-      auto kind = ComputeScrollbarKind(aFrame, isHorizontal);
-      return GetScrollbarDrawing().PaintScrollbarTrack(
-          aPaintData, devPxRect, kind, aFrame,
-          *nsLayoutUtils::StyleForScrollbar(aFrame), docState, colors,
-          dpiRatio);
     }
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarVertical: {
@@ -1551,9 +1541,7 @@ LayoutDeviceIntCoord Theme::GetScrollbarSize(const nsPresContext* aPresContext,
   return GetScrollbarDrawing().GetScrollbarSize(aPresContext, aWidth, aOverlay);
 }
 
-nscoord Theme::GetCheckboxRadioPrefSize() {
-  return CSSPixel::ToAppUnits(kCheckboxRadioSize);
-}
+CSSCoord Theme::GetCheckboxRadioPrefSize() { return kCheckboxRadioSize; }
 
 /* static */
 UniquePtr<ScrollbarDrawing> Theme::ScrollbarStyle() {
@@ -1631,29 +1619,20 @@ nsITheme::Transparency Theme::GetWidgetTransparency(
   return eUnknownTransparency;
 }
 
-NS_IMETHODIMP
-Theme::WidgetStateChanged(nsIFrame* aFrame, StyleAppearance aAppearance,
-                          nsAtom* aAttribute, bool* aShouldRepaint,
-                          const nsAttrValue* aOldValue) {
-  if (!aAttribute) {
-    // Hover/focus/active changed.  Always repaint.
-    *aShouldRepaint = true;
-  } else {
-    // Check the attribute to see if it's relevant.
-    // disabled, checked, dlgtype, default, etc.
-    *aShouldRepaint = false;
-    if (aAttribute == nsGkAtoms::disabled || aAttribute == nsGkAtoms::checked ||
-        aAttribute == nsGkAtoms::selected ||
-        aAttribute == nsGkAtoms::visuallyselected ||
-        aAttribute == nsGkAtoms::menuactive ||
-        aAttribute == nsGkAtoms::sortDirection ||
-        aAttribute == nsGkAtoms::focused || aAttribute == nsGkAtoms::_default ||
-        aAttribute == nsGkAtoms::open || aAttribute == nsGkAtoms::hover) {
-      *aShouldRepaint = true;
-    }
-  }
-
-  return NS_OK;
+bool Theme::WidgetAttributeChangeRequiresRepaint(StyleAppearance aAppearance,
+                                                 nsAtom* aAttribute) {
+  // Check the attribute to see if it's relevant.
+  // TODO(emilio): The non-native theme doesn't use these attributes. Other
+  // themes do, but not all of them (and not all of the ones they check are
+  // here).
+  return aAttribute == nsGkAtoms::disabled ||
+         aAttribute == nsGkAtoms::checked ||
+         aAttribute == nsGkAtoms::selected ||
+         aAttribute == nsGkAtoms::visuallyselected ||
+         aAttribute == nsGkAtoms::menuactive ||
+         aAttribute == nsGkAtoms::sortDirection ||
+         aAttribute == nsGkAtoms::focused ||
+         aAttribute == nsGkAtoms::_default || aAttribute == nsGkAtoms::open;
 }
 
 NS_IMETHODIMP
@@ -1688,8 +1667,6 @@ bool Theme::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
     case StyleAppearance::ScrollbarbuttonRight:
     case StyleAppearance::ScrollbarthumbHorizontal:
     case StyleAppearance::ScrollbarthumbVertical:
-    case StyleAppearance::ScrollbartrackHorizontal:
-    case StyleAppearance::ScrollbartrackVertical:
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::Scrollcorner:

@@ -28,6 +28,7 @@ export default class FxviewSearchTextbox extends MozLitElement {
     placeholder: { type: String },
     size: { type: Number },
     pageName: { type: String },
+    autofocus: { type: Boolean },
   };
 
   static queries = {
@@ -37,6 +38,12 @@ export default class FxviewSearchTextbox extends MozLitElement {
 
   #query = "";
   #searchTimer;
+
+  firstUpdated() {
+    if (this.autofocus) {
+      this.focus();
+    }
+  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -92,15 +99,9 @@ export default class FxviewSearchTextbox extends MozLitElement {
       })
     );
     if (!window.IS_STORYBOOK) {
-      Services.telemetry.recordEvent(
-        "firefoxview_next",
-        "search_initiated",
-        "search",
-        null,
-        {
-          page: this.pageName,
-        }
-      );
+      Glean.firefoxviewNext.searchInitiatedSearch.record({
+        page: this.pageName,
+      });
     }
   }
 

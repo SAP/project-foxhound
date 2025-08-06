@@ -234,6 +234,8 @@ bool js::intl_BestAvailableLocale(JSContext* cx, unsigned argc, Value* vp) {
       kind = SupportedLocaleKind::DateTimeFormat;
     } else if (StringEqualsLiteral(typeStr, "DisplayNames")) {
       kind = SupportedLocaleKind::DisplayNames;
+    } else if (StringEqualsLiteral(typeStr, "DurationFormat")) {
+      kind = SupportedLocaleKind::DurationFormat;
     } else if (StringEqualsLiteral(typeStr, "ListFormat")) {
       kind = SupportedLocaleKind::ListFormat;
     } else if (StringEqualsLiteral(typeStr, "NumberFormat")) {
@@ -419,6 +421,7 @@ bool js::intl_supportedLocaleOrFallback(JSContext* cx, unsigned argc,
   // the set of supported locales of Intl.DateTimeFormat.
   for (auto kind : {
            SupportedLocaleKind::DisplayNames,
+           SupportedLocaleKind::DurationFormat,
            SupportedLocaleKind::ListFormat,
            SupportedLocaleKind::NumberFormat,
            SupportedLocaleKind::PluralRules,
@@ -866,10 +869,13 @@ static const JSFunctionSpec intl_static_methods[] = {
     JS_FN("toSource", intl_toSource, 0, 0),
     JS_SELF_HOSTED_FN("getCanonicalLocales", "Intl_getCanonicalLocales", 1, 0),
     JS_SELF_HOSTED_FN("supportedValuesOf", "Intl_supportedValuesOf", 1, 0),
-    JS_FS_END};
+    JS_FS_END,
+};
 
 static const JSPropertySpec intl_static_properties[] = {
-    JS_STRING_SYM_PS(toStringTag, "Intl", JSPROP_READONLY), JS_PS_END};
+    JS_STRING_SYM_PS(toStringTag, "Intl", JSPROP_READONLY),
+    JS_PS_END,
+};
 
 static JSObject* CreateIntlObject(JSContext* cx, JSProtoKey key) {
   RootedObject proto(cx, &cx->global()->getObjectPrototype());
@@ -892,6 +898,7 @@ static bool IntlClassFinish(JSContext* cx, HandleObject intl,
            JSProto_Collator,
            JSProto_DateTimeFormat,
            JSProto_DisplayNames,
+           JSProto_DurationFormat,
            JSProto_ListFormat,
            JSProto_Locale,
            JSProto_NumberFormat,
@@ -920,7 +927,12 @@ static bool IntlClassFinish(JSContext* cx, HandleObject intl,
 
 static const ClassSpec IntlClassSpec = {
     CreateIntlObject, nullptr, intl_static_methods, intl_static_properties,
-    nullptr,          nullptr, IntlClassFinish};
+    nullptr,          nullptr, IntlClassFinish,
+};
 
-const JSClass js::IntlClass = {"Intl", JSCLASS_HAS_CACHED_PROTO(JSProto_Intl),
-                               JS_NULL_CLASS_OPS, &IntlClassSpec};
+const JSClass js::IntlClass = {
+    "Intl",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Intl),
+    JS_NULL_CLASS_OPS,
+    &IntlClassSpec,
+};

@@ -7,7 +7,8 @@ mkdir -p /builds/worker/.local/state/snapcraft/
 ln -s /builds/worker/artifacts /builds/worker/.local/state/snapcraft/log
 
 BRANCH=$1
-DEBUG=${2:-0}
+ARCH=$2
+DEBUG=${3:-0}
 
 SOURCE_REPO=${SOURCE_REPO:-https://github.com/canonical/firefox-snap/}
 SOURCE_BRANCH=${SOURCE_BRANCH:-${BRANCH}}
@@ -26,7 +27,13 @@ USE_SNAP_FROM_STORE_OR_MC=${USE_SNAP_FROM_STORE_OR_MC:-0}
 
 TRY=0
 if [ "${BRANCH}" = "try" ]; then
-  BRANCH=nightly
+  if [ "${SOURCE_BRANCH}" = "try" ]; then
+    # This would happen when e.g.: mach try fuzzy -q "'snap 'build 'try"
+    # In this case we want to default to nightly from upstream, except if the
+    # user passes a SOURCE_BRANCH, with e.g.:
+    # SOURCE_REPO=... SOURCE_BRANCH=... mach try fuzzy -q "'snap 'build 'try"
+    SOURCE_BRANCH=nightly
+  fi
   TRY=1
 fi
 
@@ -54,10 +61,8 @@ if [ "${USE_SNAP_FROM_STORE_OR_MC}" = "0" ]; then
   sudo apt-get update
 
   # shellcheck disable=SC2046
-  sudo apt-get install -y $(/usr/bin/python3 /builds/worker/parse.py snapcraft.yaml)
+  sudo apt-get install -y $(/usr/bin/python3 /builds/worker/parse.py snapcraft.yaml "${ARCH}")
 
-  # CRAFT_PARTS_PACKAGE_REFRESH required to avoid snapcraft running apt-get update
-  # especially for stage-packages
   if [ -d "/builds/worker/patches/${BRANCH}/" ]; then
     for p in /builds/worker/patches/"${BRANCH}"/*.patch; do
       patch -p1 < "$p"
@@ -77,7 +82,7 @@ if [ "${USE_SNAP_FROM_STORE_OR_MC}" = "0" ]; then
     sed -ri 's|hg clone --stream \$REPO -u \$REVISION|cp -r \$SNAPCRAFT_PROJECT_DIR/gecko/. |g' snapcraft.yaml
   fi
 
-  if [ "${DEBUG}" = "1" ]; then
+  if [ "${DEBUG}" = "--debug" ]; then
     {
       echo "ac_add_options --enable-debug"
       echo "ac_add_options --disable-install-strip"
@@ -90,10 +95,32 @@ if [ "${USE_SNAP_FROM_STORE_OR_MC}" = "0" ]; then
     sed -ri 's/ac_add_options MOZ_PGO=1//g' snapcraft.yaml
   fi
 
-  SNAPCRAFT_BUILD_ENVIRONMENT_MEMORY=64G \
-  SNAPCRAFT_BUILD_ENVIRONMENT_CPU=$(nproc) \
+  MAX_MEMORY_GB=$(free -g | awk '/Mem:/ { print $2 - 1 }')
+
+  # setting parallelism does not work with core24 ?
+  #
+  # SNAPCRAFT_BUILD_ENVIRONMENT_CPU=$(nproc) \
+  # SNAPCRAFT_PARALLEL_BUILD_COUNT=$(nproc) \
+  # CRAFT_PARALLEL_BUILD_COUNT=$(nproc) \
+
+  # Get the value and overwrite the snap's content.
+  MAX_CPUS=$(nproc)
+  sed -ri "s|\\\$CRAFT_PARALLEL_BUILD_COUNT|${MAX_CPUS}|g" snapcraft.yaml
+  grep "make -j" snapcraft.yaml
+
+  # CRAFT_PARTS_PACKAGE_REFRESH required to avoid snapcraft running apt-get update
+  # especially for stage-packages
+  #
+  # Passing --build-for=amd64 when building on amd64 fails with the following
+  # when running on a non-multiarch-ready snapcraft.yaml:
+  # Could not make build plan: build-on architectures in snapcraft.yaml does not match host architecture (amd64).
+  if [ "${BRANCH}" != "esr" ] && [ "${BRANCH}" != "esr-128" ]; then
+    MAYBE_BUILD_FOR_ARCH="--build-for=${ARCH}"
+  fi;
+
+  SNAPCRAFT_BUILD_ENVIRONMENT_MEMORY="${MAX_MEMORY_GB}G" \
   CRAFT_PARTS_PACKAGE_REFRESH=0 \
-    snapcraft --destructive-mode --verbose
+    snapcraft --destructive-mode --verbose "${MAYBE_BUILD_FOR_ARCH}"
 elif [ "${USE_SNAP_FROM_STORE_OR_MC}" = "store" ]; then
   mkdir from-snap-store && cd from-snap-store
 
@@ -117,7 +144,8 @@ else
   # index.gecko.v2.mozilla-central.revision.bf0897ec442e625c185407cc615a6adc0e40fa75.firefox.amd64-nightly
   #  => https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/gecko.v2.mozilla-central.revision.bf0897ec442e625c185407cc615a6adc0e40fa75.firefox.amd64-nightly/artifacts/public%2Fbuild%2Ffirefox.snap
 
-  INDEX_NAME="${BRANCH}"
+  # Remove "-" so we get e.g., esr128 from esr-128
+  INDEX_NAME=${BRANCH//-/}
   if [ "${INDEX_NAME}" = "try" ]; then
     INDEX_NAME=nightly
   fi;

@@ -140,6 +140,7 @@ function getRemoteUpdateString(aUpdateProps, aPatches) {
     name: "App Update Test",
     promptWaitTime: null,
     type: "major",
+    unsupported: false,
   };
 
   for (let name in aUpdateProps) {
@@ -306,15 +307,21 @@ function getLocalPatchString(aPatchProps) {
     custom2: null,
     selected: "true",
     state: STATE_SUCCEEDED,
+    bitsId: null,
   };
 
   for (let name in aPatchProps) {
     patchProps[name] = aPatchProps[name];
   }
 
-  let selected = 'selected="' + patchProps.selected + '" ';
-  let state = 'state="' + patchProps.state + '"/>';
-  return getPatchString(patchProps) + " " + selected + state;
+  let patchString = getPatchString(patchProps);
+  patchString += ' selected="' + patchProps.selected + '"';
+  patchString += ' state="' + patchProps.state + '"';
+  if (patchProps.bitsId) {
+    patchString += ' bitsId="' + patchProps.bitsId + '"';
+  }
+  patchString += "/>";
+  return patchString;
 }
 
 /**
@@ -348,6 +355,7 @@ function getUpdateString(aUpdateProps) {
       aUpdateProps.disableBackgroundUpdates +
       '" '
     : "";
+  let unsupported = aUpdateProps.unsupported ? 'unsupported="true" ' : "";
   let custom1 = aUpdateProps.custom1 ? aUpdateProps.custom1 + " " : "";
   let custom2 = aUpdateProps.custom2 ? aUpdateProps.custom2 + " " : "";
   let buildID = 'buildID="' + aUpdateProps.buildID + '"';
@@ -363,6 +371,7 @@ function getUpdateString(aUpdateProps) {
     promptWaitTime +
     disableBITS +
     disableBackgroundUpdates +
+    unsupported +
     custom1 +
     custom2 +
     buildID

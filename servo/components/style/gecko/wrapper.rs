@@ -1015,6 +1015,12 @@ impl<'le> TElement for GeckoElement<'le> {
     type ConcreteNode = GeckoNode<'le>;
     type TraversalChildrenIterator = GeckoChildrenIterator<'le>;
 
+    fn unopaque(opaque: OpaqueElement) -> Self {
+        unsafe {
+            Self(opaque.as_const_ptr::<RawGeckoElement>().as_ref().unwrap())
+        }
+    }
+
     fn inheritance_parent(&self) -> Option<Self> {
         if self.is_pseudo_element() {
             return self.pseudo_element_originating_element();
@@ -2064,6 +2070,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozTopmostModal |
             NonTSPseudoClass::Active |
             NonTSPseudoClass::Hover |
+            NonTSPseudoClass::HasSlotted |
             NonTSPseudoClass::MozAutofillPreview |
             NonTSPseudoClass::MozRevealed |
             NonTSPseudoClass::MozValueEmpty => self.state().intersects(pseudo_class.state_flag()),

@@ -8,15 +8,11 @@
 @namespace html "http://www.w3.org/1999/xhtml";
 @namespace xul "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
-/* TODO(bug 1845150): Remove notification-message from the host selectors in
- * this file */
-
-:host(:is(.anonymous-content-host, notification-message)),
+:host(.anonymous-content-host),
 :root {
   --in-content-page-color: rgb(21, 20, 26);
   --in-content-page-background: var(--background-color-canvas);
   --in-content-text-color: var(--in-content-page-color);
-  --in-content-box-background: var(--background-color-box);
   --in-content-box-background-odd: rgba(12, 12, 13, 0.05); /* grey 90 a05 */
   --in-content-box-border-color: color-mix(in srgb, currentColor 41%, transparent);
   --in-content-box-info-background: #f0f0f4;
@@ -24,14 +20,8 @@
   --in-content-item-hover-text: var(--in-content-page-color);
   --in-content-item-selected: var(--in-content-primary-button-background);
   --in-content-item-selected-text: var(--in-content-primary-button-text-color);
-  --in-content-icon-color: rgb(91,91,102);
-  --in-content-accent-color: var(--in-content-primary-button-background);
-  --in-content-accent-color-active: var(--in-content-primary-button-background-hover);
-  --in-content-border-hover: var(--grey-90-a50);
   --in-content-border-invalid: var(--red-50);
   --in-content-border-color: #d7d7db;
-  --in-content-warning-icon-color: #ffa436;
-  --in-content-success-icon-color: #2ac3a2;
   --in-content-button-text-color: var(--in-content-text-color);
   --in-content-button-text-color-hover: var(--in-content-text-color);
   --in-content-button-text-color-active: var(--in-content-button-text-color-hover);
@@ -75,7 +65,6 @@
   --grey-90-a10: rgba(12, 12, 13, 0.1);
   --grey-90-a20: rgba(12, 12, 13, 0.2);
   --grey-90-a30: rgba(12, 12, 13, 0.3);
-  --grey-90-a50: rgba(12, 12, 13, 0.5);
   --grey-90-a60: rgba(12, 12, 13, 0.6);
   --green-60: #12bc00;
   --green-70: #058b00;
@@ -97,12 +86,12 @@
   --card-shadow-hover: var(--card-shadow), 0 0 0 5px var(--card-outline-color);
 
   -moz-theme: non-native;
-  accent-color: var(--in-content-accent-color);
+  accent-color: var(--color-accent-primary);
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :host(:is(.anonymous-content-host, notification-message)),
+  :host(.anonymous-content-host),
   :root {
     /* Keep these in sync with:
      *
@@ -120,13 +109,7 @@
     --in-content-box-info-background: rgba(249,249,250,0.15);
 
     --in-content-border-color: rgba(249,249,250,0.2);
-    --in-content-border-hover: rgba(249,249,250,0.3);
     --in-content-border-invalid: rgb(255,132,139);
-
-    --in-content-warning-icon-color: #ffbd4f;
-    --in-content-success-icon-color: #54FFBD;
-
-    --in-content-icon-color: rgb(251,251,254);
 
     --in-content-primary-button-text-color: rgb(43,42,51);
     --in-content-primary-button-background: rgb(0,221,255);
@@ -157,24 +140,19 @@
 }
 
 @media (forced-colors) {
-  :host(:is(.anonymous-content-host, notification-message)),
+  :host(.anonymous-content-host),
   :root {
     --in-content-page-color: CanvasText;
 
-    --in-content-box-background-odd: var(--in-content-box-background);
+    --in-content-box-background-odd: var(--background-color-box);
     --in-content-box-border-color: -moz-DialogText;
-    --in-content-box-info-background: var(--in-content-box-background);
+    --in-content-box-info-background: var(--background-color-box);
 
     --in-content-item-hover: SelectedItem;
     --in-content-item-hover-text: SelectedItemText;
     --in-content-item-selected: SelectedItem;
     --in-content-item-selected-text: SelectedItemText;
-    --in-content-icon-color: -moz-DialogText;
 
-    --in-content-accent-color: SelectedItem;
-    --in-content-accent-color-active: SelectedItem;
-
-    --in-content-border-hover: ThreeDShadow;
     /* This is not great, but there is no suitable keyword for this.
      * In theory, we shouldn't be conveying invalid state just with a colour
      * change... */
@@ -282,7 +260,7 @@ xul|tab:where(:hover:active) {
 }
 
 xul|tab[selected] {
-  color: var(--in-content-accent-color);
+  color: var(--color-accent-primary);
   border-bottom-color: currentColor;
 }
 
@@ -410,7 +388,7 @@ html|select:not([size], [multiple]):dir(rtl) {
 }
 
 html|select:not([size], [multiple]) > html|option {
-  background-color: var(--in-content-box-background);
+  background-color: var(--background-color-box);
   color: var(--in-content-text-color);
 }
 
@@ -539,7 +517,7 @@ xul|menulist > xul|menupopup {
 
   --panel-border-color: var(--in-content-box-border-color);
   --panel-border-radius: 2px;
-  --panel-background: var(--in-content-box-background);
+  --panel-background: var(--background-color-box);
   --panel-color: var(--in-content-text-color);
   --panel-padding: 0;
 }
@@ -589,7 +567,7 @@ xul|search-textbox {
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 4px;
   color: inherit;
-  background-color: var(--in-content-box-background);
+  background-color: var(--background-color-box);
 }
 
 xul|search-textbox {
@@ -637,30 +615,35 @@ xul|search-textbox[disabled="true"] {
 /* Links */
 
 html|a,
-.text-link {
+.text-link,
+::part(support-link) {
   cursor: pointer;
   color: var(--link-color);
 }
 
-html|a:visited {
+html|a:visited,
+::part(support-link):visited {
   color: var(--link-color-visited);
 }
 
 html|a:hover,
 .text-link:hover,
-button.text-link:is(:not([disabled="true"]), :enabled):hover {
+button.text-link:is(:not([disabled="true"]), :enabled):hover,
+::part(support-link):hover {
   color: var(--link-color-hover);
 }
 
 html|a:hover:active,
 .text-link:hover:active,
-button.text-link:is(:not([disabled="true"]), :enabled):hover:active {
+button.text-link:is(:not([disabled="true"]), :enabled):hover:active,
+::part(support-link):hover:active {
   color: var(--link-color-active);
   text-decoration: none;
 }
 
 html|a:focus-visible,
-.text-link:focus-visible {
+.text-link:focus-visible,
+::part(support-link):focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--link-focus-outline-offset);
   border-radius: 4px;
@@ -791,7 +774,7 @@ html|*#categories > html|*.category:dir(rtl) {
 @media not (forced-colors) {
   #categories > .category[selected],
   #categories > .category.selected {
-    color: var(--in-content-accent-color);
+    color: var(--color-accent-primary);
   }
 
   #categories > .category[selected]:not(:hover) {
@@ -801,7 +784,7 @@ html|*#categories > html|*.category:dir(rtl) {
 
   #categories > .category[selected]:hover:active,
   #categories > .category.selected:hover:active {
-    color: var(--in-content-accent-color-active);
+    color: var(--color-accent-primary-active);
   }
 }
 
@@ -909,7 +892,7 @@ xul|listheader,
 xul|richlistbox {
   appearance: none;
   margin-inline: 0;
-  background-color: var(--in-content-box-background);
+  background-color: var(--background-color-box);
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 4px;
   color: var(--in-content-text-color);
@@ -980,7 +963,7 @@ xul|richlistitem[selected] xul|menulist:focus-visible {
 }
 
 xul|panel[type="autocomplete-richlistbox"] {
-  background-color: var(--in-content-box-background);
+  background-color: var(--background-color-box);
   border: 1px solid var(--in-content-box-border-color);
   color: var(--in-content-text-color);
 }
@@ -992,7 +975,7 @@ xul|tree {
   font-size: 1em;
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 4px;
-  background-color: var(--in-content-box-background);
+  background-color: var(--background-color-box);
   color: inherit;
   margin: 0;
 }
@@ -1138,7 +1121,7 @@ input[type="text"][warning]:enabled:not(:focus) {
 /* Cards */
 
 .card {
-  background: var(--in-content-box-background);
+  background: var(--background-color-box);
   /* Needed for high-contrast where the border will appear. */
   border: 1px solid transparent;
   border-radius: 4px;

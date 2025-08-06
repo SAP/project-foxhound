@@ -447,16 +447,34 @@ TimeoutManager::~TimeoutManager() {
           ("TimeoutManager %p destroyed\n", this));
 }
 
-uint32_t TimeoutManager::GetTimeoutId(Timeout::Reason aReason) {
-  switch (aReason) {
-    case Timeout::Reason::eIdleCallbackTimeout:
-      return ++mIdleCallbackTimeoutCounter;
-    case Timeout::Reason::eTimeoutOrInterval:
-      return ++mTimeoutIdCounter;
-    case Timeout::Reason::eDelayedWebTaskTimeout:
-    default:
-      return std::numeric_limits<uint32_t>::max();  // no cancellation support
-  }
+int32_t TimeoutManager::GetTimeoutId(Timeout::Reason aReason) {
+  int32_t timeoutId;
+  do {
+    switch (aReason) {
+      case Timeout::Reason::eIdleCallbackTimeout:
+        timeoutId = mIdleCallbackTimeoutCounter;
+        if (mIdleCallbackTimeoutCounter ==
+            std::numeric_limits<int32_t>::max()) {
+          mIdleCallbackTimeoutCounter = 1;
+        } else {
+          ++mIdleCallbackTimeoutCounter;
+        }
+        break;
+      case Timeout::Reason::eTimeoutOrInterval:
+        timeoutId = mTimeoutIdCounter;
+        if (mTimeoutIdCounter == std::numeric_limits<int32_t>::max()) {
+          mTimeoutIdCounter = 1;
+        } else {
+          ++mTimeoutIdCounter;
+        }
+        break;
+      case Timeout::Reason::eDelayedWebTaskTimeout:
+      default:
+        return -1;  // no cancellation support
+    }
+  } while (mTimeouts.GetTimeout(timeoutId, aReason));
+
+  return timeoutId;
 }
 
 bool TimeoutManager::IsRunningTimeout() const { return mRunningTimeout; }
@@ -577,12 +595,11 @@ bool TimeoutManager::ClearTimeoutInternal(int32_t aTimerId,
                  aReason == Timeout::Reason::eIdleCallbackTimeout,
              "This timeout reason doesn't support cancellation.");
 
-  uint32_t timerId = (uint32_t)aTimerId;
   Timeouts& timeouts = aIsIdle ? mIdleTimeouts : mTimeouts;
   RefPtr<TimeoutExecutor>& executor = aIsIdle ? mIdleExecutor : mExecutor;
   bool deferredDeletion = false;
 
-  Timeout* timeout = timeouts.GetTimeout(timerId, aReason);
+  Timeout* timeout = timeouts.GetTimeout(aTimerId, aReason);
   if (!timeout) {
     return false;
   }

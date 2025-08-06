@@ -12,6 +12,9 @@ add_task(async function () {
 
   const dbg = await initDebugger("doc-scripts.html");
 
+  // This test covers the Web Console, whereas it is no longer the default output
+  await toggleJsTracerMenuItem(dbg, "#jstracer-menu-item-console");
+
   // Add an iframe before starting the tracer to later check for key event on it
   const preExistingIframeBrowsingContext = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
@@ -58,7 +61,7 @@ add_task(async function () {
     gBrowser.selectedBrowser
   );
 
-  await hasConsoleMessage(dbg, "DOM | click");
+  await hasConsoleMessage(dbg, "DOM | node.click");
   await hasConsoleMessage(dbg, "λ simple");
 
   const iframeBrowsingContext = await SpecialPowers.spawn(
@@ -75,7 +78,7 @@ add_task(async function () {
   );
 
   await BrowserTestUtils.synthesizeKey("x", {}, iframeBrowsingContext);
-  await hasConsoleMessage(dbg, "DOM | keypress");
+  await hasConsoleMessage(dbg, "DOM | node.keypress");
   await hasConsoleMessage(dbg, "λ onkeypress");
 
   await SpecialPowers.spawn(
@@ -90,7 +93,7 @@ add_task(async function () {
     {},
     preExistingIframeBrowsingContext
   );
-  await hasConsoleMessage(dbg, "DOM | keydown");
+  await hasConsoleMessage(dbg, "DOM | node.keydown");
   await hasConsoleMessage(dbg, "λ onkeydown");
 
   // Test Blackboxing

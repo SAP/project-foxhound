@@ -16,23 +16,22 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.focus.R
 import org.mozilla.focus.activity.robots.notificationTray
 import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.TestAssetHelper
-import org.mozilla.focus.helpers.TestHelper.getStringResource
 import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.pressHomeKey
 import org.mozilla.focus.helpers.TestHelper.waitingTime
+import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 import java.io.IOException
 
 // This test switches out of Focus and opens it from the private browsing notification
 @RunWith(AndroidJUnit4ClassRunner::class)
-class SwitchContextTest {
+class SwitchContextTest : TestSetup() {
     private lateinit var webServer: MockWebServer
     private val featureSettingsHelper = FeatureSettingsHelper()
 
@@ -40,7 +39,8 @@ class SwitchContextTest {
     var mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
-    fun setUp() {
+    override fun setUp() {
+        super.setUp()
         featureSettingsHelper.setCfrForTrackingProtectionEnabled(false)
         webServer = MockWebServer().apply {
             dispatcher = MockWebServerHelper.AndroidAssetDispatcher()
@@ -77,7 +77,7 @@ class SwitchContextTest {
         // Pull down system bar and select Open
         mDevice.openNotification()
         notificationTray {
-            verifySystemNotificationExists(getStringResource(R.string.notification_erase_text))
+            verifySystemNotificationExists("Erase browsing history?")
             expandEraseBrowsingNotification()
         }.clickNotificationOpenButton {
             verifyBrowserView()
@@ -123,7 +123,7 @@ class SwitchContextTest {
         // switch to Focus
         mDevice.openNotification()
         notificationTray {
-            verifySystemNotificationExists(getStringResource(R.string.notification_erase_text))
+            verifySystemNotificationExists("Erase browsing history?")
             expandEraseBrowsingNotification()
         }.clickNotificationOpenButton {
             verifyBrowserView()

@@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   RemoteSettingsConfig: "resource://gre/modules/RustRemoteSettings.sys.mjs",
   RemoteSettingsServer:
@@ -117,8 +118,6 @@ class _QuickSuggestTestUtils {
     }
     // If you add other properties to `this`, null them in `uninit()`.
 
-    Services.telemetry.clearScalars();
-
     scope.registerCleanupFunction?.(() => this.uninit());
   }
 
@@ -133,7 +132,6 @@ class _QuickSuggestTestUtils {
     for (let p of TEST_SCOPE_PROPERTIES) {
       this[p] = null;
     }
-    Services.telemetry.clearScalars();
   }
 
   get DEFAULT_CONFIG() {
@@ -393,7 +391,7 @@ class _QuickSuggestTestUtils {
    */
   ampRemoteSettings({
     keywords = ["amp"],
-    url = "http://example.com/amp",
+    url = "https://example.com/amp",
     title = "Amp Suggestion",
     score = 0.3,
   } = {}) {
@@ -403,12 +401,91 @@ class _QuickSuggestTestUtils {
       title,
       score,
       id: 1,
-      click_url: "http://example.com/amp-click",
-      impression_url: "http://example.com/amp-impression",
+      click_url: "https://example.com/amp-click",
+      impression_url: "https://example.com/amp-impression",
       advertiser: "Amp",
       iab_category: "22 - Shopping",
       icon: "1234",
     };
+  }
+
+  /**
+   * Returns an expected AMP (sponsored) result that can be passed to
+   * `check_results()` in xpcshell tests regardless of whether the Rust backend
+   * is enabled.
+   *
+   * @returns {object}
+   *   An object that can be passed to `check_results()`.
+   */
+  ampResult({
+    source,
+    provider,
+    keyword = "amp",
+    fullKeyword = keyword,
+    title = "Amp Suggestion",
+    url = "https://example.com/amp",
+    originalUrl = url,
+    icon = null,
+    iconBlob = null,
+    impressionUrl = "https://example.com/amp-impression",
+    clickUrl = "https://example.com/amp-click",
+    blockId = 1,
+    advertiser = "Amp",
+    iabCategory = "22 - Shopping",
+    suggestedIndex = 0,
+    isSuggestedIndexRelativeToGroup = true,
+    isBestMatch = false,
+    requestId = undefined,
+    descriptionL10n = { id: "urlbar-result-action-sponsored" },
+  } = {}) {
+    let result = {
+      suggestedIndex,
+      isSuggestedIndexRelativeToGroup,
+      isBestMatch,
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      heuristic: false,
+      payload: {
+        title,
+        url,
+        originalUrl,
+        requestId,
+        displayUrl: url.replace(/^https:\/\//, ""),
+        isSponsored: true,
+        qsSuggestion: fullKeyword ?? keyword,
+        sponsoredImpressionUrl: impressionUrl,
+        sponsoredClickUrl: clickUrl,
+        sponsoredBlockId: blockId,
+        sponsoredAdvertiser: advertiser,
+        sponsoredIabCategory: iabCategory,
+        isBlockable: true,
+        blockL10n: {
+          id: "urlbar-result-menu-dismiss-firefox-suggest",
+        },
+        isManageable: true,
+        telemetryType: "adm_sponsored",
+      },
+    };
+
+    if (descriptionL10n) {
+      result.payload.descriptionL10n = descriptionL10n;
+    }
+
+    if (lazy.UrlbarPrefs.get("quickSuggestRustEnabled")) {
+      result.payload.source = source || "rust";
+      result.payload.provider = provider || "Amp";
+      if (result.payload.source == "rust") {
+        result.payload.iconBlob = iconBlob;
+      } else {
+        result.payload.icon = icon;
+      }
+    } else {
+      result.payload.source = source || "remote-settings";
+      result.payload.provider = provider || "AdmWikipedia";
+      result.payload.icon = icon;
+    }
+
+    return result;
   }
 
   /**
@@ -420,7 +497,7 @@ class _QuickSuggestTestUtils {
    */
   wikipediaRemoteSettings({
     keywords = ["wikipedia"],
-    url = "http://example.com/wikipedia",
+    url = "https://example.com/wikipedia",
     title = "Wikipedia Suggestion",
     score = 0.2,
   } = {}) {
@@ -430,11 +507,122 @@ class _QuickSuggestTestUtils {
       title,
       score,
       id: 2,
-      click_url: "http://example.com/wikipedia-click",
-      impression_url: "http://example.com/wikipedia-impression",
+      click_url: "https://example.com/wikipedia-click",
+      impression_url: "https://example.com/wikipedia-impression",
       advertiser: "Wikipedia",
       iab_category: "5 - Education",
       icon: "1234",
+    };
+  }
+
+  /**
+   * Returns an expected Wikipedia (non-sponsored) result that can be passed to
+   * `check_results()` in xpcshell tests regardless of whether the Rust backend
+   * is enabled.
+   *
+   * @returns {object}
+   *   An object that can be passed to `check_results()`.
+   */
+  wikipediaResult({
+    source,
+    provider,
+    keyword = "wikipedia",
+    fullKeyword = keyword,
+    title = "Wikipedia Suggestion",
+    url = "https://example.com/wikipedia",
+    originalUrl = url,
+    icon = null,
+    iconBlob = null,
+    impressionUrl = "https://example.com/wikipedia-impression",
+    clickUrl = "https://example.com/wikipedia-click",
+    blockId = 2,
+    advertiser = "Wikipedia",
+    iabCategory = "5 - Education",
+    suggestedIndex = -1,
+    isSuggestedIndexRelativeToGroup = true,
+  } = {}) {
+    let result = {
+      suggestedIndex,
+      isSuggestedIndexRelativeToGroup,
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      heuristic: false,
+      payload: {
+        title,
+        url,
+        originalUrl,
+        displayUrl: url.replace(/^https:\/\//, ""),
+        isSponsored: false,
+        qsSuggestion: fullKeyword ?? keyword,
+        sponsoredAdvertiser: "Wikipedia",
+        sponsoredIabCategory: "5 - Education",
+        isBlockable: true,
+        blockL10n: {
+          id: "urlbar-result-menu-dismiss-firefox-suggest",
+        },
+        isManageable: true,
+        telemetryType: "adm_nonsponsored",
+      },
+    };
+
+    if (lazy.UrlbarPrefs.get("quickSuggestRustEnabled")) {
+      result.payload.source = source || "rust";
+      result.payload.provider = provider || "Wikipedia";
+      result.payload.iconBlob = iconBlob;
+    } else {
+      result.payload.source = source || "remote-settings";
+      result.payload.provider = provider || "AdmWikipedia";
+      result.payload.icon = icon;
+      result.payload.sponsoredImpressionUrl = impressionUrl;
+      result.payload.sponsoredClickUrl = clickUrl;
+      result.payload.sponsoredBlockId = blockId;
+      result.payload.sponsoredAdvertiser = advertiser;
+      result.payload.sponsoredIabCategory = iabCategory;
+    }
+
+    return result;
+  }
+
+  /**
+   * Returns an expected dynamic Wikipedia (non-sponsored) result that can be
+   * passed to `check_results()` in xpcshell tests.
+   *
+   * @returns {object}
+   *   An object that can be passed to `check_results()`.
+   */
+  dynamicWikipediaResult({
+    source = "merino",
+    provider = "wikipedia",
+    keyword = "wikipedia",
+    fullKeyword = keyword,
+    title = "Wikipedia Suggestion",
+    url = "https://example.com/wikipedia",
+    icon = null,
+    suggestedIndex = -1,
+    isSuggestedIndexRelativeToGroup = true,
+  } = {}) {
+    return {
+      suggestedIndex,
+      isSuggestedIndexRelativeToGroup,
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      heuristic: false,
+      payload: {
+        title,
+        url,
+        source,
+        provider,
+        icon,
+        displayUrl: url.replace(/^https:\/\//, ""),
+        isSponsored: false,
+        qsSuggestion: fullKeyword ?? keyword,
+        isBlockable: true,
+        blockL10n: {
+          id: "urlbar-result-menu-dismiss-firefox-suggest",
+        },
+        isManageable: true,
+        telemetryType: "wikipedia",
+      },
     };
   }
 
@@ -447,7 +635,7 @@ class _QuickSuggestTestUtils {
    */
   amoRemoteSettings({
     keywords = ["amo"],
-    url = "http://example.com/amo",
+    url = "https://example.com/amo",
     title = "Amo Suggestion",
     score = 0.2,
   } = {}) {
@@ -462,6 +650,366 @@ class _QuickSuggestTestUtils {
       description: "Addon with score",
       number_of_ratings: 1256,
     };
+  }
+
+  /**
+   * Returns a remote settings weather record.
+   *
+   * @returns {object}
+   *   A weather record for storing in remote settings.
+   */
+  weatherRecord({
+    keywords = ["weather"],
+    min_keyword_length = undefined,
+    score = 0.29,
+  } = {}) {
+    let [maxLen, maxWordCount] = keywords.reduce(
+      ([len, wordCount], kw) => [
+        Math.max(len, kw.length),
+        Math.max(wordCount, kw.split(/\s+/).filter(s => !!s).length),
+      ],
+      [0, 0]
+    );
+    return {
+      type: "weather",
+      attachment: {
+        keywords,
+        min_keyword_length,
+        score,
+        max_keyword_length: maxLen,
+        max_keyword_word_count: maxWordCount,
+      },
+    };
+  }
+
+  /**
+   * Returns a remote settings geonames record populated with some cities.
+   *
+   * @returns {object}
+   *   A geonames record for storing in remote settings.
+   */
+  geonamesRecord() {
+    let geonames = [
+      // Waterloo, AL
+      {
+        id: 1,
+        name: "Waterloo",
+        latitude: "34.91814",
+        longitude: "-88.0642",
+        feature_class: "P",
+        feature_code: "PPL",
+        country_code: "US",
+        admin1_code: "AL",
+        population: 200,
+        alternate_names: ["waterloo"],
+        alternate_names_2: [{ name: "waterloo" }],
+      },
+      // AL
+      {
+        id: 2,
+        name: "Alabama",
+        latitude: "32.75041",
+        longitude: "-86.75026",
+        feature_class: "A",
+        feature_code: "ADM1",
+        country_code: "US",
+        admin1_code: "AL",
+        population: 4530315,
+        alternate_names: ["al", "alabama"],
+        alternate_names_2: [
+          { name: "alabama" },
+          { name: "al", iso_language: "abbr" },
+        ],
+      },
+      // Waterloo, IA
+      {
+        id: 3,
+        name: "Waterloo",
+        latitude: "42.49276",
+        longitude: "-92.34296",
+        feature_class: "P",
+        feature_code: "PPLA2",
+        country_code: "US",
+        admin1_code: "IA",
+        population: 68460,
+        alternate_names: ["waterloo"],
+        alternate_names_2: [{ name: "waterloo" }],
+      },
+      // IA
+      {
+        id: 4,
+        name: "Iowa",
+        latitude: "42.00027",
+        longitude: "-93.50049",
+        feature_class: "A",
+        feature_code: "ADM1",
+        country_code: "US",
+        admin1_code: "IA",
+        population: 2955010,
+        alternate_names: ["ia", "iowa"],
+        alternate_names_2: [
+          { name: "iowa" },
+          { name: "ia", iso_language: "abbr" },
+        ],
+      },
+      // Made-up cities with the same name in the US and CA. The CA city has a
+      // larger population.
+      {
+        id: 100,
+        name: "US CA City",
+        latitude: "38.06084",
+        longitude: "-97.92977",
+        feature_class: "P",
+        feature_code: "PPL",
+        country_code: "US",
+        admin1_code: "IA",
+        population: 1,
+        alternate_names: ["us ca city"],
+        alternate_names_2: [{ name: "us ca city" }],
+      },
+      {
+        id: 101,
+        name: "US CA City",
+        latitude: "45.50884",
+        longitude: "-73.58781",
+        feature_class: "P",
+        feature_code: "PPL",
+        country_code: "CA",
+        admin1_code: "08",
+        population: 2,
+        alternate_names: ["us ca city"],
+        alternate_names_2: [{ name: "us ca city" }],
+      },
+      // Made-up cities that are only ~1.5 km apart.
+      {
+        id: 102,
+        name: "Twin City A",
+        latitude: "33.748889",
+        longitude: "-84.39",
+        feature_class: "P",
+        feature_code: "PPL",
+        country_code: "US",
+        admin1_code: "GA",
+        population: 1,
+        alternate_names: ["twin city a"],
+        alternate_names_2: [{ name: "twin city a" }],
+      },
+      {
+        id: 103,
+        name: "Twin City B",
+        latitude: "33.76",
+        longitude: "-84.4",
+        feature_class: "P",
+        feature_code: "PPL",
+        country_code: "US",
+        admin1_code: "GA",
+        population: 2,
+        alternate_names: ["twin city b"],
+        alternate_names_2: [{ name: "twin city b" }],
+      },
+      {
+        id: 1850147,
+        name: "Tokyo",
+        latitude: "35.6895",
+        longitude: "139.69171",
+        feature_class: "P",
+        feature_code: "PPLC",
+        country_code: "JP",
+        admin1_code: "Tokyo-to",
+        population: 8336599,
+        alternate_names: ["tokyo"],
+        alternate_names_2: [{ name: "tokyo" }],
+      },
+    ];
+    let [maxLen, maxWordCount] = geonames.reduce(
+      ([len, wordCount], geoname) => [
+        Math.max(len, ...geoname.alternate_names.map(n => n.length)),
+        Math.max(
+          wordCount,
+          ...geoname.alternate_names.map(
+            n => n.split(/\s+/).filter(s => !!s).length
+          )
+        ),
+      ],
+      [0, 0]
+    );
+    return {
+      type: "geonames",
+      attachment: {
+        geonames,
+        max_alternate_name_length: maxLen,
+        max_alternate_name_word_count: maxWordCount,
+      },
+    };
+  }
+
+  /**
+   * Returns an expected AMO (addons) result that can be passed to
+   * `check_results()` in xpcshell tests regardless of whether the Rust backend
+   * is enabled.
+   *
+   * @returns {object}
+   *   An object that can be passed to `check_results()`.
+   */
+  amoResult({
+    source,
+    provider,
+    title = "Amo Suggestion",
+    description = "Amo description",
+    url = "https://example.com/amo",
+    originalUrl = "https://example.com/amo",
+    icon = null,
+    setUtmParams = true,
+  }) {
+    if (setUtmParams) {
+      url = new URL(url);
+      url.searchParams.set("utm_medium", "firefox-desktop");
+      url.searchParams.set("utm_source", "firefox-suggest");
+      url = url.href;
+    }
+
+    let result = {
+      isBestMatch: true,
+      suggestedIndex: 1,
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      heuristic: false,
+      payload: {
+        source,
+        provider,
+        title,
+        description,
+        url,
+        originalUrl,
+        icon,
+        displayUrl: url.replace(/^https:\/\//, ""),
+        shouldShowUrl: true,
+        bottomTextL10n: { id: "firefox-suggest-addons-recommended" },
+        helpUrl: lazy.QuickSuggest.HELP_URL,
+        telemetryType: "amo",
+      },
+    };
+
+    if (lazy.UrlbarPrefs.get("quickSuggestRustEnabled")) {
+      result.payload.source = source || "rust";
+      result.payload.provider = provider || "Amo";
+    } else {
+      result.payload.source = source || "remote-settings";
+      result.payload.provider = provider || "AddonSuggestions";
+    }
+
+    return result;
+  }
+
+  /**
+   * Returns an expected MDN result that can be passed to `check_results()` in
+   * xpcshell tests regardless of whether the Rust backend is enabled.
+   *
+   * @returns {object}
+   *   An object that can be passed to `check_results()`.
+   */
+  mdnResult({ url, title, description }) {
+    let finalUrl = new URL(url);
+    finalUrl.searchParams.set("utm_medium", "firefox-desktop");
+    finalUrl.searchParams.set("utm_source", "firefox-suggest");
+    finalUrl.searchParams.set(
+      "utm_campaign",
+      "firefox-mdn-web-docs-suggestion-experiment"
+    );
+    finalUrl.searchParams.set("utm_content", "treatment");
+
+    let result = {
+      isBestMatch: true,
+      suggestedIndex: 1,
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
+      heuristic: false,
+      payload: {
+        telemetryType: "mdn",
+        title,
+        url: finalUrl.href,
+        originalUrl: url,
+        displayUrl: finalUrl.href.replace(/^https:\/\//, ""),
+        description,
+        icon: "chrome://global/skin/icons/mdn.svg",
+        shouldShowUrl: true,
+        bottomTextL10n: { id: "firefox-suggest-mdn-bottom-text" },
+      },
+    };
+
+    if (lazy.UrlbarPrefs.get("quickSuggestRustEnabled")) {
+      result.payload.source = "rust";
+      result.payload.provider = "Mdn";
+    } else {
+      result.payload.source = "remote-settings";
+      result.payload.provider = "MDNSuggestions";
+    }
+
+    return result;
+  }
+
+  /**
+   * Returns an expected weather result that can be passed to `check_results()`
+   * in xpcshell tests regardless of whether the Rust backend is enabled.
+   *
+   * @returns {object}
+   *   An object that can be passed to `check_results()`.
+   */
+  weatherResult({
+    source,
+    provider,
+    city = null,
+    region = null,
+    telemetryType = undefined,
+    temperatureUnit = undefined,
+  } = {}) {
+    if (!temperatureUnit) {
+      temperatureUnit =
+        Services.locale.regionalPrefsLocales[0] == "en-US" ? "f" : "c";
+    }
+
+    let result = {
+      type: lazy.UrlbarUtils.RESULT_TYPE.DYNAMIC,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      heuristic: false,
+      suggestedIndex: 1,
+      payload: {
+        temperatureUnit,
+        url: lazy.MerinoTestUtils.WEATHER_SUGGESTION.url,
+        input: lazy.MerinoTestUtils.WEATHER_SUGGESTION.url,
+        iconId: "6",
+        requestId: lazy.MerinoTestUtils.server.response.body.request_id,
+        source: "merino",
+        provider: "accuweather",
+        dynamicType: "weather",
+        city: city || lazy.MerinoTestUtils.WEATHER_SUGGESTION.city_name,
+        region: region || lazy.MerinoTestUtils.WEATHER_SUGGESTION.region_code,
+        temperature:
+          lazy.MerinoTestUtils.WEATHER_SUGGESTION.current_conditions
+            .temperature[temperatureUnit],
+        currentConditions:
+          lazy.MerinoTestUtils.WEATHER_SUGGESTION.current_conditions.summary,
+        forecast: lazy.MerinoTestUtils.WEATHER_SUGGESTION.forecast.summary,
+        high: lazy.MerinoTestUtils.WEATHER_SUGGESTION.forecast.high[
+          temperatureUnit
+        ],
+        low: lazy.MerinoTestUtils.WEATHER_SUGGESTION.forecast.low[
+          temperatureUnit
+        ],
+      },
+    };
+
+    if (lazy.UrlbarPrefs.get("quickSuggestRustEnabled")) {
+      result.payload.source = source || "rust";
+      result.payload.provider = provider || "Weather";
+      if (telemetryType !== null) {
+        result.payload.telemetryType = telemetryType || "weather";
+      }
+    } else {
+      throw new Error("Weather result not supported when Rust disabled");
+    }
+
+    return result;
   }
 
   /**
@@ -508,6 +1056,9 @@ class _QuickSuggestTestUtils {
    *   Whether the result is expected to be a best match.
    * @param {boolean} [options.isManageable]
    *   Whether the result is expected to show Manage result menu item.
+   * @param {boolean} [options.hasSponsoredLabel]
+   *   Whether the result is expected to show the "Sponsored" label below the
+   *   title.
    * @returns {result}
    *   The quick suggest result.
    */
@@ -519,6 +1070,7 @@ class _QuickSuggestTestUtils {
     isSponsored = true,
     isBestMatch = false,
     isManageable = true,
+    hasSponsoredLabel = isSponsored || isBestMatch,
   } = {}) {
     this.Assert.ok(
       url || originalUrl,
@@ -578,7 +1130,7 @@ class _QuickSuggestTestUtils {
     let { row } = details.element;
 
     let sponsoredElement = row._elements.get("description");
-    if (isSponsored || isBestMatch) {
+    if (hasSponsoredLabel) {
       this.Assert.ok(sponsoredElement, "Result sponsored label element exists");
       this.Assert.equal(
         sponsoredElement.textContent,
@@ -587,7 +1139,7 @@ class _QuickSuggestTestUtils {
       );
     } else {
       this.Assert.ok(
-        !sponsoredElement,
+        !sponsoredElement?.textContent,
         "Result sponsored label element should not exist"
       );
     }
@@ -647,75 +1199,6 @@ class _QuickSuggestTestUtils {
   }
 
   /**
-   * Checks the values of all the quick suggest telemetry keyed scalars and,
-   * if provided, other non-quick-suggest keyed scalars. Scalar values are all
-   * assumed to be 1.
-   *
-   * @param {object} expectedKeysByScalarName
-   *   Maps scalar names to keys that are expected to be recorded. The value for
-   *   each key is assumed to be 1. If you expect a scalar to be incremented,
-   *   include it in this object; otherwise, don't include it.
-   */
-  assertScalars(expectedKeysByScalarName) {
-    let scalars = lazy.TelemetryTestUtils.getProcessScalars(
-      "parent",
-      true,
-      true
-    );
-
-    // Check all quick suggest scalars.
-    expectedKeysByScalarName = { ...expectedKeysByScalarName };
-    for (let scalarName of Object.values(
-      lazy.UrlbarProviderQuickSuggest.TELEMETRY_SCALARS
-    )) {
-      if (scalarName in expectedKeysByScalarName) {
-        lazy.TelemetryTestUtils.assertKeyedScalar(
-          scalars,
-          scalarName,
-          expectedKeysByScalarName[scalarName],
-          1
-        );
-        delete expectedKeysByScalarName[scalarName];
-      } else {
-        this.Assert.ok(
-          !(scalarName in scalars),
-          "Scalar should not be present: " + scalarName
-        );
-      }
-    }
-
-    // Check any other remaining scalars that were passed in.
-    for (let [scalarName, key] of Object.entries(expectedKeysByScalarName)) {
-      lazy.TelemetryTestUtils.assertKeyedScalar(scalars, scalarName, key, 1);
-    }
-  }
-
-  /**
-   * Checks quick suggest telemetry events. This is the same as
-   * `TelemetryTestUtils.assertEvents()` except it filters in only quick suggest
-   * events by default. If you are expecting events that are not in the quick
-   * suggest category, use `TelemetryTestUtils.assertEvents()` directly or pass
-   * in a filter override for `category`.
-   *
-   * @param {Array} expectedEvents
-   *   List of expected telemetry events.
-   * @param {object} filterOverrides
-   *   Extra properties to set in the filter object.
-   * @param {object} options
-   *   The options object to pass to `TelemetryTestUtils.assertEvents()`.
-   */
-  assertEvents(expectedEvents, filterOverrides = {}, options = undefined) {
-    lazy.TelemetryTestUtils.assertEvents(
-      expectedEvents,
-      {
-        category: lazy.QuickSuggest.TELEMETRY_EVENT_CATEGORY,
-        ...filterOverrides,
-      },
-      options
-    );
-  }
-
-  /**
    * Asserts that URLs in a result's payload have the timestamp template
    * substring replaced with real timestamps.
    *
@@ -725,8 +1208,8 @@ class _QuickSuggestTestUtils {
    *   substrings. For example:
    *   ```js
    *   {
-   *     url: "http://example.com/foo-%YYYYMMDDHH%",
-   *     sponsoredClickUrl: "http://example.com/bar-%YYYYMMDDHH%",
+   *     url: "https://example.com/foo-%YYYYMMDDHH%",
+   *     sponsoredClickUrl: "https://example.com/bar-%YYYYMMDDHH%",
    *   }
    *   ```
    */
@@ -849,17 +1332,23 @@ class _QuickSuggestTestUtils {
   }
 
   /**
-   * Sets the app's locales, calls your callback, and resets locales.
+   * Sets the app's home region and locales, calls your callback, and resets
+   * the region and locales.
    *
-   * @param {Array} locales
+   * @param {object} options
+   *   Options object.
+   * @param {Array} options.locales
    *   An array of locale strings. The entire array will be set as the available
    *   locales, and the first locale in the array will be set as the requested
    *   locale.
-   * @param {Function} callback
+   * @param {Function} options.callback
    *  The callback to be called with the {@link locales} set. This function can
    *  be async.
+   * @param {string} options.homeRegion
+   *   The home region to set, an all-caps country code, e.g., "US", "CA", "DE".
+   *   Leave undefined to skip setting a region.
    */
-  async withLocales(locales, callback) {
+  async withLocales({ locales, callback, homeRegion = undefined }) {
     let promiseChanges = async desiredLocales => {
       this.#log(
         "withLocales",
@@ -871,6 +1360,7 @@ class _QuickSuggestTestUtils {
 
       if (desiredLocales[0] == Services.locale.requestedLocales[0]) {
         // Nothing happens when the locale doesn't actually change.
+        this.#log("withLocales", "Locale is already " + desiredLocales[0]);
         return;
       }
 
@@ -908,6 +1398,11 @@ class _QuickSuggestTestUtils {
       this.#log("withLocales", "Done waiting for locale changes");
     };
 
+    let originalHome = lazy.Region.home;
+    if (homeRegion) {
+      lazy.Region._setHomeRegion(homeRegion, false);
+    }
+
     let available = Services.locale.availableLocales;
     let requested = Services.locale.requestedLocales;
 
@@ -924,6 +1419,10 @@ class _QuickSuggestTestUtils {
     );
 
     await callback();
+
+    if (homeRegion) {
+      lazy.Region._setHomeRegion(originalHome, false);
+    }
 
     promise = promiseChanges(requested);
     Services.locale.availableLocales = available;

@@ -17,19 +17,11 @@ add_setup(async function () {
     set: [["browser.urlbar.showSearchTerms.featureGate", true]],
   });
   await gCUITestUtils.addSearchBar();
-
-  await SearchTestUtils.installSearchExtension(
-    {
-      name: "MozSearch",
-      search_url: "https://www.example.com/",
-      search_url_get_params: "q={searchTerms}&pc=fake_code",
-    },
-    { setAsDefault: true }
-  );
-
+  let cleanup = await installPersistTestEngines();
   registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
     gCUITestUtils.removeSearchBar();
+    cleanup();
   });
 });
 
@@ -44,10 +36,11 @@ function assertSearchStringIsNotInUrlbar(searchString) {
     "valid",
     "Pageproxystate should be valid."
   );
+  let state = window.gURLBar.getBrowserState(window.gBrowser.selectedBrowser);
   Assert.equal(
-    gBrowser.selectedBrowser.searchTerms,
-    "",
-    "searchTerms should be blank."
+    state.persist?.searchTerms,
+    undefined,
+    "searchTerms should be undefined."
   );
 }
 
@@ -60,7 +53,7 @@ add_task(async function search_bar_on() {
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(
     tab.linkedBrowser,
     false,
-    `https://www.example.com/?q=${SEARCH_STRING}&pc=fake_code`
+    `https://www.example.com/?q=${SEARCH_STRING}`
   );
 
   let searchBar = BrowserSearch.searchBar;
@@ -83,7 +76,7 @@ add_task(async function search_bar_on_with_url_bar_search() {
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(
     tab.linkedBrowser,
     false,
-    `https://www.example.com/?q=${SEARCH_STRING}&pc=fake_code`
+    `https://www.example.com/?q=${SEARCH_STRING}`
   );
 
   gURLBar.focus();

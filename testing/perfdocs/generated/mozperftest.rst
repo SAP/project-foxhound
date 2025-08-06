@@ -29,6 +29,28 @@ perftest_browser_xhtml_dom.js
 **Measures the size of the DOM**
 
 
+dom/media/webcodecs/test/performance
+------------------------------------
+Performance tests running through Mochitest for WebCodecs
+
+test_encode_from_canvas.html
+============================
+
+:owner: Media Team
+:name: WebCodecs Video Encoding
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:realtime - frame-to-frame mean (key),unit:ms,shouldAlert:True, name:realtime - frame-to-frame stddev (key),unit:ms,shouldAlert:True, name:realtime - frame-dropping rate (key),unit:ratio,shouldAlert:True, name:realtime - frame-to-frame mean (non key),unit:ms,shouldAlert:True, name:realtime - frame-to-frame stddev (non key),unit:ms,shouldAlert:True, name:realtime - frame-dropping rate (non key),unit:ratio,shouldAlert:True, name:quality - first encode to last output,unit:ms,shouldAlert:True
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor plain
+
+**Test webcodecs video encoding performance**
+
+
 dom/serviceworkers/test/performance
 -----------------------------------
 Performance tests running through Mochitest for Service Workers
@@ -100,6 +122,75 @@ test_update.html
  --manifest-flavor plain
 
 **Test updating.**
+
+
+intl/benchmarks/test/xpcshell
+-----------------------------
+Performance tests running through XPCShell for Intl code
+
+perftest_dateTimeFormat.js
+==========================
+
+:owner: Internationalization Team
+:name: Intl.DateTimeFormat
+:tags: intl,ecma402
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:Intl.DateTimeFormat constructor iterations,unit:iterations, name:Intl.DateTimeFormat constructor accumulatedTime,unit:ms, name:Intl.DateTimeFormat constructor perCallTime,unit:ms, name:Intl.DateTimeFormat.prototype.format iterations,unit:iterations, name:Intl.DateTimeFormat.prototype.format accumulatedTime,unit:ms, name:Intl.DateTimeFormat.prototype.format perCallTime,unit:ms
+ --verbose
+
+**Test the speed of the Intl.DateTimeFormat implementation.**
+
+perftest_locale.js
+==================
+
+:owner: Internationalization Team
+:name: Intl.Locale
+:tags: intl,ecma402
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:Intl.Locale constructor iterations,unit:iterations, name:Intl.Locale constructor accumulatedTime,unit:ms, name:Intl.Locale constructor perCallTime,unit:ms, name:Intl.Locale.prototype accessors iterations,unit:iterations, name:Intl.Locale.prototype accessors accumulatedTime,unit:ms, name:Intl.Locale.prototype accessors perCallTime,unit:ms, name:Intl.Locale.maximize operation iterations,unit:iterations, name:Intl.Locale.maximize operation accumulatedTime,unit:ms, name:Intl.Locale.maximize operation perCallTime,unit:ms
+ --verbose
+
+**Test the speed of the Intl.Locale implementation.**
+
+perftest_numberFormat.js
+========================
+
+:owner: Internationalization Team
+:name: Intl.NumberFormat
+:tags: intl,ecma402
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:Intl.NumberFormat constructor iterations,unit:iterations, name:Intl.NumberFormat constructor accumulatedTime,unit:ms, name:Intl.NumberFormat constructor perCallTime,unit:ms, name:Intl.NumberFormat.prototype.format iterations,unit:iterations, name:Intl.NumberFormat.prototype.format accumulatedTime,unit:ms, name:Intl.NumberFormat.prototype.format perCallTime,unit:ms, name:Intl.NumberFormat.prototype.formatToParts iterations,unit:iterations, name:Intl.NumberFormat.prototype.formatToParts accumulatedTime,unit:ms, name:Intl.NumberFormat.prototype.formatToParts perCallTime,unit:ms
+ --verbose
+
+**Test the speed of the Intl.NumberFormat implementation.**
+
+perftest_pluralRules.js
+=======================
+
+:owner: Internationalization Team
+:name: Intl.PluralRules
+:tags: intl,ecma402
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:Intl.PluralRules constructor iterations,unit:iterations, name:Intl.PluralRules constructor accumulatedTime,unit:ms, name:Intl.PluralRules constructor perCallTime,unit:ms, name:Intl.PluralRules.prototype.select iterations,unit:iterations, name:Intl.PluralRules.prototype.select accumulatedTime,unit:ms, name:Intl.PluralRules.prototype.select perCallTime,unit:ms, name:Intl.PluralRules pluralCategories iterations,unit:iterations, name:Intl.PluralRules pluralCategories accumulatedTime,unit:ms, name:Intl.PluralRules pluralCategories perCallTime,unit:ms
+ --verbose
+
+**Test the speed of the Intl.PluralRules implementation.**
 
 
 netwerk/test/perf
@@ -294,6 +385,101 @@ perftest_WPT_firefox_init_file.js
 **Run webpagetest performance pageload tests on Firefox against Alexa top 50 websites**
 
 This mozperftest gets webpagetest to run pageload tests on Firefox against the 50 most popular websites and provide data. The full list of data returned from webpagetest: firstContentfulPaint, timeToContentfulPaint, visualComplete90, firstPaint, visualComplete99, visualComplete, SpeedIndex, bytesIn, bytesOut, TTFB, fullyLoadedCPUms, fullyLoadedCPUpct, domElements, domContentLoadedEventStart, domContentLoadedEventEnd, loadEventStart, loadEventEnd
+
+
+toolkit/components/ml/tests/browser
+-----------------------------------
+Performance tests running through Mochitest for ML Models
+
+browser_ml_suggest_inference.js
+===============================
+
+:owner: GenAI Team
+:name: ML Suggest Inference Model
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:inference-pipeline-ready-latency,unit:ms,shouldAlert:True, name:inference-initialization-latency,unit:ms,shouldAlert:True, name:inference-model-run-latency,unit:ms,shouldAlert:True, name:inference-pipeline-ready-memory,unit:MB,shouldAlert:True, name:inference-initialization-memory,unit:MB,shouldAlert:True, name:inference-model-run-memory,unit:MB,shouldAlert:True
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Template test for ML suggest Inference Model**
+
+browser_ml_suggest_intent_perf.js
+=================================
+
+:owner: GenAI Team
+:name: ML Suggest Intent Model
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:intent-pipeline-ready-latency,unit:ms,shouldAlert:True, name:intent-initialization-latency,unit:ms,shouldAlert:True, name:intent-model-run-latency,unit:ms,shouldAlert:True, name:intent-pipeline-ready-memory,unit:MB,shouldAlert:True, name:intent-initialization-memory,unit:MB,shouldAlert:True, name:intent-model-run-memory,unit:MB,shouldAlert:True, name:intent-total-memory-usage,unit:MB,shouldAlert:True
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Template test for latency for ML suggest Intent Model**
+
+browser_ml_suggest_ner_perf.js
+==============================
+
+:owner: GenAI Team
+:name: ML Suggest NER Model
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:NER-pipeline-ready-latency,unit:ms,shouldAlert:True, name:NER-initialization-latency,unit:ms,shouldAlert:True, name:NER-model-run-latency,unit:ms,shouldAlert:True, name:NER-pipeline-ready-memory,unit:MB,shouldAlert:True, name:NER-initialization-memory,unit:MB,shouldAlert:True, name:NER-model-run-memory,unit:MB,shouldAlert:True, name:NER-total-memory-usage,unit:MB,shouldAlert:True
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Template test for latency for ML suggest NER model**
+
+browser_ml_engine_perf.js
+=========================
+
+:owner: GenAI Team
+:name: ML Test Model
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:EXAMPLE-cold-start-pipeline-ready-latency,unit:ms,shouldAlert:True, name:EXAMPLE-cold-start-initialization-latency,unit:ms,shouldAlert:True, name:EXAMPLE-cold-start-model-run-latency,unit:ms,shouldAlert:True, name:EXAMPLE-cold-start-pipeline-ready-memory,unit:MB,shouldAlert:True, name:EXAMPLE-cold-start-initialization-memory,unit:MB,shouldAlert:True, name:EXAMPLE-cold-start-model-run-memory,unit:MB,shouldAlert:True, name:EXAMPLE-cold-start-total-memory-usage,unit:MB,shouldAlert:True, name:EXAMPLE-pipeline-ready-latency,unit:ms,shouldAlert:True, name:EXAMPLE-initialization-latency,unit:ms,shouldAlert:True, name:EXAMPLE-model-run-latency,unit:ms,shouldAlert:True, name:EXAMPLE-pipeline-ready-memory,unit:MB,shouldAlert:True, name:EXAMPLE-initialization-memory,unit:MB,shouldAlert:True, name:EXAMPLE-model-run-memory,unit:MB,shouldAlert:True, name:EXAMPLE-total-memory-usage,unit:MB,shouldAlert:True
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Template test for latency for ml models**
+
+browser_ml_engine_multi_perf.js
+===============================
+
+:owner: GenAI Team
+:name: ML Test Multi Model
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:intent-pipeline-ready-latency,unit:ms,shouldAlert:True, name:intent-initialization-latency,unit:ms,shouldAlert:True, name:intent-model-run-latency,unit:ms,shouldAlert:True, name:intent-pipeline-ready-memory,unit:MB,shouldAlert:True, name:intent-initialization-memory,unit:MB,shouldAlert:True, name:intent-model-run-memory,unit:MB,shouldAlert:True, name:intent-total-memory-usage,unit:MB,shouldAlert:True, name:suggest-pipeline-ready-latency,unit:ms,shouldAlert:True, name:suggest-initialization-latency,unit:ms,shouldAlert:True, name:suggest-model-run-latency,unit:ms,shouldAlert:True, name:suggest-pipeline-ready-memory,unit:MB,shouldAlert:True, name:suggest-initialization-memory,unit:MB,shouldAlert:True, name:suggest-model-run-memory,unit:MB,shouldAlert:True, name:suggest-total-memory-usage,unit:MB,shouldAlert:True, name:engine3-pipeline-ready-latency,unit:ms,shouldAlert:True, name:engine3-initialization-latency,unit:ms,shouldAlert:True, name:engine3-model-run-latency,unit:ms,shouldAlert:True, name:engine3-pipeline-ready-memory,unit:MB,shouldAlert:True, name:engine3-initialization-memory,unit:MB,shouldAlert:True, name:engine3-model-run-memory,unit:MB,shouldAlert:True, name:engine3-total-memory-usage,unit:MB,shouldAlert:True, name:engine4-pipeline-ready-latency,unit:ms,shouldAlert:True, name:engine4-initialization-latency,unit:ms,shouldAlert:True, name:engine4-model-run-latency,unit:ms,shouldAlert:True, name:engine4-pipeline-ready-memory,unit:MB,shouldAlert:True, name:engine4-initialization-memory,unit:MB,shouldAlert:True, name:engine4-model-run-memory,unit:MB,shouldAlert:True, name:engine4-total-memory-usage,unit:MB,shouldAlert:True
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Testing model execution concurrenty**
 
 
 If you have any questions, please see this `wiki page <https://wiki.mozilla.org/TestEngineering/Performance#Where_to_find_us>`_.

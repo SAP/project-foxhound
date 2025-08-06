@@ -21,10 +21,14 @@ import org.mozilla.fenix.theme.ThemeManager
 /**
  * View that contains and configures the History List
  */
+@Suppress("LongParameterList")
 class HistoryView(
     container: ViewGroup,
     val store: HistoryFragmentStore,
     val onZeroItemsLoaded: () -> Unit,
+    val onRecentlyClosedClicked: () -> Unit,
+    val onHistoryItemClicked: (History) -> Unit,
+    val onDeleteInitiated: (Set<History>) -> Unit,
     val onEmptyStateChanged: (Boolean) -> Unit,
 ) : LibraryPageView(container) {
 
@@ -37,7 +41,12 @@ class HistoryView(
     var mode: HistoryFragmentState.Mode = HistoryFragmentState.Mode.Normal
         private set
 
-    val historyAdapter = HistoryAdapter(store) { isEmpty ->
+    val historyAdapter = HistoryAdapter(
+        store = store,
+        onHistoryItemClicked = onHistoryItemClicked,
+        onRecentlyClosedClicked = onRecentlyClosedClicked,
+        onDeleteInitiated = onDeleteInitiated,
+    ) { isEmpty ->
         onEmptyStateChanged(isEmpty)
     }.apply {
         addLoadStateListener {
@@ -122,7 +131,7 @@ class HistoryView(
 
         with(binding.recentlyClosedNavEmpty) {
             recentlyClosedNav.setOnClickListener {
-                store.dispatch(HistoryFragmentAction.EnterRecentlyClosed)
+                onRecentlyClosedClicked()
             }
             val numRecentTabs = recentlyClosedNav.context.components.core.store.state.closedTabs.size
             recentlyClosedTabsDescription.text = String.format(

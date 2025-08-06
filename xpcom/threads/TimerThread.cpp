@@ -736,7 +736,7 @@ TimeDuration TimerThread::ComputeAcceptableFiringDelay(
   constexpr int64_t timerDurationDivider = 8;
   static_assert(IsPowerOfTwo(static_cast<uint64_t>(timerDurationDivider)));
   const TimeDuration tmp = timerDuration / timerDurationDivider;
-  return std::min(std::max(minDelay, tmp), maxDelay);
+  return std::clamp(tmp, minDelay, maxDelay);
 }
 
 NS_IMETHODIMP
@@ -883,7 +883,7 @@ TimerThread::Run() {
                                                      1.0, 1.75, 2.75};
         if (ChaosMode::isActive(ChaosFeature::TimerScheduling)) {
           microseconds *= sChaosFractions[ChaosMode::randomUint32LessThan(
-              ArrayLength(sChaosFractions))];
+              std::size(sChaosFractions))];
           forceRunNextTimer = true;
         }
 
@@ -915,7 +915,7 @@ TimerThread::Run() {
           const double waitInMs = waitFor.ToMilliseconds();
           const double chaosWaitInMs =
               waitInMs * sChaosFractions[ChaosMode::randomUint32LessThan(
-                             ArrayLength(sChaosFractions))];
+                             std::size(sChaosFractions))];
           waitFor = TimeDuration::FromMilliseconds(chaosWaitInMs);
         }
 

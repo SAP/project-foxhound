@@ -17,6 +17,7 @@
 #include "mozilla/css/StylePreloadKind.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/SharedSubResourceCache.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCompatibility.h"
 #include "nsCycleCollectionParticipant.h"
@@ -62,7 +63,7 @@ class SheetLoadDataHashKey : public PLDHashEntryHdr {
         mParsingMode(aKey->mParsingMode),
         mCompatMode(aKey->mCompatMode),
         mSRIMetadata(aKey->mSRIMetadata),
-        mIsLinkRelPreload(aKey->mIsLinkRelPreload) {
+        mIsLinkRelPreloadOrEarlyHint(aKey->mIsLinkRelPreloadOrEarlyHint) {
     MOZ_COUNT_CTOR(SheetLoadDataHashKey);
   }
 
@@ -83,7 +84,8 @@ class SheetLoadDataHashKey : public PLDHashEntryHdr {
         mParsingMode(aParsingMode),
         mCompatMode(aCompatMode),
         mSRIMetadata(aSRIMetadata),
-        mIsLinkRelPreload(IsLinkRelPreload(aPreloadKind)) {
+        mIsLinkRelPreloadOrEarlyHint(
+            css::IsLinkRelPreloadOrEarlyHint(aPreloadKind)) {
     MOZ_ASSERT(aURI);
     MOZ_ASSERT(aPrincipal);
     MOZ_ASSERT(aLoaderPrincipal);
@@ -100,7 +102,8 @@ class SheetLoadDataHashKey : public PLDHashEntryHdr {
         mParsingMode(std::move(toMove.mParsingMode)),
         mCompatMode(std::move(toMove.mCompatMode)),
         mSRIMetadata(std::move(toMove.mSRIMetadata)),
-        mIsLinkRelPreload(std::move(toMove.mIsLinkRelPreload)) {
+        mIsLinkRelPreloadOrEarlyHint(
+            std::move(toMove.mIsLinkRelPreloadOrEarlyHint)) {
     MOZ_COUNT_CTOR(SheetLoadDataHashKey);
   }
 
@@ -150,7 +153,7 @@ class SheetLoadDataHashKey : public PLDHashEntryHdr {
   const css::SheetParsingMode mParsingMode;
   const nsCompatibility mCompatMode;
   dom::SRIMetadata mSRIMetadata;
-  const bool mIsLinkRelPreload;
+  const bool mIsLinkRelPreloadOrEarlyHint;
 };
 
 namespace css {
@@ -246,12 +249,7 @@ class Loader final {
   }
 
   nsCompatibility CompatMode(StylePreloadKind aPreloadKind) const {
-    // For Link header preload, we guess non-quirks, because otherwise it is
-    // useless for modern pages.
-    //
-    // Link element preload is generally good because the speculative html
-    // parser deals with quirks mode properly.
-    if (aPreloadKind == StylePreloadKind::FromLinkRelPreloadHeader) {
+    if (css::ShouldAssumeStandardsMode(aPreloadKind)) {
       return eCompatibility_FullStandards;
     }
     return mDocumentCompatMode;
@@ -478,6 +476,14 @@ class Loader final {
   friend class SheetLoadData;
   friend class StreamLoader;
 
+  enum class UsePreload : bool { No, Yes };
+  enum class UseLoadGroup : bool { No, Yes };
+
+  nsresult NewStyleSheetChannel(SheetLoadData& aLoadData, CORSMode aCorsMode,
+                                UsePreload aUsePreload,
+                                UseLoadGroup aUseLoadGroup,
+                                nsIChannel** aOutChannel);
+
   // Only to be called by `LoadSheet`.
   [[nodiscard]] bool MaybeDeferLoad(SheetLoadData& aLoadData,
                                     SheetState aSheetState,
@@ -524,9 +530,13 @@ class Loader final {
                               nsIURI* aTargetURI, nsINode* aRequestingNode,
                               const nsAString& aNonce, StylePreloadKind);
 
-  std::tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
-      const SheetInfo& aInfo, css::SheetParsingMode aParsingMode,
-      bool aSyncLoad, css::StylePreloadKind aPreloadKind) {
+  bool MaybePutIntoLoadsPerformed(SheetLoadData& aLoadData);
+
+ private:
+  std::tuple<RefPtr<StyleSheet>, SheetState,
+             RefPtr<SubResourceNetworkMetadataHolder>>
+  CreateSheet(const SheetInfo& aInfo, css::SheetParsingMode aParsingMode,
+              bool aSyncLoad, css::StylePreloadKind aPreloadKind) {
     nsIPrincipal* triggeringPrincipal = aInfo.mTriggeringPrincipal
                                             ? aInfo.mTriggeringPrincipal.get()
                                             : LoaderPrincipal();
@@ -539,11 +549,12 @@ class Loader final {
   // For inline style, the aURI param is null, but the aLinkingContent
   // must be non-null then.  The loader principal must never be null
   // if aURI is not null.
-  std::tuple<RefPtr<StyleSheet>, SheetState> CreateSheet(
-      nsIURI* aURI, nsIContent* aLinkingContent,
-      nsIPrincipal* aTriggeringPrincipal, css::SheetParsingMode, CORSMode,
-      const Encoding* aPreloadOrParentDataEncoding, const nsAString& aIntegrity,
-      bool aSyncLoad, StylePreloadKind);
+  std::tuple<RefPtr<StyleSheet>, SheetState,
+             RefPtr<SubResourceNetworkMetadataHolder>>
+  CreateSheet(nsIURI* aURI, nsIContent* aLinkingContent,
+              nsIPrincipal* aTriggeringPrincipal, css::SheetParsingMode,
+              CORSMode, const Encoding* aPreloadOrParentDataEncoding,
+              const nsAString& aIntegrity, bool aSyncLoad, StylePreloadKind);
 
   // Pass in either a media string or the MediaList from the CSSParser.  Don't
   // pass both.
@@ -569,6 +580,12 @@ class Loader final {
 
   // Synchronously notify of a cached load data.
   void NotifyOfCachedLoad(RefPtr<SheetLoadData>);
+
+  // Notify observers of a cached stylesheet being.
+  void NotifyObserversForCachedSheet(SheetLoadData&);
+
+  // Add the Performance API's Resource Timing entry for the cached load data.
+  void AddPerformanceEntryForCachedSheet(SheetLoadData&);
 
   // Start the loads of all the sheets in mPendingDatas
   void StartDeferredLoads();

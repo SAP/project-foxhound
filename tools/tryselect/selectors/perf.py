@@ -34,6 +34,7 @@ from .perfselector.classification import (
     Variants,
 )
 from .perfselector.perfcomparators import get_comparator
+from .perfselector.perfpushinfo import PerfPushInfo
 from .perfselector.utils import LogProcessor
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -46,8 +47,12 @@ PREVIEW_SCRIPT = pathlib.Path(
 PERFHERDER_BASE_URL = (
     "https://treeherder.mozilla.org/perfherder/"
     "compare?originalProject=try&originalRevision=%s&newProject=try&newRevision=%s"
+    "&framework=%s"
 )
-PERFCOMPARE_BASE_URL = "https://beta--mozilla-perfcompare.netlify.app/compare-results?baseRev=%s&newRev=%s&baseRepo=try&newRepo=try"
+PERFCOMPARE_BASE_URL = (
+    "https://perf.compare/compare-results?"
+    "baseRev=%s&newRev=%s&baseRepo=try&newRepo=try&framework=%s"
+)
 TREEHERDER_TRY_BASE_URL = "https://treeherder.mozilla.org/jobs?repo=try&revision=%s"
 TREEHERDER_ALERT_TASKS_URL = (
     "https://treeherder.mozilla.org/api/performance/alertsummary-tasks/?id=%s"
@@ -108,6 +113,8 @@ class PerfParser(CompareParser):
     variants = provider.variants
     suites = provider.suites
     categories = provider.categories
+
+    push_info = PerfPushInfo()
 
     arguments = [
         [
@@ -326,14 +333,6 @@ class PerfParser(CompareParser):
                 "help": "Set the extra args "
                 "(e.x, --extra-args verbose post-startup-delay=1)",
                 "metavar": "",
-            },
-        ],
-        [
-            ["--perfcompare-beta"],
-            {
-                "action": "store_true",
-                "default": False,
-                "help": "Use PerfCompare Beta instead of CompareView.",
             },
         ],
         [
@@ -1104,7 +1103,7 @@ class PerfParser(CompareParser):
                 if set(selected_tasks) <= set(push["tasks"]):
                     return push["base_revision_treeherder"]
 
-    def save_revision_treeherder(selected_tasks, base_commit, base_revision_treeherder):
+    def save_revision_treeherder(selected_tasks, base_commit):
         """
         Save the base revision of treeherder to the cache.
         See "check_cached_revision" for more information about the data structure.
@@ -1116,7 +1115,7 @@ class PerfParser(CompareParser):
         """
         today = datetime.now().strftime("%Y-%m-%d")
         new_revision = {
-            "base_revision_treeherder": base_revision_treeherder,
+            "base_revision_treeherder": PerfParser.push_info.base_revision,
             "date": today,
             "tasks": list(selected_tasks),
         }
@@ -1141,9 +1140,7 @@ class PerfParser(CompareParser):
         """
         return any("android" in task for task in selected_tasks)
 
-    def setup_try_config(
-        try_config_params, extra_args, selected_tasks, base_revision_treeherder=None
-    ):
+    def setup_try_config(try_config_params, extra_args, selected_tasks):
         """
         Setup the try config for a push.
 
@@ -1162,16 +1159,38 @@ class PerfParser(CompareParser):
         if extra_args:
             args = " ".join(extra_args)
             env["PERF_FLAGS"] = args
-        if base_revision_treeherder:
+        if PerfParser.push_info.base_revision:
             # Reset updated since we no longer need to worry
             # about failing while we're on a base commit
-            env["PERF_BASE_REVISION"] = base_revision_treeherder
+            env["PERF_BASE_REVISION"] = PerfParser.push_info.base_revision
         if PerfParser.found_android_tasks(selected_tasks) and try_config.get(
             "use-artifact-builds", False
         ):
             # XXX: Fix artifact mode on android (no bug)
             try_config["use-artifact-builds"] = False
             print("Disabling artifact mode due to android task selection")
+
+            if try_config.get("disable-pgo", False):
+                print(
+                    "WARNING: PGO builds are disabled as artifact mode is "
+                    "enabled by default from your mozconfig."
+                )
+
+    def get_majority_framework(selected_tasks):
+        suite_counts = {suite: 0 for suite in PerfParser.suites.keys()}
+
+        for task in selected_tasks:
+            for suite, suite_info in PerfParser.suites.items():
+                if suite_info["task-specifier"] in task:
+                    suite_counts[suite] += 1
+                    break
+
+        if all(value == 0 for value in suite_counts.values()):
+            PerfParser.push_info.framework = 1
+        else:
+            PerfParser.push_info.framework = PerfParser.suites[
+                max(suite_counts, key=suite_counts.get)
+            ]["framework"]
 
     def perf_push_to_try(
         selected_tasks,
@@ -1218,8 +1237,6 @@ class PerfParser(CompareParser):
         if comparator_klass.__name__ != "BasePerfComparator":
             base_comparator = False
 
-        new_revision_treeherder = ""
-        base_revision_treeherder = ""
         try:
             # redirect_stdout allows us to feed each line into
             # a processor that we can use to catch the revision
@@ -1229,15 +1246,14 @@ class PerfParser(CompareParser):
             # Push the base revision first. This lets the new revision appear
             # first in the Treeherder view, and it also lets us enhance the new
             # revision with information about the base run.
-            base_revision_treeherder = None
             if base_comparator:
                 # Don't cache the base revision when a custom comparison is being performed
                 # since the base revision is now unique and not general to all pushes
-                base_revision_treeherder = PerfParser.check_cached_revision(
+                PerfParser.push_info.base_revision = PerfParser.check_cached_revision(
                     selected_tasks, compare_commit
                 )
 
-            if not (dry_run or single_run or base_revision_treeherder):
+            if not (dry_run or single_run or PerfParser.push_info.base_revision):
                 # Setup the base revision, and try config. This lets us change the options
                 # we run the tests with through the PERF_FLAGS environment variable.
                 base_extra_args = list(extra_args)
@@ -1261,13 +1277,12 @@ class PerfParser(CompareParser):
                         dry_run=dry_run,
                         closed_tree=False,
                         allow_log_capture=True,
+                        push_to_vcs=True,
                     )
 
-                base_revision_treeherder = log_processor.revision
+                PerfParser.push_info.base_revision = log_processor.revision
                 if base_comparator:
-                    PerfParser.save_revision_treeherder(
-                        selected_tasks, compare_commit, base_revision_treeherder
-                    )
+                    PerfParser.save_revision_treeherder(selected_tasks, compare_commit)
 
                 comparator_obj.teardown_base_revision()
 
@@ -1277,7 +1292,6 @@ class PerfParser(CompareParser):
                 try_config_params,
                 new_extra_args,
                 selected_tasks,
-                base_revision_treeherder=base_revision_treeherder,
             )
 
             with redirect_stdout(log_processor):
@@ -1292,15 +1306,14 @@ class PerfParser(CompareParser):
                     dry_run=dry_run,
                     closed_tree=False,
                     allow_log_capture=True,
+                    push_to_vcs=True,
                 )
 
-            new_revision_treeherder = log_processor.revision
+            PerfParser.push_info.new_revision = log_processor.revision
             comparator_obj.teardown_new_revision()
 
         finally:
             comparator_obj.teardown()
-
-        return base_revision_treeherder, new_revision_treeherder
 
     def run(
         update=False,
@@ -1320,7 +1333,7 @@ class PerfParser(CompareParser):
 
         if not fzf:
             print(FZF_NOT_FOUND)
-            return 1
+            return
 
         if clear_cache:
             print(f"Removing cached {cache_file} file")
@@ -1347,7 +1360,7 @@ class PerfParser(CompareParser):
             )
             if not all_tasks:
                 print("Could not find any tasks for the requested tests")
-                return None
+                return
 
         # Perform the selection, then push to try and return the revisions
         queries = []
@@ -1388,7 +1401,7 @@ class PerfParser(CompareParser):
 
         if len(selected_tasks) == 0:
             print("No tasks selected")
-            return None
+            return
 
         total_task_count = len(selected_tasks) * rebuild
         if total_task_count > MAX_PERF_TASKS:
@@ -1399,12 +1412,13 @@ class PerfParser(CompareParser):
                 f"perf run is {MAX_PERF_TASKS}. \nIf this was unexpected, please file a bug in Testing :: Performance."
                 "\n----------------------------------------------------------------------------------------------\n\n"
             )
-            return None
+            return
 
         if detect_changes:
             PerfParser.inject_change_detector(base_cmd, all_tasks, selected_tasks)
 
-        return PerfParser.perf_push_to_try(
+        PerfParser.get_majority_framework(selected_tasks)
+        PerfParser.perf_push_to_try(
             selected_tasks,
             selected_categories,
             queries,
@@ -1541,13 +1555,6 @@ class PerfParser(CompareParser):
                 base_cmd[idx] += ":wrap"
 
 
-def get_compare_url(revisions, perfcompare_beta=False):
-    """Setup the comparison link."""
-    if perfcompare_beta:
-        return PERFCOMPARE_BASE_URL % revisions
-    return PERFHERDER_BASE_URL % revisions
-
-
 def run(**kwargs):
     if (
         kwargs.get("browsertime_upload_apk") is not None
@@ -1566,8 +1573,7 @@ def run(**kwargs):
     # the rules we've setup
     PerfParser.run_category_checks()
     PerfParser.check_cached_revision([])
-
-    revisions = PerfParser.run(
+    PerfParser.run(
         profile=kwargs.get("try_config_params", {})
         .get("try_task_config", {})
         .get("gecko-profile", False),
@@ -1577,20 +1583,27 @@ def run(**kwargs):
         **kwargs,
     )
 
-    if revisions is None:
+    if not PerfParser.push_info.finished_run:
         return
 
     # Provide link to perfherder for comparisons now
-    if not kwargs.get("single_run", False):
-        perfcompare_url = get_compare_url(
-            revisions, perfcompare_beta=kwargs.get("perfcompare_beta", False)
+    if not kwargs.get("single_run", False) and not kwargs.get("dry_run", False):
+        perfcompare_url = (
+            PERFCOMPARE_BASE_URL % PerfParser.push_info.get_perfcompare_settings()
         )
-        original_try_url = TREEHERDER_TRY_BASE_URL % revisions[0]
-        local_change_try_url = TREEHERDER_TRY_BASE_URL % revisions[1]
+        compareview_url = (
+            PERFHERDER_BASE_URL % PerfParser.push_info.get_perfcompare_settings()
+        )
+        original_try_url = TREEHERDER_TRY_BASE_URL % PerfParser.push_info.base_revision
+        local_change_try_url = (
+            TREEHERDER_TRY_BASE_URL % PerfParser.push_info.new_revision
+        )
+
         print(
             "\n!!!NOTE!!!\n You'll be able to find a performance comparison here "
             "once the tests are complete (ensure you select the right "
-            "framework): %s\n" % perfcompare_url
+            f"framework):\n {perfcompare_url}\n\n"
+            f" The old comparison tool is still available at this URL:\n {compareview_url}\n"
         )
         print("\n*******************************************************")
         print("*          2 commits/try-runs are created...          *")

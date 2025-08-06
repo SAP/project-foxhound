@@ -1,3 +1,4 @@
+/* eslint-disable no-shadow */
 import { ContextMenu } from "content-src/components/ContextMenu/ContextMenu";
 import { _LinkMenu as LinkMenu } from "content-src/components/LinkMenu/LinkMenu";
 import React from "react";
@@ -425,6 +426,7 @@ describe("<LinkMenu>", () => {
           card_type: undefined,
           position: 3,
           is_pocket_card: false,
+          is_list_card: undefined,
         },
       ],
       menu_action_webext_dismiss: {
@@ -633,6 +635,7 @@ describe("<LinkMenu>", () => {
         card_type: undefined,
         position: 3,
         is_pocket_card: false,
+        is_list_card: undefined,
       };
       assert.deepEqual(blockUrlOption.action.data[0], expected);
     });
@@ -680,6 +683,7 @@ describe("<LinkMenu>", () => {
         card_type: undefined,
         position: 3,
         is_pocket_card: true,
+        is_list_card: undefined,
       };
       assert.deepEqual(blockUrlOption.action.data[0], expected);
     });

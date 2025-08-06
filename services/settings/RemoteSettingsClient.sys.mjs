@@ -22,7 +22,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Utils: "resource://services-settings/Utils.sys.mjs",
 });
 
-const TELEMETRY_COMPONENT = "remotesettings";
+const TELEMETRY_COMPONENT = "Remotesettings";
 
 ChromeUtils.defineLazyGetter(lazy, "console", () => lazy.Utils.log);
 
@@ -203,6 +203,9 @@ class AttachmentDownloader extends Downloader {
       },
       set: async (attachmentId, attachment) => {
         return this._client.db.saveAttachment(attachmentId, attachment);
+      },
+      setMultiple: async attachmentsIdsBlobs => {
+        return this._client.db.saveAttachments(attachmentsIdsBlobs);
       },
       delete: async attachmentId => {
         return this._client.db.saveAttachment(attachmentId, null);

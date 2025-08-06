@@ -789,7 +789,7 @@ static void DrawCellWithSnapping(NSCell* cell, CGContextRef cgContext,
     // Snap to the smaller control size.
     controlSize = smallerControlSize;
     sizeIndex = smallerControlSizeIndex;
-    MOZ_ASSERT(sizeIndex < ArrayLength(settings.naturalSizes));
+    MOZ_ASSERT(sizeIndex < std::size(settings.naturalSizes));
 
     // Resize and center the drawRect.
     if (sizes[sizeIndex].width) {
@@ -814,7 +814,7 @@ static void DrawCellWithSnapping(NSCell* cell, CGContextRef cgContext,
 
   [cell setControlSize:controlSize];
 
-  MOZ_ASSERT(sizeIndex < ArrayLength(settings.minimumSizes));
+  MOZ_ASSERT(sizeIndex < std::size(settings.minimumSizes));
   const NSSize minimumSize = settings.minimumSizes[sizeIndex];
   DrawCellWithScaling(cell, cgContext, drawRect, controlSize, sizes[sizeIndex],
                       minimumSize, settings.margins, view, mirrorHorizontal);
@@ -897,7 +897,7 @@ static void ApplyControlParamsToNSCell(
 // These are the sizes that Gecko needs to request to draw if it wants
 // to get a standard-sized Aqua radio button drawn. Note that the rects
 // that draw these are actually a little bigger.
-static const CellRenderSettings radioSettings = {
+MOZ_RUNINIT static const CellRenderSettings radioSettings = {
     {
         NSMakeSize(11, 11),  // mini
         NSMakeSize(13, 13),  // small
@@ -917,7 +917,7 @@ static const CellRenderSettings radioSettings = {
          {0, 0, 0, 0}   // regular
      }}};
 
-static const CellRenderSettings checkboxSettings = {
+MOZ_RUNINIT static const CellRenderSettings checkboxSettings = {
     {
         NSMakeSize(11, 11),  // mini
         NSMakeSize(13, 13),  // small
@@ -980,7 +980,7 @@ void nsNativeThemeCocoa::DrawCheckboxOrRadio(
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
-static const CellRenderSettings searchFieldSettings = {
+MOZ_RUNINIT static const CellRenderSettings searchFieldSettings = {
     {
         NSMakeSize(0, 16),  // mini
         NSMakeSize(0, 19),  // small
@@ -1115,10 +1115,10 @@ nsNativeThemeCocoa::ControlParams nsNativeThemeCocoa::ComputeControlParams(
   return params;
 }
 
-static const NSSize kHelpButtonSize = NSMakeSize(20, 20);
-static const NSSize kDisclosureButtonSize = NSMakeSize(21, 21);
+MOZ_RUNINIT static const NSSize kHelpButtonSize = NSMakeSize(20, 20);
+MOZ_RUNINIT static const NSSize kDisclosureButtonSize = NSMakeSize(21, 21);
 
-static const CellRenderSettings pushButtonSettings = {
+MOZ_RUNINIT static const CellRenderSettings pushButtonSettings = {
     {
         NSMakeSize(0, 16),  // mini
         NSMakeSize(0, 19),  // small
@@ -1373,7 +1373,7 @@ void nsNativeThemeCocoa::DrawButton(CGContextRef cgContext,
   }
 }
 
-static const CellRenderSettings dropdownSettings = {
+MOZ_RUNINIT static const CellRenderSettings dropdownSettings = {
     {
         NSMakeSize(0, 16),  // mini
         NSMakeSize(0, 19),  // small
@@ -1397,7 +1397,7 @@ static const CellRenderSettings dropdownSettings = {
          {3, 0, 3, 0}   // regular
      }}};
 
-static const CellRenderSettings editableMenulistSettings = {
+MOZ_RUNINIT static const CellRenderSettings editableMenulistSettings = {
     {
         NSMakeSize(0, 15),  // mini
         NSMakeSize(0, 18),  // small
@@ -1451,7 +1451,7 @@ void nsNativeThemeCocoa::DrawDropdown(CGContextRef cgContext,
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
-static const CellRenderSettings spinnerSettings = {
+MOZ_RUNINIT static const CellRenderSettings spinnerSettings = {
     {
         NSMakeSize(11,
                    16),  // mini (width trimmed by 2px to reduce blank border)
@@ -1544,7 +1544,7 @@ void nsNativeThemeCocoa::DrawSpinButton(CGContextRef cgContext,
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
-static const CellRenderSettings progressSettings[2][2] = {
+MOZ_RUNINIT static const CellRenderSettings progressSettings[2][2] = {
     // Vertical progress bar.
     {// Determined settings.
      {{
@@ -1657,7 +1657,7 @@ void nsNativeThemeCocoa::DrawProgress(CGContextRef cgContext,
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
-static const CellRenderSettings meterSetting = {
+MOZ_RUNINIT static const CellRenderSettings meterSetting = {
     {
         NSMakeSize(0, 16),  // mini
         NSMakeSize(0, 16),  // small
@@ -2562,10 +2562,14 @@ LayoutDeviceIntMargin nsNativeThemeCocoa::DirectionAwareMargin(
   return LayoutDeviceIntMargin(m.top, m.right, m.bottom, m.left);
 }
 
-static const LayoutDeviceIntMargin kAquaDropdownBorder(1, 22, 2, 5);
-static const LayoutDeviceIntMargin kAquaComboboxBorder(3, 20, 3, 4);
-static const LayoutDeviceIntMargin kAquaSearchfieldBorder(3, 5, 2, 19);
-static const LayoutDeviceIntMargin kAquaSearchfieldBorderBigSur(5, 5, 4, 26);
+MOZ_RUNINIT static const LayoutDeviceIntMargin kAquaDropdownBorder(1, 22, 2, 5);
+MOZ_RUNINIT static const LayoutDeviceIntMargin kAquaComboboxBorder(3, 20, 3, 4);
+MOZ_RUNINIT static const LayoutDeviceIntMargin kAquaSearchfieldBorder(3, 5, 2,
+                                                                      19);
+MOZ_RUNINIT static const LayoutDeviceIntMargin kAquaSearchfieldBorderBigSur(5,
+                                                                            5,
+                                                                            4,
+                                                                            26);
 
 LayoutDeviceIntMargin nsNativeThemeCocoa::GetWidgetBorder(
     nsDeviceContext* aContext, nsIFrame* aFrame, StyleAppearance aAppearance) {
@@ -2871,11 +2875,8 @@ LayoutDeviceIntSize nsNativeThemeCocoa::GetMinimumWidgetSize(
   NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntSize());
 }
 
-NS_IMETHODIMP
-nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame,
-                                       StyleAppearance aAppearance,
-                                       nsAtom* aAttribute, bool* aShouldRepaint,
-                                       const nsAttrValue* aOldValue) {
+bool nsNativeThemeCocoa::WidgetAttributeChangeRequiresRepaint(
+    StyleAppearance aAppearance, nsAtom* aAttribute) {
   // Some widget types just never change state.
   switch (aAppearance) {
     case StyleAppearance::MozWindowTitlebar:
@@ -2889,33 +2890,11 @@ nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame,
     case StyleAppearance::ProgressBar:
     case StyleAppearance::Meter:
     case StyleAppearance::Meterchunk:
-      *aShouldRepaint = false;
-      return NS_OK;
+      return false;
     default:
       break;
   }
-
-  // XXXdwh Not sure what can really be done here.  Can at least guess for
-  // specific widgets that they're highly unlikely to have certain states.
-  // For example, a toolbar doesn't care about any states.
-  if (!aAttribute) {
-    // Hover/focus/active changed.  Always repaint.
-    *aShouldRepaint = true;
-  } else {
-    // Check the attribute to see if it's relevant.
-    // disabled, checked, dlgtype, default, etc.
-    *aShouldRepaint = false;
-    if (aAttribute == nsGkAtoms::disabled || aAttribute == nsGkAtoms::checked ||
-        aAttribute == nsGkAtoms::selected ||
-        aAttribute == nsGkAtoms::visuallyselected ||
-        aAttribute == nsGkAtoms::menuactive ||
-        aAttribute == nsGkAtoms::sortDirection ||
-        aAttribute == nsGkAtoms::focused || aAttribute == nsGkAtoms::_default ||
-        aAttribute == nsGkAtoms::open || aAttribute == nsGkAtoms::hover)
-      *aShouldRepaint = true;
-  }
-
-  return NS_OK;
+  return Theme::WidgetAttributeChangeRequiresRepaint(aAppearance, aAttribute);
 }
 
 NS_IMETHODIMP

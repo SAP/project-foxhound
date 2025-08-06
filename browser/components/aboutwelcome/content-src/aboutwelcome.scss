@@ -87,12 +87,15 @@ html {
   --mr-screen-heading-color: var(--in-content-text-color);
   --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 20%) 0%, rgba(2, 144, 238, 20%) 100%);
   --mr-screen-background-color: #F8F6F4;
+  --single-select-border-color: #8F8F9D;
+  --single-select-hover-color: #DEDEDF;
 
   @media (prefers-color-scheme: dark) {
     --grey-subtitle-1: #FFF;
     --mr-welcome-background-color: #333336;
     --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 30%) 0%, rgba(2, 144, 238, 30%) 100%);
     --mr-screen-background-color: #62697A;
+    --single-select-hover-color: #52525E;
   }
 
   font-family: system-ui;
@@ -608,8 +611,16 @@ html {
             line-height: 16.5px;
             color: #5B5B66;
 
-            @media only screen and (width <= 800px) {
+            @mixin narrow-legal-paragraph {
               padding-inline: 30px;
+            }
+
+            @media only screen and (width <= 800px) {
+              @include narrow-legal-paragraph;
+            }
+
+            [narrow] & {
+              @include narrow-legal-paragraph;
             }
 
             @media (prefers-color-scheme: dark) {
@@ -764,7 +775,7 @@ html {
               background-color: var(--in-content-page-background);
 
               .indicator {
-                background-color: var(--in-content-accent-color);
+                background-color: var(--color-accent-primary);
               }
             }
           }
@@ -817,8 +828,16 @@ html {
             margin: 25px 0;
             padding-bottom: 30px;
 
-            @media only screen and (width <= 800px) {
+            @mixin narrow-hero-img {
               padding-bottom: unset;
+            }
+
+            @media only screen and (width <= 800px) {
+              @include narrow-hero-img;
+            }
+
+            [narrow] & {
+              @include narrow-hero-img;
             }
           }
         }
@@ -837,7 +856,7 @@ html {
           }
         }
 
-        @media only screen and (width <= 800px) {
+        @mixin narrow-multi-select-container {
           flex-direction: column;
           align-self: center;
           align-items: start;
@@ -851,13 +870,21 @@ html {
             margin-inline-start: 0;
           }
         }
+
+        @media only screen and (width <= 800px) {
+          @include narrow-multi-select-container;
+        }
+
+        [narrow] & {
+          @include narrow-multi-select-container;
+        }
       }
 
-      .tiles-theme-container {
+      .tiles-single-select-container {
         margin-block: -20px auto;
         align-items: initial;
 
-        .theme {
+        .select-item {
           min-width: 38px;
         }
       }
@@ -875,7 +902,7 @@ html {
       }
 
       @media only screen and (width >= 800px) {
-        .tiles-theme-section {
+        .tiles-single-select-section {
           margin-inline-start: -10px;
         }
 
@@ -915,7 +942,7 @@ html {
       // duplicate the above styles for no-rdm. unfortunately SASS won't allow
       // us to combine these selectors.
       &:where([no-rdm='true']) {
-        .tiles-theme-section {
+        .tiles-single-select-section {
           margin-inline-start: -10px;
         }
 
@@ -1007,7 +1034,7 @@ html {
           }
         }
 
-        @media only screen and (width <= 800px) {
+        @mixin narrow-split-fullscreen {
           .section-main,
           .section-secondary {
             width: 100%;
@@ -1049,9 +1076,17 @@ html {
             }
           }
         }
+
+        @media only screen and (width <= 800px) {
+          @include narrow-split-fullscreen;
+        }
+
+        [narrow] & {
+          @include narrow-split-fullscreen;
+        }
       }
 
-      @media only screen and (width <= 800px) {
+      @mixin narrow-split {
         &:where(:not([no-rdm])) {
           flex-direction: column;
           min-height: $small-main-section-height + $small-secondary-section-height;
@@ -1290,6 +1325,14 @@ html {
         }
       }
 
+      @media only screen and (width <= 800px) {
+        @include narrow-split;
+      }
+
+      [narrow] & {
+        @include narrow-split;
+      }
+
       @media only screen and (height <= 650px) {
         // Hide the "Sign in" button on the welcome screen when it would
         // otherwise overlap the screen. We'd reposition it, but then it would
@@ -1303,12 +1346,22 @@ html {
 
         // Reposition the "Sign in" button on the welcome screen to move inside
         // the screen when it would otherwise overlap the screen.
-        @media (width <= 620px) {
+        @mixin extra-narrow-secondary-cta {
           .section-main .secondary-cta.top {
             position: absolute;
             padding: 0;
             top: 0;
             inset-inline-end: 0;
+          }
+        }
+
+        @media (width <= 620px) {
+          @include extra-narrow-secondary-cta;
+        }
+
+        [narrow] & {
+          @media (width <= 620px) {
+            @include extra-narrow-secondary-cta;
           }
         }
       }
@@ -1346,8 +1399,16 @@ html {
   .rtamo-icon {
     text-align: start;
 
-    @media only screen and (width <= 800px) {
+    @mixin narrow-rtamo-icon {
       text-align: center;
+    }
+
+    @media only screen and (width <= 800px) {
+      @include narrow-rtamo-icon;
+    }
+
+    [narrow] & {
+      @include narrow-rtamo-icon;
     }
   }
 
@@ -1470,7 +1531,8 @@ html {
   }
 
   .language-loader {
-    filter: invert(1);
+    -moz-context-properties: fill;
+    fill: currentColor;
     margin-inline-end: 10px;
     position: relative;
     top: 3px;
@@ -1479,13 +1541,7 @@ html {
     margin-top: -6px;
   }
 
-  @media (prefers-color-scheme: dark) {
-    .language-loader {
-      filter: invert(0);
-    }
-  }
-
-  .tiles-theme-container {
+  .tiles-single-select-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1503,7 +1559,7 @@ html {
     }
   }
 
-  .tiles-theme-section {
+  .tiles-single-select-section {
     border: 0;
     display: flex;
     flex-wrap: wrap;
@@ -1520,24 +1576,101 @@ html {
       outline: 2px solid var(--in-content-primary-button-background);
     }
 
-    // newtab wallpaper specific styles
-    &.wallpaper {
-      justify-content: center;
+    // single select only specific styles
+    &.single-select:not(.wallpaper, .theme) {
+      flex-direction: row;
+      padding-top: 5px;
       gap: 10px;
+      justify-content: center;
 
+      .select-item {
+        position: relative;
+        padding-top: 5px;
+        border: 2px solid var(--single-select-border-color);
+        border-radius: 12px;
+
+        &:has(.input:focus),
+        &:has(.selected) {
+          outline: none;
+        }
+
+        &:has(.input:focus) {
+          outline: 2px solid var(--in-content-primary-button-background);
+          outline-offset: 5px;
+        }
+
+        &:has(.selected) {
+          border: 3px solid var(--in-content-primary-button-background);
+          border-radius: 12px;
+        }
+
+        &:hover {
+          background-color: var(--single-select-hover-color);
+        }
+
+        &:focus-visible {
+          outline: none;
+          // Only highlight the image, not the frame around the image and the label
+          .icon {
+            outline: initial;
+          }
+        }
+
+        .flair {
+          height: 18px;
+          border-radius: 4px;
+          background-color: #9059FF;
+          color: #FFF;
+          padding: 2px 8px;
+          position: absolute;
+          right: 1px;
+          top: -10px;
+          line-height: 1;
+        }
+
+        .icon {
+          outline: none;
+        }
+
+        .text {
+          margin-block: 8px;
+        }
+      }
+
+    }
+    // theme and wallpaper specific styles
+    &.wallpaper,
+    &.theme {
+      .select-item {
+        width: 180px;
+      }
+    }
+
+    // single select and wallpaper specific styles
+    &.single-select,
+    &.wallpaper {
       &:hover, &:focus-within {
         outline: none;
       }
 
-      .theme {
-        flex: unset;
-        width: unset;
+      .select-item {
         transition: var(--transition);
 
         &:has(.input:focus) {
           outline: 2px solid var(--in-content-primary-button-background);
           outline-offset: 2px;
         }
+      }
+    }
+
+    // newtab wallpaper specific styles
+    &.wallpaper {
+      justify-content: center;
+      gap: 10px;
+
+      .select-item {
+        flex: unset;
+        width: unset;
 
         .icon {
           width: 116px;
@@ -1621,14 +1754,13 @@ html {
 
     }
 
-    .theme {
+    .select-item {
       align-items: center;
       display: flex;
       flex-direction: column;
       flex: 1;
       padding: 0;
       min-width: 50px;
-      width: 180px;
       color: #000;
       box-shadow: none;
       border-radius: 4px;
@@ -1765,10 +1897,19 @@ html {
 
     .checkbox-container {
       display: flex;
+
+      > input {
+        flex-grow: 0;
+        flex-shrink: 0;
+      }
     }
 
-    @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
+    @media (prefers-color-scheme: dark) {
       color: #CFCFD8;
+    }
+
+    @media (prefers-contrast) {
+      color: var(--in-content-page-color);
     }
   }
 
@@ -2102,6 +2243,10 @@ html {
       margin: auto;
     }
 
+    .section-main.system-prompt-spotlight {
+      margin-top: 100px;
+      margin-inline: auto;
+    }
     // Position of noodles on second screen
     .outline-L {
       width: 87px;
@@ -2145,7 +2290,9 @@ html {
       transition-delay: 0.8s;
     }
 
-    .tiles-theme-section,
+    .tiles-single-select-section,
+    .inline-image,
+    .link-paragraph,
     .multi-select-container,
     migration-wizard {
       transition-delay: 0.9s;
@@ -2164,7 +2311,9 @@ html {
 
   // Delays for transitioning-in of intermediate screens
   .screen:not(.dialog-initial) {
-    .tiles-theme-section,
+    .tiles-single-select-section,
+    .inline-image,
+    .link-paragraph,
     .multi-select-container
      {
       transition-delay: 0.2s;
@@ -2184,6 +2333,11 @@ html {
     .section-main {
       z-index: 1;
       margin: auto;
+    }
+
+    .section-main.system-prompt-spotlight {
+      margin-top: 100px;
+      margin-inline: auto;
     }
 
     // Position of noodles on third screen
@@ -2242,7 +2396,9 @@ html {
     .screen {
       .welcome-text,
       .multi-select-container,
-      .tiles-theme-section,
+      .tiles-single-select-section,
+      .link-paragraph,
+      .inline-image,
       .primary,
       .checkbox-container:not(.multi-select-item),
       .secondary,
@@ -2260,6 +2416,43 @@ html {
           opacity: 0.2;
         }
       }
+    }
+  }
+
+  .system-prompt-spotlight {
+    .inline-icon-container {
+      display: flex;
+    }
+
+    .welcome-text {
+      align-items: flex-start;
+      padding: 5px;
+
+      h2 {
+        text-align: start;
+        margin: 0;
+        margin-block: 10px 15px;
+      }
+    }
+
+    .brand-logo {
+      margin-block: 2px;
+    }
+
+    .multi-select-container {
+      margin-inline-start: 23px;
+      margin-block-end: 17px;
+    }
+
+    .additional-cta-container {
+      display: flex;
+      flex-direction: row-reverse;
+      padding-inline-end: 15px;
+    }
+
+    .main-content.no-steps {
+      padding-bottom: 12px;
+      margin-inline: auto;
     }
   }
 
@@ -2285,7 +2478,9 @@ html {
 
       // content that is nested between inner main content and navigation CTAs
       // requires an additional 0.1s transition to avoid overlap
-      .tiles-theme-section,
+      .tiles-single-select-section,
+      .inline-image,
+      .link-paragraph,
       migration-wizard {
         opacity: 0;
         translate: 0 var(--translate);
@@ -2322,6 +2517,11 @@ html {
         transition-delay: 0.4s;
       }
     }
+  }
+
+  .inline-image,
+  .link-paragraph {
+    transition: var(--transition);
   }
 
   migration-wizard {

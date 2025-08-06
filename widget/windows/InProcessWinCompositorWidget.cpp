@@ -51,7 +51,6 @@ InProcessWinCompositorWidget::InProcessWinCompositorWidget(
       mWindow(aWindow),
       mWnd(reinterpret_cast<HWND>(aInitData.hWnd())),
       mTransparentSurfaceLock("mTransparentSurfaceLock"),
-      mTransparencyMode(uint32_t(aInitData.transparencyMode())),
       mMemoryDC(nullptr),
       mCompositeDC(nullptr),
       mLockedBackBufferData(nullptr) {
@@ -76,8 +75,6 @@ bool InProcessWinCompositorWidget::OnWindowResize(
     const LayoutDeviceIntSize& aSize) {
   return true;
 }
-
-void InProcessWinCompositorWidget::OnWindowModeChange(nsSizeMode aSizeMode) {}
 
 bool InProcessWinCompositorWidget::PreRender(WidgetRenderingContext* aContext) {
   // This can block waiting for WM_SETTEXT to finish
@@ -267,7 +264,7 @@ void InProcessWinCompositorWidget::UpdateTransparency(TransparencyMode aMode) {
     return;
   }
 
-  mTransparencyMode = uint32_t(aMode);
+  SetTransparencyMode(aMode);
   mTransparentSurface = nullptr;
   mMemoryDC = nullptr;
 
@@ -277,14 +274,8 @@ void InProcessWinCompositorWidget::UpdateTransparency(TransparencyMode aMode) {
 }
 
 void InProcessWinCompositorWidget::NotifyVisibilityUpdated(
-    nsSizeMode aSizeMode, bool aIsFullyOccluded) {
-  mSizeMode = aSizeMode;
+    bool aIsFullyOccluded) {
   mIsFullyOccluded = aIsFullyOccluded;
-}
-
-nsSizeMode InProcessWinCompositorWidget::GetWindowSizeMode() const {
-  nsSizeMode sizeMode = mSizeMode;
-  return sizeMode;
 }
 
 bool InProcessWinCompositorWidget::GetWindowIsFullyOccluded() const {

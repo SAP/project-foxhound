@@ -11,13 +11,18 @@ import shutil
 import signal
 import subprocess
 import sys
-import telnetlib
 import time
+from collections import namedtuple
 from enum import Enum
+from urllib.request import urlopen
 
 import six
 from mozdevice import ADBDeviceFactory, ADBHost
-from six.moves import input, urllib
+
+try:
+    import telnetlib
+except ImportError:  # telnetlib was removed in Python 3.13
+    from . import telnetlib
 
 MOZBUILD_PATH = os.environ.get(
     "MOZBUILD_STATE_PATH", os.path.expanduser(os.path.join("~", ".mozbuild"))
@@ -277,6 +282,48 @@ def _maybe_update_host_utils(build_obj):
                 _install_host_utils(build_obj)
 
 
+def metadata_for_app(app, aab=False):
+    """Given an app name like "fenix", "focus", or "org.mozilla.geckoview_example",
+    return Android metadata including launch `activity_name`, `package_name`, 'subcommand'.
+    to reduce special-casing throughout the code base"""
+    metadata = namedtuple("metadata", ["activity_name", "package_name", "subcommand"])
+    if not app:
+        app = "org.mozilla.geckoview.test_runner"
+    package_name = app
+    activity_name = None
+    subcommand = None
+
+    if app == "org.mozilla.fenix.release" or app == "org.mozilla.firefox":
+        package_name = "org.mozilla.firefox"
+        activity_name = "org.mozilla.firefox.App"
+        subcommand = "installFenixRelease"
+    elif "fennec" in app or "firefox" in app:
+        activity_name = "org.mozilla.gecko.BrowserApp"
+    elif app == "org.mozilla.geckoview.test":
+        subcommand = "install-geckoview-test"
+    elif app == "org.mozilla.geckoview.test_runner":
+        activity_name = "org.mozilla.geckoview.test_runner.TestRunnerActivity"
+        subcommand = (
+            "install-geckoview-test_runner-aab"
+            if aab
+            else "install-geckoview-test_runner"
+        )
+    elif app == "org.mozilla.geckoview_example":
+        activity_name = "org.mozilla.geckoview_example.GeckoViewActivity"
+        subcommand = (
+            "install-geckoview_example-aab" if aab else "install-geckoview_example"
+        )
+    elif "fenix" in app:
+        package_name = "org.mozilla.fenix.debug"
+        activity_name = "org.mozilla.fenix.debug.App"
+        subcommand = "install-fenix"
+    elif "focus" in app:
+        package_name = "org.mozilla.focus.debug"
+        activity_name = "org.mozilla.focus.activity.MainActivity"
+        subcommand = "install-focus"
+    return metadata(activity_name, package_name, subcommand)
+
+
 def verify_android_device(
     build_obj,
     install=InstallIntent.NO,
@@ -308,16 +355,16 @@ def verify_android_device(
         install = InstallIntent.NO
         _log_info(
             "Found MOZ_DISABLE_ADB_INSTALL in environment and/or the"
-            " --noinstall flag, skipping android app installation"
+            " --no-install flag, skipping android app installation"
         )
     else:
         _log_info(
             "*********************************************************************\n"
             "Neither the MOZ_DISABLE_ADB_INSTALL environment variable nor the\n"
-            "--noinstall flag was found. The code will now uninstall the current\n"
+            "--no-install flag was found. The code will now uninstall the current\n"
             "app then re-install the android app from a different source. If you\n"
             "don't want this set your local env so that\n"
-            "MOZ_DISABLE_ADB_INSTALL=True or pass the --noinstall flag\n"
+            "MOZ_DISABLE_ADB_INSTALL=True or pass the --no-install flag\n"
             "*********************************************************************"
         )
     device_verified = False
@@ -351,6 +398,8 @@ def verify_android_device(
                 os.environ["DEVICE_SERIAL"] = d["device_serial"]
                 break
 
+    metadata = metadata_for_app(app, aab)
+
     if device_verified and install != InstallIntent.NO:
         # Determine if test app is installed on the device; if not,
         # prompt to install. This feature allows a test command to
@@ -364,59 +413,40 @@ def verify_android_device(
         # Installing every time (without prompting) is problematic because:
         #  - it prevents testing against other builds (downloaded apk)
         #  - installation may take a couple of minutes.
-        if not app:
-            app = "org.mozilla.geckoview.test_runner"
         device = _get_device(build_obj.substs, device_serial)
         response = ""
-        installed = device.is_app_installed(app)
+        installed = device.is_app_installed(metadata.package_name)
 
         if not installed:
-            _log_info("It looks like %s is not installed on this device." % app)
-        if "fennec" in app or "firefox" in app:
+            _log_info(
+                "It looks like %s is not installed on this device."
+                % metadata.package_name
+            )
+
+        if metadata.subcommand and installed:
+            device.uninstall_app(metadata.package_name)
+
+        if metadata.activity_name == "org.mozilla.gecko.BrowserApp":
             if installed:
-                device.uninstall_app(app)
+                device.uninstall_app(metadata.package_name)
             _log_info("Installing Firefox...")
             build_obj._run_make(directory=".", target="install", ensure_exit_code=False)
-        elif app == "org.mozilla.geckoview.test":
-            if installed:
-                device.uninstall_app(app)
-            _log_info("Installing geckoview AndroidTest...")
+        elif metadata.subcommand:
+            _log_info("Installing %s..." % metadata.package_name)
             build_obj._mach_context.commands.dispatch(
                 "android",
                 build_obj._mach_context,
-                subcommand="install-geckoview-test",
+                subcommand=metadata.subcommand,
                 args=[],
-            )
-        elif app == "org.mozilla.geckoview.test_runner":
-            if installed:
-                device.uninstall_app(app)
-            _log_info("Installing geckoview test_runner...")
-            sub = (
-                "install-geckoview-test_runner-aab"
-                if aab
-                else "install-geckoview-test_runner"
-            )
-            build_obj._mach_context.commands.dispatch(
-                "android", build_obj._mach_context, subcommand=sub, args=[]
-            )
-        elif app == "org.mozilla.geckoview_example":
-            if installed:
-                device.uninstall_app(app)
-            _log_info("Installing geckoview_example...")
-            sub = (
-                "install-geckoview_example-aab" if aab else "install-geckoview_example"
-            )
-            build_obj._mach_context.commands.dispatch(
-                "android", build_obj._mach_context, subcommand=sub, args=[]
             )
         elif not installed:
             response = input(
                 "It looks like %s is not installed on this device,\n"
                 "but I don't know how to install it.\n"
-                "Install it now, then hit Enter " % app
+                "Install it now, then hit Enter " % metadata.package_name
             )
 
-        device.run_as_package = app
+        device.run_as_package = metadata.package_name
 
     if device_verified and xre:
         # Check whether MOZ_HOST_BIN has been set to a valid xre; if not,
@@ -455,7 +485,7 @@ def verify_android_device(
         serial = device_serial or os.environ.get("DEVICE_SERIAL")
         if not serial or ("emulator" not in serial):
             device = _get_device(build_obj.substs, serial)
-            device.run_as_package = app
+            device.run_as_package = metadata.package_name
             try:
                 addr = device.get_ip_address()
                 if not addr:
@@ -478,7 +508,9 @@ def verify_android_device(
             _log_debug("network check skipped on emulator")
 
     if debugger:
-        _setup_or_run_lldb_server(app, build_obj.substs, device_serial, setup=True)
+        _setup_or_run_lldb_server(
+            metadata.package_name, build_obj.substs, device_serial, setup=True
+        )
 
     return device_verified
 
@@ -492,7 +524,7 @@ def _setup_or_run_lldb_server(app, substs, device_serial, setup=True):
 
     # Don't use enable_run_as here, as this will not give you what you
     # want if we have root access on the device.
-    pkg_dir = device.shell_output("run-as %s pwd" % app)
+    pkg_dir = device.shell_output("run-as %s pwd" % app, attempts=3)
     if not pkg_dir or pkg_dir == "/":
         pkg_dir = "/data/data/%s" % app
         _log_warning(
@@ -985,7 +1017,7 @@ def _log_info(text):
 
 def _download_file(url, filename, path):
     _log_debug("Download %s to %s/%s..." % (url, path, filename))
-    f = urllib.request.urlopen(url)
+    f = urlopen(url)
     if not os.path.isdir(path):
         try:
             os.makedirs(path)

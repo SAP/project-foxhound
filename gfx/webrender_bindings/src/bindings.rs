@@ -6,6 +6,7 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use gleam::gl;
+use webrender::ChunkPool;
 use std::cell::RefCell;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use std::ffi::OsString;
@@ -894,7 +895,7 @@ pub fn gecko_profiler_start_marker(name: &str) {
             timing: MarkerTiming::interval_start(ProfilerTime::now()),
             ..Default::default()
         },
-        Tracing("Webrender".to_string()),
+        Tracing::from_str("Webrender"),
     );
 }
 pub fn gecko_profiler_end_marker(name: &str) {
@@ -906,7 +907,7 @@ pub fn gecko_profiler_end_marker(name: &str) {
             timing: MarkerTiming::interval_end(ProfilerTime::now()),
             ..Default::default()
         },
-        Tracing("Webrender".to_string()),
+        Tracing::from_str("Webrender"),
     );
 }
 
@@ -916,7 +917,7 @@ pub fn gecko_profiler_event_marker(name: &str) {
         name,
         gecko_profiler_category!(Graphics),
         Default::default(),
-        Tracing("Webrender".to_string()),
+        Tracing::from_str("Webrender"),
     );
 }
 
@@ -1159,6 +1160,23 @@ pub extern "C" fn wr_thread_pool_new(low_priority: bool) -> *mut WrThreadPool {
 #[no_mangle]
 pub unsafe extern "C" fn wr_thread_pool_delete(thread_pool: *mut WrThreadPool) {
     mem::drop(Box::from_raw(thread_pool));
+}
+
+pub struct WrChunkPool(Arc<ChunkPool>);
+
+#[no_mangle]
+pub unsafe extern "C" fn wr_chunk_pool_new() -> *mut WrChunkPool {
+    Box::into_raw(Box::new(WrChunkPool(Arc::new(ChunkPool::new()))))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wr_chunk_pool_delete(pool: *mut WrChunkPool) {
+    mem::drop(Box::from_raw(pool));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wr_chunk_pool_purge(pool: &WrChunkPool) {
+    pool.0.purge_all_chunks();
 }
 
 #[no_mangle]
@@ -1598,6 +1616,7 @@ pub extern "C" fn wr_window_new(
     shaders: Option<&mut WrShaders>,
     thread_pool: *mut WrThreadPool,
     thread_pool_low_priority: *mut WrThreadPool,
+    chunk_pool: &WrChunkPool,
     glyph_raster_thread: Option<&WrGlyphRasterThread>,
     size_of_op: VoidPtrToSizeFn,
     enclosing_size_of_op: VoidPtrToSizeFn,
@@ -1731,6 +1750,7 @@ pub extern "C" fn wr_window_new(
         ))),
         crash_annotator: Some(Box::new(MozCrashAnnotator)),
         workers: Some(workers),
+        chunk_pool: Some(chunk_pool.0.clone()),
         dedicated_glyph_raster_thread: glyph_raster_thread.map(|grt| grt.0.clone()),
         size_of_op: Some(size_of_op),
         enclosing_size_of_op: Some(enclosing_size_of_op),
@@ -2177,6 +2197,7 @@ pub extern "C" fn wr_resource_updates_add_external_image(
     external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8,
+    normalized_uvs: bool,
 ) {
     txn.add_image(
         image_key,
@@ -2185,6 +2206,7 @@ pub extern "C" fn wr_resource_updates_add_external_image(
             id: external_image_id,
             channel_index,
             image_type: *image_type,
+            normalized_uvs,
         }),
         None,
     );
@@ -2222,6 +2244,7 @@ pub extern "C" fn wr_resource_updates_update_external_image(
     external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8,
+    normalized_uvs: bool,
 ) {
     txn.update_image(
         key,
@@ -2230,6 +2253,7 @@ pub extern "C" fn wr_resource_updates_update_external_image(
             id: external_image_id,
             channel_index,
             image_type: *image_type,
+            normalized_uvs,
         }),
         &DirtyRect::All,
     );
@@ -2243,6 +2267,7 @@ pub extern "C" fn wr_resource_updates_update_external_image_with_dirty_rect(
     external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8,
+    normalized_uvs: bool,
     dirty_rect: DeviceIntRect,
 ) {
     txn.update_image(
@@ -2252,6 +2277,7 @@ pub extern "C" fn wr_resource_updates_update_external_image_with_dirty_rect(
             id: external_image_id,
             channel_index,
             image_type: *image_type,
+            normalized_uvs,
         }),
         &DirtyRect::Partial(dirty_rect),
     );
@@ -2283,6 +2309,21 @@ pub extern "C" fn wr_resource_updates_delete_image(txn: &mut Transaction, key: W
 #[no_mangle]
 pub extern "C" fn wr_resource_updates_delete_blob_image(txn: &mut Transaction, key: BlobImageKey) {
     txn.delete_blob_image(key);
+}
+
+#[no_mangle]
+pub extern "C" fn wr_resource_updates_add_snapshot_image(
+    txn: &mut Transaction,
+    image_key: SnapshotImageKey,
+) {
+    txn.add_snapshot_image(
+        image_key,
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn wr_resource_updates_delete_snapshot_image(txn: &mut Transaction, key: SnapshotImageKey) {
+    txn.delete_snapshot_image(key);
 }
 
 #[no_mangle]
@@ -2763,6 +2804,7 @@ pub extern "C" fn wr_dp_push_stacking_context(
         &[],
         glyph_raster_space,
         params.flags,
+        None, // TODO(nical)
     );
 
     result
@@ -3362,6 +3404,49 @@ pub extern "C" fn wr_dp_push_yuv_P010_image(
         &prim_info,
         bounds,
         YuvData::P010(image_key_0, image_key_1),
+        color_depth,
+        color_space,
+        color_range,
+        image_rendering,
+    );
+}
+
+/// Push a 2 planar NV16 image.
+#[no_mangle]
+pub extern "C" fn wr_dp_push_yuv_NV16_image(
+    state: &mut WrState,
+    bounds: LayoutRect,
+    clip: LayoutRect,
+    is_backface_visible: bool,
+    parent: &WrSpaceAndClipChain,
+    image_key_0: WrImageKey,
+    image_key_1: WrImageKey,
+    color_depth: WrColorDepth,
+    color_space: WrYuvColorSpace,
+    color_range: WrColorRange,
+    image_rendering: ImageRendering,
+    prefer_compositor_surface: bool,
+    supports_external_compositing: bool,
+) {
+    debug_assert!(unsafe { is_in_main_thread() || is_in_compositor_thread() });
+
+    let space_and_clip = parent.to_webrender(state.pipeline_id);
+
+    let prim_info = CommonItemProperties {
+        clip_rect: clip,
+        clip_chain_id: space_and_clip.clip_chain_id,
+        spatial_id: space_and_clip.spatial_id,
+        flags: prim_flags2(
+            is_backface_visible,
+            prefer_compositor_surface,
+            supports_external_compositing,
+        ),
+    };
+
+    state.frame_builder.dl_builder.push_yuv_image(
+        &prim_info,
+        bounds,
+        YuvData::NV16(image_key_0, image_key_1),
         color_depth,
         color_space,
         color_range,

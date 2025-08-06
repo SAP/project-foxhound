@@ -20,8 +20,6 @@
 #include "wasm/WasmInstance.h"
 #include "jit/MacroAssembler-inl.h"
 
-using mozilla::DebugOnly;
-
 using namespace js;
 using namespace js::jit;
 using namespace js::wasm;
@@ -259,7 +257,7 @@ void wasm::EmitWasmPreBarrierCallIndex(MacroAssembler& masm, Register instance,
 }
 
 void wasm::EmitWasmPostBarrierGuard(MacroAssembler& masm,
-                                    const Maybe<Register>& object,
+                                    const mozilla::Maybe<Register>& object,
                                     Register otherScratch, Register setValue,
                                     Label* skipBarrier) {
   // If there is a containing object and it is in the nursery, no barrier.

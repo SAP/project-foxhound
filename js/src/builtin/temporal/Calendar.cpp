@@ -61,7 +61,6 @@
 #include "builtin/temporal/TemporalParser.h"
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TemporalUnit.h"
-#include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
 #include "gc/AllocKind.h"
 #include "gc/Barrier.h"
@@ -94,7 +93,6 @@
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
-#include "vm/PlainObject.h"
 #include "vm/PropertyInfo.h"
 #include "vm/PropertyKey.h"
 #include "vm/Realm.h"
@@ -111,84 +109,14 @@
 using namespace js;
 using namespace js::temporal;
 
-static inline bool IsCalendar(Handle<Value> v) {
-  return v.isObject() && v.toObject().is<CalendarObject>();
-}
-
 void js::temporal::CalendarValue::trace(JSTracer* trc) {
   TraceRoot(trc, &value_, "CalendarValue::value");
 }
 
-void js::temporal::CalendarRecord::trace(JSTracer* trc) {
-  receiver_.trace(trc);
-  TraceNullableRoot(trc, &dateAdd_, "CalendarRecord::dateAdd");
-  TraceNullableRoot(trc, &dateFromFields_, "CalendarRecord::dateFromFields");
-  TraceNullableRoot(trc, &dateUntil_, "CalendarRecord::dateUntil");
-  TraceNullableRoot(trc, &day_, "CalendarRecord::day");
-  TraceNullableRoot(trc, &fields_, "CalendarRecord::fields");
-  TraceNullableRoot(trc, &mergeFields_, "CalendarRecord::mergeFields");
-  TraceNullableRoot(trc, &monthDayFromFields_,
-                    "CalendarRecord::monthDayFromFields");
-  TraceNullableRoot(trc, &yearMonthFromFields_,
-                    "CalendarRecord::yearMonthFromFields");
-}
-
 bool js::temporal::WrapCalendarValue(JSContext* cx,
                                      MutableHandle<JS::Value> calendar) {
-  MOZ_ASSERT(calendar.isInt32() || calendar.isObject());
+  MOZ_ASSERT(calendar.isInt32());
   return cx->compartment()->wrap(cx, calendar);
-}
-
-/**
- * IteratorToListOfType ( iteratorRecord, elementTypes )
- *
- * With `elementTypes = « String »`.
- *
- * This implementation accepts an iterable instead of an iterator record.
- */
-static bool IterableToListOfStrings(JSContext* cx, Handle<Value> items,
-                                    MutableHandle<CalendarFieldNames> list) {
-  JS::ForOfIterator iterator(cx);
-  if (!iterator.init(items)) {
-    return false;
-  }
-
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 2.
-  Rooted<Value> nextValue(cx);
-  Rooted<PropertyKey> value(cx);
-  while (true) {
-    // Step 2.a.
-    bool done;
-    if (!iterator.next(&nextValue, &done)) {
-      return false;
-    }
-
-    // Step 2.b.
-    if (done) {
-      return true;
-    }
-
-    // Step 2.d. (Reordered)
-    if (nextValue.isString()) {
-      if (!PrimitiveValueToId<CanGC>(cx, nextValue, &value)) {
-        return false;
-      }
-      if (!list.append(value)) {
-        return false;
-      }
-      continue;
-    }
-
-    // Step 2.c.1.
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, nextValue,
-                     nullptr, "not a string");
-
-    // Step 2.c.2.
-    iterator.closeThrow();
-    return false;
-  }
 }
 
 /**
@@ -582,30 +510,6 @@ static bool ParseMonthCode(JSContext* cx, CalendarId calendarId,
   return true;
 }
 
-template <typename T, typename... Ts>
-static bool ToPlainDate(JSObject* temporalDateLike, PlainDate* result) {
-  if (auto* obj = temporalDateLike->maybeUnwrapIf<T>()) {
-    *result = ToPlainDate(obj);
-    return true;
-  }
-  if constexpr (sizeof...(Ts) > 0) {
-    return ToPlainDate<Ts...>(temporalDateLike, result);
-  }
-  return false;
-}
-
-template <typename... Ts>
-static bool ToPlainDate(JSContext* cx, Handle<Value> temporalDateLike,
-                        PlainDate* result) {
-  if (temporalDateLike.isObject()) {
-    if (ToPlainDate<Ts...>(&temporalDateLike.toObject(), result)) {
-      return true;
-    }
-  }
-
-  return ToTemporalDate(cx, temporalDateLike, result);
-}
-
 #ifdef DEBUG
 static bool StringIsAsciiLowerCase(mozilla::Span<const char> str) {
   return std::all_of(str.begin(), str.end(), [](char ch) {
@@ -765,94 +669,6 @@ bool js::temporal::ToBuiltinCalendar(JSContext* cx, Handle<JSString*> id,
   return true;
 }
 
-/**
- * CreateTemporalCalendar ( identifier [ , newTarget ] )
- */
-static CalendarObject* CreateTemporalCalendar(JSContext* cx,
-                                              const CallArgs& args,
-                                              CalendarId identifier) {
-  // Step 1. (Not applicable in our implementation.)
-
-  // Steps 2-3.
-  Rooted<JSObject*> proto(cx);
-  if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_Calendar, &proto)) {
-    return nullptr;
-  }
-
-  auto* obj = NewObjectWithClassProto<CalendarObject>(cx, proto);
-  if (!obj) {
-    return nullptr;
-  }
-
-  // Step 4.
-  obj->setFixedSlot(CalendarObject::IDENTIFIER_SLOT,
-                    Int32Value(static_cast<int32_t>(identifier)));
-
-  // Step 5.
-  return obj;
-}
-
-/**
- * CreateTemporalCalendar ( identifier [ , newTarget ] )
- */
-static CalendarObject* CreateTemporalCalendar(JSContext* cx,
-                                              CalendarId identifier) {
-  // Step 1. (Not applicable in our implementation.)
-
-  // Steps 2-3.
-  auto* obj = NewBuiltinClassInstance<CalendarObject>(cx);
-  if (!obj) {
-    return nullptr;
-  }
-
-  // Step 4.
-  obj->setFixedSlot(CalendarObject::IDENTIFIER_SLOT,
-                    Int32Value(static_cast<int32_t>(identifier)));
-
-  // Step 5.
-  return obj;
-}
-
-/**
- * ObjectImplementsTemporalCalendarProtocol ( object )
- */
-static bool ObjectImplementsTemporalCalendarProtocol(JSContext* cx,
-                                                     Handle<JSObject*> object,
-                                                     bool* result) {
-  // Step 1. (Not applicable in our implementation.)
-  MOZ_ASSERT(!object->canUnwrapAs<CalendarObject>(),
-             "Calendar objects handled in the caller");
-
-  // Step 2.
-  for (auto key : {
-           &JSAtomState::dateAdd,      &JSAtomState::dateFromFields,
-           &JSAtomState::dateUntil,    &JSAtomState::day,
-           &JSAtomState::dayOfWeek,    &JSAtomState::dayOfYear,
-           &JSAtomState::daysInMonth,  &JSAtomState::daysInWeek,
-           &JSAtomState::daysInYear,   &JSAtomState::fields,
-           &JSAtomState::id,           &JSAtomState::inLeapYear,
-           &JSAtomState::mergeFields,  &JSAtomState::month,
-           &JSAtomState::monthCode,    &JSAtomState::monthDayFromFields,
-           &JSAtomState::monthsInYear, &JSAtomState::weekOfYear,
-           &JSAtomState::year,         &JSAtomState::yearMonthFromFields,
-           &JSAtomState::yearOfWeek,
-       }) {
-    // Step 2.a.
-    bool has;
-    if (!HasProperty(cx, object, cx->names().*key, &has)) {
-      return false;
-    }
-    if (!has) {
-      *result = false;
-      return true;
-    }
-  }
-
-  // Step 3.
-  *result = true;
-  return true;
-}
-
 template <typename T, typename... Ts>
 static bool ToTemporalCalendar(JSContext* cx, Handle<JSObject*> object,
                                MutableHandle<CalendarValue> result) {
@@ -878,15 +694,8 @@ bool js::temporal::ToTemporalCalendar(JSContext* cx,
   // Step 1. (Not applicable)
 
   // Step 2.
-  Rooted<Value> calendarLike(cx, temporalCalendarLike);
-  if (calendarLike.isObject()) {
-    Rooted<JSObject*> obj(cx, &calendarLike.toObject());
-
-    // Step 2.b. (Partial)
-    if (obj->canUnwrapAs<CalendarObject>()) {
-      result.set(CalendarValue(obj));
-      return true;
-    }
+  if (temporalCalendarLike.isObject()) {
+    Rooted<JSObject*> obj(cx, &temporalCalendarLike.toObject());
 
     // Step 2.a.
     Rooted<CalendarValue> calendar(cx);
@@ -899,32 +708,15 @@ bool js::temporal::ToTemporalCalendar(JSContext* cx,
       result.set(calendar);
       return true;
     }
-
-    // Step 2.b.
-    bool implementsCalendarProtocol;
-    if (!ObjectImplementsTemporalCalendarProtocol(
-            cx, obj, &implementsCalendarProtocol)) {
-      return false;
-    }
-    if (!implementsCalendarProtocol) {
-      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                               JSMSG_TEMPORAL_INVALID_OBJECT,
-                               "Temporal.Calendar", obj->getClass()->name);
-      return false;
-    }
-
-    // Step 2.c.
-    result.set(CalendarValue(obj));
-    return true;
   }
 
   // Step 3.
-  if (!calendarLike.isString()) {
+  if (!temporalCalendarLike.isString()) {
     ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK,
-                     calendarLike, nullptr, "not a string");
+                     temporalCalendarLike, nullptr, "not a string");
     return false;
   }
-  Rooted<JSString*> str(cx, calendarLike.toString());
+  Rooted<JSString*> str(cx, temporalCalendarLike.toString());
 
   // Step 4.
   Rooted<JSLinearString*> id(cx, ParseTemporalCalendarString(cx, str));
@@ -941,24 +733,6 @@ bool js::temporal::ToTemporalCalendar(JSContext* cx,
   // Step 6.
   result.set(CalendarValue(identifier));
   return true;
-}
-
-/**
- * ToTemporalCalendarSlotValue ( temporalCalendarLike [ , default ] )
- *
- * When called with `default = "iso8601"`.
- */
-bool js::temporal::ToTemporalCalendarWithISODefault(
-    JSContext* cx, Handle<Value> temporalCalendarLike,
-    MutableHandle<CalendarValue> result) {
-  // Step 1.
-  if (temporalCalendarLike.isUndefined()) {
-    result.set(CalendarValue(CalendarId::ISO8601));
-    return true;
-  }
-
-  // Steps 2-6.
-  return ToTemporalCalendar(cx, temporalCalendarLike, result);
 }
 
 /**
@@ -985,17 +759,25 @@ bool js::temporal::GetTemporalCalendarWithISODefault(
     return false;
   }
 
+  // FIXME: spec issue - handle `undefined` case here and then remove optional
+  // `default` parameter from ToTemporalCalendarSlotValue.
+  //
+  // https://github.com/tc39/proposal-temporal/pull/2913
+
   // Step 3.
-  return ToTemporalCalendarWithISODefault(cx, calendarValue, result);
+  if (calendarValue.isUndefined()) {
+    result.set(CalendarValue(CalendarId::ISO8601));
+    return true;
+  }
+  return ToTemporalCalendar(cx, calendarValue, result);
 }
 
 /**
  * ToTemporalCalendarIdentifier ( calendarSlotValue )
  */
-static JSLinearString* ToTemporalCalendarIdentifier(JSContext* cx,
-                                                    CalendarId id) {
-  // TODO: Avoid string allocations?
-  return NewStringCopy<CanGC>(cx, CalendarIdToBcp47(id));
+std::string_view js::temporal::ToTemporalCalendarIdentifier(
+    const CalendarValue& calendar) {
+  return CalendarIdToBcp47(calendar.identifier());
 }
 
 /**
@@ -1003,179 +785,8 @@ static JSLinearString* ToTemporalCalendarIdentifier(JSContext* cx,
  */
 JSLinearString* js::temporal::ToTemporalCalendarIdentifier(
     JSContext* cx, Handle<CalendarValue> calendar) {
-  // Step 1.
-  if (calendar.isString()) {
-    return ToTemporalCalendarIdentifier(cx, calendar.toString());
-  }
-
-  // Step 2.
-  Rooted<JSObject*> calendarObj(cx, calendar.toObject());
-  Rooted<Value> identifier(cx);
-  if (!GetProperty(cx, calendarObj, calendarObj, cx->names().id, &identifier)) {
-    return nullptr;
-  }
-
-  // Step 3.
-  if (!identifier.isString()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, identifier,
-                     nullptr, "not a string");
-    return nullptr;
-  }
-
-  // Step 4.
-  return identifier.toString()->ensureLinear(cx);
-}
-
-/**
- * ToTemporalCalendarObject ( calendarSlotValue )
- */
-JSObject* js::temporal::ToTemporalCalendarObject(
-    JSContext* cx, Handle<CalendarValue> calendar) {
-  // Step 1.
-  if (calendar.isObject()) {
-    return calendar.toObject();
-  }
-
-  // Step 2.
-  return CreateTemporalCalendar(cx, calendar.toString());
-}
-
-bool js::temporal::ToTemporalCalendar(JSContext* cx,
-                                      const CalendarValue& calendar,
-                                      MutableHandle<Value> result) {
-  if (calendar.isObject()) {
-    result.setObject(*calendar.toObject());
-    return true;
-  }
-
-  auto* str = ToTemporalCalendarIdentifier(cx, calendar.toString());
-  if (!str) {
-    return false;
-  }
-
-  result.setString(str);
-  return true;
-}
-
-static bool Calendar_dateAdd(JSContext* cx, unsigned argc, Value* vp);
-static bool Calendar_dateFromFields(JSContext* cx, unsigned argc, Value* vp);
-static bool Calendar_dateUntil(JSContext* cx, unsigned argc, Value* vp);
-static bool Calendar_day(JSContext* cx, unsigned argc, Value* vp);
-static bool Calendar_fields(JSContext* cx, unsigned argc, Value* vp);
-static bool Calendar_mergeFields(JSContext* cx, unsigned argc, Value* vp);
-static bool Calendar_monthDayFromFields(JSContext* cx, unsigned argc,
-                                        Value* vp);
-static bool Calendar_yearMonthFromFields(JSContext* cx, unsigned argc,
-                                         Value* vp);
-
-/**
- * CalendarMethodsRecordLookup ( calendarRec, methodName )
- */
-static bool CalendarMethodsRecordLookup(JSContext* cx,
-                                        MutableHandle<CalendarRecord> calendar,
-                                        CalendarMethod methodName) {
-  // Step 1. (Not applicable in our implementation.)
-
-  // Steps 2-10.
-  Rooted<JSObject*> object(cx, calendar.receiver().toObject());
-
-  auto lookup = [&](Handle<PropertyName*> name, JSNative native,
-                    MutableHandle<JSObject*> result) {
-    auto* method = GetMethod(cx, object, name);
-    if (!method) {
-      return false;
-    }
-
-    // As an optimization we only store the method if the receiver is either
-    // a custom calendar object or if the method isn't the default, built-in
-    // calender method.
-    if (!object->is<CalendarObject>() || !IsNativeFunction(method, native)) {
-      result.set(method);
-    }
-    return true;
-  };
-
-  switch (methodName) {
-    // Steps 2 and 10.
-    case CalendarMethod::DateAdd:
-      return lookup(cx->names().dateAdd, Calendar_dateAdd, calendar.dateAdd());
-
-      // Steps 3 and 10.
-    case CalendarMethod::DateFromFields:
-      return lookup(cx->names().dateFromFields, Calendar_dateFromFields,
-                    calendar.dateFromFields());
-
-      // Steps 4 and 10.
-    case CalendarMethod::DateUntil:
-      return lookup(cx->names().dateUntil, Calendar_dateUntil,
-                    calendar.dateUntil());
-
-      // Steps 5 and 10.
-    case CalendarMethod::Day:
-      return lookup(cx->names().day, Calendar_day, calendar.day());
-
-      // Steps 6 and 10.
-    case CalendarMethod::Fields:
-      return lookup(cx->names().fields, Calendar_fields, calendar.fields());
-
-      // Steps 7 and 10.
-    case CalendarMethod::MergeFields:
-      return lookup(cx->names().mergeFields, Calendar_mergeFields,
-                    calendar.mergeFields());
-
-      // Steps 8 and 10.
-    case CalendarMethod::MonthDayFromFields:
-      return lookup(cx->names().monthDayFromFields, Calendar_monthDayFromFields,
-                    calendar.monthDayFromFields());
-
-      // Steps 9 and 10.
-    case CalendarMethod::YearMonthFromFields:
-      return lookup(cx->names().yearMonthFromFields,
-                    Calendar_yearMonthFromFields,
-                    calendar.yearMonthFromFields());
-  }
-
-  MOZ_CRASH("invalid calendar method");
-}
-
-/**
- * CreateCalendarMethodsRecord ( calendar, methods )
- */
-bool js::temporal::CreateCalendarMethodsRecord(
-    JSContext* cx, Handle<CalendarValue> calendar,
-    mozilla::EnumSet<CalendarMethod> methods,
-    MutableHandle<CalendarRecord> result) {
-  MOZ_ASSERT(!methods.isEmpty());
-
-  // Step 1.
-  result.set(CalendarRecord{calendar});
-
-#ifdef DEBUG
-  // Remember the set of looked-up methods for assertions.
-  result.get().lookedUp() += methods;
-#endif
-
-  // Built-in calendars don't perform observable lookups.
-  if (calendar.isString()) {
-    return true;
-  }
-
-  // Step 2.
-  for (auto method : methods) {
-    if (!CalendarMethodsRecordLookup(cx, result, method)) {
-      return false;
-    }
-  }
-
-  // Step 3.
-  return true;
-}
-
-static CalendarId BuiltinCalendarId(const CalendarValue& calendar) {
-  if (calendar.isString()) {
-    return calendar.toString();
-  }
-  return calendar.toObject()->as<CalendarObject>().identifier();
+  // TODO: Avoid string allocations?
+  return NewStringCopy<CanGC>(cx, ToTemporalCalendarIdentifier(calendar));
 }
 
 static auto ToAnyCalendarKind(CalendarId id) {
@@ -3373,20 +2984,17 @@ static FieldDescriptors CalendarFieldDescriptors(CalendarId calendar,
 /**
  * CalendarFieldDescriptors ( calendar, type )
  */
-static FieldDescriptors CalendarFieldDescriptors(
-    CalendarId calendar, mozilla::EnumSet<CalendarField> type) {
-  MOZ_ASSERT(calendar != CalendarId::ISO8601);
-
-  mozilla::EnumSet<TemporalField> relevant;
-  mozilla::EnumSet<TemporalField> required;
+mozilla::EnumSet<TemporalField> js::temporal::CalendarFieldDescriptors(
+    const CalendarValue& calendar, mozilla::EnumSet<CalendarField> type) {
+  auto calendarId = calendar.identifier();
+  MOZ_ASSERT(calendarId != CalendarId::ISO8601);
 
   // "era" and "eraYear" are relevant for calendars with multiple eras when
   // "year" is present.
-  if (type.contains(CalendarField::Year) && CalendarEraRelevant(calendar)) {
-    relevant += {TemporalField::Era, TemporalField::EraYear};
+  if (type.contains(CalendarField::Year) && CalendarEraRelevant(calendarId)) {
+    return {TemporalField::Era, TemporalField::EraYear};
   }
-
-  return {relevant, required};
+  return {};
 }
 
 /**
@@ -3510,741 +3118,89 @@ static bool CalendarResolveFields(JSContext* cx, CalendarId calendar,
   return true;
 }
 
-static bool ToCalendarField(JSContext* cx, JSLinearString* linear,
-                            CalendarField* result) {
-  if (StringEqualsLiteral(linear, "year")) {
-    *result = CalendarField::Year;
-    return true;
-  }
-  if (StringEqualsLiteral(linear, "month")) {
-    *result = CalendarField::Month;
-    return true;
-  }
-  if (StringEqualsLiteral(linear, "monthCode")) {
-    *result = CalendarField::MonthCode;
-    return true;
-  }
-  if (StringEqualsLiteral(linear, "day")) {
-    *result = CalendarField::Day;
-    return true;
-  }
-  if (auto chars = QuoteString(cx, linear, '"')) {
-    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                             JSMSG_TEMPORAL_CALENDAR_INVALID_FIELD,
-                             chars.get());
-  }
-  return false;
-}
-
-static constexpr auto sortedCalendarFields = std::array{
-    CalendarField::Day,
-    CalendarField::Month,
-    CalendarField::MonthCode,
-    CalendarField::Year,
-};
-
-// TODO: Consider reordering CalendarField so we don't need this. Probably best
-// to decide after <https://github.com/tc39/proposal-temporal/issues/2826> has
-// landed.
-using SortedCalendarFields = SortedEnumSet<CalendarField, sortedCalendarFields>;
-
-static TemporalField ToTemporalField(CalendarField field) {
-  switch (field) {
-    case CalendarField::Year:
-      return TemporalField::Year;
-    case CalendarField::Month:
-      return TemporalField::Month;
-    case CalendarField::MonthCode:
-      return TemporalField::MonthCode;
-    case CalendarField::Day:
-      return TemporalField::Day;
-  }
-  MOZ_CRASH("invalid calendar field name");
-}
-
 /**
- * Temporal.Calendar.prototype.fields ( fields )
+ * CalendarEra ( dateLike )
  */
-static bool BuiltinCalendarFields(JSContext* cx, CalendarId calendarId,
-                                  mozilla::EnumSet<CalendarField> fieldNames,
-                                  CalendarFieldNames& result) {
-  MOZ_ASSERT(result.empty());
-
-  // Steps 1-4. (Not applicable.)
-
-  // Steps 5-6.
-  mozilla::EnumSet<TemporalField> temporalFields{};
-  for (auto fieldName : fieldNames) {
-    // Steps 6.a and 6.b.i-iii. (Not applicable)
-
-    // Step 6.b.iv.
-    temporalFields += ToTemporalField(fieldName);
-  }
-
-  // Steps 7-8.
-  if (calendarId != CalendarId::ISO8601) {
-    auto extraFieldDescriptors =
-        CalendarFieldDescriptors(calendarId, fieldNames);
-
-    temporalFields += extraFieldDescriptors.relevant;
-    temporalFields += extraFieldDescriptors.required;
-  }
-
-  // Reserve space for the append operation.
-  if (!result.reserve(temporalFields.size())) {
-    return false;
-  }
-
-  // Append all fields, sorted.
-  for (auto field : SortedTemporalFields{temporalFields}) {
-    auto* name = ToPropertyName(cx, field);
-    result.infallibleAppend(NameToId(name));
-  }
-
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.fields ( fields )
- */
-static bool BuiltinCalendarFields(JSContext* cx, CalendarId calendarId,
-                                  Handle<Value> fields,
-                                  MutableHandle<Value> result) {
-  // Step 3.
-  JS::ForOfIterator iterator(cx);
-  if (!iterator.init(fields)) {
-    return false;
-  }
-
-  // Step 4.
-  JS::RootedVector<Value> fieldNames(cx);
-  mozilla::EnumSet<CalendarField> seen;
-
-  // Steps 5-6.
-  Rooted<Value> nextValue(cx);
-  Rooted<JSLinearString*> linear(cx);
-  while (true) {
-    // Step 6.a.
-    bool done;
-    if (!iterator.next(&nextValue, &done)) {
-      return false;
-    }
-    if (done) {
-      break;
-    }
-
-    // Step 6.b.i.
-    if (!nextValue.isString()) {
-      // Step 6.b.i.1.
-      ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, nextValue,
-                       nullptr, "not a string");
-
-      // Step 6.b.i.2.
-      iterator.closeThrow();
-      return false;
-    }
-
-    linear = nextValue.toString()->ensureLinear(cx);
-    if (!linear) {
-      return false;
-    }
-
-    // Step 6.b.iii. (Reordered)
-    CalendarField field;
-    if (!ToCalendarField(cx, linear, &field)) {
-      iterator.closeThrow();
-      return false;
-    }
-
-    // Step 6.b.ii.
-    if (seen.contains(field)) {
-      // Step 6.b.ii.1.
-      if (auto chars = QuoteString(cx, linear, '"')) {
-        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                 JSMSG_TEMPORAL_CALENDAR_DUPLICATE_FIELD,
-                                 chars.get());
-      }
-
-      // Step 6.b.ii.2.
-      iterator.closeThrow();
-      return false;
-    }
-
-    // Step 6.b.iv.
-    if (!fieldNames.append(nextValue)) {
-      return false;
-    }
-    seen += field;
-  }
-
-  // Steps 7-8.
-  if (calendarId != CalendarId::ISO8601) {
-    auto extraFieldDescriptors = CalendarFieldDescriptors(calendarId, seen);
-
-    mozilla::EnumSet<TemporalField> temporalFields{};
-    temporalFields += extraFieldDescriptors.relevant;
-    temporalFields += extraFieldDescriptors.required;
-
-    // Remove already present fields.
-    for (auto fieldName : seen) {
-      temporalFields -= ToTemporalField(fieldName);
-    }
-
-    // Reserve space for the append operation.
-    if (!fieldNames.reserve(fieldNames.length() + temporalFields.size())) {
-      return false;
-    }
-
-    // Append all calendar fields, sorted.
-    for (auto field : SortedTemporalFields{temporalFields}) {
-      auto* name = ToPropertyName(cx, field);
-      fieldNames.infallibleAppend(StringValue(name));
-    }
-  }
-
-  // Step 9.
-  auto* array =
-      NewDenseCopiedArray(cx, fieldNames.length(), fieldNames.begin());
-  if (!array) {
-    return false;
-  }
-
-  result.setObject(*array);
-  return true;
-}
-
-/**
- * CalendarFields ( calendarRec, fieldNames )
- */
-bool js::temporal::CalendarFields(JSContext* cx,
-                                  Handle<CalendarRecord> calendar,
-                                  mozilla::EnumSet<CalendarField> fieldNames,
-                                  MutableHandle<CalendarFieldNames> result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::Fields));
-
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 2.
-  auto fields = calendar.fields();
-  if (!fields) {
-    bool arrayIterationSane;
-    if (calendar.receiver().isString()) {
-      // "String" calendars don't perform observable array iteration.
-      arrayIterationSane = true;
-    } else {
-      // "Object" calendars need to ensure array iteration is still sane.
-      if (!IsArrayIterationSane(cx, &arrayIterationSane)) {
-        return false;
-      }
-    }
-
-    if (arrayIterationSane) {
-      auto calendarId = BuiltinCalendarId(calendar.receiver());
-
-      // Steps 2.a-b.
-      return BuiltinCalendarFields(cx, calendarId, fieldNames, result.get());
-
-      // Steps 2.c-e. (Not applicable in our implementation.)
-    }
-  }
-
-  // Step 3. (Inlined call to CalendarMethodsRecordCall.)
-
-  auto* array = NewDenseFullyAllocatedArray(cx, fieldNames.size());
-  if (!array) {
-    return false;
-  }
-  array->setDenseInitializedLength(fieldNames.size());
-
-  size_t index = 0;
-  for (auto calendarField : SortedCalendarFields{fieldNames}) {
-    auto* name = ToPropertyName(cx, ::ToTemporalField(calendarField));
-    array->initDenseElement(index++, StringValue(name));
-  }
-  MOZ_ASSERT(index == fieldNames.size());
-
-  Rooted<Value> fieldsArray(cx, ObjectValue(*array));
-  Rooted<Value> calendarFieldNames(cx);
-  if (fields) {
-    Rooted<Value> fieldsFn(cx, ObjectValue(*fields));
-    auto thisv = calendar.receiver().toObjectValue();
-    if (!Call(cx, fieldsFn, thisv, fieldsArray, &calendarFieldNames)) {
-      return false;
-    }
-  } else {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-
-    if (!BuiltinCalendarFields(cx, calendarId, fieldsArray,
-                               &calendarFieldNames)) {
-      return false;
-    }
-  }
-
-  // Steps 4-5.
-  if (!IterableToListOfStrings(cx, calendarFieldNames, result)) {
-    return false;
-  }
-
-  // The spec sorts the field names in PrepareTemporalFields. Sorting is only
-  // needed for user-defined calendars, so our implementation performs this step
-  // here instead of in PrepareTemporalFields.
-  return SortTemporalFieldNames(cx, result.get());
-}
-
-static bool RequireIntegralNumber(JSContext* cx, Handle<Value> value,
-                                  Handle<PropertyName*> name,
-                                  MutableHandle<Value> result) {
-  if (MOZ_LIKELY(value.isInt32())) {
-    result.set(value);
-    return true;
-  }
-
-  if (value.isDouble()) {
-    double d = value.toDouble();
-    if (js::IsInteger(d)) {
-      result.setNumber(d);
-      return true;
-    }
-
-    if (auto str = QuoteString(cx, name)) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_TEMPORAL_INVALID_INTEGER, str.get());
-    }
-    return false;
-  }
-
-  if (auto str = QuoteString(cx, name)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_UNEXPECTED_TYPE, str.get(), "not a number");
-  }
-  return false;
-}
-
-static bool RequireIntegralPositiveNumber(JSContext* cx, Handle<Value> value,
-                                          Handle<PropertyName*> name,
-                                          MutableHandle<Value> result) {
-  if (!RequireIntegralNumber(cx, value, name, result)) {
-    return false;
-  }
-
-  if (result.toNumber() <= 0) {
-    if (auto str = QuoteString(cx, name)) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_TEMPORAL_INVALID_NUMBER, str.get());
-    }
-    return false;
-  }
-  return true;
-}
-
-static bool RequireIntegralNumberOrUndefined(JSContext* cx, Handle<Value> value,
-                                             Handle<PropertyName*> name,
-                                             MutableHandle<Value> result) {
-  if (value.isUndefined()) {
-    result.setUndefined();
-    return true;
-  }
-  return RequireIntegralNumber(cx, value, name, result);
-}
-
-static bool RequireIntegralPositiveNumberOrUndefined(
-    JSContext* cx, Handle<Value> value, Handle<PropertyName*> name,
-    MutableHandle<Value> result) {
-  if (value.isUndefined()) {
-    result.setUndefined();
-    return true;
-  }
-  return RequireIntegralPositiveNumber(cx, value, name, result);
-}
-
-static bool RequireString(JSContext* cx, Handle<Value> value,
-                          Handle<PropertyName*> name,
-                          MutableHandle<Value> result) {
-  if (MOZ_LIKELY(value.isString())) {
-    result.set(value);
-    return true;
-  }
-
-  if (auto str = QuoteString(cx, name)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_UNEXPECTED_TYPE, str.get(), "not a string");
-  }
-  return false;
-}
-
-static bool RequireStringOrUndefined(JSContext* cx, Handle<Value> value,
-                                     Handle<PropertyName*> name,
-                                     MutableHandle<Value> result) {
-  if (value.isUndefined()) {
-    result.setUndefined();
-    return true;
-  }
-  return RequireString(cx, value, name, result);
-}
-
-static bool RequireBoolean(JSContext* cx, Handle<Value> value,
-                           Handle<PropertyName*> name,
-                           MutableHandle<Value> result) {
-  if (MOZ_LIKELY(value.isBoolean())) {
-    result.set(value);
-    return true;
-  }
-
-  if (auto str = QuoteString(cx, name)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_UNEXPECTED_TYPE, str.get(),
-                              "not a boolean");
-  }
-  return false;
-}
-
-using BuiltinCalendarMethod = bool (*)(JSContext* cx, CalendarId,
-                                       const PlainDate&, MutableHandle<Value>);
-
-using CalendarConversion = bool (*)(JSContext*, Handle<Value>,
-                                    Handle<PropertyName*>,
-                                    MutableHandle<Value>);
-
-template <BuiltinCalendarMethod builtin, CalendarConversion conversion>
-static bool CallCalendarMethod(JSContext* cx, Handle<PropertyName*> name,
-                               JSNative native, Handle<CalendarValue> calendar,
-                               Handle<JSObject*> dateLike,
+bool js::temporal::CalendarEra(JSContext* cx, Handle<CalendarValue> calendar,
                                const PlainDate& date,
                                MutableHandle<Value> result) {
+  auto calendarId = calendar.identifier();
+
   // Step 1.
-  if (calendar.isString()) {
-    auto calendarId = BuiltinCalendarId(calendar);
-    return builtin(cx, calendarId, date, result);
-  }
-
-  // Step 2.
-  Rooted<JSObject*> calendarObj(cx, calendar.toObject());
-  JSObject* fn = GetMethod(cx, calendarObj, name);
-  if (!fn) {
-    return false;
-  }
-
-  // Fast-path for the default implementation.
-  if (calendarObj->is<CalendarObject>() && IsNativeFunction(fn, native)) {
-    auto calendarId = BuiltinCalendarId(calendar);
-    return builtin(cx, calendarId, date, result);
-  }
-
-  Rooted<JS::Value> fnVal(cx, ObjectValue(*fn));
-  Rooted<JS::Value> dateLikeValue(cx, ObjectValue(*dateLike));
-  if (!Call(cx, fnVal, calendarObj, dateLikeValue, result)) {
-    return false;
-  }
-
-  // Steps 3-5.
-  return conversion(cx, result, name, result);
-}
-
-/**
- * Temporal.Calendar.prototype.era ( temporalDateLike )
- */
-static bool BuiltinCalendarEra(JSContext* cx, CalendarId calendarId,
-                               const PlainDate& date,
-                               MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
-
-  // Step 4.
   if (calendarId == CalendarId::ISO8601) {
     result.setUndefined();
     return true;
   }
 
-  // Step 5.
+  // Step 2.
   return CalendarDateEra(cx, calendarId, date, result);
 }
 
-static bool Calendar_era(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarEra ( calendar, dateLike )
+ * CalendarEraYear ( dateLike )
  */
-static bool CalendarEra(JSContext* cx, Handle<CalendarValue> calendar,
-                        Handle<JSObject*> dateLike, const PlainDate& date,
-                        MutableHandle<Value> result) {
-  // Steps 1-5.
-  return CallCalendarMethod<BuiltinCalendarEra, RequireStringOrUndefined>(
-      cx, cx->names().era, Calendar_era, calendar, dateLike, date, result);
-}
-
-/**
- * CalendarEra ( calendar, dateLike )
- */
-bool js::temporal::CalendarEra(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<PlainDateObject*> dateLike,
-                               MutableHandle<Value> result) {
-  return CalendarEra(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarEra ( calendar, dateLike )
- */
-bool js::temporal::CalendarEra(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<PlainDateTimeObject*> dateLike,
-                               MutableHandle<Value> result) {
-  return CalendarEra(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarEra ( calendar, dateLike )
- */
-bool js::temporal::CalendarEra(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<PlainYearMonthObject*> dateLike,
-                               MutableHandle<Value> result) {
-  return CalendarEra(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarEra ( calendar, dateLike )
- */
-bool js::temporal::CalendarEra(JSContext* cx, Handle<CalendarValue> calendar,
-                               const PlainDateTime& dateTime,
-                               MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarEra(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.eraYear ( temporalDateLike )
- */
-static bool BuiltinCalendarEraYear(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarEraYear(JSContext* cx,
+                                   Handle<CalendarValue> calendar,
                                    const PlainDate& date,
                                    MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Step 4.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setUndefined();
     return true;
   }
 
-  // Steps 5-7.
+  // Step 2.
   return CalendarDateEraYear(cx, calendarId, date, result);
 }
 
-static bool Calendar_eraYear(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarEraYear ( calendar, dateLike )
+ * CalendarYear ( dateLike )
  */
-static bool CalendarEraYear(JSContext* cx, Handle<CalendarValue> calendar,
-                            Handle<JSObject*> dateLike, const PlainDate& date,
-                            MutableHandle<Value> result) {
-  // Steps 1-6.
-  return CallCalendarMethod<BuiltinCalendarEraYear,
-                            RequireIntegralNumberOrUndefined>(
-      cx, cx->names().eraYear, Calendar_eraYear, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarEraYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarEraYear(JSContext* cx,
-                                   Handle<CalendarValue> calendar,
-                                   Handle<PlainDateObject*> dateLike,
-                                   MutableHandle<Value> result) {
-  return CalendarEraYear(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarEraYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarEraYear(JSContext* cx,
-                                   Handle<CalendarValue> calendar,
-                                   Handle<PlainDateTimeObject*> dateLike,
-                                   MutableHandle<Value> result) {
-  return CalendarEraYear(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarEraYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarEraYear(JSContext* cx,
-                                   Handle<CalendarValue> calendar,
-                                   Handle<PlainYearMonthObject*> dateLike,
-                                   MutableHandle<Value> result) {
-  return CalendarEraYear(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarEraYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarEraYear(JSContext* cx,
-                                   Handle<CalendarValue> calendar,
-                                   const PlainDateTime& dateTime,
-                                   MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarEraYear(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.year ( temporalDateLike )
- */
-static bool BuiltinCalendarYear(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarYear(JSContext* cx, Handle<CalendarValue> calendar,
                                 const PlainDate& date,
                                 MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(date.year);
     return true;
   }
+
+  // Step 2.
   return CalendarDateYear(cx, calendarId, date, result);
 }
 
-static bool Calendar_year(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarYear ( calendar, dateLike )
+ * CalendarMonth ( dateLike )
  */
-static bool CalendarYear(JSContext* cx, Handle<CalendarValue> calendar,
-                         Handle<JSObject*> dateLike, const PlainDate& date,
-                         MutableHandle<Value> result) {
-  // Steps 1-5.
-  return CallCalendarMethod<BuiltinCalendarYear, RequireIntegralNumber>(
-      cx, cx->names().year, Calendar_year, calendar, dateLike, date, result);
-}
-
-/**
- * CalendarYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarYear(JSContext* cx, Handle<CalendarValue> calendar,
-                                Handle<PlainDateObject*> dateLike,
-                                MutableHandle<Value> result) {
-  return CalendarYear(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarYear(JSContext* cx, Handle<CalendarValue> calendar,
-                                Handle<PlainDateTimeObject*> dateLike,
-                                MutableHandle<Value> result) {
-  return CalendarYear(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarYear(JSContext* cx, Handle<CalendarValue> calendar,
-                                Handle<PlainYearMonthObject*> dateLike,
-                                MutableHandle<Value> result) {
-  return CalendarYear(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarYear(JSContext* cx, Handle<CalendarValue> calendar,
-                                const PlainDateTime& dateTime,
-                                MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarYear(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.month ( temporalDateLike )
- */
-static bool BuiltinCalendarMonth(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarMonth(JSContext* cx, Handle<CalendarValue> calendar,
                                  const PlainDate& date,
                                  MutableHandle<Value> result) {
-  // Steps 1-4. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 5-7.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(date.month);
     return true;
   }
+
+  // Step 2.
   return CalendarDateMonth(cx, calendarId, date, result);
 }
 
-static bool Calendar_month(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarMonth ( calendar, dateLike )
+ * CalendarMonthCode ( dateLike )
  */
-static bool CalendarMonth(JSContext* cx, Handle<CalendarValue> calendar,
-                          Handle<JSObject*> dateLike, const PlainDate& date,
-                          MutableHandle<Value> result) {
-  // Steps 1-6.
-  return CallCalendarMethod<BuiltinCalendarMonth,
-                            RequireIntegralPositiveNumber>(
-      cx, cx->names().month, Calendar_month, calendar, dateLike, date, result);
-}
-
-/**
- * CalendarMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonth(JSContext* cx, Handle<CalendarValue> calendar,
-                                 Handle<PlainDateObject*> dateLike,
-                                 MutableHandle<Value> result) {
-  return CalendarMonth(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonth(JSContext* cx, Handle<CalendarValue> calendar,
-                                 Handle<PlainDateTimeObject*> dateLike,
-                                 MutableHandle<Value> result) {
-  return CalendarMonth(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonth(JSContext* cx, Handle<CalendarValue> calendar,
-                                 Handle<PlainYearMonthObject*> dateLike,
-                                 MutableHandle<Value> result) {
-  return CalendarMonth(cx, calendar, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonth(JSContext* cx, Handle<CalendarValue> calendar,
-                                 const PlainDateTime& dateTime,
-                                 MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarMonth(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.monthCode ( temporalDateLike )
- */
-static bool BuiltinCalendarMonthCode(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarMonthCode(JSContext* cx,
+                                     Handle<CalendarValue> calendar,
                                      const PlainDate& date,
                                      MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     JSString* str = ISOMonthCode(cx, date.month);
     if (!str) {
@@ -4254,879 +3210,198 @@ static bool BuiltinCalendarMonthCode(JSContext* cx, CalendarId calendarId,
     result.setString(str);
     return true;
   }
+
+  // Step 2.
   return CalendarDateMonthCode(cx, calendarId, date, result);
 }
 
-static bool Calendar_monthCode(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarMonthCode ( calendar, dateLike )
+ * CalendarDay ( dateLike )
  */
-static bool CalendarMonthCode(JSContext* cx, Handle<CalendarValue> calendar,
-                              Handle<JSObject*> dateLike, const PlainDate& date,
-                              MutableHandle<Value> result) {
-  // Steps 1-4.
-  return CallCalendarMethod<BuiltinCalendarMonthCode, RequireString>(
-      cx, cx->names().monthCode, Calendar_monthCode, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarMonthCode ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthCode(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     Handle<PlainDateObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarMonthCode(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarMonthCode ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthCode(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     Handle<PlainDateTimeObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarMonthCode(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarMonthCode ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthCode(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     Handle<PlainMonthDayObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarMonthCode(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarMonthCode ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthCode(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     Handle<PlainYearMonthObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarMonthCode(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarMonthCode ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthCode(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     const PlainDateTime& dateTime,
-                                     MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarMonthCode(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.day ( temporalDateLike )
- */
-static bool BuiltinCalendarDay(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarDay(JSContext* cx, Handle<CalendarValue> calendar,
                                const PlainDate& date,
                                MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(date.day);
     return true;
   }
+
+  // Step 2.
   return CalendarDateDay(cx, calendarId, date, result);
 }
 
 /**
- * CalendarDay ( calendarRec, dateLike )
+ * CalendarDayOfWeek ( dateLike )
  */
-static bool CalendarDay(JSContext* cx, Handle<CalendarRecord> calendar,
-                        Handle<JSObject*> dateLike, const PlainDate& date,
-                        MutableHandle<Value> result) {
-  MOZ_ASSERT(CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::Day));
-
-  // Step 2. (Reordered)
-  auto day = calendar.day();
-  if (!day) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarDay(cx, calendarId, date, result);
-  }
-
-  // Step 1. (Inlined call to CalendarMethodsRecordCall.)
-  Rooted<Value> fn(cx, ObjectValue(*day));
-  auto thisv = calendar.receiver().toObjectValue();
-  Rooted<JS::Value> dateLikeValue(cx, ObjectValue(*dateLike));
-  if (!Call(cx, fn, thisv, dateLikeValue, result)) {
-    return false;
-  }
-
-  // Steps 3-6.
-  return RequireIntegralPositiveNumber(cx, result, cx->names().day, result);
-}
-
-/**
- * CalendarDay ( calendarRec, dateLike )
- */
-bool js::temporal::CalendarDay(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<PlainDateObject*> dateLike,
-                               MutableHandle<Value> result) {
-  Rooted<CalendarRecord> calendarRec(cx);
-  if (!CreateCalendarMethodsRecord(cx, calendar,
-                                   {
-                                       CalendarMethod::Day,
-                                   },
-                                   &calendarRec)) {
-    return false;
-  }
-
-  return CalendarDay(cx, calendarRec, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarDay ( calendarRec, dateLike )
- */
-bool js::temporal::CalendarDay(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<PlainDateTimeObject*> dateLike,
-                               MutableHandle<Value> result) {
-  Rooted<CalendarRecord> calendarRec(cx);
-  if (!CreateCalendarMethodsRecord(cx, calendar,
-                                   {
-                                       CalendarMethod::Day,
-                                   },
-                                   &calendarRec)) {
-    return false;
-  }
-
-  return CalendarDay(cx, calendarRec, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarDay ( calendarRec, dateLike )
- */
-bool js::temporal::CalendarDay(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<PlainMonthDayObject*> dateLike,
-                               MutableHandle<Value> result) {
-  Rooted<CalendarRecord> calendarRec(cx);
-  if (!CreateCalendarMethodsRecord(cx, calendar,
-                                   {
-                                       CalendarMethod::Day,
-                                   },
-                                   &calendarRec)) {
-    return false;
-  }
-
-  return CalendarDay(cx, calendarRec, dateLike, ToPlainDate(dateLike), result);
-}
-
-/**
- * CalendarDay ( calendarRec, dateLike )
- */
-bool js::temporal::CalendarDay(JSContext* cx, Handle<CalendarRecord> calendar,
-                               const PlainDate& date,
-                               MutableHandle<Value> result) {
-  Rooted<PlainDateObject*> dateLike(
-      cx, CreateTemporalDate(cx, date, calendar.receiver()));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarDay(cx, calendar, dateLike, date, result);
-}
-
-/**
- * CalendarDay ( calendarRec, dateLike )
- */
-bool js::temporal::CalendarDay(JSContext* cx, Handle<CalendarRecord> calendar,
-                               const PlainDateTime& dateTime,
-                               MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar.receiver()));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarDay(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.dayOfWeek ( temporalDateLike )
- */
-static bool BuiltinCalendarDayOfWeek(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarDayOfWeek(JSContext* cx,
+                                     Handle<CalendarValue> calendar,
                                      const PlainDate& date,
                                      MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(ToISODayOfWeek(date));
     return true;
   }
+
+  // Step 2.
   return CalendarDateDayOfWeek(cx, calendarId, date, result);
 }
 
-static bool Calendar_dayOfWeek(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarDayOfWeek ( calendar, dateLike )
+ * CalendarDayOfYear ( dateLike )
  */
-static bool CalendarDayOfWeek(JSContext* cx, Handle<CalendarValue> calendar,
-                              Handle<JSObject*> dateLike, const PlainDate& date,
-                              MutableHandle<Value> result) {
-  // Steps 1-6.
-  return CallCalendarMethod<BuiltinCalendarDayOfWeek,
-                            RequireIntegralPositiveNumber>(
-      cx, cx->names().dayOfWeek, Calendar_dayOfWeek, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarDayOfWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarDayOfWeek(JSContext* cx,
+bool js::temporal::CalendarDayOfYear(JSContext* cx,
                                      Handle<CalendarValue> calendar,
-                                     Handle<PlainDateObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarDayOfWeek(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarDayOfWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarDayOfWeek(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     Handle<PlainDateTimeObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarDayOfWeek(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarDayOfWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarDayOfWeek(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     const PlainDateTime& dateTime,
-                                     MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarDayOfWeek(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.dayOfYear ( temporalDateLike )
- */
-static bool BuiltinCalendarDayOfYear(JSContext* cx, CalendarId calendarId,
                                      const PlainDate& date,
                                      MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(ToISODayOfYear(date));
     return true;
   }
+
+  // Step 2.
   return CalendarDateDayOfYear(cx, calendarId, date, result);
 }
 
-static bool Calendar_dayOfYear(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarDayOfYear ( calendar, dateLike )
+ * CalendarWeekOfYear ( dateLike )
  */
-static bool CalendarDayOfYear(JSContext* cx, Handle<CalendarValue> calendar,
-                              Handle<JSObject*> dateLike, const PlainDate& date,
-                              MutableHandle<Value> result) {
-  // Steps 1-6.
-  return CallCalendarMethod<BuiltinCalendarDayOfYear,
-                            RequireIntegralPositiveNumber>(
-      cx, cx->names().dayOfYear, Calendar_dayOfYear, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarDayOfYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarDayOfYear(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     Handle<PlainDateObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarDayOfYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarDayOfYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarDayOfYear(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     Handle<PlainDateTimeObject*> dateLike,
-                                     MutableHandle<Value> result) {
-  return CalendarDayOfYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                           result);
-}
-
-/**
- * CalendarDayOfYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarDayOfYear(JSContext* cx,
-                                     Handle<CalendarValue> calendar,
-                                     const PlainDateTime& dateTime,
-                                     MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarDayOfYear(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.weekOfYear ( temporalDateLike )
- */
-static bool BuiltinCalendarWeekOfYear(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarWeekOfYear(JSContext* cx,
+                                      Handle<CalendarValue> calendar,
                                       const PlainDate& date,
                                       MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(ToISOWeekOfYear(date).week);
     return true;
   }
+
+  // Step 2.
   return CalendarDateWeekOfYear(cx, calendarId, date, result);
 }
 
-static bool Calendar_weekOfYear(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarWeekOfYear ( calendar, dateLike )
+ * CalendarYearOfWeek ( dateLike )
  */
-static bool CalendarWeekOfYear(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<JSObject*> dateLike,
-                               const PlainDate& date,
-                               MutableHandle<Value> result) {
-  // Steps 1-6.
-  return CallCalendarMethod<BuiltinCalendarWeekOfYear,
-                            RequireIntegralPositiveNumberOrUndefined>(
-      cx, cx->names().weekOfYear, Calendar_weekOfYear, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarWeekOfYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarWeekOfYear(JSContext* cx,
+bool js::temporal::CalendarYearOfWeek(JSContext* cx,
                                       Handle<CalendarValue> calendar,
-                                      Handle<PlainDateObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarWeekOfYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarWeekOfYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarWeekOfYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateTimeObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarWeekOfYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarWeekOfYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarWeekOfYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      const PlainDateTime& dateTime,
-                                      MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarWeekOfYear(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.yearOfWeek ( temporalDateLike )
- */
-static bool BuiltinCalendarYearOfWeek(JSContext* cx, CalendarId calendarId,
                                       const PlainDate& date,
                                       MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(ToISOWeekOfYear(date).year);
     return true;
   }
+
+  // Step 2.
   return CalendarDateYearOfWeek(cx, calendarId, date, result);
 }
 
-static bool Calendar_yearOfWeek(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarYearOfWeek ( calendar, dateLike )
+ * CalendarDaysInWeek ( dateLike )
  */
-static bool CalendarYearOfWeek(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<JSObject*> dateLike,
-                               const PlainDate& date,
-                               MutableHandle<Value> result) {
-  // Steps 1-5.
-  return CallCalendarMethod<BuiltinCalendarYearOfWeek,
-                            RequireIntegralNumberOrUndefined>(
-      cx, cx->names().yearOfWeek, Calendar_yearOfWeek, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarYearOfWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarYearOfWeek(JSContext* cx,
+bool js::temporal::CalendarDaysInWeek(JSContext* cx,
                                       Handle<CalendarValue> calendar,
-                                      Handle<PlainDateObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarYearOfWeek(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarYearOfWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarYearOfWeek(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateTimeObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarYearOfWeek(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarYearOfWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarYearOfWeek(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      const PlainDateTime& dateTime,
-                                      MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarYearOfWeek(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.daysInWeek ( temporalDateLike )
- */
-static bool BuiltinCalendarDaysInWeek(JSContext* cx, CalendarId calendarId,
                                       const PlainDate& date,
                                       MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(7);
     return true;
   }
+
+  // Step 2.
   return CalendarDateDaysInWeek(cx, calendarId, date, result);
 }
 
-static bool Calendar_daysInWeek(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarDaysInWeek ( calendar, dateLike )
+ * CalendarDaysInMonth ( dateLike )
  */
-static bool CalendarDaysInWeek(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<JSObject*> dateLike,
-                               const PlainDate& date,
-                               MutableHandle<Value> result) {
-  // Steps 1-6.
-  return CallCalendarMethod<BuiltinCalendarDaysInWeek,
-                            RequireIntegralPositiveNumber>(
-      cx, cx->names().daysInWeek, Calendar_daysInWeek, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarDaysInWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInWeek(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarDaysInWeek(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarDaysInWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInWeek(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateTimeObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarDaysInWeek(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarDaysInWeek ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInWeek(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      const PlainDateTime& dateTime,
-                                      MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarDaysInWeek(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.daysInMonth ( temporalDateLike )
- */
-static bool BuiltinCalendarDaysInMonth(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarDaysInMonth(JSContext* cx,
+                                       Handle<CalendarValue> calendar,
                                        const PlainDate& date,
                                        MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(::ISODaysInMonth(date.year, date.month));
     return true;
   }
+
+  // Step 2.
   return CalendarDateDaysInMonth(cx, calendarId, date, result);
 }
 
-static bool Calendar_daysInMonth(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarDaysInMonth ( calendar, dateLike )
+ * CalendarDaysInYear ( dateLike )
  */
-static bool CalendarDaysInMonth(JSContext* cx, Handle<CalendarValue> calendar,
-                                Handle<JSObject*> dateLike,
-                                const PlainDate& date,
-                                MutableHandle<Value> result) {
-  // Step 1-6.
-  return CallCalendarMethod<BuiltinCalendarDaysInMonth,
-                            RequireIntegralPositiveNumber>(
-      cx, cx->names().daysInMonth, Calendar_daysInMonth, calendar, dateLike,
-      date, result);
-}
-
-/**
- * CalendarDaysInMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInMonth(JSContext* cx,
-                                       Handle<CalendarValue> calendar,
-                                       Handle<PlainDateObject*> dateLike,
-                                       MutableHandle<Value> result) {
-  return CalendarDaysInMonth(cx, calendar, dateLike, ToPlainDate(dateLike),
-                             result);
-}
-
-/**
- * CalendarDaysInMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInMonth(JSContext* cx,
-                                       Handle<CalendarValue> calendar,
-                                       Handle<PlainDateTimeObject*> dateLike,
-                                       MutableHandle<Value> result) {
-  return CalendarDaysInMonth(cx, calendar, dateLike, ToPlainDate(dateLike),
-                             result);
-}
-
-/**
- * CalendarDaysInMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInMonth(JSContext* cx,
-                                       Handle<CalendarValue> calendar,
-                                       Handle<PlainYearMonthObject*> dateLike,
-                                       MutableHandle<Value> result) {
-  return CalendarDaysInMonth(cx, calendar, dateLike, ToPlainDate(dateLike),
-                             result);
-}
-
-/**
- * CalendarDaysInMonth ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInMonth(JSContext* cx,
-                                       Handle<CalendarValue> calendar,
-                                       const PlainDateTime& dateTime,
-                                       MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarDaysInMonth(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.daysInYear ( temporalDateLike )
- */
-static bool BuiltinCalendarDaysInYear(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarDaysInYear(JSContext* cx,
+                                      Handle<CalendarValue> calendar,
                                       const PlainDate& date,
                                       MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(ISODaysInYear(date.year));
     return true;
   }
+
+  // Step 2.
   return CalendarDateDaysInYear(cx, calendarId, date, result);
 }
 
-static bool Calendar_daysInYear(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarDaysInYear ( calendar, dateLike )
+ * CalendarMonthsInYear ( dateLike )
  */
-static bool CalendarDaysInYear(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<JSObject*> dateLike,
-                               const PlainDate& date,
-                               MutableHandle<Value> result) {
-  // Step 1-6.
-  return CallCalendarMethod<BuiltinCalendarDaysInYear,
-                            RequireIntegralPositiveNumber>(
-      cx, cx->names().daysInYear, Calendar_daysInYear, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarDaysInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarDaysInYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarDaysInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateTimeObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarDaysInYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarDaysInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainYearMonthObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return CalendarDaysInYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                            result);
-}
-
-/**
- * CalendarDaysInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarDaysInYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      const PlainDateTime& dateTime,
-                                      MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarDaysInYear(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.monthsInYear ( temporalDateLike )
- */
-static bool BuiltinCalendarMonthsInYear(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarMonthsInYear(JSContext* cx,
+                                        Handle<CalendarValue> calendar,
                                         const PlainDate& date,
                                         MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setInt32(12);
     return true;
   }
+
+  // Step 2
   return CalendarDateMonthsInYear(cx, calendarId, date, result);
 }
 
-static bool Calendar_monthsInYear(JSContext* cx, unsigned argc, Value* vp);
-
 /**
- * CalendarMonthsInYear ( calendar, dateLike )
+ * CalendarInLeapYear ( calendar, dateLike )
  */
-static bool CalendarMonthsInYear(JSContext* cx, Handle<CalendarValue> calendar,
-                                 Handle<JSObject*> dateLike,
-                                 const PlainDate& date,
-                                 MutableHandle<Value> result) {
-  // Step 1-6.
-  return CallCalendarMethod<BuiltinCalendarMonthsInYear,
-                            RequireIntegralPositiveNumber>(
-      cx, cx->names().monthsInYear, Calendar_monthsInYear, calendar, dateLike,
-      date, result);
-}
-
-/**
- * CalendarMonthsInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthsInYear(JSContext* cx,
-                                        Handle<CalendarValue> calendar,
-                                        Handle<PlainDateObject*> dateLike,
-                                        MutableHandle<Value> result) {
-  return ::CalendarMonthsInYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                                result);
-}
-
-/**
- * CalendarMonthsInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthsInYear(JSContext* cx,
-                                        Handle<CalendarValue> calendar,
-                                        Handle<PlainDateTimeObject*> dateLike,
-                                        MutableHandle<Value> result) {
-  return ::CalendarMonthsInYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                                result);
-}
-
-/**
- * CalendarMonthsInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthsInYear(JSContext* cx,
-                                        Handle<CalendarValue> calendar,
-                                        Handle<PlainYearMonthObject*> dateLike,
-                                        MutableHandle<Value> result) {
-  return ::CalendarMonthsInYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                                result);
-}
-
-/**
- * CalendarMonthsInYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarMonthsInYear(JSContext* cx,
-                                        Handle<CalendarValue> calendar,
-                                        const PlainDateTime& dateTime,
-                                        MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarMonthsInYear(cx, calendar, dateLike, dateTime.date, result);
-}
-
-/**
- * Temporal.Calendar.prototype.inLeapYear ( temporalDateLike )
- */
-static bool BuiltinCalendarInLeapYear(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarInLeapYear(JSContext* cx,
+                                      Handle<CalendarValue> calendar,
                                       const PlainDate& date,
                                       MutableHandle<Value> result) {
-  // Steps 1-3. (Not applicable.)
+  auto calendarId = calendar.identifier();
 
-  // Steps 4-6.
+  // Step 1.
   if (calendarId == CalendarId::ISO8601) {
     result.setBoolean(IsISOLeapYear(date.year));
     return true;
   }
+
+  // Step 2.
   return CalendarDateInLeapYear(cx, calendarId, date, result);
-}
-
-static bool Calendar_inLeapYear(JSContext* cx, unsigned argc, Value* vp);
-
-/**
- * CalendarInLeapYear ( calendar, dateLike )
- */
-static bool CalendarInLeapYear(JSContext* cx, Handle<CalendarValue> calendar,
-                               Handle<JSObject*> dateLike,
-                               const PlainDate& date,
-                               MutableHandle<Value> result) {
-  // Step 1-4.
-  return CallCalendarMethod<BuiltinCalendarInLeapYear, RequireBoolean>(
-      cx, cx->names().inLeapYear, Calendar_inLeapYear, calendar, dateLike, date,
-      result);
-}
-
-/**
- * CalendarInLeapYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarInLeapYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return ::CalendarInLeapYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                              result);
-}
-
-/**
- * CalendarInLeapYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarInLeapYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainDateTimeObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return ::CalendarInLeapYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                              result);
-}
-
-/**
- * CalendarInLeapYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarInLeapYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      Handle<PlainYearMonthObject*> dateLike,
-                                      MutableHandle<Value> result) {
-  return ::CalendarInLeapYear(cx, calendar, dateLike, ToPlainDate(dateLike),
-                              result);
-}
-
-/**
- * CalendarInLeapYear ( calendar, dateLike )
- */
-bool js::temporal::CalendarInLeapYear(JSContext* cx,
-                                      Handle<CalendarValue> calendar,
-                                      const PlainDateTime& dateTime,
-                                      MutableHandle<Value> result) {
-  Rooted<PlainDateTimeObject*> dateLike(
-      cx, CreateTemporalDateTime(cx, dateTime, calendar));
-  if (!dateLike) {
-    return false;
-  }
-
-  return ::CalendarInLeapYear(cx, calendar, dateLike, dateTime.date, result);
 }
 
 /**
@@ -5180,7 +3455,7 @@ static bool ISOResolveMonth(JSContext* cx,
   }
 
   // Step 15.
-  fields.month() = ordinal;
+  fields.setMonthOverride(ordinal);
 
   // Step 16.
   return true;
@@ -5227,140 +3502,67 @@ static bool ISODateFromFields(JSContext* cx, Handle<TemporalFields> fields,
 }
 
 /**
- * Temporal.Calendar.prototype.dateFromFields ( fields [ , options ] )
+ * CalendarDateFromFields ( calendar, fields, overflow )
  */
-static PlainDateObject* BuiltinCalendarDateFromFields(
-    JSContext* cx, CalendarId calendarId, Handle<JSObject*> fields,
-    Handle<JSObject*> maybeOptions) {
-  // Steps 1-4. (Not applicable)
+bool js::temporal::CalendarDateFromFields(
+    JSContext* cx, Handle<CalendarValue> calendar,
+    Handle<TemporalFields> fields, TemporalOverflow overflow,
+    MutableHandle<PlainDateWithCalendar> result) {
+  auto calendarId = calendar.identifier();
 
-  // Step 5.
-  auto relevantFieldNames = {TemporalField::Day, TemporalField::Month,
-                             TemporalField::MonthCode, TemporalField::Year};
+  // Step 1.
+  auto relevantFieldNames = {
+      TemporalField::Day,
+      TemporalField::Month,
+      TemporalField::MonthCode,
+      TemporalField::Year,
+  };
 
-  // Steps 6-7.
-  Rooted<TemporalFields> dateFields(cx);
+  // Steps 2-3.
+  PlainDate date;
   if (calendarId == CalendarId::ISO8601) {
-    // Step 6.
+    // Step 2.a.
+    Rooted<TemporalFields> dateFields(cx);
     if (!PrepareTemporalFields(cx, fields, relevantFieldNames,
                                {TemporalField::Day, TemporalField::Year},
                                &dateFields)) {
-      return nullptr;
+      return false;
+    }
+
+    // Step 2.b.
+    if (!ISOResolveMonth(cx, &dateFields)) {
+      return false;
+    }
+
+    // Step 2.c.
+    if (!ISODateFromFields(cx, dateFields, overflow, &date)) {
+      return false;
     }
   } else {
-    // Step 7.a.
+    // Step 3.a.
     auto calendarRelevantFieldDescriptors =
         CalendarFieldDescriptors(calendarId, FieldType::Date);
 
-    // Step 7.b.
+    // Step 3.b.
+    Rooted<TemporalFields> dateFields(cx);
     if (!PrepareTemporalFields(cx, fields, relevantFieldNames, {},
                                calendarRelevantFieldDescriptors, &dateFields)) {
-      return nullptr;
-    }
-  }
-
-  // Step 8.
-  auto overflow = TemporalOverflow::Constrain;
-  if (maybeOptions) {
-    if (!GetTemporalOverflowOption(cx, maybeOptions, &overflow)) {
-      return nullptr;
-    }
-  }
-
-  // Steps 9-10.
-  PlainDate result;
-  if (calendarId == CalendarId::ISO8601) {
-    // Step 9.a.
-    if (!ISOResolveMonth(cx, &dateFields)) {
-      return nullptr;
+      return false;
     }
 
-    // Step 9.b.
-    if (!ISODateFromFields(cx, dateFields, overflow, &result)) {
-      return nullptr;
-    }
-  } else {
-    // Step 10.a.
+    // Step 3.c.
     if (!CalendarResolveFields(cx, calendarId, dateFields, FieldType::Date)) {
-      return nullptr;
+      return false;
     }
 
-    // Step 10.b.
-    if (!CalendarDateToISO(cx, calendarId, dateFields, overflow, &result)) {
-      return nullptr;
+    // Step 3.d.
+    if (!CalendarDateToISO(cx, calendarId, dateFields, overflow, &date)) {
+      return false;
     }
-  }
-
-  // Step 11.
-  Rooted<CalendarValue> calendar(cx, CalendarValue(calendarId));
-  return CreateTemporalDate(cx, result, calendar);
-}
-
-/**
- * CalendarDateFromFields ( calendarRec, fields [ , options ] )
- */
-static Wrapped<PlainDateObject*> CalendarDateFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar, Handle<JSObject*> fields,
-    Handle<PlainObject*> maybeOptions) {
-  MOZ_ASSERT(CalendarMethodsRecordHasLookedUp(calendar,
-                                              CalendarMethod::DateFromFields));
-
-  // Step 1. (Not applicable in our implemetation.)
-
-  // Step 3. (Reordered)
-  auto dateFromFields = calendar.dateFromFields();
-  if (!dateFromFields) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarDateFromFields(cx, calendarId, fields, maybeOptions);
-  }
-
-  // Step 2. (Inlined call to CalendarMethodsRecordCall.)
-
-  Rooted<Value> dateFromFieldsFn(cx, ObjectValue(*dateFromFields));
-  auto thisv = calendar.receiver().toObjectValue();
-  Rooted<Value> rval(cx);
-
-  FixedInvokeArgs<2> args(cx);
-  args[0].setObject(*fields);
-  if (maybeOptions) {
-    args[1].setObject(*maybeOptions);
-  } else {
-    args[1].setUndefined();
-  }
-
-  if (!Call(cx, dateFromFieldsFn, thisv, args, &rval)) {
-    return nullptr;
   }
 
   // Step 4.
-  if (!rval.isObject() || !rval.toObject().canUnwrapAs<PlainDateObject>()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, rval,
-                     nullptr, "not a PlainDate object");
-    return nullptr;
-  }
-
-  // Step 5.
-  return &rval.toObject();
-}
-
-/**
- * CalendarDateFromFields ( calendarRec, fields [ , options ] )
- */
-Wrapped<PlainDateObject*> js::temporal::CalendarDateFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<PlainObject*> fields) {
-  // Steps 1-6.
-  return ::CalendarDateFromFields(cx, calendar, fields, nullptr);
-}
-
-/**
- * CalendarDateFromFields ( calendarRec, fields [ , options ] )
- */
-Wrapped<PlainDateObject*> js::temporal::CalendarDateFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar, Handle<PlainObject*> fields,
-    Handle<PlainObject*> options) {
-  // Steps 1-6.
-  return ::CalendarDateFromFields(cx, calendar, fields, options);
+  return CreateTemporalDate(cx, date, calendar, result);
 }
 
 struct RegulatedISOYearMonth final {
@@ -5441,158 +3643,94 @@ static bool ISOYearMonthFromFields(JSContext* cx, Handle<TemporalFields> fields,
 }
 
 /**
- * Temporal.Calendar.prototype.yearMonthFromFields ( fields [ , options ] )
+ * CalendarYearMonthFromFields ( calendar, fields, overflow )
  */
-static PlainYearMonthObject* BuiltinCalendarYearMonthFromFields(
-    JSContext* cx, CalendarId calendarId, Handle<JSObject*> fields,
-    Handle<JSObject*> maybeOptions) {
-  // Steps 1-4. (Not applicable)
+template <typename T>
+static bool CalendarYearMonthFromFields(
+    JSContext* cx, Handle<CalendarValue> calendar, Handle<T> fields,
+    TemporalOverflow overflow,
+    MutableHandle<PlainYearMonthWithCalendar> result) {
+  auto calendarId = calendar.identifier();
 
-  // Step 5.
-  auto relevantFieldNames = {TemporalField::Month, TemporalField::MonthCode,
-                             TemporalField::Year};
+  // Step 1.
+  auto relevantFieldNames = {
+      TemporalField::Month,
+      TemporalField::MonthCode,
+      TemporalField::Year,
+  };
 
-  // Steps 6-7.
-  Rooted<TemporalFields> dateFields(cx);
+  // Steps 2-3
+  PlainDate date;
   if (calendarId == CalendarId::ISO8601) {
-    // Step 6.a.
+    // Step 2.a.
+    Rooted<TemporalFields> dateFields(cx);
     if (!PrepareTemporalFields(cx, fields, relevantFieldNames,
                                {TemporalField::Year}, &dateFields)) {
-      return nullptr;
+      return false;
+    }
+
+    // Step 2.b.
+    if (!ISOResolveMonth(cx, &dateFields)) {
+      return false;
+    }
+
+    // Step 2.c.
+    if (!ISOYearMonthFromFields(cx, dateFields, overflow, &date)) {
+      return false;
     }
   } else {
-    // Step 7.a.
+    // Step 3.a.
     auto calendarRelevantFieldDescriptors =
         CalendarFieldDescriptors(calendarId, FieldType::YearMonth);
 
-    // Step 7.b.
+    // Step 3.b.
+    Rooted<TemporalFields> dateFields(cx);
     if (!PrepareTemporalFields(cx, fields, relevantFieldNames, {},
                                calendarRelevantFieldDescriptors, &dateFields)) {
-      return nullptr;
+      return false;
     }
 
-    // Step 7.c.
+    // Step 3.c.
     int32_t firstDayIndex = 1;
 
-    // Step 7.d.
-    dateFields.day() = firstDayIndex;
-  }
+    // Step 3.d.
+    MOZ_ASSERT(!dateFields.has(TemporalField::Day));
+    dateFields.setDay(firstDayIndex);
 
-  // Step 8.
-  auto overflow = TemporalOverflow::Constrain;
-  if (maybeOptions) {
-    if (!GetTemporalOverflowOption(cx, maybeOptions, &overflow)) {
-      return nullptr;
-    }
-  }
-
-  // Steps 9-10.
-  PlainDate result;
-  if (calendarId == CalendarId::ISO8601) {
-    // Step 9.a.
-    if (!ISOResolveMonth(cx, &dateFields)) {
-      return nullptr;
-    }
-
-    // Step 9.b.
-    if (!ISOYearMonthFromFields(cx, dateFields, overflow, &result)) {
-      return nullptr;
-    }
-  } else {
-    // Step 10.a.
+    // Step 3.e.
     if (!CalendarResolveFields(cx, calendarId, dateFields,
                                FieldType::YearMonth)) {
-      return nullptr;
+      return false;
     }
 
-    // Step 10.b.
-    if (!CalendarDateToISO(cx, calendarId, dateFields, overflow, &result)) {
-      return nullptr;
+    // Step 3.f.
+    if (!CalendarDateToISO(cx, calendarId, dateFields, overflow, &date)) {
+      return false;
     }
-  }
-
-  // Step 11.
-  Rooted<CalendarValue> calendar(cx, CalendarValue(calendarId));
-  return CreateTemporalYearMonth(cx, result, calendar);
-}
-
-/**
- * CalendarYearMonthFromFields ( calendarRec, fields [ , options ] )
- */
-static Wrapped<PlainYearMonthObject*> CalendarYearMonthFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar, Handle<JSObject*> fields,
-    Handle<PlainObject*> maybeOptions) {
-  MOZ_ASSERT(CalendarMethodsRecordHasLookedUp(
-      calendar, CalendarMethod::YearMonthFromFields));
-
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 3. (Reordered)
-  auto yearMonthFromFields = calendar.yearMonthFromFields();
-  if (!yearMonthFromFields) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarYearMonthFromFields(cx, calendarId, fields,
-                                              maybeOptions);
-  }
-
-  // Step 2. (Inlined call to CalendarMethodsRecordCall.)
-
-  Rooted<Value> yearMonthFromFieldsFn(cx, ObjectValue(*yearMonthFromFields));
-  auto thisv = calendar.receiver().toObjectValue();
-  Rooted<Value> rval(cx);
-
-  FixedInvokeArgs<2> args(cx);
-  args[0].setObject(*fields);
-  if (maybeOptions) {
-    args[1].setObject(*maybeOptions);
-  } else {
-    args[1].setUndefined();
-  }
-
-  if (!Call(cx, yearMonthFromFieldsFn, thisv, args, &rval)) {
-    return nullptr;
   }
 
   // Step 4.
-  if (!rval.isObject() ||
-      !rval.toObject().canUnwrapAs<PlainYearMonthObject>()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, rval,
-                     nullptr, "not a PlainYearMonth object");
-    return nullptr;
-  }
-
-  // Step 5.
-  return &rval.toObject();
+  return CreateTemporalYearMonth(cx, date, calendar, result);
 }
 
 /**
- * CalendarYearMonthFromFields ( calendarRec, fields [ , options ] )
+ * CalendarYearMonthFromFields ( calendar, fields, overflow )
  */
-Wrapped<PlainYearMonthObject*> js::temporal::CalendarYearMonthFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<PlainObject*> fields) {
-  // Steps 1-4.
-  return ::CalendarYearMonthFromFields(cx, calendar, fields, nullptr);
+bool js::temporal::CalendarYearMonthFromFields(
+    JSContext* cx, Handle<CalendarValue> calendar,
+    Handle<PlainYearMonthObject*> fields, TemporalOverflow overflow,
+    MutableHandle<PlainYearMonthWithCalendar> result) {
+  return ::CalendarYearMonthFromFields(cx, calendar, fields, overflow, result);
 }
 
 /**
- * CalendarYearMonthFromFields ( calendarRec, fields [ , options ] )
+ * CalendarYearMonthFromFields ( calendar, fields, overflow )
  */
-Wrapped<PlainYearMonthObject*> js::temporal::CalendarYearMonthFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<PlainYearMonthObject*> fields) {
-  // Steps 1-4.
-  return ::CalendarYearMonthFromFields(cx, calendar, fields, nullptr);
-}
-
-/**
- * CalendarYearMonthFromFields ( calendarRec, fields [ , options ] )
- */
-Wrapped<PlainYearMonthObject*> js::temporal::CalendarYearMonthFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar, Handle<PlainObject*> fields,
-    Handle<PlainObject*> options) {
-  // Steps 1-4.
-  return ::CalendarYearMonthFromFields(cx, calendar, fields, options);
+bool js::temporal::CalendarYearMonthFromFields(
+    JSContext* cx, Handle<CalendarValue> calendar,
+    Handle<TemporalFields> fields, TemporalOverflow overflow,
+    MutableHandle<PlainYearMonthWithCalendar> result) {
+  return ::CalendarYearMonthFromFields(cx, calendar, fields, overflow, result);
 }
 
 /**
@@ -5630,171 +3768,89 @@ static bool ISOMonthDayFromFields(JSContext* cx, Handle<TemporalFields> fields,
 }
 
 /**
- * Temporal.Calendar.prototype.monthDayFromFields ( fields [ , options ] )
+ * CalendarMonthDayFromFields ( calendar, fields, overflow )
  */
-static PlainMonthDayObject* BuiltinCalendarMonthDayFromFields(
-    JSContext* cx, CalendarId calendarId, Handle<JSObject*> fields,
-    Handle<JSObject*> maybeOptions) {
-  // Steps 1-4. (Not applicable)
+template <typename T>
+static bool CalendarMonthDayFromFields(
+    JSContext* cx, Handle<CalendarValue> calendar, Handle<T> fields,
+    TemporalOverflow overflow,
+    MutableHandle<PlainMonthDayWithCalendar> result) {
+  auto calendarId = calendar.identifier();
 
-  // Step 5.
-  auto relevantFieldNames = {TemporalField::Day, TemporalField::Month,
-                             TemporalField::MonthCode, TemporalField::Year};
+  // Step 1.
+  auto relevantFieldNames = {
+      TemporalField::Day,
+      TemporalField::Month,
+      TemporalField::MonthCode,
+      TemporalField::Year,
+  };
 
-  // Steps 6-7.
-  Rooted<TemporalFields> dateFields(cx);
+  // Steps 2-3.
+  PlainDate date;
   if (calendarId == CalendarId::ISO8601) {
-    // Step 6.a.
+    // Step 2.a.
+    Rooted<TemporalFields> dateFields(cx);
     if (!PrepareTemporalFields(cx, fields, relevantFieldNames,
                                {TemporalField::Day}, &dateFields)) {
-      return nullptr;
+      return false;
+    }
+
+    // Step 2.b.
+    if (!ISOResolveMonth(cx, &dateFields)) {
+      return false;
+    }
+
+    // Step 2.c.
+    if (!ISOMonthDayFromFields(cx, dateFields, overflow, &date)) {
+      return false;
     }
   } else {
-    // Step 7.a.
+    // Step 3.a.
     auto calendarRelevantFieldDescriptors =
         CalendarFieldDescriptors(calendarId, FieldType::MonthDay);
 
-    // Step 7.b.
+    // Step 3.b.
+    Rooted<TemporalFields> dateFields(cx);
     if (!PrepareTemporalFields(cx, fields, relevantFieldNames, {},
                                calendarRelevantFieldDescriptors, &dateFields)) {
-      return nullptr;
-    }
-  }
-
-  // Step 8.
-  auto overflow = TemporalOverflow::Constrain;
-  if (maybeOptions) {
-    if (!GetTemporalOverflowOption(cx, maybeOptions, &overflow)) {
-      return nullptr;
-    }
-  }
-
-  // Steps 9-10.
-  PlainDate result;
-  if (calendarId == CalendarId::ISO8601) {
-    // Step 9.a.
-    if (!ISOResolveMonth(cx, &dateFields)) {
-      return nullptr;
+      return false;
     }
 
-    // Step 9.b.
-    if (!ISOMonthDayFromFields(cx, dateFields, overflow, &result)) {
-      return nullptr;
-    }
-  } else {
-    // Step 10.a.
+    // Step 3.c.
     if (!CalendarResolveFields(cx, calendarId, dateFields,
                                FieldType::MonthDay)) {
-      return nullptr;
+      return false;
     }
 
-    // Step 10.b.
+    // Step 3.d.
     if (!CalendarMonthDayToISOReferenceDate(cx, calendarId, dateFields,
-                                            overflow, &result)) {
-      return nullptr;
-    }
-  }
-
-  // Step 11.
-  Rooted<CalendarValue> calendar(cx, CalendarValue(calendarId));
-  return CreateTemporalMonthDay(cx, result, calendar);
-}
-
-/**
- * CalendarMonthDayFromFields ( calendarRec, fields [ , options ] )
- */
-static Wrapped<PlainMonthDayObject*> CalendarMonthDayFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar, Handle<JSObject*> fields,
-    Handle<PlainObject*> maybeOptions) {
-  MOZ_ASSERT(CalendarMethodsRecordHasLookedUp(
-      calendar, CalendarMethod::MonthDayFromFields));
-
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 3. (Reordered)
-  auto monthDayFromFields = calendar.monthDayFromFields();
-  if (!monthDayFromFields) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarMonthDayFromFields(cx, calendarId, fields,
-                                             maybeOptions);
-  }
-
-  // Step 2. (Inlined call to CalendarMethodsRecordCall.)
-
-  Rooted<Value> monthDayFromFieldsFn(cx, ObjectValue(*monthDayFromFields));
-  auto thisv = calendar.receiver().toObjectValue();
-  Rooted<Value> rval(cx);
-
-  FixedInvokeArgs<2> args(cx);
-  args[0].setObject(*fields);
-  if (maybeOptions) {
-    args[1].setObject(*maybeOptions);
-  } else {
-    args[1].setUndefined();
-  }
-
-  if (!Call(cx, monthDayFromFieldsFn, thisv, args, &rval)) {
-    return nullptr;
-  }
-
-  // Step 4.
-  if (!rval.isObject() || !rval.toObject().canUnwrapAs<PlainMonthDayObject>()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, rval,
-                     nullptr, "not a PlainMonthDay object");
-    return nullptr;
-  }
-
-  // Step 5.
-  return &rval.toObject();
-}
-
-/**
- * CalendarMonthDayFromFields ( calendarRec, fields [ , options ] )
- */
-Wrapped<PlainMonthDayObject*> js::temporal::CalendarMonthDayFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<PlainObject*> fields) {
-  // Steps 1-4.
-  return ::CalendarMonthDayFromFields(cx, calendar, fields, nullptr);
-}
-
-/**
- * CalendarMonthDayFromFields ( calendarRec, fields [ , options ] )
- */
-Wrapped<PlainMonthDayObject*> js::temporal::CalendarMonthDayFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<PlainMonthDayObject*> fields) {
-  // Steps 1-4.
-  return ::CalendarMonthDayFromFields(cx, calendar, fields, nullptr);
-}
-
-/**
- * CalendarMonthDayFromFields ( calendarRec, fields [ , options ] )
- */
-Wrapped<PlainMonthDayObject*> js::temporal::CalendarMonthDayFromFields(
-    JSContext* cx, Handle<CalendarRecord> calendar, Handle<PlainObject*> fields,
-    Handle<PlainObject*> options) {
-  // Steps 1-4.
-  return ::CalendarMonthDayFromFields(cx, calendar, fields, options);
-}
-
-using PropertyHashSet = JS::GCHashSet<JS::PropertyKey>;
-using PropertyVector = JS::StackGCVector<JS::PropertyKey>;
-
-static bool SetFromList(JSContext* cx, const PropertyVector& keys,
-                        PropertyHashSet& keysSet) {
-  MOZ_ASSERT(keysSet.empty(), "expected an empty output hashset");
-
-  if (!keysSet.reserve(keys.length())) {
-    return false;
-  }
-
-  for (const auto& key : keys) {
-    if (!keysSet.putNew(key)) {
+                                            overflow, &date)) {
       return false;
     }
   }
-  return true;
+
+  // Step 4.
+  return CreateTemporalMonthDay(cx, date, calendar, result);
+}
+
+/**
+ * CalendarMonthDayFromFields ( calendar, fields, overflow )
+ */
+bool js::temporal::CalendarMonthDayFromFields(
+    JSContext* cx, Handle<CalendarValue> calendar,
+    Handle<PlainMonthDayObject*> fields, TemporalOverflow overflow,
+    MutableHandle<PlainMonthDayWithCalendar> result) {
+  return ::CalendarMonthDayFromFields(cx, calendar, fields, overflow, result);
+}
+
+/**
+ * CalendarMonthDayFromFields ( calendar, fields, overflow )
+ */
+bool js::temporal::CalendarMonthDayFromFields(
+    JSContext* cx, Handle<CalendarValue> calendar,
+    Handle<TemporalFields> fields, TemporalOverflow overflow,
+    MutableHandle<PlainMonthDayWithCalendar> result) {
+  return ::CalendarMonthDayFromFields(cx, calendar, fields, overflow, result);
 }
 
 /**
@@ -5818,1914 +3874,129 @@ static auto ISOFieldKeysToIgnore(mozilla::EnumSet<TemporalField> keys) {
   return ignoredKeys;
 }
 
-#ifdef DEBUG
-static bool IsPlainDataObject(PlainObject* obj) {
-  // [[Prototype]] is null.
-  if (obj->staticPrototype() != nullptr) {
-    return false;
-  }
-
-  // All properties are simple data properties.
-  for (ShapePropertyIter<NoGC> iter(obj->shape()); !iter.done(); iter++) {
-    if (iter->flags() != PropertyFlags::defaultDataPropFlags) {
-      return false;
-    }
-  }
-  return true;
-}
-#endif
-
 /**
- * Temporal.Calendar.prototype.mergeFields ( fields, additionalFields )
+ * CalendarMergeFields ( calendar, fields, additionalFields )
  */
-static PlainObject* BuiltinCalendarMergeFields(
-    JSContext* cx, CalendarId calendarId, Handle<PlainObject*> fields,
-    Handle<PlainObject*> additionalFields) {
-  MOZ_ASSERT(IsPlainDataObject(fields));
-  MOZ_ASSERT(IsPlainDataObject(additionalFields));
+TemporalFields js::temporal::CalendarMergeFields(
+    const CalendarValue& calendar, const TemporalFields& fields,
+    const TemporalFields& additionalFields) {
+  auto calendarId = calendar.identifier();
 
-  // Steps 1-4. (Not applicable in our implementation.)
+  // FIXME: spec issue - is copying still needed? what about `undefined` values?
+  // FIXME: spec issue - CalendarMergeFields is infallible
+  // FIXME: spec issue - iteration order no longer observable
+
+  // Steps 1-3. (Not applicable in our implementation.)
+
+  // Steps 4.
+  auto additionalKeys = additionalFields.keys();
 
   // Steps 5-6.
-  //
-  // |additionalFields| contains no non-enumerable properties, so we don't need
-  // to pass JSITER_HIDDEN.
-  JS::RootedVector<PropertyKey> additionalKeys(cx);
-  if (!GetPropertyKeys(cx, additionalFields, JSITER_OWNONLY | JSITER_SYMBOLS,
-                       &additionalKeys)) {
-    return nullptr;
-  }
-
-  // Steps 7-8.
-  mozilla::EnumSet<TemporalField> additionalFieldKeys;
-  for (const auto& additionalKey : additionalKeys) {
-    auto field = ToTemporalField(cx, additionalKey);
-    if (field) {
-      additionalFieldKeys += *field;
-    }
-  }
-
-  mozilla::EnumSet<TemporalField> toIgnore;
+  mozilla::EnumSet<TemporalField> overriddenKeys;
   if (calendarId == CalendarId::ISO8601) {
-    toIgnore = ISOFieldKeysToIgnore(additionalFieldKeys);
+    overriddenKeys = ISOFieldKeysToIgnore(additionalKeys);
   } else {
-    toIgnore = CalendarFieldKeysToIgnore(calendarId, additionalFieldKeys);
+    overriddenKeys = CalendarFieldKeysToIgnore(calendarId, additionalKeys);
   }
-  MOZ_ASSERT(toIgnore.contains(additionalFieldKeys));
+  MOZ_ASSERT(overriddenKeys.contains(additionalKeys));
 
-  Rooted<PropertyHashSet> overriddenKeys(cx, PropertyHashSet(cx));
-  if (!SetFromList(cx, additionalKeys.get(), overriddenKeys.get())) {
-    return nullptr;
-  }
+  // Step 7.
+  auto merged = TemporalFields{};
 
-  auto additionalFieldsToIgnore = toIgnore - additionalFieldKeys;
-  for (auto field : additionalFieldsToIgnore) {
-    auto* fieldName = ToPropertyName(cx, field);
-    if (!overriddenKeys.put(NameToId(fieldName))) {
-      return nullptr;
+  // Steps 8-10.
+  for (auto field : fields.keys()) {
+    MOZ_ASSERT(fields.has(field));
+
+    // Steps 10.a-c.
+    if (!overriddenKeys.contains(field) && !fields.isUndefined(field)) {
+      merged.setFrom(field, fields);
     }
   }
 
-  // Step 9.
-  Rooted<PlainObject*> merged(cx, NewPlainObjectWithProto(cx, nullptr));
-  if (!merged) {
-    return nullptr;
-  }
+  // Step 11.
+  for (auto field : additionalKeys) {
+    MOZ_ASSERT(additionalFields.has(field));
 
-  // Steps 10-11.
-  //
-  // See above why JSITER_HIDDEN isn't needed.
-  JS::RootedVector<PropertyKey> fieldsKeys(cx);
-  if (!GetPropertyKeys(cx, fields, JSITER_OWNONLY | JSITER_SYMBOLS,
-                       &fieldsKeys)) {
-    return nullptr;
+    if (!additionalFields.isUndefined(field)) {
+      merged.setFrom(field, additionalFields);
+    }
   }
 
   // Step 12.
-  Rooted<Value> propValue(cx);
-  for (size_t i = 0; i < fieldsKeys.length(); i++) {
-    Handle<PropertyKey> key = fieldsKeys[i];
-
-    // Steps 12.a-b.
-    if (overriddenKeys.has(key)) {
-      if (!GetProperty(cx, additionalFields, additionalFields, key,
-                       &propValue)) {
-        return nullptr;
-      }
-    } else {
-      if (!GetProperty(cx, fields, fields, key, &propValue)) {
-        return nullptr;
-      }
-    }
-
-    // Step 12.c.
-    if (!propValue.isUndefined()) {
-      if (!DefineDataProperty(cx, merged, key, propValue)) {
-        return nullptr;
-      }
-    }
-  }
-
-  // Step 13.
-  if (!CopyDataProperties(cx, merged, additionalFields)) {
-    return nullptr;
-  }
-
-  // Step 14.
   return merged;
 }
 
 /**
- * CalendarMergeFields ( calendarRec, fields, additionalFields )
+ * CalendarDateAdd ( date, duration, overflow )
  */
-JSObject* js::temporal::CalendarMergeFields(
-    JSContext* cx, Handle<CalendarRecord> calendar, Handle<PlainObject*> fields,
-    Handle<PlainObject*> additionalFields) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::MergeFields));
-
-  // Step 2. (Reordered)
-  auto mergeFields = calendar.mergeFields();
-  if (!mergeFields) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarMergeFields(cx, calendarId, fields, additionalFields);
-  }
-
-  // Step 1. (Inlined call to CalendarMethodsRecordCall.)
-
-  Rooted<Value> mergeFieldsFn(cx, ObjectValue(*mergeFields));
-  auto thisv = calendar.receiver().toObjectValue();
-  Rooted<Value> result(cx);
-
-  FixedInvokeArgs<2> args(cx);
-  args[0].setObject(*fields);
-  args[1].setObject(*additionalFields);
-
-  if (!Call(cx, mergeFieldsFn, thisv, args, &result)) {
-    return nullptr;
-  }
-
-  // Steps 3-4.
-  return RequireObject(cx, result);
-}
-
-/**
- * Temporal.Calendar.prototype.dateAdd ( date, duration [ , options ] )
- */
-static bool BuiltinCalendarAdd(JSContext* cx, CalendarId calendarId,
-                               const PlainDate& date,
-                               const NormalizedDuration& duration,
-                               Handle<JSObject*> options, PlainDate* result) {
+bool js::temporal::CalendarDateAdd(
+    JSContext* cx, Handle<CalendarValue> calendar, const PlainDate& date,
+    const Duration& duration, TemporalOverflow overflow, PlainDate* result) {
   MOZ_ASSERT(IsValidISODate(date));
   MOZ_ASSERT(IsValidDuration(duration));
 
-  // Steps 1-5. (Not applicable)
-
-  // Step 6.
-  auto overflow = TemporalOverflow::Constrain;
-  if (options) {
-    if (!GetTemporalOverflowOption(cx, options, &overflow)) {
-      return false;
-    }
-  }
-
-  // Step 7.
-  const auto& timeDuration = duration.time;
-
-  // Step 8.
-  auto balanceResult = BalanceTimeDuration(timeDuration, TemporalUnit::Day);
-
-  auto addDuration = DateDuration{
-      duration.date.years,
-      duration.date.months,
-      duration.date.weeks,
-      duration.date.days + balanceResult.days,
-  };
-
-  // Step 9.
-  if (calendarId == CalendarId::ISO8601) {
-    return AddISODate(cx, date, addDuration, overflow, result);
-  }
-
-  // Step 10.
-  return CalendarDateAddition(cx, calendarId, date, addDuration, overflow,
-                              result);
-}
-
-/**
- * Temporal.Calendar.prototype.dateAdd ( date, duration [ , options ] )
- */
-static bool BuiltinCalendarAdd(JSContext* cx, CalendarId calendarId,
-                               const PlainDate& date,
-                               const DateDuration& duration,
-                               Handle<JSObject*> options, PlainDate* result) {
-  // Steps 1-5. (Not applicable)
-
-  // Step 7. (Reordered)
-  auto normalized = CreateNormalizedDurationRecord(duration, {});
-
-  // Steps 6 and 8-10.
-  return BuiltinCalendarAdd(cx, calendarId, date, normalized, options, result);
-}
-
-/**
- * Temporal.Calendar.prototype.dateAdd ( date, duration [ , options ] )
- */
-static PlainDateObject* BuiltinCalendarAdd(JSContext* cx, CalendarId calendarId,
-                                           const PlainDate& date,
-                                           const DateDuration& duration,
-                                           Handle<JSObject*> options) {
-  // Steps 1-10.
-  PlainDate result;
-  if (!BuiltinCalendarAdd(cx, calendarId, date, duration, options, &result)) {
-    return nullptr;
-  }
-
-  // Step 11.
-  Rooted<CalendarValue> calendar(cx, CalendarValue(calendarId));
-  return CreateTemporalDate(cx, result, calendar);
-}
-
-/**
- * Temporal.Calendar.prototype.dateAdd ( date, duration [ , options ] )
- */
-static PlainDateObject* BuiltinCalendarAdd(JSContext* cx, CalendarId calendarId,
-                                           const PlainDate& date,
-                                           const Duration& duration,
-                                           Handle<JSObject*> options) {
-  // Steps 1-5. (Not applicable)
-
-  // Step 7. (Reordered)
+  // Step 1.
   auto normalized = CreateNormalizedDurationRecord(duration);
 
-  // Steps 6 and 8-10.
-  PlainDate result;
-  if (!BuiltinCalendarAdd(cx, calendarId, date, normalized, options, &result)) {
-    return nullptr;
-  }
+  // Step 2.
+  auto balanceResult = BalanceTimeDuration(normalized.time, TemporalUnit::Day);
 
-  // Step 11.
-  Rooted<CalendarValue> calendar(cx, CalendarValue(calendarId));
-  return CreateTemporalDate(cx, result, calendar);
+  auto addDuration = DateDuration{
+      normalized.date.years,
+      normalized.date.months,
+      normalized.date.weeks,
+      normalized.date.days + balanceResult.days,
+  };
+
+  // Steps 3-5.
+  return CalendarDateAdd(cx, calendar, date, addDuration, overflow, result);
 }
 
 /**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-static Wrapped<PlainDateObject*> CalendarDateAddSlow(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date,
-    Handle<Wrapped<DurationObject*>> duration, Handle<JSObject*> options) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
-  MOZ_ASSERT(calendar.receiver().isObject());
-  MOZ_ASSERT(calendar.dateAdd());
-
-  // Step 1. (Not applicable).
-
-  // Step 2. (Inlined call to CalendarMethodsRecordCall.)
-  Rooted<JS::Value> dateAdd(cx, ObjectValue(*calendar.dateAdd()));
-  auto thisv = calendar.receiver().toObjectValue();
-  Rooted<Value> rval(cx);
-
-  FixedInvokeArgs<3> args(cx);
-  args[0].setObject(*date);
-  args[1].setObject(*duration);
-  if (options) {
-    args[2].setObject(*options);
-  } else {
-    args[2].setUndefined();
-  }
-
-  if (!Call(cx, dateAdd, thisv, args, &rval)) {
-    return nullptr;
-  }
-
-  // Step 3. (Not applicable)
-  MOZ_ASSERT(!CalendarMethodsRecordIsBuiltin(calendar));
-
-  // Step 4.
-  if (!rval.isObject() || !rval.toObject().canUnwrapAs<PlainDateObject>()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, rval,
-                     nullptr, "not a PlainDate object");
-    return nullptr;
-  }
-
-  // Step 5.
-  return &rval.toObject();
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-static Wrapped<PlainDateObject*> CalendarDateAdd(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date, const Duration& duration,
-    Handle<JSObject*> options) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
-
-  // Step 1. (Not applicable).
-
-  // Step 3. (Reordered)
-  if (!calendar.dateAdd()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-
-    auto* unwrappedDate = date.unwrap(cx);
-    if (!unwrappedDate) {
-      return nullptr;
-    }
-    auto date = ToPlainDate(unwrappedDate);
-
-    return BuiltinCalendarAdd(cx, calendarId, date, duration, options);
-  }
-
-  // Steps 2 and 4-5.
-  Rooted<DurationObject*> durationObj(cx, CreateTemporalDuration(cx, duration));
-  if (!durationObj) {
-    return nullptr;
-  }
-  return CalendarDateAddSlow(cx, calendar, date, durationObj, options);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-static Wrapped<PlainDateObject*> CalendarDateAdd(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date, const DateDuration& duration,
-    Handle<JSObject*> options) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
-
-  // Step 1. (Not applicable).
-
-  // Step 3. (Reordered)
-  if (!calendar.dateAdd()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-
-    auto* unwrappedDate = date.unwrap(cx);
-    if (!unwrappedDate) {
-      return nullptr;
-    }
-    auto date = ToPlainDate(unwrappedDate);
-
-    return BuiltinCalendarAdd(cx, calendarId, date, duration, options);
-  }
-
-  // Steps 2 and 4-5.
-  Rooted<DurationObject*> durationObj(
-      cx, CreateTemporalDuration(cx, duration.toDuration()));
-  if (!durationObj) {
-    return nullptr;
-  }
-  return CalendarDateAddSlow(cx, calendar, date, durationObj, options);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-static Wrapped<PlainDateObject*> CalendarDateAdd(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date,
-    Handle<Wrapped<DurationObject*>> duration, Handle<JSObject*> options) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
-
-  // Step 1. (Not applicable).
-
-  // Step 3. (Reordered)
-  if (!calendar.dateAdd()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-
-    auto* unwrappedDate = date.unwrap(cx);
-    if (!unwrappedDate) {
-      return nullptr;
-    }
-    auto date = ToPlainDate(unwrappedDate);
-
-    auto* unwrappedDuration = duration.unwrap(cx);
-    if (!unwrappedDuration) {
-      return nullptr;
-    }
-    auto duration = ToDuration(unwrappedDuration);
-
-    return BuiltinCalendarAdd(cx, calendarId, date, duration, options);
-  }
-
-  // Steps 2 and 4-5.
-  return CalendarDateAddSlow(cx, calendar, date, duration, options);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-static bool CalendarDateAdd(JSContext* cx, Handle<CalendarRecord> calendar,
-                            Handle<Wrapped<PlainDateObject*>> date,
-                            const DateDuration& duration,
-                            Handle<JSObject*> options, PlainDate* result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
-
-  // Step 1. (Not applicable).
-
-  // Step 3. (Reordered)
-  if (!calendar.dateAdd()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-
-    auto* unwrappedDate = date.unwrap(cx);
-    if (!unwrappedDate) {
-      return false;
-    }
-    auto date = ToPlainDate(unwrappedDate);
-
-    return BuiltinCalendarAdd(cx, calendarId, date, duration, options, result);
-  }
-
-  // Steps 2 and 4-5.
-
-  Rooted<DurationObject*> durationObj(
-      cx, CreateTemporalDuration(cx, duration.toDuration()));
-  if (!durationObj) {
-    return false;
-  }
-
-  auto obj = CalendarDateAddSlow(cx, calendar, date, durationObj, options);
-  if (!obj) {
-    return false;
-  }
-
-  *result = ToPlainDate(&obj.unwrap());
-  return true;
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-static bool CalendarDateAdd(JSContext* cx, Handle<CalendarRecord> calendar,
-                            const PlainDate& date, const DateDuration& duration,
-                            Handle<JSObject*> options, PlainDate* result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
-
-  // Step 1. (Not applicable).
-
-  // Step 3. (Reordered)
-  if (!calendar.dateAdd()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarAdd(cx, calendarId, date, duration, options, result);
-  }
-
-  // Steps 2 and 4-5.
-
-  Rooted<PlainDateObject*> dateObj(
-      cx, CreateTemporalDate(cx, date, calendar.receiver()));
-  if (!dateObj) {
-    return false;
-  }
-
-  Rooted<DurationObject*> durationObj(
-      cx, CreateTemporalDuration(cx, duration.toDuration()));
-  if (!durationObj) {
-    return false;
-  }
-
-  auto obj = CalendarDateAddSlow(cx, calendar, dateObj, durationObj, options);
-  if (!obj) {
-    return false;
-  }
-
-  *result = ToPlainDate(&obj.unwrap());
-  return true;
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-Wrapped<PlainDateObject*> js::temporal::CalendarDateAdd(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date, const Duration& duration,
-    Handle<JSObject*> options) {
-  // Step 1. (Not applicable).
-
-  // Steps 2-5.
-  return ::CalendarDateAdd(cx, calendar, date, duration, options);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-Wrapped<PlainDateObject*> js::temporal::CalendarDateAdd(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date, const DateDuration& duration) {
-  // Step 1.
-  Handle<JSObject*> options = nullptr;
-
-  // Steps 2-5.
-  return ::CalendarDateAdd(cx, calendar, date, duration, options);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-Wrapped<PlainDateObject*> js::temporal::CalendarDateAdd(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date,
-    Handle<Wrapped<DurationObject*>> duration) {
-  // Step 1.
-  Handle<JSObject*> options = nullptr;
-
-  // Steps 2-5.
-  return ::CalendarDateAdd(cx, calendar, date, duration, options);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-Wrapped<PlainDateObject*> js::temporal::CalendarDateAdd(
-    JSContext* cx, Handle<CalendarRecord> calendar,
-    Handle<Wrapped<PlainDateObject*>> date,
-    Handle<Wrapped<DurationObject*>> duration, Handle<JSObject*> options) {
-  // Step 1. (Not applicable).
-
-  // Steps 2-5.
-  return ::CalendarDateAdd(cx, calendar, date, duration, options);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
+ * CalendarDateAdd ( date, duration, overflow )
  */
 bool js::temporal::CalendarDateAdd(JSContext* cx,
-                                   Handle<CalendarRecord> calendar,
+                                   Handle<CalendarValue> calendar,
                                    const PlainDate& date,
                                    const DateDuration& duration,
+                                   TemporalOverflow overflow,
                                    PlainDate* result) {
-  // Step 1.
-  Handle<JSObject*> options = nullptr;
+  MOZ_ASSERT(IsValidISODate(date));
+  MOZ_ASSERT(IsValidDuration(duration));
 
-  // Steps 2-5.
-  return ::CalendarDateAdd(cx, calendar, date, duration, options, result);
+  auto calendarId = calendar.identifier();
+
+  // Steps 1-2. (Not applicable)
+
+  // Steps 3 and 5.
+  if (calendarId == CalendarId::ISO8601) {
+    return AddISODate(cx, date, duration, overflow, result);
+  }
+
+  // Steps 4-5.
+  return CalendarDateAddition(cx, calendarId, date, duration, overflow, result);
 }
 
 /**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
+ * CalendarDateUntil ( one, two, largestUnit )
  */
-bool js::temporal::CalendarDateAdd(JSContext* cx,
-                                   Handle<CalendarRecord> calendar,
-                                   const PlainDate& date,
-                                   const DateDuration& duration,
-                                   Handle<JSObject*> options,
-                                   PlainDate* result) {
-  // Step 1. (Not applicable)
-
-  // Steps 2-5.
-  return ::CalendarDateAdd(cx, calendar, date, duration, options, result);
-}
-
-/**
- * CalendarDateAdd ( calendarRec, date, duration [ , options ] )
- */
-bool js::temporal::CalendarDateAdd(JSContext* cx,
-                                   Handle<CalendarRecord> calendar,
-                                   Handle<Wrapped<PlainDateObject*>> date,
-                                   const DateDuration& duration,
-                                   PlainDate* result) {
-  // Step 1.
-  Handle<JSObject*> options = nullptr;
-
-  // Steps 2-5.
-  return ::CalendarDateAdd(cx, calendar, date, duration, options, result);
-}
-
-/**
- * Temporal.Calendar.prototype.dateUntil ( one, two [ , options ] )
- */
-static bool BuiltinCalendarDateUntil(JSContext* cx, CalendarId calendarId,
+bool js::temporal::CalendarDateUntil(JSContext* cx,
+                                     Handle<CalendarValue> calendar,
                                      const PlainDate& one, const PlainDate& two,
                                      TemporalUnit largestUnit,
                                      DateDuration* result) {
-  // Steps 1-7. (Not applicable)
+  MOZ_ASSERT(largestUnit <= TemporalUnit::Day);
 
-  // Step 8.
+  auto calendarId = calendar.identifier();
+
+  // Step 1. (Not applicable in our implementation)
+
+  // Step 2 and 4.
   if (calendarId == CalendarId::ISO8601) {
     *result = DifferenceISODate(one, two, largestUnit);
     return true;
   }
 
-  // Step 9.
+  // Steps 3-4.
   return CalendarDateDifference(cx, calendarId, one, two, largestUnit, result);
-}
-
-/**
- * Temporal.Calendar.prototype.dateUntil ( one, two [ , options ] )
- */
-static bool BuiltinCalendarDateUntil(JSContext* cx, CalendarId calendarId,
-                                     Handle<Wrapped<PlainDateObject*>> one,
-                                     Handle<Wrapped<PlainDateObject*>> two,
-                                     TemporalUnit largestUnit,
-                                     DateDuration* result) {
-  MOZ_ASSERT(largestUnit <= TemporalUnit::Day);
-
-  auto* unwrappedOne = one.unwrap(cx);
-  if (!unwrappedOne) {
-    return false;
-  }
-  auto dateOne = ToPlainDate(unwrappedOne);
-
-  auto* unwrappedTwo = two.unwrap(cx);
-  if (!unwrappedTwo) {
-    return false;
-  }
-  auto dateTwo = ToPlainDate(unwrappedTwo);
-
-  // Steps 1-9.
-  return BuiltinCalendarDateUntil(cx, calendarId, dateOne, dateTwo, largestUnit,
-                                  result);
-}
-
-static bool CalendarDateUntilSlow(JSContext* cx,
-                                  Handle<CalendarRecord> calendar,
-                                  Handle<Wrapped<PlainDateObject*>> one,
-                                  Handle<Wrapped<PlainDateObject*>> two,
-                                  TemporalUnit largestUnit,
-                                  Handle<JSObject*> maybeOptions,
-                                  DateDuration* result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateUntil));
-  MOZ_ASSERT(calendar.receiver().isObject());
-  MOZ_ASSERT(calendar.dateUntil());
-
-  Rooted<JSObject*> options(cx, maybeOptions);
-  if (!options) {
-    options = NewPlainObjectWithProto(cx, nullptr);
-    if (!options) {
-      return false;
-    }
-  }
-
-  Rooted<Value> value(cx, StringValue(TemporalUnitToString(cx, largestUnit)));
-  if (!DefineDataProperty(cx, options, cx->names().largestUnit, value)) {
-    return false;
-  }
-
-  // Step 1. (Inlined call to CalendarMethodsRecordCall.)
-  Rooted<JS::Value> dateUntil(cx, ObjectValue(*calendar.dateUntil()));
-  auto thisv = calendar.receiver().toObjectValue();
-  Rooted<Value> rval(cx);
-
-  FixedInvokeArgs<3> args(cx);
-  args[0].setObject(*one);
-  args[1].setObject(*two);
-  args[2].setObject(*options);
-
-  if (!Call(cx, dateUntil, thisv, args, &rval)) {
-    return false;
-  }
-
-  // Step 2. (Not applicable)
-  MOZ_ASSERT(!CalendarMethodsRecordIsBuiltin(calendar));
-
-  // Step 3.
-  if (!rval.isObject() || !rval.toObject().canUnwrapAs<DurationObject>()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, rval,
-                     nullptr, "not a Duration object");
-    return false;
-  }
-
-  // Step 4.
-  auto duration = ToDuration(&rval.toObject().unwrapAs<DurationObject>());
-  *result = duration.toDateDuration();
-  return true;
-}
-
-static bool CalendarDateUntilSlow(JSContext* cx,
-                                  Handle<CalendarRecord> calendar,
-                                  const PlainDate& one, const PlainDate& two,
-                                  TemporalUnit largestUnit,
-                                  Handle<JSObject*> maybeOptions,
-                                  DateDuration* result) {
-  Rooted<PlainDateObject*> date1(
-      cx, CreateTemporalDate(cx, one, calendar.receiver()));
-  if (!date1) {
-    return false;
-  }
-
-  Rooted<PlainDateObject*> date2(
-      cx, CreateTemporalDate(cx, two, calendar.receiver()));
-  if (!date2) {
-    return false;
-  }
-
-  return CalendarDateUntilSlow(cx, calendar, date1, date2, largestUnit,
-                               maybeOptions, result);
-}
-
-/**
- * CalendarDateUntil ( calendarRec, one, two, options )
- */
-bool js::temporal::CalendarDateUntil(JSContext* cx,
-                                     Handle<CalendarRecord> calendar,
-                                     const PlainDate& one, const PlainDate& two,
-                                     TemporalUnit largestUnit,
-                                     DateDuration* result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateUntil));
-  MOZ_ASSERT(largestUnit <= TemporalUnit::Day);
-
-  // Step 2. (Reordered)
-  if (!calendar.dateUntil()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarDateUntil(cx, calendarId, one, two, largestUnit,
-                                    result);
-  }
-
-  // Steps 1 and 3-4.
-  return CalendarDateUntilSlow(cx, calendar, one, two, largestUnit, nullptr,
-                               result);
-}
-
-/**
- * CalendarDateUntil ( calendarRec, one, two, options )
- */
-bool js::temporal::CalendarDateUntil(JSContext* cx,
-                                     Handle<CalendarRecord> calendar,
-                                     const PlainDate& one, const PlainDate& two,
-                                     TemporalUnit largestUnit,
-                                     Handle<PlainObject*> options,
-                                     DateDuration* result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateUntil));
-
-  // As an optimization, our implementation only adds |largestUnit| to the
-  // options object when taking the slow-path.
-#ifdef DEBUG
-  // The object must be extensible, otherwise we'd need to throw an error when
-  // attempting to add the "largestUnit" property to a non-extensible object.
-  MOZ_ASSERT(options->isExtensible());
-
-  // Similarily, if there's an existing "largestUnit" property, this property
-  // must be configurable.
-  auto largestUnitProp = options->lookupPure(cx->names().largestUnit);
-  MOZ_ASSERT_IF(largestUnitProp, largestUnitProp->configurable());
-#endif
-
-  // Step 2. (Reordered)
-  if (!calendar.dateUntil()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarDateUntil(cx, calendarId, one, two, largestUnit,
-                                    result);
-  }
-
-  // Steps 1 and 3-4.
-  return CalendarDateUntilSlow(cx, calendar, one, two, largestUnit, options,
-                               result);
-}
-
-/**
- * CalendarDateUntil ( calendarRec, one, two, options )
- */
-bool js::temporal::CalendarDateUntil(JSContext* cx,
-                                     Handle<CalendarRecord> calendar,
-                                     Handle<Wrapped<PlainDateObject*>> one,
-                                     Handle<Wrapped<PlainDateObject*>> two,
-                                     TemporalUnit largestUnit,
-                                     DateDuration* result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateUntil));
-  MOZ_ASSERT(largestUnit <= TemporalUnit::Day);
-
-  // Step 2. (Reordered)
-  if (!calendar.dateUntil()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarDateUntil(cx, calendarId, one, two, largestUnit,
-                                    result);
-  }
-
-  // Steps 1 and 3-4.
-  return CalendarDateUntilSlow(cx, calendar, one, two, largestUnit, nullptr,
-                               result);
-}
-
-/**
- * CalendarDateUntil ( calendarRec, one, two, options )
- */
-bool js::temporal::CalendarDateUntil(JSContext* cx,
-                                     Handle<CalendarRecord> calendar,
-                                     Handle<Wrapped<PlainDateObject*>> one,
-                                     Handle<Wrapped<PlainDateObject*>> two,
-                                     TemporalUnit largestUnit,
-                                     Handle<PlainObject*> options,
-                                     DateDuration* result) {
-  MOZ_ASSERT(
-      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateUntil));
-
-  // As an optimization, our implementation only adds |largestUnit| to the
-  // options object when taking the slow-path.
-#ifdef DEBUG
-  // The object must be extensible, otherwise we'd need to throw an error when
-  // attempting to add the "largestUnit" property to a non-extensible object.
-  MOZ_ASSERT(options->isExtensible());
-
-  // Similarily, if there's an existing "largestUnit" property, this property
-  // must be configurable.
-  auto largestUnitProp = options->lookupPure(cx->names().largestUnit);
-  MOZ_ASSERT_IF(largestUnitProp, largestUnitProp->configurable());
-#endif
-
-  // Step 2. (Reordered)
-  if (!calendar.dateUntil()) {
-    auto calendarId = BuiltinCalendarId(calendar.receiver());
-    return BuiltinCalendarDateUntil(cx, calendarId, one, two, largestUnit,
-                                    result);
-  }
-
-  // Steps 1 and 3-4.
-  return CalendarDateUntilSlow(cx, calendar, one, two, largestUnit, options,
-                               result);
-}
-
-/**
- * CalendarEquals ( one, two )
- */
-bool js::temporal::CalendarEquals(JSContext* cx, Handle<CalendarValue> one,
-                                  Handle<CalendarValue> two, bool* equals) {
-  // Step 1.
-  if (one.isObject() && two.isObject() && one.toObject() == two.toObject()) {
-    *equals = true;
-    return true;
-  }
-
-  // Step 2.
-  Rooted<JSLinearString*> calendarOne(cx,
-                                      ToTemporalCalendarIdentifier(cx, one));
-  if (!calendarOne) {
-    return false;
-  }
-
-  // Step 3.
-  JSLinearString* calendarTwo = ToTemporalCalendarIdentifier(cx, two);
-  if (!calendarTwo) {
-    return false;
-  }
-
-  // Steps 4-5.
-  *equals = EqualStrings(calendarOne, calendarTwo);
-  return true;
-}
-
-/**
- * CalendarEquals ( one, two )
- */
-bool js::temporal::CalendarEqualsOrThrow(JSContext* cx,
-                                         Handle<CalendarValue> one,
-                                         Handle<CalendarValue> two) {
-  // Step 1.
-  if (one.isObject() && two.isObject() && one.toObject() == two.toObject()) {
-    return true;
-  }
-
-  // Step 2.
-  Rooted<JSLinearString*> calendarOne(cx,
-                                      ToTemporalCalendarIdentifier(cx, one));
-  if (!calendarOne) {
-    return false;
-  }
-
-  // Step 3.
-  JSLinearString* calendarTwo = ToTemporalCalendarIdentifier(cx, two);
-  if (!calendarTwo) {
-    return false;
-  }
-
-  // Steps 4-5.
-  if (EqualStrings(calendarOne, calendarTwo)) {
-    return true;
-  }
-
-  // Throw an error when the calendar identifiers don't match. Used when unequal
-  // calendars throw a RangeError.
-  if (auto charsOne = QuoteString(cx, calendarOne)) {
-    if (auto charsTwo = QuoteString(cx, calendarTwo)) {
-      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                               JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
-                               charsOne.get(), charsTwo.get());
-    }
-  }
-  return false;
-}
-
-/**
- * Temporal.Calendar ( id )
- */
-static bool CalendarConstructor(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  // Step 1.
-  if (!ThrowIfNotConstructing(cx, args, "Temporal.Calendar")) {
-    return false;
-  }
-
-  // Step 2.
-  if (!args.requireAtLeast(cx, "Temporal.Calendar", 1)) {
-    return false;
-  }
-
-  if (!args[0].isString()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, args[0],
-                     nullptr, "not a string");
-    return false;
-  }
-
-  Rooted<JSLinearString*> id(cx, args[0].toString()->ensureLinear(cx));
-  if (!id) {
-    return false;
-  }
-
-  // Step 3.
-  CalendarId identifier;
-  if (!::ToBuiltinCalendar(cx, id, &identifier)) {
-    return false;
-  }
-
-  // Step 4.
-  auto* calendar = CreateTemporalCalendar(cx, args, identifier);
-  if (!calendar) {
-    return false;
-  }
-
-  args.rval().setObject(*calendar);
-  return true;
-}
-
-/**
- * Temporal.Calendar.from ( item )
- */
-static bool Calendar_from(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  // Step 1.
-  Rooted<CalendarValue> calendar(cx);
-  if (!ToTemporalCalendar(cx, args.get(0), &calendar)) {
-    return false;
-  }
-
-  // Step 2.
-  auto* obj = ToTemporalCalendarObject(cx, calendar);
-  if (!obj) {
-    return false;
-  }
-
-  args.rval().setObject(*obj);
-  return true;
-}
-
-/**
- * get Temporal.Calendar.prototype.id
- */
-static bool Calendar_id(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-
-  // Step 3.
-  auto* str = ToTemporalCalendarIdentifier(cx, calendar->identifier());
-  if (!str) {
-    return false;
-  }
-
-  args.rval().setString(str);
-  return true;
-}
-
-/**
- * get Temporal.Calendar.prototype.id
- */
-static bool Calendar_id(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_id>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.dateFromFields ( fields [ , options ] )
- */
-static bool Calendar_dateFromFields(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  Rooted<JSObject*> fields(
-      cx, RequireObjectArg(cx, "fields", "dateFromFields", args.get(0)));
-  if (!fields) {
-    return false;
-  }
-
-  // Step 4.
-  Rooted<JSObject*> options(cx);
-  if (args.hasDefined(1)) {
-    options = RequireObjectArg(cx, "options", "dateFromFields", args[1]);
-    if (!options) {
-      return false;
-    }
-  }
-
-  // Steps 5-11.
-  auto* obj = BuiltinCalendarDateFromFields(cx, calendarId, fields, options);
-  if (!obj) {
-    return false;
-  }
-
-  args.rval().setObject(*obj);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.dateFromFields ( fields [ , options ] )
- */
-static bool Calendar_dateFromFields(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_dateFromFields>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.yearMonthFromFields ( fields [ , options ] )
- */
-static bool Calendar_yearMonthFromFields(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  Rooted<JSObject*> fields(
-      cx, RequireObjectArg(cx, "fields", "yearMonthFromFields", args.get(0)));
-  if (!fields) {
-    return false;
-  }
-
-  // Step 4.
-  Rooted<JSObject*> options(cx);
-  if (args.hasDefined(1)) {
-    options = RequireObjectArg(cx, "options", "yearMonthFromFields", args[1]);
-    if (!options) {
-      return false;
-    }
-  }
-
-  // Steps 5-11.
-  auto* obj =
-      BuiltinCalendarYearMonthFromFields(cx, calendarId, fields, options);
-  if (!obj) {
-    return false;
-  }
-
-  args.rval().setObject(*obj);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.yearMonthFromFields ( fields [ , options ] )
- */
-static bool Calendar_yearMonthFromFields(JSContext* cx, unsigned argc,
-                                         Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_yearMonthFromFields>(cx,
-                                                                        args);
-}
-
-/**
- * Temporal.Calendar.prototype.monthDayFromFields ( fields [ , options ] )
- */
-static bool Calendar_monthDayFromFields(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  Rooted<JSObject*> fields(
-      cx, RequireObjectArg(cx, "fields", "monthDayFromFields", args.get(0)));
-  if (!fields) {
-    return false;
-  }
-
-  // Step 4.
-  Rooted<JSObject*> options(cx);
-  if (args.hasDefined(1)) {
-    options = RequireObjectArg(cx, "options", "monthDayFromFields", args[1]);
-    if (!options) {
-      return false;
-    }
-  }
-
-  // Steps 5-11.
-  auto* obj =
-      BuiltinCalendarMonthDayFromFields(cx, calendarId, fields, options);
-  if (!obj) {
-    return false;
-  }
-
-  args.rval().setObject(*obj);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.monthDayFromFields ( fields [ , options ] )
- */
-static bool Calendar_monthDayFromFields(JSContext* cx, unsigned argc,
-                                        Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_monthDayFromFields>(cx,
-                                                                       args);
-}
-
-/**
- * Temporal.Calendar.prototype.dateAdd ( date, duration [ , options ] )
- */
-static bool Calendar_dateAdd(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToTemporalDate(cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Step 4.
-  Duration duration;
-  if (!ToTemporalDuration(cx, args.get(1), &duration)) {
-    return false;
-  }
-
-  // Step 5.
-  Rooted<JSObject*> options(cx);
-  if (args.hasDefined(2)) {
-    options = RequireObjectArg(cx, "options", "dateAdd", args[2]);
-    if (!options) {
-      return false;
-    }
-  }
-
-  // Steps 6-11.
-  auto* obj = BuiltinCalendarAdd(cx, calendarId, date, duration, options);
-  if (!obj) {
-    return false;
-  }
-
-  args.rval().setObject(*obj);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.dateAdd ( date, duration [ , options ] )
- */
-static bool Calendar_dateAdd(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_dateAdd>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.dateUntil ( one, two [ , options ] )
- */
-static bool Calendar_dateUntil(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate one;
-  if (!ToTemporalDate(cx, args.get(0), &one)) {
-    return false;
-  }
-
-  // Step 4.
-  PlainDate two;
-  if (!ToTemporalDate(cx, args.get(1), &two)) {
-    return false;
-  }
-
-  // Steps 5-7.
-  auto largestUnit = TemporalUnit::Day;
-  if (args.hasDefined(2)) {
-    // Step 5.
-    Rooted<JSObject*> options(
-        cx, RequireObjectArg(cx, "options", "dateUntil", args[2]));
-    if (!options) {
-      return false;
-    }
-
-    // Steps 6-7.
-    if (!GetTemporalUnitValuedOption(cx, options, TemporalUnitKey::LargestUnit,
-                                     TemporalUnitGroup::Date, &largestUnit)) {
-      return false;
-    }
-  }
-
-  // Steps 8-9.
-  DateDuration duration;
-  if (!BuiltinCalendarDateUntil(cx, calendarId, one, two, largestUnit,
-                                &duration)) {
-    return false;
-  }
-
-  // Step 10.
-  auto* obj = CreateTemporalDuration(cx, duration.toDuration());
-  if (!obj) {
-    return false;
-  }
-
-  args.rval().setObject(*obj);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.dateUntil ( one, two [ , options ] )
- */
-static bool Calendar_dateUntil(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_dateUntil>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.era ( temporalDateLike )
- */
-static bool Calendar_era(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-5.
-  return BuiltinCalendarEra(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.era ( temporalDateLike )
- */
-static bool Calendar_era(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_era>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.eraYear ( temporalDateLike )
- */
-static bool Calendar_eraYear(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-7.
-  return BuiltinCalendarEraYear(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.eraYear ( temporalDateLike )
- */
-static bool Calendar_eraYear(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_eraYear>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.year ( temporalDateLike )
- */
-static bool Calendar_year(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarYear(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.year ( temporalDateLike )
- */
-static bool Calendar_year(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_year>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.month ( temporalDateLike )
- */
-static bool Calendar_month(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  Handle<Value> temporalDateLike = args.get(0);
-  if (temporalDateLike.isObject() &&
-      temporalDateLike.toObject().canUnwrapAs<PlainMonthDayObject>()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK,
-                     temporalDateLike, nullptr, "a PlainMonthDay object");
-    return false;
-  }
-
-  // Step 4.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, temporalDateLike, &date)) {
-    return false;
-  }
-
-  // Steps 5-7.
-  return BuiltinCalendarMonth(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.month ( temporalDateLike )
- */
-static bool Calendar_month(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_month>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.monthCode ( temporalDateLike )
- */
-static bool Calendar_monthCode(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainMonthDayObject,
-                   PlainYearMonthObject>(cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarMonthCode(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.monthCode ( temporalDateLike )
- */
-static bool Calendar_monthCode(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_monthCode>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.day ( temporalDateLike )
- */
-static bool Calendar_day(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainMonthDayObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarDay(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.day ( temporalDateLike )
- */
-static bool Calendar_day(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_day>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.dayOfWeek ( temporalDateLike )
- */
-static bool Calendar_dayOfWeek(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToTemporalDate(cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarDayOfWeek(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.dayOfWeek ( temporalDateLike )
- */
-static bool Calendar_dayOfWeek(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_dayOfWeek>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.dayOfYear ( temporalDateLike )
- */
-static bool Calendar_dayOfYear(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToTemporalDate(cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarDayOfYear(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.dayOfYear ( temporalDateLike )
- */
-static bool Calendar_dayOfYear(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_dayOfYear>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.weekOfYear ( temporalDateLike )
- */
-static bool Calendar_weekOfYear(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToTemporalDate(cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarWeekOfYear(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.weekOfYear ( temporalDateLike )
- */
-static bool Calendar_weekOfYear(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_weekOfYear>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.yearOfWeek ( temporalDateLike )
- */
-static bool Calendar_yearOfWeek(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToTemporalDate(cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarYearOfWeek(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.yearOfWeek ( temporalDateLike )
- */
-static bool Calendar_yearOfWeek(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_yearOfWeek>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.daysInWeek ( temporalDateLike )
- */
-static bool Calendar_daysInWeek(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToTemporalDate(cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarDaysInWeek(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.daysInWeek ( temporalDateLike )
- */
-static bool Calendar_daysInWeek(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_daysInWeek>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.daysInMonth ( temporalDateLike )
- */
-static bool Calendar_daysInMonth(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarDaysInMonth(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.daysInMonth ( temporalDateLike )
- */
-static bool Calendar_daysInMonth(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_daysInMonth>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.daysInYear ( temporalDateLike )
- */
-static bool Calendar_daysInYear(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarDaysInYear(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.daysInYear ( temporalDateLike )
- */
-static bool Calendar_daysInYear(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_daysInYear>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.monthsInYear ( temporalDateLike )
- */
-static bool Calendar_monthsInYear(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarMonthsInYear(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.monthsInYear ( temporalDateLike )
- */
-static bool Calendar_monthsInYear(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_monthsInYear>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.inLeapYear ( temporalDateLike )
- */
-static bool Calendar_inLeapYear(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  PlainDate date;
-  if (!ToPlainDate<PlainDateObject, PlainDateTimeObject, PlainYearMonthObject>(
-          cx, args.get(0), &date)) {
-    return false;
-  }
-
-  // Steps 4-6.
-  return BuiltinCalendarInLeapYear(cx, calendarId, date, args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.inLeapYear ( temporalDateLike )
- */
-static bool Calendar_inLeapYear(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_inLeapYear>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.fields ( fields )
- */
-static bool Calendar_fields(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Steps 3-9.
-  return BuiltinCalendarFields(cx, calendarId, args.get(0), args.rval());
-}
-
-/**
- * Temporal.Calendar.prototype.fields ( fields )
- */
-static bool Calendar_fields(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_fields>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.mergeFields ( fields, additionalFields )
- */
-static bool Calendar_mergeFields(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-  auto calendarId = calendar->identifier();
-
-  // Step 3.
-  Rooted<JSObject*> fields(cx, JS::ToObject(cx, args.get(0)));
-  if (!fields) {
-    return false;
-  }
-
-  Rooted<PlainObject*> fieldsCopy(
-      cx, SnapshotOwnPropertiesIgnoreUndefined(cx, fields));
-  if (!fieldsCopy) {
-    return false;
-  }
-
-  // Step 4.
-  Rooted<JSObject*> additionalFields(cx, JS::ToObject(cx, args.get(1)));
-  if (!additionalFields) {
-    return false;
-  }
-
-  Rooted<PlainObject*> additionalFieldsCopy(
-      cx, SnapshotOwnPropertiesIgnoreUndefined(cx, additionalFields));
-  if (!additionalFieldsCopy) {
-    return false;
-  }
-
-  // Steps 5-13.
-  auto* merged = BuiltinCalendarMergeFields(cx, calendarId, fieldsCopy,
-                                            additionalFieldsCopy);
-  if (!merged) {
-    return false;
-  }
-
-  // Step 14.
-  args.rval().setObject(*merged);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.mergeFields ( fields, additionalFields )
- */
-static bool Calendar_mergeFields(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_mergeFields>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.toString ( )
- */
-static bool Calendar_toString(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-
-  // Step 3.
-  auto* str = ToTemporalCalendarIdentifier(cx, calendar->identifier());
-  if (!str) {
-    return false;
-  }
-
-  args.rval().setString(str);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.toString ( )
- */
-static bool Calendar_toString(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_toString>(cx, args);
-}
-
-/**
- * Temporal.Calendar.prototype.toJSON ( )
- */
-static bool Calendar_toJSON(JSContext* cx, const CallArgs& args) {
-  auto* calendar = &args.thisv().toObject().as<CalendarObject>();
-
-  // Step 3.
-  auto* str = ToTemporalCalendarIdentifier(cx, calendar->identifier());
-  if (!str) {
-    return false;
-  }
-
-  args.rval().setString(str);
-  return true;
-}
-
-/**
- * Temporal.Calendar.prototype.toJSON ( )
- */
-static bool Calendar_toJSON(JSContext* cx, unsigned argc, Value* vp) {
-  // Steps 1-2.
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return CallNonGenericMethod<IsCalendar, Calendar_toJSON>(cx, args);
-}
-
-const JSClass CalendarObject::class_ = {
-    "Temporal.Calendar",
-    JSCLASS_HAS_RESERVED_SLOTS(CalendarObject::SLOT_COUNT) |
-        JSCLASS_HAS_CACHED_PROTO(JSProto_Calendar),
-    JS_NULL_CLASS_OPS,
-    &CalendarObject::classSpec_,
-};
-
-const JSClass& CalendarObject::protoClass_ = PlainObject::class_;
-
-static const JSFunctionSpec Calendar_methods[] = {
-    JS_FN("from", Calendar_from, 1, 0),
-    JS_FS_END,
-};
-
-static const JSFunctionSpec Calendar_prototype_methods[] = {
-    JS_FN("dateFromFields", Calendar_dateFromFields, 1, 0),
-    JS_FN("yearMonthFromFields", Calendar_yearMonthFromFields, 1, 0),
-    JS_FN("monthDayFromFields", Calendar_monthDayFromFields, 1, 0),
-    JS_FN("dateAdd", Calendar_dateAdd, 2, 0),
-    JS_FN("dateUntil", Calendar_dateUntil, 2, 0),
-    JS_FN("era", Calendar_era, 1, 0),
-    JS_FN("eraYear", Calendar_eraYear, 1, 0),
-    JS_FN("year", Calendar_year, 1, 0),
-    JS_FN("month", Calendar_month, 1, 0),
-    JS_FN("monthCode", Calendar_monthCode, 1, 0),
-    JS_FN("day", Calendar_day, 1, 0),
-    JS_FN("dayOfWeek", Calendar_dayOfWeek, 1, 0),
-    JS_FN("dayOfYear", Calendar_dayOfYear, 1, 0),
-    JS_FN("weekOfYear", Calendar_weekOfYear, 1, 0),
-    JS_FN("yearOfWeek", Calendar_yearOfWeek, 1, 0),
-    JS_FN("daysInWeek", Calendar_daysInWeek, 1, 0),
-    JS_FN("daysInMonth", Calendar_daysInMonth, 1, 0),
-    JS_FN("daysInYear", Calendar_daysInYear, 1, 0),
-    JS_FN("monthsInYear", Calendar_monthsInYear, 1, 0),
-    JS_FN("inLeapYear", Calendar_inLeapYear, 1, 0),
-    JS_FN("fields", Calendar_fields, 1, 0),
-    JS_FN("mergeFields", Calendar_mergeFields, 2, 0),
-    JS_FN("toString", Calendar_toString, 0, 0),
-    JS_FN("toJSON", Calendar_toJSON, 0, 0),
-    JS_FS_END,
-};
-
-static const JSPropertySpec Calendar_prototype_properties[] = {
-    JS_PSG("id", Calendar_id, 0),
-    JS_STRING_SYM_PS(toStringTag, "Temporal.Calendar", JSPROP_READONLY),
-    JS_PS_END,
-};
-
-const ClassSpec CalendarObject::classSpec_ = {
-    GenericCreateConstructor<CalendarConstructor, 1, gc::AllocKind::FUNCTION>,
-    GenericCreatePrototype<CalendarObject>,
-    Calendar_methods,
-    nullptr,
-    Calendar_prototype_methods,
-    Calendar_prototype_properties,
-    nullptr,
-    ClassSpec::DontDefineConstructor,
-};
-
-struct MOZ_STACK_CLASS CalendarNameAndNative final {
-  PropertyName* name;
-  JSNative native;
-};
-
-static CalendarNameAndNative GetCalendarNameAndNative(JSContext* cx,
-                                                      CalendarField fieldName) {
-  switch (fieldName) {
-    case CalendarField::Year:
-      return {cx->names().year, Calendar_year};
-    case CalendarField::Month:
-      return {cx->names().month, Calendar_month};
-    case CalendarField::MonthCode:
-      return {cx->names().monthCode, Calendar_monthCode};
-    case CalendarField::Day:
-      return {cx->names().day, Calendar_day};
-  }
-  MOZ_CRASH("invalid temporal field name");
-}
-
-bool js::temporal::IsBuiltinAccess(
-    JSContext* cx, Handle<CalendarObject*> calendar,
-    std::initializer_list<CalendarField> fieldNames) {
-  // Don't optimize when the object has any own properties which may shadow the
-  // built-in methods.
-  if (!calendar->empty()) {
-    return false;
-  }
-
-  JSObject* proto = cx->global()->maybeGetPrototype(JSProto_Calendar);
-
-  // Don't attempt to optimize when the class isn't yet initialized.
-  if (!proto) {
-    return false;
-  }
-
-  // Don't optimize when the prototype isn't the built-in prototype.
-  if (calendar->staticPrototype() != proto) {
-    return false;
-  }
-
-  auto* nproto = &proto->as<NativeObject>();
-  for (auto fieldName : fieldNames) {
-    auto [name, native] = GetCalendarNameAndNative(cx, fieldName);
-    auto prop = nproto->lookupPure(name);
-
-    // Return if the property isn't a data property.
-    if (!prop || !prop->isDataProperty()) {
-      return false;
-    }
-
-    // Return if the property isn't the initial method.
-    if (!IsNativeFunction(nproto->getSlot(prop->slot()), native)) {
-      return false;
-    }
-  }
-
-  // TODO: Pass accessor list from caller to avoid excessive checks.
-
-  // Additionally check the various calendar fields operations.
-  for (const auto& [name, native] : (CalendarNameAndNative[]){
-           {cx->names().fields, Calendar_fields},
-           {cx->names().mergeFields, Calendar_mergeFields},
-           {cx->names().dateFromFields, Calendar_dateFromFields},
-           {cx->names().monthDayFromFields, Calendar_monthDayFromFields},
-           {cx->names().yearMonthFromFields, Calendar_yearMonthFromFields},
-       }) {
-    auto prop = nproto->lookupPure(name);
-
-    // Return if the property isn't a data property.
-    if (!prop || !prop->isDataProperty()) {
-      return false;
-    }
-
-    // Return if the property isn't the initial method.
-    if (!IsNativeFunction(nproto->getSlot(prop->slot()), native)) {
-      return false;
-    }
-  }
-
-  // CalendarFields observably uses array iteration.
-  bool arrayIterationSane;
-  if (!IsArrayIterationSane(cx, &arrayIterationSane)) {
-    cx->recoverFromOutOfMemory();
-    return false;
-  }
-  if (!arrayIterationSane) {
-    return false;
-  }
-
-  // Success! The access can be optimized.
-  return true;
 }

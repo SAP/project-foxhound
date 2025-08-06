@@ -18,16 +18,6 @@ let CONFIG_V2 = [
           params: [
             { name: "pc", value: "FIREFOX" },
             {
-              name: "form",
-              searchAccessPoint: {
-                newtab: "MOZNEWTAB",
-                homepage: "MOZHOMEPAGE",
-                searchbar: "MOZSEARCHBAR",
-                addressbar: "MOZKEYWORD",
-                contextmenu: "MOZCONTEXT",
-              },
-            },
-            {
               name: "channel",
               experimentConfig: "testChannelEnabled",
             },
@@ -41,15 +31,6 @@ let CONFIG_V2 = [
         environment: { allRegionsAndLocales: true },
       },
     ],
-  },
-  {
-    recordType: "defaultEngines",
-    globalDefault: "engine-purpose",
-    specificDefaults: [],
-  },
-  {
-    recordType: "engineOrders",
-    orders: [],
   },
 ];
 
@@ -67,18 +48,6 @@ add_setup(async function () {
   defaultEngine = Services.search.getEngineByName("Test Engine With Purposes");
 });
 
-add_task(async function test_searchTermFromResult_withAllPurposes() {
-  for (let purpose of Object.values(SearchUtils.PARAM_PURPOSES)) {
-    let uri = defaultEngine.getSubmission(TERM, null, purpose).uri;
-    let searchTerm = defaultEngine.searchTermFromResult(uri);
-    Assert.equal(
-      searchTerm,
-      TERM,
-      `Should return the correct url for purpose: ${purpose}`
-    );
-  }
-});
-
 add_task(async function test_searchTermFromResult() {
   // Internationalized Domain Name search engine.
   await SearchTestUtils.installSearchExtension({
@@ -89,11 +58,11 @@ add_task(async function test_searchTermFromResult() {
   let engineEscapedIDN = Services.search.getEngineByName("idn_addParam");
 
   // Setup server for french engine.
-  await useHttpServer();
+  await useHttpServer("");
 
   // For ISO-8859-1 encoding testing.
   let engineISOCharset = await SearchTestUtils.installOpenSearchEngine({
-    url: `${gDataUrl}engine-fr.xml`,
+    url: `${gHttpURL}/opensearch/fr-domain-iso8859-1.xml`,
   });
 
   // For Windows-1252 encoding testing.
@@ -236,14 +205,6 @@ add_task(async function test_searchTermFromResult_blank() {
 
   url = getValidEngineUrl();
   url.searchParams.delete("pc");
-  Assert.equal(
-    getTerm(url),
-    "",
-    "Should get a blank string from a url with a missing a query parameter."
-  );
-
-  url = getValidEngineUrl();
-  url.searchParams.delete("form");
   Assert.equal(
     getTerm(url),
     "",

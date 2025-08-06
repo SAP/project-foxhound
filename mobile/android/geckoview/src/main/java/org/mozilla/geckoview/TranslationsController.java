@@ -94,8 +94,15 @@ public class TranslationsController {
     }
 
     /**
-     * Returns the preferred languages of the user in the following order: 1. App languages 2. Web
-     * requested languages 3. OS language
+     * Returns the preferred languages of the user in the following order:
+     *
+     * <p>1. Most recent target languages
+     *
+     * <p>2. Web requested languages
+     *
+     * <p>3. App languages
+     *
+     * <p>4. OS language
      *
      * @return a GeckoResult with a user's preferred language(s) or null or an exception
      */

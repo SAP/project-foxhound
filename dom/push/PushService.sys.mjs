@@ -2,13 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-
 import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
-export var PushServiceWebSocket;
-export var PushServiceHttp2;
 
 const lazy = {};
 
@@ -20,21 +15,9 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 ChromeUtils.defineESModuleGetters(lazy, {
   PushCrypto: "resource://gre/modules/PushCrypto.sys.mjs",
+  PushServiceWebSocket: "resource://gre/modules/PushServiceWebSocket.sys.mjs",
   pushBroadcastService: "resource://gre/modules/PushBroadcastService.sys.mjs",
 });
-
-const CONNECTION_PROTOCOLS = (function () {
-  if ("android" != AppConstants.MOZ_WIDGET_TOOLKIT) {
-    ({ PushServiceWebSocket } = ChromeUtils.importESModule(
-      "resource://gre/modules/PushServiceWebSocket.sys.mjs"
-    ));
-    ({ PushServiceHttp2 } = ChromeUtils.importESModule(
-      "resource://gre/modules/PushServiceHttp2.sys.mjs"
-    ));
-    return [PushServiceWebSocket, PushServiceHttp2];
-  }
-  return [];
-})();
 
 ChromeUtils.defineLazyGetter(lazy, "console", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
@@ -84,17 +67,8 @@ function getServiceForServerURI(uri) {
     "testing.allowInsecureServerURL",
     false
   );
-  if (AppConstants.MOZ_WIDGET_TOOLKIT == "android") {
-    if (uri.scheme == "https" || (allowInsecure && uri.scheme == "http")) {
-      return CONNECTION_PROTOCOLS;
-    }
-    return null;
-  }
   if (uri.scheme == "wss" || (allowInsecure && uri.scheme == "ws")) {
-    return PushServiceWebSocket;
-  }
-  if (uri.scheme == "https" || (allowInsecure && uri.scheme == "http")) {
-    return PushServiceHttp2;
+    return lazy.PushServiceWebSocket;
   }
   return null;
 }
@@ -707,17 +681,6 @@ export var PushService = {
   },
 
   /**
-   * Replaces an existing registration and notifies the associated service
-   * worker.
-   *
-   * @param {String} aOldKey The registration ID to replace.
-   * @param {PushRecord} aNewRecord The new record.
-   * @returns {Promise} Resolves once the worker has been notified.
-   */
-  updateRegistrationAndNotifyApp(aOldKey, aNewRecord) {
-    return this.updateRecordAndNotifyApp(aOldKey, _ => aNewRecord);
-  },
-  /**
    * Updates a registration and notifies the associated service worker.
    *
    * @param {String} keyID The registration ID to update.
@@ -1268,20 +1231,79 @@ export var PushService = {
     });
   },
 
-  clear(info) {
+  /**
+   * Clear subscriptions matching either a principal or a domain and
+   * OriginAttributesPattern. If domain="*" is passed all records will be
+   * deleted.
+   * @param {*} options
+   * @param {nsIPrincipal} [options.principal] - The principal to clear
+   * subscriptions for. This does an exact origin match.
+   * @param {string} [options.domain] - Clear all records matching the domain,
+   * including subdomains.
+   * @param {OriginAttributesPattern} [options.originAttributesPattern] -
+   * Additional OriginAttributes filter for clearing by domain. Ignored for
+   * domain == "*".
+   * @returns {Promise} - A Promise which resolves once the operation has
+   * completed.
+   */
+  clear({ principal, domain, originAttributesPattern }) {
     return this._checkActivated()
       .then(_ => {
-        return this._dropRegistrationsIf(
-          record =>
-            info.domain == "*" ||
-            (record.uri &&
-              Services.eTLD.hasRootDomain(record.uri.prePath, info.domain))
-        );
+        return this._dropRegistrationsIf(record => {
+          // Drop all
+          if (domain == "*") {
+            return true;
+          }
+          // Can't match against record if it doesn't have a URI.
+          if (record.uri == null) {
+            return false;
+          }
+
+          let originAttributes;
+          if (principal || originAttributesPattern) {
+            // Restore OriginAttributes from record.originAttributes which
+            // contains the OA suffix string. We need this to match against the
+            // principal or the OriginAttributesPattern.
+            try {
+              originAttributes =
+                ChromeUtils.CreateOriginAttributesFromOriginSuffix(
+                  record.originAttributes
+                );
+            } catch (e) {
+              console.warn("Error while parsing record OA suffix.", e);
+              return false;
+            }
+          }
+
+          // Drop all matching principal.
+          if (principal) {
+            // Build a principal from the record metadata so we can compare it
+            // to the given principal.
+            let recordPrincipal =
+              Services.scriptSecurityManager.createContentPrincipal(
+                record.uri,
+                originAttributes
+              );
+            return recordPrincipal.equals(principal);
+          }
+
+          if (!record.uri.host) {
+            return false;
+          }
+
+          // Drop all matching domain + OA pattern.
+          return Services.clearData.hostMatchesSite(
+            record.uri.host,
+            originAttributes,
+            domain,
+            originAttributesPattern
+          );
+        });
       })
       .catch(e => {
         lazy.console.warn(
-          "clear: Error dropping subscriptions for domain",
-          info.domain,
+          "clear: Error dropping subscriptions for domain or principal",
+          domain,
           e
         );
         return Promise.resolve();

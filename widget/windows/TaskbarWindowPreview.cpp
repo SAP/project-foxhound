@@ -14,6 +14,8 @@
 #include "TaskbarPreviewButton.h"
 #include "nsWindow.h"
 #include "nsWindowGfx.h"
+#include "imgLoader.h"
+#include "nsISVGPaintContext.h"
 
 namespace mozilla {
 namespace widget {
@@ -174,7 +176,7 @@ TaskbarWindowPreview::SetProgressState(nsTaskbarProgressState aState,
                                        uint64_t aCurrentValue,
                                        uint64_t aMaxValue) {
   NS_ENSURE_ARG_RANGE(aState, nsTaskbarProgressState(0),
-                      nsTaskbarProgressState(ArrayLength(sNativeStates) - 1));
+                      nsTaskbarProgressState(std::size(sNativeStates) - 1));
 
   TBPFLAG nativeState = sNativeStates[aState];
   if (nativeState == TBPF_NOPROGRESS || nativeState == TBPF_INDETERMINATE) {
@@ -194,7 +196,8 @@ TaskbarWindowPreview::SetProgressState(nsTaskbarProgressState aState,
 
 NS_IMETHODIMP
 TaskbarWindowPreview::SetOverlayIcon(imgIContainer* aStatusIcon,
-                                     const nsAString& aStatusDescription) {
+                                     const nsAString& aStatusDescription,
+                                     nsISVGPaintContext* aPaintContext) {
   nsresult rv;
   if (aStatusIcon) {
     // The image shouldn't be animated
@@ -207,7 +210,7 @@ TaskbarWindowPreview::SetOverlayIcon(imgIContainer* aStatusIcon,
   HICON hIcon = nullptr;
   if (aStatusIcon) {
     rv = nsWindowGfx::CreateIcon(
-        aStatusIcon, false, LayoutDeviceIntPoint(),
+        aStatusIcon, aPaintContext, false, LayoutDeviceIntPoint(),
         nsWindowGfx::GetIconMetrics(nsWindowGfx::kSmallIcon), &hIcon);
     NS_ENSURE_SUCCESS(rv, rv);
   }

@@ -1,8 +1,6 @@
-# ***** BEGIN LICENSE BLOCK *****
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-# ***** END LICENSE BLOCK *****
 """Generic script objects.
 
 script.py, along with config.py and log.py, represents the core of
@@ -2034,7 +2032,7 @@ def PreScriptAction(action=None):
         func._pre_action_listener = None
         return func
 
-    if type(action) == type(_wrapped):
+    if type(action) is type(_wrapped):
         return _wrapped_none(action)
 
     return _wrapped
@@ -2065,7 +2063,7 @@ def PostScriptAction(action=None):
         func._post_action_listener = None
         return func
 
-    if type(action) == type(_wrapped):
+    if type(action) is type(_wrapped):
         return _wrapped_none(action)
 
     return _wrapped
@@ -2191,7 +2189,7 @@ class BaseScript(ScriptMixin, LogMixin, object):
                 item = getattr(self, name)
         else:
             item = inspect.getattr_static(self, name)
-            if type(item) == property:
+            if type(item) is property:
                 item = None
             else:
                 item = getattr(self, name)

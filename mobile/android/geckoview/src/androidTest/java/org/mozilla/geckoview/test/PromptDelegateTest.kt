@@ -361,7 +361,7 @@ class PromptDelegateTest : BaseSessionTest(
         })""",
         )
 
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
         sessionRule.waitForResult(result)
         assertThat(
             "Events should be as expected",
@@ -390,7 +390,7 @@ class PromptDelegateTest : BaseSessionTest(
             }
         })
 
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
         sessionRule.waitForResult(result)
     }
 
@@ -414,7 +414,7 @@ class PromptDelegateTest : BaseSessionTest(
             }
         })
 
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
         sessionRule.waitForResult(result)
     }
 
@@ -543,7 +543,7 @@ class PromptDelegateTest : BaseSessionTest(
             """.trimIndent(),
         )
 
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
         sessionRule.waitForResult(result)
         assertThat(
             "Selected item should be as expected",
@@ -575,7 +575,7 @@ class PromptDelegateTest : BaseSessionTest(
             }
         })
 
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
         sessionRule.waitForResult(result)
     }
 
@@ -757,6 +757,7 @@ class PromptDelegateTest : BaseSessionTest(
 
         mainSession.evaluateJS(
             """
+            document.documentElement.style.paddingTop = "50px";
             this.c = document.getElementById('colorexample');
             """.trimIndent(),
         )
@@ -804,6 +805,7 @@ class PromptDelegateTest : BaseSessionTest(
 
         mainSession.evaluateJS(
             """
+            document.documentElement.style.paddingTop = "50px";
             this.c = document.getElementById('colorexample');
             this.c.setAttribute('list', 'colorlist');
             """.trimIndent(),
@@ -838,7 +840,8 @@ class PromptDelegateTest : BaseSessionTest(
 
         mainSession.evaluateJS(
             """
-            document.body.addEventListener("click", () => {
+            document.documentElement.style.paddingTop = "50px";
+            document.addEventListener("click", () => {
                 document.getElementById('dateexample').showPicker();
             });
             """.trimIndent(),
@@ -870,7 +873,7 @@ class PromptDelegateTest : BaseSessionTest(
             document.getElementById('dateexample').getBoundingClientRect();
             """.trimIndent(),
         )
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
 
         sessionRule.waitUntilCalled(object : PromptDelegate {
             @AssertCalled(count = 1)
@@ -898,7 +901,7 @@ class PromptDelegateTest : BaseSessionTest(
             document.getElementById('weekexample').getBoundingClientRect();
             """.trimIndent(),
         )
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
 
         sessionRule.waitUntilCalled(object : PromptDelegate {
             @AssertCalled(count = 1)
@@ -926,7 +929,7 @@ class PromptDelegateTest : BaseSessionTest(
             document.getElementById('dateexample').getBoundingClientRect();
             """.trimIndent(),
         )
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
 
         sessionRule.waitUntilCalled(object : PromptDelegate {
             @AssertCalled(count = 1)
@@ -965,8 +968,13 @@ class PromptDelegateTest : BaseSessionTest(
             }
         })
 
-        mainSession.evaluateJS("document.getElementById('selectexample').remove()")
-        mainSession.synthesizeTap(10, 10)
+        mainSession.evaluateJS(
+            """
+            document.getElementById('selectexample').remove();
+            document.getElementById('dateexample').getBoundingClientRect();
+            """.trimIndent(),
+        )
+        mainSession.synthesizeTap(20, 20)
         sessionRule.waitForResult(result)
     }
 
@@ -999,9 +1007,10 @@ class PromptDelegateTest : BaseSessionTest(
             """
             document.getElementById('selectexample').remove();
             document.getElementById('dateexample').remove();
+            document.getElementById('monthexample').getBoundingClientRect();
             """.trimIndent(),
         )
-        mainSession.synthesizeTap(10, 10)
+        mainSession.synthesizeTap(20, 20)
         sessionRule.waitForResult(result)
     }
 

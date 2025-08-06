@@ -252,7 +252,7 @@ virtualized-list {
   display: grid;
   padding: 16px 32px;
   color: var(--in-content-text-color);
-  background-color: var(--in-content-box-background);
+  background-color: var(--background-color-box);
   border: 1px solid var(--in-content-border-color);
   box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.1);
 }
@@ -275,7 +275,8 @@ virtualized-list {
 }
 
 /* Password Card styles */
-password-card {
+password-card,
+.empty-state-card {
   margin-block: var(--space-small);
 }
 
@@ -284,10 +285,8 @@ password-card {
   flex-direction: column;
 }
 
-.password-card-container {
-  display: grid;
-  grid-template-rows: 1fr 1fr 1fr;
-  grid-gap: var(--space-medium);
+login-form {
+  margin-block-start: var(--space-small);
 }
 
 .edit-button {
@@ -296,12 +295,11 @@ password-card {
 
 .searchContainer {
   height: 32px;
-  padding: 8px;
+  padding-inline-start: var(--space-small);
   cursor: text;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   border: 1px solid var(--in-content-border-color);
   box-sizing: border-box;
-  width: 100%;
   display: flex;
 
   &:focus-within {
@@ -313,10 +311,10 @@ password-card {
   background-image: url(chrome://global/skin/icons/search-textbox.svg);
   background-position: center;
   background-repeat: no-repeat;
-  fill: currentColor;
   -moz-context-properties: fill;
-  width: 18px;
-  margin-inline-end: 4px;
+  fill: currentColor;
+  width: var(--icon-size-default);
+  margin-inline-end: var(--space-xsmall);
   flex-shrink: 0;
 }
 
@@ -324,6 +322,7 @@ password-card {
   border: none;
   background-color: transparent;
   outline: none;
+  width: 100%;
 }
 
 .first-row {
@@ -337,13 +336,20 @@ password-card {
 .second-row {
   display: flex;
   justify-content: space-between;
-}
-
-.toggle-buttons {
-  display: flex;
-  gap: var(--space-small);
+  align-items: center;
+  margin-block-end: var(--space-small);
 }
 
 .selected::part(button) {
   background-color: var(--button-background-color-active);
+}
+
+.no-logins-card-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+
+  > moz-button {
+    width: 100%
+  }
 }

@@ -4,6 +4,7 @@
 
 import { cardContextTypes } from "../../Card/types.mjs";
 import { SponsoredContentHighlight } from "../FeatureHighlight/SponsoredContentHighlight";
+// eslint-disable-next-line no-shadow
 import { CSSTransition, TransitionGroup } from "react-transition-group";
 import { FluentOrText } from "../../FluentOrText/FluentOrText.jsx";
 import React from "react";
@@ -12,10 +13,10 @@ import React from "react";
 const ANIMATION_DURATION = 3000;
 
 export const DSMessageLabel = props => {
-  const { context, context_type } = props;
+  const { context, context_type, mayHaveSectionsCards } = props;
   const { icon, fluentID } = cardContextTypes[context_type] || {};
 
-  if (!context && context_type) {
+  if (!context && context_type && !mayHaveSectionsCards) {
     return (
       <TransitionGroup component={null}>
         <CSSTransition
@@ -85,6 +86,7 @@ export class DSContextFooter extends React.PureComponent {
       source,
       spocMessageVariant,
       dispatch,
+      mayHaveSectionsCards,
     } = this.props;
 
     const sponsorLabel = SponsorLabel({
@@ -95,6 +97,7 @@ export class DSContextFooter extends React.PureComponent {
     const dsMessageLabel = DSMessageLabel({
       context,
       context_type,
+      mayHaveSectionsCards,
     });
 
     if (cta_button_variant === "variant-a") {

@@ -2,14 +2,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::SuggestionProvider;
+use crate::{LabeledTimingSample, Suggestion, SuggestionProvider, SuggestionProviderConstraints};
 
 /// A query for suggestions to show in the address bar.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, uniffi::Record)]
 pub struct SuggestionQuery {
     pub keyword: String,
     pub providers: Vec<SuggestionProvider>,
+    #[uniffi(default = None)]
+    pub provider_constraints: Option<SuggestionProviderConstraints>,
+    #[uniffi(default = None)]
     pub limit: Option<i32>,
+}
+
+#[derive(uniffi::Record)]
+pub struct QueryWithMetricsResult {
+    pub suggestions: Vec<Suggestion>,
+    /// Samples for the `suggest.query_time` metric
+    pub query_times: Vec<LabeledTimingSample>,
 }
 
 impl SuggestionQuery {
@@ -19,7 +29,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.to_string(),
             providers: Vec::from(SuggestionProvider::all()),
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -27,7 +37,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.to_string(),
             providers,
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -45,7 +55,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Amp],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -53,7 +63,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Wikipedia],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -61,7 +71,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::AmpMobile],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -69,7 +79,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Amo],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -77,7 +87,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Pocket],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -85,7 +95,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Yelp],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -93,7 +103,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Mdn],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -101,7 +111,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Fakespot],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -109,7 +119,20 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Weather],
-            limit: None,
+            ..Self::default()
+        }
+    }
+
+    pub fn exposure(keyword: &str, suggestion_types: &[&str]) -> Self {
+        Self {
+            keyword: keyword.into(),
+            providers: vec![SuggestionProvider::Exposure],
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(
+                    suggestion_types.iter().map(|s| s.to_string()).collect(),
+                ),
+            }),
+            ..Self::default()
         }
     }
 

@@ -96,7 +96,11 @@ def support_vcs_checkout(config, job, taskdesc, sparse=False):
     if is_win:
         checkoutdir = "./build"
         geckodir = f"{checkoutdir}/src"
-        hgstore = "y:/hg-shared"
+        if "aarch64" in job["worker-type"] or "a64" in job["worker-type"]:
+            # arm64 instances on azure don't support local ssds
+            hgstore = f"{checkoutdir}/hg-store"
+        else:
+            hgstore = "y:/hg-shared"
     elif is_docker:
         checkoutdir = "{workdir}/checkouts".format(**job["run"])
         geckodir = f"{checkoutdir}/gecko"
@@ -152,47 +156,6 @@ def support_vcs_checkout(config, job, taskdesc, sparse=False):
     # only some worker platforms have taskcluster-proxy enabled
     if job["worker"]["implementation"] in ("docker-worker",):
         taskdesc["worker"]["taskcluster-proxy"] = True
-
-
-def generic_worker_hg_commands(
-    base_repo, head_repo, head_rev, path, sparse_profile=None
-):
-    """Obtain commands needed to obtain a Mercurial checkout on generic-worker.
-
-    Returns two command strings. One performs the checkout. Another logs.
-    """
-    args = [
-        r'"c:\Program Files\Mercurial\hg.exe"',
-        "robustcheckout",
-        "--sharebase",
-        r"y:\hg-shared",
-        "--purge",
-        "--upstream",
-        base_repo,
-        "--revision",
-        head_rev,
-    ]
-
-    if sparse_profile:
-        args.extend(["--config", "extensions.sparse="])
-        args.extend(["--sparseprofile", sparse_profile])
-
-    args.extend(
-        [
-            head_repo,
-            path,
-        ]
-    )
-
-    logging_args = [
-        b":: TinderboxPrint:<a href={source_repo}/rev/{revision} "
-        b"title='Built from {repo_name} revision {revision}'>{revision}</a>"
-        b"\n".format(
-            revision=head_rev, source_repo=head_repo, repo_name=head_repo.split("/")[-1]
-        ),
-    ]
-
-    return [" ".join(args), " ".join(logging_args)]
 
 
 def setup_secrets(config, job, taskdesc):

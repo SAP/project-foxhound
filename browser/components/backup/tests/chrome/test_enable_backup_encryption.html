@@ -10,28 +10,14 @@
   src="chrome://browser/content/backup/enable-backup-encryption.mjs"
   type="module"
 ></script>
+  <link rel="localization" href="preview/backupSettings.ftl"/>
+  <link rel="localization" href="branding/brand.ftl"/>
   <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script>
 
     const { BrowserTestUtils } = ChromeUtils.importESModule(
       "resource://testing-common/BrowserTestUtils.sys.mjs"
     );
-
-    /**
-     * Tests that adding a enable-backup-encryption element to the DOM causes it to
-     * fire a BackupUI:InitWidget event.
-     */
-    add_task(async function test_initWidget() {
-      let enableBackupEncryption = document.createElement("enable-backup-encryption");
-      let content = document.getElementById("content");
-
-      let sawInitWidget = BrowserTestUtils.waitForEvent(content, "BackupUI:InitWidget");
-      content.appendChild(enableBackupEncryption);
-      await sawInitWidget;
-      ok(true, "Saw BackupUI:InitWidget");
-
-      enableBackupEncryption.remove();
-    });
 
     /**
      * Tests that pressing the confirm button for the set-password type dialog will dispatch the expected events.
@@ -61,12 +47,14 @@
       ok(!confirmButton.disabled, "Confirm button should no longer be disabled");
 
       let content = document.getElementById("content");
-      let encryptionPromise = BrowserTestUtils.waitForEvent(content, "enableEncryption");
+      let encryptionPromise = BrowserTestUtils.waitForEvent(content, "BackupUI:EnableEncryption");
 
       confirmButton.click()
 
       await encryptionPromise;
       ok(true, "Detected event after selecting the confirm button");
+
+      enableBackupEncryption.reset();
     })
 
     /**
@@ -99,12 +87,14 @@
       ok(!confirmButton.disabled, "Confirm button should no longer be disabled");
 
       let content = document.getElementById("content");
-      let encryptionPromise = BrowserTestUtils.waitForEvent(content, "rerunEncryption");
+      let encryptionPromise = BrowserTestUtils.waitForEvent(content, "BackupUI:RerunEncryption");
 
       confirmButton.click()
 
       await encryptionPromise;
       ok(true, "Detected event after selecting the confirm button");
+
+      enableBackupEncryption.reset();
     })
 
     /**
@@ -126,6 +116,8 @@
 
       await promise;
       ok(true, "Detected event after selecting the cancel button");
+
+      enableBackupEncryption.reset();
     })
   </script>
 </head>

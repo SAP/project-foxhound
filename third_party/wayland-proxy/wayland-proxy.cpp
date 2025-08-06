@@ -6,7 +6,7 @@
 // This code is based on Rust implementation at
 // https://github.com/the8472/weyland-p5000
 
-// Version 1.1
+// Version 1.2
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,8 +26,26 @@
 #include <cassert>
 #include <pthread.h>
 #include <sched.h>
+#include <fstream> 
 
 #include "wayland-proxy.h"
+
+constexpr const char* stateFlags[] = {
+  "WP:E ",
+  "WP:D ",
+  "WP:RF ",
+  "WP:RT ",
+  "WP:CA ",
+  "WP:CR ",
+  "WP:AT ",
+  "WP:ACT ",
+  "WP:CPCA ",
+  "WP:CPCF ",
+  "WP:CPSF ",
+};
+
+CompositorCrashHandler WaylandProxy::sCompositorCrashHandler = nullptr;
+std::atomic<unsigned> WaylandProxy::sProxyStateFlags = 0;
 
 // The maximum number of fds libwayland can recvmsg at once
 #define MAX_LIBWAY_FDS 28
@@ -92,6 +110,9 @@ class ProxiedConnection {
   // Process this connection (send/receive data).
   // Returns false if connection is broken and should be removed.
   bool Process();
+  void ProcessFailure();
+
+  void PrintConnectionInfo();
 
   ~ProxiedConnection();
 
@@ -101,9 +122,11 @@ class ProxiedConnection {
 
   bool TransferOrQueue(
       int aSourceSocket, int aSourcePollFlags, int aDestSocket,
-      std::vector<std::unique_ptr<WaylandMessage>>* aMessageQueue);
+      std::vector<std::unique_ptr<WaylandMessage>>* aMessageQueue,
+      int& aStatSent, int& aStatReceived);
   bool FlushQueue(int aDestSocket, int aDestPollFlags,
-                  std::vector<std::unique_ptr<WaylandMessage>>& aMessageQueue);
+                  std::vector<std::unique_ptr<WaylandMessage>>& aMessageQueue,
+                  int& aStatSent);
 
   // Where we should connect.
   // Weak pointer to parent WaylandProxy class.
@@ -116,8 +139,9 @@ class ProxiedConnection {
   int mFailedCompositorConnections = 0;
   static constexpr int sMaxFailedCompositorConnections = 100;
 
-  // We're disconnected from app or compositor. We will close this connection.
-  bool mFailed = false;
+  // We're disconnected from app or compositor. We will close such connection.
+  bool mApplicationFailed = false;
+  bool mCompositorFailed = false;
 
   int mCompositorSocket = -1;
   int mCompositorFlags = 0;
@@ -128,6 +152,14 @@ class ProxiedConnection {
   // Stored proxied data
   std::vector<std::unique_ptr<WaylandMessage>> mToCompositorQueue;
   std::vector<std::unique_ptr<WaylandMessage>> mToApplicationQueue;
+
+  int mStatRecvFromCompositor = 0;
+  int mStatSentToCompositor = 0;
+  int mStatSentToCompositorLater = 0;
+
+  int mStatRecvFromClient = 0;
+  int mStatSentToClient = 0;
+  int mStatSentToClientLater = 0;
 };
 
 WaylandMessage::~WaylandMessage() {
@@ -345,6 +377,7 @@ bool ProxiedConnection::ConnectToCompositor() {
         mFailedCompositorConnections++;
         if (mFailedCompositorConnections > sMaxFailedCompositorConnections) {
           Error("ConnectToCompositor() connect() failed repeatedly");
+          WaylandProxy::AddState(WAYLAND_PROXY_COMPOSITOR_SOCKET_FAILED);
           return false;
         }
         // We can recover from these errors and try again
@@ -352,9 +385,13 @@ bool ProxiedConnection::ConnectToCompositor() {
         return true;
       default:
         Error("ConnectToCompositor() connect()");
+        WaylandProxy::AddState(WAYLAND_PROXY_COMPOSITOR_SOCKET_FAILED);
         return false;
     }
   }
+
+  Print("ConnectToCompositor() Connected to compositor\n");
+  WaylandProxy::AddState(WAYLAND_PROXY_COMPOSITOR_ATTACHED);
   return true;
 }
 
@@ -363,17 +400,18 @@ bool ProxiedConnection::ConnectToCompositor() {
 // Return
 bool ProxiedConnection::TransferOrQueue(
     int aSourceSocket, int aSourcePollFlags, int aDestSocket,
-    std::vector<std::unique_ptr<WaylandMessage>>* aMessageQueue) {
+    std::vector<std::unique_ptr<WaylandMessage>>* aMessageQueue,
+    int& aStatSent, int& aStatReceived) {
   // Don't read if we don't have any data ready
   if (!(aSourcePollFlags & POLLIN)) {
     return true;
   }
 
-  while (1) {
+  while (true) {
     int availableData = 0;
     if (ioctl(aSourceSocket, FIONREAD, &availableData) < 0) {
       // Broken connection, we're finished here
-      Warning("ProxiedConnection::TransferOrQueue() broken source socket %s\n");
+      Warning("ProxiedConnection::TransferOrQueue() broken source socket\n");
       return false;
     }
     if (availableData == 0) {
@@ -389,20 +427,25 @@ bool ProxiedConnection::TransferOrQueue(
       // Let's try again
       return true;
     }
-    if (!message->Write(aDestSocket)) {
-      if (message->Failed()) {
-        // Failed to write and we can't recover
-        return false;
-      }
-      aMessageQueue->push_back(std::move(message));
+    aStatReceived++;
+
+    if (message->Write(aDestSocket)) {
+      aStatSent++;
+      continue;
     }
+    if (message->Failed()) {
+      // Failed to write and we can't recover
+      return false;
+    }
+    aMessageQueue->push_back(std::move(message));
   }
 }
 
 // Try to flush all data to aMessageQueue.
 bool ProxiedConnection::FlushQueue(
     int aDestSocket, int aDestPollFlags,
-    std::vector<std::unique_ptr<WaylandMessage>>& aMessageQueue) {
+    std::vector<std::unique_ptr<WaylandMessage>>& aMessageQueue,
+    int& aStatSent) {
   // Can't write to destination yet
   if (!(aDestPollFlags & POLLOUT) || aMessageQueue.empty()) {
     return true;
@@ -412,12 +455,13 @@ bool ProxiedConnection::FlushQueue(
   for (message = aMessageQueue.begin(); message != aMessageQueue.end();) {
     if (!(*message)->Write(aDestSocket)) {
       // Failed to write the message, remove whole connection
-      // as it's broken.
+      // if it's broken.
       if ((*message)->Failed()) {
         return false;
       }
       break;
     }
+    aStatSent++;
     message++;
   }
 
@@ -429,25 +473,57 @@ bool ProxiedConnection::FlushQueue(
   return true;
 }
 
-bool ProxiedConnection::Process() {
-  if (mFailed) {
-    return false;
-  }
+void ProxiedConnection::PrintConnectionInfo() {
+  constexpr char animation[] = {'-','\\','|','/'};
+  static unsigned int animationState = 0;
+  animationState = (animationState + 1) % sizeof(animation);
 
+  static bool isCharDevice = []() {
+    struct stat st;
+    if (fstat(STDERR_FILENO, &st)) {
+      return false;
+    }
+    return (S_ISCHR(st.st_mode));
+  }();
+
+  fprintf(stderr,"%s[%p][%c] compositor [%d] -> [%d] delay [%d] pending [%d] | application [%d] -> [%d] delayed [%d] pending [%d]%c",
+  isCharDevice ? "\r" : "",
+  this,
+  animation[animationState],
+  mStatRecvFromCompositor,
+  mStatSentToClient,
+  mStatSentToClientLater,
+  mStatRecvFromCompositor - mStatSentToClient - mStatSentToClientLater,
+  mStatRecvFromClient,
+  mStatSentToCompositor,
+  mStatSentToCompositorLater,
+  mStatRecvFromClient - mStatSentToCompositor - mStatSentToCompositorLater,
+  isCharDevice ? ' ' : '\n');
+}
+
+bool ProxiedConnection::Process() {
   // Check if appplication is still listening
   if (mApplicationFlags & (POLLHUP | POLLERR)) {
+    Print("ProxiedConnection::Process(): Client socket is not listening\n");
+    WaylandProxy::AddState(WAYLAND_PROXY_APP_CONNECTION_FAILED);
+    mApplicationFailed = true;
     return false;
   }
 
   // Check if compositor is still listening
   if (mCompositorConnected) {
     if (mCompositorFlags & (POLLHUP | POLLERR)) {
+      Print("ProxiedConnection::Process(): Compositor socket is not listening\n");
+      WaylandProxy::AddState(WAYLAND_PROXY_COMPOSITOR_CONNECTION_FAILED);
+      mCompositorFailed = true;
       return false;
     }
   } else {
     // Try to reconnect to compositor.
     if (!ConnectToCompositor()) {
-      Print("Failed to connect to compositor\n");
+      Error("ProxiedConnection::Process(): Failed to connect to compositor\n");
+      WaylandProxy::AddState(WAYLAND_PROXY_COMPOSITOR_CONNECTION_FAILED);
+      mCompositorFailed = true;
       return false;
     }
     // We're not connected yet but ConnectToCompositor() didn't return
@@ -457,16 +533,58 @@ bool ProxiedConnection::Process() {
     }
   }
 
-  mFailed =
-      !TransferOrQueue(mCompositorSocket, mCompositorFlags, mApplicationSocket,
-                       &mToApplicationQueue) ||
-      !TransferOrQueue(mApplicationSocket, mApplicationFlags, mCompositorSocket,
-                       &mToCompositorQueue) ||
-      !FlushQueue(mCompositorSocket, mCompositorFlags, mToCompositorQueue) ||
-      !FlushQueue(mApplicationSocket, mApplicationFlags, mToApplicationQueue);
+  if (!TransferOrQueue(mCompositorSocket, mCompositorFlags, mApplicationSocket,
+                       &mToApplicationQueue, mStatRecvFromCompositor,
+                       mStatSentToClient)) {
+    Error("ProxiedConnection::Process(): Failed to read data from compositor!");
+      WaylandProxy::AddState(WAYLAND_PROXY_COMPOSITOR_CONNECTION_FAILED);
+    mCompositorFailed = true;
+    return false;
+  }
+  if (!TransferOrQueue(mApplicationSocket, mApplicationFlags, mCompositorSocket,
+                       &mToCompositorQueue, mStatRecvFromClient,
+                       mStatSentToCompositor)) {
+    Error("ProxiedConnection::Process(): Failed to read data from client!");
+    WaylandProxy::AddState(WAYLAND_PROXY_APP_CONNECTION_FAILED);
+    mApplicationFailed = true;
+    return false;
+  }
+  if (!FlushQueue(mCompositorSocket, mCompositorFlags, mToCompositorQueue,
+                  mStatSentToCompositorLater)) {
+    Error("ProxiedConnection::Process(): Failed to flush queue to compositor!");
+    WaylandProxy::AddState(WAYLAND_PROXY_COMPOSITOR_CONNECTION_FAILED);
+    mCompositorFailed = true;
+    return false;
+  }
+  if (!FlushQueue(mApplicationSocket, mApplicationFlags, mToApplicationQueue,
+                  mStatSentToClientLater)) {
+    Error("ProxiedConnection::Process(): Failed to flush queue to client!");
+    WaylandProxy::AddState(WAYLAND_PROXY_APP_CONNECTION_FAILED);
+    mApplicationFailed = true;
+    return false;
+  }
 
-  return !mFailed;
+  if (sPrintInfo) {
+    PrintConnectionInfo();
+  }
+
+  return true;
 }
+
+void ProxiedConnection::ProcessFailure() {
+  if (mCompositorFailed) {
+    struct stat buffer;
+    if (stat(mWaylandDisplay, &buffer) < 0) {
+      Print("ProxiedConnection(): compositor crashed!\n");
+      WaylandProxy::CompositorCrashed();
+    } else {
+      Print("ProxiedConnection(): compositor fails to read/write events!\n");
+    }
+  } else if (mApplicationFailed) {
+    Print("ProxiedConnection(): application fails to read/write events!\n");
+  }
+}
+
 
 bool WaylandProxy::CheckWaylandDisplay(const char* aWaylandDisplay) {
   struct sockaddr_un addr = {};
@@ -492,6 +610,8 @@ bool WaylandProxy::CheckWaylandDisplay(const char* aWaylandDisplay) {
       case EISCONN:
       case ETIMEDOUT:
         // We can recover from these errors and try again
+        Info("CheckWaylandDisplay(): Wayland display %s non-fatal error %s\n",
+             mWaylandDisplay, strerror(errno));
         ret = true;
         break;
       default:
@@ -625,6 +745,7 @@ bool WaylandProxy::IsChildAppTerminated() {
   }
   if (ret == mApplicationPID) {
     // Child application is terminated, so quit too.
+    WaylandProxy::AddState(WAYLAND_PROXY_APP_TERMINATED);
     return true;
   }
   bool terminate = (errno == ECHILD);
@@ -667,11 +788,12 @@ bool WaylandProxy::PollConnections() {
         case EINTR:
         case EAGAIN:
           if (IsChildAppTerminated()) {
+            Info("PollConnections(): ChildAppTerminated\n");
             return false;
           }
           continue;
         default:
-          Error("Run: poll() error");
+          Error("PollConnections(): poll() error");
           return false;
       }
     }
@@ -703,6 +825,7 @@ bool WaylandProxy::PollConnections() {
     } else {
       auto connection = std::make_unique<ProxiedConnection>();
       if (connection->Init(applicationSocket, mWaylandDisplay)) {
+        WaylandProxy::AddState(WAYLAND_PROXY_CONNECTION_ADDED);
         mConnections.push_back(std::move(connection));
       }
     }
@@ -715,7 +838,8 @@ bool WaylandProxy::ProcessConnections() {
   std::vector<std::unique_ptr<ProxiedConnection>>::iterator connection;
   for (connection = mConnections.begin(); connection != mConnections.end();) {
     if (!(*connection)->Process()) {
-      Info("remove connection\n");
+      WaylandProxy::AddState(WAYLAND_PROXY_CONNECTION_REMOVED);
+      (*connection)->ProcessFailure();
       connection = mConnections.erase(connection);
       if (mConnections.empty()) {
         // We removed last connection - quit.
@@ -730,8 +854,21 @@ bool WaylandProxy::ProcessConnections() {
 }
 
 void WaylandProxy::Run() {
-  while (!IsChildAppTerminated() && PollConnections() && ProcessConnections())
-    ;
+  while (1) {
+    if (IsChildAppTerminated()) {
+      Info("quit - ChildAppTerminated\n");
+      break;
+    }
+    if (!PollConnections()) {
+      Info("quit - no connection\n");
+      break;
+    }
+    if (!ProcessConnections()) {
+      Info("quit - failed to process connections\n");
+      break;
+    }
+  }
+  WaylandProxy::AddState(WAYLAND_PROXY_TERMINATED);
 }
 
 WaylandProxy::~WaylandProxy() {
@@ -801,7 +938,7 @@ bool WaylandProxy::RunThread() {
 
   sched_param param;
   if (pthread_attr_getschedparam(&attr, &param) == 0) {
-    param.sched_priority = sched_get_priority_min(SCHED_RR);
+    param.sched_priority = sched_get_priority_min(SCHED_FIFO);
     pthread_attr_setschedparam(&attr, &param);
   }
 
@@ -812,6 +949,7 @@ bool WaylandProxy::RunThread() {
     ErrorPlain("WaylandProxy::RunThread(): pthread_create() failed\n");
     // If we failed to run proxy thread, set WAYLAND_DISPLAY back.
     RestoreWaylandDisplay();
+    WaylandProxy::AddState(WAYLAND_PROXY_RUN_FAILED);
   }
 
   pthread_attr_destroy(&attr);
@@ -847,4 +985,29 @@ void WaylandProxy::ErrorPlain(const char* aFormat, ...) {
   va_start(args, aFormat);
   vfprintf(stderr, aFormat, args);
   va_end(args);
+}
+
+void WaylandProxy::SetCompositorCrashHandler(CompositorCrashHandler aCrashHandler) {
+  sCompositorCrashHandler = aCrashHandler;
+}
+
+void WaylandProxy::CompositorCrashed() {
+  if (sCompositorCrashHandler) {
+    sCompositorCrashHandler();
+  }
+}
+
+void WaylandProxy::AddState(unsigned aState) {
+  sProxyStateFlags.fetch_or(aState, std::memory_order_relaxed);
+}
+
+const char* WaylandProxy::GetState() {
+  std::string stateString;
+  unsigned state = sProxyStateFlags.load(std::memory_order_relaxed);
+  for (unsigned i = 0, flag = 1; i < sizeof(stateFlags); i++, flag <<= 1) {
+    if (state & flag) {
+      stateString.append(stateFlags[i]);
+    }
+  }
+  return strdup(stateString.c_str());
 }

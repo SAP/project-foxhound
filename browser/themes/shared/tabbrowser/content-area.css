@@ -25,7 +25,21 @@
   }
 }
 
-#appcontent,
+#navigator-toolbox {
+  border-bottom: 0.01px solid var(--chrome-content-separator-color);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.revamp") {
+    /* This reserves space for the content area outline */
+    border-bottom-color: var(--toolbar-bgcolor);
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.verticalTabs") {
+    border-bottom-style: none;
+  }
+}
+
 #browser,
 #tabbrowser-tabbox,
 #tabbrowser-tabpanels,
@@ -33,6 +47,18 @@
   /* Allow devtools with large specified width/height to shrink */
   min-width: 0;
   min-height: 0;
+}
+
+#tabbrowser-tabbox {
+  position: relative;
+  z-index: var(--browser-area-z-index-tabbox);
+  margin: 0;
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "sidebar.revamp") {
+    outline: 0.01px solid var(--chrome-content-separator-color);
+    box-shadow: var(--content-area-shadow);
+  }
 }
 
 /* We set large flex on both containers to allow the devtools toolbox to
@@ -184,7 +210,7 @@
   --shortcuts-left: calc(var(--shortcuts-x) + var(--shortcuts-offset));
   --shortcuts-offset: 10px;
   --shortcuts-top: calc(var(--shortcuts-y) + var(--shortcuts-offset));
-  background: var(--toolbar-bgcolor) url(chrome://mozapps/skin/extensions/category-discover.svg) center / 16px no-repeat;
+  background: var(--arrowpanel-background) url(chrome://mozapps/skin/extensions/category-discover.svg) center / 16px no-repeat;
   border: 1px solid var(--arrowpanel-border-color);
   border-radius: var(--arrowpanel-border-radius);
   color: var(--arrowpanel-color);
@@ -198,10 +224,6 @@
 
   &:-moz-locale-dir(rtl) {
     --shortcuts-left: calc(var(--shortcuts-x) - var(--shortcuts-offset) - 28px);
-  }
-
-  &[active] {
-    color: var(--color-accent-primary);
   }
 
   &:not([shown]) {
@@ -251,6 +273,13 @@
   margin: 0 3vw;
   padding: 0;
   overflow-x: auto;
+
+  /* Ensure that dialog boxes are pixel-snapped, to keep their internal layout
+   * consistent, regardless of whether the surrounding layout places them at a
+   * fractional position. (This helps prevent arbitrary 1px shifts that could
+   * otherwise appear inside of a vertically-centered dialog when the
+   * viewport-height changes from being odd to even.) */
+  will-change: transform;
 
   &:not(.spotlightBox) {
     box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);

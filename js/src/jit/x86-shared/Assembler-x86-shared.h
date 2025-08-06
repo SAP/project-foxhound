@@ -165,10 +165,6 @@ class Operand {
   }
 };
 
-inline Imm32 Imm64::firstHalf() const { return low(); }
-
-inline Imm32 Imm64::secondHalf() const { return hi(); }
-
 class CPUInfo {
  public:
   // As the SSE's were introduced in order, the presence of a later SSE implies
@@ -277,6 +273,8 @@ class CPUInfo {
   }
   static void SetAVXEnabled() {
     MOZ_ASSERT(!FlagsHaveBeenComputed());
+    MOZ_ASSERT(maxEnabledSSEVersion == UnknownSSE,
+               "Can't enable AVX when SSE has been restricted");
     avxEnabled = true;
   }
 };
@@ -1410,17 +1408,15 @@ class AssemblerX86Shared : public AssemblerShared {
   void subl(Imm32 imm, Register dest) {
     masm.subl_ir(imm.value, dest.encoding());
   }
-  void subl(Imm32 imm, const Operand& op) {
+  size_t subl(Imm32 imm, const Operand& op) {
     switch (op.kind()) {
       case Operand::REG:
-        masm.subl_ir(imm.value, op.reg());
-        break;
+        return masm.subl_ir(imm.value, op.reg());
       case Operand::MEM_REG_DISP:
-        masm.subl_im(imm.value, op.disp(), op.base());
-        break;
+        return masm.subl_im(imm.value, op.disp(), op.base());
       case Operand::MEM_SCALE:
-        masm.subl_im(imm.value, op.disp(), op.base(), op.index(), op.scale());
-        break;
+        return masm.subl_im(imm.value, op.disp(), op.base(), op.index(),
+                            op.scale());
       default:
         MOZ_CRASH("unexpected operand kind");
     }
@@ -4848,6 +4844,18 @@ class AssemblerX86Shared : public AssemblerShared {
         MOZ_CRASH("unexpected operand kind");
     }
   }
+
+  void vpsignd(const Operand& src1, FloatRegister src0, FloatRegister dest) {
+    MOZ_ASSERT(HasSSSE3());
+    switch (src1.kind()) {
+      case Operand::FPREG:
+        masm.vpsignd_rr(src1.fpu(), src0.encoding(), dest.encoding());
+        break;
+      default:
+        MOZ_CRASH("unexpected operand kind");
+    }
+  }
+
   void vfmadd231ps(FloatRegister src1, FloatRegister src0, FloatRegister dest) {
     MOZ_ASSERT(HasFMA());
     masm.vfmadd231ps_rrr(src1.encoding(), src0.encoding(), dest.encoding());

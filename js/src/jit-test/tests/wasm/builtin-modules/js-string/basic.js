@@ -3,96 +3,161 @@
 let testModule = `(module
   (type $arrayMutI16 (array (mut i16)))
 
-  (func
+  (func $testImp
     (import "wasm:js-string" "test")
     (param externref)
     (result i32)
   )
-  (export "test" (func 0))
-
-  (func
+  (func $castImp
     (import "wasm:js-string" "cast")
     (param externref)
     (result (ref extern))
   )
-  (export "cast" (func 1))
-
-  (func
+  (func $fromCharCodeArrayImp
     (import "wasm:js-string" "fromCharCodeArray")
     (param (ref null $arrayMutI16) i32 i32)
     (result (ref extern))
   )
-  (export "fromCharCodeArray" (func 2))
-
-  (func
+  (func $intoCharCodeArrayImp
     (import "wasm:js-string" "intoCharCodeArray")
     (param externref (ref null $arrayMutI16) i32)
     (result i32)
   )
-  (export "intoCharCodeArray" (func 3))
-
-  (func
+  (func $fromCharCodeImp
     (import "wasm:js-string" "fromCharCode")
     (param i32)
     (result (ref extern))
   )
-  (export "fromCharCode" (func 4))
-
-  (func
+  (func $fromCodePointImp
     (import "wasm:js-string" "fromCodePoint")
     (param i32)
     (result (ref extern))
   )
-  (export "fromCodePoint" (func 5))
-
-  (func
+  (func $charCodeAtImp
     (import "wasm:js-string" "charCodeAt")
     (param externref i32)
     (result i32)
   )
-  (export "charCodeAt" (func 6))
-
-  (func
+  (func $codePointAtImp
     (import "wasm:js-string" "codePointAt")
     (param externref i32)
     (result i32)
   )
-  (export "codePointAt" (func 7))
-
-  (func
+  (func $lengthImp
     (import "wasm:js-string" "length")
     (param externref)
     (result i32)
   )
-  (export "length" (func 8))
-
-  (func
+  (func $concatImp
     (import "wasm:js-string" "concat")
     (param externref externref)
     (result (ref extern))
   )
-  (export "concat" (func 9))
-
-  (func
+  (func $substringImp
     (import "wasm:js-string" "substring")
     (param externref i32 i32)
     (result (ref extern))
   )
-  (export "substring" (func 10))
-
-  (func
+  (func $equalsImp
     (import "wasm:js-string" "equals")
     (param externref externref)
     (result i32)
   )
-  (export "equals" (func 11))
-
-  (func
+  (func $compareImp
     (import "wasm:js-string" "compare")
     (param externref externref)
     (result i32)
   )
-  (export "compare" (func 12))
+
+  (func $test (export "test")
+    (param externref)
+    (result i32)
+    local.get 0
+    call $testImp
+  )
+  (func $cast (export "cast")
+    (param externref)
+    (result (ref extern))
+    local.get 0
+    call $castImp
+  )
+  (func $fromCharCodeArray (export "fromCharCodeArray")
+    (param (ref null $arrayMutI16) i32 i32)
+    (result (ref extern))
+    local.get 0
+    local.get 1
+    local.get 2
+    call $fromCharCodeArrayImp
+  )
+  (func $intoCharCodeArray (export "intoCharCodeArray")
+    (param externref (ref null $arrayMutI16) i32)
+    (result i32)
+    local.get 0
+    local.get 1
+    local.get 2
+    call $intoCharCodeArrayImp
+  )
+  (func $fromCharCode (export "fromCharCode")
+    (param i32)
+    (result externref)
+    local.get 0
+    call $fromCharCodeImp
+  )
+  (func $fromCodePoint (export "fromCodePoint")
+    (param i32)
+    (result externref)
+    local.get 0
+    call $fromCodePointImp
+  )
+  (func $charCodeAt (export "charCodeAt")
+    (param externref i32)
+    (result i32)
+    local.get 0
+    local.get 1
+    call $charCodeAtImp
+  )
+  (func $codePointAt (export "codePointAt")
+    (param externref i32)
+    (result i32)
+    local.get 0
+    local.get 1
+    call $codePointAtImp
+  )
+  (func $length (export "length")
+    (param externref)
+    (result i32)
+    local.get 0
+    call $lengthImp
+  )
+  (func $concat (export "concat")
+    (param externref externref)
+    (result externref)
+    local.get 0
+    local.get 1
+    call $concatImp
+  )
+  (func $substring (export "substring")
+    (param externref i32 i32)
+    (result externref)
+    local.get 0
+    local.get 1
+    local.get 2
+    call $substringImp
+  )
+  (func $equals (export "equals")
+    (param externref externref)
+    (result i32)
+    local.get 0
+    local.get 1
+    call $equalsImp
+  )
+  (func $compare (export "compare")
+    (param externref externref)
+    (result i32)
+    local.get 0
+    local.get 1
+    call $compareImp
+  )
 )`;
 
 let {
@@ -126,6 +191,11 @@ let {
 
 function throwIfNotString(a) {
   if (typeof a !== "string") {
+    throw new WebAssembly.RuntimeError();
+  }
+}
+function throwIfNotStringOrNull(a) {
+  if (a !== null && typeof a !== "string") {
     throw new WebAssembly.RuntimeError();
   }
 }
@@ -209,16 +279,18 @@ let polyFillImports = {
     startIndex >>>= 0;
     endIndex >>>= 0;
     throwIfNotString(string);
-    if (startIndex > string.length,
-        endIndex > string.length,
+    if (startIndex > string.length ||
         endIndex < startIndex) {
       return "";
+    }
+    if (endIndex > string.length) {
+      endIndex = string.length;
     }
     return string.substring(startIndex, endIndex);
   },
   equals: (stringA, stringB) => {
-    throwIfNotString(stringA);
-    throwIfNotString(stringB);
+    throwIfNotStringOrNull(stringA);
+    throwIfNotStringOrNull(stringB);
     return stringA === stringB;
   },
   compare: (stringA, stringB) => {
@@ -264,6 +336,7 @@ let builtinExports = wasmEvalText(testModule, {}, {builtins: ["js-string"]}).exp
 let polyfillExports = wasmEvalText(testModule, { 'wasm:js-string': polyFillImports }).exports;
 
 let testStrings = ["", "a", "1", "ab", "hello, world", "\n", "☺", "☺smiley", String.fromCodePoint(0x10000, 0x10001)];
+let testStringsAndNull = [...testStrings, null];
 let testCharCodes = [1, 2, 3, 10, 0x7f, 0xff, 0xfffe, 0xffff];
 let testCodePoints = [1, 2, 3, 10, 0x7f, 0xff, 0xfffe, 0xffff, 0x10000, 0x10001];
 
@@ -335,7 +408,10 @@ for (let a of testStrings) {
   );
 
   for (let i = 0; i < length; i++) {
-    for (let j = 0; j < length; j++) {
+    // The end parameter is interpreted as unsigned and is always clamped to
+    // the string length. This means that -1, and string.length + 1 are valid
+    // end indices.
+    for (let j = -1; j <= length + 1; j++) {
       assertSameBehavior(
         builtinExports['substring'],
         polyfillExports['substring'],
@@ -353,13 +429,18 @@ for (let a of testStrings) {
       a, b
     );
     assertSameBehavior(
-      builtinExports['equals'],
-      polyfillExports['equals'],
-      a, b
-    );
-    assertSameBehavior(
       builtinExports['compare'],
       polyfillExports['compare'],
+      a, b
+    );
+  }
+}
+
+for (let a of testStringsAndNull) {
+  for (let b of testStringsAndNull) {
+    assertSameBehavior(
+      builtinExports['equals'],
+      polyfillExports['equals'],
       a, b
     );
   }

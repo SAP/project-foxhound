@@ -439,7 +439,7 @@ MSG_DEF(JSMSG_WASM_COMPILE_ERROR,      1, JSEXN_WASMCOMPILEERROR, "{0}")
 MSG_DEF(JSMSG_WASM_BAD_IMPORT_TYPE,    2, JSEXN_WASMLINKERROR, "import object field '{0}' is not a {1}")
 MSG_DEF(JSMSG_WASM_BAD_IMPORT_SIG,     2, JSEXN_WASMLINKERROR, "imported function '{0}.{1}' signature mismatch")
 MSG_DEF(JSMSG_WASM_BAD_TAG_SIG,        2, JSEXN_WASMLINKERROR, "imported tag '{0}.{1}' signature mismatch")
-MSG_DEF(JSMSG_WASM_BAD_IMP_INDEX,      1, JSEXN_WASMLINKERROR, "imported {0} with incompatible index type")
+MSG_DEF(JSMSG_WASM_BAD_IMP_ADDRESS,    1, JSEXN_WASMLINKERROR, "imported {0} with incompatible address type")
 MSG_DEF(JSMSG_WASM_BAD_IMP_SIZE,       1, JSEXN_WASMLINKERROR, "imported {0} with incompatible size")
 MSG_DEF(JSMSG_WASM_BAD_IMP_MAX,        1, JSEXN_WASMLINKERROR, "imported {0} with incompatible maximum size")
 MSG_DEF(JSMSG_WASM_IMP_SHARED_REQD,    0, JSEXN_WASMLINKERROR, "imported unshared memory but shared required")
@@ -466,6 +466,7 @@ MSG_DEF(JSMSG_WASM_ARRAY_IMP_LIMIT,    0, JSEXN_WASMRUNTIMEERROR, "too many arra
 MSG_DEF(JSMSG_WASM_ARRAY_NEW_ELEM_NOT_IMPLEMENTED, 0, JSEXN_WASMRUNTIMEERROR, "array.new_elem does not yet support the expression encoding of element segments")
 MSG_DEF(JSMSG_WASM_BAD_RANGE,          2, JSEXN_RANGEERR,    "bad {0} {1}")
 MSG_DEF(JSMSG_WASM_BAD_GROW,           1, JSEXN_RANGEERR,    "failed to grow {0}")
+MSG_DEF(JSMSG_WASM_MAX_LT_INITIAL,     1, JSEXN_RANGEERR,    "initial {0} size cannot be greater than maximum")
 MSG_DEF(JSMSG_WASM_TABLE_OUT_OF_BOUNDS, 0, JSEXN_WASMRUNTIMEERROR,   "table index out of bounds")
 MSG_DEF(JSMSG_WASM_BAD_ENFORCE_RANGE,  2, JSEXN_TYPEERR,     "bad {0} {1}")
 MSG_DEF(JSMSG_WASM_BAD_BUF_ARG,        0, JSEXN_TYPEERR,     "first argument must be an ArrayBuffer or typed array object")
@@ -487,7 +488,7 @@ MSG_DEF(JSMSG_WASM_BAD_ARRAYREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass a W
 MSG_DEF(JSMSG_WASM_BAD_TYPEREF_VALUE,  0, JSEXN_TYPEERR,     "bad type")
 MSG_DEF(JSMSG_WASM_BAD_VAL_TYPE,       0, JSEXN_TYPEERR,     "cannot pass value to or from JS")
 MSG_DEF(JSMSG_WASM_BAD_STRING_VAL_TYPE,    0, JSEXN_TYPEERR,     "bad value type")
-MSG_DEF(JSMSG_WASM_BAD_STRING_IDX_TYPE,    0, JSEXN_TYPEERR,     "bad index type")
+MSG_DEF(JSMSG_WASM_BAD_STRING_ADDR_TYPE,    0, JSEXN_TYPEERR,     "bad address type")
 MSG_DEF(JSMSG_WASM_BAD_EXN_ARG,        0, JSEXN_TYPEERR,     "first argument must be a WebAssembly.Tag")
 MSG_DEF(JSMSG_WASM_BAD_EXN_PAYLOAD,    0, JSEXN_TYPEERR,     "second argument must be an object")
 MSG_DEF(JSMSG_WASM_BAD_EXN_PAYLOAD_LEN, 2, JSEXN_TYPEERR,    "expected {0} values but got {1}")
@@ -495,7 +496,6 @@ MSG_DEF(JSMSG_WASM_BAD_EXN_TAG,        0, JSEXN_TYPEERR,     "exception's tag di
 MSG_DEF(JSMSG_WASM_BAD_EXN_OPTIONS,    0, JSEXN_TYPEERR,     "argument cannot be converted to an ExceptionOptions")
 MSG_DEF(JSMSG_WASM_BAD_FUNCTION_VALUE, 0, JSEXN_TYPEERR,     "second argument must be a function")
 MSG_DEF(JSMSG_WASM_BAD_COMPILE_OPTIONS, 0, JSEXN_TYPEERR,    "argument cannot be converted to a CompileOptions")
-MSG_DEF(JSMSG_WASM_UNKNOWN_BUILTIN,     0, JSEXN_TYPEERR,    "unknown builtin")
 MSG_DEF(JSMSG_WASM_DUPLICATE_BUILTIN,   0, JSEXN_TYPEERR,    "duplicate builtin")
 MSG_DEF(JSMSG_WASM_BAD_CODEPOINT,       0, JSEXN_WASMRUNTIMEERROR,     "bad codepoint")
 MSG_DEF(JSMSG_WASM_NO_TRANSFER,        0, JSEXN_TYPEERR,     "cannot transfer WebAssembly/asm.js ArrayBuffer")
@@ -557,6 +557,7 @@ MSG_DEF(JSMSG_SC_BAD_CLONE_VERSION,    0, JSEXN_ERR, "unsupported structured clo
 MSG_DEF(JSMSG_SC_BAD_SERIALIZED_DATA,  1, JSEXN_INTERNALERR, "bad serialized structured data ({0})")
 MSG_DEF(JSMSG_SC_DUP_TRANSFERABLE,     0, JSEXN_TYPEERR, "duplicate transferable for structured clone")
 MSG_DEF(JSMSG_SC_NOT_TRANSFERABLE,     0, JSEXN_TYPEERR, "invalid transferable array for structured clone")
+MSG_DEF(JSMSG_SC_TRANSFERABLE_TWICE,   0, JSEXN_TYPEERR, "structured clone cannot transfer twice")
 MSG_DEF(JSMSG_SC_UNSUPPORTED_TYPE,     0, JSEXN_TYPEERR, "unsupported type for structured data")
 MSG_DEF(JSMSG_SC_NOT_CLONABLE,         1, JSEXN_TYPEERR, "The {0} object cannot be serialized. The Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy HTTP headers will enable this in the future.")
 MSG_DEF(JSMSG_SC_NOT_CLONABLE_WITH_COOP_COEP, 1, JSEXN_TYPEERR, "The {0} object cannot be serialized. The Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy HTTP headers can be used to enable this.")
@@ -596,8 +597,10 @@ MSG_DEF(JSMSG_DEBUGGEE_WOULD_RUN,      2, JSEXN_DEBUGGEEWOULDRUN, "debuggee '{0}
 MSG_DEF(JSMSG_NOT_CALLABLE_OR_UNDEFINED, 0, JSEXN_TYPEERR, "value is not a function or undefined")
 MSG_DEF(JSMSG_NOT_TRACKING_ALLOCATIONS, 1, JSEXN_ERR, "Cannot call {0} without setting trackingAllocationSites to true")
 MSG_DEF(JSMSG_OBJECT_METADATA_CALLBACK_ALREADY_SET, 0, JSEXN_ERR, "Cannot track object allocation, because other tools are already doing so")
-MSG_DEF(JSMSG_QUERY_INNERMOST_WITHOUT_LINE_URL, 0, JSEXN_TYPEERR, "findScripts query object with 'innermost' property must have 'line' and either 'displayURL', 'url', or 'source'")
-MSG_DEF(JSMSG_QUERY_LINE_WITHOUT_URL, 0, JSEXN_TYPEERR, "findScripts query object has 'line' property, but no 'displayURL', 'url', or 'source' property")
+MSG_DEF(JSMSG_QUERY_INNERMOST_WITHOUT_LINE_URL, 0, JSEXN_TYPEERR, "findScripts query object with 'innermost' property must have 'line', or 'start' and 'end', and either 'displayURL', 'url', or 'source'")
+MSG_DEF(JSMSG_QUERY_LINE_WITHOUT_URL, 1, JSEXN_TYPEERR, "findScripts query object has {0}, but no 'displayURL', 'url', or 'source' property")
+MSG_DEF(JSMSG_QUERY_USE_START_AND_END_TOGETHER, 0, JSEXN_ERR, "findScripts query object's 'start' and 'end' properties must be used together")
+MSG_DEF(JSMSG_QUERY_START_LINE_IS_AFTER_END, 0, JSEXN_ERR, "findScripts query object's 'start.line' property is greater than its 'end.line' property, but it must be less than or equal to 'end.line'")
 MSG_DEF(JSMSG_DEBUG_CANT_SET_OPT_ENV, 1, JSEXN_REFERENCEERR, "can't set '{0}' in an optimized-out environment")
 MSG_DEF(JSMSG_DEBUG_INVISIBLE_COMPARTMENT, 0, JSEXN_TYPEERR, "object in compartment marked as invisible to Debugger")
 MSG_DEF(JSMSG_DEBUG_CENSUS_BREAKDOWN,  1, JSEXN_TYPEERR, "unrecognized 'by' value in takeCensus breakdown: {0}")
@@ -607,6 +610,8 @@ MSG_DEF(JSMSG_DEBUG_PROMISE_NOT_FULFILLED, 0, JSEXN_TYPEERR, "Promise hasn't bee
 MSG_DEF(JSMSG_DEBUG_PROMISE_NOT_REJECTED, 0, JSEXN_TYPEERR, "Promise hasn't been rejected")
 MSG_DEF(JSMSG_DEBUG_NO_BINARY_SOURCE,  0, JSEXN_ERR, "WebAssembly binary source is not available")
 MSG_DEF(JSMSG_DEBUG_EXCLUSIVE_FRAME_COVERAGE, 0, JSEXN_ERR, "onEnterFrame and collectCoverageInfo cannot be active at the same time")
+MSG_DEF(JSMSG_DEBUG_EXCLUSIVE_EXECUTION_TRACE_COVERAGE, 0, JSEXN_ERR, "execution trace and collectCoverageInfo cannot be active at the same time")
+MSG_DEF(JSMSG_NATIVE_TRACING_BUFFER_MALFORMED, 0, JSEXN_ERR, "bad data encountered while reading the native tracing buffer")
 
 // Testing functions
 MSG_DEF(JSMSG_TESTING_SCRIPTS_ONLY, 0, JSEXN_TYPEERR, "only works on scripts")
@@ -638,6 +643,15 @@ MSG_DEF(JSMSG_UNDEFINED_TYPE,          0, JSEXN_TYPEERR, "missing \"type\" optio
 MSG_DEF(JSMSG_NAN_NUMBER_RANGE,        3, JSEXN_RANGEERR, "range can't {0} with NaN in {1}.{2}()")
 MSG_DEF(JSMSG_INVALID_NUMBER_OPTION,   2, JSEXN_TYPEERR, "can't set option {0} when {1} is used")
 MSG_DEF(JSMSG_UNEQUAL_FRACTION_DIGITS, 0, JSEXN_RANGEERR, "fraction digits must be the same when roundingIncrement is used")
+MSG_DEF(JSMSG_INTL_DURATION_INVALID_NON_NUMERIC_OPTION, 2, JSEXN_RANGEERR, "invalid non-numeric value {0} for option {1}")
+MSG_DEF(JSMSG_INTL_DURATION_INVALID_DISPLAY_OPTION, 1, JSEXN_RANGEERR, "{0} can't use \"numeric\" style with \"always\" display")
+MSG_DEF(JSMSG_INTL_DURATION_INVALID_DISPLAY_OPTION_DEFAULT_STYLE, 1, JSEXN_RANGEERR, "{0} can't use \"always\" display when style defaults to \"numeric\"")
+MSG_DEF(JSMSG_INTL_DURATION_INVALID_DISPLAY_OPTION_DEFAULT_DISPLAY, 1, JSEXN_RANGEERR, "{0} can't use \"numeric\" style when display defaults to \"always\"")
+MSG_DEF(JSMSG_INTL_DURATION_NOT_INTEGER, 1, JSEXN_RANGEERR, "{0} isn't a valid duration value because it isn't an integer")
+MSG_DEF(JSMSG_INTL_DURATION_INVALID_SIGN, 0, JSEXN_RANGEERR, "duration elements must have the same sign")
+MSG_DEF(JSMSG_INTL_DURATION_INVALID_LIMIT, 0, JSEXN_RANGEERR, "duration elements must be below valid limits")
+MSG_DEF(JSMSG_INTL_DURATION_MISSING_UNIT, 0, JSEXN_TYPEERR, "Duration-like objects must have at least one duration unit")
+MSG_DEF(JSMSG_INTL_DURATION_UNEXPECTED_STRING, 0, JSEXN_RANGEERR, "duration can't be a string")
 
 // RegExp
 MSG_DEF(JSMSG_BAD_CLASS_RANGE,         0, JSEXN_SYNTAXERR, "invalid range in character class")
@@ -671,6 +685,7 @@ MSG_DEF(JSMSG_INCOMPATIBLE_REGEXP_GETTER,  2, JSEXN_TYPEERR, "RegExp.prototype.{
 MSG_DEF(JSMSG_INVALID_CLASS_SET_OP,        0, JSEXN_SYNTAXERR, "invalid class set operation in regular expression")
 MSG_DEF(JSMSG_INVALID_CHAR_IN_CLASS,       0, JSEXN_SYNTAXERR, "invalid character in class in regular expression")
 MSG_DEF(JSMSG_NEGATED_CLASS_WITH_STR,      0, JSEXN_SYNTAXERR, "negated character class with strings in regular expression")
+MSG_DEF(JSMSG_MULTIPLE_FLAG_DASHES,        0, JSEXN_SYNTAXERR, "multiple dashes in flag group")
 
 // Typed object
 MSG_DEF(JSMSG_TYPEDOBJECT_SETTING_IMMUTABLE, 0, JSEXN_ERR, "setting immutable field")
@@ -729,6 +744,7 @@ MSG_DEF(JSMSG_SYMBOL_TO_NUMBER,        0, JSEXN_TYPEERR, "can't convert symbol t
 // Atomics and futexes
 MSG_DEF(JSMSG_ATOMICS_BAD_ARRAY,         0, JSEXN_TYPEERR, "invalid array type for the operation")
 MSG_DEF(JSMSG_ATOMICS_WAIT_NOT_ALLOWED,  0, JSEXN_TYPEERR, "waiting is not allowed on this thread")
+MSG_DEF(JSMSG_ATOMICS_PAUSE_BAD_COUNT,   0, JSEXN_TYPEERR, "Atomics.pause called with non-integral Number")
 
 // XPConnect wrappers and DOM bindings
 MSG_DEF(JSMSG_CANT_SET_INTERPOSED,       1, JSEXN_TYPEERR, "unable to set interposed data property '{0}'")
@@ -962,6 +978,8 @@ MSG_DEF(JSMSG_TEMPORAL_PARSER_INVALID_UTC_DESIGNATOR_WITHOUT_NAME, 0, JSEXN_RANG
 MSG_DEF(JSMSG_TEMPORAL_PARSER_MONTH_DAY_CALENDAR_NOT_ISO8601, 0, JSEXN_RANGEERR, "Month-Day formats only support the \"iso8601\" calendar")
 MSG_DEF(JSMSG_TEMPORAL_PARSER_YEAR_MONTH_CALENDAR_NOT_ISO8601, 0, JSEXN_RANGEERR, "Year-Month formats only support the \"iso8601\" calendar")
 MSG_DEF(JSMSG_TEMPORAL_PARSER_INVALID_SUBMINUTE_TIMEZONE, 0, JSEXN_RANGEERR, "time zone offset must not contain seconds precision")
+MSG_DEF(JSMSG_TEMPORAL_PARSER_INCONSISTENT_DATE_SEPARATOR, 0, JSEXN_RANGEERR, "date separator '-' must be consistent")
+MSG_DEF(JSMSG_TEMPORAL_PARSER_INCONSISTENT_TIME_SEPARATOR, 0, JSEXN_RANGEERR, "time separator ':' must be consistent")
 
 // Explicit Resource Management
 

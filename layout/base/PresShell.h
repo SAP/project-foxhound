@@ -1259,7 +1259,8 @@ class PresShell final : public nsStubDocumentObserver,
   NS_IMETHOD GetDisplaySelection(int16_t* aToggle) override;
   NS_IMETHOD ScrollSelectionIntoView(RawSelectionType aRawSelectionType,
                                      SelectionRegion aRegion,
-                                     int16_t aFlags) override;
+                                     ControllerScrollFlags aFlags) override;
+  using nsISelectionController::ScrollSelectionIntoView;
   NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
   void SelectionWillTakeFocus() override;
   void SelectionWillLoseFocus() override;
@@ -1475,6 +1476,12 @@ class PresShell final : public nsStubDocumentObserver,
    */
   void MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty);
 
+  /**
+   * Similar to above MarkFixedFramesForReflow, but for sticky position children
+   * stuck to the root frame.
+   */
+  void MarkStickyFramesForReflow();
+
   void MaybeReflowForInflationScreenSizeChange();
 
   // This function handles all the work after VisualViewportSize is set
@@ -1520,6 +1527,9 @@ class PresShell final : public nsStubDocumentObserver,
   // Returns the visual viewport size during the dynamic toolbar is being
   // shown/hidden.
   nsSize GetVisualViewportSizeUpdatedByDynamicToolbar() const;
+
+  // Trigger refreshing the MobileViewportManager's size metrics.
+  void RefreshViewportSize();
 
   /* Enable/disable author style level. Disabling author style disables the
    * entire author level of the cascade, including the HTML preshint level.
@@ -1751,6 +1761,12 @@ class PresShell final : public nsStubDocumentObserver,
   ProximityToViewportResult DetermineProximityToViewport();
 
   void ClearTemporarilyVisibleForScrolledIntoViewDescendantFlags() const;
+
+  // A cache that contains all fully selected nodes per selection instance.
+  // Only non-null during reflow.
+  dom::SelectionNodeCache* GetSelectionNodeCache() {
+    return mSelectionNodeCache;
+  }
 
  private:
   ~PresShell();
@@ -2845,7 +2861,7 @@ class PresShell final : public nsStubDocumentObserver,
      * AutoCurrentEventInfoSetter() pushes and pops current event info of
      * aEventHandler.mPresShell.
      */
-    struct MOZ_STACK_CLASS AutoCurrentEventInfoSetter final {
+    struct MOZ_RAII AutoCurrentEventInfoSetter final {
       explicit AutoCurrentEventInfoSetter(EventHandler& aEventHandler)
           : mEventHandler(aEventHandler) {
         MOZ_DIAGNOSTIC_ASSERT(!mEventHandler.mCurrentEventInfoSetter);
@@ -3033,7 +3049,8 @@ class PresShell final : public nsStubDocumentObserver,
   // Text directives are supposed to be scrolled to the center of the viewport.
   // Since `ScrollToAnchor()` might get called after `GoToAnchor()` during a
   // load, the vertical view position should be preserved.
-  WhereToScroll mLastAnchorVerticalScrollViewPosition;
+  enum class AnchorScrollType : bool { Anchor, TextDirective };
+  AnchorScrollType mLastAnchorScrollType = AnchorScrollType::Anchor;
 
   // Information needed to properly handle scrolling content into view if the
   // pre-scroll reflow flush can be interrupted.  mContentToScrollTo is non-null
@@ -3260,6 +3277,13 @@ class PresShell final : public nsStubDocumentObserver,
   // The last TimeStamp when the keyup event did not exit fullscreen because it
   // was consumed.
   TimeStamp mLastConsumedEscapeKeyUpForFullscreen;
+
+  // The `SelectionNodeCache` is tightly coupled with the PresShell.
+  // It should only be possible to create a cache from within a PresShell.
+  // The created cache sets itself into `this`. Therefore, it's necessary to use
+  // `friend` here to avoid having setters.
+  friend dom::SelectionNodeCache;
+  dom::SelectionNodeCache* mSelectionNodeCache{nullptr};
 
   struct CapturingContentInfo final {
     CapturingContentInfo()

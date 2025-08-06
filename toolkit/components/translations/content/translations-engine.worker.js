@@ -130,21 +130,34 @@ function handleMessages(engine) {
 
       switch (data.type) {
         case "translation-request": {
-          const { sourceText, messageId, isHTML, innerWindowId } = data;
+          const {
+            sourceText,
+            messageId,
+            translationId,
+            isHTML,
+            innerWindowId,
+          } = data;
           if (discardPromise) {
             // Wait for messages to be discarded if there are any.
             await discardPromise;
           }
           try {
+            const { whitespaceBefore, whitespaceAfter, cleanedSourceText } =
+              cleanText(sourceText);
+
             // Add a translation to the work queue, and when it returns, post the message
             // back. The translation may never return if the translations are discarded
             // before it have time to be run. In this case this await is just never
             // resolved, and the postMessage is never run.
-            const targetText = await engine.translate(
-              sourceText,
+            let targetText = await engine.translate(
+              cleanedSourceText,
               isHTML,
-              innerWindowId
+              innerWindowId,
+              translationId
             );
+
+            // Ensure the whitespace is retained.
+            targetText = whitespaceBefore + targetText + whitespaceAfter;
 
             // This logging level can be very verbose and slow, so only do it under the
             // "Trace" level, which is the most verbose. Set the logging level to "Info" to avoid
@@ -159,6 +172,7 @@ function handleMessages(engine) {
             postMessage({
               type: "translation-response",
               targetText,
+              translationId,
               messageId,
             });
           } catch (error) {
@@ -195,6 +209,13 @@ function handleMessages(engine) {
           postMessage({
             type: "translations-discarded",
           });
+          break;
+        }
+        case "cancel-single-translation": {
+          engine.discardSingleTranslation(
+            data.innerWindowId,
+            data.translationId
+          );
           break;
         }
         default:
@@ -239,11 +260,8 @@ class Engine {
     this.bergamot = bergamot;
     /** @type {Bergamot["TranslationModel"][]} */
     this.languageTranslationModels = languageTranslationModelFiles.map(
-      languageTranslationModelFiles =>
-        BergamotUtils.constructSingleTranslationModel(
-          bergamot,
-          languageTranslationModelFiles
-        )
+      modelFiles =>
+        BergamotUtils.constructSingleTranslationModel(bergamot, modelFiles)
     );
 
     /** @type {Bergamot["BlockingService"]} */
@@ -263,11 +281,12 @@ class Engine {
    * @param {string} sourceText
    * @param {boolean} isHTML
    * @param {number} innerWindowId - This is required
+   * @param {number} translationId
    *
    * @returns {Promise<string>}sourceText
    */
-  translate(sourceText, isHTML, innerWindowId) {
-    return this.#getWorkQueue(innerWindowId).runTask(() =>
+  translate(sourceText, isHTML, innerWindowId, translationId) {
+    return this.#getWorkQueue(innerWindowId).runTask(translationId, () =>
       this.#syncTranslate(sourceText, isHTML, innerWindowId)
     );
   }
@@ -310,6 +329,20 @@ class Engine {
   }
 
   /**
+   * Cancels any in-progress translations by removing the work queue.
+   *
+   * @param {number} innerWindowId
+   * @param {number} translationId
+   */
+  discardSingleTranslation(innerWindowId, translationId) {
+    const workQueue = this.#workQueues.get(innerWindowId);
+    if (workQueue) {
+      trace("Discarding translation with translationId", translationId);
+      workQueue.cancelTask(translationId);
+    }
+  }
+
+  /**
    * Run the translation models to perform a translation. This
    * blocks the worker thread until it is completed.
    *
@@ -321,7 +354,6 @@ class Engine {
   #syncTranslate(sourceText, isHTML, innerWindowId) {
     const startTime = performance.now();
     let response;
-    sourceText = sourceText.trim();
     const { messages, options } = BergamotUtils.getTranslationArgs(
       this.bergamot,
       sourceText,
@@ -558,33 +590,15 @@ class BergamotUtils {
   }
 
   /**
-   * Do any cleaning steps for the text that are required before sending it into
-   * the translation engine.
-   *
-   * @param {string} sourceText
-   * @returns {string}
-   */
-  static cleanText(sourceText) {
-    // Whitespace at the beginning or end can confuse translations.
-    sourceText = sourceText.trim();
-
-    // Remove any soft hyphens, as they will break tokenization.
-    sourceText = sourceText.replaceAll("\u00AD", "");
-
-    return sourceText;
-  }
-
-  /**
    * JS objects need to be translated into wasm objects to configure the translation engine.
    *
    * @param {Bergamot} bergamot
-   * @param {string[]} sourceText
+   * @param {string} sourceText
    * @returns {{ messages: Bergamot["VectorString"], options: Bergamot["VectorResponseOptions"] }}
    */
   static getTranslationArgs(bergamot, sourceText, isHTML) {
     const messages = new bergamot.VectorString();
     const options = new bergamot.VectorResponseOptions();
-    sourceText = BergamotUtils.cleanText(sourceText);
 
     // Empty paragraphs break the translation.
     if (sourceText) {
@@ -642,8 +656,13 @@ class WorkQueue {
   #TIME_BUDGET = 100; // ms
   #RUN_IMMEDIATELY_COUNT = 20;
 
-  /** @type {Array<{task: Function, resolve: Function}>} */
-  #tasks = [];
+  /**
+   * This is the list of work to be done. While it is a Map, it is treated as a FIFO
+   * queue, but with work that can be canceled via the translationId.
+   *
+   * @type {Map<number, {task: Function, resolve: Function}>}
+   */
+  #tasksByTranslationId = new Map();
   #isRunning = false;
   #isWorkCancelled = false;
   #runImmediately = this.#RUN_IMMEDIATELY_COUNT;
@@ -658,11 +677,12 @@ class WorkQueue {
   /**
    * Run the task and return the result.
    *
-   * @template {T}
+   * @template {any} T
+   * @param {number} translationId
    * @param {() => T} task
    * @returns {Promise<T>}
    */
-  runTask(task) {
+  runTask(translationId, task) {
     if (this.#runImmediately > 0) {
       // Run the first N translations immediately, most likely these are the user-visible
       // translations on the page, as they are sent in first. The setTimeout of 0 can
@@ -671,9 +691,16 @@ class WorkQueue {
       return Promise.resolve(task());
     }
     return new Promise((resolve, reject) => {
-      this.#tasks.push({ task, resolve, reject });
+      this.#tasksByTranslationId.set(translationId, { task, resolve, reject });
       this.#run().catch(error => console.error(error));
     });
+  }
+
+  /**
+   * @param {number} translationId
+   */
+  cancelTask(translationId) {
+    this.#tasksByTranslationId.delete(translationId);
   }
 
   /**
@@ -699,7 +726,7 @@ class WorkQueue {
       );
     };
 
-    while (this.#tasks.length !== 0) {
+    while (this.#tasksByTranslationId.size) {
       if (this.#isWorkCancelled) {
         // The work was already cancelled.
         break;
@@ -719,12 +746,20 @@ class WorkQueue {
       }
 
       // Check this between every `await`.
-      if (this.#isWorkCancelled || !this.#tasks.length) {
+      if (this.#isWorkCancelled || !this.#tasksByTranslationId.size) {
         break;
       }
 
       tasksInBatch++;
-      const { task, resolve, reject } = this.#tasks.shift();
+
+      // Treat the `this.#tasksByTranslationId` Map as a FIFO queue, and take the oldest
+      // item out by manually using the `entries()` iterator.
+      const [translationId, taskAndResolvers] = this.#tasksByTranslationId
+        .entries()
+        .next().value;
+      const { task, resolve, reject } = taskAndResolvers;
+      this.#tasksByTranslationId.delete(translationId);
+
       try {
         const result = await task();
 
@@ -744,8 +779,40 @@ class WorkQueue {
 
   async cancelWork() {
     this.#isWorkCancelled = true;
-    this.#tasks = [];
+    this.#tasksByTranslationId = new Map();
     await new Promise(resolve => setTimeout(resolve, 0));
     this.#isWorkCancelled = false;
   }
+}
+
+/**
+ * This regex matches the whitespace before and after a text, so that it is preserved.
+ */
+const whitespaceRegex = /^(\s*)(.*?)(\s*)$/s;
+//                                            Include newlines in .*
+//                        (^^^)     (^^^)     Match the whitespace at the beginning and end.
+//                             (^^^)      /s  Non-greedily match the text (including newlines.)
+
+/**
+ * Do any cleaning steps for the text that are required before sending it into
+ * the translation engine.
+ *
+ * @param {string} sourceText
+ * @returns {{ whitespaceBefore: string, whitespaceAfter: string, cleanedSourceText: string }}
+ */
+function cleanText(sourceText) {
+  // Whitespace at the beginning or end can confuse translations, but can affect the
+  // presentation of the final result.
+  const result = whitespaceRegex.exec(sourceText);
+  if (!result) {
+    throw new Error("The whitespace regex should always return a result.");
+  }
+  const whitespaceBefore = result[1];
+  const whitespaceAfter = result[3];
+  let cleanedSourceText = result[2];
+
+  // Remove any soft hyphens, as they will break tokenization.
+  cleanedSourceText = cleanedSourceText.replaceAll("\u00AD", "");
+
+  return { whitespaceBefore, whitespaceAfter, cleanedSourceText };
 }

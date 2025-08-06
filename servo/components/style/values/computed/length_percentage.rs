@@ -67,7 +67,9 @@ pub struct PercentageVariant {
 #[cfg(target_pointer_width = "32")]
 pub struct CalcVariant {
     tag: u8,
-    ptr: *mut CalcLengthPercentage,
+    // Ideally CalcLengthPercentage, but that would cause circular references
+    // for leaves referencing LengthPercentage.
+    ptr: *mut (),
 }
 
 #[doc(hidden)]
@@ -358,7 +360,7 @@ impl LengthPercentage {
         #[cfg(target_pointer_width = "32")]
         let calc = CalcVariant {
             tag: LengthPercentageUnion::TAG_CALC,
-            ptr,
+            ptr: ptr as *mut (),
         };
 
         #[cfg(target_pointer_width = "64")]
@@ -518,8 +520,8 @@ impl LengthPercentage {
 
     /// Convert the computed value into used value.
     #[inline]
-    pub fn maybe_to_used_value(&self, container_len: Option<Length>) -> Option<Au> {
-        self.maybe_percentage_relative_to(container_len)
+    pub fn maybe_to_used_value(&self, container_len: Option<Au>) -> Option<Au> {
+        self.maybe_percentage_relative_to(container_len.map(Length::from))
             .map(Au::from)
     }
 
@@ -906,6 +908,22 @@ impl CalcLengthPercentage {
                 } else {
                     leaf.clone()
                 })
+            }, |node| {
+                match node {
+                    CalcNode::Anchor(f) => {
+                        if let Some(fallback) = f.fallback.as_ref() {
+                            return Ok((**fallback).clone());
+                        }
+                        Ok(CalcNode::Leaf(CalcLengthPercentageLeaf::Length(Length::zero())))
+                    },
+                    CalcNode::AnchorSize(f) => {
+                        if let Some(fallback) = f.fallback.as_ref() {
+                            return Ok((**fallback).clone());
+                        }
+                        Ok(CalcNode::Leaf(CalcLengthPercentageLeaf::Length(Length::zero())))
+                    }
+                    _ => Err(()),
+                }
             })
             .unwrap()
         {
@@ -1120,9 +1138,7 @@ impl NonNegativeLengthPercentage {
     /// Convert the computed value into used value.
     #[inline]
     pub fn maybe_to_used_value(&self, containing_length: Option<Au>) -> Option<Au> {
-        let resolved = self
-            .0
-            .maybe_to_used_value(containing_length.map(|v| v.into()))?;
+        let resolved = self.0.maybe_to_used_value(containing_length)?;
         Some(std::cmp::max(resolved, Au(0)))
     }
 }

@@ -95,6 +95,7 @@ def set_test_manifests(config, tasks):
         mozinfo = guess_mozinfo_from_task(
             task,
             config.params.get("head_repository", ""),
+            config.params.get("app_version", ""),
             get_test_tags(config, task.get("worker", {}).get("env", {})),
         )
 
@@ -175,6 +176,7 @@ def set_test_manifests(config, tasks):
         elif (
             get_test_tags(config, task.get("worker", {}).get("env", {}))
             and not task["test-manifests"]["active"]
+            and not task["test-manifests"]["other_dirs"]
         ):
             # no MH_TEST_PATHS, but MH_TEST_TAG or other filters
             continue
@@ -279,7 +281,9 @@ def split_chunks(config, tasks):
                 and manifests["active"]
                 and "skipped" in manifests
             ):
-                chunked_manifests[0].extend(manifests["skipped"])
+                chunked_manifests[0].extend(
+                    [m for m in manifests["skipped"] if not m.endswith(".list")]
+                )
 
         for i in range(task["chunks"]):
             this_chunk = i + 1

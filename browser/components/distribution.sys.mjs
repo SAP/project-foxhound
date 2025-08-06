@@ -247,11 +247,13 @@ DistributionCustomizer.prototype = {
 
           if (item.icon && item.iconData) {
             try {
-              lazy.PlacesUtils.favicons.setFaviconForPage(
-                Services.io.newURI(item.link),
-                Services.io.newURI(item.icon),
-                Services.io.newURI(item.iconData)
-              );
+              lazy.PlacesUtils.favicons
+                .setFaviconForPage(
+                  Services.io.newURI(item.link),
+                  Services.io.newURI(item.icon),
+                  Services.io.newURI(item.iconData)
+                )
+                .catch(console.error);
             } catch (e) {
               console.error(e);
             }
@@ -600,6 +602,18 @@ DistributionCustomizer.prototype = {
             "toolbar-menubar",
             "autohide",
             "false"
+          );
+        }
+      } catch (e) {}
+      // If a theme was specified in the distribution, and it's a new profile,
+      // set the theme as default.
+      try {
+        const activeThemeID = Services.prefs.getCharPref(
+          "extensions.activeThemeID"
+        );
+        if (activeThemeID) {
+          lazy.AddonManager.getAddonByID(activeThemeID).then(addon =>
+            addon?.enable()
           );
         }
       } catch (e) {}

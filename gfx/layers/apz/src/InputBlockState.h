@@ -7,7 +7,8 @@
 #ifndef mozilla_layers_InputBlockState_h
 #define mozilla_layers_InputBlockState_h
 
-#include "InputData.h"           // for MultiTouchInput
+#include "InputData.h"  // for MultiTouchInput
+#include "Units.h"
 #include "mozilla/RefCounted.h"  // for RefCounted
 #include "mozilla/RefPtr.h"      // for RefPtr
 #include "mozilla/StaticPrefs_apz.h"
@@ -93,6 +94,10 @@ class InputBlockState : public RefCounted<InputBlockState> {
    * be removed as the last item in the pending queue.
    */
   virtual bool MustStayActive() = 0;
+
+  const ScreenToParentLayerMatrix4x4& GetTransformToApzc() const {
+    return mTransformToApzc;
+  }
 
  protected:
   virtual void UpdateTargetApzc(
@@ -365,6 +370,14 @@ class PanGestureBlockState : public CancelableBlockState {
     return mWaitingForContentResponse;
   }
   Maybe<LayersId> WheelTransactionLayersId() const override;
+
+  void ConfirmForHoldGesture() {
+    // Hold gestures get their own input block, but do not generate
+    // any events that get to web content (because the PANGESTURE_MAYSTART
+    // event has a zero delta). As a result, do not wait for a content
+    // response for them because it will never arrive.
+    mTargetConfirmed = InputBlockState::TargetConfirmationState::eConfirmed;
+  }
 
  private:
   bool mInterrupted;

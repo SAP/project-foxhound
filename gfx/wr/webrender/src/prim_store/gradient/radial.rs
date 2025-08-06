@@ -108,6 +108,7 @@ pub struct RadialGradientTemplate {
 impl PatternBuilder for RadialGradientTemplate {
     fn build(
         &self,
+        _sub_rect: Option<DeviceRect>,
         _ctx: &PatternBuilderContext,
         state: &mut PatternBuilderState,
     ) -> Pattern {
@@ -123,6 +124,19 @@ impl PatternBuilder for RadialGradientTemplate {
             &self.stops,
             state.frame_gpu_data,
         )
+    }
+
+    fn get_base_color(
+        &self,
+        _ctx: &PatternBuilderContext,
+    ) -> ColorF {
+        ColorF::WHITE
+    }
+
+    fn use_shared_pattern(
+        &self,
+    ) -> bool {
+        true
     }
 }
 
@@ -235,18 +249,17 @@ impl RadialGradientTemplate {
         };
 
         let task_id = frame_state.resource_cache.request_render_task(
-            RenderTaskCacheKey {
+            Some(RenderTaskCacheKey {
                 size: task_size,
                 kind: RenderTaskCacheKeyKind::RadialGradient(cache_key),
-            },
+            }),
+            false,
+            RenderTaskParent::Surface,
             frame_state.gpu_cache,
             &mut frame_state.frame_gpu_data.f32,
             frame_state.rg_builder,
-            None,
-            false,
-            RenderTaskParent::Surface,
             &mut frame_state.surface_builder,
-            |rg_builder, gpu_buffer_builder| {
+            &mut |rg_builder, gpu_buffer_builder, _| {
                 let stops = GradientGpuBlockBuilder::build(
                     false,
                     gpu_buffer_builder,

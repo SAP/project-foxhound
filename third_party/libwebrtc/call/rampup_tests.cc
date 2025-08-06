@@ -10,25 +10,48 @@
 
 #include "call/rampup_tests.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "absl/flags/flag.h"
 #include "absl/strings/string_view.h"
+#include "api/field_trials_view.h"
+#include "api/make_ref_counted.h"
+#include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtc_event_log/rtc_event_log_factory.h"
 #include "api/rtc_event_log_output_file.h"
+#include "api/rtp_parameters.h"
+#include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/test/metrics/global_metrics_logger_and_exporter.h"
 #include "api/test/metrics/metric.h"
+#include "api/test/simulated_network.h"
+#include "api/transport/bitrate_settings.h"
+#include "api/units/data_rate.h"
+#include "api/units/time_delta.h"
+#include "api/video/video_codec_type.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "call/audio_receive_stream.h"
+#include "call/audio_send_stream.h"
+#include "call/call.h"
 #include "call/fake_network_pipe.h"
+#include "call/flexfec_receive_stream.h"
+#include "call/video_receive_stream.h"
+#include "call/video_send_stream.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
-#include "rtc_base/platform_thread.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/task_queue_for_test.h"
-#include "rtc_base/time_utils.h"
+#include "rtc_base/task_utils/repeating_task.h"
+#include "test/call_test.h"
 #include "test/encoder_settings.h"
 #include "test/gtest.h"
+#include "test/rtp_rtcp_observer.h"
 #include "test/video_test_constants.h"
+#include "video/config/video_encoder_config.h"
 
 ABSL_FLAG(std::string,
           ramp_dump_name,
@@ -410,7 +433,8 @@ RampUpDownUpTester::RampUpDownUpTester(size_t num_video_streams,
       interval_start_ms_(clock_->TimeInMilliseconds()),
       sent_bytes_(0),
       loss_rates_(loss_rates) {
-  forward_transport_config_.link_capacity_kbps = link_rates_[test_state_];
+  forward_transport_config_.link_capacity =
+      DataRate::KilobitsPerSec(link_rates_[test_state_]);
   forward_transport_config_.queue_delay_ms = 100;
   forward_transport_config_.loss_percent = loss_rates_[test_state_];
 }
@@ -549,7 +573,8 @@ void RampUpDownUpTester::EvolveTestState(int bitrate_bps, bool suspended) {
     case kTransitionToNextState:
       if (!ExpectingFec() || GetFecBytes() > 0) {
         test_state_ = next_state_;
-        forward_transport_config_.link_capacity_kbps = link_rates_[test_state_];
+        forward_transport_config_.link_capacity =
+            DataRate::KilobitsPerSec(link_rates_[test_state_]);
         // No loss while ramping up and down as it may affect the BWE
         // negatively, making the test flaky.
         forward_transport_config_.loss_percent = 0;

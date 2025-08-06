@@ -16,6 +16,7 @@ support-files = [
   "GlobalObjectsSandbox.js",
   "metadata2Restore_profile.zip",
   "metadataRestore_profile.zip",
+  "fileListUpgrade_profile.zip",
   "schema18upgrade_profile.zip",
   "schema21upgrade_profile.zip",
   "schema23upgrade_profile.zip",
@@ -48,11 +49,15 @@ skip-if = ["tsan"]
 
 ["test_connection_idle_maintenance_stop.js"]
 
+["test_databaseWorkStarted.js"]
+
 ["test_database_close_without_onclose.js"]
 
 ["test_database_onclose.js"]
 
 ["test_file_copy_failure.js"]
+
+["test_fileListUpgrade.js"]
 
 ["test_globalObjects_ipc.js"]
 skip-if = ["os == 'android'"]
@@ -92,6 +97,10 @@ skip-if = ["true"]
 ["test_schema21upgrade.js"]
 
 ["test_schema23upgrade.js"]
+
+["test_slowDatabaseInitialization.js"]
+
+["test_slowStorageInitialization.js"]
 
 ["test_snappyUpgrade.js"]
 

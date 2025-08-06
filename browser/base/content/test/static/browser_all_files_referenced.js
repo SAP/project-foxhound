@@ -32,11 +32,21 @@ var gExceptionPaths = [
   "chrome://activity-stream/content/data/content/assets/remote/",
   "chrome://activity-stream/content/data/content/assets/mobile-download-qr-new-user-cn.svg",
   "chrome://activity-stream/content/data/content/assets/mobile-download-qr-existing-user-cn.svg",
+  "chrome://activity-stream/content/data/content/assets/mr-amo-collection.svg",
   "chrome://activity-stream/content/data/content/assets/person-typing.svg",
+  "chrome://activity-stream/content/data/content/assets/tabs-side-zap-transparent.svg",
+  "chrome://activity-stream/content/data/content/assets/tabs-top-zap-transparent.svg",
+  "chrome://activity-stream/content/data/content/assets/nuo-taborientation.svg",
+  "chrome://activity-stream/content/data/content/assets/euo-tab-orientation.svg",
+  "chrome://activity-stream/content/data/content/assets/euo-chatbot.svg",
   "chrome://browser/content/assets/moz-vpn.svg",
   "chrome://browser/content/assets/vpn-logo.svg",
   "chrome://browser/content/assets/focus-promo.png",
   "chrome://browser/content/assets/klar-qr-code.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-box-on-cloud.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-devices.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-locked-box.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-mobile.svg",
 
   // toolkit/components/pdfjs/content/build/pdf.js
   "resource://pdf.js/web/images/",
@@ -84,6 +94,15 @@ var gExceptionPaths = [
 
   // Strip on Share parameter lists
   "chrome://global/content/antitracking/",
+
+  // CSS file is referenced inside JS in login-form.mjs
+  "chrome://global/content/megalist/LoginFormComponent/",
+
+  // The ONNX runtime picks files to run programmaticaly
+  "chrome://global/content/ml/",
+
+  // The profile avatars are directly referenced.
+  "chrome://browser/content/profiles/assets/",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -161,6 +180,9 @@ var allowlist = [
 
   // toolkit/mozapps/extensions/AddonContentPolicy.cpp
   { file: "resource://gre/localization/en-US/toolkit/global/cspErrors.ftl" },
+
+  // toolkit/components/antitracking/bouncetrackingprotection/BounceTrackingProtection.cpp
+  { file: "resource://gre/localization/en-US/toolkit/global/antiTracking.ftl" },
 
   // The l10n build system can't package string files only for some platforms.
   {
@@ -288,6 +310,11 @@ var allowlist = [
   // Referenced programmatically
   { file: "chrome://browser/content/backup/BackupManifest.1.schema.json" },
   { file: "chrome://browser/content/backup/ArchiveJSONBlock.1.schema.json" },
+
+  // Bug 1733498 - Migrate necko errors l10n strings from .properties to Fluent
+  {
+    file: "resource://gre/localization/en-US/netwerk/necko.ftl",
+  },
 ];
 
 if (AppConstants.NIGHTLY_BUILD) {

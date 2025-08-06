@@ -1,6 +1,5 @@
 [DEFAULT]
 tags = "condprof"
-prefs = ["dom.window.sizeToContent.enabled=true"]
 support-files = [
   "bug289714.sjs",
   "bug346659-echoer.html",
@@ -305,19 +304,14 @@ skip-if = [
 ["test_protochains.html"]
 
 ["test_resize_move_windows.html"]
+run-if = ["os != 'android'"] # Windows can't change size and position on Android
 skip-if = [
-  "os == 'android'", # Windows can't change size and position on Android
   "os == 'linux'", # Bug 1781569, Bug 1661132
-  "os == 'mac'", # Bug 1781569
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1781569
 ]
 support-files = [
   "file_resize_move_windows_1.html",
   "file_resize_move_windows_2.html",
-]
-
-["test_sizetocontent_clamp.html"]
-skip-if = [
-  "os == 'android'", #Windows can't change size on Android
 ]
 
 ["test_toJSON.html"]

@@ -11,8 +11,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/contentrelevancy/private/InputUtils.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  RelevancyStore: "resource://gre/modules/RustRelevancy.sys.mjs",
+  Interest: "resource://gre/modules/RustRelevancy.sys.mjs",
   InterestVector: "resource://gre/modules/RustRelevancy.sys.mjs",
+  RelevancyStore: "resource://gre/modules/RustRelevancy.sys.mjs",
+  score: "resource://gre/modules/RustRelevancy.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -45,6 +47,31 @@ const NIMBUS_VARIABLE_MIN_INPUT_URLS = "minInputUrls";
 const NIMBUS_VARIABLE_TIMER_INTERVAL = "timerInterval";
 const NIMBUS_VARIABLE_INGEST_ENABLED = "ingestEnabled";
 
+// A map used to align the UniFFI Interest enum with SERP categories.
+ChromeUtils.defineLazyGetter(lazy, "SerpCategoriesToInterestEnum", () => {
+  return new Map([
+    [0, lazy.Interest.INCONCLUSIVE],
+    [1, lazy.Interest.ANIMALS],
+    [2, lazy.Interest.ARTS],
+    [3, lazy.Interest.AUTOS],
+    [4, lazy.Interest.BUSINESS],
+    [5, lazy.Interest.CAREER],
+    [6, lazy.Interest.EDUCATION],
+    [7, lazy.Interest.FASHION],
+    [8, lazy.Interest.FINANCE],
+    [9, lazy.Interest.FOOD],
+    [10, lazy.Interest.GOVERNMENT],
+    [12, lazy.Interest.HOBBIES],
+    [13, lazy.Interest.HOME],
+    [14, lazy.Interest.NEWS],
+    [15, lazy.Interest.REALESTATE],
+    [16, lazy.Interest.SOCIETY],
+    [17, lazy.Interest.SPORTS],
+    [18, lazy.Interest.TECH],
+    [19, lazy.Interest.TRAVEL],
+  ]);
+});
+
 // Setup the `lazy.log` object.  This is called on startup and also whenever `PREF_LOG_ENABLED`
 // changes.
 function setupLogging() {
@@ -73,14 +100,17 @@ class RelevancyManager {
    * Note that this should be called once only. `#enable` and `#disable` can be
    * used to toggle the feature once the manager is initialized.
    */
-  init() {
+  init(rustRelevancyStore = lazy.RelevancyStore) {
     if (this.initialized) {
       return;
     }
 
     lazy.log.info("Initializing the manager");
 
-    this.#storeManager = new RustRelevancyStoreManager(this.#storePath);
+    this.#storeManager = new RustRelevancyStoreManager(
+      this.#storePath,
+      rustRelevancyStore
+    );
     if (this.shouldEnable) {
       this.#enable();
     }
@@ -105,6 +135,7 @@ class RelevancyManager {
     this.#storeManager = null;
 
     this.#initialized = false;
+    this.#interestVector = null;
   }
 
   /**
@@ -116,6 +147,13 @@ class RelevancyManager {
         NIMBUS_VARIABLE_ENABLED
       ) ?? false
     );
+  }
+
+  /**
+   * Whether or not the manager is initialized and enabled.
+   */
+  get enabled() {
+    return this.initialized && this.#storeManager.enabled;
   }
 
   #startUpTimer() {
@@ -253,6 +291,7 @@ class RelevancyManager {
       timerId = Glean.relevancyClassify.duration.start();
 
       const interestVector = await this.#classifyUrls(urls);
+      this.#interestVector = interestVector;
       const sortedVector = Object.entries(interestVector).sort(
         ([, a], [, b]) => b - a // descending
       );
@@ -363,6 +402,94 @@ class RelevancyManager {
   }
 
   /**
+   * Get the user interest vector from the relevancy store.
+   *
+   * Note:
+   *   - It will return "null" if the vector couldn't be fetched from
+   *     the relevancy store or the store is not enabled.
+   *   - The fetched interest vector will be cached for future acesses.
+   *     the cache will be automatically updated upon the next interest
+   *     classification.
+   *
+   * @returns {InterestVector}
+   *   An interest vector.
+   */
+  async getUserInterestVector() {
+    if (!this.enabled) {
+      return null;
+    }
+
+    if (this.#interestVector !== null) {
+      return this.#interestVector;
+    }
+
+    try {
+      this.#interestVector =
+        await this.#storeManager.store.userInterestVector();
+    } catch (error) {
+      lazy.log.error(
+        "Failed to fetch the interest vector: " + (error.reason ?? error)
+      );
+    }
+
+    return this.#interestVector;
+  }
+
+  /**
+   * Generate a score for a given interest array based on the user interest vector.
+   *
+   * @param {Array<Interest>} interests
+   *   An array of interests with each item of type `RustRelevancy.Interest`.
+   *   This is usually specified by the content provider representing the
+   *   interest type(s) of the content. Note that `Interest.INCONCLUSIVE`
+   *   will be ignored for scoring.
+   * @param {boolean}  adjustInterest
+   *   Whether or not to adjust `interests` for off-by-1 encoding difference
+   *   between the UniFFI binding and the true source. This flag will be
+   *   ignored if `Interest.INCONCLUSIVE == 0` meaning the encoding behavior
+   *   gets unified in UniFFI.
+   * @returns {number}
+   *   A relevance score ranges from 0 to 1. A higher score indicating the content
+   *   is more relevant to the user.
+   * @throws {Error}
+   *   Thrown for any store errors or invalid interest parameters.
+   */
+  async score(interests, adjustInterest = false) {
+    const userInterestVector = await this.getUserInterestVector();
+    if (userInterestVector === null) {
+      throw new Error("User interest vector not ready");
+    }
+
+    // Copy it for mutation below.
+    let newInterests = [...interests];
+
+    // UniFFI currently uses 1-based encoding for enums regardless of how
+    // it's defined upstream. Manually adjust that until that off-by-1
+    // handling gets fixed in the future.
+    //
+    // `INCONCLUSIVE` should be 0 as defined by upstream. If not, convert the
+    // interest values via the conversion lookup table.
+    if (lazy.Interest.INCONCLUSIVE !== 0 && adjustInterest) {
+      newInterests = newInterests.map(
+        item => lazy.SerpCategoriesToInterestEnum.get(item) || item
+      );
+    }
+    // `INCONCLUSIVE` is excluded from scoring.
+    newInterests = newInterests.filter(
+      item => item !== lazy.Interest.INCONCLUSIVE
+    );
+
+    let relevanceScore;
+    try {
+      relevanceScore = lazy.score(userInterestVector, newInterests);
+    } catch (error) {
+      throw new Error("Invalid interest value");
+    }
+
+    return relevanceScore;
+  }
+
+  /**
    * Nimbus update listener.
    */
   #onNimbusUpdate(_event, _reason) {
@@ -392,6 +519,9 @@ class RelevancyManager {
   // Whether or not there is an in-progress classification. Used to prevent
   // duplicate classification tasks.
   #isInProgress = false;
+
+  // The inferred user interest vector
+  #interestVector = null;
 }
 
 /**

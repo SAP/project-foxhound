@@ -6,6 +6,7 @@
 
 #include "mozilla/layers/WebRenderBridgeParent.h"
 
+#include "mozmemory.h"
 #include "CompositableHost.h"
 #include "gfxEnv.h"
 #include "gfxPlatform.h"
@@ -157,6 +158,55 @@ void gfx_wr_clear_crash_annotation(mozilla::wr::CrashAnnotation aAnnotation) {
 namespace mozilla::layers {
 
 using namespace mozilla::gfx;
+
+static bool sAllocAsjustmentTaskCancelled = false;
+static bool sIncreasedDirtyPageThreshold = false;
+
+void ResetDirtyPageModifier();
+
+void ScheduleResetMaxDirtyPageModifier() {
+  NS_DelayedDispatchToCurrentThread(
+      NewRunnableFunction("ResetDirtyPageModifier", &ResetDirtyPageModifier),
+      100  // In ms.
+  );
+}
+
+void NeedIncreasedMaxDirtyPageModifier() {
+  if (sIncreasedDirtyPageThreshold) {
+    sAllocAsjustmentTaskCancelled = true;
+    return;
+  }
+
+  moz_set_max_dirty_page_modifier(3);
+  sIncreasedDirtyPageThreshold = true;
+
+  ScheduleResetMaxDirtyPageModifier();
+}
+
+void ResetDirtyPageModifier() {
+  if (!sIncreasedDirtyPageThreshold) {
+    return;
+  }
+
+  if (sAllocAsjustmentTaskCancelled) {
+    sAllocAsjustmentTaskCancelled = false;
+    ScheduleResetMaxDirtyPageModifier();
+    return;
+  }
+
+  moz_set_max_dirty_page_modifier(0);
+
+  wr::RenderThread* renderThread = wr::RenderThread::Get();
+  if (renderThread) {
+    renderThread->NotifyIdle();
+  }
+
+#if defined(MOZ_MEMORY)
+  jemalloc_free_excess_dirty_pages();
+#endif
+
+  sIncreasedDirtyPageThreshold = false;
+}
 
 LazyLogModule gWebRenderBridgeParentLog("WebRenderBridgeParent");
 #define LOG(...) \
@@ -843,7 +893,8 @@ bool WebRenderBridgeParent::UpdateSharedExternalImage(
   wr::ImageDescriptor descriptor(surfaceSize, dSurf->Stride(),
                                  dSurf->GetFormat());
   aResources.UpdateExternalImageWithDirtyRect(
-      aKey, descriptor, aExtId, imageType, wr::ToDeviceIntRect(aDirtyRect), 0);
+      aKey, descriptor, aExtId, imageType, wr::ToDeviceIntRect(aDirtyRect), 0,
+      /* aNormalizedUvs */ false);
 
   return true;
 }
@@ -1110,6 +1161,8 @@ bool WebRenderBridgeParent::SetDisplayList(
                                                 this, aWrEpoch, aTxnStartTime));
   }
 
+  NeedIncreasedMaxDirtyPageModifier();
+
   mApi->SendTransaction(aTxn);
 
   // We will schedule generating a frame after the scene
@@ -1284,6 +1337,7 @@ bool WebRenderBridgeParent::ProcessEmptyTransactionUpdates(
     // There are resource updates, then we update Epoch of transaction.
     txn.UpdateEpoch(mPipelineId, mWrEpoch);
     *aScheduleComposite = true;
+    NeedIncreasedMaxDirtyPageModifier();
   } else {
     // If TransactionBuilder does not have resource updates nor display list,
     // ScheduleGenerateFrame is not triggered via SceneBuilder and there is no
@@ -1426,6 +1480,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvParentCommands(
   wr::TransactionBuilder txn(mApi);
   txn.SetLowPriority(!IsRootWebRenderBridgeParent());
   bool success = ProcessWebRenderParentCommands(aCommands, txn);
+  NeedIncreasedMaxDirtyPageModifier();
   mApi->SendTransaction(txn);
 
   if (!success) {
@@ -2294,7 +2349,7 @@ void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
                          MarkerInnerWindowId(innerWindowId),
                          "Too many pending frames");
 
-    Telemetry::ScalarAdd(Telemetry::ScalarID::GFX_SKIPPED_COMPOSITES, 1);
+    glean::gfx::skipped_composites.Add(1);
 
     return;
   }
@@ -2392,6 +2447,8 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
 
   fastTxn.GenerateFrame(aId, aReasons);
   wr::RenderThread::Get()->IncPendingFrameCount(mApi->GetId(), aId, start);
+
+  NeedIncreasedMaxDirtyPageModifier();
 
   mApi->SendTransaction(fastTxn);
 

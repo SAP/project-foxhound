@@ -713,6 +713,11 @@ ProductID:
   type: string
   ping: true
 
+ProfileDirectory:
+  description: >
+    The directory of the active profile, if any.
+  type: string
+
 ProfilerChildShutdownPhase:
   description: >
     When a child process shuts down, this describes if the profiler is running,
@@ -809,7 +814,7 @@ ShutdownProgress:
 ShutdownReason:
   description: >
     One out of "Unknown", "AppClose", "AppRestart", "OSForceClose",
-    "OSSessionEnd", "OSShutdown" or "WinUnexpectedMozQuit".
+    "OSSessionEnd" or "OSShutdown".
   type: string
   ping: true
 

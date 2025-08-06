@@ -1026,7 +1026,7 @@ nsresult gfxFontUtils::RenameFont(const nsAString& aName,
                                            NAME_ID_POSTSCRIPT};
 
   // calculate new name table size
-  uint16_t nameCount = ArrayLength(neededNameIDs);
+  uint16_t nameCount = std::size(neededNameIDs);
 
   // leave room for null-terminator
   uint32_t nameStrLength = (aName.Length() + 1) * sizeof(char16_t);
@@ -1294,7 +1294,7 @@ nsresult gfxFontUtils::ReadCanonicalName(const char* aNameData,
 // on the first search.
 
 const uint16_t ANY = 0xffff;
-const gfxFontUtils::MacFontNameCharsetMapping
+MOZ_RUNINIT const gfxFontUtils::MacFontNameCharsetMapping
     gfxFontUtils::gMacFontNameCharsets[] = {
         {ENCODING_ID_MAC_ROMAN, LANG_ID_MAC_ENGLISH, MACINTOSH_ENCODING},
         {ENCODING_ID_MAC_ROMAN, LANG_ID_MAC_ICELANDIC, X_USER_DEFINED_ENCODING},
@@ -1325,14 +1325,14 @@ const gfxFontUtils::MacFontNameCharsetMapping
          GB18030_ENCODING},
         {ENCODING_ID_MAC_SIMP_CHINESE, ANY, GB18030_ENCODING}};
 
-const Encoding* gfxFontUtils::gISOFontNameCharsets[] = {
+MOZ_RUNINIT const Encoding* gfxFontUtils::gISOFontNameCharsets[] = {
     /* 0 */ WINDOWS_1252_ENCODING, /* US-ASCII */
     /* 1 */ nullptr, /* spec says "ISO 10646" but does not specify encoding
                         form! */
     /* 2 */ WINDOWS_1252_ENCODING /* ISO-8859-1 */
 };
 
-const Encoding* gfxFontUtils::gMSFontNameCharsets[] = {
+MOZ_RUNINIT const Encoding* gfxFontUtils::gMSFontNameCharsets[] = {
     /* [0] ENCODING_ID_MICROSOFT_SYMBOL */ UTF_16BE_ENCODING,
     /* [1] ENCODING_ID_MICROSOFT_UNICODEBMP */ UTF_16BE_ENCODING,
     /* [2] ENCODING_ID_MICROSOFT_SHIFTJIS */ SHIFT_JIS_ENCODING,
@@ -1380,7 +1380,7 @@ const Encoding* gfxFontUtils::GetCharsetForFontName(uint16_t aPlatform,
       for (uint32_t i = 0; i < 2; ++i) {
         size_t idx;
         if (BinarySearchIf(gMacFontNameCharsets, 0,
-                           ArrayLength(gMacFontNameCharsets),
+                           std::size(gMacFontNameCharsets),
                            MacCharsetMappingComparator(searchValue), &idx)) {
           return gMacFontNameCharsets[idx].mEncoding;
         }
@@ -1391,13 +1391,13 @@ const Encoding* gfxFontUtils::GetCharsetForFontName(uint16_t aPlatform,
     } break;
 
     case PLATFORM_ID_ISO:
-      if (aScript < ArrayLength(gISOFontNameCharsets)) {
+      if (aScript < std::size(gISOFontNameCharsets)) {
         return gISOFontNameCharsets[aScript];
       }
       break;
 
     case PLATFORM_ID_MICROSOFT:
-      if (aScript < ArrayLength(gMSFontNameCharsets)) {
+      if (aScript < std::size(gMSFontNameCharsets)) {
         return gMSFontNameCharsets[aScript];
       }
       break;

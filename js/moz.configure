@@ -23,7 +23,7 @@ option(
     env="MOZ_APP_NAME",
     nargs=1,
     help="Used for e.g. the binary program file name. If not set, "
-    "defaults to a lowercase form of MOZ_APP_BASENAME.",
+    "defaults to a lowercase form of MOZ_APP_BASENAME",
 )
 
 
@@ -177,8 +177,8 @@ set_define("ENABLE_DECORATORS", enable_decorators)
 # ===================================================
 option(
     "--enable-explicit-resource-management",
-    default=False,
-    help="Enable explicit resource management",
+    default=milestone.is_nightly,
+    help="{Enable|Disable} explicit resource management",
 )
 
 
@@ -192,24 +192,12 @@ set_config("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_manag
 set_define("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
 
 
-# Enable JSON.parse with source
-# ===================================================
-@depends(milestone.is_nightly)
-def enable_json_parse_with_source(is_nightly):
-    if is_nightly:
-        return True
-
-
-set_config("ENABLE_JSON_PARSE_WITH_SOURCE", enable_json_parse_with_source)
-set_define("ENABLE_JSON_PARSE_WITH_SOURCE", enable_json_parse_with_source)
-
-
 # Portable Baseline Intepreter
 # =======================================================
 option(
     "--enable-portable-baseline-interp",
     default=False,
-    help="{Enable|Disable} the portable baseline interpreter.",
+    help="{Enable|Disable} the portable baseline interpreter",
 )
 set_define(
     "ENABLE_PORTABLE_BASELINE_INTERP",
@@ -224,7 +212,7 @@ set_config(
 option(
     "--enable-portable-baseline-interp-force",
     default=False,
-    help="{Enable|Disable} forcing use of the portable baseline interpreter.",
+    help="{Enable|Disable} forcing use of the portable baseline interpreter",
 )
 
 set_define(
@@ -239,23 +227,11 @@ set_config(
 
 # JIT support
 # =======================================================
-@depends(
-    target,
-    "--enable-record-tuple",
-    "--enable-portable-baseline-interp",
-    "--enable-explicit-resource-management",
-)
-def jit_default(
-    target,
-    enable_record_tuple,
-    enable_portable_baseline_interp,
-    enable_explicit_resource_management,
-):
+@depends(target, "--enable-record-tuple", "--enable-portable-baseline-interp")
+def jit_default(target, enable_record_tuple, enable_portable_baseline_interp):
     if enable_record_tuple:
         return False
     if enable_portable_baseline_interp:
-        return False
-    if enable_explicit_resource_management:
         return False
     if target.cpu in (
         "x86",
@@ -443,6 +419,30 @@ set_define("MOZ_PROFILING", profiling)
 imply_option("--enable-vtune", imply_vtune, reason="--enable-profiling")
 
 
+@depends(milestone)
+def enable_execution_tracing(milestone):
+    return milestone.is_nightly
+
+
+option(
+    "--enable-execution-tracing",
+    env="MOZ_EXECUTION_TRACING",
+    default=enable_execution_tracing,
+    help="{Set|Do not set} compile flags necessary for running the JS "
+    "execution tracer",
+)
+
+
+@depends("--enable-execution-tracing")
+def execution_tracing(value):
+    if value:
+        return True
+
+
+set_config("MOZ_EXECUTION_TRACING", execution_tracing)
+set_define("MOZ_EXECUTION_TRACING", execution_tracing)
+
+
 option("--enable-vtune", env="MOZ_VTUNE", help="Enable VTune profiling")
 
 
@@ -490,15 +490,25 @@ option(
 set_define("JS_OOM_BREAKPOINT", depends_if("--enable-oom-breakpoint")(lambda _: True))
 
 
-option("--enable-perf", env="JS_ION_PERF", help="Enable Linux perf integration")
+# Enable perf jitdump integration for nightly.
+# The following must be true for jitdump to be enabled:
+#   (a) --disable-jitdump was not provided.
+#   (b) target is Linux or Mac
+#   (c) milestone is a nightly build
+# =======================================================
+option(
+    "--enable-jitdump",
+    default=milestone.is_nightly,
+    help="{Enable|Disable} perf jitdump integration",
+)
 
 
-@depends("--enable-perf", target)
-def ion_perf(value, target):
-    is_linux = target.kernel == "Linux"
-    is_mac = target.kernel == "Darwin" and target.os == "OSX"
-
-    if value and (is_linux or is_mac):
+@depends("--enable-jitdump", target)
+def ion_perf(enable_jitdump, target):
+    is_linux_or_mac = target.kernel == "Linux" or (
+        target.kernel == "Darwin" and target.os == "OSX"
+    )
+    if enable_jitdump and is_linux_or_mac:
         return True
 
 
@@ -582,7 +592,7 @@ set_define("JS_DISASM_ARM64", jit_disasm_arm64)
 option(
     "--enable-masm-verbose",
     default=depends(when=moz_debug)(lambda: True),
-    help="{Enable|Disable} MacroAssembler verbosity of generated code.",
+    help="{Enable|Disable} MacroAssembler verbosity of generated code",
 )
 set_define("JS_MASM_VERBOSE", depends_if("--enable-masm-verbose")(lambda _: True))
 set_config("JS_MASM_VERBOSE", depends_if("--enable-masm-verbose")(lambda _: True))
@@ -603,7 +613,7 @@ def is_apple_silicon(target):
 option(
     "--enable-arm64-fjcvtzs",
     default=is_apple_silicon,
-    help="{Enable|Disable} static use of FJCVTZS instruction on Aarch64 targets.",
+    help="{Enable|Disable} static use of FJCVTZS instruction on Aarch64 targets",
 )
 
 
@@ -682,7 +692,7 @@ set_define("ENABLE_PIPELINE_OPERATOR", enable_pipeline_operator)
 # ==============================================================
 
 option(
-    "--enable-rust-simd", env="MOZ_RUST_SIMD", help="Enable explicit SIMD in Rust code."
+    "--enable-rust-simd", env="MOZ_RUST_SIMD", help="Enable explicit SIMD in Rust code"
 )
 
 
@@ -733,58 +743,9 @@ set_define(
 option(
     "--wasm-no-experimental",
     default=False,
-    help="Force disable all wasm experimental features for testing.",
+    help="Force disable all wasm experimental features for testing",
 )
 
-# Support for WebAssembly tail-calls.
-# ===========================
-
-
-@depends(target)
-def default_wasm_tail_calls(target):
-    if target.cpu in ("x86", "x86_64", "arm", "aarch64", "loongarch64", "mips64"):
-        return True
-
-
-option(
-    "--enable-wasm-tail-calls",
-    default=default_wasm_tail_calls,
-    help="{Enable|Disable} WebAssembly tail-calls",
-)
-
-
-@depends("--enable-wasm-tail-calls", target)
-def wasm_tail_calls(value, target):
-    if not value:
-        return
-
-    if target.cpu in ("x86", "x86_64", "arm", "aarch64", "loongarch64", "mips64"):
-        return True
-
-    die(
-        "--enable-wasm-tail-calls only possible when targeting the x86_64/x86/arm64/arm/loongarch64/mips64 jits"
-    )
-
-
-set_config("ENABLE_WASM_TAIL_CALLS", wasm_tail_calls)
-set_define("ENABLE_WASM_TAIL_CALLS", wasm_tail_calls)
-
-# Support for WebAssembly GC.
-# ===========================
-
-
-option("--disable-wasm-gc", default=True, help="{Enable|Disable} WebAssembly GC")
-
-
-@depends("--disable-wasm-gc")
-def wasm_gc(value):
-    if not value:
-        return
-    return True
-
-
-set_config("ENABLE_WASM_GC", wasm_gc)
-set_define("ENABLE_WASM_GC", wasm_gc)
 
 # Support for JS PI spec.
 # ===========================
@@ -794,22 +755,15 @@ set_define("ENABLE_WASM_GC", wasm_gc)
     milestone.is_nightly,
     "--enable-jit",
     "--enable-simulator",
-    "--enable-wasm-gc",
-    "--enable-wasm-tail-calls",
     target,
 )
 def default_wasm_jspi(
     is_nightly,
     jit_enabled,
     simulator,
-    gc,
-    tail_calls,
     target,
 ):
     if not jit_enabled:
-        return
-
-    if not gc or not tail_calls:
         return
 
     if not is_nightly:
@@ -818,7 +772,7 @@ def default_wasm_jspi(
     if simulator:
         return simulator[0] == "arm64" or simulator[0] == "arm"
 
-    if target.cpu in ("x86_64", "x86", "aarch64", "arm"):
+    if target.cpu in ("x86_64", "x86", "aarch64", "arm", "loongarch64"):
         return True
 
 
@@ -833,31 +787,25 @@ option(
     "--enable-wasm-jspi",
     "--enable-jit",
     "--enable-simulator",
-    "--enable-wasm-gc",
-    "--enable-wasm-tail-calls",
     "--wasm-no-experimental",
     target,
 )
-def wasm_jspi(value, jit_enabled, simulator, gc, tail_calls, no_experimental, target):
+def wasm_jspi(value, jit_enabled, simulator, no_experimental, target):
     if no_experimental or not value:
         return
 
     if not jit_enabled:
         die("--enable-wasm-jspi requires --enable-jit")
 
-    if not gc:
-        die("--enable-wasm-jspi requires --enable-wasm-gc")
-
-    if not tail_calls:
-        die("--enable-wasm-jspi requires --enable-wasm-tail-calls")
-
     if simulator and not (simulator[0] == "arm64" or simulator[0] == "arm"):
         die("--enable-wasm-jspi is only supported for arm64/arm simulators")
 
-    if target.cpu in ("x86_64", "x86", "aarch64", "arm"):
+    if target.cpu in ("x86_64", "x86", "aarch64", "arm", "loongarch64"):
         return True
 
-    die("--enable-wasm-jspi only possible when targeting the x86_64/x86/arm64/arm jits")
+    die(
+        "--enable-wasm-jspi only possible when targeting the x86_64/x86/arm64/arm/loongarch64 jits"
+    )
 
 
 set_config("ENABLE_WASM_JSPI", wasm_jspi)
@@ -874,9 +822,9 @@ option(
 )
 
 
-@depends("--disable-wasm-js-string-builtins", "--wasm-no-experimental")
-def wasm_js_string_builtins(value, no_experimental):
-    if no_experimental or not value:
+@depends("--disable-wasm-js-string-builtins")
+def wasm_js_string_builtins(value):
+    if not value:
         return
 
     return True
@@ -1102,16 +1050,15 @@ set_define("ENABLE_WASM_MOZ_INTGEMM", wasm_moz_intgemm)
 # ===========================
 
 
-@depends(milestone.is_nightly, "--enable-simulator", target)
-def default_wasm_memory64(is_nightly, simulator, target):
+@depends("--enable-simulator", target)
+def default_wasm_memory64(simulator, target):
     if target.cpu == "mips32":
         return
 
     if simulator and simulator[0] == "mips32":
         return
 
-    if is_nightly:
-        return True
+    return True
 
 
 option(
@@ -1121,11 +1068,9 @@ option(
 )
 
 
-@depends(
-    "--enable-wasm-memory64", "--enable-simulator", target, "--wasm-no-experimental"
-)
-def wasm_memory64(value, simulator, target, no_experimental):
-    if no_experimental or not value:
+@depends("--enable-wasm-memory64", "--enable-simulator", target)
+def wasm_memory64(value, simulator, target):
+    if not value:
         return
 
     if target.cpu == "mips32":
@@ -1483,6 +1428,34 @@ with only_when(compile_environment):
     )
 
 
+# Optimization flags
+# ==============================================================
+@depends(
+    target,
+    c_compiler,
+    configured_moz_optimize_flags,
+    when="--enable-compile-environment",
+)
+@imports(_from="mozbuild.shellutil", _import="split")
+def moz_js_optimize_flags(target, compiler, configured_moz_optimize_flags):
+    if configured_moz_optimize_flags:
+        return configured_moz_optimize_flags
+
+    if target.kernel in ("Darwin", "Linux"):
+        flags = ["-O3"]
+        if target.os == "Android" and compiler.type == "gcc":
+            flags += ["-fno-reorder-functions"]
+        return flags
+    elif target.kernel == "WINNT":
+        return ["-O2"]
+    else:
+        return ["-O"]
+
+
+set_config("MOZ_JS_OPTIMIZE_FLAGS", moz_js_optimize_flags, when=~js_build)
+set_config("MOZ_OPTIMIZE_FLAGS", moz_js_optimize_flags, when=js_build)
+
+
 # link executables against mozglue
 # ==============================================================
 @depends(
@@ -1508,7 +1481,6 @@ def js_library_name(symbolversion, js_standalone):
 
 
 set_config("JS_LIBRARY_NAME", js_library_name)
-add_old_configure_assignment("JS_LIBRARY_NAME", js_library_name)
 
 
 @depends(nspr_config.libs, nspr_pkg.libs, instruments)
@@ -1524,6 +1496,17 @@ def js_config_libs(nspr_libs, nspr_pkg_libs, instruments):
 
 
 set_config("JS_CONFIG_LIBS", js_config_libs)
+
+
+@depends(js_library_name, c_compiler, "--libdir", when=compile_environment)
+def js_config_moz_js_libs(js_library_name, compiler, libdir):
+    if compiler.type == "clang-cl":
+        return [f"{libdir[0]}/{js_library_name}.lib"]
+    else:
+        return [f"-L{libdir[0]}", f"-l{js_library_name}"]
+
+
+set_config("JS_CONFIG_MOZ_JS_LIBS", js_config_moz_js_libs)
 
 #
 # Checks for library functions

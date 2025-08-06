@@ -11,20 +11,20 @@
 #include "modules/pacing/task_queue_paced_sender.h"
 
 #include <algorithm>
-#include <any>
-#include <atomic>
-#include <list>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <string>
 #include <utility>
 #include <vector>
 
+#include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/transport/network_types.h"
 #include "api/units/data_rate.h"
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "modules/pacing/pacing_controller.h"
 #include "modules/pacing/packet_router.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
@@ -36,10 +36,7 @@
 using ::testing::_;
 using ::testing::AtLeast;
 using ::testing::AtMost;
-using ::testing::Lt;
 using ::testing::NiceMock;
-using ::testing::Return;
-using ::testing::SaveArg;
 
 namespace webrtc {
 namespace {
@@ -443,8 +440,7 @@ TEST(TaskQueuePacedSenderTest, SchedulesProbeAtSentTime) {
 TEST(TaskQueuePacedSenderTest, NoMinSleepTimeWhenProbing) {
   // Set min_probe_delta to be less than kMinSleepTime (1ms).
   const TimeDelta kMinProbeDelta = TimeDelta::Micros(200);
-  ScopedKeyValueConfig trials(
-      "WebRTC-Bwe-ProbingBehavior/min_probe_delta:200us/");
+  ScopedKeyValueConfig trials;
   GlobalSimulatedTimeController time_controller(Timestamp::Millis(1234));
   MockPacketRouter packet_router;
   TaskQueuePacedSender pacer(time_controller.GetClock(), &packet_router, trials,
@@ -473,6 +469,7 @@ TEST(TaskQueuePacedSenderTest, NoMinSleepTimeWhenProbing) {
       {{.at_time = time_controller.GetClock()->CurrentTime(),
         .target_data_rate = kProbingRate,
         .target_duration = TimeDelta::Millis(15),
+        .min_probe_delta = kMinProbeDelta,
         .target_probe_count = 5,
         .id = kProbeClusterId}});
 

@@ -21,7 +21,6 @@
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/EventTarget.h"
 #include "nsAString.h"
-#include "nsAlgorithm.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsError.h"
@@ -1478,6 +1477,12 @@ NS_IMETHODIMP HTMLEditor::GetObjectResizingEnabled(
 NS_IMETHODIMP HTMLEditor::SetObjectResizingEnabled(
     bool aObjectResizingEnabled) {
   EnableObjectResizer(aObjectResizingEnabled);
+  return NS_OK;
+}
+
+NS_IMETHODIMP HTMLEditor::GetIsObjectResizingActive(bool* aIsActive) {
+  MOZ_ASSERT(aIsActive);
+  *aIsActive = !!mResizedObject;
   return NS_OK;
 }
 

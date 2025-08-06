@@ -15,7 +15,7 @@
     <!-- This text is shown in the URL bar when it's empty -->
     <string name="urlbar_hint">Нишониеро ҷустуҷӯ кунед ё ворид намоед</string>
 
-    <string name="teaser">Тамошокунии хусусии худкор.\nТамошо кунед. Пок созед. Такрор намоед.</string>
+    <string name="teaser">Тамошобинии хусусии худкор.\nТамошо кунед. Пок созед. Такрор намоед.</string>
 
     <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
     <string name="feedback_erase">Таърихи тамошои шумо пок карда шуд.</string>
@@ -84,7 +84,6 @@
     <string name="share_dialog_title">Мубодила тавассути</string>
 
     <string name="notification_erase_title_android_14">Таърихи тамошоро пок мекунед?</string>
-    <string name="notification_erase_text_android_14" moz:RemovedIn="124" tools:ignore="UnusedResources">Барои ба таври бехатар пок кардани таърихи тамошо, лутфан, ба ин огоҳнома зер кунед ё онро тоза намоед.</string>
 
     <!-- Text shown in the notification description that pops up to remind the user that a browsing session is active
     for Android 14+. -->
@@ -123,23 +122,23 @@
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
          Focus is hard coded since we can't use variables in this context.
          Do not translate or transliterate Focus.-->
-    <string name="text_selection_search_action_focus">Ҷустуҷӯ дар «Focus»</string>
+    <string name="text_selection_search_action_focus" tools:ignore="BrandUsage">Ҷустуҷӯ дар «Focus»</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
              Klar is hard coded since we can't use variables in this context.
              Do not translate or transliterate Klar.-->
-    <string name="text_selection_search_action_klar">Ҷустуҷӯ дар «Klar»</string>
+    <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Ҷустуҷӯ дар «Klar»</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
             Focus Beta is hard coded since we can't use variables in this context.
             Do not translate or transliterate Focus Beta.-->
-    <string name="text_selection_search_action_focus_beta">Ҷустуҷӯ дар «Focus Beta»</string>
+    <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Ҷустуҷӯ дар «Focus Beta»</string>
     <!-- This is the label of an action we offer when the user selects text in other third-party apps.
           Focus Nightly is hard coded since we can't use variables in this context.
           Do not translate or transliterate Focus Nightly.-->
-    <string name="text_selection_search_action_focus_nightly">Ҷустуҷӯ дар «Focus Nightly»</string>
+    <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Ҷустуҷӯ дар «Focus Nightly»</string>
 
     <!-- Content of about focus. Argument 1 is the app name (Firefox Focus/Firefox Klar/etc).
          Argument 2 is the url for the learn-more link. -->
-    <string name="about_content"><![CDATA[<p>«%1$s» ба шумо идора медиҳад.</p>
+    <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>«%1$s» ба шумо идора медиҳад.</p>
 <p>Онро ҳамчун браузери хусусӣ истифода баред:
   <ul>
     <li>Ҷустуҷӯ кунед ва рост дар дохили барнома тамошо намоед</li>
@@ -485,7 +484,7 @@
          the app store installed on the device (usually that's Google Play). -->
     <string name="external_app_prompt_no_app">Ҳеҷ яке аз барномаҳои дастгоҳи шумо ин пайвандро кушода наметавонад. Шумо метавонед аз «%1$s» бароед ва барномаи мувофиқро тавассути «%2$s» ҷустуҷӯ кунед.</string>
     <!-- This label is shown above a list of apps that can be used to open a given link -->
-    <string name="external_multiple_apps_matched_exit">Аз тамошокунии махфӣ мебароед?</string>
+    <string name="external_multiple_apps_matched_exit">Аз тамошобинии махфӣ мебароед?</string>
 
     <!-- Snackbar that will be displayed after a download has completed. %1$s will be replaced with the file name. -->
     <string name="download_snackbar_finished">«%1$s» анҷом ёфт</string>
@@ -499,7 +498,7 @@
     <string name="error_hostLookup_title">Сервер ёфт нашуд</string>
 
     <!-- Content description (not visible, for screen readers etc.): This is the description for the close button from the new onboarding flow screen one and two -->
-    <string name="onboarding_close_button_content_description">Пӯшидан</string>
+    <string name="onboarding_close_button_content_description" moz:removedIn="133" tools:ignore="UnusedResources">Пӯшидан</string>
 
     <!-- New Onboarding flow first screen title -->
     <!-- %1$s will be replaced by the app name and build variant(e.g. Firefox Focus, Firefox Klar Nightly) -->
@@ -532,7 +531,7 @@
     <string name="firstrun_defaultbrowser_title">Махфияти худро тақвият диҳед</string>
 
     <!-- First run tour (Default browser): Text. -->
-    <string name="firstrun_defaultbrowser_text2">Тамошокунии хусусиро ба сатҳи нав баланд бардоред. Таблиғоту реклама ва муҳтавои дигареро, ки метавонад шуморо байни сомонаҳо пайгирӣ кунад ва вақти кушодани саҳифаҳоро хеле суст намоянд, манъ кунед.</string>
+    <string name="firstrun_defaultbrowser_text2">Тамошобинии хусусиро ба сатҳи нав баланд бардоред. Таблиғоту реклама ва муҳтавои дигареро, ки метавонад шуморо байни сомонаҳо пайгирӣ кунад ва вақти кушодани саҳифаҳоро хеле суст намоянд, манъ кунед.</string>
 
     <!-- First run tour (Search): Title -->
     <string name="firstrun_search_title">Ҷустуҷӯи шумо, Интернети шумо</string>
@@ -550,7 +549,7 @@
     <string name="firstrun_privacy_title">Махфиятро ба одати худ табдил диҳед</string>
 
     <!-- First run tour (Privacy): Text. %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-    <string name="firstrun_privacy_text">«%1$s»-ро ҳамчун браузери пешфарзи худ танзим карда, истифода баред ва ҳамаи афзалиятҳои тамошокунии хусусиро ҳангоми кушодани саҳифаҳои сомонаҳо аз барномаҳои дигар ба даст оред.</string>
+    <string name="firstrun_privacy_text">«%1$s»-ро ҳамчун браузери пешфарзи худ танзим карда, истифода баред ва ҳамаи афзалиятҳои тамошобинии хусусиро ҳангоми кушодани саҳифаҳои сомонаҳо аз барномаҳои дигар ба даст оред.</string>
 
     <string name="firstrun_close_button">Хуб, фаҳмидам!</string>
     <string name="firstrun_skip_button">Нодида гузарондан</string>
@@ -579,7 +578,7 @@
     * To understand what notification channels are, see: https://www.androidcentral.com/notification-channels
     * To see how this string will look like in Android's UI, see: https://github.com/mozilla-mobile/focus-android/issues/863#issuecomment-324105723
     -->
-    <string name="notification_browsing_session_channel_name">Ҷаласаи тамошокунии хусусӣ</string>
+    <string name="notification_browsing_session_channel_name">Ҷаласаи тамошобинии хусусӣ</string>
 
     <!-- The user visible description of the "notification channel" (Android 8+ feature) for the ongoing notification shown while a browsing session is active.
     The recommended maximum length is 300 characters; the value may be truncated if it is too long. %1$s will be replaced with the name of the app (e.g. Firefox Focus).
@@ -592,9 +591,12 @@
     <!-- Label for a button in the "tabs tray" to erase the browsing history (closes all tabs and removes associated data). -->
     <string name="tabs_tray_action_erase">Пок кардани таърихи тамошо</string>
 
+    <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
+    <string name="tabs_tray_action_erase_other">Пӯшидани варақаҳои дигар</string>
+
     <!-- If the user decides to open the current page in another browser and if Firefox is not installed then we show this
       item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play). -->
-    <string name="download_firefox">Боргирӣ кардани «Firefox»</string>
+    <string name="download_firefox" tools:ignore="BrandUsage">Боргирӣ кардани «Firefox»</string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)-->
@@ -603,24 +605,24 @@
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/) -->
-    <string name="your_rights_content2"><![CDATA[Браузери «%1$s» тибқи шартҳои <a href="%2$s">Иҷозатномаи ҷамъиятии «Mozilla»</a> ва иҷозатномаҳои манбаи кушоди дигар ба шумо барои истифода дастрас шудааст.]]></string>
+    <string name="your_rights_content2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[Браузери «%1$s» тибқи шартҳои <a href="%2$s">Иҷозатномаи ҷамъиятии «Mozilla»</a> ва иҷозатномаҳои манбаи кушоди дигар ба шумо барои истифода дастрас шудааст.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/) -->
-    <string name="your_rights_content3"><![CDATA[Ба шумо нисбат ба тамғаҳои тиҷории «Mozilla Foundation» ё ягон тарафи дигар, аз он ҷумла,
+    <string name="your_rights_content3" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[Ба шумо нисбат ба тамғаҳои тиҷории «Mozilla Foundation» ё ягон тарафи дигар, аз он ҷумла,
 бе маҳдудият нисбат ба тамға ё номи «Mozilla», «Firefox» or «%1$s» ягон ҳуқуқи тамғаи тиҷорӣ ё иҷозатномавӣ таъмин нашудааст. Маълумоти иловагӣ метавонад <a href="%2$s">дар ин ҷо</a> пайдо карда шавад.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.-->
-    <string name="your_rights_content4"><![CDATA[Рамзи манбаи иловагӣ барои «%1$s» дар таҳти <a href="%2$s">иҷозатномаҳои</a> гуногуни дигари манбаи кушод ва ройгон дастрас аст.]]></string>
+    <string name="your_rights_content4" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[Рамзи манбаи иловагӣ барои «%1$s» дар таҳти <a href="%2$s">иҷозатномаҳои</a> гуногуни дигари манбаи кушод ва ройгон дастрас аст.]]></string>
 
     <!-- Text shown in the "Your rights" screen.
     %1$s will be replaced with the name of the app (e.g. Firefox Focus)
     %2$s will be replaced with a URL linking to the GPL
     %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists) -->
-    <string name="your_rights_content5"><![CDATA[«%1$s», инчунин, аз рӯйхатҳои манъкуние, ки аз ҷониби «Disconnect, Inc.» таъмин шудаанд, ҳамчун корҳои алоҳида ва мустақил дар таҳти <a href="%2$s">Иҷозатномаи ҷамъиятии умумии GNU v3</a> истифода мебарад ва рӯйхати мазкур <a href="%3$s">дар ин ҷо</a> дастрас аст.]]></string>
+    <string name="your_rights_content5" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[«%1$s», инчунин, аз рӯйхатҳои манъкуние, ки аз ҷониби «Disconnect, Inc.» таъмин шудаанд, ҳамчун корҳои алоҳида ва мустақил дар таҳти <a href="%2$s">Иҷозатномаи ҷамъиятии умумии GNU v3</a> истифода мебарад ва рӯйхати мазкур <a href="%3$s">дар ин ҷо</a> дастрас аст.]]></string>
 
     <!-- Text shown in prompts for GeckoView -->
     <string name="gv_prompt_username_hint">Номи корбар</string>
@@ -809,13 +811,13 @@
     <string name="preference_studies">Омӯзишҳо</string>
 
     <!-- Preference for studies summary-->
-    <string name="preference_studies_summary">Баъзе вақт «Firefox» метавонад омӯзишҳоро насб ва иҷро намояд.</string>
+    <string name="preference_studies_summary" tools:ignore="BrandUsage">Баъзе вақт «Firefox» метавонад омӯзишҳоро насб ва иҷро намояд.</string>
 
     <!-- Learn more link for studies, links to an article for more information about studies. -->
     <string name="studies_learn_more">Маълумоти бештар</string>
 
     <!-- Dialog message shown when some changes are made on studies -->
-    <string name="studies_restart_app">Барои татбиқ кардани тағйирот барнома пӯшида мешавад</string>
+    <string name="studies_restart_app" moz:removedIn="135">Барои татбиқ кардани тағйирот барнома пӯшида мешавад</string>
 
     <!-- Title of the remove studies button -->
     <string name="studies_remove">Тоза кардан</string>
@@ -910,9 +912,6 @@
 
     <!-- Label for the button in the snackbar that switches to the newly opened tab -->
     <string name="open_new_tab_snackbar">Қатъу васл кардан</string>
-
-    <!-- Text displayed in a notification when the user enters full screen mode -->
-    <string name="full_screen_notification" moz:removedIn="130" tools:ignore="UnusedResources">Ба реҷаи экрани пурра ворид шуда истодааст</string>
 
     <!-- Preference for switching to a new tab immediately after opening -->
     <string name="preference_open_new_tab">Гузариши фаврӣ ба пайванди кушодашуда дар варақаи нав</string>
@@ -1014,7 +1013,7 @@
 
     <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will get replaced with the name of the app (e.g. "Firefox Focus").
         Contains a button that will redirect the user to Privacy & Security Screen-->
-    <string name="errorpage_httpsonly_message2"><![CDATA[Барои бехатарии бештар, «%1$s» кӯшиш мекунад, ки аз пайвасти «HTTPS» ба қадри имкон истифода барад.
+    <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[Барои бехатарии бештар, «%1$s» кӯшиш мекунад, ки аз пайвасти «HTTPS» ба қадри имкон истифода барад.
      <a href="%2$s">Маълумоти бештар</a> <br/><br/>
      Шумо метавонед ин танзимро дар Танзимот > Махфият ва амният > Бехатарӣ иваз кунед.]]></string>
 
@@ -1070,11 +1069,11 @@
     <string name="promote_search_widget_dialog_title">Таърихи тамошо пок карда шуд! 🎉</string>
 
     <!-- Banner Info Message than will appear when user first enters in the app. The location is at the toolbar. -->
-    <string name="cfr_for_start_browsing">Ҷаласаи тамошокунии хусусиро оғоз намоед ва мо васоити пайгирӣ ва дигар чизҳои зарароварро аз роҳи шумо тоза мекунем.</string>
+    <string name="cfr_for_start_browsing">Ҷаласаи тамошобинии хусусиро оғоз намоед ва мо васоити пайгирӣ ва дигар чизҳои зарароварро аз роҳи шумо тоза мекунем.</string>
 
     <!-- This is the subtitle of promote search widget dialog. %1$s will get replaced with the name
     of the app (e.g. "Focus") -->
-    <string name="promote_search_widget_dialog_subtitle">Мо шуморо ба тамошокунии хусусӣ ворид мекунем, аммо дар оянда браузери худро ба воситаи виҷети «%1$s» аз экрани асосии худ зудтар оғоз намоед.</string>
+    <string name="promote_search_widget_dialog_subtitle">Мо шуморо ба тамошобинии хусусӣ ворид мекунем, аммо дар оянда браузери худро ба воситаи виҷети «%1$s» аз экрани асосии худ зудтар оғоз намоед.</string>
 
     <!-- This is te text from add search widget to home screen button .The button is located on
     promote search widget dialog. -->
@@ -1085,8 +1084,10 @@
     <string name="promote_search_widget_snackbar_message">Виҷет ба экрани асосӣ илова карда шуд</string>
 
     <!-- Messages explaining how to exit fullscreen mode -->
-    <!-- Message shown to explain how to exit fullscreen mode when gesture navigation is enabled -->
-    <string name="exit_fullscreen_with_gesture">Барои баромадан аз экрани пурра, аз боло кашед ва ишораи бозгаштро истифода баред</string>
-    <!-- Message shown to explain how to exit fullscreen mode when using back button navigation -->
-    <string name="exit_fullscreen_with_back_button">Барои баромадан аз экрани пурра, аз боло кашед ва тугмаи бозгаштро пахш кунед</string>
+    <!-- Message shown to explain how to exit fullscreen mode when gesture navigation is enabled. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_gesture_short">Аз боло кашед ва барои баромад ишораи бозгаштро истифода баред</string>
+    <!-- Message shown to explain how to exit fullscreen mode when using back button navigation. -->
+    <!-- Localisation note: this text should be as short as possible, max 68 chars -->
+    <string name="exit_fullscreen_with_back_button_short">Аз боло кашед ва барои баромад тугмаи «Бозгашт»-ро пахш намоед</string>
 </resources>

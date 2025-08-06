@@ -76,6 +76,11 @@ impl State {
             None
         }
     }
+
+    #[must_use]
+    pub const fn closing(&self) -> bool {
+        matches!(self, Self::Closing { .. } | Self::Draining { .. })
+    }
 }
 
 // Implement `PartialOrd` so that we can enforce monotonic state progression.
@@ -90,7 +95,6 @@ impl Ord for State {
         if mem::discriminant(self) == mem::discriminant(other) {
             return Ordering::Equal;
         }
-        #[allow(clippy::match_same_arms)] // Lint bug: rust-lang/rust-clippy#860
         match (self, other) {
             (Self::Init, _) => Ordering::Less,
             (_, Self::Init) => Ordering::Greater,

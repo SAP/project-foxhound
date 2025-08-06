@@ -50,6 +50,12 @@ namespace mozilla {
 namespace ipc {
 
 /* static */
+EndpointProcInfo EndpointProcInfo::Current() {
+  return EndpointProcInfo{.mPid = GetCurrentProcId(),
+                          .mChildID = XRE_GetChildID()};
+}
+
+/* static */
 IPCResult IPCResult::FailImpl(NotNull<IProtocol*> actor, const char* where,
                               const char* why) {
   // Calls top-level protocol to handle the error.
@@ -521,12 +527,12 @@ void IProtocol::UnlinkManager() {
   mManager = nullptr;
 }
 
-bool IProtocol::ChannelSend(UniquePtr<IPC::Message> aMsg) {
+bool IProtocol::ChannelSend(UniquePtr<IPC::Message> aMsg, int32_t* aSeqno) {
   if (CanSend()) {
     // NOTE: This send call failing can only occur during toplevel channel
     // teardown. As this is an async call, this isn't reasonable to predict or
     // respond to, so just drop the message on the floor silently.
-    GetIPCChannel()->Send(std::move(aMsg));
+    GetIPCChannel()->Send(std::move(aMsg), aSeqno);
     return true;
   }
 
@@ -619,7 +625,7 @@ void IProtocol::ActorDisconnected(ActorDestroyReason aWhy) {
       }
     }
 
-    ipcChannel->RejectPendingResponsesForActor(id);
+    actor->RejectPendingResponses(ResponseRejectReason::ActorDestroyed);
     actor->ActorDestroy(why);
   };
 
@@ -684,14 +690,16 @@ IToplevelProtocol::IToplevelProtocol(const char* aName, ProtocolId aProtoId,
   mToplevel = this;
 }
 
-void IToplevelProtocol::SetOtherProcessId(base::ProcessId aOtherPid) {
-  mOtherPid = aOtherPid;
+void IToplevelProtocol::SetOtherEndpointProcInfo(
+    EndpointProcInfo aOtherProcInfo) {
+  mOtherPid = aOtherProcInfo.mPid;
+  mOtherChildID = aOtherProcInfo.mChildID;
 }
 
 bool IToplevelProtocol::Open(ScopedPort aPort, const nsID& aMessageChannelId,
-                             base::ProcessId aOtherPid,
+                             EndpointProcInfo aOtherProcInfo,
                              nsISerialEventTarget* aEventTarget) {
-  SetOtherProcessId(aOtherPid);
+  SetOtherEndpointProcInfo(aOtherProcInfo);
   return GetIPCChannel()->Open(std::move(aPort), mSide, aMessageChannelId,
                                aEventTarget);
 }
@@ -699,15 +707,15 @@ bool IToplevelProtocol::Open(ScopedPort aPort, const nsID& aMessageChannelId,
 bool IToplevelProtocol::Open(IToplevelProtocol* aTarget,
                              nsISerialEventTarget* aEventTarget,
                              mozilla::ipc::Side aSide) {
-  SetOtherProcessId(base::GetCurrentProcId());
-  aTarget->SetOtherProcessId(base::GetCurrentProcId());
+  SetOtherEndpointProcInfo(EndpointProcInfo::Current());
+  aTarget->SetOtherEndpointProcInfo(EndpointProcInfo::Current());
   return GetIPCChannel()->Open(aTarget->GetIPCChannel(), aEventTarget, aSide);
 }
 
 bool IToplevelProtocol::OpenOnSameThread(IToplevelProtocol* aTarget,
                                          Side aSide) {
-  SetOtherProcessId(base::GetCurrentProcId());
-  aTarget->SetOtherProcessId(base::GetCurrentProcId());
+  SetOtherEndpointProcInfo(EndpointProcInfo::Current());
+  aTarget->SetOtherEndpointProcInfo(EndpointProcInfo::Current());
   return GetIPCChannel()->OpenOnSameThread(aTarget->GetIPCChannel(), aSide);
 }
 
@@ -884,6 +892,76 @@ IPDLResolverInner::~IPDLResolverInner() {
       ResponseRejectReason reason = ResponseRejectReason::ResolverDestroyed;
       WriteIPDLParam(&writer, aActor, reason);
     });
+  }
+}
+
+bool IPDLAsyncReturnsCallbacks::EntryKey::operator==(
+    const EntryKey& aOther) const {
+  return mSeqno == aOther.mSeqno && mType == aOther.mType;
+}
+
+bool IPDLAsyncReturnsCallbacks::EntryKey::operator<(
+    const EntryKey& aOther) const {
+  return mSeqno < aOther.mSeqno ||
+         (mSeqno == aOther.mSeqno && mType < aOther.mType);
+}
+
+void IPDLAsyncReturnsCallbacks::AddCallback(int32_t aSeqno, msgid_t aType,
+                                            Callback aResolve,
+                                            RejectCallback aReject) {
+  Entry entry{{aSeqno, aType}, std::move(aResolve), std::move(aReject)};
+  MOZ_ASSERT(!mMap.ContainsSorted(entry));
+  mMap.InsertElementSorted(std::move(entry));
+}
+
+auto IPDLAsyncReturnsCallbacks::GotReply(
+    IProtocol* aActor, const IPC::Message& aMessage) -> Result {
+  // Check if we have an entry for the given seqno and message type.
+  EntryKey key{aMessage.seqno(), aMessage.type()};
+  size_t index = mMap.BinaryIndexOf(key);
+  if (index == nsTArray<Entry>::NoIndex) {
+    return MsgProcessingError;
+  }
+
+  // Move the callbacks out of the map, as we will now be handling it.
+  Entry entry = std::move(mMap[index]);
+  mMap.RemoveElementAt(index);
+  MOZ_ASSERT(entry == key);
+
+  // Deserialize the message which was serialized by IPDLResolverInner.
+  IPC::MessageReader reader{aMessage, aActor};
+  bool resolve = false;
+  if (!IPC::ReadParam(&reader, &resolve)) {
+    entry.mReject(ResponseRejectReason::HandlerRejected);
+    return MsgValueError;
+  }
+
+  if (resolve) {
+    // Hand off resolve-case deserialization & success to the callback.
+    Result rv = entry.mResolve(&reader);
+    if (rv != MsgProcessed) {
+      // If deserialization failed, we need to call the reject handler.
+      entry.mReject(ResponseRejectReason::HandlerRejected);
+    }
+    return rv;
+  }
+
+  ResponseRejectReason reason;
+  if (!IPC::ReadParam(&reader, &reason)) {
+    entry.mReject(ResponseRejectReason::HandlerRejected);
+    return MsgValueError;
+  }
+  reader.EndRead();
+
+  entry.mReject(reason);
+  return MsgProcessed;
+}
+
+void IPDLAsyncReturnsCallbacks::RejectPendingResponses(
+    ResponseRejectReason aReason) {
+  nsTArray<Entry> pending = std::move(mMap);
+  for (auto& entry : pending) {
+    entry.mReject(aReason);
   }
 }
 

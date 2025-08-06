@@ -1471,19 +1471,16 @@ void gfxUtils::WriteAsPNG(SourceSurface* aSurface, const char* aFile) {
 
   if (!file) {
     // Maybe the directory doesn't exist; try creating it, then fopen again.
-    nsresult rv = NS_ERROR_FAILURE;
-    nsCOMPtr<nsIFile> comFile = do_CreateInstance("@mozilla.org/file/local;1");
-    if (comFile) {
-      NS_ConvertUTF8toUTF16 utf16path((nsDependentCString(aFile)));
-      rv = comFile->InitWithPath(utf16path);
-      if (NS_SUCCEEDED(rv)) {
-        nsCOMPtr<nsIFile> dirPath;
-        comFile->GetParent(getter_AddRefs(dirPath));
-        if (dirPath) {
-          rv = dirPath->Create(nsIFile::DIRECTORY_TYPE, 0777);
-          if (NS_SUCCEEDED(rv) || rv == NS_ERROR_FILE_ALREADY_EXISTS) {
-            file = fopen(aFile, "wb");
-          }
+    nsCOMPtr<nsIFile> comFile;
+    nsresult rv = NS_NewNativeLocalFile(nsDependentCString(aFile),
+                                        getter_AddRefs(comFile));
+    if (NS_SUCCEEDED(rv)) {
+      nsCOMPtr<nsIFile> dirPath;
+      comFile->GetParent(getter_AddRefs(dirPath));
+      if (dirPath) {
+        rv = dirPath->Create(nsIFile::DIRECTORY_TYPE, 0777);
+        if (NS_SUCCEEDED(rv) || rv == NS_ERROR_FILE_ALREADY_EXISTS) {
+          file = fopen(aFile, "wb");
         }
       }
     }
@@ -1775,7 +1772,7 @@ bool gfxUtils::DumpDisplayList() {
           XRE_IsContentProcess());
 }
 
-FILE* gfxUtils::sDumpPaintFile = stderr;
+MOZ_GLOBINIT FILE* gfxUtils::sDumpPaintFile = stderr;
 
 namespace mozilla {
 namespace gfx {
@@ -1808,7 +1805,7 @@ sRGBColor ToSRGBColor(const StyleAbsoluteColor& aColor) {
   auto srgb = aColor.ToColorSpace(StyleColorSpace::Srgb);
 
   const auto ToComponent = [](float aF) -> float {
-    float component = std::min(std::max(0.0f, aF), 1.0f);
+    float component = std::clamp(aF, 0.0f, 1.0f);
     if (MOZ_UNLIKELY(!std::isfinite(component))) {
       return 0.0f;
     }

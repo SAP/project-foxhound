@@ -29,6 +29,8 @@
 #include "mozilla/UseCounter.h"
 #include "mozilla/dom/ClientSource.h"
 #include "mozilla/dom/FlippedOnce.h"
+#include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerChild.h"
+#include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
 #include "mozilla/dom/Worker.h"
@@ -39,17 +41,20 @@
 #include "mozilla/dom/workerinternals/JSSettings.h"
 #include "mozilla/dom/workerinternals/Queue.h"
 #include "mozilla/dom/JSExecutionManager.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
-#include "nsIContentSecurityPolicy.h"
+#include "nsIContentPolicy.h"
+#include "nsID.h"
 #include "nsIEventTarget.h"
 #include "nsILoadInfo.h"
 #include "nsRFPService.h"
 #include "nsTObserverArray.h"
 #include "stdint.h"
 
+class nsIContentSecurityPolicy;
 class nsIThreadInternal;
 
 namespace JS {
@@ -61,6 +66,7 @@ class ThrottledEventQueue;
 namespace dom {
 
 class RemoteWorkerChild;
+class RemoteWorkerNonLifeCycleOpControllerChild;
 
 // If you change this, the corresponding list in nsIWorkerDebugger.idl needs
 // to be updated too. And histograms enum for worker use counters uses the same
@@ -232,7 +238,10 @@ class WorkerPrivate final
       const nsACString& aServiceWorkerScope, WorkerLoadInfo* aLoadInfo,
       ErrorResult& aRv, nsString aId = u""_ns,
       CancellationCallback&& aCancellationCallback = {},
-      TerminationCallback&& aTerminationCallback = {});
+      TerminationCallback&& aTerminationCallback = {},
+      mozilla::ipc::Endpoint<
+          PRemoteWorkerNonLifeCycleOpControllerChild>&& aChildEp =
+          mozilla::ipc::Endpoint<PRemoteWorkerNonLifeCycleOpControllerChild>());
 
   enum LoadGroupBehavior { InheritLoadGroup, OverrideLoadGroup };
 
@@ -414,10 +423,12 @@ class WorkerPrivate final
   void ReportError(JSContext* aCx, JS::ConstUTF8CharsZ aToStringResult,
                    JSErrorReport* aReport);
 
-  static void ReportErrorToConsole(const char* aMessage);
-
-  static void ReportErrorToConsole(const char* aMessage,
-                                   const nsTArray<nsString>& aParams);
+  static void ReportErrorToConsole(
+      uint32_t aErrorFlags, const nsCString& aCategory,
+      nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
+      const nsTArray<nsString>& aParams = nsTArray<nsString>(),
+      const mozilla::SourceLocation& aLocation =
+          mozilla::JSCallingLocation::Get());
 
   int32_t SetTimeout(JSContext* aCx, TimeoutHandler* aHandler, int32_t aTimeout,
                      bool aIsInterval, Timeout::Reason aReason,
@@ -829,6 +840,12 @@ class WorkerPrivate final
     return mLoadInfo.mServiceWorkerRegistrationDescriptor.ref();
   }
 
+  const ClientInfo& GetSourceInfo() const {
+    MOZ_DIAGNOSTIC_ASSERT(IsServiceWorker());
+    MOZ_DIAGNOSTIC_ASSERT(mLoadInfo.mSourceInfo.isSome());
+    return mLoadInfo.mSourceInfo.ref();
+  }
+
   void UpdateServiceWorkerState(ServiceWorkerState aState) {
     MOZ_DIAGNOSTIC_ASSERT(IsServiceWorker());
     MOZ_DIAGNOSTIC_ASSERT(mLoadInfo.mServiceWorkerDescriptor.isSome());
@@ -1234,7 +1251,9 @@ class WorkerPrivate final
       nsString&& aId, const nsID& aAgentClusterId,
       const nsILoadInfo::CrossOriginOpenerPolicy aAgentClusterOpenerPolicy,
       CancellationCallback&& aCancellationCallback,
-      TerminationCallback&& aTerminationCallback);
+      TerminationCallback&& aTerminationCallback,
+      mozilla::ipc::Endpoint<PRemoteWorkerNonLifeCycleOpControllerChild>&&
+          aChildEp);
 
   ~WorkerPrivate();
 
@@ -1244,8 +1263,8 @@ class WorkerPrivate final
   };
 
   static AgentClusterIdAndCoop ComputeAgentClusterIdAndCoop(
-      WorkerPrivate* aParent, WorkerKind aWorkerKind,
-      WorkerLoadInfo* aLoadInfo);
+      WorkerPrivate* aParent, WorkerKind aWorkerKind, WorkerLoadInfo* aLoadInfo,
+      bool aIsChromeWorker);
 
   void CancelAllTimeouts();
 
@@ -1464,6 +1483,13 @@ class WorkerPrivate final
   // Only touched on the parent thread.  Used for both SharedWorker and
   // ServiceWorker RemoteWorkers.
   RefPtr<RemoteWorkerChild> mRemoteWorkerController;
+
+  // Only touched on the worker thread. Used for both SharedWorker and
+  // ServiceWorker RemoteWorkers.
+  RefPtr<RemoteWorkerNonLifeCycleOpControllerChild>
+      mRemoteWorkerNonLifeCycleOpController;
+
+  mozilla::ipc::Endpoint<PRemoteWorkerNonLifeCycleOpControllerChild> mChildEp;
 
   JS::UniqueChars mDefaultLocale;  // nulled during worker JSContext init
   TimeStamp mKillTime;

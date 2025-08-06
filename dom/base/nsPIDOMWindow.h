@@ -51,6 +51,7 @@ class BrowsingContextGroup;
 class ClientInfo;
 class ClientState;
 class ContentFrameMessageManager;
+class CloseWatcherManager;
 class DocGroup;
 class Document;
 class Element;
@@ -658,6 +659,8 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   };
   bool HasActiveWebTransports() { return mWebTransportCount > 0; }
 
+  mozilla::dom::CloseWatcherManager* EnsureCloseWatcherManager();
+
  protected:
   void CreatePerformanceObjectIfNeeded();
 
@@ -781,6 +784,9 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
    * workers.
    */
   uint32_t mWebTransportCount = 0;
+
+  // The CloseWatcherManager for this window.
+  RefPtr<mozilla::dom::CloseWatcherManager> mCloseWatcherManager;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsPIDOMWindowInner, NS_PIDOMWINDOWINNER_IID)
@@ -1080,7 +1086,8 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
    *
    * Outer windows only.
    */
-  virtual nsresult OpenNoNavigate(const nsAString& aUrl, const nsAString& aName,
+  virtual nsresult OpenNoNavigate(const nsACString& aUrl,
+                                  const nsAString& aName,
                                   const nsAString& aOptions,
                                   mozilla::dom::BrowsingContext** _retval) = 0;
 
@@ -1112,13 +1119,12 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   // aLoadState will be passed on through to the windowwatcher.
   // aForceNoOpener will act just like a "noopener" feature in aOptions except
   //                will not affect any other window features.
-  virtual nsresult Open(const nsAString& aUrl, const nsAString& aName,
+  virtual nsresult Open(const nsACString& aUrl, const nsAString& aName,
                         const nsAString& aOptions,
                         nsDocShellLoadState* aLoadState, bool aForceNoOpener,
                         mozilla::dom::BrowsingContext** _retval) = 0;
-  virtual nsresult OpenDialog(const nsAString& aUrl, const nsAString& aName,
-                              const nsAString& aOptions,
-                              nsISupports* aExtraArgument,
+  virtual nsresult OpenDialog(const nsACString& aUrl, const nsAString& aName,
+                              const nsAString& aOptions, nsIArray* aArguments,
                               mozilla::dom::BrowsingContext** _retval) = 0;
 
   virtual nsresult GetInnerWidth(double* aWidth) = 0;

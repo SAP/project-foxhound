@@ -375,6 +375,16 @@ CHILD_PROCESSES += [
     # Teruten security software DLLs cause crashes in the content process (bug 1904087)
     DllBlocklistEntry("T_Prevent64.dll", ALL_VERSIONS),
     DllBlocklistEntry("TDCommonLib64.dll", ALL_VERSIONS),
+
+    # Causes crashes in the content, gmp and utility processes, bug 1929333
+    DllBlocklistEntry("ks3rdhmpg.dll", ALL_VERSIONS),
+
+    # Causes crashes in the content process with USER_RESTRICTED, bug 1930472
+    DllBlocklistEntry("TbdgHook.dll", (1, 5, 9, 0)),
+    DllBlocklistEntry("TbdgHook64.dll", (1, 5, 9, 0)),
+
+    # Causes crashes in the content process with USER_RESTRICTED, bug 1930468
+    DllBlocklistEntry("AppMonitorDll.dll", (36, 30, 0, 0)),
 ]
 
 GPU_PROCESSES += [
@@ -409,8 +419,10 @@ UTILITY_PROCESSES += [
     # Causes crashes in the utility process, bug 1826393
     DllBlocklistEntry("ipseng64.dll", ALL_VERSIONS),
     DllBlocklistEntry("ipseng32.dll", ALL_VERSIONS),
-    DllBlocklistEntry("ks3rdhmpg.dll", ALL_VERSIONS),
     DllBlocklistEntry("kwsui64.dll", ALL_VERSIONS),
+
+    # Causes crashes in the LPAC utility process for PlayReady, bug 1895174
+    DllBlocklistEntry("WRusr.dll", ALL_VERSIONS),
 ]
 
 UTILITY_PROCESSES_TESTS += [
@@ -422,7 +434,6 @@ GMPLUGIN_PROCESSES += [
     # Causes crashes in the plugin process, bug 1830950
     DllBlocklistEntry("ipseng64.dll", ALL_VERSIONS),
     DllBlocklistEntry("ipseng32.dll", ALL_VERSIONS),
-    DllBlocklistEntry("ks3rdhmpg.dll", ALL_VERSIONS),
     DllBlocklistEntry("kwsui64.dll", ALL_VERSIONS),
 
     # Morphisec, bug 1896442

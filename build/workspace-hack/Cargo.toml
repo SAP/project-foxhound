@@ -20,7 +20,7 @@ arrayvec = { version = "0.7", features = ["serde"], optional = true }
 bitflags = { version = "2", features = ["serde", "std"], optional = true }
 bytes = { version = "1", optional = true }
 chrono = { version = "0.4", features = ["serde"], optional = true }
-clap = { version = "4", default-features = false, features = ["cargo", "derive", "error-context", "help", "string", "usage", "wrap_help"], optional = true }
+clap = { version = "4", default-features = false, features = ["cargo", "derive", "error-context", "help", "std", "string", "usage", "wrap_help"], optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
 dist-bin = { path = "../rust/dist-bin", optional = true }
 env_logger = { version = "0.10", default-features = false, features = ["color"], optional = true }
@@ -31,15 +31,16 @@ fnv = { version = "1", optional = true }
 futures = { version = "0.3", features = ["futures-executor"], optional = true }
 futures-channel = { version = "0.3", features = ["sink"], optional = true }
 futures-core = { version = "0.3", optional = true }
+futures-executor = { version = "0.3", features = ["thread-pool"], optional = true }
 futures-sink = { version = "0.3", optional = true }
 futures-util = { version = "0.3", features = ["channel", "io", "sink"], optional = true }
 getrandom = { version = "0.2", default-features = false, features = ["std"], optional = true }
 hashbrown = { version = "0.13", optional = true }
-hex = { version = "0.4", optional = true }
+hex = { version = "0.4", features = ["serde"], optional = true }
 hyper = { version = "0.14", features = ["full"], optional = true }
 icu_locid = { version = "1", default-features = false, features = ["zerovec"], optional = true }
 icu_properties = { version = "1", features = ["bidi"], optional = true }
-indexmap = { version = "2", default-features = false, features = ["serde", "std"], optional = true }
+indexmap = { version = "2", features = ["serde", "std"], optional = true }
 libc = { version = "0.2", features = ["extra_traits"] }
 lmdb-rkv-sys = { version = "0.11", default-features = false, features = ["mdb_idl_logn_9"], optional = true }
 log = { version = "0.4", features = ["release_max_level_info", "std"], optional = true }
@@ -56,7 +57,7 @@ serde = { version = "1", features = ["alloc", "derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order", "unbounded_depth"], optional = true }
 smallvec = { version = "1", features = ["const_new", "serde", "union"], optional = true }
 stable_deref_trait = { version = "1", features = ["std"], optional = true }
-strsim = { version = "0.10", optional = true }
+strsim = { version = "0.11", optional = true }
 time = { version = "0.3", features = ["macros", "parsing", "serde"], optional = true }
 tinystr = { version = "0.7", features = ["zerovec"], optional = true }
 tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread"], optional = true }
@@ -73,13 +74,6 @@ yoke = { version = "0.7", features = ["derive"], optional = true }
 zerofrom = { version = "0.1", default-features = false, features = ["alloc", "derive"], optional = true }
 zerovec = { version = "0.10", default-features = false, features = ["derive", "yoke"], optional = true }
 zip = { version = "2.1.2", default-features = false, features = ["deflate-flate2", "flate2"], optional = true }
-
-# Match the definition in toolkit/library/rust/gkrust-features.mozbuild
-[target.'cfg(not(target_os = "android"))'.dependencies]
-glean = { workspace = true, optional = true, features = ["preinit_million_queue"] }
-
-[target.'cfg(target_os = "android")'.dependencies]
-glean = { workspace = true, optional = true }
 
 [target."cfg(windows)".dependencies]
 scopeguard = { version = "1", optional = true }
@@ -209,6 +203,9 @@ features = [
     "Win32_Networking",
     "Win32_Networking_WinSock",
     "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_WinTrust",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_Diagnostics_Debug",
@@ -219,11 +216,13 @@ features = [
     "Win32_System_Memory",
     "Win32_System_Pipes",
     "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
     "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
@@ -235,13 +234,15 @@ optional = true
 
 [features]
 builtins-static = ["dep:bindgen", "dep:bitflags", "dep:itertools", "dep:memchr", "dep:nom", "dep:regex", "dep:smallvec"]
-crashreporter = ["dep:bindgen", "dep:bitflags", "dep:bytes", "dep:cc", "dep:chrono", "dep:crossbeam-utils", "dep:env_logger", "dep:flate2", "dep:fluent", "dep:fluent-langneg", "dep:fnv", "dep:futures-channel", "dep:futures-core", "dep:futures-sink", "dep:futures-util", "dep:getrandom", "dep:glean", "dep:hashbrown", "dep:hyper", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:itertools", "dep:lmdb-rkv-sys", "dep:log", "dep:memchr", "dep:mio", "dep:nom", "dep:num-integer", "dep:num-traits", "dep:once_cell", "dep:phf", "dep:regex", "dep:rkv", "dep:semver", "dep:serde_json", "dep:smallvec", "dep:stable_deref_trait", "dep:time", "dep:time-macros", "dep:tinystr", "dep:tokio", "dep:tokio-util", "dep:toml", "dep:tracing", "dep:unic-langid", "dep:unic-langid-impl", "dep:unicode-bidi", "dep:uniffi", "dep:url", "dep:uuid", "dep:windows-sys", "dep:yoke", "dep:zerofrom", "dep:zerovec", "dep:zip"]
+crashreporter = ["dep:bindgen", "dep:bitflags", "dep:bytes", "dep:cc", "dep:chrono", "dep:crossbeam-utils", "dep:env_logger", "dep:flate2", "dep:fluent", "dep:fluent-langneg", "dep:fnv", "dep:futures-channel", "dep:futures-core", "dep:futures-sink", "dep:futures-util", "dep:getrandom", "dep:hashbrown", "dep:hyper", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:itertools", "dep:lmdb-rkv-sys", "dep:log", "dep:memchr", "dep:mio", "dep:nom", "dep:num-integer", "dep:num-traits", "dep:once_cell", "dep:phf", "dep:regex", "dep:rkv", "dep:semver", "dep:serde_json", "dep:smallvec", "dep:stable_deref_trait", "dep:time", "dep:time-macros", "dep:tinystr", "dep:tokio", "dep:tokio-util", "dep:toml", "dep:tracing", "dep:unic-langid", "dep:unic-langid-impl", "dep:unicode-bidi", "dep:uniffi", "dep:url", "dep:uuid", "dep:windows-sys", "dep:yoke", "dep:zerofrom", "dep:zerovec", "dep:zip"]
 geckodriver = ["dep:bitflags", "dep:bytes", "dep:cc", "dep:chrono", "dep:clap", "dep:crossbeam-utils", "dep:flate2", "dep:fnv", "dep:futures-channel", "dep:futures-core", "dep:futures-sink", "dep:futures-util", "dep:getrandom", "dep:hashbrown", "dep:hyper", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:log", "dep:memchr", "dep:mio", "dep:num-integer", "dep:num-traits", "dep:once_cell", "dep:regex", "dep:semver", "dep:serde_json", "dep:smallvec", "dep:stable_deref_trait", "dep:strsim", "dep:time", "dep:time-macros", "dep:tinystr", "dep:tokio", "dep:tokio-util", "dep:tracing", "dep:unicode-bidi", "dep:url", "dep:uuid", "dep:windows-sys", "dep:xml-rs", "dep:yoke", "dep:zerofrom", "dep:zerovec", "dep:zip"]
-gkrust = ["dep:arrayvec", "dep:bindgen", "dep:bitflags", "dep:bytes", "dep:cc", "dep:chrono", "dep:core-foundation-sys", "dep:crossbeam-utils", "dep:env_logger", "dep:flate2", "dep:fluent", "dep:fluent-langneg", "dep:fnv", "dep:futures", "dep:futures-channel", "dep:futures-core", "dep:futures-sink", "dep:futures-util", "dep:getrandom", "dep:glean", "dep:hashbrown", "dep:hex", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:itertools", "dep:lmdb-rkv-sys", "dep:log", "dep:memchr", "dep:nom", "dep:num-integer", "dep:num-traits", "dep:once_cell", "dep:phf", "dep:regex", "dep:rkv", "dep:scopeguard", "dep:scroll", "dep:semver", "dep:serde_json", "dep:smallvec", "dep:stable_deref_trait", "dep:strsim", "dep:time", "dep:time-macros", "dep:tinystr", "dep:toml", "dep:unic-langid", "dep:unic-langid-impl", "dep:unicode-bidi", "dep:uniffi", "dep:url", "dep:uuid", "dep:windows-sys", "dep:xml-rs", "dep:yoke", "dep:zerofrom", "dep:zerovec"]
+gkrust = ["dep:arrayvec", "dep:bindgen", "dep:bitflags", "dep:bytes", "dep:cc", "dep:chrono", "dep:core-foundation-sys", "dep:crossbeam-utils", "dep:env_logger", "dep:flate2", "dep:fluent", "dep:fluent-langneg", "dep:fnv", "dep:futures", "dep:futures-channel", "dep:futures-core", "dep:futures-sink", "dep:futures-util", "dep:getrandom", "dep:hashbrown", "dep:hex", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:itertools", "dep:lmdb-rkv-sys", "dep:log", "dep:memchr", "dep:nom", "dep:num-integer", "dep:num-traits", "dep:once_cell", "dep:phf", "dep:regex", "dep:rkv", "dep:scopeguard", "dep:scroll", "dep:semver", "dep:serde_json", "dep:smallvec", "dep:stable_deref_trait", "dep:strsim", "dep:time", "dep:time-macros", "dep:tinystr", "dep:toml", "dep:unic-langid", "dep:unic-langid-impl", "dep:unicode-bidi", "dep:uniffi", "dep:url", "dep:uuid", "dep:windows-sys", "dep:xml-rs", "dep:yoke", "dep:zerofrom", "dep:zerovec"]
 gkrust-gtest = ["gkrust"]
 http3server = ["dep:arrayvec", "dep:bindgen", "dep:bitflags", "dep:bytes", "dep:chrono", "dep:clap", "dep:dist-bin", "dep:env_logger", "dep:fnv", "dep:futures", "dep:futures-channel", "dep:futures-core", "dep:futures-sink", "dep:futures-util", "dep:getrandom", "dep:hashbrown", "dep:hex", "dep:hyper", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:itertools", "dep:log", "dep:memchr", "dep:mio", "dep:nom", "dep:num-integer", "dep:num-traits", "dep:once_cell", "dep:regex", "dep:semver", "dep:serde_json", "dep:smallvec", "dep:stable_deref_trait", "dep:strsim", "dep:time", "dep:time-macros", "dep:tinystr", "dep:tokio", "dep:tokio-util", "dep:toml", "dep:tracing", "dep:unicode-bidi", "dep:url", "dep:windows-sys", "dep:yoke", "dep:zerofrom", "dep:zerovec"]
 ipcclientcerts-static = ["dep:bindgen", "dep:bitflags", "dep:itertools", "dep:memchr", "dep:nom", "dep:regex"]
 jsrust = ["dep:arrayvec", "dep:cc", "dep:env_logger", "dep:getrandom", "dep:hashbrown", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:log", "dep:memchr", "dep:num-traits", "dep:once_cell", "dep:semver", "dep:smallvec", "dep:stable_deref_trait", "dep:tinystr", "dep:unicode-bidi", "dep:url", "dep:yoke", "dep:zerofrom", "dep:zerovec"]
+minidump-analyzer = ["dep:clap", "dep:env_logger", "dep:futures-executor", "dep:futures-util", "dep:log", "dep:serde_json", "dep:windows-sys"]
+minidump-analyzer-export = ["minidump-analyzer"]
 mozwer_s = ["dep:getrandom", "dep:hashbrown", "dep:indexmap", "dep:log", "dep:once_cell", "dep:scroll", "dep:serde_json", "dep:uuid", "dep:windows-sys"]
 nmhproxy = ["dep:bitflags", "dep:hashbrown", "dep:icu_locid", "dep:icu_properties", "dep:indexmap", "dep:once_cell", "dep:serde_json", "dep:smallvec", "dep:stable_deref_trait", "dep:tinystr", "dep:unicode-bidi", "dep:url", "dep:windows-sys", "dep:yoke", "dep:zerofrom", "dep:zerovec"]
 osclientcerts-static = ["dep:bindgen", "dep:bitflags", "dep:core-foundation-sys", "dep:env_logger", "dep:itertools", "dep:log", "dep:memchr", "dep:nom", "dep:regex"]

@@ -16,7 +16,7 @@ const kOverriddenEngineName = "Simple Engine";
 const allowlist = [
   {
     thirdPartyId: "test@thirdparty.example.com",
-    overridesId: "simple@search.mozilla.org",
+    overridesAppIdv2: "simple",
     urls: [],
   },
 ];
@@ -226,7 +226,13 @@ let baseExtension;
 let remoteSettingsStub;
 
 add_setup(async function () {
-  await SearchTestUtils.useTestEngines("simple-engines");
+  SearchTestUtils.setRemoteSettingsConfig([
+    { identifier: "originalDefault" },
+    {
+      identifier: "simple",
+      base: { name: kOverriddenEngineName },
+    },
+  ]);
   await SearchTestUtils.initXPCShellAddonManager();
   await Services.search.init();
 
@@ -327,7 +333,7 @@ for (const test of tests) {
         {
           defaultSearchEngine: "simple-addon",
           defaultSearchEngineData: {
-            loadPath: "[app]simple@search.mozilla.org",
+            loadPath: "[app]simple",
             name: "Simple Engine",
             origin: "default",
             submissionURL: test.expected.searchUrl.replace("{searchTerms}", ""),

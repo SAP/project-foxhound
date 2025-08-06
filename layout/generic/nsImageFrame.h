@@ -77,7 +77,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
             nsIFrame* aPrevInFlow) override;
   void BuildDisplayList(nsDisplayListBuilder*, const nsDisplayListSet&) final;
 
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) final;
 
   mozilla::IntrinsicSize GetIntrinsicSize() final { return mIntrinsicSize; }
@@ -174,7 +174,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   nsImageMap* GetImageMap();
   nsImageMap* GetExistingImageMap() const { return mImageMap; }
 
-  void AddInlineMinISize(gfxContext* aRenderingContext,
+  void AddInlineMinISize(const mozilla::IntrinsicSizeInput& aInput,
                          InlineMinISizeData* aData) final;
 
   void DisconnectMap();
@@ -295,7 +295,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
   void OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage);
   void OnFrameUpdate(imgIRequest* aRequest, const nsIntRect* aRect);
-  void OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
+  void OnLoadComplete(imgIRequest* aRequest);
   mozilla::IntrinsicSize ComputeIntrinsicSize(
       bool aIgnoreContainment = false) const;
   // Whether the image frame should use the mapped aspect ratio from width=""
@@ -305,7 +305,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   /**
    * Notification that aRequest will now be the current request.
    */
-  void NotifyNewCurrentRequest(imgIRequest* aRequest, nsresult aStatus);
+  void NotifyNewCurrentRequest(imgIRequest* aRequest);
 
   /// Always sync decode our image when painting if @aForce is true.
   void SetForceSyncDecoding(bool aForce) { mForceSyncDecoding = aForce; }

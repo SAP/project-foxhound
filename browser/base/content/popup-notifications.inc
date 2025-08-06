@@ -111,20 +111,14 @@
       <popupnotificationcontent id="addon-install-confirmation-content" orient="vertical"/>
     </popupnotification>
 
-    <popupnotification id="addon-webext-permissions-notification" hidden="true">
+    <popupnotification id="addon-webext-permissions-notification"
+                       is="addon-webext-permissions-notification"
+                       hidden="true">
       <popupnotificationcontent class="addon-webext-perm-notification-content" orient="vertical">
         <description id="addon-webext-perm-text" class="addon-webext-perm-text"/>
         <label id="addon-webext-perm-intro" class="addon-webext-perm-text"/>
         <label id="addon-webext-perm-single-entry" class="addon-webext-perm-single-entry"/>
         <html:ul id="addon-webext-perm-list" class="addon-webext-perm-list"/>
-        <hbox>
-          <html:a
-            is="moz-support-link"
-            id="addon-webext-perm-info"
-            class="popup-notification-learnmore-link"
-            support-page="extension-permissions"
-          />
-        </hbox>
       </popupnotificationcontent>
     </popupnotification>
 
@@ -139,6 +133,17 @@
               data-l10n-id="popup-notification-xpinstall-prompt-learn-more"
             />
         </hbox>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="addon-install-failed-blocklist-notification" hidden="true">
+      <popupnotificationcontent id="addon-install-failed-blocklist-content" orient="vertical">
+        <html:a
+            id="addon-install-failed-blocklist-info"
+            is="addon-notification-blocklist-url"
+            class="popup-notification-learnmore-link"
+            data-l10n-id="popup-notification-xpinstall-prompt-block-url"
+          />
       </popupnotificationcontent>
     </popupnotification>
 
@@ -248,6 +253,19 @@
           <html:p id="firefox-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice">
             <label id="firefox-relay-offer-tos-url" is="text-link" data-l10n-name="tos-url"/>
             <label id="firefox-relay-offer-privacy-url" is="text-link" data-l10n-name="privacy-url"/>
+          </html:p>
+        </html:div>
+      </popupnotificationcontent>
+    </popupnotification>
+
+    <popupnotification id="fxa-and-relay-integration-offer-notification" hidden="true">
+      <popupnotificationcontent orient="vertical">
+        <html:div>
+          <html:p data-l10n-id="firefox-relay-offer-why-to-use-relay"></html:p>
+          <html:p id="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-offer-what-fxa-and-relay-provides"></html:p>
+          <html:p id="firefox-fxa-and-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice">
+            <label id="firefox-fxa-and-relay-offer-tos-url" is="text-link" data-l10n-name="tos-url"/>
+            <label id="firefox-fxa-and-relay-offer-privacy-url" is="text-link" data-l10n-name="privacy-url"/>
           </html:p>
         </html:div>
       </popupnotificationcontent>

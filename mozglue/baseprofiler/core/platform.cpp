@@ -278,7 +278,8 @@ class MOZ_RAII PSAutoLock {
   detail::BaseProfilerAutoLock mLock;
 };
 
-detail::BaseProfilerMutex PSAutoLock::gPSMutex{"Base Profiler mutex"};
+MOZ_RUNINIT detail::BaseProfilerMutex PSAutoLock::gPSMutex{
+    "Base Profiler mutex"};
 
 // Only functions that take a PSLockRef arg can access CorePS's and ActivePS's
 // fields.
@@ -2628,6 +2629,8 @@ void profiler_init(void* aStackTop) {
   LOG("profiler_init");
 
   profiler_init_main_thread_id();
+
+  Flow::Init();
 
   VTUNE_INIT();
 

@@ -348,7 +348,7 @@ class MediaDecoderStateMachine::DecodeMetadataState
 
   RefPtr<MediaDecoder::SeekPromise> HandleSeek(
       const SeekTarget& aTarget) override {
-    MOZ_DIAGNOSTIC_ASSERT(false, "Can't seek while decoding metadata.");
+    MOZ_DIAGNOSTIC_CRASH("Can't seek while decoding metadata.");
     return MediaDecoder::SeekPromise::CreateAndReject(true, __func__);
   }
 
@@ -820,7 +820,7 @@ class MediaDecoderStateMachine::DecodingState
   bool mIsPrerolling = true;
 
   // Fired when playback is paused for a while to enter dormant.
-  DelayedScheduler mDormantTimer;
+  DelayedScheduler<TimeStamp> mDormantTimer;
 
   MediaEventListener mOnAudioPopped;
   MediaEventListener mOnVideoPopped;
@@ -2835,28 +2835,28 @@ class MediaDecoderStateMachine::ShutdownState
   RefPtr<ShutdownPromise> Enter();
 
   void Exit() override {
-    MOZ_DIAGNOSTIC_ASSERT(false, "Shouldn't escape the SHUTDOWN state.");
+    MOZ_DIAGNOSTIC_CRASH("Shouldn't escape the SHUTDOWN state.");
   }
 
   State GetState() const override { return DECODER_STATE_SHUTDOWN; }
 
   RefPtr<MediaDecoder::SeekPromise> HandleSeek(
       const SeekTarget& aTarget) override {
-    MOZ_DIAGNOSTIC_ASSERT(false, "Can't seek in shutdown state.");
+    MOZ_DIAGNOSTIC_CRASH("Can't seek in shutdown state.");
     return MediaDecoder::SeekPromise::CreateAndReject(true, __func__);
   }
 
   RefPtr<ShutdownPromise> HandleShutdown() override {
-    MOZ_DIAGNOSTIC_ASSERT(false, "Already shutting down.");
+    MOZ_DIAGNOSTIC_CRASH("Already shutting down.");
     return nullptr;
   }
 
   void HandleVideoSuspendTimeout() override {
-    MOZ_DIAGNOSTIC_ASSERT(false, "Already shutting down.");
+    MOZ_DIAGNOSTIC_CRASH("Already shutting down.");
   }
 
   void HandleResumeVideoDecoding(const TimeUnit&) override {
-    MOZ_DIAGNOSTIC_ASSERT(false, "Already shutting down.");
+    MOZ_DIAGNOSTIC_CRASH("Already shutting down.");
   }
 };
 
@@ -2874,44 +2874,6 @@ MediaDecoderStateMachine::StateObject::HandleShutdown() {
   return SetState<ShutdownState>();
 }
 
-static void ReportRecoveryTelemetry(const TimeStamp& aRecoveryStart,
-                                    const MediaInfo& aMediaInfo,
-                                    bool aIsHardwareAccelerated) {
-  MOZ_ASSERT(NS_IsMainThread());
-  if (!aMediaInfo.HasVideo()) {
-    return;
-  }
-
-  // Keyed by audio+video or video alone, hardware acceleration,
-  // and by a resolution range.
-  nsCString key(aMediaInfo.HasAudio() ? "AV" : "V");
-  key.AppendASCII(aIsHardwareAccelerated ? "(hw)," : ",");
-  static const struct {
-    int32_t mH;
-    const char* mRes;
-  } sResolutions[] = {{240, "0-240"},
-                      {480, "241-480"},
-                      {720, "481-720"},
-                      {1080, "721-1080"},
-                      {2160, "1081-2160"}};
-  const char* resolution = "2161+";
-  int32_t height = aMediaInfo.mVideo.mImage.height;
-  for (const auto& res : sResolutions) {
-    if (height <= res.mH) {
-      resolution = res.mRes;
-      break;
-    }
-  }
-  key.AppendASCII(resolution);
-
-  TimeDuration duration = TimeStamp::Now() - aRecoveryStart;
-  double duration_ms = duration.ToMilliseconds();
-  Telemetry::Accumulate(Telemetry::VIDEO_SUSPEND_RECOVERY_TIME_MS, key,
-                        static_cast<uint32_t>(lround(duration_ms)));
-  Telemetry::Accumulate(Telemetry::VIDEO_SUSPEND_RECOVERY_TIME_MS, "All"_ns,
-                        static_cast<uint32_t>(lround(duration_ms)));
-}
-
 void MediaDecoderStateMachine::StateObject::HandleResumeVideoDecoding(
     const TimeUnit& aTarget) {
   MOZ_ASSERT(mMaster->mVideoDecodeSuspended);
@@ -2919,13 +2881,6 @@ void MediaDecoderStateMachine::StateObject::HandleResumeVideoDecoding(
   mMaster->mVideoDecodeSuspended = false;
   mMaster->mOnPlaybackEvent.Notify(MediaPlaybackEvent::ExitVideoSuspend);
   Reader()->SetVideoBlankDecode(false);
-
-  // Start counting recovery time from right now.
-  TimeStamp start = TimeStamp::Now();
-
-  // Local reference to mInfo, so that it will be copied in the lambda below.
-  const auto& info = Info();
-  bool hw = Reader()->VideoIsHardwareAccelerated();
 
   // Start video-only seek to the current time.
   SeekJob seekJob;
@@ -2945,15 +2900,7 @@ void MediaDecoderStateMachine::StateObject::HandleResumeVideoDecoding(
   SLOG("video-only seek target=%" PRId64 ", current time=%" PRId64,
        aTarget.ToMicroseconds(), mMaster->GetMediaTime().ToMicroseconds());
 
-  // Hold mMaster->mAbstractMainThread here because this->mMaster will be
-  // invalid after the current state object is deleted in SetState();
-  RefPtr<AbstractThread> mainThread = mMaster->mAbstractMainThread;
-
-  SetSeekingState(std::move(seekJob), EventVisibility::Suppressed)
-      ->Then(
-          mainThread, __func__,
-          [start, info, hw]() { ReportRecoveryTelemetry(start, info, hw); },
-          []() {});
+  SetSeekingState(std::move(seekJob), EventVisibility::Suppressed);
 }
 
 RefPtr<MediaDecoder::SeekPromise>
@@ -3284,7 +3231,7 @@ void MediaDecoderStateMachine::SeekingState::SeekCompleted() {
   if ((newCurrentTime == mMaster->Duration() ||
        newCurrentTime.EqualsAtLowestResolution(
            mMaster->Duration().ToBase(USECS_PER_S))) &&
-      !mMaster->mIsLiveStream) {
+      !mMaster->IsLiveStream()) {
     SLOG("Seek completed, seeked to end: %s", newCurrentTime.ToString().get());
     // will transition to COMPLETED immediately. Note we don't do
     // this when playing a live stream, since the end of media will advance

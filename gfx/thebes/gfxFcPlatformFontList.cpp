@@ -1860,26 +1860,25 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
     // map the psname, fullname ==> font family for local font lookups
     nsAutoCString psname, fullname;
     GetFaceNames(aPattern, aFamilyName, psname, fullname);
+    MOZ_PUSH_IGNORE_THREAD_SAFETY
     if (!psname.IsEmpty()) {
       ToLowerCase(psname);
-      mLocalNameTable.InsertOrUpdate(
+      MaybeAddToLocalNameTable(
           psname, fontlist::LocalFaceRec::InitData(keyName, descriptor));
     }
     if (!fullname.IsEmpty()) {
       ToLowerCase(fullname);
       if (fullname != psname) {
-        mLocalNameTable.WithEntryHandle(fullname, [&](auto&& entry) {
-          if (entry && !singleName) {
-            // We only override an existing entry if this is the only way to
-            // name this family. This prevents dubious aliases from clobbering
-            // the local name table.
-            return;
-          }
-          entry.InsertOrUpdate(
-              fontlist::LocalFaceRec::InitData(keyName, descriptor));
-        });
+        // We only consider overriding an existing entry if this is the only
+        // way to name this family. This prevents dubious aliases from
+        // clobbering the local name table.
+        if (singleName || !mLocalNameTable.Contains(fullname)) {
+          MaybeAddToLocalNameTable(
+              fullname, fontlist::LocalFaceRec::InitData(keyName, descriptor));
+        }
       }
     }
+    MOZ_POP_THREAD_SAFETY
 
     return visibility == FontVisibility::Base;
   };
@@ -1938,6 +1937,7 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
       // This substantially reduces the pressure on shared memory (bug 1664151)
       // due to the large font descriptors (serialized patterns).
       FcChar8* fontFormat;
+      MOZ_PUSH_IGNORE_THREAD_SAFETY
       if (FcPatternGetString(clone, FC_FONTFORMAT, 0, &fontFormat) ==
               FcResultMatch &&
           (!FcStrCmp(fontFormat, (const FcChar8*)"TrueType") ||
@@ -1951,6 +1951,7 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
           ++count;
         }
       }
+      MOZ_POP_THREAD_SAFETY
 
       FcPatternDestroy(clone);
     }
@@ -2058,29 +2059,29 @@ gfxFcPlatformFontList::GetFilteredPlatformFontLists() {
     case Device::Linux_Ubuntu_any:
     case Device::Linux_Ubuntu_22:
       fontLists.AppendElement(std::make_pair(
-          kBaseFonts_Ubuntu_22_04, ArrayLength(kBaseFonts_Ubuntu_22_04)));
+          kBaseFonts_Ubuntu_22_04, std::size(kBaseFonts_Ubuntu_22_04)));
       fontLists.AppendElement(std::make_pair(
-          kLangFonts_Ubuntu_22_04, ArrayLength(kLangFonts_Ubuntu_22_04)));
+          kLangFonts_Ubuntu_22_04, std::size(kLangFonts_Ubuntu_22_04)));
       // For Ubuntu_any, we fall through to also check the 20_04 lists.
       [[fallthrough]];
 
     case Device::Linux_Ubuntu_20:
       fontLists.AppendElement(std::make_pair(
-          kBaseFonts_Ubuntu_20_04, ArrayLength(kBaseFonts_Ubuntu_20_04)));
+          kBaseFonts_Ubuntu_20_04, std::size(kBaseFonts_Ubuntu_20_04)));
       fontLists.AppendElement(std::make_pair(
-          kLangFonts_Ubuntu_20_04, ArrayLength(kLangFonts_Ubuntu_20_04)));
+          kLangFonts_Ubuntu_20_04, std::size(kLangFonts_Ubuntu_20_04)));
       break;
 
     case Device::Linux_Fedora_any:
     case Device::Linux_Fedora_39:
-      fontLists.AppendElement(std::make_pair(
-          kBaseFonts_Fedora_39, ArrayLength(kBaseFonts_Fedora_39)));
+      fontLists.AppendElement(std::make_pair(kBaseFonts_Fedora_39,
+                                             std::size(kBaseFonts_Fedora_39)));
       // For Fedora_any, fall through to also check Fedora 38 list.
       [[fallthrough]];
 
     case Device::Linux_Fedora_38:
-      fontLists.AppendElement(std::make_pair(
-          kBaseFonts_Fedora_38, ArrayLength(kBaseFonts_Fedora_38)));
+      fontLists.AppendElement(std::make_pair(kBaseFonts_Fedora_38,
+                                             std::size(kBaseFonts_Fedora_38)));
       break;
 
     default:
@@ -2794,7 +2795,7 @@ void gfxFcPlatformFontList::GetSampleLangForGroup(
   const MozLangGroupData* mozLangGroup = nullptr;
 
   // -- look it up in the list of moz lang groups
-  for (unsigned int i = 0; i < ArrayLength(MozLangGroups); ++i) {
+  for (unsigned int i = 0; i < std::size(MozLangGroups); ++i) {
     if (aLanguage == MozLangGroups[i].mozLangGroup) {
       mozLangGroup = &MozLangGroups[i];
       break;

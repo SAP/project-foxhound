@@ -26,6 +26,9 @@ import android.view.ViewStub
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
+import android.window.OnBackInvokedDispatcher
+import androidx.activity.ComponentDialog
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AlertDialog
@@ -37,7 +40,9 @@ import androidx.constraintlayout.widget.ConstraintProperties.TOP
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
+import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
+import androidx.fragment.app.setFragmentResult
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph
@@ -79,6 +84,7 @@ import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.VoiceSearch
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.Core.Companion.BOOKMARKS_SEARCH_ENGINE_ID
 import org.mozilla.fenix.components.Core.Companion.HISTORY_SEARCH_ENGINE_ID
 import org.mozilla.fenix.components.Core.Companion.TABS_SEARCH_ENGINE_ID
@@ -161,10 +167,14 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setStyle(STYLE_NO_TITLE, R.style.SearchDialogStyle)
+        if (context?.isTabStripEnabled() == true) {
+            setStyle(STYLE_NO_TITLE, R.style.SearchDialogStyleTabStrip)
+        } else {
+            setStyle(STYLE_NO_TITLE, R.style.SearchDialogStyle)
+        }
 
         startForResult = registerForActivityResult { result ->
-            result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.first()?.also {
+            result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.also {
                 val updatedUrl = toolbarView.view.edit.updateUrl(url = it, shouldHighlight = false, shouldAppend = true)
                 interactor.onTextChanged(updatedUrl)
                 toolbarView.view.edit.focus()
@@ -179,14 +189,28 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        return object : Dialog(requireContext(), this.theme) {
-            @Deprecated("Deprecated in Java")
-            override fun onBackPressed() {
-                this@SearchDialogFragment.onBackPressed()
-            }
-        }.apply {
+        return ComponentDialog(requireContext(), this.theme).apply {
             if ((requireActivity() as HomeActivity).browsingModeManager.mode.isPrivate) {
                 this.secure(requireActivity())
+            }
+
+            onBackPressedDispatcher.addCallback(
+                owner = this,
+                onBackPressedCallback = object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        this@SearchDialogFragment.onBackPressed()
+                    }
+                },
+            )
+
+            // This makes sure that we don't miss any onBackPressed calls because
+            // of the introduction of predictive back gesture to Android OS.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+                ) {
+                    this@SearchDialogFragment.onBackPressed()
+                }
             }
         }
     }
@@ -556,6 +580,11 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
     override fun onResume() {
         super.onResume()
 
+        setFragmentResult(
+            SEARCH_VISIBILITY_RESPONSE_KEY,
+            bundleOf(SEARCH_VISIBILITY_RESPONSE_BUNDLE_KEY to SEARCH_IS_VISIBLE),
+        )
+
         qrFeature.get()?.let {
             if (it.isScanInProgress) {
                 it.scan(binding.searchWrapper.id)
@@ -581,6 +610,11 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         super.onDestroyView()
 
         _binding = null
+
+        setFragmentResult(
+            SEARCH_VISIBILITY_RESPONSE_KEY,
+            bundleOf(SEARCH_VISIBILITY_RESPONSE_BUNDLE_KEY to SEARCH_IS_HIDDEN),
+        )
     }
 
     /*
@@ -851,7 +885,7 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
                     qrButtonAction = IncreasedTapAreaActionDecorator(
                         BrowserToolbar.Button(
                             AppCompatResources.getDrawable(requireContext(), R.drawable.ic_qr)!!,
-                            requireContext().getString(R.string.search_scan_button),
+                            requireContext().getString(R.string.search_scan_button_2),
                             autoHide = { true },
                             listener = ::launchQr,
                         ),
@@ -996,5 +1030,10 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         private const val TAP_INCREASE_DPS_4 = 4
         private const val QR_FRAGMENT_TAG = "MOZAC_QR_FRAGMENT"
         private const val REQUEST_CODE_CAMERA_PERMISSIONS = 1
+
+        const val SEARCH_VISIBILITY_RESPONSE_KEY = "SEARCH_VISIBILITY_RESPONSE_KEY"
+        const val SEARCH_VISIBILITY_RESPONSE_BUNDLE_KEY = "SEARCH_VISIBILITY_RESPONSE_BUNDLE_KEY"
+        const val SEARCH_IS_VISIBLE = "SEARCH_IS_VISIBLE"
+        const val SEARCH_IS_HIDDEN = "SEARCH_IS_HIDDEN"
     }
 }

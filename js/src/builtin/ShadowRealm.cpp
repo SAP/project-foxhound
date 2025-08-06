@@ -41,7 +41,6 @@ using namespace js;
 
 using JS::AutoStableStringChars;
 using JS::CompileOptions;
-using JS::SourceOwnership;
 using JS::SourceText;
 
 static JSObject* DefaultNewShadowRealmGlobal(JSContext* cx,
@@ -49,7 +48,10 @@ static JSObject* DefaultNewShadowRealmGlobal(JSContext* cx,
                                              JSPrincipals* principals,
                                              Handle<JSObject*> unused) {
   static const JSClass shadowRealmGlobal = {
-      "ShadowRealmGlobal", JSCLASS_GLOBAL_FLAGS, &JS::DefaultGlobalClassOps};
+      "ShadowRealmGlobal",
+      JSCLASS_GLOBAL_FLAGS,
+      &JS::DefaultGlobalClassOps,
+  };
 
   return JS_NewGlobalObject(cx, &shadowRealmGlobal, principals,
                             JS::FireOnNewGlobalHook, options);

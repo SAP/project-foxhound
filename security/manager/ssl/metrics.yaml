@@ -84,7 +84,7 @@ tls:
   xyber_intolerance_reason:
     type: labeled_counter
     description: >
-      The error that was returned from a failed TLS 1.3 handshake in which the client sent a Xyber key share (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp).
+      The error that was returned from a failed TLS 1.3 handshake in which the client sent a mlkem768x25519 key share (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp).
     data_sensitivity:
       - technical
     bugs:
@@ -278,3 +278,150 @@ pkcs11:
       - dkeeler@mozilla.com
     expires: never
     unit: modules
+
+cert_verification_time:
+  success:
+    type: timing_distribution
+    time_unit: microsecond
+    description: >
+      The time it takes to successfully verify a certificate in a TLS handshake.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - dkeeler@mozilla.com
+    expires: never
+
+  failure:
+    type: timing_distribution
+    time_unit: microsecond
+    description: >
+      The time it takes to fail to verify a certificate in a TLS handshake.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - dkeeler@mozilla.com
+    expires: never
+
+ocsp_request_time:
+  success:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time it takes to make an OCSP request that succeeded.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - dkeeler@mozilla.com
+    expires: never
+
+  failure:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time it takes to make an OCSP request that failed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - dkeeler@mozilla.com
+    expires: never
+
+  cancel:
+    type: timing_distribution
+    time_unit: millisecond
+    description: >
+      The time it takes to make an OCSP request that was cancelled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1913794
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - dkeeler@mozilla.com
+    expires: never
+
+networking:
+  nss_initialization:
+    type: quantity
+    description: >
+      The time in milliseconds to initialize the NSS component in the
+      parent process.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar networking.nss_initialization.
+    bugs:
+      - https://bugzil.la/1628734
+    data_reviews:
+      - https://bugzil.la/1628734
+    notification_emails:
+      - mconley@mozilla.com
+      - dkeeler@mozilla.com
+    expires: never
+    unit: millisecond
+    telemetry_mirror: NETWORKING_NSS_INITIALIZATION
+
+  loading_certs_task:
+    type: quantity
+    description: >
+      The time in milliseconds to load any external certificates. This
+      occurs off of the main-thread, but can block main-thread operations.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar networking.loading_certs_task.
+    bugs:
+      - https://bugzil.la/1628734
+    data_reviews:
+      - https://bugzil.la/1628734
+    notification_emails:
+      - mconley@mozilla.com
+      - dkeeler@mozilla.com
+    expires: never
+    unit: millisecond
+    telemetry_mirror: NETWORKING_LOADING_CERTS_TASK
+
+security:
+  client_auth_cert_usage:
+    type: labeled_counter
+    description: >
+      Measures how many servers have requested a client authentication
+      certificate (key: "requested") and how many times the user has opted
+      to send one in response (key: "sent").
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar security.client_auth_cert_usage.
+    bugs:
+      - https://bugzil.la/1749884
+    data_reviews:
+      - https://bugzil.la/1749884
+    notification_emails:
+      - dkeeler@mozilla.com
+    expires: never
+    telemetry_mirror: SECURITY_CLIENT_AUTH_CERT_USAGE

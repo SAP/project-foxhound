@@ -12,7 +12,7 @@
     ]]></string>
 
     <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-    <string name="mozac_browser_errorpages_security_ssl_title">Dështoi Lidhja e Sigurt</string>
+    <string name="mozac_browser_errorpages_security_ssl_title">Dështoi Lidhja e Siguruar</string>
 
     <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
     <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[      <ul>
@@ -21,7 +21,7 @@
       </ul>]]></string>
 
     <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
-    <string name="mozac_browser_errorpages_security_bad_cert_title">Dështoi Lidhja e Sigurt</string>
+    <string name="mozac_browser_errorpages_security_bad_cert_title">Dështoi Lidhja e Siguruar</string>
     <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
     <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[      <ul>
         <li>Mund të jetë problem i formësimit të shërbyesit, ose mundet që dikush të jetë duke imituar shërbyesin.</li>
@@ -57,7 +57,7 @@
 
     <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
     <string name="mozac_browser_errorpages_security_bad_hsts_cert_techInfo2"><![CDATA[
-        <label><b>%1$s</b> përmban një rregull sigurie të quajtur HTTP Strict Transport Security (HSTS), që do të thotë se <b>%2$s</b>-i mund të lidhet me të vetëm nën mënyrë të sigurt. S’shtoni dot një përjashtim që të vizitoni këtë sajt. </label>
+        <label><b>%1$s</b> përmban një rregull sigurie të quajtur HTTP Strict Transport Security (HSTS), që do të thotë se <b>%2$s</b>-i mund të lidhet me të vetëm nën mënyrë të siguruar. S’shtoni dot një përjashtim që të vizitoni këtë sajt. </label>
     ]]></string>
     <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
     <string name="mozac_browser_errorpages_security_bad_hsts_cert_back">Kthehu Mbrapsht</string>
@@ -113,7 +113,7 @@
     <string name="mozac_browser_errorpages_offline_message"><![CDATA[<p>Shfletuesi po punon nën mënyrën jashtë linje dhe s’lidhet dot te objekti i kërkuar.</p>
       <ul>
         <li>A është pajisja e lidhur te një rrjet aktiv?</li>
-        <li>Shtypni “Riprovoni” që të kalohet nën mënyrën në linjë dhe të ringarkohet faqja.</li>
+        <li>Shtypni “Riprovoni” që të kalohet nën mënyrën “Në linjë” dhe të ringarkohet faqja.</li>
       </ul>]]></string>
 
     <!-- The document title and heading of the error page shown when the browser prevents loading a website on a restricted port. -->
@@ -177,9 +177,16 @@
       </ul>]]></string>
 
     <!-- The document title and heading of an error page. -->
-    <string name="mozac_browser_errorpages_no_internet_title">Pa lidhje internet</string>
+    <string name="mozac_browser_errorpages_no_internet_title" moz:removedIn="133" tools:ignore="UnusedResources">Pa lidhje internet</string>
+    <!-- The document title and heading of an error page. -->
+    <string name="mozac_browser_errorpages_no_internet_title_2">Duket se ka një problem me lidhjen tuaj në internet</string>
     <!-- The main body text of this error page. It will be shown beneath the title -->
-    <string name="mozac_browser_errorpages_no_internet_message">Kontrolloni lidhjen tuaj në rrjet, ose provoni të ringarkoni faqen pas pak çastesh.</string>
+    <string name="mozac_browser_errorpages_no_internet_message" moz:removedIn="133" tools:ignore="UnusedResources">Kontrolloni lidhjen tuaj në rrjet, ose provoni të ringarkoni faqen pas pak çastesh.</string>
+    <!-- The main body text of this error page. It will be shown beneath the title -->
+    <string name="mozac_browser_errorpages_no_internet_message_2">Provoni të lidheni që nga një pajisje tjetër. Shihni modemin ose rrugëzuesin tuaj. Shkëputuni dhe rilidhuni me Wi-Fi-n.</string>
+    <!-- The document title and heading of an error page. -->
+    <string name="mozac_browser_errorpages_no_internet_error_code">Kod Gabimi: NS_ERROR_OFFLINE</string>
+
     <!-- Text that will show up on the button at the bottom of the error page -->
     <string name="mozac_browser_errorpages_no_internet_refresh_button">Ringarkoje</string>
 
@@ -206,7 +213,7 @@
       <p>Adresa tregon një protokoll (p.sh., <q>wxyz://</q>) të cilin shfletuesi s’e njeh, kështu që s’mund të lidhet si duhet me këtë sajt.</p>
       <ul>
         <li>Mos po përpiqeni të hapni shërbime multimedia apo shërbim tjetër jo tekst? Shihni te sajti për domosdoshmëri ekstra.</li>
-        <li>Disa protokolle mund të lypin software ose shtojca prej palësh të treta, përpara se shfletuesi të mund t’i njohë.</li>
+        <li>Disa protokolle mund të lypin <em>software</em> ose shtojca prej palësh të treta, përpara se shfletuesi të mund t’i njohë.</li>
       </ul>
     ]]></string>
 
@@ -263,7 +270,7 @@
     <string name="mozac_browser_errorpages_safe_browsing_unwanted_uri_title">Problem sajti të padëshiruar</string>
     <!-- The %1$s will be replaced by the malicious website URL-->
     <string name="mozac_browser_errorpages_safe_browsing_unwanted_uri_message"><![CDATA[
-      <p>Sajti te %1$s është raportuar se shërben software të padëshiruar dhe është bllokuar bazuar në parapëlqimet tuaja për sigurinë.</p>
+      <p>Sajti te %1$s është raportuar se shërben <em>software</em> të padëshiruar dhe është bllokuar bazuar në parapëlqimet tuaja për sigurinë.</p>
     ]]></string>
 
     <!-- The document title and heading of an error page. -->
@@ -281,7 +288,7 @@
     ]]></string>
 
     <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
-    <string name="mozac_browser_errorpages_httpsonly_title">S’ka Sajt të Sigurt</string>
+    <string name="mozac_browser_errorpages_httpsonly_title">S’ka Sajt të Siguruar</string>
     <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->
     <string name="mozac_browser_errorpages_httpsonly_message"><![CDATA[Keni aktivizuar Mënyrën Vetëm-HTTPS, për siguri të thelluar dhe s’ka version HTTPS për <em>%1$s</em>.]]></string>
     <!-- Button on error page for websites that do not support HTTPS when HTTPS-Only is turned on. Clicking the button allows the user to nevertheless load the website using HTTP. -->

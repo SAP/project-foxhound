@@ -909,7 +909,7 @@ double js::math_sign_impl(double x) {
   return x == 0 ? x : x < 0 ? -1 : 1;
 }
 
-static bool math_sign(JSContext* cx, unsigned argc, Value* vp) {
+bool js::math_sign(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   if (args.length() == 0) {
     args.rval().setNaN();
@@ -940,6 +940,17 @@ static bool math_toSource(JSContext* cx, unsigned argc, Value* vp) {
   args.rval().setString(cx->names().Math);
   return true;
 }
+
+#ifdef NIGHTLY_BUILD
+/**
+ * Math.sumPrecise ( items )
+ *
+ * https://tc39.es/proposal-math-sum/#sec-math.sumprecise
+ */
+static bool math_sumPrecise(JSContext* cx, unsigned argc, Value* vp) {
+  return false;
+}
+#endif
 
 UnaryMathFunctionType js::GetUnaryMathFunctionPtr(UnaryMathFunction fun) {
   switch (fun) {
@@ -1095,6 +1106,9 @@ static const JSFunctionSpec math_static_methods[] = {
     JS_INLINABLE_FN("trunc", math_trunc, 1, 0, MathTrunc),
     JS_INLINABLE_FN("sign", math_sign, 1, 0, MathSign),
     JS_INLINABLE_FN("cbrt", math_cbrt, 1, 0, MathCbrt),
+#ifdef NIGHTLY_BUILD
+    JS_FN("sumPrecise", math_sumPrecise, 1, 0),
+#endif
     JS_FS_END,
 };
 
@@ -1117,13 +1131,19 @@ static JSObject* CreateMathObject(JSContext* cx, JSProtoKey key) {
   return NewTenuredObjectWithGivenProto(cx, &MathClass, proto);
 }
 
-static const ClassSpec MathClassSpec = {CreateMathObject,
-                                        nullptr,
-                                        math_static_methods,
-                                        math_static_properties,
-                                        nullptr,
-                                        nullptr,
-                                        nullptr};
+static const ClassSpec MathClassSpec = {
+    CreateMathObject,
+    nullptr,
+    math_static_methods,
+    math_static_properties,
+    nullptr,
+    nullptr,
+    nullptr,
+};
 
-const JSClass js::MathClass = {"Math", JSCLASS_HAS_CACHED_PROTO(JSProto_Math),
-                               JS_NULL_CLASS_OPS, &MathClassSpec};
+const JSClass js::MathClass = {
+    "Math",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Math),
+    JS_NULL_CLASS_OPS,
+    &MathClassSpec,
+};

@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
+import pickle
 import sys
 from pathlib import Path
 
@@ -55,6 +56,7 @@ GIFFT_TYPES = {
         "uuid",
         "datetime",
         "quantity",
+        "labeled_quantity",
         "rate",
         "url",
     ],
@@ -74,6 +76,19 @@ def parse(args):
     Parse and lint the input files,
     then return the parsed objects for further processing.
     """
+
+    if all(arg.endswith(".cached") for arg in args[:-1]):
+        objects = dict()
+        options = None
+        for cache_file in args[:-1]:
+            with open(cache_file, "rb") as cache:
+                cached_objects, cached_options = pickle.load(cache)
+                objects.update(cached_objects)
+                assert (
+                    options is None or cached_options == options
+                ), "consistent options"
+                options = options or cached_options
+        return objects, options
 
     # Unfortunately, GeneratedFile appends `flags` directly after `inputs`
     # instead of listifying either, so we need to pull stuff from a *args.
@@ -228,14 +243,6 @@ def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd):
         )
     )
     output_fd.write("\n")
-
-    # Events also need to output maps from event extra enum to strings.
-    # Sadly we need to generate code for all possible events, not just mirrored.
-    # Otherwise we won't compile.
-    if probe_type == "Event":
-        template = env.get_template("gifft_events.jinja2")
-        cpp_fd.write(template.render(all_objs=all_objs))
-        cpp_fd.write("\n")
 
 
 def jog_factory(output_fd, *args):

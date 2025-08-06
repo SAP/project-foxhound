@@ -387,7 +387,10 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
       nsIGlobalObject* global = xpc::NativeGlobal(aPromise);
       if (nsCOMPtr<EventTarget> owner = do_QueryInterface(global)) {
         RootedDictionary<PromiseRejectionEventInit> init(aCx);
-        init.mPromise = Promise::CreateFromExisting(global, aPromise);
+        if (RefPtr<Promise> newPromise =
+                Promise::CreateFromExisting(global, aPromise)) {
+          init.mPromise = newPromise->PromiseObj();
+        }
         init.mReason = JS::GetPromiseResult(aPromise);
 
         RefPtr<PromiseRejectionEvent> event =
@@ -779,7 +782,7 @@ NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
       if (nsCOMPtr<EventTarget> target =
               do_QueryInterface(promise->GetParentObject())) {
         RootedDictionary<PromiseRejectionEventInit> init(cx);
-        init.mPromise = promise;
+        init.mPromise = promiseObj;
         init.mReason = JS::GetPromiseResult(promiseObj);
         init.mCancelable = true;
 
@@ -823,6 +826,35 @@ nsresult CycleCollectedJSContext::NotifyUnhandledRejections::Cancel() {
   }
   return NS_OK;
 }
+
+#ifdef MOZ_EXECUTION_TRACING
+
+void CycleCollectedJSContext::BeginExecutionTracingAsync() {
+  mOwningThread->Dispatch(NS_NewRunnableFunction(
+      "CycleCollectedJSContext::BeginExecutionTracingAsync", [] {
+        CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
+        if (ccjs) {
+          JS_TracerBeginTracing(ccjs->Context());
+        }
+      }));
+}
+
+void CycleCollectedJSContext::EndExecutionTracingAsync() {
+  mOwningThread->Dispatch(NS_NewRunnableFunction(
+      "CycleCollectedJSContext::EndExecutionTracingAsync", [] {
+        CycleCollectedJSContext* ccjs = CycleCollectedJSContext::Get();
+        if (ccjs) {
+          JS_TracerEndTracing(ccjs->Context());
+        }
+      }));
+}
+
+#else
+
+void CycleCollectedJSContext::BeginExecutionTracingAsync() {}
+void CycleCollectedJSContext::EndExecutionTracingAsync() {}
+
+#endif
 
 class FinalizationRegistryCleanup::CleanupRunnable
     : public DiscardableRunnable {

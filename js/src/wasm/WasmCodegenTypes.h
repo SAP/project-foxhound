@@ -42,8 +42,6 @@ class ABIArgIterBase;
 
 namespace wasm {
 
-using mozilla::EnumeratedArray;
-
 struct CodeMetadata;
 struct TableDesc;
 struct V128;
@@ -273,7 +271,7 @@ WASM_DECLARE_CACHEABLE_POD(TrapSite);
 WASM_DECLARE_POD_VECTOR(TrapSite, TrapSiteVector)
 
 struct TrapSiteVectorArray
-    : EnumeratedArray<Trap, TrapSiteVector, size_t(Trap::Limit)> {
+    : mozilla::EnumeratedArray<Trap, TrapSiteVector, size_t(Trap::Limit)> {
   bool empty() const;
   void clear();
   void swap(TrapSiteVectorArray& rhs);
@@ -294,6 +292,31 @@ struct CallFarJump {
 WASM_DECLARE_CACHEABLE_POD(CallFarJump);
 
 using CallFarJumpVector = Vector<CallFarJump, 0, SystemAllocPolicy>;
+
+class CallRefMetricsPatch {
+ private:
+  // The offset of where to patch in the offset of the CallRefMetrics.
+  uint32_t offsetOfOffsetPatch_;
+  static constexpr uint32_t NO_OFFSET = UINT32_MAX;
+
+  WASM_CHECK_CACHEABLE_POD(offsetOfOffsetPatch_);
+
+ public:
+  explicit CallRefMetricsPatch() : offsetOfOffsetPatch_(NO_OFFSET) {}
+
+  bool hasOffsetOfOffsetPatch() const {
+    return offsetOfOffsetPatch_ != NO_OFFSET;
+  }
+  uint32_t offsetOfOffsetPatch() const { return offsetOfOffsetPatch_; }
+  void setOffset(uint32_t indexOffset) {
+    MOZ_ASSERT(!hasOffsetOfOffsetPatch());
+    MOZ_ASSERT(indexOffset != NO_OFFSET);
+    offsetOfOffsetPatch_ = indexOffset;
+  }
+};
+
+using CallRefMetricsPatchVector =
+    Vector<CallRefMetricsPatch, 0, SystemAllocPolicy>;
 
 // On trap, the bytecode offset to be reported in callstacks is saved.
 
@@ -391,17 +414,18 @@ using FuncOffsetsVector = Vector<FuncOffsets, 0, SystemAllocPolicy>;
 class CodeRange {
  public:
   enum Kind {
-    Function,           // function definition
-    InterpEntry,        // calls into wasm from C++
-    JitEntry,           // calls into wasm from jit code
-    ImportInterpExit,   // slow-path calling from wasm into C++ interp
-    ImportJitExit,      // fast-path calling from wasm into jit code
-    BuiltinThunk,       // fast-path calling from wasm into a C++ native
-    TrapExit,           // calls C++ to report and jumps to throw stub
-    DebugStub,          // calls C++ to handle debug event
-    RequestTierUpStub,  // calls C++ to request tier-2 compilation
-    FarJumpIsland,      // inserted to connect otherwise out-of-range insns
-    Throw               // special stack-unwinding stub jumped to by other stubs
+    Function,                  // function definition
+    InterpEntry,               // calls into wasm from C++
+    JitEntry,                  // calls into wasm from jit code
+    ImportInterpExit,          // slow-path calling from wasm into C++ interp
+    ImportJitExit,             // fast-path calling from wasm into jit code
+    BuiltinThunk,              // fast-path calling from wasm into a C++ native
+    TrapExit,                  // calls C++ to report and jumps to throw stub
+    DebugStub,                 // calls C++ to handle debug event
+    RequestTierUpStub,         // calls C++ to request tier-2 compilation
+    UpdateCallRefMetricsStub,  // updates a CallRefMetrics
+    FarJumpIsland,  // inserted to connect otherwise out-of-range insns
+    Throw           // special stack-unwinding stub jumped to by other stubs
   };
 
  private:
@@ -465,6 +489,10 @@ class CodeRange {
   bool isImportJitExit() const { return kind() == ImportJitExit; }
   bool isTrapExit() const { return kind() == TrapExit; }
   bool isDebugStub() const { return kind() == DebugStub; }
+  bool isRequestTierUpStub() const { return kind() == RequestTierUpStub; }
+  bool isUpdateCallRefMetricsStub() const {
+    return kind() == UpdateCallRefMetricsStub;
+  }
   bool isThunk() const { return kind() == FarJumpIsland; }
 
   // Functions, import exits, debug stubs and JitEntry stubs have standard
@@ -472,7 +500,9 @@ class CodeRange {
   // know the offset of the return instruction to calculate the frame pointer.
 
   bool hasReturn() const {
-    return isFunction() || isImportExit() || isDebugStub() || isJitEntry();
+    return isFunction() || isImportExit() || isDebugStub() ||
+           isRequestTierUpStub() || isUpdateCallRefMetricsStub() ||
+           isJitEntry();
   }
   uint32_t ret() const {
     MOZ_ASSERT(hasReturn());
@@ -960,8 +990,8 @@ class CalleeDesc {
     } import;
     struct {
       uint32_t instanceDataOffset_;
-      uint32_t minLength_;
-      Maybe<uint32_t> maxLength_;
+      uint64_t minLength_;
+      mozilla::Maybe<uint64_t> maxLength_;
       CallIndirectId callIndirectId_;
     } table;
     SymbolicAddress builtin_;
@@ -1005,7 +1035,7 @@ class CalleeDesc {
     MOZ_ASSERT(which_ == WasmTable);
     return u.table.minLength_;
   }
-  Maybe<uint32_t> wasmTableMaxLength() const {
+  mozilla::Maybe<uint32_t> wasmTableMaxLength() const {
     MOZ_ASSERT(which_ == WasmTable);
     return u.table.maxLength_;
   }

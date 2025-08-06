@@ -89,26 +89,26 @@
 namespace mozilla {
 namespace dom {
 
-// Forward declare GetConstructorObject methods.
-#define HTML_TAG(_tag, _classname, _interfacename)  \
-  namespace HTML##_interfacename##Element_Binding { \
-    JSObject* GetConstructorObject(JSContext*);     \
+// Forward declare GetConstructorObjectHandle methods.
+#define HTML_TAG(_tag, _classname, _interfacename)                \
+  namespace HTML##_interfacename##Element_Binding {               \
+    JS::Handle<JSObject*> GetConstructorObjectHandle(JSContext*); \
   }
 #define HTML_OTHER(_tag)
 #include "nsHTMLTagList.h"
 #undef HTML_TAG
 #undef HTML_OTHER
 
-using constructorGetterCallback = JSObject* (*)(JSContext*);
+using constructorGetterCallback = JS::Handle<JSObject*> (*)(JSContext*);
 
-// Mapping of html tag and GetConstructorObject methods.
+// Mapping of html tag and GetConstructorObjectHandle methods.
 #define HTML_TAG(_tag, _classname, _interfacename) \
-  HTML##_interfacename##Element_Binding::GetConstructorObject,
+  HTML##_interfacename##Element_Binding::GetConstructorObjectHandle,
 #define HTML_OTHER(_tag) nullptr,
 // We use eHTMLTag_foo (where foo is the tag) which is defined in nsHTMLTags.h
 // to index into this array.
 static const constructorGetterCallback sConstructorGetterCallback[] = {
-    HTMLUnknownElement_Binding::GetConstructorObject,
+    HTMLUnknownElement_Binding::GetConstructorObjectHandle,
 #include "nsHTMLTagList.h"
 #undef HTML_TAG
 #undef HTML_OTHER
@@ -130,7 +130,7 @@ static const JSErrorFormatString ErrorFormatString[] = {
 
 static const JSErrorFormatString* GetErrorMessage(void* aUserRef,
                                                   const unsigned aErrorNumber) {
-  MOZ_ASSERT(aErrorNumber < ArrayLength(ErrorFormatString));
+  MOZ_ASSERT(aErrorNumber < std::size(ErrorFormatString));
   return &ErrorFormatString[aErrorNumber];
 }
 
@@ -626,10 +626,8 @@ void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx,
                                                       const char* context) {
   AssertInOwningThread();
   if (IsUncatchableException()) {
-    // Nuke any existing exception on cx, to make sure we're uncatchable.
-    JS_ClearPendingException(cx);
-    // Don't do any reporting.  Just return, to create an
-    // uncatchable exception.
+    // Note: ReportUncatchableException will clear any existing exception on cx.
+    JS::ReportUncatchableException(cx);
     mResult = NS_OK;
     return;
   }
@@ -998,8 +996,8 @@ static JSObject* CreateInterfaceObject(
     JS::Rooted<JSObject*> legacyFactoryFunction(
         cx, CreateBuiltinFunctionForConstructor(
                 cx, LegacyFactoryFunctionJSNative,
-                LEGACY_FACTORY_FUNCTION_NATIVE_HOLDER_RESERVED_SLOT,
-                const_cast<JSNativeHolder*>(&lff.mHolder), lff.mNargs, nameId,
+                LEGACY_FACTORY_FUNCTION_RESERVED_SLOT,
+                const_cast<LegacyFactoryFunction*>(&lff), lff.mNargs, nameId,
                 nullptr));
     if (!legacyFactoryFunction ||
         !JS_DefineProperty(cx, legacyFactoryFunction, "prototype", proto,
@@ -1908,6 +1906,30 @@ static bool ResolvePrototypeOrConstructor(
                                        JS::PropertyAttribute::Writable})));
         return true;
       }
+    }
+
+    if (id.get() == GetJSIDByIndex(cx, XPCJSContext::IDX_NAME)) {
+      const char* name = IsInterfaceObject(obj)
+                             ? InterfaceInfoFromObject(obj)->mConstructorName
+                             : LegacyFactoryFunctionFromObject(obj)->mName;
+      JSString* nameStr = JS_NewStringCopyZ(cx, name);
+      if (!nameStr) {
+        return false;
+      }
+      desc.set(Some(JS::PropertyDescriptor::Data(
+          JS::StringValue(nameStr), {JS::PropertyAttribute::Configurable,
+                                     JS::PropertyAttribute::Enumerable})));
+      return true;
+    }
+
+    if (id.get() == GetJSIDByIndex(cx, XPCJSContext::IDX_LENGTH)) {
+      uint8_t length = IsInterfaceObject(obj)
+                           ? InterfaceInfoFromObject(obj)->mConstructorArgs
+                           : LegacyFactoryFunctionFromObject(obj)->mNargs;
+      desc.set(Some(JS::PropertyDescriptor::Data(
+          JS::Int32Value(length), {JS::PropertyAttribute::Configurable,
+                                   JS::PropertyAttribute::Enumerable})));
+      return true;
     }
   } else if (type == eNamespace) {
     if (id.isWellKnownSymbol(JS::SymbolCode::toStringTag)) {
@@ -3829,24 +3851,24 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   if (ns == kNameSpaceID_XUL) {
     if (definition->mLocalName == nsGkAtoms::description ||
         definition->mLocalName == nsGkAtoms::label) {
-      cb = XULTextElement_Binding::GetConstructorObject;
+      cb = XULTextElement_Binding::GetConstructorObjectHandle;
     } else if (definition->mLocalName == nsGkAtoms::resizer) {
-      cb = XULResizerElement_Binding::GetConstructorObject;
+      cb = XULResizerElement_Binding::GetConstructorObjectHandle;
     } else if (definition->mLocalName == nsGkAtoms::menupopup ||
                definition->mLocalName == nsGkAtoms::panel ||
                definition->mLocalName == nsGkAtoms::tooltip) {
-      cb = XULPopupElement_Binding::GetConstructorObject;
+      cb = XULPopupElement_Binding::GetConstructorObjectHandle;
     } else if (definition->mLocalName == nsGkAtoms::iframe ||
                definition->mLocalName == nsGkAtoms::browser ||
                definition->mLocalName == nsGkAtoms::editor) {
-      cb = XULFrameElement_Binding::GetConstructorObject;
+      cb = XULFrameElement_Binding::GetConstructorObjectHandle;
     } else if (definition->mLocalName == nsGkAtoms::menu ||
                definition->mLocalName == nsGkAtoms::menulist) {
-      cb = XULMenuElement_Binding::GetConstructorObject;
+      cb = XULMenuElement_Binding::GetConstructorObjectHandle;
     } else if (definition->mLocalName == nsGkAtoms::tree) {
-      cb = XULTreeElement_Binding::GetConstructorObject;
+      cb = XULTreeElement_Binding::GetConstructorObjectHandle;
     } else {
-      cb = XULElement_Binding::GetConstructorObject;
+      cb = XULElement_Binding::GetConstructorObjectHandle;
     }
   }
 
@@ -3856,7 +3878,7 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     // If the definition is for an autonomous custom element, the active
     // function should be HTMLElement or extend from XULElement.
     if (!cb) {
-      cb = HTMLElement_Binding::GetConstructorObject;
+      cb = HTMLElement_Binding::GetConstructorObjectHandle;
     }
 
     // We want to get the constructor from our global's realm, not the
@@ -4049,7 +4071,7 @@ static const char* kDeprecatedOperations[] = {
     nullptr};
 #undef DEPRECATED_OPERATION
 
-void ReportDeprecation(nsIGlobalObject* aGlobal, nsIURI* aURI,
+void ReportDeprecation(nsIGlobalObject* aGlobal, Document* aDoc, nsIURI* aURI,
                        DeprecatedOperations aOperation,
                        const nsACString& aFileName,
                        const Nullable<uint32_t>& aLineNumber,
@@ -4073,8 +4095,8 @@ void ReportDeprecation(nsIGlobalObject* aGlobal, nsIURI* aURI,
   key.AppendASCII("Warning");
 
   nsAutoString msg;
-  rv = nsContentUtils::GetLocalizedString(nsContentUtils::eDOM_PROPERTIES,
-                                          key.get(), msg);
+  rv = nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eDOM_PROPERTIES,
+                                               key.get(), aDoc, msg);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -4136,7 +4158,7 @@ void MaybeShowDeprecationWarning(const GlobalObject& aGlobal,
 void MaybeReportDeprecation(const GlobalObject& aGlobal,
                             DeprecatedOperations aOperation) {
   nsCOMPtr<nsIURI> uri;
-
+  nsCOMPtr<Document> doc;
   if (NS_IsMainThread()) {
     nsCOMPtr<nsPIDOMWindowInner> window =
         do_QueryInterface(aGlobal.GetAsSupports());
@@ -4144,7 +4166,8 @@ void MaybeReportDeprecation(const GlobalObject& aGlobal,
       return;
     }
 
-    uri = window->GetExtantDoc()->GetDocumentURI();
+    doc = window->GetExtantDoc();
+    uri = doc->GetDocumentURI();
   } else {
     WorkerPrivate* workerPrivate =
         GetWorkerPrivateFromContext(aGlobal.Context());
@@ -4170,8 +4193,8 @@ void MaybeReportDeprecation(const GlobalObject& aGlobal,
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(global);
 
-  ReportDeprecation(global, uri, aOperation, location.FileName(), lineNumber,
-                    columnNumber);
+  ReportDeprecation(global, doc, uri, aOperation, location.FileName(),
+                    lineNumber, columnNumber);
 }
 
 }  // anonymous namespace
@@ -4293,7 +4316,43 @@ already_AddRefed<Promise> CreateRejectedPromiseFromThrownException(
   return Promise::RejectWithExceptionFromContext(global, aCx, aError);
 }
 
+/* static */
+void ReflectedHTMLAttributeSlotsBase::ForEachXrayReflectedHTMLAttributeSlots(
+    JS::RootingContext* aCx, JSObject* aObject, size_t aSlotIndex,
+    size_t aArrayIndex, void (*aFunc)(void* aSlots, size_t aArrayIndex)) {
+  xpc::ForEachXrayExpandoObject(
+      aCx, aObject, [aSlotIndex, aFunc, aArrayIndex](JSObject* aExpandObject) {
+        MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(JS::GetClass(aExpandObject)) >
+                   aSlotIndex);
+        MOZ_ASSERT(aSlotIndex >= DOM_EXPANDO_RESERVED_SLOTS);
+        JS::Value array = JS::GetReservedSlot(aExpandObject, aSlotIndex);
+        if (!array.isUndefined()) {
+          aFunc(array.toPrivate(), aArrayIndex);
+        }
+      });
+}
+
+/* static */
+void ReflectedHTMLAttributeSlotsBase::XrayExpandoObjectFinalize(
+    JS::GCContext* aCx, JSObject* aObject) {
+  xpc::ExpandoObjectFinalize(aCx, aObject);
+}
+
+void ClearXrayExpandoSlots(JS::RootingContext* aCx, JSObject* aObject,
+                           size_t aSlotIndex) {
+  xpc::ForEachXrayExpandoObject(
+      aCx, aObject, [aSlotIndex](JSObject* aExpandObject) {
+        MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(JS::GetClass(aExpandObject)) >
+                   aSlotIndex);
+        MOZ_ASSERT(aSlotIndex >= DOM_EXPANDO_RESERVED_SLOTS);
+        JS::SetReservedSlot(aExpandObject, aSlotIndex, JS::UndefinedValue());
+      });
+}
+
 }  // namespace binding_detail
+
+static_assert(UnderlyingValue(DOM_EXPANDO_RESERVED_SLOTS) ==
+              UnderlyingValue(xpc::JSSLOT_EXPANDO_COUNT));
 
 }  // namespace dom
 }  // namespace mozilla

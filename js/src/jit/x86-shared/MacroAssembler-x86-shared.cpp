@@ -747,6 +747,15 @@ void MacroAssembler::patchCallToNop(uint8_t* callsite) {
   Assembler::patchCallToFiveByteNop(callsite);
 }
 
+CodeOffset MacroAssembler::move32WithPatch(Register dest) {
+  movl(Imm32(-1), dest);
+  return CodeOffset(currentOffset());
+}
+
+void MacroAssembler::patchMove32(CodeOffset offset, Imm32 n) {
+  X86Encoding::SetInt32(masm.data() + offset.offset(), n.value);
+}
+
 // ===============================================================
 // Jit Frames.
 
@@ -1091,6 +1100,29 @@ void MacroAssembler::oolWasmTruncateCheckF32ToI64(FloatRegister input,
 void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
                                                ExitFrameType type) {
   enterFakeExitFrame(cxreg, scratch, type);
+}
+
+CodeOffset MacroAssembler::sub32FromMemAndBranchIfNegativeWithPatch(
+    Address address, Label* label) {
+  // -128 is arbitrary, but makes `*address` count upwards, which may help
+  // to identify cases where the subsequent ::patch..() call was forgotten.
+  int numImmBytes = subl(Imm32(-128), Operand(address));
+  // This is vitally important for patching
+  MOZ_RELEASE_ASSERT(numImmBytes == 1);
+  // Points immediately after the location to patch
+  CodeOffset patchPoint = CodeOffset(currentOffset());
+  jSrc(Condition::Signed, label);
+  return patchPoint;
+}
+
+void MacroAssembler::patchSub32FromMemAndBranchIfNegative(CodeOffset offset,
+                                                          Imm32 imm) {
+  int32_t val = imm.value;
+  // Patching it to zero would make the insn pointless
+  MOZ_RELEASE_ASSERT(val >= 1 && val <= 127);
+  uint8_t* ptr = (uint8_t*)masm.data() + offset.offset() - 1;
+  MOZ_RELEASE_ASSERT(*ptr == uint8_t(-128));  // as created above
+  *ptr = uint8_t(val) & 0x7F;
 }
 
 // ========================================================================
@@ -1693,6 +1725,8 @@ void MacroAssembler::atomicFetchOpJS(Scalar::Type arrayType,
   AtomicFetchOpJS(*this, arrayType, sync, op, value, mem, temp1, temp2, output);
 }
 
+void MacroAssembler::atomicPause() { masm.pause(); }
+
 // ========================================================================
 // Spectre Mitigations.
 
@@ -2186,6 +2220,13 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
   }
   lshift32(Imm32(shift), indexTemp32);
   addPtr(indexTemp32, pointer);
+}
+
+CodeOffset MacroAssembler::wasmMarkedSlowCall(const wasm::CallSiteDesc& desc,
+                                              const Register reg) {
+  CodeOffset offset = call(desc, reg);
+  wasmMarkCallAsSlow();
+  return offset;
 }
 
 //}}} check_macroassembler_style

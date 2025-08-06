@@ -337,11 +337,7 @@ var gMainPane = {
         "command",
         function (event) {
           if (!event.target.checked) {
-            Services.telemetry.recordEvent(
-              "pictureinpicture.settings",
-              "disable",
-              "settings"
-            );
+            Glean.pictureinpictureSettings.disableSettings.record();
           }
         }
       );
@@ -431,28 +427,16 @@ var gMainPane = {
         "command",
         gMainPane.onWindowsLaunchOnLoginChange
       );
-      // We do a check here for startWithLastProfile as we could
-      // have disabled the pref for the user before they're ever
-      // exposed to the experiment on a new profile.
-      // If we're using MSIX, we don't show the checkbox as MSIX
-      // can't write to the registry.
       if (
-        Cc["@mozilla.org/toolkit/profile-service;1"].getService(
-          Ci.nsIToolkitProfileService
-        ).startWithLastProfile
+        Services.prefs.getBoolPref(
+          "browser.startup.windowsLaunchOnLogin.enabled",
+          false
+        )
       ) {
+        document.getElementById("windowsLaunchOnLoginBox").hidden = false;
         NimbusFeatures.windowsLaunchOnLogin.recordExposureEvent({
           once: true,
         });
-
-        if (
-          Services.prefs.getBoolPref(
-            "browser.startup.windowsLaunchOnLogin.enabled",
-            false
-          )
-        ) {
-          document.getElementById("windowsLaunchOnLoginBox").hidden = false;
-        }
       }
     }
     gMainPane.updateBrowserStartupUI =
@@ -691,16 +675,33 @@ var gMainPane = {
         let launchOnLoginCheckbox = document.getElementById(
           "windowsLaunchOnLogin"
         );
-        WindowsLaunchOnLogin.getLaunchOnLoginEnabled().then(enabled => {
-          launchOnLoginCheckbox.checked = enabled;
-        });
-        WindowsLaunchOnLogin.getLaunchOnLoginApproved().then(
-          approvedByWindows => {
-            launchOnLoginCheckbox.disabled = !approvedByWindows;
-            document.getElementById("windowsLaunchOnLoginDisabledBox").hidden =
-              approvedByWindows;
-          }
-        );
+
+        let startWithLastProfile = Cc[
+          "@mozilla.org/toolkit/profile-service;1"
+        ].getService(Ci.nsIToolkitProfileService).startWithLastProfile;
+
+        // Grey out the launch on login checkbox if startWithLastProfile is false
+        document.getElementById(
+          "windowsLaunchOnLoginDisabledProfileBox"
+        ).hidden = startWithLastProfile;
+        launchOnLoginCheckbox.disabled = !startWithLastProfile;
+
+        if (!startWithLastProfile) {
+          launchOnLoginCheckbox.checked = false;
+        } else {
+          WindowsLaunchOnLogin.getLaunchOnLoginEnabled().then(enabled => {
+            launchOnLoginCheckbox.checked = enabled;
+          });
+
+          WindowsLaunchOnLogin.getLaunchOnLoginApproved().then(
+            approvedByWindows => {
+              launchOnLoginCheckbox.disabled = !approvedByWindows;
+              document.getElementById(
+                "windowsLaunchOnLoginDisabledBox"
+              ).hidden = approvedByWindows;
+            }
+          );
+        }
 
         // On Windows, the Application Update setting is an installation-
         // specific preference, not a profile-specific one. Show a warning to
@@ -1401,12 +1402,6 @@ var gMainPane = {
   },
 
   initPrimaryBrowserLanguageUI() {
-    // Enable telemetry.
-    Services.telemetry.setEventRecordingEnabled(
-      "intl.ui.browserLanguage",
-      true
-    );
-
     // This will register the "command" listener.
     let menulist = document.getElementById("primaryBrowserLocale");
     new SelectionChangedMenulist(menulist, event => {
@@ -1795,11 +1790,8 @@ var gMainPane = {
   },
 
   recordBrowserLanguagesTelemetry(method, value = null) {
-    Services.telemetry.recordEvent(
-      "intl.ui.browserLanguage",
-      method,
-      "main",
-      value
+    Glean.intlUiBrowserLanguage[method + "Main"].record(
+      value ? { value } : undefined
     );
   },
 
@@ -1875,6 +1867,18 @@ var gMainPane = {
     if (!selected) {
       // No locales were selected. Cancel the operation.
       return;
+    }
+
+    // Track how often locale fallback order is changed.
+    // Drop the first locale and filter to only include the overlapping set
+    const prevLocales = Services.locale.requestedLocales.filter(
+      lc => selected.indexOf(lc) > 0
+    );
+    const newLocales = selected.filter(
+      (lc, i) => i > 0 && prevLocales.includes(lc)
+    );
+    if (prevLocales.some((lc, i) => newLocales[i] != lc)) {
+      this.gBrowserLanguagesDialog.recordTelemetry("setFallback");
     }
 
     switch (gMainPane.getLanguageSwitchTransitionType(selected)) {
@@ -2844,6 +2848,9 @@ var gMainPane = {
     if (aHandlerApp instanceof Ci.nsIGIOMimeApp) {
       return aHandlerApp.command;
     }
+    if (aHandlerApp instanceof Ci.nsIGIOHandlerApp) {
+      return aHandlerApp.id;
+    }
 
     return false;
   },
@@ -3382,8 +3389,16 @@ var gMainPane = {
       return this._getIconURLForWebApp(aHandlerApp.uriTemplate);
     }
 
+    if (aHandlerApp instanceof Ci.nsIGIOHandlerApp) {
+      return this._getIconURLForAppId(aHandlerApp.id);
+    }
+
     // We know nothing about other kinds of handler apps.
     return "";
+  },
+
+  _getIconURLForAppId(aAppId) {
+    return "moz-icon://" + aAppId + "?size=16";
   },
 
   _getIconURLForFile(aFile) {

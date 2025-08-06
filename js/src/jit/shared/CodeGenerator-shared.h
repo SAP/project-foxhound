@@ -11,6 +11,7 @@
 
 #include <utility>
 
+#include "jit/InlineList.h"
 #include "jit/InlineScriptTree.h"
 #include "jit/JitcodeMap.h"
 #include "jit/LIR.h"
@@ -32,7 +33,7 @@ class IonIC;
 class OutOfLineTruncateSlow;
 
 class CodeGeneratorShared : public LElementVisitor {
-  js::Vector<OutOfLineCode*, 0, SystemAllocPolicy> outOfLineCode_;
+  AppendOnlyList<OutOfLineCode> outOfLineCode_;
 
   MacroAssembler& ensureMasm(MacroAssembler* masm, TempAllocator& alloc,
                              CompileRealm* realm);
@@ -61,24 +62,25 @@ class CodeGeneratorShared : public LElementVisitor {
   // Amount of bytes allocated for incoming args. Used for Wasm return calls.
   uint32_t inboundStackArgBytes_;
 
-  js::Vector<CodegenSafepointIndex, 0, SystemAllocPolicy> safepointIndices_;
-  js::Vector<OsiIndex, 0, SystemAllocPolicy> osiIndices_;
+  js::Vector<CodegenSafepointIndex, 0, JitAllocPolicy> safepointIndices_;
+  js::Vector<OsiIndex, 0, BackgroundSystemAllocPolicy> osiIndices_;
 
   // Allocated data space needed at runtime.
-  js::Vector<uint8_t, 0, SystemAllocPolicy> runtimeData_;
+  js::Vector<uint8_t, 0, BackgroundSystemAllocPolicy> runtimeData_;
 
   // Vector mapping each IC index to its offset in runtimeData_.
-  js::Vector<uint32_t, 0, SystemAllocPolicy> icList_;
+  js::Vector<uint32_t, 0, BackgroundSystemAllocPolicy> icList_;
 
   // IC data we need at compile-time. Discarded after creating the IonScript.
   struct CompileTimeICInfo {
     CodeOffset icOffsetForJump;
     CodeOffset icOffsetForPush;
   };
-  js::Vector<CompileTimeICInfo, 0, SystemAllocPolicy> icInfo_;
+  js::Vector<CompileTimeICInfo, 0, BackgroundSystemAllocPolicy> icInfo_;
 
  protected:
-  js::Vector<NativeToBytecode, 0, SystemAllocPolicy> nativeToBytecodeList_;
+  js::Vector<NativeToBytecode, 0, BackgroundSystemAllocPolicy>
+      nativeToBytecodeList_;
   UniquePtr<uint8_t> nativeToBytecodeMap_;
   uint32_t nativeToBytecodeMapSize_;
   uint32_t nativeToBytecodeTableOffset_;
@@ -135,6 +137,9 @@ class CodeGeneratorShared : public LElementVisitor {
 
   template <BaseRegForAddress Base = BaseRegForAddress::Default>
   inline Address ToAddress(const LAllocation* a) const;
+
+  template <BaseRegForAddress Base = BaseRegForAddress::Default>
+  inline Address ToAddress(const LInt64Allocation& a) const;
 
   static inline Address ToAddress(Register elements, const LAllocation* index,
                                   Scalar::Type type,
@@ -397,7 +402,8 @@ class CodeGeneratorShared : public LElementVisitor {
 };
 
 // An out-of-line path is generated at the end of the function.
-class OutOfLineCode : public TempObject {
+class OutOfLineCode : public TempObject,
+                      public AppendOnlyListNode<OutOfLineCode> {
   Label entry_;
   Label rejoin_;
   uint32_t framePushed_;

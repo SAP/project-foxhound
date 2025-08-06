@@ -18,6 +18,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
+  FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -111,10 +112,6 @@ export class AboutLoginsParent extends JSWindowActorParent {
       }
       case "AboutLogins:SyncEnable": {
         this.#syncEnable();
-        break;
-      }
-      case "AboutLogins:SyncOptions": {
-        this.#syncOptions();
         break;
       }
       case "AboutLogins:ImportFromBrowser": {
@@ -220,10 +217,6 @@ export class AboutLoginsParent extends JSWindowActorParent {
     this.#ownerGlobal.gSync.openFxAEmailFirstPage("password-manager");
   }
 
-  #syncOptions() {
-    this.#ownerGlobal.gSync.openFxAManagePage("password-manager");
-  }
-
   #importFromBrowser() {
     try {
       lazy.MigrationUtils.showMigrationWizard(this.#ownerGlobal, {
@@ -306,7 +299,7 @@ export class AboutLoginsParent extends JSWindowActorParent {
 
     const logins = await AboutLogins.getAllLogins();
     try {
-      let syncState = AboutLogins.getSyncState();
+      let syncState = await AboutLogins.getSyncState();
 
       let selectedSort = Services.prefs.getCharPref(
         "signon.management.page.sort",
@@ -409,8 +402,11 @@ export class AboutLoginsParent extends JSWindowActorParent {
       captionText.value
     );
 
-    let { method, object, extra = {}, value = null } = telemetryEvent;
-    Services.telemetry.recordEvent("pwmgr", method, object, value, extra);
+    let { name, extra = {}, value = null } = telemetryEvent;
+    if (value) {
+      extra.value = value;
+    }
+    Glean.pwmgr[name].record(extra);
 
     if (!isAuthorized) {
       return;
@@ -420,11 +416,7 @@ export class AboutLoginsParent extends JSWindowActorParent {
     function fpCallback(aResult) {
       if (aResult != Ci.nsIFilePicker.returnCancel) {
         lazy.LoginExport.exportAsCSV(fp.file.path);
-        Services.telemetry.recordEvent(
-          "pwmgr",
-          "mgmt_menu_item_used",
-          "export_complete"
-        );
+        Glean.pwmgr.mgmtMenuItemUsedExportComplete.record();
       }
     }
     let [title, defaultFilename, okButtonLabel, csvFilterTitle] =
@@ -496,11 +488,7 @@ export class AboutLoginsParent extends JSWindowActorParent {
       }
       if (summary) {
         this.sendAsyncMessage("AboutLogins:ImportPasswordsDialog", summary);
-        Services.telemetry.recordEvent(
-          "pwmgr",
-          "mgmt_menu_item_used",
-          "import_csv_complete"
-        );
+        Glean.pwmgr.mgmtMenuItemUsedImportCsvComplete.record();
       }
     }
   }
@@ -568,7 +556,10 @@ class AboutLoginsInternal {
         break;
       }
       case lazy.UIState.ON_UPDATE: {
-        this.#messageSubscribers("AboutLogins:SyncState", this.getSyncState());
+        this.#messageSubscribers(
+          "AboutLogins:SyncState",
+          await this.getSyncState()
+        );
         break;
       }
       case "passwordmgr-storage-changed": {
@@ -826,13 +817,16 @@ class AboutLoginsInternal {
     }
   }
 
-  getSyncState() {
+  async getSyncState() {
     const state = lazy.UIState.get();
     // As long as Sync is configured, about:logins will treat it as
     // authenticated. More diagnostics and error states can be handled
     // by other more Sync-specific pages.
     const loggedIn = state.status != lazy.UIState.STATUS_NOT_CONFIGURED;
     const passwordSyncEnabled = state.syncEnabled && lazy.PASSWORD_SYNC_ENABLED;
+    const accountURL = await lazy.FxAccounts.config.promiseManageURI(
+      "password-manager"
+    );
 
     return {
       loggedIn,
@@ -840,11 +834,15 @@ class AboutLoginsInternal {
       avatarURL: state.avatarURL,
       fxAccountsEnabled: lazy.FXA_ENABLED,
       passwordSyncEnabled,
+      accountURL,
     };
   }
 
-  onPasswordSyncEnabledPreferenceChange(_data, _previous, _latest) {
-    this.#messageSubscribers("AboutLogins:SyncState", this.getSyncState());
+  async onPasswordSyncEnabledPreferenceChange(_data, _previous, _latest) {
+    this.#messageSubscribers(
+      "AboutLogins:SyncState",
+      await this.getSyncState()
+    );
   }
 
   #observedTopics = [
@@ -880,5 +878,5 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "PASSWORD_SYNC_ENABLED",
   "services.sync.engine.passwords",
   false,
-  AboutLogins.onPasswordSyncEnabledPreferenceChange
+  AboutLogins.onPasswordSyncEnabledPreferenceChange.bind(AboutLogins)
 );

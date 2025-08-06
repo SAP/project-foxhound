@@ -112,7 +112,7 @@ private fun StrongPasswordBottomSheetDescription(
 ) {
     Text(
         modifier = modifier.padding(start = 40.dp, top = 0.dp, end = 12.dp, bottom = 16.dp),
-        text = stringResource(id = R.string.mozac_feature_prompts_suggest_strong_password_description_2),
+        text = stringResource(id = R.string.mozac_feature_prompts_suggest_strong_password_description_3),
         style = TextStyle(
             fontSize = FONT_SIZE,
             lineHeight = LINE_HEIGHT,
@@ -173,7 +173,7 @@ private fun StrongPasswordBottomSheetButtons(
                 style = TextStyle(
                     fontSize = 16.sp,
                     lineHeight = 24.sp,
-                    color = colors.confirmButton,
+                    color = colors.cancelText,
                     letterSpacing = 0.15.sp,
                     fontWeight = FontWeight.Bold,
                 ),

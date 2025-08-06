@@ -17,10 +17,10 @@
 #include "Document.h"
 #include "mozilla/dom/ElementInlines.h"
 
+#include <cstddef>
 #include <inttypes.h>
 #include <initializer_list>
-#include <new>
-#include "DOMIntersectionObserver.h"
+#include <utility>
 #include "DOMMatrix.h"
 #include "ExpandedPrincipal.h"
 #include "PresShellInlines.h"
@@ -51,21 +51,25 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/PointerLockManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellForwards.h"
 #include "mozilla/ReflowOutput.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/RelativeTo.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/ServoStyleConstsInlines.h"
 #include "mozilla/SizeOfState.h"
+#include "mozilla/SourceLocation.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_full_screen_api.h"
+#include "mozilla/StaticString.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
@@ -77,7 +81,9 @@
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/CloseWatcher.h"
 #include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/CSPViolationData.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/Document.h"
@@ -103,6 +109,7 @@
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/NodeInfo.h"
+#include "mozilla/dom/nsCSPUtils.h"
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Sanitizer.h"
@@ -110,6 +117,9 @@
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/dom/TrustedHTML.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/UnbindContext.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/dom/XULCommandEvent.h"
@@ -147,6 +157,7 @@
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsGridContainerFrame.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIAutoCompletePopup.h"
 #include "nsIBrowser.h"
 #include "nsIContentInlines.h"
@@ -174,6 +185,7 @@
 #include "nsIURI.h"
 #include "nsLayoutUtils.h"
 #include "nsLineBox.h"
+#include "nsLiteralString.h"
 #include "nsNameSpaceManager.h"
 #include "nsNodeInfoManager.h"
 #include "nsPIDOMWindow.h"
@@ -300,7 +312,7 @@ nsDOMAttributeMap* Element::Attributes() {
 }
 
 void Element::SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
-  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerEvents) &&
+  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerId) &&
       aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
     aError.ThrowNotFoundError("Invalid pointer id");
     return;
@@ -329,7 +341,7 @@ void Element::SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
 }
 
 void Element::ReleasePointerCapture(int32_t aPointerId, ErrorResult& aError) {
-  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerEvents) &&
+  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerId) &&
       aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
     aError.ThrowNotFoundError("Invalid pointer id");
     return;
@@ -614,6 +626,10 @@ void Element::ClearStyleStateLocks() {
 
 /* virtual */
 nsINode* Element::GetScopeChainParent() const { return OwnerDoc(); }
+
+JSObject* Element::WrapNode(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return Element_Binding::Wrap(aCx, this, aGivenProto);
+}
 
 nsDOMTokenList* Element::ClassList() {
   nsDOMSlots* slots = DOMSlots();
@@ -940,24 +956,34 @@ int32_t Element::ScrollLeftMax() {
 
 static nsSize GetScrollRectSizeForOverflowVisibleFrame(nsIFrame* aFrame) {
   if (!aFrame || aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
-    return nsSize(0, 0);
+    return nsSize();
   }
 
-  nsRect paddingRect = aFrame->GetPaddingRectRelativeToSelf();
-  OverflowAreas overflowAreas(paddingRect, paddingRect);
-  // Add the scrollable overflow areas of children (if any) to the paddingRect.
-  // It's important to start with the paddingRect, otherwise if there are no
-  // children the overflow rect will be 0,0,0,0 which will force the point 0,0
-  // to be included in the final rect.
-  nsLayoutUtils::UnionChildOverflow(aFrame, overflowAreas);
-  // Make sure that an empty padding-rect's edges are included, by adding
-  // the padding-rect in again with UnionEdges.
-  nsRect overflowRect =
-      overflowAreas.ScrollableOverflow().UnionEdges(paddingRect);
-  return nsLayoutUtils::GetScrolledRect(aFrame, overflowRect,
-                                        paddingRect.Size(),
-                                        aFrame->StyleVisibility()->mDirection)
-      .Size();
+  // This matches WebKit and Blink, which in turn (apparently, according to
+  // their source) matched old IE.
+  const nsRect paddingRect = aFrame->GetPaddingRectRelativeToSelf();
+  const nsRect overflowRect = [&] {
+    OverflowAreas overflowAreas(paddingRect, paddingRect);
+    // Add the scrollable overflow areas of children (if any) to the
+    // paddingRect, as if aFrame was a scrolled frame. It's important to start
+    // with the paddingRect, otherwise if there are no children the overflow
+    // rect will be 0,0,0,0 which will force the point 0,0 to be included in the
+    // final rect.
+    aFrame->UnionChildOverflow(overflowAreas, /* aAsIfScrolled = */ true);
+    // Make sure that an empty padding-rect's edges are included, by adding
+    // the padding-rect in again with UnionEdges.
+    return overflowAreas.ScrollableOverflow().UnionEdges(paddingRect);
+  }();
+
+  auto directions =
+      ScrollContainerFrame::ComputePerAxisScrollDirections(aFrame);
+  const nscoord height = directions.mToBottom
+                             ? overflowRect.YMost() - paddingRect.Y()
+                             : paddingRect.YMost() - overflowRect.Y();
+  const nscoord width = directions.mToRight
+                            ? overflowRect.XMost() - paddingRect.X()
+                            : paddingRect.XMost() - overflowRect.X();
+  return nsSize(width, height);
 }
 
 nsSize Element::GetScrollSize() {
@@ -2072,7 +2098,7 @@ void Element::UnbindFromTree(UnbindContext& aContext) {
   Document* document = GetComposedDoc();
 
   if (HasPointerLock()) {
-    PointerLockManager::Unlock();
+    PointerLockManager::Unlock("Element::UnbindFromTree");
   }
   if (mState.HasState(ElementState::FULLSCREEN)) {
     // The element being removed is an ancestor of the fullscreen element,
@@ -3309,7 +3335,7 @@ void Element::GetEventTargetParentForLinks(EventChainPreVisitor& aVisitor) {
         nsAutoString target;
         GetLinkTarget(target);
         nsContentUtils::TriggerLink(this, absURI, target,
-                                    /* click */ false, /* isTrusted */ true);
+                                    /* click */ false);
         // Make sure any ancestor links don't also TriggerLink
         aVisitor.mEvent->mFlags.mMultipleActionsPrevented = true;
       }
@@ -3468,8 +3494,7 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
               nsAutoString target;
               GetLinkTarget(target);
               nsContentUtils::TriggerLink(this, absURI, target,
-                                          /* click */ true,
-                                          mouseEvent->IsTrusted());
+                                          /* click */ true);
             }
             // Since we didn't dispatch DOMActivate because there were no
             // listeners, do still set mEventStatus as if it was dispatched
@@ -3493,10 +3518,7 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
         if (nsCOMPtr<nsIURI> absURI = GetHrefURI()) {
           nsAutoString target;
           GetLinkTarget(target);
-          const InternalUIEvent* activeEvent = aVisitor.mEvent->AsUIEvent();
-          MOZ_ASSERT(activeEvent);
-          nsContentUtils::TriggerLink(this, absURI, target, /* click */ true,
-                                      activeEvent->IsTrustable());
+          nsContentUtils::TriggerLink(this, absURI, target, /* click */ true);
           aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
         }
       }
@@ -4032,19 +4054,42 @@ void Element::GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError) {
   MarkTaintOperation(aInnerHTML, "element.innerHTML");
 }
 
-void Element::SetInnerHTML(const nsAString& aInnerHTML,
+void Element::GetInnerHTML(OwningTrustedHTMLOrNullIsEmptyString& aInnerHTML,
+                           OOMReporter& aError) {
+  GetInnerHTML(aInnerHTML.SetAsNullIsEmptyString(), aError);
+}
+
+void Element::SetInnerHTML(const TrustedHTMLOrNullIsEmptyString& aInnerHTML,
                            nsIPrincipal* aSubjectPrincipal,
                            ErrorResult& aError) {
+  constexpr nsLiteralString sink = u"Element innerHTML"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aInnerHTML, sink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aError);
+
+  if (aError.Failed()) {
+    return;
+  }
 
   // Foxhound: innerHTML sink - don't set for template elements
   if (!IsTemplateElement()) {
-    ReportTaintSink(aInnerHTML, "innerHTML", this);
+    ReportTaintSink(*compliantString, "innerHTML", this);
   }
 
   // Copy in order to mark the taint operation
-  nsAutoString strCpy(aInnerHTML);
+  nsAutoString strCpy(*compliantString);
   MarkTaintOperation(strCpy, "innerHTML", this);
-  SetInnerHTMLInternal(strCpy, aError);
+
+  SetInnerHTMLTrusted(*compliantString, aSubjectPrincipal, aError);
+}
+
+void Element::SetInnerHTMLTrusted(const nsAString& aInnerHTML,
+                                  nsIPrincipal* aSubjectPrincipal,
+                                  ErrorResult& aError) {
+  SetInnerHTMLInternal(aInnerHTML, aError);
 }
 
 void Element::GetOuterHTML(nsAString& aOuterHTML) {
@@ -4111,10 +4156,23 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
 
 enum nsAdjacentPosition { eBeforeBegin, eAfterBegin, eBeforeEnd, eAfterEnd };
 
-void Element::InsertAdjacentHTML(const nsAString& aPosition,
-                                 const nsAString& aText, ErrorResult& aError) {
+void Element::InsertAdjacentHTML(
+    const nsAString& aPosition, const TrustedHTMLOrString& aTrustedHTMLOrString,
+    ErrorResult& aError) {
+  constexpr nsLiteralString kSink = u"Element insertAdjacentHTML"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aTrustedHTMLOrString, kSink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aError);
+
+  if (aError.Failed()) {
+    return;
+  }
+
   // Foxhound: insertAdjacentHTML sink
-  ReportTaintSink(aText, "insertAdjacentHTML", this);
+  ReportTaintSink(*compliantString, "insertAdjacentHTML", this);
 
   nsAdjacentPosition position;
   if (aPosition.LowerCaseEqualsLiteral("beforebegin")) {
@@ -4166,7 +4224,7 @@ void Element::InsertAdjacentHTML(const nsAString& aPosition,
       contextLocal = nsGkAtoms::body;
     }
     aError = nsContentUtils::ParseFragmentHTML(
-        aText, destination, contextLocal, contextNs,
+        *compliantString, destination, contextLocal, contextNs,
         doc->GetCompatibilityMode() == eCompatibility_NavQuirks, true);
     // HTML5 parser has notified, but not fired mutation events.
     nsContentUtils::FireMutationEventsForDirectParsing(doc, destination,
@@ -4176,7 +4234,7 @@ void Element::InsertAdjacentHTML(const nsAString& aPosition,
 
   // couldn't parse directly
   RefPtr<DocumentFragment> fragment = nsContentUtils::CreateContextualFragment(
-      destination, aText, true, aError);
+      destination, *compliantString, true, aError);
   if (aError.Failed()) {
     return;
   }
@@ -4339,6 +4397,29 @@ void Element::GetImplementedPseudoElement(nsAString& aPseudo) const {
   aPseudo.SetCapacity(pseudo.Length() + 1);
   aPseudo.Append(':');
   aPseudo.Append(pseudo);
+}
+
+const Element* Element::GetPseudoElement(
+    const PseudoStyleRequest& aRequest) const {
+  switch (aRequest.mType) {
+    case PseudoStyleType::NotPseudo:
+      return this;
+    case PseudoStyleType::before:
+      return nsLayoutUtils::GetBeforePseudo(this);
+    case PseudoStyleType::after:
+      return nsLayoutUtils::GetAfterPseudo(this);
+    case PseudoStyleType::marker:
+      return nsLayoutUtils::GetMarkerPseudo(this);
+    case PseudoStyleType::viewTransition:
+    case PseudoStyleType::viewTransitionGroup:
+    case PseudoStyleType::viewTransitionImagePair:
+    case PseudoStyleType::viewTransitionOld:
+    case PseudoStyleType::viewTransitionNew:
+      // FIXME: Bug 1919347: Support these when working on getComputedStyle(),
+      // or Web Animation APIs.
+    default:
+      return nullptr;
+  }
 }
 
 ReferrerPolicy Element::GetReferrerPolicyAsEnum() const {

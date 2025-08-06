@@ -115,6 +115,36 @@ document.addEventListener(
         historyMenu._placesView._onCommand(event);
       });
 
+    let bookmarksMenuPopup = document.getElementById("bookmarksMenuPopup");
+    bookmarksMenuPopup.addEventListener("command", event => {
+      BookmarksEventHandler.onCommand(event);
+    });
+
+    bookmarksMenuPopup.addEventListener("click", event => {
+      BookmarksEventHandler.onClick(
+        event,
+        bookmarksMenuPopup.parentNode._placesView
+      );
+    });
+
+    bookmarksMenuPopup.addEventListener("mouseup", event => {
+      BookmarksEventHandler.onMouseUp(event);
+    });
+
+    const bookmarksMenu = document.getElementById("bookmarksMenu");
+    bookmarksMenu.addEventListener("dragover", event =>
+      PlacesMenuDNDHandler.onDragOver(event)
+    );
+    bookmarksMenu.addEventListener("dragenter", event =>
+      PlacesMenuDNDHandler.onDragEnter(event)
+    );
+    bookmarksMenu.addEventListener("dragleave", event =>
+      PlacesMenuDNDHandler.onDragLeave(event)
+    );
+    bookmarksMenu.addEventListener("drop", event =>
+      PlacesMenuDNDHandler.onDrop(event)
+    );
+
     mainMenuBar.addEventListener("popupshowing", event => {
       // On macOS, we don't track whether activation of the native menubar happened
       // with the keyboard.
@@ -140,7 +170,7 @@ document.addEventListener(
           updateEditUIVisibility();
           break;
         case "view-menu-popup":
-          onViewToolbarsPopupShowing(event);
+          ToolbarContextMenu.onViewToolbarsPopupShowing(event);
           break;
         case "pageStyleMenuPopup":
           gPageStyleMenu.fillPopup(event.target);
@@ -195,6 +225,9 @@ document.addEventListener(
           break;
         case "menu_HelpPopup":
           buildHelpMenu();
+          break;
+        case "menu_ProfilesPopup":
+          gProfiles.onPopupShowing(event);
           break;
       }
     });

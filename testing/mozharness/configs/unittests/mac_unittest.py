@@ -13,11 +13,10 @@ if "MOZ_FETCHES_DIR" in os.environ:
 XPCSHELL_NAME = "xpcshell"
 HTTP3SERVER_NAME = "http3server"
 EXE_SUFFIX = ""
-DISABLE_SCREEN_SAVER = False
 ADJUST_MOUSE_AND_SCREEN = False
 #####
 config = {
-    "virtualenv_modules": ["six==1.13.0", "vcversioner==2.16.0.0"],
+    "virtualenv_modules": ["six==1.16.0", "vcversioner==2.16.0.0"],
     ###
     "installer_path": INSTALLER_PATH,
     "xpcshell_name": XPCSHELL_NAME,
@@ -141,6 +140,10 @@ config = {
         ],
         "mochitest-browser-a11y": ["--flavor=browser", "--subsuite=a11y"],
         "mochitest-browser-media": ["--flavor=browser", "--subsuite=media-bc"],
+        "mochitest-browser-translations": [
+            "--flavor=browser",
+            "--subsuite=translations",
+        ],
         "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
         "mochitest-remote": ["--flavor=browser", "--subsuite=remote"],
     },
@@ -181,10 +184,17 @@ config = {
         # NOTE 'enabled' is only here while we have unconsolidated configs
         {
             "name": "disable_screen_saver",
-            "cmd": ["xset", "s", "off", "s", "reset"],
+            "cmd": [
+                "defaults",
+                "-currentHost",
+                "write",
+                "com.apple.screensaver",
+                "idleTime",
+                "0",
+            ],
             "architectures": ["32bit", "64bit"],
             "halt_on_failure": False,
-            "enabled": DISABLE_SCREEN_SAVER,
+            "enabled": True,
         },
         {
             "name": "disable_dock",

@@ -174,6 +174,7 @@ using dom::MediaStreamConstraints;
 using dom::MediaStreamError;
 using dom::MediaStreamTrack;
 using dom::MediaStreamTrackSource;
+using dom::MediaTrackCapabilities;
 using dom::MediaTrackConstraints;
 using dom::MediaTrackConstraintSet;
 using dom::MediaTrackSettings;
@@ -244,7 +245,8 @@ struct DeviceState {
   // disabled. When the timer fires we initiate Stop()ing mDevice.
   // If set we allow dynamically stopping and starting mDevice.
   // Any thread.
-  const RefPtr<MediaTimer> mDisableTimer = new MediaTimer();
+  const RefPtr<MediaTimer<TimeStamp>> mDisableTimer =
+      new MediaTimer<TimeStamp>();
 
   // The underlying device we keep state for. Always non-null.
   // Threadsafe access, but see method declarations for individual constraints.
@@ -408,6 +410,12 @@ class DeviceListener : public SupportsWeakPtr {
    * associated with aTrack.
    */
   void GetSettings(MediaTrackSettings& aOutSettings) const;
+
+  /**
+   * Gets the main thread MediaTrackCapabilities from the MediaEngineSource
+   * associated with aTrack.
+   */
+  void GetCapabilities(MediaTrackCapabilities& aOutCapabilities) const;
 
   /**
    * Posts a task to set the enabled state of the device associated with this
@@ -830,6 +838,12 @@ class LocalTrackSource : public MediaStreamTrackSource {
     }
   }
 
+  void GetCapabilities(MediaTrackCapabilities& aOutCapabilities) override {
+    if (mListener) {
+      mListener->GetCapabilities(aOutCapabilities);
+    }
+  }
+
   void Stop() override {
     if (mListener) {
       mListener->Stop();
@@ -1114,6 +1128,12 @@ LocalMediaDevice::GetCanRequestOsLevelPrompt(bool* aCanRequestOsLevelPrompt) {
 void LocalMediaDevice::GetSettings(MediaTrackSettings& aOutSettings) {
   MOZ_ASSERT(NS_IsMainThread());
   Source()->GetSettings(aOutSettings);
+}
+
+void LocalMediaDevice::GetCapabilities(
+    MediaTrackCapabilities& aOutCapabilities) {
+  MOZ_ASSERT(NS_IsMainThread());
+  Source()->GetCapabilities(aOutCapabilities);
 }
 
 MediaEngineSource* LocalMediaDevice::Source() {
@@ -1769,7 +1789,16 @@ void GetUserMediaStreamTask::PrepareDOMStream() {
                       return DeviceListener::DeviceListenerPromise::
                           CreateAndResolve(true, __func__);
                     },
-                    [] {
+                    [](nsresult aError) {
+                      MOZ_ASSERT(NS_FAILED(aError));
+                      if (aError == NS_ERROR_UNEXPECTED) {
+                        return DeviceListener::DeviceListenerPromise::
+                            CreateAndReject(
+                                MakeRefPtr<MediaMgrError>(
+                                    MediaMgrError::Name::NotAllowedError),
+                                __func__);
+                      }
+                      MOZ_ASSERT(aError == NS_ERROR_ABORT);
                       return DeviceListener::DeviceListenerPromise::
                           CreateAndReject(MakeRefPtr<MediaMgrError>(
                                               MediaMgrError::Name::AbortError,
@@ -2153,9 +2182,15 @@ MediaManager::MaybeRequestPermissionAndEnumerateRawDevices(
   }
 
   if (!deviceAccessPromise) {
-    // No device access request needed. Proceed directly.
-    deviceAccessPromise =
-        NativePromise::CreateAndResolve(CamerasAccessStatus::Granted, __func__);
+    // No device access request needed. We can proceed directly, but we still
+    // need to update camera availability, because the camera engine is always
+    // created together with the WebRTC backend, which is done because
+    // devicechange events must work before prompting in cases where persistent
+    // permission has already been given. Making a request to camera access not
+    // allowing a permission request does exactly what we need in this case.
+    ipc::PBackgroundChild* backgroundChild =
+        ipc::BackgroundChild::GetOrCreateForCurrentThread();
+    deviceAccessPromise = backgroundChild->SendRequestCameraAccess(false);
   }
 
   return deviceAccessPromise->Then(
@@ -2190,8 +2225,9 @@ MediaManager::MaybeRequestPermissionAndEnumerateRawDevices(
               "rejected");
         }
 
-        if (aParams.mFlags.contains(EnumerationFlag::AllowPermissionRequest)) {
-          MOZ_ASSERT(aValue.ResolveValue() == CamerasAccessStatus::Granted);
+        if (aParams.VideoInputType() == MediaSourceEnum::Camera &&
+            aParams.mFlags.contains(EnumerationFlag::AllowPermissionRequest) &&
+            aValue.ResolveValue() == CamerasAccessStatus::Granted) {
           EnsureNoPlaceholdersInDeviceCache();
         }
 
@@ -2584,7 +2620,7 @@ void MediaManager::DeviceListChanged() {
   if (mDeviceChangeTimer) {
     mDeviceChangeTimer->Cancel();
   } else {
-    mDeviceChangeTimer = MakeRefPtr<MediaTimer>();
+    mDeviceChangeTimer = MakeRefPtr<MediaTimer<TimeStamp>>();
   }
   // However, if this would cause a delay of over 1000ms in handling the
   // oldest unhandled event, then respond now and set the timer to run
@@ -2754,7 +2790,8 @@ enum class GetUserMediaSecurityState {
 
 /**
  * This function is used in getUserMedia when privacy.resistFingerprinting is
- * true. Only mediaSource of audio/video constraint will be kept.
+ * true. Only mediaSource of audio/video constraint will be kept. On mobile
+ * facing mode is also kept.
  */
 static void ReduceConstraint(
     OwningBooleanOrMediaTrackConstraints& aConstraint) {
@@ -2768,12 +2805,19 @@ static void ReduceConstraint(
     return;
   }
 
-  // Keep mediaSource, ignore all other constraints.
+  // Keep mediaSource.
   Maybe<nsString> mediaSource;
   if (aConstraint.GetAsMediaTrackConstraints().mMediaSource.WasPassed()) {
     mediaSource =
         Some(aConstraint.GetAsMediaTrackConstraints().mMediaSource.Value());
   }
+
+  Maybe<OwningStringOrStringSequenceOrConstrainDOMStringParameters> facingMode;
+  if (aConstraint.GetAsMediaTrackConstraints().mFacingMode.WasPassed()) {
+    facingMode =
+        Some(aConstraint.GetAsMediaTrackConstraints().mFacingMode.Value());
+  }
+
   aConstraint.Uninit();
   if (mediaSource) {
     aConstraint.SetAsMediaTrackConstraints().mMediaSource.Construct(
@@ -2781,6 +2825,14 @@ static void ReduceConstraint(
   } else {
     Unused << aConstraint.SetAsMediaTrackConstraints();
   }
+
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
+  if (facingMode) {
+    aConstraint.SetAsMediaTrackConstraints().mFacingMode.Construct(*facingMode);
+  } else {
+    Unused << aConstraint.SetAsMediaTrackConstraints();
+  }
+#endif
 }
 
 /**
@@ -3254,22 +3306,39 @@ RefPtr<LocalDeviceSetPromise> MediaManager::AnonymizeDevices(
         MakeRefPtr<MediaMgrError>(MediaMgrError::Name::NotAllowedError),
         __func__);
   }
-  bool persist = IsActivelyCapturingOrHasAPermission(windowId);
+  bool resistFingerprinting =
+      aWindow->AsGlobal()->ShouldResistFingerprinting(RFPTarget::MediaDevices);
+  bool persist =
+      IsActivelyCapturingOrHasAPermission(windowId) && !resistFingerprinting;
   return media::GetPrincipalKey(principalInfo, persist)
       ->Then(
           GetMainThreadSerialEventTarget(), __func__,
-          [rawDevices = std::move(aDevices),
-           windowId](const nsCString& aOriginKey) {
+          [rawDevices = std::move(aDevices), windowId,
+           resistFingerprinting](const nsCString& aOriginKey) {
             MOZ_ASSERT(!aOriginKey.IsEmpty());
             RefPtr anonymized = new LocalMediaDeviceSetRefCnt();
             for (const RefPtr<MediaDevice>& device : *rawDevices) {
+              nsString name = device->mRawName;
+              if (name.Find(u"AirPods"_ns) != -1) {
+                name = u"AirPods"_ns;
+              }
+
               nsString id = device->mRawID;
+              if (resistFingerprinting) {
+                nsRFPService::GetMediaDeviceName(name, device->mKind);
+                id = name;
+                id.AppendInt(windowId);
+              }
               // An empty id represents a virtual default device, for which
               // the exposed deviceId is the empty string.
               if (!id.IsEmpty()) {
                 nsContentUtils::AnonymizeId(id, aOriginKey);
               }
+
               nsString groupId = device->mRawGroupID;
+              if (resistFingerprinting) {
+                nsRFPService::GetMediaDeviceGroup(groupId, device->mKind);
+              }
               // Use window id to salt group id in order to make it session
               // based as required by the spec. This does not provide unique
               // group ids through out a browser restart. However, this is not
@@ -3277,11 +3346,6 @@ RefPtr<LocalDeviceSetPromise> MediaManager::AnonymizeDevices(
               // after a browser restart the fingerprint is not bigger.
               groupId.AppendInt(windowId);
               nsContentUtils::AnonymizeId(groupId, aOriginKey);
-
-              nsString name = device->mRawName;
-              if (name.Find(u"AirPods"_ns) != -1) {
-                name = u"AirPods"_ns;
-              }
               anonymized->EmplaceBack(
                   new LocalMediaDevice(device, id, groupId, name));
             }
@@ -4306,6 +4370,20 @@ void DeviceListener::GetSettings(MediaTrackSettings& aOutSettings) const {
       mediaSource == MediaSourceEnum::Microphone) {
     aOutSettings.mDeviceId.Construct(device->mID);
     aOutSettings.mGroupId.Construct(device->mGroupID);
+  }
+}
+
+void DeviceListener::GetCapabilities(
+    MediaTrackCapabilities& aOutCapabilities) const {
+  MOZ_ASSERT(NS_IsMainThread(), "Only call on main thread");
+  LocalMediaDevice* device = GetDevice();
+  device->GetCapabilities(aOutCapabilities);
+
+  MediaSourceEnum mediaSource = device->GetMediaSource();
+  if (mediaSource == MediaSourceEnum::Camera ||
+      mediaSource == MediaSourceEnum::Microphone) {
+    aOutCapabilities.mDeviceId.Construct(device->mID);
+    aOutCapabilities.mGroupId.Construct(device->mGroupID);
   }
 }
 

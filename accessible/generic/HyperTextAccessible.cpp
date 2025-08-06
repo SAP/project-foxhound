@@ -560,8 +560,7 @@ nsresult HyperTextAccessible::SetSelectionRange(int32_t aStartPos,
   // Make sure it is visible
   domSel->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
                          ScrollAxis(), ScrollAxis(),
-                         dom::Selection::SCROLL_FOR_CARET_MOVE |
-                             dom::Selection::SCROLL_OVERFLOW_HIDDEN);
+                         ScrollFlags::ScrollOverflowHidden);
 
   // When selection is done, move the focus to the selection if accessible is
   // not focusable. That happens when selection is set within hypertext
@@ -997,7 +996,13 @@ void HyperTextAccessible::DeleteText(int32_t aStartPos, int32_t aEndPos) {
 void HyperTextAccessible::PasteText(int32_t aPosition) {
   RefPtr<EditorBase> editorBase = GetEditor();
   if (editorBase) {
-    SetSelectionRange(aPosition, aPosition);
+    // If the caller wants to paste at the caret, we don't need to set the
+    // selection. If there is text already selected, this also allows the caller
+    // to replace it, just as would happen when pasting using the keyboard or
+    // GUI.
+    if (aPosition != nsIAccessibleText::TEXT_OFFSET_CARET) {
+      SetSelectionRange(aPosition, aPosition);
+    }
     editorBase->PasteAsAction(nsIClipboard::kGlobalClipboard,
                               EditorBase::DispatchPasteEvent::Yes);
   }

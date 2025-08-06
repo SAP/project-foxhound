@@ -55,9 +55,6 @@ export class ExtensionControlledPopup {
    *                 An observer topic to trigger the popup on with Services.obs. If the
    *                 doorhanger should appear on a specific window include it as the
    *                 subject in the observer event.
-   * @param {string} opts.anchorId
-   *                 The id to anchor the popupnotification on. If it is not provided
-   *                 then it will anchor to a browser action or the app menu.
    * @param {string} opts.popupnotificationId
    *                 The id for the popupnotification element in the markup. This
    *                 element should be defined in panelUI.inc.xhtml.
@@ -103,7 +100,6 @@ export class ExtensionControlledPopup {
   constructor(opts) {
     this.confirmedType = opts.confirmedType;
     this.observerTopic = opts.observerTopic;
-    this.anchorId = opts.anchorId;
     this.popupnotificationId = opts.popupnotificationId;
     this.settingType = opts.settingType;
     this.settingKey = opts.settingKey;
@@ -297,25 +293,31 @@ export class ExtensionControlledPopup {
       { once: true }
     );
 
-    let anchorButton;
-    if (this.anchorId) {
-      // If there's an anchorId, use that right away.
-      anchorButton = doc.getElementById(this.anchorId);
-    } else {
-      // Look for a browserAction on the toolbar.
-      let action = lazy.CustomizableUI.getWidget(
-        `${makeWidgetId(extensionId)}-browser-action`
-      );
-      if (action) {
-        action =
-          action.areaType == "toolbar" &&
-          action.forWindow(win).node.firstElementChild;
-      }
-
-      // Anchor to a toolbar browserAction if found, otherwise use the menu button.
-      anchorButton = action || doc.getElementById("PanelUI-menu-button");
+    // Look for a browserAction on the toolbar.
+    let action = lazy.CustomizableUI.getWidget(
+      `${makeWidgetId(extensionId)}-browser-action`
+    );
+    if (action) {
+      action =
+        action.areaType == "toolbar" &&
+        action.forWindow(win).node.firstElementChild;
     }
-    let anchor = anchorButton.icon;
+
+    // Anchor to a toolbar browserAction if found, otherwise use the extensions
+    // button.
+    const anchor = action || doc.getElementById("unified-extensions-button");
+
+    if (this.learnMoreLink) {
+      const learnMoreURL =
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        this.learnMoreLink;
+      popupnotification.setAttribute("learnmoreurl", learnMoreURL);
+    } else {
+      // In practice this isn't really needed because each of the
+      // controlled popups use its own popupnotification instance
+      // and they always have an learnMoreURL.
+      popupnotification.removeAttribute("learnmoreurl");
+    }
     popupnotification.show();
     panel.openPopup(anchor);
   }
@@ -349,11 +351,6 @@ export class ExtensionControlledPopup {
         lazy.BrowserUIUtils.getLocalizedFragment(doc, message, addonDetails)
       );
     }
-
-    let link = doc.createElement("a", { is: "moz-support-link" });
-    link.setAttribute("class", "learnMore");
-    link.setAttribute("support-page", this.learnMoreLink);
-    description.appendChild(link);
   }
 
   async _ensureWindowReady(win) {

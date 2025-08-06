@@ -26,10 +26,12 @@
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/InputType.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/WheelEventBinding.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/ImageInputTelemetry.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
@@ -181,7 +183,7 @@ static const nsAttrValue::EnumTable kInputTypeTable[] = {
 
 // Default type is 'text'.
 static const nsAttrValue::EnumTable* kInputDefaultType =
-    &kInputTypeTable[ArrayLength(kInputTypeTable) - 2];
+    &kInputTypeTable[std::size(kInputTypeTable) - 2];
 
 static const nsAttrValue::EnumTable kCaptureTable[] = {
     {"user", nsIFilePicker::captureUser},
@@ -400,7 +402,7 @@ static already_AddRefed<nsIFile> LastUsedDirectory(
     }
 
     nsCOMPtr<nsIFile> localFile;
-    nsresult rv = NS_NewLocalFile(path, true, getter_AddRefs(localFile));
+    nsresult rv = NS_NewLocalFile(path, getter_AddRefs(localFile));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return nullptr;
     }
@@ -491,6 +493,8 @@ HTMLInputElement::nsFilePickerShownCallback::Done(
 
       OwningFileOrDirectory* element = newFilesOrDirectories.AppendElement();
       element->SetAsFile() = domBlob->ToFile();
+
+      ImageInputTelemetry::MaybeRecordFilePickerImageInputTelemetry(domBlob);
     }
   } else {
     MOZ_ASSERT(mode == nsIFilePicker::modeOpen ||
@@ -540,6 +544,8 @@ HTMLInputElement::nsFilePickerShownCallback::Done(
 
       OwningFileOrDirectory* element = newFilesOrDirectories.AppendElement();
       element->SetAsFile() = file;
+
+      ImageInputTelemetry::MaybeRecordFilePickerImageInputTelemetry(blob);
     } else if (tmp) {
       RefPtr<Directory> directory = static_cast<Directory*>(tmp.get());
       OwningFileOrDirectory* element = newFilesOrDirectories.AppendElement();
@@ -2197,7 +2203,7 @@ void HTMLInputElement::MozSetFileNameArray(const Sequence<nsString>& aFileNames,
 
     if (!file) {
       // this is no "file://", try as local file
-      NS_NewLocalFile(aFileNames[i], false, getter_AddRefs(file));
+      NS_NewLocalFile(aFileNames[i], getter_AddRefs(file));
     }
 
     if (!file) {
@@ -2230,7 +2236,7 @@ void HTMLInputElement::MozSetDirectory(const nsAString& aDirectoryPath,
   }
 
   nsCOMPtr<nsIFile> file;
-  aRv = NS_NewLocalFile(aDirectoryPath, true, getter_AddRefs(file));
+  aRv = NS_NewLocalFile(aDirectoryPath, getter_AddRefs(file));
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -3387,6 +3393,18 @@ void HTMLInputElement::LegacyPreActivationBehavior(
     // latest one will be deferred until after the exit point of the
     // handler.
     mForm->OnSubmitClickBegin(this);
+
+    if (aVisitor.mDOMEvent) {
+      if (auto* mouseEvent = aVisitor.mDOMEvent->AsMouseEvent()) {
+        CSSIntPoint pt = mouseEvent->OffsetPoint();
+        if (auto* imageClickedPoint = static_cast<CSSIntPoint*>(
+                GetProperty(nsGkAtoms::imageClickedPoint))) {
+          // Ensures that a dispatched event's clicked point is not the default
+          // value.
+          *imageClickedPoint = pt;
+        }
+      }
+    }
   }
 }
 
@@ -4127,7 +4145,9 @@ void HTMLInputElement::ActivationBehavior(EventChainPostVisitor& aVisitor) {
     return;
   }
 
-  if (mCheckedIsToggled) {
+  // https://html.spec.whatwg.org/#checkbox-state-(type=checkbox):input-activation-behavior
+  // If element is connected, fire input and change event
+  if (mCheckedIsToggled && IsInComposedDoc()) {
     SetUserInteracted(true);
 
     // Fire input event and then change event.
@@ -4874,10 +4894,7 @@ void HTMLInputElement::SanitizeValue(nsAString& aValue,
           // For the <input type=number> value getter, we return the unlocalized
           // value if it doesn't parse as StringToDecimal, for compat with other
           // browsers.
-          char buf[32];
-          DebugOnly<bool> ok = result.mResult.toString(buf, ArrayLength(buf));
-          aValue.AssignASCII(buf);
-          MOZ_ASSERT(ok, "buf not big enough");
+          aValue.AssignASCII(result.mResult.toString().c_str());
           break;
         }
         case SanitizationKind::ForDisplay:
@@ -4958,10 +4975,7 @@ void HTMLInputElement::SanitizeValue(nsAString& aValue,
       }
 
       if (needSanitization) {
-        char buf[32];
-        DebugOnly<bool> ok = value.toString(buf, ArrayLength(buf));
-        aValue.AssignASCII(buf);
-        MOZ_ASSERT(ok, "buf not big enough");
+        aValue.AssignASCII(value.toString().c_str());
       }
     } break;
     case FormControlType::InputDate: {
@@ -5443,12 +5457,12 @@ bool HTMLInputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
       FormControlType(kInputDefaultType->value) == FormControlType::InputText,
       "Someone forgot to update kInputDefaultType when adding a new "
       "input type.");
-  MOZ_ASSERT(kInputTypeTable[ArrayLength(kInputTypeTable) - 1].tag == nullptr,
+  MOZ_ASSERT(kInputTypeTable[std::size(kInputTypeTable) - 1].tag == nullptr,
              "Last entry in the table must be the nullptr guard");
-  MOZ_ASSERT(FormControlType(
-                 kInputTypeTable[ArrayLength(kInputTypeTable) - 2].value) ==
-                 FormControlType::InputText,
-             "Next to last entry in the table must be the \"text\" entry");
+  MOZ_ASSERT(
+      FormControlType(kInputTypeTable[std::size(kInputTypeTable) - 2].value) ==
+          FormControlType::InputText,
+      "Next to last entry in the table must be the \"text\" entry");
 
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::type) {
@@ -5765,7 +5779,7 @@ Nullable<uint32_t> HTMLInputElement::GetSelectionStart(ErrorResult& aRv) {
 }
 
 uint32_t HTMLInputElement::GetSelectionStartIgnoringType(ErrorResult& aRv) {
-  uint32_t selEnd, selStart;
+  uint32_t selEnd = 0, selStart = 0;
   GetSelectionRange(&selStart, &selEnd, aRv);
   return selStart;
 }
@@ -5796,7 +5810,7 @@ Nullable<uint32_t> HTMLInputElement::GetSelectionEnd(ErrorResult& aRv) {
 }
 
 uint32_t HTMLInputElement::GetSelectionEndIgnoringType(ErrorResult& aRv) {
-  uint32_t selEnd, selStart;
+  uint32_t selEnd = 0, selStart = 0;
   GetSelectionRange(&selStart, &selEnd, aRv);
   return selEnd;
 }
@@ -6306,8 +6320,7 @@ static nsTArray<OwningFileOrDirectory> RestoreFileContentData(
     } else {
       MOZ_ASSERT(it.type() == FileContentData::TnsString);
       nsCOMPtr<nsIFile> file;
-      nsresult rv =
-          NS_NewLocalFile(it.get_nsString(), true, getter_AddRefs(file));
+      nsresult rv = NS_NewLocalFile(it.get_nsString(), getter_AddRefs(file));
       if (NS_WARN_IF(NS_FAILED(rv))) {
         continue;
       }

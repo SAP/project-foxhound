@@ -13,6 +13,7 @@
 # before you make any changes to this file.
 
 import codecs
+import io
 import json
 import os
 import sys
@@ -82,8 +83,8 @@ class GeckoInstance(object):
         # No slow script dialogs
         "dom.max_chrome_script_run_time": 0,
         "dom.max_script_run_time": 0,
-        # Disable location change rate limitation
-        "dom.navigation.locationChangeRateLimit.count": 0,
+        # Disable navigation change rate limitation
+        "dom.navigation.navigationRateLimit.count": 0,
         # DOM Push
         "dom.push.connection.enabled": False,
         # Screen Orientation API
@@ -370,8 +371,15 @@ class GeckoInstance(object):
         }
 
         if self.gecko_log == "-":
-            if hasattr(sys.stdout, "buffer"):
+            if getattr(sys.stdout, "encoding") == "utf-8":
+                process_args["stream"] = sys.stdout
+            elif hasattr(sys.stdout, "buffer"):
                 process_args["stream"] = codecs.getwriter("utf-8")(sys.stdout.buffer)
+            elif isinstance(sys.stdout, io.TextIOBase):
+                # If sys.stdout expects unicode strings, we can't wrap it because the
+                # wrapper will write byte strings. This can happen when e.g. tests
+                # replace sys.stdout with a io.StringIO().
+                process_args["stream"] = sys.stdout
             else:
                 process_args["stream"] = codecs.getwriter("utf-8")(sys.stdout)
         else:
@@ -400,7 +408,7 @@ class GeckoInstance(object):
         args = {
             "binary": self.binary,
             "profile": self.profile,
-            "cmdargs": ["-no-remote", "-marionette"] + self.app_args,
+            "cmdargs": ["-marionette"] + self.app_args,
             "env": env,
             "symbols_path": self.symbols_path,
             "process_args": process_args,

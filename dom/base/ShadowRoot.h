@@ -89,8 +89,8 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
   void RemoveSheetFromStyles(StyleSheet&);
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
-  void RuleChanged(StyleSheet&, css::Rule*, StyleRuleChangeKind);
-  void ImportRuleLoaded(CSSImportRule&, StyleSheet&);
+  void RuleChanged(StyleSheet&, css::Rule*, const StyleRuleChange&);
+  void ImportRuleLoaded(StyleSheet&);
   void SheetCloned(StyleSheet&);
   void StyleSheetApplicableStateChanged(StyleSheet&);
 

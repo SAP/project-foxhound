@@ -41,6 +41,9 @@ with Files("tryselect/**"):
 with Files("tryselect/selectors/release.py"):
     BUG_COMPONENT = ("Release Engineering", "General")
 
+with Files("ts/**"):
+    BUG_COMPONENT = ("Developer Infrastructure", "Lint and Formatting")
+
 with Files("update-packaging/**"):
     BUG_COMPONENT = ("Release Engineering", "General")
 
@@ -64,10 +67,6 @@ SPHINX_TREES["profiler"] = "profiler/docs"
 
 with Files("tryselect/docs/**"):
     SCHEDULES.exclusive = ["docs"]
-
-CRAMTEST_MANIFESTS += [
-    "tryselect/test/cram.toml",
-]
 
 PYTHON_UNITTEST_MANIFESTS += [
     "fuzzing/smoke/python.toml",

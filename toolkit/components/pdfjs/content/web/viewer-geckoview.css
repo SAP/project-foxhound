@@ -140,9 +140,10 @@
 
     .dialogSeparator{
       width:100%;
-      height:1px;
+      height:0;
       margin-block:4px;
-      background-color:var(--separator-color);
+      border-top:1px solid var(--separator-color);
+      border-bottom:none;
     }
 
     .dialogButtonsGroup{
@@ -442,6 +443,11 @@
   > :not(.markedContent),
   .markedContent span:not(.markedContent){
     z-index:1;
+  }
+
+  span[role="img"]{
+    user-select:none;
+    cursor:default;
   }
 
   .highlight{
@@ -1227,6 +1233,7 @@
 
 .pdfViewer{
   --scale-factor:1;
+  --page-bg-color:unset;
 
   padding-bottom:var(--pdfViewer-padding-bottom);
 
@@ -1249,6 +1256,8 @@
     canvas{
       margin:0;
       display:block;
+      width:100%;
+      height:100%;
 
       &[hidden]{
         display:none;
@@ -1267,6 +1276,9 @@
 }
 
 .pdfViewer .page{
+  --scale-round-x:1px;
+  --scale-round-y:1px;
+
   direction:ltr;
   width:816px;
   height:1056px;
@@ -1275,7 +1287,7 @@
   overflow:visible;
   border:var(--page-border);
   background-clip:content-box;
-  background-color:rgb(255 255 255);
+  background-color:var(--page-bg-color, rgb(255 255 255));
 }
 
 .pdfViewer .dummyPage{
@@ -1373,6 +1385,8 @@
   --toolbar-bg-color:#f9f9fb;
   --toolbar-divider-color:#e0e0e6;
   --toolbar-fg-color:#15141a;
+  --toolbar-height:48px;
+  --toolbar-border-width:1px;
 
   --toolbarButton-download-icon:url(images/gv-toolbarButton-download.svg);
 }
@@ -1446,8 +1460,7 @@ body{
 #viewerContainer{
   overflow:auto;
   position:absolute;
-  inset-block:41px 0;
-  inset-inline:0;
+  inset:var(--toolbar-height) 0 0;
   outline:none;
 }
 
@@ -1512,59 +1525,60 @@ body{
   align-items:center;
   position:absolute;
   width:100%;
-  height:40px;
+  height:calc(var(--toolbar-height) + var(--toolbar-border-width));
   top:0;
   left:0;
-  box-sizing:content-box;
-  border-block-end:solid 1px var(--toolbar-divider-color);
-  background-color:var(--toolbar-bg-color);
-}
-
-#floatingToolbar.show{
-  z-index:100000;
-  opacity:1;
-}
-
-#floatingToolbar:not(show){
-  z-index:-1;
-  opacity:0;
-}
-
-.toolbarButton{
-  display:flex;
-  align-items:center;
-  border-style:none;
-  user-select:none;
+  padding:2px;
   box-sizing:border-box;
-  background-color:transparent;
-  width:auto;
-  height:auto;
-  outline:none;
-  position:relative;
-}
+  border-block-end:solid var(--toolbar-border-width) var(--toolbar-divider-color);
+  background-color:var(--toolbar-bg-color);
 
-.toolbarButton > span{
-  color:var(--toolbar-fg-color);
-  width:auto;
-  height:auto;
-  overflow:hidden;
+  &.show{
+    z-index:100000;
+    opacity:1;
+  }
+
+  &:not(.show){
+    z-index:-1;
+    opacity:0;
+  }
+
+  .toolbarButton{
+    display:flex;
+    align-items:center;
+    border-style:none;
+    user-select:none;
+    box-sizing:border-box;
+    background-color:transparent;
+    width:auto;
+    height:100%;
+    outline:none;
+    position:relative;
+
+    &::before{
+      width:24px;
+      height:24px;
+      content:"";
+      background-color:var(--toolbar-fg-color);
+      mask-size:cover;
+      margin-inline:12px 8px;
+    }
+
+    > span{
+      color:var(--toolbar-fg-color);
+      width:auto;
+      height:auto;
+      overflow:hidden;
+    }
+
+    &#download::before{
+      mask-image:var(--toolbarButton-download-icon);
+    }
+  }
 }
 
 :is(.toolbarButton .dialogButton)[disabled]{
   opacity:0.5;
-}
-
-.toolbarButton::before{
-  width:24px;
-  height:24px;
-  content:"";
-  background-color:var(--toolbar-fg-color);
-  mask-size:cover;
-  margin-inline:12px 8px;
-}
-
-#download::before{
-  mask-image:var(--toolbarButton-download-icon);
 }
 
 .dialogButton{
@@ -1608,9 +1622,10 @@ dialog .toolbarField{
 dialog .separator{
   display:block;
   margin:4px 0;
-  height:1px;
+  height:0;
   width:100%;
-  background-color:var(--separator-color);
+  border-top:1px solid var(--separator-color);
+  border-bottom:none;
 }
 
 dialog .buttonRow{

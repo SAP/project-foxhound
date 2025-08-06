@@ -74,37 +74,13 @@ class CodeGeneratorARM : public CodeGeneratorShared {
   void emitBranch(Assembler::Condition cond, MBasicBlock* ifTrue,
                   MBasicBlock* ifFalse);
 
-  void testNullEmitBranch(Assembler::Condition cond, const ValueOperand& value,
-                          MBasicBlock* ifTrue, MBasicBlock* ifFalse) {
-    cond = masm.testNull(cond, value);
-    emitBranch(cond, ifTrue, ifFalse);
-  }
-  void testUndefinedEmitBranch(Assembler::Condition cond,
-                               const ValueOperand& value, MBasicBlock* ifTrue,
-                               MBasicBlock* ifFalse) {
-    cond = masm.testUndefined(cond, value);
-    emitBranch(cond, ifTrue, ifFalse);
-  }
-  void testObjectEmitBranch(Assembler::Condition cond,
-                            const ValueOperand& value, MBasicBlock* ifTrue,
-                            MBasicBlock* ifFalse) {
-    cond = masm.testObject(cond, value);
-    emitBranch(cond, ifTrue, ifFalse);
-  }
-  void testZeroEmitBranch(Assembler::Condition cond, Register reg,
-                          MBasicBlock* ifTrue, MBasicBlock* ifFalse) {
-    MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-    masm.cmpPtr(reg, ImmWord(0));
-    emitBranch(cond, ifTrue, ifFalse);
-  }
-
   void emitTableSwitchDispatch(MTableSwitch* mir, Register index,
                                Register base);
 
-  void emitBigIntDiv(LBigIntDiv* ins, Register dividend, Register divisor,
-                     Register output, Label* fail);
-  void emitBigIntMod(LBigIntMod* ins, Register dividend, Register divisor,
-                     Register output, Label* fail);
+  void emitBigIntPtrDiv(LBigIntPtrDiv* ins, Register dividend, Register divisor,
+                        Register output);
+  void emitBigIntPtrMod(LBigIntPtrMod* ins, Register dividend, Register divisor,
+                        Register output);
 
   template <typename T>
   void emitWasmLoad(T* ins);

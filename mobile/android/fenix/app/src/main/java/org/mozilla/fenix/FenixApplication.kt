@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix
 
-import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.Context
 import android.net.Uri
@@ -91,6 +90,7 @@ import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.metrics.MetricServiceType
 import org.mozilla.fenix.components.metrics.MozillaProductDetector
+import org.mozilla.fenix.distributions.getDistributionId
 import org.mozilla.fenix.experiments.maybeFetchExperiments
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
@@ -100,6 +100,7 @@ import org.mozilla.fenix.ext.isKnownSearchDomain
 import org.mozilla.fenix.ext.setCustomEndpointIfAvailable
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.lifecycle.StoreLifecycleObserver
+import org.mozilla.fenix.lifecycle.VisibilityLifecycleObserver
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.onboarding.MARKETING_CHANNEL_ID
 import org.mozilla.fenix.perf.ApplicationExitInfoMetrics
@@ -209,6 +210,9 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
             ),
             enableEventTimestamps = FxNimbus.features.glean.value().enableEventTimestamps,
             delayPingLifetimeIo = FxNimbus.features.glean.value().delayPingLifetimeIo,
+            pingLifetimeThreshold = FxNimbus.features.glean.value().pingLifetimeThreshold,
+            pingLifetimeMaxTime = FxNimbus.features.glean.value().pingLifetimeMaxTime,
+            pingSchedule = mapOf("baseline" to listOf("usage-reporting")),
         )
 
         // Set the metric configuration from Nimbus.
@@ -306,6 +310,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
                 appStore = components.appStore,
                 browserStore = components.core.store,
             ),
+            VisibilityLifecycleObserver(),
         )
 
         components.analytics.metricsStorage.tryRegisterAsUsageRecorder(this)
@@ -605,8 +610,6 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         }
     }
 
-    @SuppressLint("WrongConstant")
-    // Suppressing erroneous lint warning about using MODE_NIGHT_AUTO_BATTERY, a likely library bug
     private fun setDayNightTheme() {
         val settings = this.settings()
         when {
@@ -746,12 +749,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         setPreferenceMetrics(settings)
         with(Metrics) {
             // Set this early to guarantee it's in every ping from here on.
-            distributionId.set(
-                when (Config.channel.isMozillaOnline) {
-                    true -> "MozillaOnline"
-                    false -> "Mozilla"
-                },
-            )
+            distributionId.set(getDistributionId(browserStore))
 
             defaultBrowser.set(browsersCache.all(applicationContext).isDefaultBrowser)
             mozillaProductDetector.getMozillaBrowserDefault(applicationContext)?.also {

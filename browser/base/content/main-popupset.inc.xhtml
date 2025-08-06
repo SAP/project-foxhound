@@ -6,7 +6,25 @@
   <script src="chrome://browser/content/main-popupset.js" />
 
   <menupopup id="tabContextMenu">
-    <menuitem id="context_openANewTab" data-lazy-l10n-id="tab-context-new-tab"/>
+    <menuitem id="context_openANewTab" data-lazy-l10n-id="tab-context-new-tab-open"/>
+    <menuitem id="context_moveTabToNewGroup"
+      data-lazy-l10n-id="tab-context-move-tab-to-new-group"
+      data-l10n-args='{"tabCount": 1}'
+      hidden="true"/>
+    <menu id="context_moveTabToGroup"
+      data-lazy-l10n-id="tab-context-move-tab-to-group"
+      data-l10n-args='{"tabCount": 1}'
+      hidden="true">
+      <menupopup id="context_moveTabToGroupPopupMenu">
+        <menuitem id="context_moveTabToGroupNewGroup"
+                  data-lazy-l10n-id="tab-context-new-group"/>
+        <menuseparator/>
+      </menupopup>
+    </menu>
+    <menuitem id="context_ungroupTab"
+      data-lazy-l10n-id="tab-context-ungroup-tab"
+      data-l10n-args='{"groupCount": 1}'
+      hidden="true"/>
     <menuseparator/>
     <menuitem id="context_reloadTab" data-lazy-l10n-id="reload-tab"/>
     <menuitem id="context_reloadSelectedTabs" data-lazy-l10n-id="reload-tabs" hidden="true"/>
@@ -14,6 +32,9 @@
     <menuitem id="context_playSelectedTabs" data-lazy-l10n-id="tab-context-play-tabs" hidden="true"/>
     <menuitem id="context_toggleMuteTab" />
     <menuitem id="context_toggleMuteSelectedTabs" hidden="true"/>
+    <menuitem id="context_unloadTab"
+              data-lazy-l10n-id="tab-context-unload-n-tabs"
+              data-l10n-args='{"tabCount": 1}'/>
     <menuitem id="context_pinTab" data-lazy-l10n-id="pin-tab"/>
     <menuitem id="context_unpinTab" data-lazy-l10n-id="unpin-tab" hidden="true"/>
     <menuitem id="context_pinSelectedTabs" data-lazy-l10n-id="pin-selected-tabs" hidden="true"/>
@@ -90,6 +111,8 @@
   <menupopup id="new-tab-button-popup"/>
   <!-- for search and content formfill/pw manager -->
 
+  <tabgroup-menu id="tab-group-editor"></tabgroup-menu>
+
   <panel is="autocomplete-richlistbox-popup"
          type="autocomplete-richlistbox"
          id="PopupAutoComplete"
@@ -109,14 +132,21 @@
          noautofocus="true"
          hidden="true" />
 
-  <panel id="searchmode-switcher-popup" noautofocus="true" orient="vertical" type="arrow">
+  <panel id="searchmode-switcher-popup"
+         class="panel-no-padding toolbar-menupopup"
+         orient="vertical"
+         role="menu"
+         consumeoutsideclicks="false"
+         aria-labelledby="searchmode-switcher-popup-description">
     <label data-l10n-id="urlbar-searchmode-popup-description" id="searchmode-switcher-popup-description" />
     <toolbarseparator />
     <vbox class="panel-subview-body"></vbox>
     <toolbarseparator />
-    <toolbarbutton oncommand="window.openPreferences('paneSearch');"
-                   class="subviewbutton subviewbutton-iconic"
-                   id="searchmode-switcher-popup-search-settings-button">
+    <toolbarbutton class="subviewbutton subviewbutton-iconic panel-subview-footer-button"
+                   data-action="openpreferences"
+                   id="searchmode-switcher-popup-search-settings-button"
+                   role="button"
+                   tabindex="0">
       <image id="searchmode-switcher-popup-search-settings-icon" />
       <label data-l10n-id="urlbar-searchmode-popup-search-settings" />
     </toolbarbutton>
@@ -260,6 +290,48 @@
     <menuitem data-l10n-id="sidebar-context-menu-report-extension"
               id="sidebar-context-menu-report-extension"
               contexttype="extension-action"/>
+  </menupopup>
+
+  <menupopup id="sidebar-history-menu">
+    <menuitem data-l10n-id="sidebar-history-sort-by-date"
+              id="sidebar-history-sort-by-date"
+              type="checkbox"/>
+    <menuitem data-l10n-id="sidebar-history-sort-by-site"
+              id="sidebar-history-sort-by-site"
+              type="checkbox"/>
+    <menuseparator/>
+    <menuitem data-l10n-id="sidebar-history-clear"
+              id="sidebar-history-clear"/>
+  </menupopup>
+
+  <menupopup id="sidebar-history-context-menu">
+    <menuitem data-l10n-id="sidebar-history-context-menu-delete-page"
+              id="sidebar-history-context-delete-page"/>
+    <menuseparator/>
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-window"
+              id="sidebar-history-context-open-in-window"/>
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-private-window"
+              id="sidebar-history-context-open-in-private-window"/>
+    <menuseparator/>
+    <menuitem data-l10n-id="sidebar-context-menu-copy-link"
+              id="sidebar-history-context-copy-link"/>
+  </menupopup>
+
+  <menupopup id="sidebar-synced-tabs-context-menu">
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-window"
+              id="sidebar-synced-tabs-context-open-in-window"/>
+    <menuitem data-l10n-id="sidebar-context-menu-open-in-private-window"
+              id="sidebar-synced-tabs-context-open-in-private-window"/>
+    <menuseparator/>
+    <menuitem data-l10n-id="sidebar-context-menu-close-remote-tab"
+              id="sidebar-context-menu-close-remote-tab"
+              data-l10n-args='{"deviceName": ""}'
+              disabled="true"/>
+    <menuseparator/>
+    <menuitem data-l10n-id="sidebar-context-menu-bookmark-tab"
+              id="sidebar-synced-tabs-context-bookmark-tab"/>
+    <menuitem data-l10n-id="sidebar-context-menu-copy-link"
+              id="sidebar-synced-tabs-context-copy-link"/>
   </menupopup>
 
   <menupopup id="toolbar-context-menu">

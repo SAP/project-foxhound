@@ -131,17 +131,19 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     this.handleWeatherUpdate = this.handleWeatherUpdate.bind(this);
     this.refreshTopicSelectionCache =
       this.refreshTopicSelectionCache.bind(this);
+    this.toggleTBRFeed = this.toggleTBRFeed.bind(this);
+    this.handleSectionsToggle = this.handleSectionsToggle.bind(this);
     this.state = {
       toggledStories: {},
       weatherQuery: "",
     };
   }
 
-  setConfigValue(name, value) {
+  setConfigValue(configName, configValue) {
     this.props.dispatch(
       ac.OnlyToMain({
         type: at.DISCOVERY_STREAM_CONFIG_SET_VALUE,
-        data: { name, value },
+        data: { name: configName, value: configValue },
       })
     );
   }
@@ -193,6 +195,12 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_SHOW_PLACEHOLDER);
   }
 
+  toggleTBRFeed(e) {
+    const feed = e.target.value;
+    const selectedFeed = "discoverystream.contextualContent.selectedFeed";
+    this.props.dispatch(ac.SetPref(selectedFeed, feed));
+  }
+
   idleDaily() {
     this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_IDLE_DAILY);
   }
@@ -209,6 +217,19 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     e.preventDefault();
     const { weatherQuery } = this.state;
     this.props.dispatch(ac.SetPref("weather.query", weatherQuery));
+  }
+
+  handleSectionsToggle(e) {
+    const { pressed } = e.target;
+    this.props.dispatch(
+      ac.SetPref("discoverystream.sections.enabled", pressed)
+    );
+    this.props.dispatch(
+      ac.SetPref("discoverystream.sections.cards.enabled", pressed)
+    );
+    this.props.dispatch(
+      ac.SetPref("discoverystream.sections.cards.thumbsUpDown.enabled", pressed)
+    );
   }
 
   renderComponent(width, component) {
@@ -293,11 +314,43 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     );
   }
 
+  renderImpressionsData() {
+    const { impressions } = this.props.state.DiscoveryStream;
+    return (
+      <>
+        <h4>Feed Impressions</h4>
+        <table>
+          <tbody>
+            {Object.keys(impressions.feed).map(key => {
+              return (
+                <Row key={key}>
+                  <td className="min">{key}</td>
+                  <td>{relativeTime(impressions.feed[key]) || "(no data)"}</td>
+                </Row>
+              );
+            })}
+          </tbody>
+        </table>
+      </>
+    );
+  }
+
   renderSpocs() {
     const { spocs } = this.props.state.DiscoveryStream;
+
+    const unifiedAdsSpocsEnabled =
+      this.props.otherPrefs["unifiedAds.spocs.enabled"];
+
+    const unifiedAdsEndpoint = this.props.otherPrefs["unifiedAds.endpoint"];
+
     let spocsData = [];
-    if (spocs.data && spocs.data.spocs && spocs.data.spocs.items) {
-      spocsData = spocs.data.spocs.items || [];
+
+    if (
+      spocs.data &&
+      spocs.data.newtab_spocs &&
+      spocs.data.newtab_spocs.items
+    ) {
+      spocsData = spocs.data.newtab_spocs.items || [];
     }
 
     return (
@@ -306,7 +359,11 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
           <tbody>
             <Row>
               <td className="min">spocs_endpoint</td>
-              <td>{spocs.spocs_endpoint}</td>
+              <td>
+                {unifiedAdsSpocsEnabled
+                  ? unifiedAdsEndpoint
+                  : spocs.spocs_endpoint}
+              </td>
             </Row>
             <Row>
               <td className="min">Data last fetched</td>
@@ -386,6 +443,16 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     const { config, layout } = this.props.state.DiscoveryStream;
     const personalized =
       this.props.otherPrefs["discoverystream.personalization.enabled"];
+    const selectedFeed =
+      this.props.otherPrefs["discoverystream.contextualContent.selectedFeed"];
+    const sectionsEnabled =
+      this.props.otherPrefs["discoverystream.sections.enabled"];
+    const TBRFeeds = this.props.otherPrefs[
+      "discoverystream.contextualContent.feeds"
+    ]
+      .split(",")
+      .map(s => s.trim())
+      .filter(item => item);
     return (
       <div>
         <button className="button" onClick={this.restorePrefDefaults}>
@@ -414,7 +481,26 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
         <br />
         <button className="button" onClick={this.showPlaceholder}>
           Show Placeholder Cards
-        </button>
+        </button>{" "}
+        <select
+          className="button"
+          onChange={this.toggleTBRFeed}
+          value={selectedFeed}
+        >
+          {TBRFeeds.map(feed => (
+            <option key={feed} value={feed}>
+              {feed}
+            </option>
+          ))}
+        </select>
+        <div className="toggle-wrapper">
+          <moz-toggle
+            id="sections-toggle"
+            pressed={sectionsEnabled || null}
+            onToggle={this.handleSectionsToggle}
+            label="Toggle DS Sections"
+          />
+        </div>
         <table>
           <tbody>
             {prefToggles.map(pref => (
@@ -451,7 +537,11 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
         <h3>Spocs</h3>
         {this.renderSpocs()}
         <h3>Feeds Data</h3>
-        {this.renderFeedsData()}
+        <div className="large-data-container">{this.renderFeedsData()}</div>
+        <h3>Impressions Data</h3>
+        <div className="large-data-container">
+          {this.renderImpressionsData()}
+        </div>
         <h3>Weather Data</h3>
         {this.renderWeatherData()}
       </div>

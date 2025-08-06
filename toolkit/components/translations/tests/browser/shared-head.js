@@ -37,6 +37,8 @@ const PDF_TEST_PAGE_URL =
   URL_COM_PREFIX + DIR_PATH + "translations-tester-pdf-file.pdf";
 const SELECT_TEST_PAGE_URL =
   URL_COM_PREFIX + DIR_PATH + "translations-tester-select.html";
+const TEXT_CLEANING_URL =
+  URL_COM_PREFIX + DIR_PATH + "translations-text-cleaning.html";
 
 const PIVOT_LANGUAGE = "en";
 const LANGUAGE_PAIRS = [
@@ -98,12 +100,13 @@ async function openAboutTranslations({
   languagePairs = LANGUAGE_PAIRS,
   prefs,
   autoDownloadFromRemoteSettings = false,
-}) {
+} = {}) {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Enabled by default.
       ["browser.translations.enable", !disabled],
       ["browser.translations.logLevel", "All"],
+      ["browser.translations.mostRecentTargetLanguages", ""],
       ...(prefs ?? []),
     ],
   });
@@ -115,6 +118,7 @@ async function openAboutTranslations({
     pageHeader: '[data-l10n-id="about-translations-header"]',
     fromLanguageSelect: "select#language-from",
     toLanguageSelect: "select#language-to",
+    languageSwapButton: "button#language-swap",
     translationTextarea: "textarea#translation-from",
     translationResult: "#translation-to",
     translationResultBlank: "#translation-to-blank",
@@ -178,6 +182,8 @@ async function openAboutTranslations({
       await EngineProcess.destroyTranslationsEngine();
 
       await SpecialPowers.popPrefEnv();
+      TestTranslationsTelemetry.reset();
+      Services.fog.testResetFOG();
     },
     resolveDownloads,
     rejectDownloads,
@@ -271,11 +277,34 @@ function upperCaseNode(node) {
 }
 
 /**
+ * Recursively transforms all child nodes to have diacriticized text. This is useful
+ * to spot multiple translations.
+ *
+ * @param {Node} node
+ */
+function diacriticizeNode(node) {
+  if (typeof node.nodeValue === "string") {
+    let result = "";
+    for (let i = 0; i < node.nodeValue.length; i++) {
+      const ch = node.nodeValue[i];
+      result += ch;
+      if ("abcdefghijklmnopqrstuvwxyz".includes(ch.toLowerCase())) {
+        result += "\u0305";
+      }
+    }
+    node.nodeValue = result;
+  }
+  for (const childNode of node.childNodes) {
+    diacriticizeNode(childNode);
+  }
+}
+
+/**
  * Creates a mocked message port for translations.
  *
  * @returns {MessagePort} This is mocked
  */
-function createMockedTranslatorPort(transformNode = upperCaseNode) {
+function createMockedTranslatorPort(transformNode = upperCaseNode, delay = 0) {
   const parser = new DOMParser();
   const mockedPort = {
     async postMessage(message) {
@@ -292,15 +321,18 @@ function createMockedTranslatorPort(transformNode = upperCaseNode) {
           });
           break;
         case "TranslationsPort:TranslationRequest": {
-          const { messageId, sourceText } = message;
+          const { translationId, sourceText } = message;
 
           const translatedDoc = parser.parseFromString(sourceText, "text/html");
           transformNode(translatedDoc.body);
+          if (delay) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
           mockedPort.onmessage({
             data: {
               type: "TranslationsPort:TranslationResponse",
               targetText: translatedDoc.body.innerHTML,
-              messageId,
+              translationId,
             },
           });
         }
@@ -308,6 +340,198 @@ function createMockedTranslatorPort(transformNode = upperCaseNode) {
     },
   };
   return mockedPort;
+}
+
+class TranslationResolver {
+  resolvers = Promise.withResolvers();
+  resolveCount = 0;
+  getPromise() {
+    return this.resolvers.promise;
+  }
+}
+
+/**
+ * Creates a mocked message port for translations.
+ *
+ * @returns {MessagePort} This is mocked
+ */
+function createControlledTranslatorPort() {
+  const parser = new DOMParser();
+
+  const canceledTranslations = new Set();
+  let resolvers = Promise.withResolvers();
+  let translationCount = 0;
+
+  async function resolveRequests() {
+    info("Resolving all pending translation requests");
+    await TestUtils.waitForTick();
+    resolvers.resolve();
+    resolvers = Promise.withResolvers();
+    await TestUtils.waitForTick();
+    const count = translationCount;
+    translationCount = 0;
+    return count;
+  }
+
+  const mockedTranslatorPort = {
+    async postMessage(message) {
+      switch (message.type) {
+        case "TranslationsPort:CancelSingleTranslation":
+          info("Canceling translation id:" + message.translationId);
+          canceledTranslations.add(message.translationId);
+          break;
+        case "TranslationsPort:GetEngineStatusRequest":
+          mockedTranslatorPort.onmessage({
+            data: {
+              type: "TranslationsPort:GetEngineStatusResponse",
+              status: "ready",
+            },
+          });
+          break;
+        case "TranslationsPort:TranslationRequest": {
+          const { translationId, sourceText } = message;
+
+          // Create a short debug version of the text.
+          let debugText = sourceText.trim().replaceAll("\n", "");
+          if (debugText.length > 50) {
+            debugText = debugText.slice(0, 50) + "...";
+          }
+
+          info(
+            `Translation requested (id:${message.translationId}) "${debugText}"`
+          );
+          await resolvers.promise;
+
+          if (canceledTranslations.has(translationId)) {
+            info("Cancelled translation id:" + translationId);
+          } else {
+            info(
+              "Translation completed, responding id:" + message.translationId
+            );
+            translationCount++;
+            const translatedDoc = parser.parseFromString(
+              sourceText,
+              "text/html"
+            );
+            diacriticizeNode(translatedDoc.body);
+            const targetText =
+              translatedDoc.body.innerHTML.trim() + ` (id:${translationId})`;
+
+            info("Translation response: " + targetText.replaceAll("\n", ""));
+            mockedTranslatorPort.onmessage({
+              data: {
+                type: "TranslationsPort:TranslationResponse",
+                targetText,
+                translationId,
+              },
+            });
+          }
+        }
+      }
+    },
+  };
+
+  return { mockedTranslatorPort, resolveRequests };
+}
+
+/**
+ * @type {typeof import("../../content/translations-document.sys.mjs")}
+ */
+const { TranslationsDocument, LRUCache } = ChromeUtils.importESModule(
+  "chrome://global/content/translations/translations-document.sys.mjs"
+);
+
+/**
+ * @param {string} html
+ * @param {{
+ *  mockedTranslatorPort?: (message: string) => Promise<string>,
+ *  mockedReportVisibleChange?: () => void
+ * }} [options]
+ */
+async function createTranslationsDoc(html, options) {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.translations.enable", true],
+      ["browser.translations.logLevel", "All"],
+    ],
+  });
+
+  const parser = new DOMParser();
+  const document = parser.parseFromString(html, "text/html");
+
+  // For some reason, the document <body> here from the DOMParser is "display: flex" by
+  // default. Ensure that it is "display: block" instead, otherwise the children of the
+  // <body> will not be "display: inline".
+  document.body.style.display = "block";
+
+  const translate = () => {
+    info("Creating the TranslationsDocument.");
+    return new TranslationsDocument(
+      document,
+      "en",
+      "EN",
+      0, // This is a fake innerWindowID
+      options?.mockedTranslatorPort ?? createMockedTranslatorPort(),
+      () => {
+        throw new Error("Cannot request a new port");
+      },
+      options?.mockedReportVisibleChange ?? (() => {}),
+      performance.now(),
+      () => performance.now(),
+      new LRUCache()
+    );
+  };
+
+  /**
+   * Test utility to check that the document matches the expected markup
+   *
+   * @param {string} message
+   * @param {string} html
+   */
+  async function htmlMatches(message, html, element = document.body) {
+    const expected = naivelyPrettify(html);
+    try {
+      await waitForCondition(
+        () => naivelyPrettify(element.innerHTML) === expected,
+        "Waiting for HTML to match."
+      );
+      ok(true, message);
+    } catch (error) {
+      console.error(error);
+
+      // Provide a nice error message.
+      const actual = naivelyPrettify(element.innerHTML);
+      ok(
+        false,
+        `${message}\n\nExpected HTML:\n\n${expected}\n\nActual HTML:\n\n${actual}\n\n`
+      );
+    }
+  }
+
+  function cleanup() {
+    SpecialPowers.popPrefEnv();
+  }
+
+  return { htmlMatches, cleanup, translate, document };
+}
+
+/**
+ * Perform a double requestAnimationFrame, which is used by the TranslationsDocument
+ * to handle mutations.
+ *
+ * @param {Document} doc
+ */
+function doubleRaf(doc) {
+  return new Promise(resolve => {
+    doc.ownerGlobal.requestAnimationFrame(() => {
+      doc.ownerGlobal.requestAnimationFrame(() => {
+        resolve(
+          // Wait for a tick to be after anything that resolves with a double rAF.
+          TestUtils.waitForTick()
+        );
+      });
+    });
+  });
 }
 
 /**
@@ -380,9 +604,7 @@ function createdReorderingMockedTranslatorPort() {
  * @returns {import("../../actors/TranslationsParent.sys.mjs").TranslationsParent}
  */
 function getTranslationsParent() {
-  return gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
-    "Translations"
-  );
+  return TranslationsParent.getTranslationsActor(gBrowser.selectedBrowser);
 }
 
 /**
@@ -517,10 +739,30 @@ async function setupActorTest({
   };
 }
 
+/**
+ * Creates and mocks remote settings for translations.
+ *
+ * @param {object} options - The options for creating and mocking remote settings.
+ * @param {Array<{fromLang: string, toLang: string}>} [options.languagePairs=LANGUAGE_PAIRS]
+ *  - The language pairs to be used.
+ * @param {boolean} [options.useMockedTranslator=true]
+ *  - Whether to use a mocked translator.
+ * @param {boolean} [options.autoDownloadFromRemoteSettings=false]
+ *  - Whether to automatically download from remote settings.
+ *
+ * @returns {Promise<object>} - An object containing the removeMocks function and remoteClients.
+ */
 async function createAndMockRemoteSettings({
   languagePairs = LANGUAGE_PAIRS,
+  useMockedTranslator = true,
   autoDownloadFromRemoteSettings = false,
 }) {
+  if (TranslationsParent.isTranslationsEngineMocked()) {
+    throw new Error(
+      "Attempt to mock the Translations Engine when it is already mocked."
+    );
+  }
+
   const remoteClients = {
     translationModels: await createTranslationModelsRemoteClient(
       autoDownloadFromRemoteSettings,
@@ -536,10 +778,11 @@ async function createAndMockRemoteSettings({
   TranslationsParent.clearCache();
   TranslationsPanelShared.clearLanguageListsCache();
 
-  TranslationsParent.mockTranslationsEngine(
-    remoteClients.translationModels.client,
-    remoteClients.translationsWasm.client
-  );
+  TranslationsParent.applyTestingMocks({
+    useMockedTranslator,
+    translationModelsRemoteClient: remoteClients.translationModels.client,
+    translationsWasmRemoteClient: remoteClients.translationsWasm.client,
+  });
 
   return {
     async removeMocks() {
@@ -547,10 +790,110 @@ async function createAndMockRemoteSettings({
       await remoteClients.translationModels.client.db.clear();
       await remoteClients.translationsWasm.client.db.clear();
 
-      TranslationsParent.unmockTranslationsEngine();
+      TranslationsParent.removeTestingMocks();
       TranslationsParent.clearCache();
       TranslationsPanelShared.clearLanguageListsCache();
     },
+    remoteClients,
+  };
+}
+
+/**
+ * Normalizes the backslashes or forward slashes in the given path
+ * to be correct for the current operating system.
+ *
+ * @param {string} path - The path to normalize.
+ *
+ * @returns {string} - The normalized path.
+ */
+function normalizePathForOS(path) {
+  if (Services.appinfo.OS === "WINNT") {
+    // On Windows, replace forward slashes with backslashes
+    return path.replace(/\//g, "\\");
+  }
+
+  // On Unix-like systems, replace backslashes with forward slashes
+  return path.replace(/\\/g, "/");
+}
+
+/**
+ * Returns true if the given path exists, otherwise false.
+ *
+ * @param {string} path - The path to check.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function pathExists(path) {
+  try {
+    return await IOUtils.exists(path);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Creates remote settings for the file system.
+ *
+ * @param {Array<{fromLang: string, toLang: string}>} languagePairs - The language pairs to be used.
+ *
+ * @returns {Promise<object>} - An object containing the removeMocks function and remoteClients.
+ */
+async function createFileSystemRemoteSettings(languagePairs) {
+  const { removeMocks, remoteClients } = await createAndMockRemoteSettings({
+    languagePairs,
+    useMockedTranslator: false,
+    autoDownloadFromRemoteSettings: true,
+  });
+
+  const artifactDirectory = normalizePathForOS(
+    `${Services.env.get("MOZ_FETCHES_DIR")}`
+  );
+
+  if (!artifactDirectory) {
+    await removeMocks();
+    throw new Error(`
+
+      🚨 The MOZ_FETCHES_DIR environment variable is not set 🚨
+
+      If you are running a Translations end-to-end test locally, you will need to download the required artifacts to MOZ_FETCHES_DIR.
+      To configure MOZ_FETCHES_DIR to run Translations end-to-end tests locally, please run the following script:
+
+      ❯ python3 toolkit/components/translations/tests/scripts/download-translations-artifacts.py
+
+    `);
+  }
+
+  if (!PathUtils.isAbsolute(artifactDirectory)) {
+    await removeMocks();
+    throw new Error(`
+      The path exported to MOZ_FETCHES_DIR environment variable is a relative path.
+      Please export an absolute path to MOZ_FETCHES_DIR.
+    `);
+  }
+
+  const download = async record => {
+    const recordPath = normalizePathForOS(
+      `${artifactDirectory}/${record.name}`
+    );
+
+    if (!(await pathExists(recordPath))) {
+      throw new Error(`
+        The record ${record.name} was not found in ${artifactDirectory} specified by MOZ_FETCHES_DIR.
+        If you are running a Translations end-to-end test locally, you will need to download the required artifacts to MOZ_FETCHES_DIR.
+        To configure MOZ_FETCHES_DIR to run Translations end-to-end tests locally, please run toolkit/components/translations/tests/scripts/download-translations-artifacts.py
+      `);
+    }
+
+    return {
+      buffer: (await IOUtils.read(recordPath)).buffer,
+    };
+  };
+
+  remoteClients.translationsWasm.client.attachments.download = download;
+  remoteClients.translationModels.client.attachments.download = download;
+
+  return {
+    removeMocks,
     remoteClients,
   };
 }
@@ -629,6 +972,7 @@ class MockedA11yUtils {
 
 async function loadTestPage({
   languagePairs,
+  endToEndTest = false,
   autoDownloadFromRemoteSettings = false,
   page,
   prefs,
@@ -660,6 +1004,7 @@ async function loadTestPage({
         ["browser.translations.automaticallyPopup", true],
         ["browser.translations.alwaysTranslateLanguages", ""],
         ["browser.translations.neverTranslateLanguages", ""],
+        ["browser.translations.mostRecentTargetLanguages", ""],
         // Bug 1893100 - This is needed to ensure that switching focus
         // with tab works in tests independent of macOS settings that
         // would otherwise disable keyboard navigation at the OS level.
@@ -683,10 +1028,12 @@ async function loadTestPage({
       }))
     );
 
-    const result = await createAndMockRemoteSettings({
-      languagePairs,
-      autoDownloadFromRemoteSettings,
-    });
+    const result = endToEndTest
+      ? await createFileSystemRemoteSettings(languagePairs)
+      : await createAndMockRemoteSettings({
+          languagePairs,
+          autoDownloadFromRemoteSettings,
+        });
     remoteClients = result.remoteClients;
     removeMocks = result.removeMocks;
   }
@@ -718,6 +1065,11 @@ async function loadTestPage({
     remoteClients,
 
     /**
+     * Resolves the downloads for the pending count of requested language pairs.
+     * This should be used when resolving downloads immediately after requesting them.
+     *
+     * @see {resolveBulkDownloads} for requesting multiple translations prior to resolving.
+     *
      * @param {number} count - Count of the language pairs expected.
      */
     async resolveDownloads(count) {
@@ -728,12 +1080,63 @@ async function loadTestPage({
     },
 
     /**
+     * Rejects the downloads for the pending count of requested language pairs.
+     * This should be used when rejecting downloads immediately after requesting them.
+     *
+     * @see {resolveBulkDownloads} for requesting multiple translations prior to rejecting.
+     *
      * @param {number} count - Count of the language pairs expected.
      */
     async rejectDownloads(count) {
       await remoteClients.translationsWasm.rejectPendingDownloads(1);
       await remoteClients.translationModels.rejectPendingDownloads(
         FILES_PER_LANGUAGE_PAIR * count
+      );
+    },
+
+    /**
+     * Resolves downloads for multiple pending translation requests.
+     *
+     * @see {resolveDownloads} for resolving downloads for just a single request.
+     *
+     * @param {object} expectations
+     * @param {number} expectations.expectedWasmDownloads
+     *  - The expected count of pending WASM binary download requests.
+     * @param {number} expectations.expectedLanguagePairDownloads
+     *  - The expected count of language-pair model-download requests.
+     */
+    async resolveBulkDownloads({
+      expectedWasmDownloads,
+      expectedLanguagePairDownloads,
+    }) {
+      await remoteClients.translationsWasm.resolvePendingDownloads(
+        expectedWasmDownloads
+      );
+      await remoteClients.translationModels.resolvePendingDownloads(
+        FILES_PER_LANGUAGE_PAIR * expectedLanguagePairDownloads
+      );
+    },
+
+    /**
+     * Rejects downloads for multiple pending translation requests.
+     *
+     * @see {rejectDownloads} for rejecting downloads for just a single request.
+     *
+     * @param {object} expectations
+     * @param {number} expectations.expectedWasmDownloads
+     *  - The expected count of pending WASM binary download requests.
+     * @param {number} expectations.expectedLanguagePairDownloads
+     *  - The expected count of language-pair model-download requests.
+     */
+    async rejectBulkDownloads({
+      expectedWasmDownloads,
+      expectedLanguagePairDownloads,
+    }) {
+      await remoteClients.translationsWasm.rejectPendingDownloads(
+        expectedWasmDownloads
+      );
+      await remoteClients.translationModels.rejectPendingDownloads(
+        FILES_PER_LANGUAGE_PAIR * expectedLanguagePairDownloads
       );
     },
 

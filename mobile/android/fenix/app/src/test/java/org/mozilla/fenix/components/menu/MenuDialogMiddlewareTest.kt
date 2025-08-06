@@ -12,7 +12,6 @@ import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.concept.engine.webextension.InstallationMethod
-import mozilla.components.concept.storage.BookmarksStorage
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.AddonManager
 import mozilla.components.feature.app.links.AppLinkRedirect
@@ -24,6 +23,7 @@ import mozilla.components.feature.top.sites.TopSitesUseCases
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.libstate.ext.waitUntilIdle
+import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
@@ -32,6 +32,7 @@ import mozilla.components.support.test.whenever
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -46,6 +47,7 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.BookmarkAction
 import org.mozilla.fenix.components.appstate.AppAction.FindInPageAction
 import org.mozilla.fenix.components.appstate.AppAction.ReaderViewAction
+import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.bookmarks.BookmarksUseCase.AddBookmarksUseCase
 import org.mozilla.fenix.components.menu.fake.FakeBookmarksStorage
 import org.mozilla.fenix.components.menu.middleware.MenuDialogMiddleware
@@ -63,7 +65,7 @@ class MenuDialogMiddlewareTest {
     val coroutinesTestRule = MainCoroutineRule()
     private val scope = coroutinesTestRule.scope
 
-    private val bookmarksStorage: BookmarksStorage = FakeBookmarksStorage()
+    private val bookmarksStorage = FakeBookmarksStorage()
     private val addBookmarkUseCase: AddBookmarksUseCase =
         spy(AddBookmarksUseCase(storage = bookmarksStorage))
 
@@ -186,9 +188,74 @@ class MenuDialogMiddlewareTest {
         // Wait for UpdateExtensionState and middleware
         store.waitUntilIdle()
 
+        assertTrue(store.state.extensionMenuState.availableAddons.isEmpty())
         assertEquals(1, store.state.extensionMenuState.recommendedAddons.size)
         assertEquals(addon, store.state.extensionMenuState.recommendedAddons.first())
+        assertTrue(store.state.extensionMenuState.showExtensionsOnboarding)
     }
+
+    @Test
+    fun `GIVEN at least one addon is installed WHEN init action is dispatched THEN initial extension state is updated`() =
+        runTestOnMain {
+            val addon = Addon(id = "ext1")
+            val addonTwo = Addon(
+                id = "ext2",
+                installedState = Addon.InstalledState(
+                    id = "id",
+                    version = "1.0",
+                    enabled = true,
+                    optionsPageUrl = "",
+                ),
+            )
+            val addonThree = Addon(id = "ext3")
+            whenever(addonManager.getAddons()).thenReturn(listOf(addon, addonTwo, addonThree))
+
+            val store = createStore()
+
+            assertEquals(0, store.state.extensionMenuState.recommendedAddons.size)
+
+            // Wait for InitAction and middleware
+            store.waitUntilIdle()
+
+            // Wait for UpdateExtensionState and middleware
+            store.waitUntilIdle()
+
+            assertEquals(1, store.state.extensionMenuState.availableAddons.size)
+            assertTrue(store.state.extensionMenuState.recommendedAddons.isEmpty())
+            assertFalse(store.state.extensionMenuState.showExtensionsOnboarding)
+            assertTrue(store.state.extensionMenuState.shouldShowManageExtensionsMenuItem)
+        }
+
+    @Test
+    fun `GIVEN at least one addon is installed and not enabled WHEN init action is dispatched THEN initial extension state is updated`() =
+        runTestOnMain {
+            val addon = Addon(
+                id = "ext",
+                installedState = Addon.InstalledState(
+                    id = "id",
+                    version = "1.0",
+                    enabled = false,
+                    optionsPageUrl = "",
+                ),
+            )
+
+            whenever(addonManager.getAddons()).thenReturn(listOf(addon))
+
+            val store = createStore()
+
+            assertEquals(0, store.state.extensionMenuState.recommendedAddons.size)
+
+            // Wait for InitAction and middleware
+            store.waitUntilIdle()
+
+            // Wait for UpdateExtensionState and middleware
+            store.waitUntilIdle()
+
+            assertTrue(store.state.extensionMenuState.availableAddons.isEmpty())
+            assertTrue(store.state.extensionMenuState.recommendedAddons.isEmpty())
+            assertFalse(store.state.extensionMenuState.showExtensionsOnboarding)
+            assertTrue(store.state.extensionMenuState.shouldShowManageExtensionsMenuItem)
+        }
 
     @Test
     fun `WHEN add bookmark action is dispatched for a selected tab THEN bookmark is added`() = runTestOnMain {
@@ -202,7 +269,8 @@ class MenuDialogMiddlewareTest {
                 title = title,
             ),
         )
-        val appStore = spy(AppStore())
+        val captureMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captureMiddleware))
         val store = createStore(
             appStore = appStore,
             menuState = MenuState(
@@ -214,13 +282,89 @@ class MenuDialogMiddlewareTest {
         store.dispatch(MenuAction.AddBookmark)
         store.waitUntilIdle()
 
-        verify(addBookmarkUseCase).invoke(url = url, title = title)
-        verify(appStore).dispatch(
-            BookmarkAction.BookmarkAdded(
-                guidToEdit = any(),
+        verify(addBookmarkUseCase).invoke(url = url, title = title, parentGuid = BookmarkRoot.Mobile.id)
+        captureMiddleware.assertLastAction(BookmarkAction.BookmarkAdded::class) { action: BookmarkAction.BookmarkAdded ->
+            assertNotNull(action.guidToEdit)
+        }
+        assertTrue(dismissWasCalled)
+    }
+
+    @Test
+    fun `GIVEN the last added bookmark belongs to a folder WHEN bookmark is added THEN bookmark is added to folder and parent title is dispatched`() = runTestOnMain {
+        val url = "https://www.mozilla.org"
+        val title = "Mozilla"
+        val parentTitle = "title"
+
+        // Add parent
+        val parentGuid = bookmarksStorage.addItem(
+            parentGuid = "root",
+            url = "url",
+            title = parentTitle,
+            position = 0U,
+        )
+        // Add pre-existing child
+        bookmarksStorage.addItem(
+            parentGuid = parentGuid,
+            url = "url",
+            title = parentTitle,
+            position = 1U,
+        )
+        val browserMenuState = BrowserMenuState(
+            selectedTab = createTab(
+                url = url,
+                title = title,
             ),
         )
-        assertTrue(dismissWasCalled)
+        val captureMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captureMiddleware))
+        val store = createStore(
+            appStore = appStore,
+            menuState = MenuState(
+                browserMenuState = browserMenuState,
+            ),
+            onDismiss = { },
+        )
+
+        store.dispatch(MenuAction.AddBookmark)
+        store.waitUntilIdle()
+
+        verify(addBookmarkUseCase).invoke(url = url, title = title, parentGuid = parentGuid)
+        captureMiddleware.assertLastAction(BookmarkAction.BookmarkAdded::class) { action: BookmarkAction.BookmarkAdded ->
+            assertNotNull(action.guidToEdit)
+            assertEquals(parentTitle, action.parentNode?.title)
+        }
+    }
+
+    @Test
+    fun `GIVEN the last added bookmark does not belongs to a folder WHEN bookmark is added THEN bookmark is added to mobile root`() = runTestOnMain {
+        val url = "https://www.mozilla.org"
+        val title = "Mozilla"
+
+        // Add a pre-existing item. This accounts for the null case, but that shouldn't actually be
+        // possible because the mobile root is a subfolder of the synced root
+        bookmarksStorage.addFolder(
+            parentGuid = "",
+            title = "title",
+        )
+        val browserMenuState = BrowserMenuState(
+            selectedTab = createTab(
+                url = url,
+                title = title,
+            ),
+        )
+        val appStore = AppStore()
+        val store = createStore(
+            appStore = appStore,
+            menuState = MenuState(
+                browserMenuState = browserMenuState,
+            ),
+            onDismiss = { },
+        )
+
+        store.dispatch(MenuAction.AddBookmark)
+        store.waitUntilIdle()
+
+        verify(addBookmarkUseCase).invoke(url = url, title = title, parentGuid = BookmarkRoot.Mobile.id)
     }
 
     @Test
@@ -242,7 +386,8 @@ class MenuDialogMiddlewareTest {
                 title = title,
             ),
         )
-        val appStore = spy(AppStore())
+        val captureMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captureMiddleware))
         val store = createStore(
             appStore = appStore,
             menuState = MenuState(
@@ -264,11 +409,7 @@ class MenuDialogMiddlewareTest {
         store.waitUntilIdle()
 
         verify(addBookmarkUseCase, never()).invoke(url = url, title = title)
-        verify(appStore, never()).dispatch(
-            BookmarkAction.BookmarkAdded(
-                guidToEdit = any(),
-            ),
-        )
+        captureMiddleware.assertNotDispatched(BookmarkAction.BookmarkAdded::class)
         assertFalse(dismissWasCalled)
     }
 
@@ -568,29 +709,11 @@ class MenuDialogMiddlewareTest {
     }
 
     @Test
-    fun `WHEN delete browsing data and quit action is dispatched THEN onDeleteAndQuit is invoked`() = runTestOnMain {
-        var dismissWasCalled = false
-
-        val appStore = spy(AppStore())
-        val store = createStore(
-            appStore = appStore,
-            menuState = MenuState(
-                browserMenuState = null,
-            ),
-            onDismiss = { dismissWasCalled = true },
-        )
-
-        store.dispatch(MenuAction.DeleteBrowsingDataAndQuit).join()
-        store.waitUntilIdle()
-
-        verify(onDeleteAndQuit).invoke()
-        assertTrue(dismissWasCalled)
-    }
-
-    @Test
     fun `GIVEN selected tab has external app WHEN open in app action is dispatched THEN the site is opened in app`() = runTestOnMain {
         val url = "https://www.mozilla.org"
         val title = "Mozilla"
+        var dismissWasCalled = false
+
         val browserMenuState = BrowserMenuState(
             selectedTab = createTab(
                 url = url,
@@ -601,6 +724,7 @@ class MenuDialogMiddlewareTest {
             menuState = MenuState(
                 browserMenuState = browserMenuState,
             ),
+            onDismiss = { dismissWasCalled = true },
         )
 
         val getRedirect: AppLinksUseCases.GetAppLinkRedirect = mock()
@@ -620,12 +744,15 @@ class MenuDialogMiddlewareTest {
         store.waitUntilIdle()
 
         verify(openAppLinkRedirect).invoke(appIntent = intent)
+        assertTrue(dismissWasCalled)
     }
 
     @Test
     fun `GIVEN selected tab does not have external app WHEN open in app action is dispatched THEN the site is not opened in app`() = runTestOnMain {
         val url = "https://www.mozilla.org"
         val title = "Mozilla"
+        var dismissWasCalled = false
+
         val browserMenuState = BrowserMenuState(
             selectedTab = createTab(
                 url = url,
@@ -636,6 +763,7 @@ class MenuDialogMiddlewareTest {
             menuState = MenuState(
                 browserMenuState = browserMenuState,
             ),
+            onDismiss = { dismissWasCalled = true },
         )
 
         val getRedirect: AppLinksUseCases.GetAppLinkRedirect = mock()
@@ -652,6 +780,7 @@ class MenuDialogMiddlewareTest {
         store.waitUntilIdle()
 
         verify(openAppLinkRedirect, never()).invoke(appIntent = intent)
+        assertFalse(dismissWasCalled)
     }
 
     @Test
@@ -668,6 +797,8 @@ class MenuDialogMiddlewareTest {
             onSuccess = any(),
             onError = any(),
         )
+
+        assertEquals(store.state.extensionMenuState.addonInstallationInProgress, addon)
     }
 
     @Test
@@ -954,35 +1085,6 @@ class MenuDialogMiddlewareTest {
             enable = eq(false),
             tabId = eq(selectedTab.id),
         )
-        assertTrue(dismissWasCalled)
-    }
-
-    @Test
-    fun `GIVEN menu is accessed from the home screen WHEN request desktop mode action is dispatched THEN set the next tab to be opened in desktop mode`() = runTestOnMain {
-        var dismissWasCalled = false
-        val store = createStore(
-            onDismiss = { dismissWasCalled = true },
-        )
-
-        store.dispatch(MenuAction.RequestDesktopSite)
-        store.waitUntilIdle()
-
-        assertTrue(settings.openNextTabInDesktopMode)
-        assertTrue(dismissWasCalled)
-    }
-
-    @Test
-    fun `GIVEN menu is accessed from the home screen and desktop mode is enabled WHEN request mobile mode action is dispatched THEN set the next tab to be opened in mobile mode`() = runTestOnMain {
-        var dismissWasCalled = false
-        val store = createStore(
-            menuState = MenuState(isDesktopMode = true),
-            onDismiss = { dismissWasCalled = true },
-        )
-
-        store.dispatch(MenuAction.RequestMobileSite)
-        store.waitUntilIdle()
-
-        assertFalse(settings.openNextTabInDesktopMode)
         assertTrue(dismissWasCalled)
     }
 

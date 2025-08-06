@@ -18,8 +18,6 @@
 
 #include "wasm/WasmDebug.h"
 
-#include "mozilla/BinarySearch.h"
-
 #include "debugger/Debugger.h"
 #include "ds/Sort.h"
 #include "jit/MacroAssembler.h"
@@ -34,8 +32,6 @@
 using namespace js;
 using namespace js::jit;
 using namespace js::wasm;
-
-using mozilla::BinarySearchIf;
 
 DebugState::DebugState(const Code& code, const Module& module)
     : code_(&code),
@@ -517,7 +513,7 @@ bool DebugState::getSourceMappingURL(JSContext* cx,
 }
 
 void DebugState::addSizeOfMisc(
-    MallocSizeOf mallocSizeOf, CodeMetadata::SeenSet* seenCodeMeta,
+    mozilla::MallocSizeOf mallocSizeOf, CodeMetadata::SeenSet* seenCodeMeta,
     CodeMetadataForAsmJS::SeenSet* seenCodeMetaForAsmJS,
     Code::SeenSet* seenCode, size_t* code, size_t* data) const {
   code_->addSizeOfMiscIfNotSeen(mallocSizeOf, seenCodeMeta,

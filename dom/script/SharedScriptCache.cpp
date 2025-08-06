@@ -90,7 +90,8 @@ ScriptLoadData::ScriptLoadData(ScriptLoader* aLoader,
     : mExpirationTime(aRequest->ExpirationTime()),
       mLoader(aLoader),
       mKey(aLoader, aRequest),
-      mLoadedScript(aRequest->getLoadedScript()) {}
+      mLoadedScript(aRequest->getLoadedScript()),
+      mNetworkMetadata(aRequest->mNetworkMetadata) {}
 
 NS_IMPL_ISUPPORTS(SharedScriptCache, nsIMemoryReporter, nsIObserver)
 
@@ -138,21 +139,19 @@ SharedScriptCache::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-void SharedScriptCache::Clear(nsIPrincipal* aForPrincipal,
-                              const nsACString* aBaseDomain) {
+void SharedScriptCache::Clear(const Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
+                              const Maybe<nsCString>& aSchemelessSite,
+                              const Maybe<OriginAttributesPattern>& aPattern) {
   using ContentParent = dom::ContentParent;
 
   if (XRE_IsParentProcess()) {
-    auto forPrincipal = aForPrincipal ? Some(RefPtr(aForPrincipal)) : Nothing();
-    auto baseDomain = aBaseDomain ? Some(nsCString(*aBaseDomain)) : Nothing();
-
     for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-      Unused << cp->SendClearScriptCache(forPrincipal, baseDomain);
+      Unused << cp->SendClearScriptCache(aPrincipal, aSchemelessSite, aPattern);
     }
   }
 
   if (sSingleton) {
-    sSingleton->ClearInProcess(aForPrincipal, aBaseDomain);
+    sSingleton->ClearInProcess(aPrincipal, aSchemelessSite, aPattern);
   }
 }
 

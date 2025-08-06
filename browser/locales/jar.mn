@@ -8,7 +8,6 @@
 # having to create the same entry for each locale.
 
 [localization] @AB_CD@.jar:
-  preview/ion.ftl                                  (../components/ion/content/ion.ftl)
   preview/protections.ftl                          (../components/protections/content/protections.ftl)
   preview/interventions.ftl                        (../components/urlbar/content/interventions.ftl)
   preview/enUS-searchFeatures.ftl                  (../components/urlbar/content/enUS-searchFeatures.ftl)
@@ -17,8 +16,10 @@
   preview/translations.ftl                         (../locales-preview/translations.ftl)
   preview/credentialChooser.ftl                    (../../toolkit/components/credentialmanagement/credentialChooser.ftl)
   browser                                          (%browser/**/*.ftl)
-  preview/profiles.ftl                             (../components/profiles/content/profiles.ftl)
   preview/backupSettings.ftl                       (../locales-preview/backupSettings.ftl)
+  preview/firefoxRelayToAllBrowsers.ftl            (../locales-preview/firefoxRelayToAllBrowsers.ftl)
+  preview/tabGroups.ftl                            (../locales-preview/tabGroups.ftl)
+  preview/tabUnload.ftl                            (../locales-preview/tabUnload.ftl)
 
 @AB_CD@.jar:
 % locale browser @AB_CD@ %locale/browser/
@@ -34,7 +35,6 @@
     locale/browser/places/bookmarkProperties.properties (%chrome/browser/places/bookmarkProperties.properties)
     locale/browser/safebrowsing/safebrowsing.properties   (%chrome/browser/safebrowsing/safebrowsing.properties)
     locale/browser/feeds/subscribe.properties       (%chrome/browser/feeds/subscribe.properties)
-    locale/browser/syncSetup.properties         (%chrome/browser/syncSetup.properties)
 % locale browser-region @AB_CD@ %locale/browser-region/
 # the following files are browser-specific overrides
     locale/browser/appstrings.properties       (%chrome/overrides/appstrings.properties)

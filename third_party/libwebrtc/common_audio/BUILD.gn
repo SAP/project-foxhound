@@ -46,6 +46,7 @@ rtc_library("common_audio") {
     ":common_audio_c",
     ":sinc_resampler",
     "../api:array_view",
+    "../api/audio:audio_frame_api",
     "../rtc_base:checks",
     "../rtc_base:gtest_prod",
     "../rtc_base:logging",
@@ -58,7 +59,6 @@ rtc_library("common_audio") {
     "../system_wrappers",
     "third_party/ooura:fft_size_256",
   ]
-  absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 
   defines = []
 
@@ -291,7 +291,7 @@ if (rtc_build_with_neon) {
 
     if (target_cpu != "arm64") {
       # Enable compilation for the NEON instruction set.
-      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
+      suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
       cflags = [ "-mfpu=neon" ]
     }
 
@@ -314,7 +314,7 @@ if (rtc_build_with_neon) {
 
     if (target_cpu != "arm64") {
       # Enable compilation for the NEON instruction set.
-      suppressed_configs += [ "//build/config/compiler:compiler_arm_fpu" ]
+      suppressed_configs += [ "//chromium/build/config/compiler:compiler_arm_fpu" ]
       cflags = [ "-mfpu=neon" ]
     }
 

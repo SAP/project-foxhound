@@ -4,7 +4,6 @@
 
 use super::error_reporter::ErrorReporter;
 use super::stylesheet_loader::{AsyncStylesheetParser, StylesheetLoader};
-use bincode::{deserialize, serialize};
 use cssparser::ToCss as ParserToCss;
 use cssparser::{
     BasicParseError, ParseError as CssParseError, Parser, ParserInput, ParserState, SourceLocation,
@@ -37,7 +36,7 @@ use style::font_face::{self, FontFaceSourceFormat, FontFaceSourceListComponent, 
 use style::gecko::arc_types::{
     LockedCounterStyleRule, LockedCssRules, LockedDeclarationBlock, LockedFontFaceRule,
     LockedImportRule, LockedKeyframe, LockedKeyframesRule, LockedMediaList, LockedPageRule,
-    LockedStyleRule,
+    LockedPositionTryRule, LockedNestedDeclarationsRule, LockedStyleRule,
 };
 use style::gecko::data::{
     AuthorStyles, GeckoStyleSheet, PerDocumentStyleData, PerDocumentStyleDataImpl,
@@ -60,14 +59,12 @@ use style::gecko_bindings::bindings::Gecko_HaveSeenPtr;
 use style::gecko_bindings::structs;
 use style::gecko_bindings::structs::gfx::FontPaletteValueSet;
 use style::gecko_bindings::structs::gfxFontFeatureValueSet;
-use style::gecko_bindings::structs::ipc::ByteBuf;
 use style::gecko_bindings::structs::nsAtom;
 use style::gecko_bindings::structs::nsCSSCounterDesc;
 use style::gecko_bindings::structs::nsCSSFontDesc;
 use style::gecko_bindings::structs::nsCSSPropertyID;
 use style::gecko_bindings::structs::nsChangeHint;
 use style::gecko_bindings::structs::nsCompatibility;
-use style::gecko_bindings::structs::nsStyleTransformMatrix::MatrixTransformOperator;
 use style::gecko_bindings::structs::nsresult;
 use style::gecko_bindings::structs::CallerType;
 use style::gecko_bindings::structs::CompositeOperation;
@@ -135,9 +132,10 @@ use style::stylesheets::{
     AllowImportRules, ContainerRule, CounterStyleRule, CssRule, CssRuleType, CssRuleTypes,
     CssRules, CssRulesHelpers, DocumentRule, FontFaceRule, FontFeatureValuesRule,
     FontPaletteValuesRule, ImportRule, KeyframesRule, LayerBlockRule, LayerStatementRule,
-    MarginRule, MediaRule, NamespaceRule, Origin, OriginSet, PagePseudoClassFlags, PageRule,
-    PropertyRule, SanitizationData, SanitizationKind, ScopeRule, StartingStyleRule, StyleRule,
-    StylesheetContents, StylesheetLoader as StyleStylesheetLoader, SupportsRule, UrlExtraData,
+    MarginRule, MediaRule, NamespaceRule, NestedDeclarationsRule, Origin, OriginSet,
+    PagePseudoClassFlags, PageRule, PositionTryRule, PropertyRule, SanitizationData,
+    SanitizationKind, ScopeRule, StartingStyleRule, StyleRule, StylesheetContents,
+    StylesheetLoader as StyleStylesheetLoader, SupportsRule, UrlExtraData,
 };
 use style::stylist::{add_size_of_ua_cache, AuthorStylesEnabled, RuleInclusion, Stylist};
 use style::thread_state;
@@ -994,110 +992,64 @@ pub extern "C" fn Servo_AnimationValue_Uncompute(
     .into()
 }
 
-#[inline]
-fn create_byte_buf_from_vec(mut v: Vec<u8>) -> ByteBuf {
-    let w = ByteBuf {
-        mData: v.as_mut_ptr(),
-        mLen: v.len(),
-        mCapacity: v.capacity(),
-    };
-    std::mem::forget(v);
-    w
-}
-
-#[inline]
-fn view_byte_buf(b: &ByteBuf) -> &[u8] {
-    if b.mData.is_null() {
-        debug_assert_eq!(b.mCapacity, 0);
-        return &[];
-    }
-    unsafe { std::slice::from_raw_parts(b.mData, b.mLen) }
-}
-
-macro_rules! impl_basic_serde_funcs {
-    ($ser_name:ident, $de_name:ident, $computed_type:ty) => {
-        #[no_mangle]
-        pub extern "C" fn $ser_name(v: &$computed_type, output: &mut ByteBuf) -> bool {
-            let buf = match serialize(v) {
-                Ok(buf) => buf,
-                Err(..) => return false,
-            };
-
-            *output = create_byte_buf_from_vec(buf);
-            true
-        }
-
-        #[no_mangle]
-        pub unsafe extern "C" fn $de_name(input: &ByteBuf, v: *mut $computed_type) -> bool {
-            let buf = match deserialize(view_byte_buf(input)) {
-                Ok(buf) => buf,
-                Err(..) => return false,
-            };
-
-            std::ptr::write(v, buf);
-            true
-        }
-    };
-}
-
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::LengthPercentage,
     Servo_LengthPercentage_Serialize,
-    Servo_LengthPercentage_Deserialize,
-    computed::LengthPercentage
+    Servo_LengthPercentage_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::transform::Rotate,
     Servo_StyleRotate_Serialize,
-    Servo_StyleRotate_Deserialize,
-    computed::transform::Rotate
+    Servo_StyleRotate_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::transform::Scale,
     Servo_StyleScale_Serialize,
-    Servo_StyleScale_Deserialize,
-    computed::transform::Scale
+    Servo_StyleScale_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::transform::Translate,
     Servo_StyleTranslate_Serialize,
-    Servo_StyleTranslate_Deserialize,
-    computed::transform::Translate
+    Servo_StyleTranslate_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::transform::Transform,
     Servo_StyleTransform_Serialize,
-    Servo_StyleTransform_Deserialize,
-    computed::transform::Transform
+    Servo_StyleTransform_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::motion::OffsetPath,
     Servo_StyleOffsetPath_Serialize,
-    Servo_StyleOffsetPath_Deserialize,
-    computed::motion::OffsetPath
+    Servo_StyleOffsetPath_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::motion::OffsetRotate,
     Servo_StyleOffsetRotate_Serialize,
-    Servo_StyleOffsetRotate_Deserialize,
-    computed::motion::OffsetRotate
+    Servo_StyleOffsetRotate_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::position::PositionOrAuto,
     Servo_StylePositionOrAuto_Serialize,
-    Servo_StylePositionOrAuto_Deserialize,
-    computed::position::PositionOrAuto
+    Servo_StylePositionOrAuto_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    computed::motion::OffsetPosition,
     Servo_StyleOffsetPosition_Serialize,
-    Servo_StyleOffsetPosition_Deserialize,
-    computed::motion::OffsetPosition
+    Servo_StyleOffsetPosition_Deserialize
 );
 
-impl_basic_serde_funcs!(
+ipdl_utils::define_ffi_serializer!(
+    ComputedTimingFunction,
     Servo_StyleComputedTimingFunction_Serialize,
-    Servo_StyleComputedTimingFunction_Deserialize,
-    ComputedTimingFunction
+    Servo_StyleComputedTimingFunction_Deserialize
 );
 
 // Return the ComputedValues by a base ComputedValues and the rules.
@@ -1271,16 +1223,13 @@ pub extern "C" fn Servo_ComputedValues_ShouldTransition(
     // For main thread animations, it's fine to use |old_value| because it represents the value in
     // before-change style [1] if not transitions and animations, or the current value [2] if it
     // has a running transition.
-    // If this property has a running transition on the compositor, |old_value| may be invalid, and
-    // we have to compute the current value here to make sure the check of
-    // `current_or_old_value == new_value` below makes sense.
     //
-    // Note: For compositor animaitons, in we may only compose the transition rule only once when
-    // creating the transition on the main thread. And then we throttle the animations, so the
-    // transition rules in |old| are out-of-date. This means |old_value| is not equal to current
-    // value. In some cases, it could be equal to the start value of the running transition. This
-    // situation prevent us from creating a reversing transition. Therefore, it's necessay to
-    // compute current value if needed, for compositor animations.
+    // If this property is replacing a running or pending transition, we might want to compute a
+    // more accurate current value, to make sure the check of `current_or_old_value == new_value`
+    // below makes sense. |old_value| might be stale, even being the initial value of the
+    // transition (if we've throttled the animation on the main thread, due to it being off-screen,
+    // or a compositor animation). This prevents us from creating a reversing transition
+    // incorrectly.
     //
     // [1] https://drafts.csswg.org/css-transitions-1/#before-change-style
     // [2] https://drafts.csswg.org/css-transitions-1/#current-value
@@ -1301,8 +1250,8 @@ pub extern "C" fn Servo_ComputedValues_ShouldTransition(
     //    transition-property value, and the end value is not equal to the value of the property
     //    in the after-change style. Also, if the **current value** of the property in the
     //    running transition is equal to the value of the property in the after-change style, or
-    //    if these two values are not transitionable. In this case, we don't create new
-    //    transition and we will cancel the running transition.
+    //    if these two values are not transitionable. In this case, we don't create new transition
+    //    and we will cancel the running transition.
     let current_or_old_value = current_value.unwrap_or(old_value);
     if current_or_old_value == new_value ||
         matches!(behavior, computed::TransitionBehavior::Normal if !current_or_old_value.interpolable_with(&new_value))
@@ -2088,16 +2037,11 @@ pub extern "C" fn Servo_StyleSheet_GetRules(sheet: &StylesheetContents) -> Stron
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_StyleSheet_Clone(
-    contents: &StylesheetContents,
-    reference_sheet: *const DomStyleSheet,
-) -> Strong<StylesheetContents> {
-    use style::shared_lock::{DeepCloneParams, DeepCloneWithLock};
+pub extern "C" fn Servo_StyleSheet_Clone(contents: &StylesheetContents) -> Strong<StylesheetContents> {
+    use style::shared_lock::DeepCloneWithLock;
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
-    let params = DeepCloneParams { reference_sheet };
-
-    Arc::new(contents.deep_clone_with_lock(&global_style_data.shared_lock, &guard, &params)).into()
+    Arc::new(contents.deep_clone_with_lock(&global_style_data.shared_lock, &guard)).into()
 }
 
 #[no_mangle]
@@ -2209,6 +2153,16 @@ where
         let mut guard = lock.write();
         func(raw.write_with(&mut guard))
     })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_CssRules_GetRuleCount(rules: &LockedCssRules) -> usize {
+    read_locked_arc(rules, |rules| rules.0.len())
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_CssRules_GetRuleTypeAt(rules: &LockedCssRules, index: usize) -> CssRuleType {
+    read_locked_arc(rules, |rules| rules.0[index].rule_type())
 }
 
 #[no_mangle]
@@ -2572,6 +2526,37 @@ impl_group_rule_funcs! { (StartingStyle, StartingStyleRule, StartingStyleRule),
     changed: Servo_StyleSet_StartingStyleRuleChanged,
 }
 
+impl_basic_rule_funcs! { (PositionTry, PositionTryRule, Locked<PositionTryRule>),
+    getter: Servo_CssRules_GetPositionTryRuleAt,
+    debug: Servo_PositionTryRule_Debug,
+    to_css: Servo_PositionTryRule_GetCssText,
+    changed: Servo_StyleSet_PositionTryRuleChanged,
+}
+
+impl_basic_rule_funcs! { (NestedDeclarations, NestedDeclarationsRule, Locked<NestedDeclarationsRule>),
+    getter: Servo_CssRules_GetNestedDeclarationsRuleAt,
+    debug: Servo_NestedDeclarationsRule_Debug,
+    to_css: Servo_NestedDeclarationsRule_GetCssText,
+    changed: Servo_StyleSet_NestedDeclarationsRuleChanged,
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_NestedDeclarationsRule_GetStyle(
+    rule: &LockedNestedDeclarationsRule,
+) -> Strong<LockedDeclarationBlock> {
+    read_locked_arc(rule, |rule: &NestedDeclarationsRule| rule.block.clone().into())
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_NestedDeclarationsRule_SetStyle(
+    rule: &LockedNestedDeclarationsRule,
+    declarations: &LockedDeclarationBlock,
+) {
+    write_locked_arc(rule, |rule: &mut NestedDeclarationsRule| {
+        rule.block = unsafe { Arc::from_raw_addrefed(declarations) };
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn Servo_StyleRule_GetStyle(
     rule: &LockedStyleRule,
@@ -2705,6 +2690,7 @@ pub extern "C" fn Servo_StyleRule_SetSelectorText(
     contents: &StylesheetContents,
     rule: &LockedStyleRule,
     text: &nsACString,
+    parse_relative_rule_type: Option<&CssRuleType>,
 ) -> bool {
     let value_str = unsafe { text.as_str_unchecked() };
 
@@ -2721,13 +2707,16 @@ pub extern "C" fn Servo_StyleRule_SetSelectorText(
             for_supports_rule: false,
         };
 
-        // TODO: Maybe allow setting relative selectors from the OM, if we're in a nested style
-        // rule?
+        let parse_relative = match parse_relative_rule_type {
+            Some(CssRuleType::Style) => ParseRelative::ForNesting,
+            Some(CssRuleType::Scope) => ParseRelative::ForScope,
+            _ => ParseRelative::No,
+        };
         let mut parser_input = ParserInput::new(&value_str);
         match SelectorList::parse(
             &parser,
             &mut Parser::new(&mut parser_input),
-            ParseRelative::No,
+            parse_relative,
         ) {
             Ok(selectors) => {
                 rule.selectors = selectors;
@@ -4038,6 +4027,31 @@ counter_style_descriptors! {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn Servo_PositionTryRule_GetName(
+    rule: &LockedPositionTryRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &PositionTryRule| rule.name.to_css(&mut CssWriter::new(result)).unwrap());
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_PositionTryRule_GetStyle(
+    rule: &LockedPositionTryRule,
+) -> Strong<LockedDeclarationBlock> {
+    read_locked_arc(rule, |rule: &PositionTryRule| rule.block.clone().into())
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_PositionTryRule_SetStyle(
+    rule: &LockedPositionTryRule,
+    declarations: &LockedDeclarationBlock,
+) {
+    write_locked_arc(rule, |rule: &mut PositionTryRule| {
+        rule.block = unsafe { Arc::from_raw_addrefed(declarations) };
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn Servo_ComputedValues_GetForPageContent(
     raw_data: &PerDocumentStyleData,
     page_name: *const nsAtom,
@@ -4409,9 +4423,9 @@ pub extern "C" fn Servo_ComputedValues_SpecifiesAnimationsOrTransitions(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_ComputedValues_GetStyleRuleList(
+pub extern "C" fn Servo_ComputedValues_GetMatchingDeclarations(
     values: &ComputedValues,
-    rules: &mut nsTArray<*const LockedStyleRule>,
+    rules: &mut nsTArray<*const LockedDeclarationBlock>,
 ) {
     let rule_node = match values.rules {
         Some(ref r) => r,
@@ -4419,11 +4433,6 @@ pub extern "C" fn Servo_ComputedValues_GetStyleRuleList(
     };
 
     for node in rule_node.self_and_ancestors() {
-        let style_rule = match node.style_source().and_then(|x| x.as_rule()) {
-            Some(rule) => rule,
-            _ => continue,
-        };
-
         // For the rules with any important declaration, we insert them into
         // rule tree twice, one for normal level and another for important
         // level. So, we skip the important one to keep the specificity order of
@@ -4432,7 +4441,9 @@ pub extern "C" fn Servo_ComputedValues_GetStyleRuleList(
             continue;
         }
 
-        rules.push(&*style_rule);
+        let Some(source) = node.style_source() else { continue };
+
+        rules.push(&**source.get());
     }
 }
 
@@ -4464,20 +4475,13 @@ fn dump_properties_and_rules(cv: &ComputedValues, properties: &LonghandIdSet) {
 #[cfg(feature = "gecko_debug")]
 fn dump_rules(cv: &ComputedValues) {
     println_stderr!("  Rules({:?}):", cv.pseudo());
-    let global_style_data = &*GLOBAL_STYLE_DATA;
-    let guard = global_style_data.shared_lock.read();
     if let Some(rules) = cv.rules.as_ref() {
         for rn in rules.self_and_ancestors() {
             if rn.importance().important() {
                 continue;
             }
-            if let Some(d) = rn.style_source().and_then(|s| s.as_declarations()) {
-                println_stderr!("    [DeclarationBlock: {:?}]", d);
-            }
-            if let Some(r) = rn.style_source().and_then(|s| s.as_rule()) {
-                let mut s = nsCString::new();
-                r.read_with(&guard).to_css(&guard, &mut s).unwrap();
-                println_stderr!("    {}", s);
+            if let Some(d) = rn.style_source() {
+                println_stderr!("    {:?}", d.get());
             }
         }
     }
@@ -4716,28 +4720,24 @@ pub extern "C" fn Servo_GetProperties_Overriding_Animation(
 
 #[no_mangle]
 pub extern "C" fn Servo_MatrixTransform_Operate(
-    matrix_operator: MatrixTransformOperator,
-    from: *const structs::Matrix4x4Components,
-    to: *const structs::Matrix4x4Components,
+    interpolate: bool,
+    from: &structs::Matrix4x4Components,
+    to: &structs::Matrix4x4Components,
     progress: f64,
-    output: *mut structs::Matrix4x4Components,
+    output: &mut structs::Matrix4x4Components,
 ) {
-    use self::MatrixTransformOperator::{Accumulate, Interpolate};
     use style::values::computed::transform::Matrix3D;
 
-    let from = Matrix3D::from(unsafe { from.as_ref() }.expect("not a valid 'from' matrix"));
-    let to = Matrix3D::from(unsafe { to.as_ref() }.expect("not a valid 'to' matrix"));
-    let result = match matrix_operator {
-        Interpolate => from.animate(&to, Procedure::Interpolate { progress }),
-        Accumulate => from.animate(
-            &to,
-            Procedure::Accumulate {
-                count: progress as u64,
-            },
-        ),
+    let from = Matrix3D::from(from);
+    let to = Matrix3D::from(to);
+    let proc = if interpolate {
+        Procedure::Interpolate { progress }
+    } else {
+        Procedure::Accumulate {
+            count: progress as u64,
+        }
     };
-
-    let output = unsafe { output.as_mut() }.expect("not a valid 'output' matrix");
+    let result = from.animate(&to, proc);
     if let Ok(result) = result {
         *output = result.into();
     } else if progress < 0.5 {
@@ -5013,6 +5013,21 @@ fn set_property(
         before_change_closure,
         importance,
     )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Servo_DeclarationBlock_SanitizeForCanvas(
+    declarations: &LockedDeclarationBlock,
+) {
+    use style::properties::PropertyDeclaration;
+    use style::values::specified::{LineHeight, XTextScale, Zoom};
+    // From canvas spec, force to set line-height property to 'normal' font property.
+    // Also, for compat, disable text scaling and CSS zoom.
+    write_locked_arc(declarations, |decls: &mut PropertyDeclarationBlock| {
+        decls.push(PropertyDeclaration::LineHeight(LineHeight::Normal), Importance::Normal);
+        decls.push(PropertyDeclaration::Zoom(Zoom::Document), Importance::Normal);
+        decls.push(PropertyDeclaration::XTextScale(XTextScale::None), Importance::Normal);
+    });
 }
 
 #[no_mangle]
@@ -5397,7 +5412,6 @@ pub extern "C" fn Servo_DeclarationBlock_SetKeywordValue(
     let value = value as u32;
 
     let prop = match_wrap_declared! { long,
-        MozUserModify => longhands::_moz_user_modify::SpecifiedValue::from_gecko_keyword(value),
         Direction => get_from_computed::<longhands::direction::SpecifiedValue>(value),
         Display => get_from_computed::<Display>(value),
         Float => get_from_computed::<Float>(value),
@@ -5521,7 +5535,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetPixelValue(
 ) {
     use style::properties::longhands::border_spacing::SpecifiedValue as BorderSpacing;
     use style::properties::PropertyDeclaration;
-    use style::values::generics::length::{LengthPercentageOrAuto, Size};
+    use style::values::generics::length::{GenericMargin, Size};
     use style::values::generics::NonNegative;
     use style::values::specified::length::{
         LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
@@ -5531,7 +5545,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetPixelValue(
     let long = get_longhand_from_id!(property);
     let nocalc = NoCalcLength::from_px(value);
     let lp = LengthPercentage::Length(nocalc);
-    let lp_or_auto = LengthPercentageOrAuto::LengthPercentage(lp.clone());
+    let margin = GenericMargin::LengthPercentage(lp.clone());
     let prop = match_wrap_declared! { long,
         Height => Size::LengthPercentage(NonNegative(lp)),
         Width => Size::LengthPercentage(NonNegative(lp)),
@@ -5539,10 +5553,10 @@ pub extern "C" fn Servo_DeclarationBlock_SetPixelValue(
         BorderRightWidth => BorderSideWidth::from_px(value),
         BorderBottomWidth => BorderSideWidth::from_px(value),
         BorderLeftWidth => BorderSideWidth::from_px(value),
-        MarginTop => lp_or_auto,
-        MarginRight => lp_or_auto,
-        MarginBottom => lp_or_auto,
-        MarginLeft => lp_or_auto,
+        MarginTop => margin,
+        MarginRight => margin,
+        MarginBottom => margin,
+        MarginLeft => margin,
         PaddingTop => NonNegative(lp),
         PaddingRight => NonNegative(lp),
         PaddingBottom => NonNegative(lp),
@@ -5658,6 +5672,24 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
 }
 
 #[no_mangle]
+pub extern "C" fn Servo_DeclarationBlock_SetTransform(
+    declarations: &LockedDeclarationBlock,
+    property: nsCSSPropertyID,
+    ops: &nsTArray<computed::TransformOperation>,
+) {
+    use style::values::generics::transform::GenericTransform;
+    use style::properties::PropertyDeclaration;
+    let long = get_longhand_from_id!(property);
+    let v = GenericTransform(ops.iter().map(ToComputedValue::from_computed_value).collect());
+    let prop = match_wrap_declared! { long,
+        Transform => v,
+    };
+    write_locked_arc(declarations, |decls: &mut PropertyDeclarationBlock| {
+        decls.push(prop, Importance::Normal);
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn Servo_DeclarationBlock_SetPathValue(
     declarations: &LockedDeclarationBlock,
     property: nsCSSPropertyID,
@@ -5742,7 +5774,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetPercentValue(
 ) {
     use style::properties::PropertyDeclaration;
     use style::values::computed::Percentage;
-    use style::values::generics::length::{LengthPercentageOrAuto, Size};
+    use style::values::generics::length::{GenericMargin, LengthPercentageOrAuto, Size};
     use style::values::generics::NonNegative;
     use style::values::specified::length::LengthPercentage;
     use style::values::specified::FontSize;
@@ -5750,7 +5782,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetPercentValue(
     let long = get_longhand_from_id!(property);
     let pc = Percentage(value);
     let lp = LengthPercentage::Percentage(pc);
-    let lp_or_auto = LengthPercentageOrAuto::LengthPercentage(lp.clone());
+    let margin = GenericMargin::LengthPercentage(lp.clone());
 
     let prop = match_wrap_declared! { long,
         Height => Size::LengthPercentage(NonNegative(lp)),
@@ -5762,10 +5794,10 @@ pub extern "C" fn Servo_DeclarationBlock_SetPercentValue(
         R =>  NonNegative(lp),
         Rx => LengthPercentageOrAuto::LengthPercentage(NonNegative(lp)),
         Ry => LengthPercentageOrAuto::LengthPercentage(NonNegative(lp)),
-        MarginTop => lp_or_auto,
-        MarginRight => lp_or_auto,
-        MarginBottom => lp_or_auto,
-        MarginLeft => lp_or_auto,
+        MarginTop => margin,
+        MarginRight => margin,
+        MarginBottom => margin,
+        MarginLeft => margin,
         FontSize => FontSize::Length(LengthPercentage::Percentage(pc)),
     };
     write_locked_arc(declarations, |decls: &mut PropertyDeclarationBlock| {
@@ -5779,10 +5811,10 @@ pub extern "C" fn Servo_DeclarationBlock_SetAutoValue(
     property: nsCSSPropertyID,
 ) {
     use style::properties::PropertyDeclaration;
-    use style::values::generics::length::{LengthPercentageOrAuto, Size};
+    use style::values::generics::length::{GenericMargin, Size};
 
     let long = get_longhand_from_id!(property);
-    let auto = LengthPercentageOrAuto::Auto;
+    let auto = GenericMargin::Auto;
 
     let prop = match_wrap_declared! { long,
         Height => Size::auto(),
@@ -6312,18 +6344,18 @@ struct PropertyAndIndex {
 
 struct PrioritizedPropertyIter<'a> {
     properties: &'a [PropertyValuePair],
-    sorted_property_indices: Vec<PropertyAndIndex>,
+    sorted_property_indices: Box<[PropertyAndIndex]>,
     curr: usize,
 }
 
 impl<'a> PrioritizedPropertyIter<'a> {
-    fn new(properties: &'a [PropertyValuePair]) -> PrioritizedPropertyIter {
+    fn new(properties: &'a [PropertyValuePair]) -> Self {
         use style::values::animated::compare_property_priority;
 
         // If we fail to convert a nsCSSPropertyID into a PropertyId we
         // shouldn't fail outright but instead by treating that property as the
         // 'all' property we make it sort last.
-        let mut sorted_property_indices: Vec<PropertyAndIndex> = properties
+        let mut sorted_property_indices: Box<[PropertyAndIndex]> = properties
             .iter()
             .enumerate()
             .map(|(index, pair)| {
@@ -9298,6 +9330,7 @@ pub unsafe extern "C" fn Servo_Value_Matches_Syntax(
         AllowComputationallyDependent,
         SpecifiedValue,
     };
+    use crate::style::properties::CSSWideKeyword;
 
     // Attempt to consume a syntax definition from syntax.
     let syntax = unsafe { syntax.as_str_unchecked() };
@@ -9309,6 +9342,12 @@ pub unsafe extern "C" fn Servo_Value_Matches_Syntax(
     let mut input = ParserInput::new(css_text);
     let mut input = Parser::new(&mut input);
     input.skip_whitespace();
+
+    // Consider CSS-wide keywords to match any syntax.
+    if input.try_parse(CSSWideKeyword::parse).is_ok() {
+        return true;
+    }
+
     let url_data = unsafe { UrlExtraData::from_ptr_ref(&extra_data) };
 
     SpecifiedValue::parse(

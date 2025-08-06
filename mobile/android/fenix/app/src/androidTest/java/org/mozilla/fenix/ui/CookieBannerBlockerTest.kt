@@ -11,7 +11,6 @@ import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithCondition
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.nimbus.FxNimbus
@@ -56,8 +55,7 @@ class CookieBannerBlockerTest : TestSetup() {
             }.togglePrivateBrowsingMode()
 
             navigationToolbar {
-            }.enterURLAndEnterToBrowser("voetbal24.be".toUri()) {
-                waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            }.enterURLAndEnterToBrowser("materiel.net".toUri()) {
                 verifyCookieBannerExists(exists = false)
                 verifyCookieBannerBlockerCFRExists(exists = true)
             }

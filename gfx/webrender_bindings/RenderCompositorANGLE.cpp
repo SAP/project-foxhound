@@ -226,6 +226,7 @@ bool RenderCompositorANGLE::CreateSwapChain(nsACString& aError) {
     return false;
   }
 
+  const bool alpha = ShouldUseAlpha();
   if (!mSwapChain && dxgiFactory2) {
     RefPtr<IDXGISwapChain1> swapChain1;
     bool useTripleBuffering = false;
@@ -237,7 +238,6 @@ bool RenderCompositorANGLE::CreateSwapChain(nsACString& aError) {
     desc.SampleDesc.Count = 1;
     desc.SampleDesc.Quality = 0;
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-
     bool useFlipSequential = gfx::gfxVars::UseWebRenderFlipSequentialWin();
     if (useFlipSequential && !mWidget->AsWindows()->GetCompositorHwnd()) {
       useFlipSequential = false;
@@ -258,6 +258,8 @@ bool RenderCompositorANGLE::CreateSwapChain(nsACString& aError) {
       desc.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
       desc.Scaling = DXGI_SCALING_STRETCH;
     }
+    desc.AlphaMode =
+        alpha ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_IGNORE;
     desc.Flags = 0;
 
     hr = dxgiFactory2->CreateSwapChainForHwnd(
@@ -268,6 +270,7 @@ bool RenderCompositorANGLE::CreateSwapChain(nsACString& aError) {
       mSwapChain = swapChain1;
       mSwapChain1 = swapChain1;
       mUseTripleBuffering = useTripleBuffering;
+      mSwapChainUsingAlpha = alpha;
     } else if (useFlipSequential) {
       gfxCriticalNoteOnce << "FLIP_SEQUENTIAL is not supported. Fallback";
     }
@@ -307,7 +310,7 @@ bool RenderCompositorANGLE::CreateSwapChain(nsACString& aError) {
     hr = mSwapChain->QueryInterface(
         (IDXGISwapChain1**)getter_AddRefs(swapChain1));
     if (SUCCEEDED(hr)) {
-      mSwapChain1 = swapChain1;
+      mSwapChain1 = std::move(swapChain1);
     }
   }
 
@@ -341,7 +344,7 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
 
   // When compositor is enabled, CompositionSurface is used for rendering.
   // It does not support triple buffering.
-  bool useTripleBuffering =
+  const bool useTripleBuffering =
       gfx::gfxVars::UseWebRenderTripleBufferingWin() && !UseCompositor();
   RefPtr<IDXGISwapChain1> swapChain1 =
       CreateSwapChainForDComp(useTripleBuffering);
@@ -396,7 +399,10 @@ RefPtr<IDXGISwapChain1> RenderCompositorANGLE::CreateSwapChainForDComp(
   // DXGI_SCALING_NONE caused swap chain creation failure.
   desc.Scaling = DXGI_SCALING_STRETCH;
   desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-  desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+  const bool alpha = ShouldUseAlpha();
+  // See if we need to use transparency.
+  desc.AlphaMode =
+      alpha ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_IGNORE;
   desc.Flags = 0;
 
   hr = dxgiFactory2->CreateSwapChainForComposition(mDevice, &desc, nullptr,
@@ -404,17 +410,30 @@ RefPtr<IDXGISwapChain1> RenderCompositorANGLE::CreateSwapChainForDComp(
   if (SUCCEEDED(hr) && swapChain1) {
     DXGI_RGBA color = {1.0f, 1.0f, 1.0f, 1.0f};
     swapChain1->SetBackgroundColor(&color);
+    mSwapChainUsingAlpha = alpha;
     return swapChain1;
   }
 
   return nullptr;
 }
 
+bool RenderCompositorANGLE::ShouldUseAlpha() const {
+  return mWidget->AsWindows()->TransparencyModeIs(
+      widget::TransparencyMode::Transparent);
+}
+
 bool RenderCompositorANGLE::BeginFrame() {
   mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
 
-  if (!UseCompositor() && !ResizeBufferIfNeeded()) {
-    return false;
+  if (!UseCompositor()) {
+    if (!mSwapChainUsingAlpha && ShouldUseAlpha()) {
+      if (!RecreateNonNativeCompositorSwapChain()) {
+        return false;
+      }
+    }
+    if (!ResizeBufferIfNeeded()) {
+      return false;
+    }
   }
 
   if (!MakeCurrent()) {
@@ -469,10 +488,10 @@ RenderedFrameId RenderCompositorANGLE::EndFrame(
         for (size_t i = 0; i < aDirtyRects.Length(); ++i) {
           const DeviceIntRect& rect = aDirtyRects[i];
           // Clip rect to bufferSize
-          int left = std::max(0, std::min(rect.min.x, bufferSize.width));
-          int top = std::max(0, std::min(rect.min.y, bufferSize.height));
-          int right = std::max(0, std::min(rect.max.x, bufferSize.width));
-          int bottom = std::max(0, std::min(rect.max.y, bufferSize.height));
+          int left = std::clamp(rect.min.x, 0, bufferSize.width);
+          int top = std::clamp(rect.min.y, 0, bufferSize.height);
+          int right = std::clamp(rect.max.x, 0, bufferSize.width);
+          int bottom = std::clamp(rect.max.y, 0, bufferSize.height);
 
           // When rect is not empty, the rect could be passed to Present1().
           if (left < right && top < bottom) {
@@ -788,15 +807,9 @@ gfx::DeviceResetReason RenderCompositorANGLE::IsContextLost(bool aForce) {
   return layers::DXGIErrorToDeviceResetReason(reason);
 }
 
-bool RenderCompositorANGLE::UseCompositor() {
-  if (!mUseNativeCompositor) {
-    return false;
-  }
-
-  if (!mDCLayerTree || !gfx::gfxVars::UseWebRenderCompositor()) {
-    return false;
-  }
-  return true;
+bool RenderCompositorANGLE::UseCompositor() const {
+  return mUseNativeCompositor && mDCLayerTree &&
+         gfx::gfxVars::UseWebRenderCompositor();
 }
 
 bool RenderCompositorANGLE::SupportAsyncScreenshot() {
@@ -887,21 +900,30 @@ void RenderCompositorANGLE::EnableNativeCompositor(bool aEnable) {
   mUseNativeCompositor = false;
   mDCLayerTree->DisableNativeCompositor();
 
+  if (!RecreateNonNativeCompositorSwapChain()) {
+    gfxCriticalNote << "Failed to re-create SwapChain";
+    RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
+    return;
+  }
+
+  mDisablingNativeCompositor = true;
+}
+
+bool RenderCompositorANGLE::RecreateNonNativeCompositorSwapChain() {
   DestroyEGLSurface();
   mBufferSize.reset();
 
   RefPtr<IDXGISwapChain1> swapChain1 =
       CreateSwapChainForDComp(mUseTripleBuffering);
-  if (swapChain1) {
-    mSwapChain = swapChain1;
-    mDCLayerTree->SetDefaultSwapChain(swapChain1);
-    ResizeBufferIfNeeded();
-  } else {
-    gfxCriticalNote << "Failed to re-create SwapChain";
-    RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
-    return;
+  if (!swapChain1) {
+    return false;
   }
-  mDisablingNativeCompositor = true;
+  mSwapChain = swapChain1;
+  mSwapChain1 = swapChain1;
+  if (mDCLayerTree) {
+    mDCLayerTree->SetDefaultSwapChain(swapChain1);
+  }
+  return ResizeBufferIfNeeded();
 }
 
 void RenderCompositorANGLE::InitializeUsePartialPresent() {

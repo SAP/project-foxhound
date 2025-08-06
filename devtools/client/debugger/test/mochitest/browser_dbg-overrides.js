@@ -60,7 +60,7 @@ add_task(async function () {
     "Select the `test.js` script for the tree"
   );
   is(
-    getCM(dbg).getValue(),
+    getEditorContent(dbg),
     testSourceContent,
     "The test.js is the original source content"
   );
@@ -99,9 +99,9 @@ add_task(async function () {
   const onReloaded = reload(dbg, "test.js");
   await waitForPaused(dbg);
 
-  assertPausedAtSourceAndLine(dbg, findSource(dbg, "test.js").id, 2);
+  await assertPausedAtSourceAndLine(dbg, findSource(dbg, "test.js").id, 2);
   is(
-    getCM(dbg).getValue(),
+    getEditorContent(dbg),
     testOverrideSourceContent,
     "The test.js is the overridden source content"
   );
@@ -110,7 +110,7 @@ add_task(async function () {
   await onReloaded;
 
   info("Remove override and test");
-  const removed = waitForDispatch(dbg.store, "REMOVE_OVERRIDE");
+  const removed = waitForDispatch(dbg.toolbox.store, "REMOVE_NETWORK_OVERRIDE");
   await triggerSourceTreeContextMenu(
     dbg,
     findSourceNodeWithText(dbg, "test.js"),
@@ -123,7 +123,7 @@ add_task(async function () {
   await waitForSelectedSource(dbg, "test.js");
 
   is(
-    getCM(dbg).getValue(),
+    getEditorContent(dbg),
     testSourceContent,
     "The test.js is the original source content"
   );

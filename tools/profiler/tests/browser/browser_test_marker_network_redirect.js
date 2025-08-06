@@ -76,6 +76,7 @@ add_task(async function test_network_markers_redirect_simple() {
         status: "STATUS_REDIRECT",
         URI: url,
         RedirectURI: targetUrl,
+        httpVersion: "http/1.1",
         requestMethod: "GET",
         contentType: null,
         startTime: Expect.number(),
@@ -83,6 +84,7 @@ add_task(async function test_network_markers_redirect_simple() {
         domainLookupStart: Expect.number(),
         domainLookupEnd: Expect.number(),
         connectStart: Expect.number(),
+        secureConnectionStart: Expect.number(),
         tcpConnectEnd: Expect.number(),
         connectEnd: Expect.number(),
         requestStart: Expect.number(),
@@ -106,6 +108,7 @@ add_task(async function test_network_markers_redirect_simple() {
       type: "Network",
       status: "STATUS_STOP",
       URI: targetUrl,
+      httpVersion: "http/1.1",
       requestMethod: "GET",
       contentType: "text/html",
       startTime: Expect.number(),
@@ -113,6 +116,7 @@ add_task(async function test_network_markers_redirect_simple() {
       domainLookupStart: Expect.number(),
       domainLookupEnd: Expect.number(),
       connectStart: Expect.number(),
+      secureConnectionStart: Expect.number(),
       tcpConnectEnd: Expect.number(),
       connectEnd: Expect.number(),
       requestStart: Expect.number(),
@@ -220,6 +224,7 @@ add_task(async function test_network_markers_redirect_resources() {
 
     const expectedCommonDataProperties = {
       type: "Network",
+      httpVersion: "http/1.1",
       requestMethod: "GET",
       startTime: Expect.number(),
       endTime: Expect.number(),
@@ -241,6 +246,7 @@ add_task(async function test_network_markers_redirect_resources() {
       domainLookupStart: Expect.number(),
       domainLookupEnd: Expect.number(),
       connectStart: Expect.number(),
+      secureConnectionStart: Expect.number(),
       tcpConnectEnd: Expect.number(),
       connectEnd: Expect.number(),
     };

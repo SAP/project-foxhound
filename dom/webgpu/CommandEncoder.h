@@ -8,9 +8,11 @@
 
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
 #include "nsWrapperCache.h"
 #include "ObjectModel.h"
+#include "QuerySet.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -30,13 +32,6 @@ struct GPURenderPassDescriptor;
 using GPUExtent3D = RangeEnforcedUnsignedLongSequenceOrGPUExtent3DDict;
 }  // namespace dom
 namespace webgpu {
-namespace ffi {
-struct WGPUComputePass;
-struct WGPURecordedRenderPass;
-struct WGPUImageDataLayout;
-struct WGPUImageCopyTexture_TextureId;
-struct WGPUExtent3d;
-}  // namespace ffi
 
 class BindGroup;
 class Buffer;
@@ -101,9 +96,31 @@ class CommandEncoder final : public ObjectBase, public ChildOf<Device> {
       const dom::GPUComputePassDescriptor& aDesc);
   already_AddRefed<RenderPassEncoder> BeginRenderPass(
       const dom::GPURenderPassDescriptor& aDesc);
+  void ResolveQuerySet(QuerySet& aQuerySet, uint32_t aFirstQuery,
+                       uint32_t aQueryCount, webgpu::Buffer& aDestination,
+                       uint64_t aDestinationOffset);
   already_AddRefed<CommandBuffer> Finish(
       const dom::GPUCommandBufferDescriptor& aDesc);
 };
+
+template <typename T>
+void AssignPassTimestampWrites(const T& src,
+                               ffi::WGPUPassTimestampWrites& dest) {
+  if (src.mBeginningOfPassWriteIndex.WasPassed()) {
+    dest.beginning_of_pass_write_index =
+        &src.mBeginningOfPassWriteIndex.Value();
+  } else {
+    dest.beginning_of_pass_write_index = nullptr;
+  }
+
+  if (src.mEndOfPassWriteIndex.WasPassed()) {
+    dest.end_of_pass_write_index = &src.mEndOfPassWriteIndex.Value();
+  } else {
+    dest.end_of_pass_write_index = nullptr;
+  }
+
+  dest.query_set = src.mQuerySet->mId;
+}
 
 }  // namespace webgpu
 }  // namespace mozilla

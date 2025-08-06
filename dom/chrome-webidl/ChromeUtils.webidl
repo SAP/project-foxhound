@@ -228,10 +228,10 @@ namespace ChromeUtils {
 #endif // NIGHTLY_BUILD
 
   /**
-   * Clears the stylesheet cache by baseDomain. This includes associated
+   * Clears the stylesheet cache by site. This includes associated
    * state-partitioned cache.
    */
-  undefined clearStyleSheetCacheByBaseDomain(UTF8String baseDomain);
+  undefined clearStyleSheetCacheBySite(UTF8String schemelessSite, optional OriginAttributesPatternDictionary pattern = {});
 
   /**
    * Clears the stylesheet cache by principal.
@@ -244,10 +244,10 @@ namespace ChromeUtils {
   undefined clearStyleSheetCache();
 
   /**
-   * Clears the JavaScript cache by baseDomain. This includes associated
+   * Clears the JavaScript cache by schemeless site. This includes associated
    * state-partitioned cache.
    */
-  undefined clearScriptCacheByBaseDomain(UTF8String baseDomain);
+  undefined clearScriptCacheBySite(UTF8String schemelessSite, optional OriginAttributesPatternDictionary pattern = {});
 
   /**
    * Clears the JavaScript cache by principal.
@@ -351,19 +351,19 @@ namespace ChromeUtils {
                         optional ImportESModuleOptionsDictionary aOptions = {});
 
   /**
-   * Defines propertys on the given target which lazily imports a ES module
+   * Defines properties on the given target which lazily imports a ES module
    * when accessed.
    *
    * @param aTarget The target object on which to define the property.
    * @param aModules An object with a property for each module property to be
    *                 imported, where the property name is the name of the
    *                 imported symbol and the value is the module URI.
-   * @param aOption An option to specify where to load the module into.
+   * @param aOptions An option to specify where to load the module into.
    *
-   * In worker threads, aOption is required and only { global: "current" } and
+   * In worker threads, aOptions is required and only { global: "current" } and
    * { global: "contextual" } are supported.
    *
-   * In DevTools distinct global, aOptions.global is reuiqred.
+   * In DevTools distinct global, aOptions.global is required.
    */
   [Throws]
   undefined defineESModuleGetters(object aTarget, object aModules,
@@ -454,16 +454,20 @@ partial namespace ChromeUtils {
   getBaseDomainFromPartitionKey(DOMString partitionKey);
 
   /**
-   * Returns the partitionKey for a given URL.
+   * Returns the partitionKey for a given subresourceURL given its top-level URL
+   * and whether or not it is in a foreign context.
    *
-   * The function will treat the URL as a first party and construct the
-   * partitionKey according to the scheme, site and port in the URL.
+   * The function will treat the topLevelURL as a first party and construct the
+   * partitionKey according to the scheme, site and port in the URL. It will also
+   * include information about the subresource and whether or not this is a foreign
+   * request in the partition key.
    *
-   * Throws for invalid urls.
+   * Throws for invalid urls, if the Third Party Service is unavailable, or if the
+   * combination of inputs is impossible.
    */
   [Throws]
   DOMString
-  getPartitionKeyFromURL(DOMString url);
+  getPartitionKeyFromURL(DOMString topLevelUrl, DOMString subresourceUrl, optional boolean foreignContext);
 
   /**
    * Loads and compiles the script at the given URL and returns an object
@@ -790,7 +794,6 @@ enum WebIDLProcType {
  "vr",
  "rdd",
  "socket",
- "remoteSandboxBroker",
  "inference",
 #ifdef MOZ_ENABLE_FORKSERVER
  "forkServer",
@@ -1119,10 +1122,12 @@ enum PopupBlockerState {
 enum JSRFPTarget {
   "RoundWindowSize",
   "SiteSpecificZoom",
+  "CSSPrefersColorScheme",
 };
 
 #ifdef XP_UNIX
 dictionary LibcConstants {
+  long EPERM;
   long EINTR;
   long EACCES;
   long EAGAIN;
@@ -1159,4 +1164,5 @@ dictionary CDMInformation {
   required DOMString capabilities;
   required boolean clearlead;
   required boolean isHDCP22Compatible;
+  required boolean isHardwareDecryption;
 };

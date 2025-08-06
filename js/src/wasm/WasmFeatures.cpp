@@ -22,7 +22,7 @@
 #include "jit/JitContext.h"
 #include "jit/JitOptions.h"
 #include "js/Prefs.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 #include "vm/StringType.h"
@@ -227,7 +227,7 @@ bool wasm::AnyCompilerAvailable(JSContext* cx) {
 JS_FOR_WASM_FEATURES(WASM_FEATURE)
 #undef WASM_FEATURE
 
-bool wasm::IsSimdPrivilegedContext(JSContext* cx) {
+bool wasm::IsPrivilegedContext(JSContext* cx) {
   // This may be slightly more lenient than we want in an ideal world, but it
   // remains safe.
   return cx->realm() && cx->realm()->principals() &&
@@ -303,8 +303,8 @@ bool wasm::CodeCachingAvailable(JSContext* cx) {
   return false;
 #else
 
-  // We temporarily don't support caching with our new compile pipeline
-  if (ExperimentalCompilePipelineAvailable(cx)) {
+  // TODO(bug 1913109): lazy tiering doesn't support serialization
+  if (JS::Prefs::wasm_lazy_tiering() || JS::Prefs::wasm_lazy_tiering_for_gc()) {
     return false;
   }
 

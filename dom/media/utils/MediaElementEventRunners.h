@@ -86,8 +86,11 @@ class nsMediaEventRunner : public nsIRunnable, public nsINamed {
 
  protected:
   virtual ~nsMediaEventRunner() = default;
-  bool IsCancelled();
+  bool IsCancelled() const;
   nsresult DispatchEvent(const nsAString& aName);
+
+  virtual void ReportProfilerMarker();
+  uint64_t GetElementDurationMs() const;
 
   RefPtr<HTMLMediaElement> mElement;
   nsString mName;
@@ -157,14 +160,17 @@ class nsSourceErrorEventRunner : public nsMediaEventRunner {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsSourceErrorEventRunner,
                                            nsMediaEventRunner)
-  nsSourceErrorEventRunner(HTMLMediaElement* aElement, nsIContent* aSource)
+  nsSourceErrorEventRunner(HTMLMediaElement* aElement, nsIContent* aSource,
+                           const nsACString& aErrorDetails)
       : nsMediaEventRunner(u"nsSourceErrorEventRunner"_ns, aElement),
-        mSource(aSource) {}
+        mSource(aSource),
+        mErrorDetails(NS_ConvertUTF8toUTF16(aErrorDetails)) {}
   NS_IMETHOD Run() override;
 
  private:
   virtual ~nsSourceErrorEventRunner() = default;
   nsCOMPtr<nsIContent> mSource;
+  const nsString mErrorDetails;
 };
 
 /**
@@ -181,6 +187,7 @@ class nsTimeupdateRunner : public nsMediaEventRunner {
   NS_IMETHOD Run() override;
 
  private:
+  void ReportProfilerMarker() override;
   bool ShouldDispatchTimeupdate() const;
   bool mIsMandatory;
 };

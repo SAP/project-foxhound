@@ -6,6 +6,8 @@
 
 #include "RemoteWorkerServiceParent.h"
 #include "RemoteWorkerManager.h"
+#include "RemoteWorkerParent.h"
+#include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla {
@@ -33,9 +35,10 @@ RefPtr<RemoteWorkerServiceParent> RemoteWorkerServiceParent::CreateForProcess(
 
   Endpoint<PRemoteWorkerServiceParent> parentEp;
   nsresult rv = PRemoteWorkerService::CreateEndpoints(
-      base::GetCurrentProcId(),
-      aProcess ? aProcess->OtherPid() : base::GetCurrentProcId(), &parentEp,
-      aChildEp);
+      EndpointProcInfo::Current(),
+      aProcess ? aProcess->OtherEndpointProcInfo()
+               : EndpointProcInfo::Current(),
+      &parentEp, aChildEp);
   NS_ENSURE_SUCCESS(rv, nullptr);
 
   RefPtr<RemoteWorkerServiceParent> actor = new RemoteWorkerServiceParent(

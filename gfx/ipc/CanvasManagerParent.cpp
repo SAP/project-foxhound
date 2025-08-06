@@ -23,7 +23,7 @@
 
 namespace mozilla::gfx {
 
-CanvasManagerParent::ManagerSet CanvasManagerParent::sManagers;
+MOZ_RUNINIT CanvasManagerParent::ManagerSet CanvasManagerParent::sManagers;
 
 /* static */ void CanvasManagerParent::Init(
     Endpoint<PCanvasManagerParent>&& aEndpoint,
@@ -137,7 +137,7 @@ already_AddRefed<dom::PWebGLParent> CanvasManagerParent::AllocPWebGLParent() {
     MOZ_ASSERT_UNREACHABLE("AllocPWebGLParent without remote WebGL");
     return nullptr;
   }
-  return MakeAndAddRef<dom::WebGLParent>(mContentId);
+  return MakeAndAddRef<dom::WebGLParent>(mSharedSurfacesHolder, mContentId);
 }
 
 already_AddRefed<webgpu::PWebGPUParent>

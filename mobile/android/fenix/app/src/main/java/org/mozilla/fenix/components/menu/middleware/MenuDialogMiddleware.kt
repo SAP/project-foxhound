@@ -10,6 +10,7 @@ import android.content.Intent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.state.ext.getUrl
 import mozilla.components.concept.engine.webextension.InstallationMethod
 import mozilla.components.concept.storage.BookmarksStorage
@@ -68,7 +69,7 @@ import org.mozilla.fenix.utils.Settings
  * with the url of the custom tab.
  * @param scope [CoroutineScope] used to launch coroutines.
  */
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "CyclomaticComplexMethod")
 class MenuDialogMiddleware(
     private val appStore: AppStore,
     private val addonManager: AddonManager,
@@ -106,7 +107,7 @@ class MenuDialogMiddleware(
             is MenuAction.FindInPage -> launchFindInPage()
             is MenuAction.OpenInApp -> openInApp(context.store)
             is MenuAction.OpenInFirefox -> openInFirefox()
-            is MenuAction.InstallAddon -> installAddon(action.addon)
+            is MenuAction.InstallAddon -> installAddon(context.store, action.addon)
             is MenuAction.CustomMenuItemAction -> customMenuItemAction(action.intent, action.url)
             is MenuAction.ToggleReaderView -> toggleReaderView(state = currentState)
             is MenuAction.CustomizeReaderView -> customizeReaderView()
@@ -114,7 +115,7 @@ class MenuDialogMiddleware(
             is MenuAction.RequestDesktopSite,
             is MenuAction.RequestMobileSite,
             -> requestSiteMode(
-                tabId = currentState.browserMenuState?.selectedTab?.id,
+                tabId = currentState.customTabSessionId ?: currentState.browserMenuState?.selectedTab?.id,
                 shouldRequestDesktopMode = !currentState.isDesktopMode,
             )
 
@@ -168,6 +169,15 @@ class MenuDialogMiddleware(
     ) = scope.launch {
         try {
             val addons = addonManager.getAddons()
+
+            store.dispatch(MenuAction.UpdateAvailableAddons(addons.filter { it.isInstalled() && it.isEnabled() }))
+
+            if (addons.any { it.isInstalled() }) {
+                store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(false))
+                store.dispatch(MenuAction.UpdateManageExtensionsMenuItemVisibility(true))
+                return@launch
+            }
+
             val recommendedAddons = addons
                 .filter { !it.isInstalled() }
                 .shuffled()
@@ -179,6 +189,7 @@ class MenuDialogMiddleware(
                         recommendedAddons = recommendedAddons,
                     ),
                 )
+                store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(true))
             }
         } catch (e: AddonManagerException) {
             logger.error("Failed to query extensions", e)
@@ -197,14 +208,24 @@ class MenuDialogMiddleware(
         val selectedTab = browserMenuState.selectedTab
         val url = selectedTab.getUrl() ?: return@launch
 
+        val parentGuid = bookmarksStorage
+            .getRecentBookmarks(1)
+            .firstOrNull()
+            ?.parentGuid
+            ?: BookmarkRoot.Mobile.id
+
+        val parentNode = bookmarksStorage.getBookmark(parentGuid)
+
         val guidToEdit = addBookmarkUseCase(
             url = url,
             title = selectedTab.content.title,
+            parentGuid = parentGuid,
         )
 
         appStore.dispatch(
             BookmarkAction.BookmarkAdded(
                 guidToEdit = guidToEdit,
+                parentNode = parentNode,
             ),
         )
 
@@ -296,6 +317,7 @@ class MenuDialogMiddleware(
         redirect.appIntent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK
 
         appLinksUseCases.openAppLink.invoke(redirect.appIntent)
+        onDismiss()
     }
 
     private fun openInFirefox() = scope.launch {
@@ -304,12 +326,29 @@ class MenuDialogMiddleware(
     }
 
     private fun installAddon(
+        store: Store<MenuState, MenuAction>,
         addon: Addon,
     ) = scope.launch {
+        if (addon.isInstalled()) {
+            return@launch
+        }
+
+        store.dispatch(
+            MenuAction.UpdateInstallAddonInProgress(
+                addon = addon,
+            ),
+        )
+
         addonManager.installAddon(
             url = addon.downloadUrl,
             installationMethod = InstallationMethod.MANAGER,
+            onSuccess = {
+                store.dispatch(MenuAction.InstallAddonSuccess(addon = addon))
+                store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(false))
+                store.dispatch(MenuAction.UpdateManageExtensionsMenuItemVisibility(true))
+            },
             onError = { e ->
+                store.dispatch(MenuAction.InstallAddonFailed(addon = addon))
                 logger.error("Failed to install addon", e)
             },
         )
@@ -352,8 +391,6 @@ class MenuDialogMiddleware(
                 enable = shouldRequestDesktopMode,
                 tabId = tabId,
             )
-        } else {
-            settings.openNextTabInDesktopMode = shouldRequestDesktopMode
         }
 
         onDismiss()

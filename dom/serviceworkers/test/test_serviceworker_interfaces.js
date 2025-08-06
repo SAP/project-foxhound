@@ -40,7 +40,7 @@ let wasmGlobalInterfaces = [
   { name: "Function", insecureContext: true, nightly: true },
   { name: "Exception", insecureContext: true },
   { name: "Tag", insecureContext: true },
-  { name: "JSTag", insecureContext: true, earlyBetaOrEarlier: true },
+  { name: "JSTag", insecureContext: true },
   { name: "compile", insecureContext: true },
   { name: "compileStreaming", insecureContext: true },
   { name: "instantiate", insecureContext: true },
@@ -73,6 +73,7 @@ let ecmaGlobals = [
   "Int8Array",
   "InternalError",
   "Intl",
+  "Iterator",
   "JSON",
   "Map",
   "Math",
@@ -151,6 +152,10 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CountQueuingStrategy",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CookieChangeEvent", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CookieStore", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "Crypto",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CryptoKey",
@@ -182,6 +187,8 @@ let interfaceNamesInGlobalScope = [
   "ErrorEvent",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Event",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "EventSource",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "EventTarget",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -285,6 +292,10 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "PerformanceServerTiming",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "Permissions",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "PermissionStatus",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "ProgressEvent",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "PromiseRejectionEvent",
@@ -318,6 +329,8 @@ let interfaceNamesInGlobalScope = [
   { name: "Scheduler", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ServiceWorker",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "ServiceWorkerContainer",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ServiceWorkerGlobalScope",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -416,6 +429,8 @@ let interfaceNamesInGlobalScope = [
   "clients",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "console",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "cookieStore", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "onactivate",
   // IMPORTANT: Do not change this list without review from a DOM peer!

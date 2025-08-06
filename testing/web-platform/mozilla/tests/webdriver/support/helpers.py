@@ -4,6 +4,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -25,6 +26,8 @@ class Browser:
         env=None,
         extra_args=None,
         extra_prefs=None,
+        log_level=None,
+        truncate_enabled=True,
         use_bidi=False,
         use_cdp=False,
         use_marionette=False,
@@ -33,6 +36,8 @@ class Browser:
 
         self.extra_args = extra_args
         self.extra_prefs = extra_prefs
+        self.log_level = log_level
+        self.truncate_enabled = truncate_enabled
         self.use_bidi = use_bidi
         self.use_cdp = use_cdp
         self.use_marionette = use_marionette
@@ -69,6 +74,13 @@ class Browser:
         # which checks session equality and would create a new session each time.
         prefs = self.extra_prefs or {}
         prefs.update({"remote.active-protocols": active_protocols})
+
+        if log_level is not None:
+            prefs.update({"remote.log.level": log_level})
+
+        if truncate_enabled is False:
+            prefs.update({"remote.log.truncate": False})
+
         self.profile.set_preferences(prefs)
 
         if self.use_bidi or self.use_cdp:
@@ -204,6 +216,8 @@ class Geckodriver:
         return self
 
     def processOutputLine(self, line):
+        sys.stdout.write(line)
+
         if self.port is None:
             m = self.PORT_RE.match(line)
             if m is not None:

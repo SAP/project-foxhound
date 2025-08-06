@@ -29,6 +29,7 @@
 namespace webrtc {
 namespace videocapturemodule {
 
+class DeviceInfoPipeWire;
 class PipeWireSession;
 class VideoCaptureModulePipeWire;
 
@@ -37,8 +38,15 @@ class VideoCaptureModulePipeWire;
 // So they all represent one camera that is available via PipeWire.
 class PipeWireNode {
  public:
-  PipeWireNode(PipeWireSession* session, uint32_t id, const spa_dict* props);
-  ~PipeWireNode();
+  struct PipeWireNodeDeleter {
+    void operator()(PipeWireNode* node) const noexcept;
+  };
+
+  using PipeWireNodePtr =
+      std::unique_ptr<PipeWireNode, PipeWireNode::PipeWireNodeDeleter>;
+  static PipeWireNodePtr Create(PipeWireSession* session,
+                                uint32_t id,
+                                const spa_dict* props);
 
   uint32_t id() const { return id_; }
   std::string display_name() const { return display_name_; }
@@ -47,6 +55,9 @@ class PipeWireNode {
   std::vector<VideoCaptureCapability> capabilities() const {
     return capabilities_;
   }
+
+ protected:
+  PipeWireNode(PipeWireSession* session, uint32_t id, const spa_dict* props);
 
  private:
   static void OnNodeInfo(void* data, const pw_node_info* info);
@@ -88,7 +99,23 @@ class PipeWireSession : public rtc::RefCountedNonVirtual<PipeWireSession> {
   void Init(VideoCaptureOptions::Callback* callback,
             int fd = kInvalidPipeWireFd);
 
-  const std::deque<PipeWireNode>& nodes() const { return nodes_; }
+  // [De]Register DeviceInfo for device change updates
+  // These methods will add or remove references to DeviceInfo
+  // objects that we want to notify about device changes.
+  // NOTE: We do not take ownership of these objects and
+  // they should never be released by us. All the instances
+  // of DeviceInfoPipeWire must outlive their registration.
+
+  // Returns true when DeviceInfo was successfuly registered
+  // or false otherwise, when it was already registered before.
+  bool RegisterDeviceInfo(DeviceInfoPipeWire* device_info);
+  // Returns true when DeviceInfo was successfuly unregistered
+  // or false otherwise, when it was not previously registered.
+  bool DeRegisterDeviceInfo(DeviceInfoPipeWire* device_info);
+
+  const std::deque<PipeWireNode::PipeWireNodePtr>& nodes() const {
+    return nodes_;
+  }
 
   friend class CameraPortalNotifier;
   friend class PipeWireNode;
@@ -99,6 +126,8 @@ class PipeWireSession : public rtc::RefCountedNonVirtual<PipeWireSession> {
   bool StartPipeWire(int fd);
   void StopPipeWire();
   void PipeWireSync();
+
+  void NotifyDeviceChange();
 
   static void OnCoreError(void* data,
                           uint32_t id,
@@ -122,7 +151,13 @@ class PipeWireSession : public rtc::RefCountedNonVirtual<PipeWireSession> {
   VideoCaptureOptions::Callback* callback_ RTC_GUARDED_BY(&callback_lock_) =
       nullptr;
 
-  VideoCaptureOptions::Status status_;
+  webrtc::Mutex device_info_lock_;
+  std::vector<DeviceInfoPipeWire*> device_info_list_
+      RTC_GUARDED_BY(device_info_lock_);
+  // Guard with device_info_lock, because currently it's the only place where
+  // we use this status information.
+  VideoCaptureOptions::Status status_
+      RTC_GUARDED_BY(device_info_lock_);
 
   struct pw_thread_loop* pw_main_loop_ = nullptr;
   struct pw_context* pw_context_ = nullptr;
@@ -134,7 +169,7 @@ class PipeWireSession : public rtc::RefCountedNonVirtual<PipeWireSession> {
 
   int sync_seq_ = 0;
 
-  std::deque<PipeWireNode> nodes_;
+  std::deque<PipeWireNode::PipeWireNodePtr> nodes_;
   std::unique_ptr<CameraPortal> portal_;
   std::unique_ptr<CameraPortalNotifier> portal_notifier_;
 };

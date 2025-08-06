@@ -59,10 +59,28 @@ export const MultiStageAboutWelcome = props => {
 
       didFilter.current = true;
 
+      // After completing screen filtering, trigger any unhandled campaign
+      // action present in the attribution campaign data. This updates the
+      // "trailhead.firstrun.didHandleCampaignAction" preference, marking the
+      // actions as complete to prevent them from being handled on subsequent
+      // visits to about:welcome. Do not await getting the action to avoid
+      // blocking the thread.
+      window
+        .AWGetUnhandledCampaignAction?.()
+        .then(action => {
+          if (typeof action === "string") {
+            AboutWelcomeUtils.handleCampaignAction(action, props.message_id);
+          }
+        })
+        .catch(error => {
+          console.error("Failed to get unhandled campaign action:", error);
+        });
+
       const screenInitials = filteredScreens
         .map(({ id }) => id?.split("_")[1]?.[0])
         .join("");
       // Send impression ping when respective screen first renders
+      // eslint-disable-next-line no-shadow
       filteredScreens.forEach((screen, order) => {
         if (index === order) {
           const messageId = `${props.message_id}_${order}_${screen.id}_${screenInitials}`;
@@ -181,6 +199,12 @@ export const MultiStageAboutWelcome = props => {
   // multi select screen.
   const [activeMultiSelects, setActiveMultiSelects] = useState({});
 
+  // Save the active single select state for each screen as string value keyed
+  // by screen id. Similar to above, this allows us to remember the state of
+  // each screen's single select picker when navigating back and forth between
+  // screens.
+  const [activeSingleSelects, setActiveSingleSelects] = useState({});
+
   // Get the active theme so the rendering code can make it selected
   // by default.
   const [activeTheme, setActiveTheme] = useState(null);
@@ -219,58 +243,71 @@ export const MultiStageAboutWelcome = props => {
         className={`outer-wrapper onboardingContainer proton transition-${transition}`}
         style={props.backdrop ? { background: props.backdrop } : {}}
       >
-        {screens.map((screen, order) => {
-          const isFirstScreen = screen === screens[0];
-          const isLastScreen = screen === screens[screens.length - 1];
+        {screens.map((currentScreen, order) => {
+          const isFirstScreen = currentScreen === screens[0];
+          const isLastScreen = currentScreen === screens[screens.length - 1];
           const totalNumberOfScreens = screens.length;
           const isSingleScreen = totalNumberOfScreens === 1;
 
           const setActiveMultiSelect = valueOrFn =>
             setActiveMultiSelects(prevState => ({
               ...prevState,
-              [screen.id]:
+              [currentScreen.id]:
                 typeof valueOrFn === "function"
-                  ? valueOrFn(prevState[screen.id])
+                  ? valueOrFn(prevState[currentScreen.id])
                   : valueOrFn,
             }));
           const setScreenMultiSelects = valueOrFn =>
             setMultiSelects(prevState => ({
               ...prevState,
-              [screen.id]:
+              [currentScreen.id]:
                 typeof valueOrFn === "function"
-                  ? valueOrFn(prevState[screen.id])
+                  ? valueOrFn(prevState[currentScreen.id])
+                  : valueOrFn,
+            }));
+
+          const setActiveSingleSelect = valueOrFn =>
+            setActiveSingleSelects(prevState => ({
+              ...prevState,
+              [currentScreen.id]:
+                typeof valueOrFn === "function"
+                  ? valueOrFn(prevState[currentScreen.id])
                   : valueOrFn,
             }));
 
           return index === order ? (
             <WelcomeScreen
-              key={screen.id + order}
-              id={screen.id}
+              key={currentScreen.id + order}
+              id={currentScreen.id}
               totalNumberOfScreens={totalNumberOfScreens}
               isFirstScreen={isFirstScreen}
               isLastScreen={isLastScreen}
               isSingleScreen={isSingleScreen}
               order={order}
               previousOrder={previousOrder}
-              content={screen.content}
+              content={currentScreen.content}
               navigate={handleTransition}
-              messageId={`${props.message_id}_${order}_${screen.id}`}
+              messageId={`${props.message_id}_${order}_${currentScreen.id}`}
               UTMTerm={props.utm_term}
               flowParams={flowParams}
               activeTheme={activeTheme}
               initialTheme={initialTheme}
               setActiveTheme={setActiveTheme}
               setInitialTheme={setInitialTheme}
-              screenMultiSelects={multiSelects[screen.id]}
+              screenMultiSelects={multiSelects[currentScreen.id]}
               setScreenMultiSelects={setScreenMultiSelects}
-              activeMultiSelect={activeMultiSelects[screen.id]}
+              activeMultiSelect={activeMultiSelects[currentScreen.id]}
               setActiveMultiSelect={setActiveMultiSelect}
-              autoAdvance={screen.auto_advance}
+              autoAdvance={currentScreen.auto_advance}
+              activeSingleSelect={activeSingleSelects[currentScreen.id]}
+              setActiveSingleSelect={setActiveSingleSelect}
               negotiatedLanguage={negotiatedLanguage}
               langPackInstallPhase={langPackInstallPhase}
-              forceHideStepsIndicator={screen.force_hide_steps_indicator}
+              forceHideStepsIndicator={currentScreen.force_hide_steps_indicator}
               ariaRole={props.ariaRole}
-              aboveButtonStepsIndicator={screen.above_button_steps_indicator}
+              aboveButtonStepsIndicator={
+                currentScreen.above_button_steps_indicator
+              }
               installedAddons={installedAddons}
               setInstalledAddons={setInstalledAddons}
             />
@@ -443,13 +480,15 @@ export class WelcomeScreen extends React.PureComponent {
 
     let actionResult;
     if (["OPEN_URL", "SHOW_FIREFOX_ACCOUNTS"].includes(action.type)) {
-      actionResult = await this.handleOpenURL(
+      actionResult = this.handleOpenURL(
         action,
         props.flowParams,
         props.UTMTerm
       );
     } else if (action.type) {
-      actionResult = await AboutWelcomeUtils.handleUserAction(action);
+      actionResult = action.needsAwait
+        ? await AboutWelcomeUtils.handleUserAction(action)
+        : AboutWelcomeUtils.handleUserAction(action);
       if (action.type === "FXA_SIGNIN_FLOW") {
         AboutWelcomeUtils.sendActionTelemetry(
           props.messageId,
@@ -483,11 +522,20 @@ export class WelcomeScreen extends React.PureComponent {
           } else {
             wpAction.data.pref.value = `light-${theme}`;
           }
-          await AboutWelcomeUtils.handleUserAction(actionWallpaper);
+          AboutWelcomeUtils.handleUserAction(actionWallpaper);
         });
       } else {
         window.AWSelectTheme(themeToUse);
       }
+    }
+
+    if (action.picker) {
+      let options = props.content.tiles.data;
+      options.forEach(opt => {
+        if (opt.id === value) {
+          AboutWelcomeUtils.handleUserAction(opt.action);
+        }
+      });
     }
 
     // If the action has persistActiveTheme: true, we set the initial theme to the currently active theme
@@ -499,8 +547,20 @@ export class WelcomeScreen extends React.PureComponent {
     // `navigate` and `dismiss` can be true/false/undefined, or they can be a
     // string "actionResult" in which case we should use the actionResult
     // (boolean resolved by handleUserAction)
-    const shouldDoBehavior = behavior =>
-      behavior === "actionResult" ? actionResult : behavior;
+    const shouldDoBehavior = behavior => {
+      if (behavior !== "actionResult") {
+        return behavior;
+      }
+
+      if (action.needsAwait) {
+        return actionResult;
+      }
+
+      console.error(
+        "actionResult is only supported for actions with needsAwait"
+      );
+      return false;
+    };
 
     if (shouldDoBehavior(action.navigate)) {
       props.navigate();
@@ -571,6 +631,8 @@ export class WelcomeScreen extends React.PureComponent {
         setScreenMultiSelects={this.props.setScreenMultiSelects}
         activeMultiSelect={this.props.activeMultiSelect}
         setActiveMultiSelect={this.props.setActiveMultiSelect}
+        activeSingleSelect={this.props.activeSingleSelect}
+        setActiveSingleSelect={this.props.setActiveSingleSelect}
         totalNumberOfScreens={this.props.totalNumberOfScreens}
         appAndSystemLocaleInfo={this.props.appAndSystemLocaleInfo}
         negotiatedLanguage={this.props.negotiatedLanguage}

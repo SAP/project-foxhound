@@ -105,7 +105,7 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
   RateControlParameters rates;
   bool keyframe;
   uint32_t counter;
-  absl::optional<int> qp;
+  std::optional<int> qp;
   {
     MutexLock lock(&mutex_);
     max_framerate = config_.maxFramerate;
@@ -151,6 +151,7 @@ int32_t FakeEncoder::Encode(const VideoFrame& input_image,
     if (qp)
       encoded.qp_ = *qp;
     encoded.SetSimulcastIndex(i);
+    encoded.SetTemporalIndex(frame_info.layers[i].temporal_id);
     CodecSpecificInfo codec_specific = EncodeHook(encoded, buffer);
 
     if (callback->OnEncodedImage(encoded, &codec_specific).error !=

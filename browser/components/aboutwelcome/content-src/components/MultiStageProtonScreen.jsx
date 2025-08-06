@@ -7,7 +7,7 @@ import { Localized } from "./MSLocalized";
 import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils.mjs";
 import { MobileDownloads } from "./MobileDownloads";
 import { MultiSelect } from "./MultiSelect";
-import { Themes } from "./Themes";
+import { SingleSelect } from "./SingleSelect";
 import {
   SecondaryCTA,
   StepsIndicator,
@@ -21,6 +21,7 @@ import { AdditionalCTA } from "./AdditionalCTA";
 import { EmbeddedMigrationWizard } from "./EmbeddedMigrationWizard";
 import { AddonsPicker } from "./AddonsPicker";
 import { LinkParagraph } from "./LinkParagraph";
+import { ActionChecklist } from "./ActionChecklist";
 
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
@@ -39,6 +40,20 @@ export const MultiStageProtonScreen = props => {
     return () => {};
   }, [autoAdvance, handleAction, order]);
 
+  // Set narrow on an outer element to allow for use of SCSS outer selector and
+  // consolidation of styles for small screen widths with those for messages
+  // configured to always be narrow
+  if (props.content.narrow) {
+    document
+      .querySelector("#multi-stage-message-root")
+      ?.setAttribute("narrow", "");
+  } else {
+    // Clear narrow attribute in case it was set by a previous screen
+    document
+      .querySelector("#multi-stage-message-root")
+      ?.removeAttribute("narrow");
+  }
+
   return (
     <ProtonScreen
       content={props.content}
@@ -50,6 +65,8 @@ export const MultiStageProtonScreen = props => {
       setScreenMultiSelects={props.setScreenMultiSelects}
       activeMultiSelect={props.activeMultiSelect}
       setActiveMultiSelect={props.setActiveMultiSelect}
+      activeSingleSelect={props.activeSingleSelect}
+      setActiveSingleSelect={props.setActiveSingleSelect}
       totalNumberOfScreens={props.totalNumberOfScreens}
       handleAction={props.handleAction}
       isFirstScreen={props.isFirstScreen}
@@ -285,12 +302,15 @@ export class ProtonScreen extends React.PureComponent {
           />
         ) : null}
         {content.tiles &&
-        content.tiles.type === "theme" &&
+        (content.tiles.type === "theme" ||
+          content.tiles.type === "single-select") &&
         content.tiles.data ? (
-          <Themes
+          <SingleSelect
             content={content}
             activeTheme={this.props.activeTheme}
             handleAction={this.props.handleAction}
+            activeSingleSelect={this.props.activeSingleSelect}
+            setActiveSingleSelect={this.props.setActiveSingleSelect}
           />
         ) : null}
         {content.tiles &&
@@ -316,6 +336,14 @@ export class ProtonScreen extends React.PureComponent {
           <EmbeddedMigrationWizard
             handleAction={this.props.handleAction}
             content={content}
+          />
+        ) : null}
+        {content.tiles &&
+        content.tiles.type === "action_checklist" &&
+        content.tiles.data ? (
+          <ActionChecklist
+            content={content}
+            message_id={this.props.messageId}
           />
         ) : null}
       </React.Fragment>
@@ -507,6 +535,8 @@ export class ProtonScreen extends React.PureComponent {
         )
       : "";
     const isEmbeddedMigration = content.tiles?.type === "migration-wizard";
+    const isSystemPromptStyleSpotlight =
+      content.isSystemPromptStyleSpotlight === true;
 
     return (
       <main
@@ -528,7 +558,7 @@ export class ProtonScreen extends React.PureComponent {
         <div
           className={`section-main ${
             isEmbeddedMigration ? "embedded-migration" : ""
-          }`}
+          }${isSystemPromptStyleSpotlight ? "system-prompt-spotlight" : ""}`}
           hide-secondary-section={
             content.hide_secondary_section
               ? String(content.hide_secondary_section)

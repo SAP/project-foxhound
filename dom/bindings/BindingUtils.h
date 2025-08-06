@@ -12,6 +12,7 @@
 #include "jsfriendapi.h"
 #include "js/CharacterEncoding.h"
 #include "js/Conversions.h"
+#include "js/experimental/BindingAllocs.h"
 #include "js/experimental/JitInfo.h"  // JSJitGetterOp, JSJitInfo
 #include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy, js::ToWindowProxyIfWindow
 #include "js/MemoryFunctions.h"
@@ -481,7 +482,7 @@ class ProtoAndIfaceCache {
     JS::Heap<JSObject*>& EntrySlotMustExist(size_t i) { return (*this)[i]; }
 
     void Trace(JSTracer* aTracer) {
-      for (size_t i = 0; i < ArrayLength(*this); ++i) {
+      for (size_t i = 0; i < std::size(*this); ++i) {
         JS::TraceEdge(aTracer, &(*this)[i], "protoAndIfaceCache[i]");
       }
     }
@@ -496,7 +497,7 @@ class ProtoAndIfaceCache {
     PageTableCache() { memset(mPages.begin(), 0, sizeof(mPages)); }
 
     ~PageTableCache() {
-      for (size_t i = 0; i < ArrayLength(mPages); ++i) {
+      for (size_t i = 0; i < std::size(mPages); ++i) {
         delete mPages[i];
       }
     }
@@ -538,10 +539,10 @@ class ProtoAndIfaceCache {
     }
 
     void Trace(JSTracer* trc) {
-      for (size_t i = 0; i < ArrayLength(mPages); ++i) {
+      for (size_t i = 0; i < std::size(mPages); ++i) {
         Page* p = mPages[i];
         if (p) {
-          for (size_t j = 0; j < ArrayLength(*p); ++j) {
+          for (size_t j = 0; j < std::size(*p); ++j) {
             JS::TraceEdge(trc, &(*p)[j], "protoAndIfaceCache[i]");
           }
         }
@@ -550,7 +551,7 @@ class ProtoAndIfaceCache {
 
     size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
       size_t n = aMallocSizeOf(this);
-      for (size_t i = 0; i < ArrayLength(mPages); ++i) {
+      for (size_t i = 0; i < std::size(mPages); ++i) {
         n += aMallocSizeOf(mPages[i]);
       }
       return n;
@@ -705,21 +706,26 @@ struct JSNativeHolder {
 struct DOMInterfaceInfo {
   JSNativeHolder nativeHolder;
 
-  ProtoGetter mGetParentProto;
+  ProtoHandleGetter mGetParentProto;
+
+  const uint32_t mDepth;
 
   const prototypes::ID mPrototypeID;  // uint16_t
-  const uint32_t mDepth;
 
   // Boolean indicating whether this object wants a isInstance property
   // pointing to InterfaceIsInstance defined on it.  Only ever true for
   // interfaces.
   bool wantsInterfaceIsInstance;
+
+  uint8_t mConstructorArgs;
+
+  const char* mConstructorName;
 };
 
 struct LegacyFactoryFunction {
   const char* mName;
   const JSNativeHolder mHolder;
-  unsigned mNargs;
+  uint8_t mNargs;
 };
 
 namespace binding_detail {
@@ -1493,10 +1499,9 @@ inline Maybe<Enum> StringToEnum(const StringT& aString) {
 }
 
 template <typename Enum>
-inline const nsCString& GetEnumString(Enum stringId) {
-  MOZ_RELEASE_ASSERT(
-      static_cast<size_t>(stringId) <
-      mozilla::ArrayLength(binding_detail::EnumStrings<Enum>::Values));
+inline constexpr const nsLiteralCString& GetEnumString(Enum stringId) {
+  MOZ_RELEASE_ASSERT(static_cast<size_t>(stringId) <
+                     std::size(binding_detail::EnumStrings<Enum>::Values));
   return binding_detail::EnumStrings<Enum>::Values[static_cast<size_t>(
       stringId)];
 }
@@ -2366,21 +2371,26 @@ inline const JSNativeHolder* NativeHolderFromInterfaceObject(JSObject* obj) {
 
 // We use one JSNative to represent all legacy factory functions (so we can
 // easily detect when we need to wrap them in an Xray wrapper). We store the
-// real JSNative and the NativeProperties in a JSNativeHolder in the
-// LEGACY_FACTORY_FUNCTION_NATIVE_HOLDER_RESERVED_SLOT slot of the JSFunction
-// object.
+// real JSNative and the NativeProperties in a JSNativeHolder in a
+// LegacyFactoryFunction in the LEGACY_FACTORY_FUNCTION_RESERVED_SLOT slot of
+// the JSFunction object.
 bool LegacyFactoryFunctionJSNative(JSContext* cx, unsigned argc, JS::Value* vp);
 
 inline bool IsLegacyFactoryFunction(JSObject* obj) {
   return JS_IsNativeFunction(obj, LegacyFactoryFunctionJSNative);
 }
 
-inline const JSNativeHolder* NativeHolderFromLegacyFactoryFunction(
+inline const LegacyFactoryFunction* LegacyFactoryFunctionFromObject(
     JSObject* obj) {
   MOZ_ASSERT(IsLegacyFactoryFunction(obj));
-  const JS::Value& v = js::GetFunctionNativeReserved(
-      obj, LEGACY_FACTORY_FUNCTION_NATIVE_HOLDER_RESERVED_SLOT);
-  return static_cast<const JSNativeHolder*>(v.toPrivate());
+  const JS::Value& v =
+      js::GetFunctionNativeReserved(obj, LEGACY_FACTORY_FUNCTION_RESERVED_SLOT);
+  return static_cast<const LegacyFactoryFunction*>(v.toPrivate());
+}
+
+inline const JSNativeHolder* NativeHolderFromLegacyFactoryFunction(
+    JSObject* obj) {
+  return &LegacyFactoryFunctionFromObject(obj)->mHolder;
 }
 
 inline const JSNativeHolder* NativeHolderFromObject(JSObject* obj) {
@@ -2813,7 +2823,8 @@ class MOZ_STACK_CLASS BindingJSObjectCreator {
   void CreateObject(JSContext* aCx, const JSClass* aClass,
                     JS::Handle<JSObject*> aProto, T* aNative,
                     JS::MutableHandle<JSObject*> aReflector) {
-    aReflector.set(JS_NewObjectWithGivenProto(aCx, aClass, aProto));
+    aReflector.set(
+        JS_NewObjectWithGivenProtoAndUseAllocSite(aCx, aClass, aProto));
     if (aReflector) {
       JS::SetReservedSlot(aReflector, DOM_OBJECT_SLOT,
                           JS::PrivateValue(aNative));
@@ -3376,6 +3387,104 @@ inline bool ShouldExpose(JSContext* aCx, JS::Handle<JSObject*> aGlobal,
          (aDefine == DefineInterfaceProperty::CheckExposure &&
           ConstructorEnabled(aCx, aGlobal));
 }
+
+class ReflectedHTMLAttributeSlotsBase {
+ protected:
+  static void ForEachXrayReflectedHTMLAttributeSlots(
+      JS::RootingContext* aCx, JSObject* aObject, size_t aSlotIndex,
+      size_t aArrayIndex, void (*aFunc)(void* aSlots, size_t aArrayIndex));
+  static void XrayExpandoObjectFinalize(JS::GCContext* aCx, JSObject* aObject);
+};
+
+template <size_t SlotIndex, size_t XrayExpandoSlotIndex, size_t Count>
+class ReflectedHTMLAttributeSlots : public Array<JS::Heap<JS::Value>, Count>,
+                                    private ReflectedHTMLAttributeSlotsBase {
+ public:
+  using Array<JS::Heap<JS::Value>, Count>::Array;
+
+  static ReflectedHTMLAttributeSlots& GetOrCreate(JSObject* aSlotStorage,
+                                                  bool aIsXray) {
+    size_t slotIndex = aIsXray ? XrayExpandoSlotIndex : SlotIndex;
+    JS::Value v = JS::GetReservedSlot(aSlotStorage, slotIndex);
+    ReflectedHTMLAttributeSlots* array;
+    if (v.isUndefined()) {
+      array = new ReflectedHTMLAttributeSlots();
+      JS::SetReservedSlot(aSlotStorage, slotIndex, JS::PrivateValue(array));
+    } else {
+      array = static_cast<ReflectedHTMLAttributeSlots*>(v.toPrivate());
+    }
+    return *array;
+  }
+
+  static void Clear(JSObject* aObject, size_t aArrayIndex) {
+    JS::Value array = JS::GetReservedSlot(aObject, SlotIndex);
+    if (!array.isUndefined()) {
+      ReflectedHTMLAttributeSlots& slots =
+          *static_cast<ReflectedHTMLAttributeSlots*>(array.toPrivate());
+      slots[aArrayIndex] = JS::UndefinedValue();
+    }
+  }
+  static void ClearInXrays(JS::RootingContext* aCx, JSObject* aObject,
+                           size_t aArrayIndex) {
+    ReflectedHTMLAttributeSlotsBase::ForEachXrayReflectedHTMLAttributeSlots(
+        aCx, aObject, XrayExpandoSlotIndex, aArrayIndex,
+        [](void* aSlots, size_t aArrayIndex) {
+          ReflectedHTMLAttributeSlots& slots =
+              *static_cast<ReflectedHTMLAttributeSlots*>(aSlots);
+          slots[aArrayIndex] = JS::UndefinedValue();
+        });
+  }
+
+  static void Trace(JSTracer* aTracer, JSObject* aObject) {
+    Trace(aTracer, aObject, SlotIndex);
+  }
+
+  static void Finalize(JSObject* aObject) { Finalize(aObject, SlotIndex); }
+
+  static void XrayExpandoObjectTrace(JSTracer* aTracer, JSObject* aObject) {
+    Trace(aTracer, aObject, XrayExpandoSlotIndex);
+  }
+
+  static void XrayExpandoObjectFinalize(JS::GCContext* aCx, JSObject* aObject) {
+    Finalize(aObject, XrayExpandoSlotIndex);
+    ReflectedHTMLAttributeSlotsBase::XrayExpandoObjectFinalize(aCx, aObject);
+  }
+
+  static constexpr JSClassOps sXrayExpandoObjectClassOps = {
+      nullptr, /* addProperty */
+      nullptr, /* delProperty */
+      nullptr, /* enumerate */
+      nullptr, /* newEnumerate */
+      nullptr, /* resolve */
+      nullptr, /* mayResolve */
+      XrayExpandoObjectFinalize,
+      nullptr, /* call */
+      nullptr, /* construct */
+      XrayExpandoObjectTrace,
+  };
+
+ private:
+  static void Trace(JSTracer* aTracer, JSObject* aObject, size_t aSlotIndex) {
+    JS::Value slotValue = JS::GetReservedSlot(aObject, aSlotIndex);
+    if (!slotValue.isUndefined()) {
+      auto* array =
+          static_cast<ReflectedHTMLAttributeSlots*>(slotValue.toPrivate());
+      for (JS::Heap<JS::Value>& v : *array) {
+        JS::TraceEdge(aTracer, &v, "ReflectedHTMLAttributeSlots[i]");
+      }
+    }
+  }
+  static void Finalize(JSObject* aObject, size_t aSlotIndex) {
+    JS::Value slotValue = JS::GetReservedSlot(aObject, aSlotIndex);
+    if (!slotValue.isUndefined()) {
+      delete static_cast<ReflectedHTMLAttributeSlots*>(slotValue.toPrivate());
+      JS::SetReservedSlot(aObject, aSlotIndex, JS::UndefinedValue());
+    }
+  }
+};
+
+void ClearXrayExpandoSlots(JS::RootingContext* aCx, JSObject* aObject,
+                           size_t aSlotIndex);
 
 }  // namespace binding_detail
 

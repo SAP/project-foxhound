@@ -354,7 +354,9 @@ pub struct PipelineOptions {
     /// to receive the vertex buffers, lengths, and vertex id as args,
     /// and bounds-check the vertex id and use the index into the
     /// vertex buffers to access attributes, rather than using Metal's
-    /// [[stage-in]] assembled attribute data.
+    /// [[stage-in]] assembled attribute data. This is true by default,
+    /// but remains configurable for use by tests via deserialization
+    /// of this struct. There is no user-facing way to set this value.
     pub vertex_pulling_transform: bool,
 
     /// vertex_buffer_mappings are used during shader translation to
@@ -435,8 +437,7 @@ impl Options {
                     })
                 }
                 LocationMode::Uniform => Err(Error::GenericValidation(format!(
-                    "Unexpected Binding::Location({}) for the Uniform mode",
-                    location
+                    "Unexpected Binding::Location({location}) for the Uniform mode"
                 ))),
             },
         }
@@ -567,7 +568,7 @@ impl ResolvedBinding {
                     Bi::SubgroupId => "simdgroup_index_in_threadgroup",
                     Bi::SubgroupSize => "threads_per_simdgroup",
                     Bi::SubgroupInvocationId => "thread_index_in_simdgroup",
-                    Bi::CullDistance | Bi::ViewIndex => {
+                    Bi::CullDistance | Bi::ViewIndex | Bi::DrawID => {
                         return Err(Error::UnsupportedBuiltIn(built_in))
                     }
                 };
@@ -625,6 +626,7 @@ impl ResolvedInterpolation {
             (I::Linear, S::Centroid) => Self::CentroidNoPerspective,
             (I::Linear, S::Sample) => Self::SampleNoPerspective,
             (I::Flat, _) => Self::Flat,
+            _ => unreachable!(),
         }
     }
 

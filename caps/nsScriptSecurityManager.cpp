@@ -497,9 +497,8 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     // Get the CSP for addon sandboxes.  If the principal is expanded and has a
     // csp, we're probably in luck.
     auto* basePrin = BasePrincipal::Cast(subjectPrincipal);
-    // ContentScriptAddonPolicy means it is also an expanded principal, thus
-    // this is in a sandbox used as a content script.
-    if (basePrin->ContentScriptAddonPolicy()) {
+    // TODO bug 1548468: Move CSP off ExpandedPrincipal.
+    if (basePrin->Is<ExpandedPrincipal>()) {
       basePrin->As<ExpandedPrincipal>()->GetCsp(getter_AddRefs(csp));
     }
     // don't do anything unless there's a CSP
@@ -1213,7 +1212,7 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
   // available.
   uint32_t flags[] = {nsIURIFixup::FIXUP_FLAG_NONE,
                       nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS};
-  for (uint32_t i = 0; i < ArrayLength(flags); ++i) {
+  for (uint32_t i = 0; i < std::size(flags); ++i) {
     uint32_t fixupFlags = flags[i];
     if (aPrincipal->OriginAttributesRef().IsPrivateBrowsing()) {
       fixupFlags |= nsIURIFixup::FIXUP_FLAG_PRIVATE_CONTEXT;

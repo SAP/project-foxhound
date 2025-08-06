@@ -326,9 +326,6 @@ void AppShutdown::AnnotateShutdownReason(AppShutdownReason aReason) {
     case AppShutdownReason::OSShutdown:
       reasonStr = "OSShutdown";
       break;
-    case AppShutdownReason::WinUnexpectedMozQuit:
-      reasonStr = "WinUnexpectedMozQuit";
-      break;
     default:
       MOZ_ASSERT_UNREACHABLE("We should know the given reason for shutdown.");
       reasonStr = "Unknown";
@@ -458,7 +455,7 @@ void AppShutdown::AdvanceShutdownPhase(
 }
 
 ShutdownPhase AppShutdown::GetShutdownPhaseFromTopic(const char* aTopic) {
-  for (size_t i = 0; i < ArrayLength(sPhaseObserverKeys); ++i) {
+  for (size_t i = 0; i < std::size(sPhaseObserverKeys); ++i) {
     if (sPhaseObserverKeys[i] && !strcmp(sPhaseObserverKeys[i], aTopic)) {
       return static_cast<ShutdownPhase>(i);
     }

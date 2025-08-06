@@ -615,7 +615,7 @@ nsMemoryInfoDumper::DumpMemoryReportsToNamedFile(
   // Create the file.
 
   nsCOMPtr<nsIFile> reportsFile;
-  nsresult rv = NS_NewLocalFile(aFilename, false, getter_AddRefs(reportsFile));
+  nsresult rv = NS_NewLocalFile(aFilename, getter_AddRefs(reportsFile));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -690,7 +690,7 @@ nsMemoryInfoDumper::DumpMemoryInfoToTempDir(const nsAString& aIdentifier,
 }
 
 #ifdef MOZ_DMD
-dmd::DMDFuncs::Singleton dmd::DMDFuncs::sSingleton;
+MOZ_RUNINIT dmd::DMDFuncs::Singleton dmd::DMDFuncs::sSingleton;
 
 nsresult nsMemoryInfoDumper::OpenDMDFile(const nsAString& aIdentifier, int aPid,
                                          FILE** aOutFile) {

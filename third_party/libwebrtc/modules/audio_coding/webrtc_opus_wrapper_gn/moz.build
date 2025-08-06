@@ -29,8 +29,8 @@ LOCAL_INCLUDES += [
     "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
     "/media/libopus/include/",
+    "/third_party/abseil-cpp/",
     "/third_party/libwebrtc/",
-    "/third_party/libwebrtc/third_party/abseil-cpp/",
     "/tools/profiler/public"
 ]
 
@@ -131,13 +131,6 @@ if CONFIG["OS_TARGET"] == "WINNT":
     DEFINES["_WIN32_WINNT"] = "0x0A00"
     DEFINES["_WINDOWS"] = True
     DEFINES["__STD_C"] = True
-
-    OS_LIBS += [
-        "crypt32",
-        "iphlpapi",
-        "secur32",
-        "winmm"
-    ]
 
 if CONFIG["TARGET_CPU"] == "aarch64":
 

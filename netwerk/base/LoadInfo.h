@@ -8,7 +8,6 @@
 #define mozilla_LoadInfo_h
 
 #include "mozilla/dom/FeaturePolicy.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsIInterceptionInfo.h"
 #include "nsILoadInfo.h"
 #include "nsIPrincipal.h"
@@ -48,6 +47,7 @@ nsresult LoadInfoArgsToLoadInfo(const mozilla::net::LoadInfoArgs& aLoadInfoArgs,
                                 const nsACString& aOriginRemoteType,
                                 nsINode* aCspToInheritLoadingContext,
                                 net::LoadInfo** outLoadInfo);
+
 }  // namespace ipc
 
 namespace net {
@@ -236,7 +236,7 @@ class LoadInfo final : public nsILoadInfo {
       uint64_t aBrowsingContextID, uint64_t aFrameBrowsingContextID,
       bool aInitialSecurityCheckDone, bool aIsThirdPartyContext,
       const Maybe<bool>& aIsThirdPartyContextToTopWindow,
-      bool aIsFormSubmission, bool aSendCSPViolationEvents,
+      bool aIsFormSubmission, bool aIsGETRequest, bool aSendCSPViolationEvents,
       const OriginAttributes& aOriginAttributes,
       RedirectHistoryArray&& aRedirectChainIncludingInternalRedirects,
       RedirectHistoryArray&& aRedirectChain,
@@ -259,8 +259,10 @@ class LoadInfo final : public nsILoadInfo {
       nsILoadInfo::CrossOriginEmbedderPolicy aLoadingEmbedderPolicy,
       bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel,
       nsIURI* aUnstrippedURI, nsIInterceptionInfo* aInterceptionInfo,
-      bool aHasInjectedCookieForCookieBannerHandling, bool aWasSchemelessInput,
-      nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry);
+      bool aHasInjectedCookieForCookieBannerHandling,
+      nsILoadInfo::SchemelessInputType aSchemelessInput,
+      nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry,
+      bool aIsNewWindowTarget);
 
   LoadInfo(const LoadInfo& rhs);
 
@@ -347,6 +349,7 @@ class LoadInfo final : public nsILoadInfo {
   bool mIsThirdPartyContext = false;
   Maybe<bool> mIsThirdPartyContextToTopWindow;
   bool mIsFormSubmission = false;
+  bool mIsGETRequest = true;
   bool mSendCSPViolationEvents = true;
   OriginAttributes mOriginAttributes;
   RedirectHistoryArray mRedirectChainIncludingInternalRedirects;
@@ -412,10 +415,14 @@ class LoadInfo final : public nsILoadInfo {
   nsCOMPtr<nsIInterceptionInfo> mInterceptionInfo;
 
   bool mHasInjectedCookieForCookieBannerHandling = false;
-  bool mWasSchemelessInput = false;
+  nsILoadInfo::SchemelessInputType mSchemelessInput =
+      nsILoadInfo::SchemelessInputTypeUnset;
 
   nsILoadInfo::HTTPSUpgradeTelemetryType mHttpsUpgradeTelemetry =
       nsILoadInfo::NOT_INITIALIZED;
+
+  bool mIsNewWindowTarget = false;
+  bool mSkipHTTPSUpgrade = false;
 };
 
 // This is exposed solely for testing purposes and should not be used outside of

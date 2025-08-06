@@ -16,10 +16,9 @@ include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/dom/WorkerIPCUtils.h";
 
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
-using mozilla::dom::RequestCredentials from "mozilla/dom/RequestBinding.h";
+using mozilla::dom::WorkerOptions from "mozilla/dom/WorkerBinding.h";
 using mozilla::StorageAccess from "mozilla/StorageAccess.h";
 using mozilla::OriginTrials from "mozilla/OriginTrialsIPCUtils.h";
-using mozilla::dom::WorkerType from "mozilla/dom/WorkerBinding.h";
 
 namespace mozilla {
 namespace dom {
@@ -53,9 +52,7 @@ struct RemoteWorkerData
   URIParams baseScriptURL;
   URIParams resolvedScriptURL;
 
-  nsString name;
-  WorkerType type;
-  RequestCredentials credentials;
+  WorkerOptions workerOptions;
 
   PrincipalInfo loadingPrincipalInfo;
   PrincipalInfo principalInfo;
@@ -70,6 +67,14 @@ struct RemoteWorkerData
 
   bool isSecureContext;
 
+  // For SharedWorkers this serves as the loadingClientInfo for the script loads
+  // and the basis for CSP for the global.
+  //
+  // For ServiceWorkers this is pre-created ClientSource information which
+  // should be used instead of a freshly created ClientSource.  This is done so
+  // that a ServiceWorker's client id can have a mapping established in the
+  // parent so that the keepalive contribution of ServiceWorkers to other
+  // ServiceWorkers is limited to their own keepalive lifetime.
   IPCClientInfo? clientInfo;
 
   nullable nsIReferrerInfo referrerInfo;
@@ -118,10 +123,13 @@ struct CSPViolation {
   nsString json;
 };
 
+struct ErrorMismatchOptions {};
+
 union ErrorValue {
   nsresult;
   ErrorData;
   CSPViolation;
+  ErrorMismatchOptions;
   void_t;
 };
 

@@ -25,7 +25,6 @@ class DrawTargetRecording final : public DrawTarget {
   DrawTargetRecording(DrawEventRecorder* aRecorder, DrawTarget* aDT,
                       IntRect aRect, bool aHasData = false);
   DrawTargetRecording(layers::CanvasDrawEventRecorder* aRecorder,
-                      int64_t aTextureId,
                       const layers::RemoteTextureOwnerId& aTextureOwnerId,
                       DrawTarget* aDT, const IntSize& aSize);
 
@@ -222,6 +221,9 @@ class DrawTargetRecording final : public DrawTarget {
    * be ignored.
    */
   virtual void PopClip() override;
+
+  /* Remove all applied clips. */
+  virtual bool RemoveAllClips() override;
 
   /**
    * Push a 'layer' to the DrawTarget, a layer is a temporary surface that all

@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -23,7 +24,6 @@
 #include "absl/algorithm/container.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
 #include "api/candidate.h"
 #include "api/rtp_parameters.h"
 #include "media/base/codec.h"
@@ -52,10 +52,6 @@
 namespace cricket {
 namespace {
 
-using ::rtc::kCsAeadAes128Gcm;
-using ::rtc::kCsAeadAes256Gcm;
-using ::rtc::kCsAesCm128HmacSha1_32;
-using ::rtc::kCsAesCm128HmacSha1_80;
 using ::rtc::UniqueRandomIdGenerator;
 using ::testing::Bool;
 using ::testing::Combine;
@@ -461,10 +457,11 @@ class MediaSessionDescriptionFactoryTest : public testing::Test {
     if (offer) {
       desc = f1_.CreateOfferOrError(options, current_desc.get()).MoveValue();
     } else {
-      std::unique_ptr<SessionDescription> offer;
-      offer = f1_.CreateOfferOrError(options, nullptr).MoveValue();
-      desc = f1_.CreateAnswerOrError(offer.get(), options, current_desc.get())
-                 .MoveValue();
+      std::unique_ptr<SessionDescription> offer_desc;
+      offer_desc = f1_.CreateOfferOrError(options, nullptr).MoveValue();
+      desc =
+          f1_.CreateAnswerOrError(offer_desc.get(), options, current_desc.get())
+              .MoveValue();
     }
     ASSERT_TRUE(desc);
     const TransportInfo* ti_audio = desc->GetTransportInfoByName("audio");
@@ -4145,7 +4142,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, H265TxModeIsDifferentDropCodecs) {
   ASSERT_EQ(1u, answer->contents().size());
   vcd1 = answer->contents()[0].media_description()->as_video();
   ASSERT_EQ(1u, vcd1->codecs().size());
-  EXPECT_EQ(vcd1->codecs()[0].tx_mode, absl::nullopt);
+  EXPECT_EQ(vcd1->codecs()[0].tx_mode, std::nullopt);
 }
 #endif
 
@@ -4218,7 +4215,7 @@ TEST_F(MediaSessionDescriptionFactoryTest, PacketizationIsDifferent) {
   ASSERT_EQ(1u, answer->contents().size());
   vcd1 = answer->contents()[0].media_description()->as_video();
   ASSERT_EQ(1u, vcd1->codecs().size());
-  EXPECT_EQ(vcd1->codecs()[0].packetization, absl::nullopt);
+  EXPECT_EQ(vcd1->codecs()[0].packetization, std::nullopt);
 }
 
 // Test that the codec preference order per media section is respected in

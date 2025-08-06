@@ -70,6 +70,7 @@ import mozilla.components.feature.prompts.dialog.Prompter
 import mozilla.components.feature.prompts.dialog.SaveLoginDialogFragment
 import mozilla.components.feature.prompts.dialog.TextPromptDialogFragment
 import mozilla.components.feature.prompts.dialog.TimePickerDialogFragment
+import mozilla.components.feature.prompts.dialog.emitGeneratedPasswordShownFact
 import mozilla.components.feature.prompts.ext.executeIfWindowedPrompt
 import mozilla.components.feature.prompts.facts.emitCreditCardSaveShownFact
 import mozilla.components.feature.prompts.facts.emitPromptConfirmedFact
@@ -171,7 +172,7 @@ internal const val FRAGMENT_TAG = "mozac_feature_prompt_dialog"
  * need to be requested before a prompt (e.g. a file picker) can be displayed.
  * Once the request is completed, [onPermissionsResult] needs to be invoked.
  */
-@Suppress("LargeClass", "LongParameterList", "MaxLineLength")
+@Suppress("LargeClass", "LongParameterList")
 class PromptFeature private constructor(
     private val container: PromptContainer,
     private val store: BrowserStore,
@@ -197,9 +198,8 @@ class PromptFeature private constructor(
     private val onFirstTimeEngagedWithSignup: () -> Unit = {},
     private val onSaveLoginWithStrongPassword: (String, String) -> Unit = { _, _ -> },
     private val onSaveLogin: (Boolean) -> Unit = { _ -> },
-    private val passwordGeneratorColorsProvider: PasswordGeneratorDialogColorsProvider = PasswordGeneratorDialogColorsProvider {
-        PasswordGeneratorDialogColors.default()
-    },
+    private val passwordGeneratorColorsProvider: PasswordGeneratorDialogColorsProvider =
+        PasswordGeneratorDialogColorsProvider { PasswordGeneratorDialogColors.default() },
     private val hideUpdateFragmentAfterSavingGeneratedPassword: (String, String) -> Boolean = { _, _ -> true },
     private val removeLastSavedGeneratedPassword: () -> Unit = {},
     private val creditCardDelegate: CreditCardDelegate = object : CreditCardDelegate {},
@@ -254,9 +254,8 @@ class PromptFeature private constructor(
         onFirstTimeEngagedWithSignup: () -> Unit = {},
         onSaveLoginWithStrongPassword: (String, String) -> Unit = { _, _ -> },
         onSaveLogin: (Boolean) -> Unit = { _ -> },
-        passwordGeneratorColorsProvider: PasswordGeneratorDialogColorsProvider = PasswordGeneratorDialogColorsProvider {
-            PasswordGeneratorDialogColors.default()
-        },
+        passwordGeneratorColorsProvider: PasswordGeneratorDialogColorsProvider =
+            PasswordGeneratorDialogColorsProvider { PasswordGeneratorDialogColors.default() },
         hideUpdateFragmentAfterSavingGeneratedPassword: (String, String) -> Boolean = { _, _ -> true },
         removeLastSavedGeneratedPassword: () -> Unit = {},
         creditCardDelegate: CreditCardDelegate = object : CreditCardDelegate {},
@@ -608,7 +607,8 @@ class PromptFeature private constructor(
     }
 
     @Suppress("NestedBlockDepth")
-    private fun processPromptRequest(
+    @VisibleForTesting(otherwise = PRIVATE)
+    internal fun processPromptRequest(
         promptRequest: PromptRequest,
         session: SessionState,
     ) {
@@ -842,6 +842,8 @@ class PromptFeature private constructor(
                     dismissDialogRequest(promptRequest, session)
                     return
                 }
+
+                emitGeneratedPasswordShownFact()
 
                 PasswordGeneratorDialogFragment.newInstance(
                     sessionId = session.id,

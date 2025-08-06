@@ -88,6 +88,17 @@ class OnboardingTelemetryRecorder {
                     ),
                 )
             }
+
+            OnboardingPageUiData.Type.ADD_ONS -> {
+                Onboarding.addOnsCard.record(
+                    Onboarding.AddOnsCardExtra(
+                        action = ACTION_IMPRESSION,
+                        elementType = ET_ONBOARDING_CARD,
+                        sequenceId = sequenceId,
+                        sequencePosition = sequencePosition,
+                    ),
+                )
+            }
         }
     }
 
@@ -229,6 +240,34 @@ class OnboardingTelemetryRecorder {
             Onboarding.PrivacyPolicyExtra(
                 action = ACTION_CLICK,
                 elementType = ET_SECONDARY_BUTTON,
+                sequenceId = sequenceId,
+                sequencePosition = sequencePosition,
+            ),
+        )
+    }
+
+    /**
+     * Records an add-on was installed.
+     *  @param addOnId The id of the installed add-on.
+     */
+    fun onAddOnInstalled(addOnId: String) {
+        Onboarding.addOnInstalled.record(
+            Onboarding.AddOnInstalledExtra(
+                addOnId,
+            ),
+        )
+    }
+
+    /**
+     * Records the add-ons card primary button click event.
+     * @param sequenceId The identifier of the onboarding sequence shown to the user.
+     * @param sequencePosition The sequence position of the page for which the impression occurred.
+     */
+    fun onAddOnsButtonClick(sequenceId: String, sequencePosition: String) {
+        Onboarding.addOnsCardButtonPressed.record(
+            Onboarding.AddOnsCardButtonPressedExtra(
+                action = ACTION_CLICK,
+                elementType = ET_PRIMARY_BUTTON,
                 sequenceId = sequenceId,
                 sequencePosition = sequencePosition,
             ),

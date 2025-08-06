@@ -90,9 +90,13 @@ def executor_kwargs(logger, test_type, test_environment, run_info_data,
 def env_extras(**kwargs):
     return []
 
+# Default preferences for Android to use when the preference is not specifically stated.
+# See Bug 1577912
+def default_prefs():
+    return {"fission.disableSessionHistoryInParent": "true"}
 
 def run_info_extras(logger, **kwargs):
-    rv = fx_run_info_extras(logger, **kwargs)
+    rv = fx_run_info_extras(logger, default_prefs=default_prefs(), **kwargs)
     rv.update({"headless": False})
 
     if kwargs["browser_version"] is None:
@@ -188,6 +192,8 @@ class ProfileCreator(FirefoxProfileCreator):
         profile.set_preferences({"fission.autostart": True})
         if self.disable_fission:
             profile.set_preferences({"fission.autostart": False})
+
+        profile.set_preferences(default_prefs())
 
 
 class FirefoxAndroidBrowser(Browser):
@@ -403,7 +409,7 @@ class FirefoxAndroidWdSpecBrowser(FirefoxWdSpecBrowser):
             self.logger.warning("Failed to remove forwarded or reversed ports: %s" % e)
         super().stop(force=force)
 
-    def get_env(self, binary, debug_info, headless, chaos_mode_flags, e10s):
+    def get_env(self, binary, debug_info, headless, gmp_path, chaos_mode_flags, e10s):
         env = get_environ(chaos_mode_flags)
         env["RUST_BACKTRACE"] = "1"
         return env

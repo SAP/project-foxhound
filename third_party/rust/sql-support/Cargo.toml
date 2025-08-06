@@ -14,10 +14,19 @@ edition = "2021"
 name = "sql-support"
 version = "0.1.0"
 authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
+build = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+readme = false
 license = "MPL-2.0"
 
+[lib]
+name = "sql_support"
+path = "src/lib.rs"
+
 [dependencies]
-ffi-support = "0.4"
 lazy_static = "1.4"
 log = "0.4"
 parking_lot = ">=0.11,<=0.12"

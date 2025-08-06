@@ -20,6 +20,8 @@ const FEATURES = {
   AdmWikipedia: "resource:///modules/urlbar/private/AdmWikipedia.sys.mjs",
   BlockedSuggestions:
     "resource:///modules/urlbar/private/BlockedSuggestions.sys.mjs",
+  ExposureSuggestions:
+    "resource:///modules/urlbar/private/ExposureSuggestions.sys.mjs",
   FakespotSuggestions:
     "resource:///modules/urlbar/private/FakespotSuggestions.sys.mjs",
   ImpressionCaps: "resource:///modules/urlbar/private/ImpressionCaps.sys.mjs",
@@ -28,6 +30,8 @@ const FEATURES = {
     "resource:///modules/urlbar/private/PocketSuggestions.sys.mjs",
   SuggestBackendJs:
     "resource:///modules/urlbar/private/SuggestBackendJs.sys.mjs",
+  SuggestBackendMl:
+    "resource:///modules/urlbar/private/SuggestBackendMl.sys.mjs",
   SuggestBackendRust:
     "resource:///modules/urlbar/private/SuggestBackendRust.sys.mjs",
   Weather: "resource:///modules/urlbar/private/Weather.sys.mjs",
@@ -37,8 +41,6 @@ const FEATURES = {
 const TIMESTAMP_TEMPLATE = "%YYYYMMDDHH%";
 const TIMESTAMP_LENGTH = 10;
 const TIMESTAMP_REGEXP = /^\d{10}$/;
-
-const TELEMETRY_EVENT_CATEGORY = "contextservices.quicksuggest";
 
 // Values returned by the onboarding dialog depending on the user's response.
 // These values are used in telemetry events, so be careful about changing them.
@@ -61,14 +63,6 @@ const ONBOARDING_URI =
  * related helpers.
  */
 class _QuickSuggest {
-  /**
-   * @returns {string}
-   *   The name of the quick suggest telemetry event category.
-   */
-  get TELEMETRY_EVENT_CATEGORY() {
-    return TELEMETRY_EVENT_CATEGORY;
-  }
-
   /**
    * @returns {string}
    *   The timestamp template string used in quick suggest URLs.
@@ -155,13 +149,21 @@ class _QuickSuggest {
   }
 
   /**
-   * @returns {Map}
-   *   A map from the name of each registered Rust suggestion type to the
-   *   feature that manages that type. This mapping is determined by each
-   *   feature's `rustSuggestionTypes`.
+   * @returns {Set}
+   *   The set of features that manage Rust suggestion types, as determined by
+   *   each feature's `rustSuggestionTypes`.
    */
-  get featuresByRustSuggestionType() {
-    return this.#featuresByRustSuggestionType;
+  get rustFeatures() {
+    return new Set(this.#featuresByRustSuggestionType.values());
+  }
+
+  /**
+   * @returns {Set}
+   *   The set of features that manage ML suggestion types, as determined by
+   *   each feature's `mlIntent`.
+   */
+  get mlFeatures() {
+    return new Set(this.#featuresByMlIntent.values());
   }
 
   get logger() {
@@ -191,6 +193,9 @@ class _QuickSuggest {
       }
       for (let type of feature.rustSuggestionTypes) {
         this.#featuresByRustSuggestionType.set(type, feature);
+      }
+      if (feature.mlIntent) {
+        this.#featuresByMlIntent.set(feature.mlIntent, feature);
       }
 
       // Update the map from enabling preferences to features.
@@ -255,6 +260,20 @@ class _QuickSuggest {
   }
 
   /**
+   * Returns a Suggest feature by the ML intent name (as defined by
+   * `feature.mlIntent` and `MLSuggest`). Not all features support ML.
+   *
+   * @param {string} intent
+   *   The name of an ML intent.
+   * @returns {BaseFeature}
+   *   The feature object, an instance of a subclass of `BaseFeature`, or null
+   *   if no feature corresponds to the intent.
+   */
+  getFeatureByMlIntent(intent) {
+    return this.#featuresByMlIntent.get(intent);
+  }
+
+  /**
    * Called when a urlbar pref changes.
    *
    * @param {string} pref
@@ -267,36 +286,6 @@ class _QuickSuggest {
       for (let f of features) {
         f.update();
       }
-    }
-
-    switch (pref) {
-      case "quicksuggest.dataCollection.enabled":
-        if (!lazy.UrlbarPrefs.updatingFirefoxSuggestScenario) {
-          Services.telemetry.recordEvent(
-            TELEMETRY_EVENT_CATEGORY,
-            "data_collect_toggled",
-            lazy.UrlbarPrefs.get(pref) ? "enabled" : "disabled"
-          );
-        }
-        break;
-      case "suggest.quicksuggest.nonsponsored":
-        if (!lazy.UrlbarPrefs.updatingFirefoxSuggestScenario) {
-          Services.telemetry.recordEvent(
-            TELEMETRY_EVENT_CATEGORY,
-            "enable_toggled",
-            lazy.UrlbarPrefs.get(pref) ? "enabled" : "disabled"
-          );
-        }
-        break;
-      case "suggest.quicksuggest.sponsored":
-        if (!lazy.UrlbarPrefs.updatingFirefoxSuggestScenario) {
-          Services.telemetry.recordEvent(
-            TELEMETRY_EVENT_CATEGORY,
-            "sponsored_toggled",
-            lazy.UrlbarPrefs.get(pref) ? "enabled" : "disabled"
-          );
-        }
-        break;
     }
   }
 
@@ -334,8 +323,15 @@ class _QuickSuggest {
     }
 
     if (result.payload.source == "rust") {
-      // The Rust implementation has its own equivalence function.
-      return lazy.rawSuggestionUrlMatches(result.payload.originalUrl, url);
+      // Rust has its own equivalence function. The urlbar implementation for an
+      // individual Rust suggestion type will define `originalUrl` only when
+      // necessary. Its value depends on the type and generally represents the
+      // suggestion's URL before UTM and timestamp params are added. If it's not
+      // defined, fall back to the main URL.
+      return lazy.rawSuggestionUrlMatches(
+        result.payload.originalUrl || resultURL,
+        url
+      );
     }
 
     // If the result URL doesn't have a timestamp, then do a straight string
@@ -506,12 +502,6 @@ class _QuickSuggest {
 
     lazy.UrlbarPrefs.set("quicksuggest.onboardingDialogChoice", params.choice);
 
-    Services.telemetry.recordEvent(
-      "contextservices.quicksuggest",
-      "opt_in_dialog",
-      params.choice
-    );
-
     return true;
   }
 
@@ -527,13 +517,6 @@ class _QuickSuggest {
     for (let feature of Object.values(this.#features)) {
       feature.update();
     }
-
-    // Update state related to quick suggest as a whole.
-    let enabled = lazy.UrlbarPrefs.get("quickSuggestEnabled");
-    Services.telemetry.setEventRecordingEnabled(
-      TELEMETRY_EVENT_CATEGORY,
-      enabled
-    );
   }
 
   // Maps from Suggest feature class names to feature instances.
@@ -544,6 +527,9 @@ class _QuickSuggest {
 
   // Maps from Rust suggestion types to Suggest feature instances.
   #featuresByRustSuggestionType = new Map();
+
+  // Maps from ML intent strings to Suggest feature instances.
+  #featuresByMlIntent = new Map();
 
   // Maps from preference names to the `Set` of feature instances they enable.
   #featuresByEnablingPrefs = new Map();

@@ -22,7 +22,7 @@
 
 var __webpack_exports__ = {};
 
-;// CONCATENATED MODULE: ./src/scripting_api/constants.js
+;// ./src/scripting_api/constants.js
 const Border = Object.freeze({
   s: "solid",
   d: "dashed",
@@ -147,7 +147,7 @@ const GlobalConstants = Object.freeze({
   RE_SSN_COMMIT: ["\\d{3}(\\.|[- ])?\\d{2}(\\.|[- ])?\\d{4}"]
 });
 
-;// CONCATENATED MODULE: ./src/scripting_api/common.js
+;// ./src/scripting_api/common.js
 const FieldType = {
   none: 0,
   number: 1,
@@ -186,7 +186,7 @@ function getFieldType(actions) {
   return FieldType.none;
 }
 
-;// CONCATENATED MODULE: ./src/shared/scripting_utils.js
+;// ./src/shared/scripting_utils.js
 function makeColorComp(n) {
   return Math.floor(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, "0");
 }
@@ -245,7 +245,7 @@ class ColorConverters {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/pdf_object.js
+;// ./src/scripting_api/pdf_object.js
 class PDFObject {
   constructor(data) {
     this._expandos = Object.create(null);
@@ -254,7 +254,7 @@ class PDFObject {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/color.js
+;// ./src/scripting_api/color.js
 
 
 class Color extends PDFObject {
@@ -342,7 +342,7 @@ class Color extends PDFObject {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/field.js
+;// ./src/scripting_api/field.js
 
 
 
@@ -832,6 +832,10 @@ class RadioButtonField extends Field {
     this._hasBeenInitialized = true;
     this._value = data.value || "";
   }
+  get _siblings() {
+    return this._radioIds.filter(id => id !== this._id);
+  }
+  set _siblings(_) {}
   get value() {
     return this._value;
   }
@@ -921,7 +925,7 @@ class CheckboxField extends RadioButtonField {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/aform.js
+;// ./src/scripting_api/aform.js
 
 class AForm {
   constructor(document, app, util, color) {
@@ -931,115 +935,24 @@ class AForm {
     this._color = color;
     this._dateFormats = ["m/d", "m/d/yy", "mm/dd/yy", "mm/yy", "d-mmm", "d-mmm-yy", "dd-mmm-yy", "yy-mm-dd", "mmm-yy", "mmmm-yy", "mmm d, yyyy", "mmmm d, yyyy", "m/d/yy h:MM tt", "m/d/yy HH:MM"];
     this._timeFormats = ["HH:MM", "h:MM tt", "HH:MM:ss", "h:MM:ss tt"];
-    this._dateActionsCache = new Map();
     this._emailRegex = new RegExp("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+" + "@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?" + "(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$");
   }
   _mkTargetName(event) {
     return event.target ? `[ ${event.target.name} ]` : "";
   }
-  _tryToGuessDate(cFormat, cDate) {
-    let actions = this._dateActionsCache.get(cFormat);
-    if (!actions) {
-      actions = [];
-      this._dateActionsCache.set(cFormat, actions);
-      cFormat.replaceAll(/(d+)|(m+)|(y+)|(H+)|(M+)|(s+)/g, function (match, d, m, y, H, M, s) {
-        if (d) {
-          actions.push((n, date) => {
-            if (n >= 1 && n <= 31) {
-              date.setDate(n);
-              return true;
-            }
-            return false;
-          });
-        } else if (m) {
-          actions.push((n, date) => {
-            if (n >= 1 && n <= 12) {
-              date.setMonth(n - 1);
-              return true;
-            }
-            return false;
-          });
-        } else if (y) {
-          actions.push((n, date) => {
-            if (n < 50) {
-              n += 2000;
-            } else if (n < 100) {
-              n += 1900;
-            }
-            date.setYear(n);
-            return true;
-          });
-        } else if (H) {
-          actions.push((n, date) => {
-            if (n >= 0 && n <= 23) {
-              date.setHours(n);
-              return true;
-            }
-            return false;
-          });
-        } else if (M) {
-          actions.push((n, date) => {
-            if (n >= 0 && n <= 59) {
-              date.setMinutes(n);
-              return true;
-            }
-            return false;
-          });
-        } else if (s) {
-          actions.push((n, date) => {
-            if (n >= 0 && n <= 59) {
-              date.setSeconds(n);
-              return true;
-            }
-            return false;
-          });
-        }
-        return "";
-      });
-    }
-    const number = /\d+/g;
-    let i = 0;
-    let array;
-    const date = new Date();
-    while ((array = number.exec(cDate)) !== null) {
-      if (i < actions.length) {
-        if (!actions[i++](parseInt(array[0]), date)) {
-          return null;
-        }
-      } else {
-        break;
-      }
-    }
-    if (i === 0) {
-      return null;
-    }
-    return date;
-  }
   _parseDate(cFormat, cDate, strict = false) {
     let date = null;
     try {
-      date = this._util.scand(cFormat, cDate);
+      date = this._util._scand(cFormat, cDate, strict);
     } catch {}
-    if (!date) {
-      if (strict) {
-        return null;
-      }
-      let format = cFormat;
-      if (/mm(?!m)/.test(format)) {
-        format = format.replace("mm", "m");
-      }
-      if (/dd(?!d)/.test(format)) {
-        format = format.replace("dd", "d");
-      }
-      try {
-        date = this._util.scand(format, cDate);
-      } catch {}
+    if (date) {
+      return date;
     }
-    if (!date) {
-      date = Date.parse(cDate);
-      date = isNaN(date) ? this._tryToGuessDate(cFormat, cDate) : new Date(date);
+    if (strict) {
+      return null;
     }
-    return date;
+    date = Date.parse(cDate);
+    return isNaN(date) ? null : new Date(date);
   }
   AFMergeChange(event = globalThis.event) {
     if (event.willCommit) {
@@ -1335,6 +1248,16 @@ class AForm {
     event.value = this._util.printx(formatStr, event.value);
   }
   AFSpecial_KeystrokeEx(cMask) {
+    const event = globalThis.event;
+    const simplifiedFormatStr = cMask.replaceAll(/[^9AOX]/g, "");
+    this.#AFSpecial_KeystrokeEx_helper(simplifiedFormatStr, false);
+    if (event.rc) {
+      return;
+    }
+    event.rc = true;
+    this.#AFSpecial_KeystrokeEx_helper(cMask, true);
+  }
+  #AFSpecial_KeystrokeEx_helper(cMask, warn) {
     if (!cMask) {
       return;
     }
@@ -1361,18 +1284,24 @@ class AForm {
     }
     const err = `${GlobalConstants.IDS_INVALID_VALUE} = "${cMask}"`;
     if (value.length > cMask.length) {
-      this._app.alert(err);
+      if (warn) {
+        this._app.alert(err);
+      }
       event.rc = false;
       return;
     }
     if (event.willCommit) {
       if (value.length < cMask.length) {
-        this._app.alert(err);
+        if (warn) {
+          this._app.alert(err);
+        }
         event.rc = false;
         return;
       }
       if (!_checkValidity(value, cMask)) {
-        this._app.alert(err);
+        if (warn) {
+          this._app.alert(err);
+        }
         event.rc = false;
         return;
       }
@@ -1383,7 +1312,9 @@ class AForm {
       cMask = cMask.substring(0, value.length);
     }
     if (!_checkValidity(value, cMask)) {
-      this._app.alert(err);
+      if (warn) {
+        this._app.alert(err);
+      }
       event.rc = false;
     }
   }
@@ -1400,7 +1331,7 @@ class AForm {
         break;
       case 2:
         const value = this.AFMergeChange(event);
-        formatStr = value.length > 8 || value.startsWith("(") ? "(999) 999-9999" : "999-9999";
+        formatStr = value.startsWith("(") || value.length > 7 && /^\p{N}+$/.test(value) ? "(999) 999-9999" : "999-9999";
         break;
       case 3:
         formatStr = "999-99-9999";
@@ -1437,7 +1368,7 @@ class AForm {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/app_utils.js
+;// ./src/scripting_api/app_utils.js
 const VIEWER_TYPE = "PDF.js";
 const VIEWER_VARIATION = "Full";
 const VIEWER_VERSION = 21.00720099;
@@ -1452,7 +1383,7 @@ function serializeError(error) {
   };
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/event.js
+;// ./src/scripting_api/event.js
 
 class Event {
   constructor(data) {
@@ -1738,7 +1669,7 @@ class EventDispatcher {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/fullscreen.js
+;// ./src/scripting_api/fullscreen.js
 
 
 class FullScreen extends PDFObject {
@@ -1803,7 +1734,7 @@ class FullScreen extends PDFObject {
   set useTimer(_) {}
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/thermometer.js
+;// ./src/scripting_api/thermometer.js
 
 class Thermometer extends PDFObject {
   constructor(data) {
@@ -1841,7 +1772,7 @@ class Thermometer extends PDFObject {
   end() {}
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/app.js
+;// ./src/scripting_api/app.js
 
 
 
@@ -2290,7 +2221,7 @@ class App extends PDFObject {
   trustPropagatorFunction() {}
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/console.js
+;// ./src/scripting_api/console.js
 
 class Console extends PDFObject {
   clear() {
@@ -2310,7 +2241,7 @@ class Console extends PDFObject {
   show() {}
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/print_params.js
+;// ./src/scripting_api/print_params.js
 class PrintParams {
   constructor(data) {
     this.binaryOk = true;
@@ -2441,7 +2372,7 @@ class PrintParams {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/doc.js
+;// ./src/scripting_api/doc.js
 
 
 
@@ -3299,7 +3230,7 @@ class Doc extends PDFObject {
   syncAnnotScan() {}
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/proxy.js
+;// ./src/scripting_api/proxy.js
 class ProxyHandler {
   constructor() {
     this.nosend = new Set(["delay"]);
@@ -3395,9 +3326,10 @@ class ProxyHandler {
   }
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/util.js
+;// ./src/scripting_api/util.js
 
 class Util extends PDFObject {
+  #dateActionsCache = null;
   constructor(data) {
     super(data);
     this._scandCache = new Map();
@@ -3488,7 +3420,12 @@ class Util extends PDFObject {
       if (cConvChar === "f") {
         decPart = nPrecision !== undefined ? Math.abs(arg - intPart).toFixed(nPrecision) : Math.abs(arg - intPart).toString();
         if (decPart.length > 2) {
-          decPart = `${decimalSep}${decPart.substring(2)}`;
+          if (/^1\.0+$/.test(decPart)) {
+            intPart += Math.sign(arg);
+            decPart = `${decimalSep}${decPart.split(".")[1]}`;
+          } else {
+            decPart = `${decimalSep}${decPart.substring(2)}`;
+          }
         } else {
           if (decPart === "1") {
             intPart += Math.sign(arg);
@@ -3646,7 +3583,88 @@ class Util extends PDFObject {
     }
     return buf.join("");
   }
+  #tryToGuessDate(cFormat, cDate) {
+    let actions = (this.#dateActionsCache ||= new Map()).get(cFormat);
+    if (!actions) {
+      actions = [];
+      this.#dateActionsCache.set(cFormat, actions);
+      cFormat.replaceAll(/(d+)|(m+)|(y+)|(H+)|(M+)|(s+)/g, function (match, d, m, y, H, M, s) {
+        if (d) {
+          actions.push((n, date) => {
+            if (n >= 1 && n <= 31) {
+              date.setDate(n);
+              return true;
+            }
+            return false;
+          });
+        } else if (m) {
+          actions.push((n, date) => {
+            if (n >= 1 && n <= 12) {
+              date.setMonth(n - 1);
+              return true;
+            }
+            return false;
+          });
+        } else if (y) {
+          actions.push((n, date) => {
+            if (n < 50) {
+              n += 2000;
+            } else if (n < 100) {
+              n += 1900;
+            }
+            date.setYear(n);
+            return true;
+          });
+        } else if (H) {
+          actions.push((n, date) => {
+            if (n >= 0 && n <= 23) {
+              date.setHours(n);
+              return true;
+            }
+            return false;
+          });
+        } else if (M) {
+          actions.push((n, date) => {
+            if (n >= 0 && n <= 59) {
+              date.setMinutes(n);
+              return true;
+            }
+            return false;
+          });
+        } else if (s) {
+          actions.push((n, date) => {
+            if (n >= 0 && n <= 59) {
+              date.setSeconds(n);
+              return true;
+            }
+            return false;
+          });
+        }
+        return "";
+      });
+    }
+    const number = /\d+/g;
+    let i = 0;
+    let array;
+    const date = new Date(0);
+    while ((array = number.exec(cDate)) !== null) {
+      if (i < actions.length) {
+        if (!actions[i++](parseInt(array[0]), date)) {
+          return null;
+        }
+      } else {
+        break;
+      }
+    }
+    if (i === 0) {
+      return null;
+    }
+    return date;
+  }
   scand(cFormat, cDate) {
+    return this._scand(cFormat, cDate);
+  }
+  _scand(cFormat, cDate, strict = false) {
     if (typeof cDate !== "string") {
       return new Date(cDate);
     }
@@ -3803,7 +3821,7 @@ class Util extends PDFObject {
     const [re, actions] = this._scandCache.get(cFormat);
     const matches = new RegExp(`^${re}$`, "g").exec(cDate);
     if (!matches || matches.length !== actions.length + 1) {
-      return null;
+      return strict ? null : this.#tryToGuessDate(cFormat, cDate);
     }
     const data = {
       year: 2000,
@@ -3825,7 +3843,7 @@ class Util extends PDFObject {
   xmlToSpans() {}
 }
 
-;// CONCATENATED MODULE: ./src/scripting_api/initialization.js
+;// ./src/scripting_api/initialization.js
 
 
 
@@ -3889,29 +3907,23 @@ function initSandbox(params) {
       obj.doc = _document;
       obj.fieldPath = name;
       obj.appObjects = appObjects;
+      const otherFields = annotations.slice(1);
       let field;
       switch (obj.type) {
         case "radiobutton":
           {
-            const otherButtons = annotations.slice(1);
-            field = new RadioButtonField(otherButtons, obj);
+            field = new RadioButtonField(otherFields, obj);
             break;
           }
         case "checkbox":
           {
-            const otherButtons = annotations.slice(1);
-            field = new CheckboxField(otherButtons, obj);
+            field = new CheckboxField(otherFields, obj);
             break;
           }
-        case "text":
-          if (annotations.length <= 1) {
-            field = new Field(obj);
-            break;
-          }
-          obj.siblings = annotations.map(x => x.id).slice(1);
-          field = new Field(obj);
-          break;
         default:
+          if (otherFields.length > 0) {
+            obj.siblings = otherFields.map(x => x.id);
+          }
           field = new Field(obj);
       }
       const wrapped = new Proxy(field, proxyHandler);
@@ -4005,10 +4017,10 @@ function initSandbox(params) {
   };
 }
 
-;// CONCATENATED MODULE: ./src/pdf.scripting.js
+;// ./src/pdf.scripting.js
 
-const pdfjsVersion = "4.5.252";
-const pdfjsBuild = "e44e4db52";
+const pdfjsVersion = "4.9.14";
+const pdfjsBuild = "bff673896";
 globalThis.pdfjsScripting = {
   initSandbox: initSandbox
 };

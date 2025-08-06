@@ -25,6 +25,9 @@
 #include "api/audio_codecs/opus/audio_decoder_opus.h"
 #include "api/audio_codecs/opus/audio_encoder_multi_channel_opus.h"
 #include "api/audio_codecs/opus/audio_encoder_opus.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
+#include "api/units/timestamp.h"
 #include "modules/audio_coding/acm2/acm_receive_test.h"
 #include "modules/audio_coding/acm2/acm_send_test.h"
 #include "modules/audio_coding/codecs/cng/audio_encoder_cng.h"
@@ -162,8 +165,8 @@ class PacketizationCallbackStubOldApi : public AudioPacketizationCallback {
 class AudioCodingModuleTestOldApi : public ::testing::Test {
  protected:
   AudioCodingModuleTestOldApi()
-      : rtp_utility_(new RtpData(kFrameSizeSamples, kPayloadType)),
-        clock_(Clock::GetRealTimeClock()) {}
+      : env_(CreateEnvironment()),
+        rtp_utility_(new RtpData(kFrameSizeSamples, kPayloadType)) {}
 
   ~AudioCodingModuleTestOldApi() {}
 
@@ -172,9 +175,8 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
   void SetUp() {
     acm_ = AudioCodingModule::Create();
     acm2::AcmReceiver::Config config;
-    config.clock = *clock_;
     config.decoder_factory = CreateBuiltinAudioDecoderFactory();
-    acm_receiver_ = std::make_unique<acm2::AcmReceiver>(config);
+    acm_receiver_ = std::make_unique<acm2::AcmReceiver>(env_, config);
 
     rtp_utility_->Populate(&rtp_header_);
 
@@ -198,8 +200,8 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
 
   virtual void RegisterCodec() {
     acm_receiver_->SetCodecs({{kPayloadType, *audio_format_}});
-    acm_->SetEncoder(CreateBuiltinAudioEncoderFactory()->MakeAudioEncoder(
-        kPayloadType, *audio_format_, absl::nullopt));
+    acm_->SetEncoder(CreateBuiltinAudioEncoderFactory()->Create(
+        env_, *audio_format_, {.payload_type = kPayloadType}));
   }
 
   virtual void InsertPacketAndPullAudio() {
@@ -209,9 +211,10 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
 
   virtual void InsertPacket() {
     const uint8_t kPayload[kPayloadSizeBytes] = {0};
-    ASSERT_EQ(0, acm_receiver_->InsertPacket(rtp_header_,
-                                             rtc::ArrayView<const uint8_t>(
-                                                 kPayload, kPayloadSizeBytes)));
+    ASSERT_EQ(0, acm_receiver_->InsertPacket(
+                     rtp_header_,
+                     rtc::ArrayView<const uint8_t>(kPayload, kPayloadSizeBytes),
+                     /*receive_time=*/Timestamp::MinusInfinity()));
     rtp_utility_->Forward(&rtp_header_);
   }
 
@@ -238,6 +241,7 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
     VerifyEncoding();
   }
 
+  Environment env_;
   std::unique_ptr<RtpData> rtp_utility_;
   std::unique_ptr<AudioCodingModule> acm_;
   std::unique_ptr<acm2::AcmReceiver> acm_receiver_;
@@ -245,10 +249,8 @@ class AudioCodingModuleTestOldApi : public ::testing::Test {
   RTPHeader rtp_header_;
   AudioFrame input_frame_;
 
-  absl::optional<SdpAudioFormat> audio_format_;
+  std::optional<SdpAudioFormat> audio_format_;
   int pac_size_ = -1;
-
-  Clock* clock_;
 };
 
 class AudioCodingModuleTestOldApiDeathTest
@@ -263,8 +265,7 @@ class AudioCodingModuleTestOldApiDeathTest
 TEST_F(AudioCodingModuleTestOldApiDeathTest, FailOnZeroDesiredFrequency) {
   AudioFrame audio_frame;
   bool muted;
-  RTC_EXPECT_DEATH(acm_receiver_->GetAudio(0, &audio_frame, &muted),
-                   "dst_sample_rate_hz");
+  RTC_EXPECT_DEATH(acm_receiver_->GetAudio(0, &audio_frame, &muted), "");
 }
 #endif
 
@@ -380,7 +381,9 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
         pull_audio_count_(0),
         next_insert_packet_time_ms_(0),
         fake_clock_(new SimulatedClock(0)) {
-    clock_ = fake_clock_.get();
+    EnvironmentFactory override_clock(env_);
+    override_clock.Set(fake_clock_.get());
+    env_ = override_clock.Create();
   }
 
   void SetUp() {
@@ -457,7 +460,7 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
     SleepMs(1);
     {
       MutexLock lock(&mutex_);
-      if (clock_->TimeInMilliseconds() < next_insert_packet_time_ms_) {
+      if (env_.clock().TimeInMilliseconds() < next_insert_packet_time_ms_) {
         return;
       }
       next_insert_packet_time_ms_ += 10;
@@ -472,7 +475,7 @@ class AudioCodingModuleMtTestOldApi : public AudioCodingModuleTestOldApi {
     {
       MutexLock lock(&mutex_);
       // Don't let the insert thread fall behind.
-      if (next_insert_packet_time_ms_ < clock_->TimeInMilliseconds()) {
+      if (next_insert_packet_time_ms_ < env_.clock().TimeInMilliseconds()) {
         return;
       }
       ++pull_audio_count_;
@@ -519,6 +522,17 @@ class AudioPacketizationCallbackMock : public AudioPacketizationCallback {
               (override));
 };
 
+TEST(AudioCodingModule, DoesResetEncoder) {
+  std::unique_ptr<AudioCodingModule> acm = AudioCodingModule::Create();
+  auto encoder = std::make_unique<MockAudioEncoder>();
+  MockAudioEncoder* encoder_mock = encoder.get();
+
+  acm->SetEncoder(std::move(encoder));
+
+  EXPECT_CALL(*encoder_mock, Reset()).Times(1);
+  acm->Reset();
+}
+
 class AcmAbsoluteCaptureTimestamp : public ::testing::Test {
  public:
   AcmAbsoluteCaptureTimestamp() : audio_frame_(kSampleRateHz, kNumChannels) {}
@@ -533,9 +547,10 @@ class AcmAbsoluteCaptureTimestamp : public ::testing::Test {
     rtc::scoped_refptr<AudioEncoderFactory> codec_factory =
         CreateBuiltinAudioEncoderFactory();
     acm_ = AudioCodingModule::Create();
-    std::unique_ptr<AudioEncoder> encoder = codec_factory->MakeAudioEncoder(
-        111, SdpAudioFormat("OPUS", kSampleRateHz, kNumChannels),
-        absl::nullopt);
+    std::unique_ptr<AudioEncoder> encoder = codec_factory->Create(
+        CreateEnvironment(),
+        SdpAudioFormat("OPUS", kSampleRateHz, kNumChannels),
+        {.payload_type = 111});
     encoder->SetDtx(true);
     encoder->SetReceiverFrameLengthRange(kPTimeMs, kPTimeMs);
     acm_->SetEncoder(std::move(encoder));
@@ -576,6 +591,40 @@ TEST_F(AcmAbsoluteCaptureTimestamp, HaveBeginningOfFrameCaptureTime) {
       transport_,
       SendData(_, _, _, _, _, first_absolute_capture_timestamp_ms + kPTimeMs))
       .Times(1);
+  for (int k = 0; k < 5; ++k) {
+    acm_->Add10MsData(
+        GetAudioWithAbsoluteCaptureTimestamp(absolute_capture_timestamp_ms));
+    absolute_capture_timestamp_ms += 10;
+  }
+}
+
+TEST_F(AcmAbsoluteCaptureTimestamp, DoesResetWhenAudioCodingModuleDo) {
+  constexpr int64_t first_absolute_capture_timestamp_ms = 123456789;
+
+  int64_t absolute_capture_timestamp_ms = first_absolute_capture_timestamp_ms;
+  EXPECT_CALL(transport_,
+              SendData(_, _, _, _, _, first_absolute_capture_timestamp_ms))
+      .Times(1);
+  EXPECT_CALL(
+      transport_,
+      SendData(_, _, _, _, _, first_absolute_capture_timestamp_ms + kPTimeMs))
+      .Times(1);
+  for (int k = 0; k < 5; ++k) {
+    acm_->Add10MsData(
+        GetAudioWithAbsoluteCaptureTimestamp(absolute_capture_timestamp_ms));
+    absolute_capture_timestamp_ms += 10;
+  }
+
+  acm_->Reset();
+  constexpr int64_t after_reset_absolute_capture_timestamp_ms = 523456789;
+  EXPECT_CALL(transport_, SendData(_, _, _, _, _,
+                                   after_reset_absolute_capture_timestamp_ms))
+      .Times(1);
+  EXPECT_CALL(transport_,
+              SendData(_, _, _, _, _,
+                       after_reset_absolute_capture_timestamp_ms + kPTimeMs))
+      .Times(1);
+  absolute_capture_timestamp_ms = after_reset_absolute_capture_timestamp_ms;
   for (int k = 0; k < 5; ++k) {
     acm_->Add10MsData(
         GetAudioWithAbsoluteCaptureTimestamp(absolute_capture_timestamp_ms));
@@ -864,7 +913,13 @@ TEST_F(AcmSenderBitExactnessOldApi, Pcma_stereo_20ms) {
 
 #if defined(WEBRTC_CODEC_ILBC) && defined(WEBRTC_LINUX) && \
     defined(WEBRTC_ARCH_X86_64)
+
+// TODO(bugs.webrtc.org/345525069): Either fix/enable or remove iLBC.
+#if defined(__has_feature) && __has_feature(undefined_behavior_sanitizer)
+TEST_F(AcmSenderBitExactnessOldApi, DISABLED_Ilbc_30ms) {
+#else
 TEST_F(AcmSenderBitExactnessOldApi, Ilbc_30ms) {
+#endif
   ASSERT_NO_FATAL_FAILURE(SetUpTest("ILBC", 8000, 1, 102, 240, 240));
   Run(/*audio_checksum_ref=*/"a739434bec8a754e9356ce2115603ce5",
       /*payload_checksum_ref=*/"cfae2e9f6aba96e145f2bcdd5050ce78",
@@ -874,7 +929,13 @@ TEST_F(AcmSenderBitExactnessOldApi, Ilbc_30ms) {
 #endif
 
 #if defined(WEBRTC_LINUX) && defined(WEBRTC_ARCH_X86_64)
+
+// TODO(bugs.webrtc.org/345525069): Either fix/enable or remove G722.
+#if defined(__has_feature) && __has_feature(undefined_behavior_sanitizer)
+TEST_F(AcmSenderBitExactnessOldApi, DISABLED_G722_20ms) {
+#else
 TEST_F(AcmSenderBitExactnessOldApi, G722_20ms) {
+#endif
   ASSERT_NO_FATAL_FAILURE(SetUpTest("G722", 16000, 1, 9, 320, 160));
   Run(/*audio_checksum_ref=*/"b875d9a3e41f5470857bdff02e3b368f",
       /*payload_checksum_ref=*/"fc68a87e1380614e658087cb35d5ca10",
@@ -884,7 +945,13 @@ TEST_F(AcmSenderBitExactnessOldApi, G722_20ms) {
 #endif
 
 #if defined(WEBRTC_LINUX) && defined(WEBRTC_ARCH_X86_64)
+
+// TODO(bugs.webrtc.org/345525069): Either fix/enable or remove G722.
+#if defined(__has_feature) && __has_feature(undefined_behavior_sanitizer)
+TEST_F(AcmSenderBitExactnessOldApi, DISABLED_G722_stereo_20ms) {
+#else
 TEST_F(AcmSenderBitExactnessOldApi, G722_stereo_20ms) {
+#endif
   ASSERT_NO_FATAL_FAILURE(SetUpTest("G722", 16000, 2, 119, 320, 160));
   Run(/*audio_checksum_ref=*/"02c427d73363b2f37853a0dd17fe1aba",
       /*payload_checksum_ref=*/"66516152eeaa1e650ad94ff85f668dac",
@@ -917,7 +984,9 @@ TEST_F(AcmSenderBitExactnessNewApi, OpusFromFormat_stereo_20ms) {
       SdpAudioFormat("opus", 48000, 2, {{"stereo", "1"}}));
   ASSERT_TRUE(SetUpSender(kTestFileFakeStereo32kHz, 32000));
   ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(
-      AudioEncoderOpus::MakeAudioEncoder(*config, 120), 120));
+      AudioEncoderOpus::MakeAudioEncoder(CreateEnvironment(), *config,
+                                         {.payload_type = 120}),
+      120));
   Run(audio_checksum, payload_checksum, /*expected_packets=*/50,
       /*expected_channels=*/test::AcmReceiveTestOldApi::kStereoOutput);
 }
@@ -972,7 +1041,9 @@ TEST_F(AcmSenderBitExactnessNewApi, OpusFromFormat_stereo_20ms_voip) {
   config->application = AudioEncoderOpusConfig::ApplicationMode::kVoip;
   ASSERT_TRUE(SetUpSender(kTestFileFakeStereo32kHz, 32000));
   ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(
-      AudioEncoderOpus::MakeAudioEncoder(*config, 120), 120));
+      AudioEncoderOpus::MakeAudioEncoder(CreateEnvironment(), *config,
+                                         {.payload_type = 120}),
+      120));
   const std::string audio_maybe_sse =
       "cb644fc17d9666a0f5986eef24818159"
       "|4a74024473c7c729543c2790829b1e42";
@@ -1063,8 +1134,10 @@ TEST_F(AcmSetBitRateNewApi, OpusFromFormat_48khz_20ms_10kbps) {
   const auto config = AudioEncoderOpus::SdpToConfig(
       SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "10000"}}));
   ASSERT_TRUE(SetUpSender());
-  RegisterExternalSendCodec(AudioEncoderOpus::MakeAudioEncoder(*config, 107),
-                            107);
+  RegisterExternalSendCodec(
+      AudioEncoderOpus::MakeAudioEncoder(CreateEnvironment(), *config,
+                                         {.payload_type = 107}),
+      107);
   RunInner(7000, 12000);
 }
 
@@ -1072,8 +1145,10 @@ TEST_F(AcmSetBitRateNewApi, OpusFromFormat_48khz_20ms_50kbps) {
   const auto config = AudioEncoderOpus::SdpToConfig(
       SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "50000"}}));
   ASSERT_TRUE(SetUpSender());
-  RegisterExternalSendCodec(AudioEncoderOpus::MakeAudioEncoder(*config, 107),
-                            107);
+  RegisterExternalSendCodec(
+      AudioEncoderOpus::MakeAudioEncoder(CreateEnvironment(), *config,
+                                         {.payload_type = 107}),
+      107);
   RunInner(40000, 60000);
 }
 
@@ -1180,8 +1255,10 @@ TEST_F(AcmSetBitRateNewApi, MAYBE_OpusFromFormat_48khz_20ms_100kbps) {
   const auto config = AudioEncoderOpus::SdpToConfig(
       SdpAudioFormat("opus", 48000, 2, {{"maxaveragebitrate", "100000"}}));
   ASSERT_TRUE(SetUpSender());
-  RegisterExternalSendCodec(AudioEncoderOpus::MakeAudioEncoder(*config, 107),
-                            107);
+  RegisterExternalSendCodec(
+      AudioEncoderOpus::MakeAudioEncoder(CreateEnvironment(), *config,
+                                         {.payload_type = 107}),
+      107);
   RunInner(80000, 120000);
 }
 

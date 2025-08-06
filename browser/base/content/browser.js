@@ -39,7 +39,6 @@ ChromeUtils.defineESModuleGetters(this, {
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   ExtensionsUI: "resource:///modules/ExtensionsUI.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
-  isProductURL: "chrome://global/content/shopping/ShoppingProduct.mjs",
   LightweightThemeConsumer:
     "resource://gre/modules/LightweightThemeConsumer.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
@@ -50,13 +49,11 @@ ChromeUtils.defineESModuleGetters(this, {
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   nsContextMenu: "chrome://browser/content/nsContextMenu.sys.mjs",
-  openContextMenu: "chrome://browser/content/nsContextMenu.sys.mjs",
   OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.sys.mjs",
   PageActions: "resource:///modules/PageActions.sys.mjs",
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
   PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
   PanelView: "resource:///modules/PanelMultiView.sys.mjs",
-  PBMExitStatus: "resource:///modules/PBMExitStatus.sys.mjs",
   PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
@@ -68,7 +65,6 @@ ChromeUtils.defineESModuleGetters(this, {
   PromptUtils: "resource://gre/modules/PromptUtils.sys.mjs",
   ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
   ResetPBMPanel: "resource:///modules/ResetPBMPanel.sys.mjs",
-  ReportBrokenSite: "resource:///modules/ReportBrokenSite.sys.mjs",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.sys.mjs",
@@ -87,6 +83,7 @@ ChromeUtils.defineESModuleGetters(this, {
   TabsSetupFlowManager:
     "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+  ToolbarContextMenu: "resource:///modules/ToolbarContextMenu.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
   UITour: "resource:///modules/UITour.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
@@ -103,6 +100,17 @@ ChromeUtils.defineESModuleGetters(this, {
   webrtcUI: "resource:///modules/webrtcUI.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
   ZoomUI: "resource:///modules/ZoomUI.sys.mjs",
+});
+
+// Bug 1894239: We will move this up to ChromeUtils.defineESModuleGetters once
+// the MOZ_SELECTABLE_PROFILES flag is removed
+ChromeUtils.defineLazyGetter(this, "SelectableProfileService", () => {
+  if (!AppConstants.MOZ_SELECTABLE_PROFILES) {
+    return null;
+  }
+  return ChromeUtils.importESModule(
+    "resource:///modules/profiles/SelectableProfileService.sys.mjs"
+  ).SelectableProfileService;
 });
 
 ChromeUtils.defineLazyGetter(this, "fxAccounts", () => {
@@ -565,13 +573,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "gAlwaysOpenPanel",
-  "browser.download.alwaysOpenPanel",
-  true
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
   "gMiddleClickNewTabUsesPasteboard",
   "browser.tabs.searchclipboardfor.middleclick",
   true
@@ -633,6 +634,13 @@ customElements.setElementCreationCallback("screenshots-buttons", () => {
   Services.scriptloader.loadSubScript(
     "chrome://browser/content/screenshots/screenshots-buttons.js",
     window
+  );
+});
+
+customElements.setElementCreationCallback("fxa-menu-message", () => {
+  ChromeUtils.importESModule(
+    "chrome://browser/content/asrouter/components/fxa-menu-message.mjs",
+    { global: "current" }
   );
 });
 
@@ -728,10 +736,6 @@ var gInitialPages = [
   "chrome://browser/content/blanktab.html",
 ];
 
-if (Services.prefs.getBoolPref("browser.profiles.enabled")) {
-  gInitialPages.push("about:profilemanager");
-}
-
 function isInitialPage(url) {
   if (!(url instanceof Ci.nsIURI)) {
     try {
@@ -809,8 +813,6 @@ function updateFxaToolbarMenu(enable, isInitialUpdate = false) {
 
   fxaPanelEl.addEventListener("ViewShowing", gSync.updateSendToDeviceTitle);
 
-  Services.telemetry.setEventRecordingEnabled("fxa_app_menu", true);
-
   if (enable && syncEnabled) {
     mainWindowEl.setAttribute("fxatoolbarmenu", "visible");
 
@@ -820,8 +822,6 @@ function updateFxaToolbarMenu(enable, isInitialUpdate = false) {
     if (!isInitialUpdate) {
       gSync.maybeUpdateUIState();
     }
-
-    Services.telemetry.setEventRecordingEnabled("fxa_avatar_menu", true);
   } else {
     mainWindowEl.removeAttribute("fxatoolbarmenu");
   }
@@ -995,6 +995,7 @@ const gClickAndHoldListenersOnElement = {
 
   _keypressHandler(aEvent) {
     if (aEvent.key == " " || aEvent.key == "Enter") {
+      aEvent.preventDefault();
       // Normally, command events get fired for keyboard activation. However,
       // we've set type="menu", so that doesn't happen. Handle this the same
       // way we handle clicks.
@@ -1017,7 +1018,11 @@ const gClickAndHoldListenersOnElement = {
         this._mouseupHandler(e);
         break;
       case "keypress":
-        this._keypressHandler(e);
+        // Note that we might not be the only ones dealing with keypresses.
+        // See bug 1921772 for more context.
+        if (!e.defaultPrevented) {
+          this._keypressHandler(e);
+        }
         break;
     }
   },
@@ -1616,7 +1621,7 @@ var BrowserOnClick = {
 
     browsingContext.fixupAndLoadURIString(blockedInfo.uri, {
       triggeringPrincipal,
-      flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
+      loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
     });
   },
 };
@@ -2521,7 +2526,9 @@ function FillHistoryMenu(event) {
         entry.hasUserInteraction === false &&
         // Always allow going to the first and last navigation points.
         j != end - 1 &&
-        j != start
+        j != start &&
+        // Always display the current entry
+        j != index
       ) {
         continue;
       }
@@ -3401,8 +3408,6 @@ var XULBrowserWindow = {
       aFlags
     );
 
-    gTabletModePageCounter.inc();
-
     this._updateElementsForContentType();
 
     this._updateMacUserActivity(window, aLocationURI, aWebProgress);
@@ -3602,14 +3607,8 @@ var XULBrowserWindow = {
   },
 
   // Properties used to cache security state used to update the UI
-  _state: null,
-  _lastLocation: null,
   _event: null,
   _lastLocationForEvent: null,
-  // _isSecureContext can change without the state/location changing, due to security
-  // error pages that intercept certain loads. For example this happens sometimes
-  // with the the HTTPS-Only Mode error page (more details in bug 1656027)
-  _isSecureContext: null,
 
   // This is called in multiple ways:
   //  1. Due to the nsIWebProgressListener.onContentBlockingEvent notification.
@@ -3656,41 +3655,23 @@ var XULBrowserWindow = {
   //  3. Called directly during this object's initializations.
   // aRequest will be null always in case 2 and 3, and sometimes in case 1.
   onSecurityChange(aWebProgress, aRequest, aState, _aIsSimulated) {
-    // Don't need to do anything if the data we use to update the UI hasn't
-    // changed
-    let uri = gBrowser.currentURI;
-    let spec = uri.spec;
-    let isSecureContext = gBrowser.securityUI.isSecureContext;
-    if (
-      this._state == aState &&
-      this._lastLocation == spec &&
-      this._isSecureContext === isSecureContext
-    ) {
-      // Switching to a tab of the same URL doesn't change most security
-      // information, but tab specific permissions may be different.
-      gIdentityHandler.refreshIdentityBlock();
-      return;
-    }
-    this._state = aState;
-    this._lastLocation = spec;
-    this._isSecureContext = isSecureContext;
-
     // Make sure the "https" part of the URL is striked out or not,
     // depending on the current mixed active content blocking state.
     gURLBar.formatValue();
 
     // Update the identity panel, making sure we use the precursorPrincipal's
     // URI where appropriate, for example about:blank windows.
+    let uri = gBrowser.currentURI;
     let uriOverride = this._securityURIOverride(gBrowser.selectedBrowser);
     if (uriOverride) {
       uri = uriOverride;
-      this._state |= Ci.nsIWebProgressListener.STATE_IDENTITY_ASSOCIATED;
+      aState |= Ci.nsIWebProgressListener.STATE_IDENTITY_ASSOCIATED;
     }
 
     try {
       uri = Services.io.createExposableURI(uri);
     } catch (e) {}
-    gIdentityHandler.updateIdentity(this._state, uri);
+    gIdentityHandler.updateIdentity(aState, uri);
   },
 
   // simulate all change notifications after switching tabs
@@ -4549,170 +4530,6 @@ function showFullScreenViewContextMenuItems(popup) {
   }
 }
 
-function onViewToolbarsPopupShowing(aEvent, aInsertPoint) {
-  var popup = aEvent.target;
-
-  // triggerNode can be a nested child element of a toolbaritem.
-  let toolbarItem = popup.triggerNode;
-  while (toolbarItem) {
-    let localName = toolbarItem.localName;
-    if (localName == "toolbar") {
-      toolbarItem = null;
-      break;
-    }
-    if (localName == "toolbarpaletteitem") {
-      toolbarItem = toolbarItem.firstElementChild;
-      break;
-    }
-    if (localName == "menupopup") {
-      aEvent.preventDefault();
-      aEvent.stopPropagation();
-      return;
-    }
-    let parent = toolbarItem.parentElement;
-    if (parent) {
-      if (
-        parent.classList.contains("customization-target") ||
-        parent.getAttribute("overflowfortoolbar") || // Needs to work in the overflow list as well.
-        parent.localName == "toolbarpaletteitem" ||
-        parent.localName == "toolbar"
-      ) {
-        break;
-      }
-    }
-    toolbarItem = parent;
-  }
-
-  // Empty the menu
-  for (var i = popup.children.length - 1; i >= 0; --i) {
-    var deadItem = popup.children[i];
-    if (deadItem.hasAttribute("toolbarId")) {
-      popup.removeChild(deadItem);
-    }
-  }
-
-  MozXULElement.insertFTLIfNeeded("browser/toolbarContextMenu.ftl");
-  let firstMenuItem = aInsertPoint || popup.firstElementChild;
-  let toolbarNodes = gNavToolbox.querySelectorAll("toolbar");
-  for (let toolbar of toolbarNodes) {
-    if (!toolbar.hasAttribute("toolbarname")) {
-      continue;
-    }
-
-    if (toolbar.id == "PersonalToolbar") {
-      let menu = BookmarkingUI.buildBookmarksToolbarSubmenu(toolbar);
-      popup.insertBefore(menu, firstMenuItem);
-    } else {
-      let menuItem = document.createXULElement("menuitem");
-      menuItem.setAttribute("id", "toggle_" + toolbar.id);
-      menuItem.setAttribute("toolbarId", toolbar.id);
-      menuItem.setAttribute("type", "checkbox");
-      menuItem.setAttribute("label", toolbar.getAttribute("toolbarname"));
-      let hidingAttribute =
-        toolbar.getAttribute("type") == "menubar" ? "autohide" : "collapsed";
-      menuItem.setAttribute(
-        "checked",
-        toolbar.getAttribute(hidingAttribute) != "true"
-      );
-      menuItem.setAttribute("accesskey", toolbar.getAttribute("accesskey"));
-      if (popup.id != "toolbar-context-menu") {
-        menuItem.setAttribute("key", toolbar.getAttribute("key"));
-      }
-
-      popup.insertBefore(menuItem, firstMenuItem);
-      menuItem.addEventListener("command", onViewToolbarCommand);
-    }
-  }
-
-  let moveToPanel = popup.querySelector(".customize-context-moveToPanel");
-  let removeFromToolbar = popup.querySelector(
-    ".customize-context-removeFromToolbar"
-  );
-  // Show/hide fullscreen context menu items and set the
-  // autohide item's checked state to mirror the autohide pref.
-  showFullScreenViewContextMenuItems(popup);
-  // View -> Toolbars menu doesn't have the moveToPanel or removeFromToolbar items.
-  if (!moveToPanel || !removeFromToolbar) {
-    return;
-  }
-
-  let showTabStripItems = toolbarItem?.id == "tabbrowser-tabs";
-  for (let node of popup.querySelectorAll(
-    'menuitem[contexttype="toolbaritem"]'
-  )) {
-    node.hidden = showTabStripItems;
-  }
-
-  for (let node of popup.querySelectorAll('menuitem[contexttype="tabbar"]')) {
-    node.hidden = !showTabStripItems;
-  }
-
-  document
-    .getElementById("toolbar-context-menu")
-    .querySelectorAll("[data-lazy-l10n-id]")
-    .forEach(el => {
-      el.setAttribute("data-l10n-id", el.getAttribute("data-lazy-l10n-id"));
-      el.removeAttribute("data-lazy-l10n-id");
-    });
-
-  // The "normal" toolbar items menu separator is hidden because it's unused
-  // when hiding the "moveToPanel" and "removeFromToolbar" items on flexible
-  // space items. But we need to ensure its hidden state is reset in the case
-  // the context menu is subsequently opened on a non-flexible space item.
-  let menuSeparator = document.getElementById("toolbarItemsMenuSeparator");
-  menuSeparator.hidden = false;
-
-  document.getElementById("toolbarNavigatorItemsMenuSeparator").hidden =
-    !showTabStripItems;
-
-  if (
-    !CustomizationHandler.isCustomizing() &&
-    CustomizableUI.isSpecialWidget(toolbarItem?.id || "")
-  ) {
-    moveToPanel.hidden = true;
-    removeFromToolbar.hidden = true;
-    menuSeparator.hidden = !showTabStripItems;
-  }
-
-  if (showTabStripItems) {
-    let multipleTabsSelected = !!gBrowser.multiSelectedTabsCount;
-    document.getElementById("toolbar-context-bookmarkSelectedTabs").hidden =
-      !multipleTabsSelected;
-    document.getElementById("toolbar-context-bookmarkSelectedTab").hidden =
-      multipleTabsSelected;
-    document.getElementById("toolbar-context-reloadSelectedTabs").hidden =
-      !multipleTabsSelected;
-    document.getElementById("toolbar-context-reloadSelectedTab").hidden =
-      multipleTabsSelected;
-    document.getElementById("toolbar-context-selectAllTabs").disabled =
-      gBrowser.allTabsSelected();
-    document.getElementById("toolbar-context-undoCloseTab").disabled =
-      SessionStore.getClosedTabCount() == 0;
-    return;
-  }
-
-  // fxms-bmb-button is a Firefox Messaging System Bookmarks bar button
-  let removable = !toolbarItem?.classList?.contains("fxms-bmb-button");
-  let movable =
-    toolbarItem?.id &&
-    removable &&
-    !toolbarItem?.classList?.contains("fxms-bmb-button") &&
-    CustomizableUI.isWidgetRemovable(toolbarItem);
-  if (movable) {
-    if (CustomizableUI.isSpecialWidget(toolbarItem.id)) {
-      moveToPanel.setAttribute("disabled", true);
-    } else {
-      moveToPanel.removeAttribute("disabled");
-    }
-    removeFromToolbar.removeAttribute("disabled");
-  } else {
-    if (removable) {
-      removeFromToolbar.setAttribute("disabled", true);
-    }
-    moveToPanel.setAttribute("disabled", true);
-  }
-}
-
 function onViewToolbarCommand(aEvent) {
   let node = aEvent.originalTarget;
   let menuId;
@@ -4769,17 +4586,14 @@ function setToolbarVisibility(
       );
     }
 
-    const overlapAttr = "BookmarksToolbarOverlapsBrowser";
     switch (isVisible) {
       case true:
       case "always":
         isVisible = true;
-        document.documentElement.toggleAttribute(overlapAttr, false);
         break;
       case false:
       case "never":
         isVisible = false;
-        document.documentElement.toggleAttribute(overlapAttr, false);
         break;
       case "newtab":
       default: {
@@ -4797,7 +4611,6 @@ function setToolbarVisibility(
           }
         }
         isVisible = BookmarkingUI.isOnNewTabPage(currentURI);
-        document.documentElement.toggleAttribute(overlapAttr, isVisible);
         break;
       }
     }
@@ -4840,10 +4653,12 @@ function updateToggleControlLabel(control) {
   control.setAttribute("label", control.getAttribute(`label-${prefix}checked`));
 }
 
-var TabletModeUpdater = {
+// Propagates Win10's tablet mode into the browser CSS. (Win11's tablet mode is
+// more like non-tablet mode and has no need for this.)
+const Win10TabletModeUpdater = {
   init() {
     if (AppConstants.platform == "win") {
-      this.update(WindowsUIUtils.inTabletMode);
+      this.update(WindowsUIUtils.inWin10TabletMode);
       Services.obs.addObserver(this, "tablet-mode-change");
     }
   },
@@ -4855,48 +4670,14 @@ var TabletModeUpdater = {
   },
 
   observe(subject, topic, data) {
-    this.update(data == "tablet-mode");
+    this.update(data == "win10-tablet-mode");
   },
 
   update(isInTabletMode) {
-    let wasInTabletMode = document.documentElement.hasAttribute("tabletmode");
     if (isInTabletMode) {
-      document.documentElement.setAttribute("tabletmode", "true");
+      document.documentElement.setAttribute("win10-tablet-mode", "true");
     } else {
-      document.documentElement.removeAttribute("tabletmode");
-    }
-    if (wasInTabletMode != isInTabletMode) {
-      gUIDensity.update();
-    }
-  },
-};
-
-var gTabletModePageCounter = {
-  enabled: false,
-  inc() {
-    this.enabled = AppConstants.platform == "win";
-    if (!this.enabled) {
-      this.inc = () => {};
-      return;
-    }
-    this.inc = this._realInc;
-    this.inc();
-  },
-
-  _desktopCount: 0,
-  _tabletCount: 0,
-  _realInc() {
-    let inTabletMode = document.documentElement.hasAttribute("tabletmode");
-    this[inTabletMode ? "_tabletCount" : "_desktopCount"]++;
-  },
-
-  finish() {
-    if (this.enabled) {
-      let histogram = Services.telemetry.getKeyedHistogramById(
-        "FX_TABLETMODE_PAGE_LOAD"
-      );
-      histogram.add("tablet", this._tabletCount);
-      histogram.add("desktop", this._desktopCount);
+      document.documentElement.removeAttribute("win10-tablet-mode");
     }
   },
 };
@@ -4912,23 +4693,32 @@ var gUIDensity = {
   MODE_TOUCH: 2,
   uiDensityPref: "browser.uidensity",
   autoTouchModePref: "browser.touchmode.auto",
+  knownPrefs: new Set(["browser.uidensity", "browser.touchmode.auto"]),
 
   init() {
     this.update();
+    Services.obs.addObserver(this, "tablet-mode-change");
     Services.prefs.addObserver(this.uiDensityPref, this);
     Services.prefs.addObserver(this.autoTouchModePref, this);
   },
 
   uninit() {
+    Services.obs.removeObserver(this, "tablet-mode-change");
     Services.prefs.removeObserver(this.uiDensityPref, this);
     Services.prefs.removeObserver(this.autoTouchModePref, this);
   },
 
   observe(aSubject, aTopic, aPrefName) {
-    if (
-      aTopic != "nsPref:changed" ||
-      (aPrefName != this.uiDensityPref && aPrefName != this.autoTouchModePref)
-    ) {
+    const ok = (() => {
+      if (aTopic == "tablet-mode-change") {
+        return true;
+      }
+      if (aTopic == "nsPref:changed" && this.knownPrefs.has(aPrefName)) {
+        return true;
+      }
+      return false;
+    })();
+    if (!ok) {
       return;
     }
 
@@ -4936,13 +4726,14 @@ var gUIDensity = {
   },
 
   getCurrentDensity() {
-    // Automatically override the uidensity to touch in Windows tablet mode.
-    if (
-      AppConstants.platform == "win" &&
-      WindowsUIUtils.inTabletMode &&
-      Services.prefs.getBoolPref(this.autoTouchModePref)
-    ) {
-      return { mode: this.MODE_TOUCH, overridden: true };
+    // Automatically override the uidensity to touch in Windows tablet mode
+    // (either Win10 or Win11).
+    if (AppConstants.platform == "win") {
+      const inTablet =
+        WindowsUIUtils.inWin10TabletMode || WindowsUIUtils.inWin11TabletMode;
+      if (inTablet && Services.prefs.getBoolPref(this.autoTouchModePref)) {
+        return { mode: this.MODE_TOUCH, overridden: true };
+      }
     }
     return {
       mode: Services.prefs.getIntPref(this.uiDensityPref),
@@ -5401,135 +5192,6 @@ function handleDroppedLink(
   }
 }
 
-var ToolbarContextMenu = {
-  updateDownloadsAutoHide(popup) {
-    let checkbox = document.getElementById(
-      "toolbar-context-autohide-downloads-button"
-    );
-    let isDownloads =
-      popup.triggerNode &&
-      ["downloads-button", "wrapper-downloads-button"].includes(
-        popup.triggerNode.id
-      );
-    checkbox.hidden = !isDownloads;
-    if (DownloadsButton.autoHideDownloadsButton) {
-      checkbox.setAttribute("checked", "true");
-    } else {
-      checkbox.removeAttribute("checked");
-    }
-  },
-
-  onDownloadsAutoHideChange(event) {
-    let autoHide = event.target.getAttribute("checked") == "true";
-    Services.prefs.setBoolPref("browser.download.autohideButton", autoHide);
-  },
-
-  updateDownloadsAlwaysOpenPanel(popup) {
-    let separator = document.getElementById(
-      "toolbarDownloadsAnchorMenuSeparator"
-    );
-    let checkbox = document.getElementById(
-      "toolbar-context-always-open-downloads-panel"
-    );
-    let isDownloads =
-      popup.triggerNode &&
-      ["downloads-button", "wrapper-downloads-button"].includes(
-        popup.triggerNode.id
-      );
-    separator.hidden = checkbox.hidden = !isDownloads;
-    gAlwaysOpenPanel
-      ? checkbox.setAttribute("checked", "true")
-      : checkbox.removeAttribute("checked");
-  },
-
-  onDownloadsAlwaysOpenPanelChange(event) {
-    let alwaysOpen = event.target.getAttribute("checked") == "true";
-    Services.prefs.setBoolPref("browser.download.alwaysOpenPanel", alwaysOpen);
-  },
-
-  _getUnwrappedTriggerNode(popup) {
-    // Toolbar buttons are wrapped in customize mode. Unwrap if necessary.
-    let { triggerNode } = popup;
-    if (triggerNode && gCustomizeMode.isWrappedToolbarItem(triggerNode)) {
-      return triggerNode.firstElementChild;
-    }
-    return triggerNode;
-  },
-
-  _getExtensionId(popup) {
-    let node = this._getUnwrappedTriggerNode(popup);
-    return node && node.getAttribute("data-extensionid");
-  },
-
-  _getWidgetId(popup) {
-    let node = this._getUnwrappedTriggerNode(popup);
-    return node?.closest(".unified-extensions-item")?.id;
-  },
-
-  async updateExtension(popup, event) {
-    let removeExtension = popup.querySelector(
-      ".customize-context-removeExtension"
-    );
-    let manageExtension = popup.querySelector(
-      ".customize-context-manageExtension"
-    );
-    let reportExtension = popup.querySelector(
-      ".customize-context-reportExtension"
-    );
-    let pinToToolbar = popup.querySelector(".customize-context-pinToToolbar");
-    let separator = reportExtension.nextElementSibling;
-    let id = this._getExtensionId(popup);
-    let addon = id && (await AddonManager.getAddonByID(id));
-
-    for (let element of [removeExtension, manageExtension, separator]) {
-      element.hidden = !addon;
-    }
-
-    if (pinToToolbar) {
-      pinToToolbar.hidden = !addon;
-    }
-
-    reportExtension.hidden = !addon || !gAddonAbuseReportEnabled;
-
-    if (addon) {
-      popup.querySelector(".customize-context-moveToPanel").hidden = true;
-      popup.querySelector(".customize-context-removeFromToolbar").hidden = true;
-
-      if (pinToToolbar) {
-        let widgetId = this._getWidgetId(popup);
-        if (widgetId) {
-          let area = CustomizableUI.getPlacementOfWidget(widgetId).area;
-          let inToolbar = area != CustomizableUI.AREA_ADDONS;
-          pinToToolbar.setAttribute("checked", inToolbar);
-        }
-      }
-
-      removeExtension.disabled = !(
-        addon.permissions & AddonManager.PERM_CAN_UNINSTALL
-      );
-
-      if (event?.target?.id === "toolbar-context-menu") {
-        ExtensionsUI.originControlsMenu(popup, id);
-      }
-    }
-  },
-
-  async removeExtensionForContextAction(popup) {
-    let id = this._getExtensionId(popup);
-    await BrowserAddonUI.removeAddon(id, "browserAction");
-  },
-
-  async reportExtensionForContextAction(popup, reportEntryPoint) {
-    let id = this._getExtensionId(popup);
-    await BrowserAddonUI.reportAddon(id, reportEntryPoint);
-  },
-
-  async openAboutAddonsForContextAction(popup) {
-    let id = this._getExtensionId(popup);
-    await BrowserAddonUI.manageAddon(id, "browserAction");
-  },
-};
-
 // Note that this is also called from non-browser windows on OSX, which do
 // share menu items but not much else. See nonbrowser-mac.js.
 var BrowserOffline = {
@@ -5837,11 +5499,11 @@ var WebAuthnPromptHelper = {
     } else if (data.prompt.type == "uv-invalid") {
       let retriesLeft = data.prompt.retries;
       let dialogText;
-      if (retriesLeft == 0) {
+      if (retriesLeft === 0) {
         // We can skip that because it will either be replaced
         // by uv-blocked or by PIN-prompt
         return;
-      } else if (retriesLeft < 0) {
+      } else if (retriesLeft == null || retriesLeft < 0) {
         dialogText = this._l10n.formatValueSync(
           "webauthn-uv-invalid-short-prompt"
         );
@@ -5877,11 +5539,13 @@ var WebAuthnPromptHelper = {
     let dialogText;
     if (!wasInvalid) {
       dialogText = this._l10n.formatValueSync("webauthn-pin-required-prompt");
-    } else if (retriesLeft < 0 || retriesLeft > 3) {
+    } else if (retriesLeft == null || retriesLeft < 0 || retriesLeft > 3) {
       // The token will need to be power cycled after three incorrect attempts,
       // so we show a short error message that does not include retriesLeft. It
       // would be confusing to display retriesLeft at this point, as the user
       // will feel that they only get three attempts.
+      // We also only show the short prompt in the case the token doesn't
+      // support/send a retries-counter. Then we simply don't know how many are left.
       dialogText = this._l10n.formatValueSync(
         "webauthn-pin-invalid-short-prompt"
       );
@@ -6172,10 +5836,9 @@ function WindowIsClosing(event) {
  * Checks if this is the last full *browser* window around. If it is, this will
  * be communicated like quitting. Otherwise, we warn about closing multiple tabs.
  *
- * @param source where the request to close came from (used for telemetry)
  * @returns true if closing can proceed, false if it got cancelled.
  */
-function warnAboutClosingWindow(source) {
+function warnAboutClosingWindow() {
   // Popups aren't considered full browser windows; we also ignore private windows.
   let isPBWindow =
     PrivateBrowsingUtils.isWindowPrivate(window) &&
@@ -6183,9 +5846,8 @@ function warnAboutClosingWindow(source) {
 
   if (!isPBWindow && !toolbar.visible) {
     return gBrowser.warnAboutClosingTabs(
-      gBrowser.visibleTabs.length,
-      gBrowser.closingTabsEnum.ALL,
-      source
+      gBrowser.openTabCount,
+      gBrowser.closingTabsEnum.ALL
     );
   }
 
@@ -6218,19 +5880,14 @@ function warnAboutClosingWindow(source) {
     if (exitingCanceled.data) {
       return false;
     }
-    // Notify observers that we're commited to exiting private browsing.
-    // "last-pb-context-exiting" isn't suitable for this since exit can still be
-    // cancelled by one of the observers.
-    Services.obs.notifyObservers(null, "last-pb-context-exiting-granted");
   }
 
   if (otherWindowExists) {
     return (
       isPBWindow ||
       gBrowser.warnAboutClosingTabs(
-        gBrowser.visibleTabs.length,
-        gBrowser.closingTabsEnum.ALL,
-        source
+        gBrowser.openTabCount,
+        gBrowser.closingTabsEnum.ALL
       )
     );
   }
@@ -6254,9 +5911,8 @@ function warnAboutClosingWindow(source) {
     AppConstants.platform != "macosx" ||
     isPBWindow ||
     gBrowser.warnAboutClosingTabs(
-      gBrowser.visibleTabs.length,
-      gBrowser.closingTabsEnum.ALL,
-      source
+      gBrowser.openTabCount,
+      gBrowser.closingTabsEnum.ALL
     )
   );
 }
@@ -6537,9 +6193,6 @@ var gPrivateBrowsingUI = {
       return;
     }
 
-    // Init PBM exit telemetry.
-    PBMExitStatus.init();
-
     // Disable the Clear Recent History... menu item when in PB mode
     // temporary fix until bug 463607 is fixed
     document.getElementById("Tools:Sanitize").setAttribute("disabled", "true");
@@ -6569,15 +6222,34 @@ var gPrivateBrowsingUI = {
     }
 
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
-      // Adjust the New Window menu entries
-      let newWindow = document.getElementById("menu_newNavigator");
-      let newPrivateWindow = document.getElementById("menu_newPrivateWindow");
-      if (newWindow && newPrivateWindow) {
-        newPrivateWindow.hidden = true;
-        newWindow.label = newPrivateWindow.label;
-        newWindow.accessKey = newPrivateWindow.accessKey;
-        newWindow.command = newPrivateWindow.command;
-      }
+      let hideNewWindowItem = (windowItem, privateWindowItem) => {
+        // In permanent browsing mode command "cmd_newNavigator" should act the
+        // same as "Tools:PrivateBrowsing".
+        // So we hide the redundant private window item. But we also rename the
+        // "new window" item to be "new private window".
+        // NOTE: We choose to hide privateWindowItem rather than windowItem so
+        // that we still show the "key" for "cmd_newNavigator" (Ctrl+N) rather
+        // than (Ctrl+Shift+P).
+        privateWindowItem.hidden = true;
+        windowItem.setAttribute(
+          "data-l10n-id",
+          privateWindowItem.getAttribute("data-l10n-id")
+        );
+      };
+
+      // Adjust the File menu items.
+      hideNewWindowItem(
+        document.getElementById("menu_newNavigator"),
+        document.getElementById("menu_newPrivateWindow")
+      );
+      // Adjust the App menu items.
+      hideNewWindowItem(
+        PanelMultiView.getViewNode(document, "appMenu-new-window-button2"),
+        PanelMultiView.getViewNode(
+          document,
+          "appMenu-new-private-window-button2"
+        )
+      );
     }
   },
 };
@@ -7948,14 +7620,7 @@ var FirefoxViewHandler = {
       let viewCount = Services.prefs.getIntPref(PREF_NAME, 0);
 
       // Record telemetry
-      Services.telemetry.setEventRecordingEnabled("firefoxview_next", true);
-      Services.telemetry.recordEvent(
-        "firefoxview_next",
-        "tab_selected",
-        "toolbarbutton",
-        null,
-        {}
-      );
+      Glean.firefoxviewNext.tabSelectedToolbarbutton.record();
 
       if (viewCount < MAX_VIEW_COUNT) {
         Services.prefs.setIntPref(PREF_NAME, viewCount + 1);

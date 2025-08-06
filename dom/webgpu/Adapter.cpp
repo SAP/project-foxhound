@@ -18,11 +18,8 @@
 
 namespace mozilla::webgpu {
 
-bool AdapterInfo::WrapObject(JSContext* const cx,
-                             JS::Handle<JSObject*> givenProto,
-                             JS::MutableHandle<JSObject*> reflector) {
-  return dom::GPUAdapterInfo_Binding::Wrap(cx, this, givenProto, reflector);
-}
+GPU_IMPL_CYCLE_COLLECTION(AdapterInfo, mParent)
+GPU_IMPL_JS_WRAP(AdapterInfo)
 
 void AdapterInfo::GetWgpuName(nsString& s) const {
   s = mAboutSupportInfo->name;
@@ -90,7 +87,7 @@ void AdapterInfo::GetWgpuBackend(nsString& s) const {
 
 // -
 
-GPU_IMPL_CYCLE_COLLECTION(Adapter, mParent, mBridge, mFeatures, mLimits)
+GPU_IMPL_CYCLE_COLLECTION(Adapter, mParent, mBridge, mFeatures, mLimits, mInfo)
 GPU_IMPL_JS_WRAP(Adapter)
 
 static Maybe<ffi::WGPUFeatures> ToWGPUFeatures(
@@ -129,27 +126,20 @@ static Maybe<ffi::WGPUFeatures> ToWGPUFeatures(
 
     case dom::GPUFeatureName::Float32_filterable:
       return Some(WGPUFeatures_FLOAT32_FILTERABLE);
+
+    case dom::GPUFeatureName::Float32_blendable:
+      // TODO: https://bugzilla.mozilla.org/show_bug.cgi?id=1931630
+      return Nothing();
+
+    case dom::GPUFeatureName::Clip_distances:
+      // TODO: https://bugzilla.mozilla.org/show_bug.cgi?id=1931629
+      return Nothing();
+
+    case dom::GPUFeatureName::Dual_source_blending:
+      // TODO: https://bugzilla.mozilla.org/show_bug.cgi?id=1924328
+      return Nothing();  // Some(WGPUFeatures_DUAL_SOURCE_BLENDING);
   }
   MOZ_CRASH("Bad GPUFeatureName.");
-}
-
-static Maybe<ffi::WGPUFeatures> MakeFeatureBits(
-    const dom::Sequence<dom::GPUFeatureName>& aFeatures) {
-  ffi::WGPUFeatures bits = 0;
-  for (const auto& feature : aFeatures) {
-    const auto bit = ToWGPUFeatures(feature);
-    if (!bit) {
-      const auto featureStr = dom::GetEnumString(feature);
-      (void)featureStr;
-      NS_WARNING(
-          nsPrintfCString("Requested feature bit for '%s' is not implemented.",
-                          featureStr.get())
-              .get());
-      return Nothing();
-    }
-    bits |= *bit;
-  }
-  return Some(bits);
 }
 
 Adapter::Adapter(Instance* const aParent, WebGPUChild* const aBridge,
@@ -159,7 +149,8 @@ Adapter::Adapter(Instance* const aParent, WebGPUChild* const aBridge,
       mId(aInfo->id),
       mFeatures(new SupportedFeatures(this)),
       mLimits(new SupportedLimits(this, aInfo->limits)),
-      mInfo(aInfo) {
+      mInfo(new AdapterInfo(this, aInfo)),
+      mInfoInner(aInfo) {
   ErrorResult ignoredRv;  // It's onerous to plumb this in from outside in this
                           // case, and we don't really need to.
 
@@ -213,8 +204,14 @@ void Adapter::Cleanup() {
 
 const RefPtr<SupportedFeatures>& Adapter::Features() const { return mFeatures; }
 const RefPtr<SupportedLimits>& Adapter::Limits() const { return mLimits; }
+const RefPtr<AdapterInfo>& Adapter::Info() const { return mInfo; }
+
 bool Adapter::IsFallbackAdapter() const {
-  return mInfo->device_type == ffi::WGPUDeviceType::WGPUDeviceType_Cpu;
+  return mInfoInner->device_type == ffi::WGPUDeviceType::WGPUDeviceType_Cpu;
+}
+
+bool Adapter::SupportExternalTextureInSwapChain() const {
+  return mInfoInner->support_use_external_texture_in_swap_chain;
 }
 
 static std::string_view ToJsKey(const Limit limit) {
@@ -263,8 +260,6 @@ static std::string_view ToJsKey(const Limit limit) {
       return "maxVertexAttributes";
     case Limit::MaxVertexBufferArrayStride:
       return "maxVertexBufferArrayStride";
-    case Limit::MaxInterStageShaderComponents:
-      return "maxInterStageShaderComponents";
     case Limit::MaxInterStageShaderVariables:
       return "maxInterStageShaderVariables";
     case Limit::MaxColorAttachments:
@@ -329,7 +324,6 @@ already_AddRefed<dom::Promise> Adapter::RequestDevice(
       case Limit::MaxBufferSize: return 268435456;
       case Limit::MaxVertexAttributes: return 16;
       case Limit::MaxVertexBufferArrayStride: return 2048;
-      case Limit::MaxInterStageShaderComponents: return 60;
       case Limit::MaxInterStageShaderVariables: return 16;
       case Limit::MaxColorAttachments: return 8;
       case Limit::MaxColorAttachmentBytesPerSample: return 32;
@@ -358,14 +352,28 @@ already_AddRefed<dom::Promise> Adapter::RequestDevice(
     // -
     // Validate Features
 
+    ffi::WGPUFeatures featureBits = 0;
     for (const auto requested : aDesc.mRequiredFeatures) {
-      const bool supported = mFeatures->Features().count(requested);
-      if (!supported) {
+      const auto bit = ToWGPUFeatures(requested);
+      if (!bit) {
+        const auto featureStr = dom::GetEnumString(requested);
+        (void)featureStr;
+        nsPrintfCString msg(
+            "`GPUAdapter.requestDevice`: '%s' was requested in "
+            "`requiredFeatures`, but it is not supported by Firefox.",
+            featureStr.get());
+        promise->MaybeRejectWithTypeError(msg);
+        return;
+      }
+      featureBits |= *bit;
+
+      const bool supportedByAdapter = mFeatures->Features().count(requested);
+      if (!supportedByAdapter) {
         const auto fstr = dom::GetEnumString(requested);
         const auto astr = this->LabelOrId();
         nsPrintfCString msg(
-            "requestDevice: Feature '%s' requested must be supported by "
-            "adapter %s",
+            "`GPUAdapter.requestDevice`: '%s' was requested in "
+            "`requiredFeatures`, but it is not supported by adapter %s.",
             fstr.get(), astr.get());
         promise->MaybeRejectWithTypeError(msg);
         return;
@@ -446,7 +454,7 @@ already_AddRefed<dom::Promise> Adapter::RequestDevice(
     // -
 
     ffi::WGPUFfiDeviceDescriptor ffiDesc = {};
-    ffiDesc.required_features = *MakeFeatureBits(aDesc.mRequiredFeatures);
+    ffiDesc.required_features = featureBits;
     ffiDesc.required_limits = deviceLimits;
     auto request = mBridge->AdapterRequestDevice(mId, ffiDesc);
     if (!request) {
@@ -454,8 +462,8 @@ already_AddRefed<dom::Promise> Adapter::RequestDevice(
           "Unable to instantiate a Device");
       return;
     }
-    RefPtr<Device> device =
-        new Device(this, request->mId, ffiDesc.required_limits);
+    RefPtr<Device> device = new Device(
+        this, request->mDeviceId, request->mQueueId, ffiDesc.required_limits);
     for (const auto& feature : aDesc.mRequiredFeatures) {
       device->mFeatures->Add(feature, aRv);
     }
@@ -466,9 +474,7 @@ already_AddRefed<dom::Promise> Adapter::RequestDevice(
           if (aSuccess) {
             promise->MaybeResolve(device);
           } else {
-            // In this path, request->mId has an error entry in the wgpu
-            // registry, so let Device::~Device clean things up on both the
-            // child and parent side.
+            device->CleanupUnregisteredInParent();
             promise->MaybeRejectWithInvalidStateError(
                 "Unable to fulfill requested features and limits");
           }
@@ -483,18 +489,6 @@ already_AddRefed<dom::Promise> Adapter::RequestDevice(
         });
   }();
 
-  return promise.forget();
-}
-
-// -
-
-already_AddRefed<dom::Promise> Adapter::RequestAdapterInfo(
-    const dom::Sequence<nsString>& /*aUnmaskHints*/, ErrorResult& aRv) const {
-  RefPtr<dom::Promise> promise = dom::Promise::Create(GetParentObject(), aRv);
-  if (!promise) return nullptr;
-
-  auto rai = UniquePtr<AdapterInfo>{new AdapterInfo(mInfo)};
-  promise->MaybeResolve(std::move(rai));
   return promise.forget();
 }
 

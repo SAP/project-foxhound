@@ -111,7 +111,12 @@ export function NarrateControls(win, languagePromise) {
   narrateControl.appendChild(narrateSkipNext);
 
   win.document.addEventListener("keydown", function (event) {
-    if (win.document.hasFocus() && event.key === "n") {
+    if (
+      win.document.hasFocus() &&
+      event.key === "n" &&
+      !event.metaKey &&
+      !event.shiftKey
+    ) {
       narrateStartStop.click();
     }
     //Arrow key direction also hardcoded for RTL in order to be
@@ -229,11 +234,15 @@ NarrateControls.prototype = {
       case "click":
         this._onButtonClick(evt);
         break;
-      case "keydown":
-        if (evt.key === "Tab" && !evt.shiftKey) {
+      case "keydown": {
+        let popup = this._doc.querySelector(
+          ".narrate-dropdown > .dropdown-popup"
+        );
+        if (evt.key === "Tab" && popup.contains(evt.target)) {
           this._handleFocus(evt);
         }
         break;
+      }
       case "voiceschanged":
         this._setupVoices();
         break;
@@ -278,26 +287,6 @@ NarrateControls.prototype = {
       }
 
       let narrateToggle = win.document.querySelector(".narrate-toggle");
-      let histogram = Services.telemetry.getKeyedHistogramById(
-        "NARRATE_CONTENT_BY_LANGUAGE_2"
-      );
-      let initial = !this._voicesInitialized;
-      this._voicesInitialized = true;
-
-      // if language is null, re-assign it to "unknown-language"
-      if (language == null) {
-        language = "unknown-language";
-      }
-
-      if (initial) {
-        histogram.add(language, 0);
-      }
-
-      if (options.length && narrateToggle.hidden) {
-        // About to show for the first time..
-        histogram.add(language, 1);
-      }
-
       // We disable this entire feature if there are no available voices.
       narrateToggle.hidden = !options.length;
     });
@@ -340,7 +329,6 @@ NarrateControls.prototype = {
         this.narrator.stop();
       } else {
         this._updateSpeechControls(true);
-        TelemetryStopwatch.start("NARRATE_CONTENT_SPEAKTIME_MS", this);
         let options = { rate: this.rate, voice: this.voice };
         this.narrator
           .start(options)
@@ -349,7 +337,6 @@ NarrateControls.prototype = {
           })
           .then(() => {
             this._updateSpeechControls(false);
-            TelemetryStopwatch.finish("NARRATE_CONTENT_SPEAKTIME_MS", this);
           });
       }
     }
@@ -453,19 +440,25 @@ NarrateControls.prototype = {
 
   _handleFocus(e) {
     let classList = e.target.classList;
-    if (classList.contains("option") || classList.contains("select-toggle")) {
-      e.preventDefault();
-    } else {
-      return;
-    }
-
     let narrateDropdown = this._doc.querySelector(".narrate-dropdown");
-    if (narrateDropdown.classList.contains("speaking")) {
-      let skipPrevious = this._doc.querySelector(".narrate-skip-previous");
-      skipPrevious.focus();
-    } else {
-      let startStop = this._doc.querySelector(".narrate-start-stop");
-      startStop.focus();
+    if (!e.shiftKey) {
+      if (classList.contains("option") || classList.contains("select-toggle")) {
+        e.preventDefault();
+      } else {
+        return;
+      }
+      if (narrateDropdown.classList.contains("speaking")) {
+        let skipPrevious = this._doc.querySelector(".narrate-skip-previous");
+        skipPrevious.focus();
+      } else {
+        let startStop = this._doc.querySelector(".narrate-start-stop");
+        startStop.focus();
+      }
+    }
+    let firstFocusableButton = narrateDropdown.querySelector("button:enabled");
+    if (e.target === firstFocusableButton) {
+      e.preventDefault();
+      narrateDropdown.querySelector(".select-toggle").focus();
     }
   },
 };

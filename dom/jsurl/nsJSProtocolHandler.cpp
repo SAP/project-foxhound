@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "js/CompilationAndEvaluation.h"
 #include "nsCOMPtr.h"
 #include "jsapi.h"
 #include "js/Wrapper.h"
@@ -42,9 +43,10 @@
 #include "nsTextToSubURI.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/DOMSecurityMonitor.h"
-#include "mozilla/dom/JSExecutionContext.h"
+#include "mozilla/dom/JSExecutionUtils.h"  // mozilla::dom::Compile, mozilla::dom::EvaluationExceptionToNSResult
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "nsContentSecurityManager.h"
@@ -57,7 +59,6 @@
 
 using mozilla::IsAscii;
 using mozilla::dom::AutoEntryScript;
-using mozilla::dom::JSExecutionContext;
 
 static NS_DEFINE_CID(kJSURICID, NS_JSURI_CID);
 
@@ -166,6 +167,63 @@ static bool AllowedByCSP(nsIContentSecurityPolicy* aCSP,
                             &allowsInlineScript);
 
   return (NS_SUCCEEDED(rv) && allowsInlineScript);
+}
+
+static bool IsPromiseValue(JSContext* aCx, JS::Handle<JS::Value> aValue) {
+  if (!aValue.isObject()) {
+    return false;
+  }
+
+  // We only care about Promise here, so CheckedUnwrapStatic is fine.
+  JS::Rooted<JSObject*> obj(aCx, js::CheckedUnwrapStatic(&aValue.toObject()));
+  if (!obj) {
+    return false;
+  }
+
+  return JS::IsPromiseObject(obj);
+}
+
+// Execute the compiled script a get the return value, coerced to a string.
+//
+// Copy the returned value into the mutable handle argument. In case of a
+// evaluation failure either during the execution or the conversion of the
+// result to a string, the nsresult is be set to the corresponding result
+// code and the mutable handle argument remains unchanged.
+//
+// The value returned in the mutable handle argument is part of |aCx|'s
+// compartment. If the caller is in a different compartment, then the out-param
+// value should be wrapped by calling |JS_WrapValue|.
+//
+static void ExecScriptAndCoerceToString(JSContext* aCx,
+                                        JS::Handle<JSScript*> aScript,
+                                        JS::MutableHandle<JS::Value> aRetValue,
+                                        mozilla::ErrorResult& aRv) {
+  MOZ_ASSERT(aScript);
+
+  if (!JS_ExecuteScript(aCx, aScript, aRetValue)) {
+    aRv.NoteJSContextException(aCx);
+    return;
+  }
+
+  if (IsPromiseValue(aCx, aRetValue)) {
+    // We're a javascript: url and we should treat Promise return values as
+    // undefined.
+    //
+    // Once bug 1477821 is fixed this code might be able to go away, or will
+    // become enshrined in the spec, depending.
+    aRetValue.setUndefined();
+  }
+
+  if (!aRetValue.isUndefined()) {
+    JSString* str = JS::ToString(aCx, aRetValue);
+    if (!str) {
+      // ToString can be a function call, so an exception can be raised while
+      // executing the function.
+      aRv.NoteJSContextException(aCx);
+      return;
+    }
+    aRetValue.set(JS::StringValue(str));
+  }
 }
 
 nsresult nsJSThunk::EvaluateScript(
@@ -325,10 +383,32 @@ nsresult nsJSThunk::EvaluateScript(
   options.setFileAndLine(mURL.get(), 1);
   options.setIntroductionType("javascriptURL");
   {
-    JSExecutionContext exec(cx, globalJSObject, options);
-    exec.SetCoerceToString(true);
-    exec.Compile(NS_ConvertUTF8toUTF16(script));
-    rv = exec.ExecScript(&v);
+    mozilla::ErrorResult erv;
+    if (MOZ_LIKELY(xpc::Scriptability::Get(globalJSObject).Allowed())) {
+      mozilla::AutoProfilerLabel autoProfilerLabel(
+          "JSExecutionContext",
+          /* dynamicStr */ nullptr, JS::ProfilingCategoryPair::JS);
+      JSAutoRealm autoRealm(cx, globalJSObject);
+      RefPtr<JS::Stencil> stencil;
+      JS::Rooted<JSScript*> compiledScript(cx);
+      mozilla::dom::Compile(cx, options, NS_ConvertUTF8toUTF16(script), stencil,
+                            erv);
+      if (stencil) {
+        JS::InstantiateOptions instantiateOptions(options);
+        MOZ_ASSERT(!instantiateOptions.deferDebugMetadata);
+        compiledScript.set(JS::InstantiateGlobalStencil(
+            aes.cx(), instantiateOptions, stencil, /* storage */ nullptr));
+        if (!compiledScript) {
+          erv.NoteJSContextException(aes.cx());
+        }
+      }
+
+      if (!erv.Failed()) {
+        MOZ_ASSERT(!options.noScriptRval);
+        ExecScriptAndCoerceToString(cx, compiledScript, &v, erv);
+      }
+    }
+    rv = mozilla::dom::EvaluationExceptionToNSResult(erv);
   }
 
   js::AssertSameCompartment(cx, v);

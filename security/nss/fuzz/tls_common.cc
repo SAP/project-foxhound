@@ -2,12 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <assert.h>
+#include "tls_common.h"
 
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+
+#include "prio.h"
 #include "ssl.h"
 #include "sslexp.h"
-
-#include "tls_common.h"
 
 static PRTime FixedTime(void*) { return 1234; }
 
@@ -17,16 +20,23 @@ void FixTime(PRFileDesc* fd) {
   assert(rv == SECSuccess);
 }
 
-PRStatus EnableAllProtocolVersions() {
+void EnableAllProtocolVersions() {
   SSLVersionRange supported;
+  SECStatus rv;
 
-  SECStatus rv = SSL_VersionRangeGetSupported(ssl_variant_stream, &supported);
+  // Enable all supported versions for TCP.
+  rv = SSL_VersionRangeGetSupported(ssl_variant_stream, &supported);
   assert(rv == SECSuccess);
 
   rv = SSL_VersionRangeSetDefault(ssl_variant_stream, &supported);
   assert(rv == SECSuccess);
 
-  return PR_SUCCESS;
+  // Enable all supported versions for UDP.
+  rv = SSL_VersionRangeGetSupported(ssl_variant_datagram, &supported);
+  assert(rv == SECSuccess);
+
+  rv = SSL_VersionRangeSetDefault(ssl_variant_datagram, &supported);
+  assert(rv == SECSuccess);
 }
 
 void EnableAllCipherSuites(PRFileDesc* fd) {
@@ -54,4 +64,33 @@ void DoHandshake(PRFileDesc* fd, bool isServer) {
       PR_Write(fd, block, nb);
     }
   }
+}
+
+SECStatus DummyCompressionEncode(const SECItem* input, SECItem* output) {
+  if (!input || !input->data || input->len == 0 || !output) {
+    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
+    return SECFailure;
+  }
+
+  SECITEM_CopyItem(nullptr, output, input);
+
+  return SECSuccess;
+}
+
+SECStatus DummyCompressionDecode(const SECItem* input, unsigned char* output,
+                                 size_t outputLen, size_t* usedLen) {
+  if (!input || !input->data || input->len == 0 || !output || outputLen == 0) {
+    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
+    return SECFailure;
+  }
+
+  if (input->len > outputLen) {
+    PR_SetError(SEC_ERROR_BAD_DATA, 0);
+    return SECFailure;
+  }
+
+  PORT_Memcpy(output, input->data, input->len);
+  *usedLen = input->len;
+
+  return SECSuccess;
 }

@@ -12,6 +12,7 @@ import { CustomizeMenu } from "content-src/components/CustomizeMenu/CustomizeMen
 import React from "react";
 import { Search } from "content-src/components/Search/Search";
 import { Sections } from "content-src/components/Sections/Sections";
+import { Logo } from "content-src/components/Logo/Logo";
 import { Weather } from "content-src/components/Weather/Weather";
 import { Notifications } from "content-src/components/Notifications/Notifications";
 import { TopicSelection } from "content-src/components/DiscoveryStreamComponents/TopicSelection/TopicSelection";
@@ -242,22 +243,22 @@ export class BaseContent extends React.PureComponent {
       return null;
     }
 
-    const { name, webpage } = selected.attribution;
-    if (activeWallpaper && wallpaperList && name.url) {
+    const { name: authorDetails, webpage } = selected.attribution;
+    if (activeWallpaper && wallpaperList && authorDetails.url) {
       return (
         <p
           className={`wallpaper-attribution`}
-          key={name.string}
+          key={authorDetails.string}
           data-l10n-id="newtab-wallpaper-attribution"
           data-l10n-args={JSON.stringify({
-            author_string: name.string,
-            author_url: name.url,
+            author_string: authorDetails.string,
+            author_url: authorDetails.url,
             webpage_string: webpage.string,
             webpage_url: webpage.url,
           })}
         >
-          <a data-l10n-name="name-link" href={name.url}>
-            {name.string}
+          <a data-l10n-name="name-link" href={authorDetails.url}>
+            {authorDetails.string}
           </a>
           <a data-l10n-name="webpage-link" href={webpage.url}>
             {webpage.string}
@@ -435,6 +436,10 @@ export class BaseContent extends React.PureComponent {
     const { initialized, customizeMenuVisible } = App;
     const prefs = props.Prefs.values;
 
+    const layoutsVariantAEnabled = prefs["newtabLayouts.variant-a"];
+    const layoutsVariantBEnabled = prefs["newtabLayouts.variant-b"];
+    const layoutsVariantAorB = layoutsVariantAEnabled || layoutsVariantBEnabled;
+
     const activeWallpaper =
       prefs[`newtabWallpapers.wallpaper-${this.state.colorMode}`];
     const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
@@ -487,10 +492,15 @@ export class BaseContent extends React.PureComponent {
     const hasThumbsUpDownLayout =
       prefs["discoverystream.thumbsUpDown.searchTopsitesCompact"];
     const hasThumbsUpDown = prefs["discoverystream.thumbsUpDown.enabled"];
+    const sectionsEnabled = prefs["discoverystream.sections.enabled"];
 
     const featureClassName = [
       weatherEnabled && mayHaveWeather && "has-weather", // Show is weather is enabled/visible
       prefs.showSearch ? "has-search" : "no-search",
+      layoutsVariantAEnabled ? "layout-variant-a" : "", // Layout experiment variant A
+      layoutsVariantBEnabled ? "layout-variant-b" : "", // Layout experiment variant B
+      pocketEnabled ? "has-recommended-stories" : "no-recommended-stories",
+      sectionsEnabled ? "has-sections-grid" : "",
     ]
       .filter(v => v)
       .join(" ");
@@ -567,6 +577,10 @@ export class BaseContent extends React.PureComponent {
                   />
                 </ErrorBoundary>
               </div>
+            )}
+            {/* Bug 1914055: Show logo regardless if search is enabled */}
+            {!prefs.showSearch && layoutsVariantAorB && !noSectionsEnabled && (
+              <Logo />
             )}
             <div className={`body-wrapper${initialized ? " on" : ""}`}>
               {isDiscoveryStream ? (

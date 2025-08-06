@@ -8,14 +8,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::AtomicFenceValue;
 use arrayvec::ArrayVec;
-#[cfg(native)]
-use std::mem;
 use std::sync::atomic::Ordering;
 
 type ShaderStage<'a> = (
     naga::ShaderStage,
-    &'a crate::ProgrammableStage<'a, super::Api>,
+    &'a crate::ProgrammableStage<'a, super::ShaderModule>,
 );
 type NameBindingMap = rustc_hash::FxHashMap<String, (super::BindingRegister, u8)>;
 
@@ -112,22 +111,21 @@ impl super::Device {
     ///
     /// - `name` must be created respecting `desc`
     /// - `name` must be a texture
-    /// - If `drop_guard` is [`None`], wgpu-hal will take ownership of the texture. If `drop_guard` is
-    ///   [`Some`], the texture must be valid until the drop implementation
-    ///   of the drop guard is called.
+    /// - If `drop_callback` is [`None`], wgpu-hal will take ownership of the texture. If
+    ///   `drop_callback` is [`Some`], the texture must be valid until the callback is called.
     #[cfg(any(native, Emscripten))]
     pub unsafe fn texture_from_raw(
         &self,
         name: std::num::NonZeroU32,
         desc: &crate::TextureDescriptor,
-        drop_guard: Option<crate::DropGuard>,
+        drop_callback: Option<crate::DropCallback>,
     ) -> super::Texture {
         super::Texture {
             inner: super::TextureInner::Texture {
                 raw: glow::NativeTexture(name),
                 target: super::Texture::get_info_from_desc(desc),
             },
-            drop_guard,
+            drop_guard: crate::DropGuard::from_option(drop_callback),
             mip_level_count: desc.mip_level_count,
             array_layer_count: desc.array_layer_count(),
             format: desc.format,
@@ -140,21 +138,20 @@ impl super::Device {
     ///
     /// - `name` must be created respecting `desc`
     /// - `name` must be a renderbuffer
-    /// - If `drop_guard` is [`None`], wgpu-hal will take ownership of the renderbuffer. If `drop_guard` is
-    ///   [`Some`], the renderbuffer must be valid until the drop implementation
-    ///   of the drop guard is called.
+    /// - If `drop_callback` is [`None`], wgpu-hal will take ownership of the renderbuffer. If
+    ///   `drop_callback` is [`Some`], the renderbuffer must be valid until the callback is called.
     #[cfg(any(native, Emscripten))]
     pub unsafe fn texture_from_raw_renderbuffer(
         &self,
         name: std::num::NonZeroU32,
         desc: &crate::TextureDescriptor,
-        drop_guard: Option<crate::DropGuard>,
+        drop_callback: Option<crate::DropCallback>,
     ) -> super::Texture {
         super::Texture {
             inner: super::TextureInner::Renderbuffer {
                 raw: glow::NativeRenderbuffer(name),
             },
-            drop_guard,
+            drop_guard: crate::DropGuard::from_option(drop_callback),
             mip_level_count: desc.mip_level_count,
             array_layer_count: desc.array_layer_count(),
             format: desc.format,
@@ -178,9 +175,7 @@ impl super::Device {
         let raw = unsafe { gl.create_shader(target) }.unwrap();
         #[cfg(native)]
         if gl.supports_debug() {
-            //TODO: remove all transmutes from `object_label`
-            // https://github.com/grovesNL/glow/issues/186
-            let name = unsafe { mem::transmute(raw) };
+            let name = raw.0.get();
             unsafe { gl.object_label(glow::SHADER, name, label) };
         }
 
@@ -209,7 +204,7 @@ impl super::Device {
     fn create_shader(
         gl: &glow::Context,
         naga_stage: naga::ShaderStage,
-        stage: &crate::ProgrammableStage<super::Api>,
+        stage: &crate::ProgrammableStage<super::ShaderModule>,
         context: CompilationContext,
         program: glow::Program,
     ) -> Result<glow::Shader, crate::PipelineError> {
@@ -227,7 +222,7 @@ impl super::Device {
         )
         .map_err(|e| {
             let msg = format!("{e}");
-            crate::PipelineError::Linkage(map_naga_stage(naga_stage), msg)
+            crate::PipelineError::PipelineConstants(map_naga_stage(naga_stage), msg)
         })?;
 
         let entry_point_index = module
@@ -250,7 +245,6 @@ impl super::Device {
             index: BoundsCheckPolicy::Unchecked,
             buffer: BoundsCheckPolicy::Unchecked,
             image_load: image_check,
-            image_store: BoundsCheckPolicy::Unchecked,
             binding_array: BoundsCheckPolicy::Unchecked,
         };
 
@@ -366,7 +360,7 @@ impl super::Device {
         #[cfg(native)]
         if let Some(label) = label {
             if private_caps.contains(PrivateCapabilities::DEBUG_FNS) {
-                let name = unsafe { mem::transmute(program) };
+                let name = program.0.get();
                 unsafe { gl.object_label(glow::PROGRAM, name, Some(label)) };
             }
         }
@@ -541,6 +535,7 @@ impl crate::Device for super::Device {
                 size: desc.size,
                 map_flags: 0,
                 data: Some(Arc::new(Mutex::new(vec![0; desc.size as usize]))),
+                offset_of_current_mapping: Arc::new(Mutex::new(0)),
             });
         }
 
@@ -621,7 +616,7 @@ impl crate::Device for super::Device {
                 .private_caps
                 .contains(PrivateCapabilities::DEBUG_FNS)
             {
-                let name = unsafe { mem::transmute(raw) };
+                let name = raw.map_or(0, |buf| buf.0.get());
                 unsafe { gl.object_label(glow::BUFFER, name, Some(label)) };
             }
         }
@@ -640,6 +635,7 @@ impl crate::Device for super::Device {
             size: desc.size,
             map_flags,
             data,
+            offset_of_current_mapping: Arc::new(Mutex::new(0)),
         })
     }
 
@@ -650,6 +646,10 @@ impl crate::Device for super::Device {
         }
 
         self.counters.buffers.sub(1);
+    }
+
+    unsafe fn add_raw_buffer(&self, _buffer: &super::Buffer) {
+        self.counters.buffers.add(1);
     }
 
     unsafe fn map_buffer(
@@ -673,6 +673,7 @@ impl crate::Device for super::Device {
                     unsafe { self.shared.get_buffer_sub_data(gl, buffer.target, 0, slice) };
                     slice.as_mut_ptr()
                 } else {
+                    *buffer.offset_of_current_mapping.lock().unwrap() = range.start;
                     unsafe {
                         gl.map_buffer_range(
                             buffer.target,
@@ -698,6 +699,7 @@ impl crate::Device for super::Device {
                 unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
                 unsafe { gl.unmap_buffer(buffer.target) };
                 unsafe { gl.bind_buffer(buffer.target, None) };
+                *buffer.offset_of_current_mapping.lock().unwrap() = 0;
             }
         }
     }
@@ -706,16 +708,20 @@ impl crate::Device for super::Device {
         I: Iterator<Item = crate::MemoryRange>,
     {
         if let Some(raw) = buffer.raw {
-            let gl = &self.shared.context.lock();
-            unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
-            for range in ranges {
-                unsafe {
-                    gl.flush_mapped_buffer_range(
-                        buffer.target,
-                        range.start as i32,
-                        (range.end - range.start) as i32,
-                    )
-                };
+            if buffer.data.is_none() {
+                let gl = &self.shared.context.lock();
+                unsafe { gl.bind_buffer(buffer.target, Some(raw)) };
+                for range in ranges {
+                    let offset_of_current_mapping =
+                        *buffer.offset_of_current_mapping.lock().unwrap();
+                    unsafe {
+                        gl.flush_mapped_buffer_range(
+                            buffer.target,
+                            (range.start - offset_of_current_mapping) as i32,
+                            (range.end - range.start) as i32,
+                        )
+                    };
+                }
             }
         }
     }
@@ -768,7 +774,7 @@ impl crate::Device for super::Device {
                     .private_caps
                     .contains(PrivateCapabilities::DEBUG_FNS)
                 {
-                    let name = unsafe { mem::transmute(raw) };
+                    let name = raw.0.get();
                     unsafe { gl.object_label(glow::RENDERBUFFER, name, Some(label)) };
                 }
             }
@@ -936,7 +942,7 @@ impl crate::Device for super::Device {
                     .private_caps
                     .contains(PrivateCapabilities::DEBUG_FNS)
                 {
-                    let name = unsafe { mem::transmute(raw) };
+                    let name = raw.0.get();
                     unsafe { gl.object_label(glow::TEXTURE, name, Some(label)) };
                 }
             }
@@ -979,6 +985,10 @@ impl crate::Device for super::Device {
         drop(texture.drop_guard);
 
         self.counters.textures.sub(1);
+    }
+
+    unsafe fn add_raw_texture(&self, _texture: &super::Texture) {
+        self.counters.textures.add(1);
     }
 
     unsafe fn create_texture_view(
@@ -1088,7 +1098,7 @@ impl crate::Device for super::Device {
                 .private_caps
                 .contains(PrivateCapabilities::DEBUG_FNS)
             {
-                let name = unsafe { mem::transmute(raw) };
+                let name = raw.0.get();
                 unsafe { gl.object_label(glow::SAMPLER, name, Some(label)) };
             }
         }
@@ -1106,7 +1116,7 @@ impl crate::Device for super::Device {
 
     unsafe fn create_command_encoder(
         &self,
-        _desc: &crate::CommandEncoderDescriptor<super::Api>,
+        _desc: &crate::CommandEncoderDescriptor<super::Queue>,
     ) -> Result<super::CommandEncoder, crate::DeviceError> {
         self.counters.command_encoders.add(1);
 
@@ -1137,7 +1147,7 @@ impl crate::Device for super::Device {
 
     unsafe fn create_pipeline_layout(
         &self,
-        desc: &crate::PipelineLayoutDescriptor<super::Api>,
+        desc: &crate::PipelineLayoutDescriptor<super::BindGroupLayout>,
     ) -> Result<super::PipelineLayout, crate::DeviceError> {
         use naga::back::glsl;
 
@@ -1229,7 +1239,13 @@ impl crate::Device for super::Device {
 
     unsafe fn create_bind_group(
         &self,
-        desc: &crate::BindGroupDescriptor<super::Api>,
+        desc: &crate::BindGroupDescriptor<
+            super::BindGroupLayout,
+            super::Buffer,
+            super::Sampler,
+            super::TextureView,
+            super::AccelerationStructure,
+        >,
     ) -> Result<super::BindGroup, crate::DeviceError> {
         let mut contents = Vec::new();
 
@@ -1337,7 +1353,11 @@ impl crate::Device for super::Device {
 
     unsafe fn create_render_pipeline(
         &self,
-        desc: &crate::RenderPipelineDescriptor<super::Api>,
+        desc: &crate::RenderPipelineDescriptor<
+            super::PipelineLayout,
+            super::ShaderModule,
+            super::PipelineCache,
+        >,
     ) -> Result<super::RenderPipeline, crate::PipelineError> {
         let gl = &self.shared.context.lock();
         let mut shaders = ArrayVec::new();
@@ -1427,7 +1447,11 @@ impl crate::Device for super::Device {
 
     unsafe fn create_compute_pipeline(
         &self,
-        desc: &crate::ComputePipelineDescriptor<super::Api>,
+        desc: &crate::ComputePipelineDescriptor<
+            super::PipelineLayout,
+            super::ShaderModule,
+            super::PipelineCache,
+        >,
     ) -> Result<super::ComputePipeline, crate::PipelineError> {
         let gl = &self.shared.context.lock();
         let mut shaders = ArrayVec::new();
@@ -1460,12 +1484,12 @@ impl crate::Device for super::Device {
     unsafe fn create_pipeline_cache(
         &self,
         _: &crate::PipelineCacheDescriptor<'_>,
-    ) -> Result<(), crate::PipelineCacheError> {
+    ) -> Result<super::PipelineCache, crate::PipelineCacheError> {
         // Even though the cache doesn't do anything, we still return something here
         // as the least bad option
-        Ok(())
+        Ok(super::PipelineCache)
     }
-    unsafe fn destroy_pipeline_cache(&self, (): ()) {}
+    unsafe fn destroy_pipeline_cache(&self, _: super::PipelineCache) {}
 
     #[cfg_attr(target_arch = "wasm32", allow(unused))]
     unsafe fn create_query_set(
@@ -1511,7 +1535,7 @@ impl crate::Device for super::Device {
     unsafe fn create_fence(&self) -> Result<super::Fence, crate::DeviceError> {
         self.counters.fences.add(1);
         Ok(super::Fence {
-            last_completed: 0,
+            last_completed: AtomicFenceValue::new(0),
             pending: Vec::new(),
         })
     }
@@ -1537,7 +1561,7 @@ impl crate::Device for super::Device {
         wait_value: crate::FenceValue,
         timeout_ms: u32,
     ) -> Result<bool, crate::DeviceError> {
-        if fence.last_completed < wait_value {
+        if fence.last_completed.load(Ordering::Relaxed) < wait_value {
             let gl = &self.shared.context.lock();
             let timeout_ns = if cfg!(any(webgl, Emscripten)) {
                 0
@@ -1549,19 +1573,25 @@ impl crate::Device for super::Device {
                 .iter()
                 .find(|&&(value, _)| value >= wait_value)
             {
-                return match unsafe {
+                let signalled = match unsafe {
                     gl.client_wait_sync(sync, glow::SYNC_FLUSH_COMMANDS_BIT, timeout_ns as i32)
                 } {
                     // for some reason firefox returns WAIT_FAILED, to investigate
                     #[cfg(any(webgl, Emscripten))]
                     glow::WAIT_FAILED => {
                         log::warn!("wait failed!");
-                        Ok(false)
+                        false
                     }
-                    glow::TIMEOUT_EXPIRED => Ok(false),
-                    glow::CONDITION_SATISFIED | glow::ALREADY_SIGNALED => Ok(true),
-                    _ => Err(crate::DeviceError::Lost),
+                    glow::TIMEOUT_EXPIRED => false,
+                    glow::CONDITION_SATISFIED | glow::ALREADY_SIGNALED => true,
+                    _ => return Err(crate::DeviceError::Lost),
                 };
+                if signalled {
+                    fence
+                        .last_completed
+                        .fetch_max(wait_value, Ordering::Relaxed);
+                }
+                return Ok(signalled);
             }
         }
         Ok(true)
@@ -1586,22 +1616,26 @@ impl crate::Device for super::Device {
     unsafe fn create_acceleration_structure(
         &self,
         _desc: &crate::AccelerationStructureDescriptor,
-    ) -> Result<(), crate::DeviceError> {
+    ) -> Result<super::AccelerationStructure, crate::DeviceError> {
         unimplemented!()
     }
     unsafe fn get_acceleration_structure_build_sizes<'a>(
         &self,
-        _desc: &crate::GetAccelerationStructureBuildSizesDescriptor<'a, super::Api>,
+        _desc: &crate::GetAccelerationStructureBuildSizesDescriptor<'a, super::Buffer>,
     ) -> crate::AccelerationStructureBuildSizes {
         unimplemented!()
     }
     unsafe fn get_acceleration_structure_device_address(
         &self,
-        _acceleration_structure: &(),
+        _acceleration_structure: &super::AccelerationStructure,
     ) -> wgt::BufferAddress {
         unimplemented!()
     }
-    unsafe fn destroy_acceleration_structure(&self, _acceleration_structure: ()) {}
+    unsafe fn destroy_acceleration_structure(
+        &self,
+        _acceleration_structure: super::AccelerationStructure,
+    ) {
+    }
 
     fn get_internal_counters(&self) -> wgt::HalCounters {
         self.counters.clone()

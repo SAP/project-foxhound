@@ -226,7 +226,8 @@ static bool AreFramesOnDifferentLines(nsIFrame* aFrame1, nsIFrame* aFrame2) {
     }
     found = false;
     nsBlockInFlowLineIterator it2(block, lineFrame2, &found);
-    return !found || it1.GetLine() != it2.GetLine();
+    return !found || it1.GetLineList() != it2.GetLineList() ||
+           it1.GetLine() != it2.GetLine();
   }
   AutoAssertNoDomMutations guard;
   nsILineIterator* it = block1->GetLineIterator();
@@ -469,7 +470,7 @@ FindDOMTextOffsetAttributes(LocalAccessible* aAcc, int32_t aRenderedStart,
           {SelectionType::eSpellCheck, nsGkAtoms::spelling},
           {SelectionType::eTargetText, nsGkAtoms::mark},
       };
-  result.SetCapacity(ArrayLength(kSelectionTypesToAttributes));
+  result.SetCapacity(std::size(kSelectionTypesToAttributes));
   for (auto [selType, attr] : kSelectionTypesToAttributes) {
     dom::Selection* domSel = frameSel->GetSelection(selType);
     if (!domSel) {
@@ -1489,6 +1490,9 @@ void TextLeafPoint::AddTextOffsetAttributes(AccAttributes* aAttrs) const {
 
   RemoteAccessible* acc = mAcc->AsRemote();
   MOZ_ASSERT(acc);
+  if (RequestDomainsIfInactive(CacheDomain::TextOffsetAttributes)) {
+    return;
+  }
   if (!acc->mCachedFields) {
     return;
   }
@@ -1602,6 +1606,9 @@ TextLeafPoint TextLeafPoint::FindTextOffsetAttributeSameAcc(
 
   RemoteAccessible* acc = mAcc->AsRemote();
   MOZ_ASSERT(acc);
+  if (RequestDomainsIfInactive(CacheDomain::TextOffsetAttributes)) {
+    return TextLeafPoint();
+  }
   if (!acc->mCachedFields) {
     return TextLeafPoint();
   }
@@ -1804,9 +1811,8 @@ already_AddRefed<AccAttributes> TextLeafPoint::GetTextAttributesLocalAcc(
   MOZ_ASSERT(hyperAcc);
   RefPtr<AccAttributes> attributes = new AccAttributes();
   if (hyperAcc) {
-    TextAttrsMgr mgr(hyperAcc, aIncludeDefaults, acc,
-                     acc ? acc->IndexInParent() : -1);
-    mgr.GetAttributes(attributes, nullptr, nullptr);
+    TextAttrsMgr mgr(hyperAcc, aIncludeDefaults, acc);
+    mgr.GetAttributes(attributes);
   }
   return attributes.forget();
 }
@@ -1865,6 +1871,29 @@ TextLeafPoint TextLeafPoint::FindTextAttrsStart(nsDirection aDirection,
     }
   }
   TextLeafPoint lastPoint = *this;
+  // If we're at the start of the container and searching for a previous start,
+  // start the search from the previous leaf. Otherwise, we'll miss the previous
+  // start.
+  const bool shouldTraversePrevLeaf = [&]() {
+    const bool shouldTraverse =
+        !aIncludeOrigin && aDirection == eDirPrevious && mOffset == 0;
+    Accessible* prevSibling = mAcc->PrevSibling();
+    if (prevSibling) {
+      return shouldTraverse && !prevSibling->IsText();
+    }
+    return shouldTraverse;
+  }();
+  if (shouldTraversePrevLeaf) {
+    // Go to the previous leaf and start the search from there, if it exists.
+    Accessible* prevLeaf = PrevLeaf(mAcc);
+    if (!prevLeaf) {
+      return *this;
+    }
+    lastPoint = TextLeafPoint(
+        prevLeaf, static_cast<int32_t>(nsAccUtils::TextLength(prevLeaf)));
+  }
+  // This loop searches within a container (that is, it only looks at siblings).
+  // We might cross containers before or after this loop, but not within it.
   for (;;) {
     if (TextLeafPoint offsetAttr = lastPoint.FindTextOffsetAttributeSameAcc(
             aDirection, aIncludeOrigin && lastPoint.mAcc == mAcc)) {
@@ -1882,21 +1911,28 @@ TextLeafPoint TextLeafPoint::FindTextAttrsStart(nsDirection aDirection,
         isRemote ? point.mAcc->AsRemote()->GetCachedTextAttributes()
                  : point.GetTextAttributesLocalAcc();
     if (attrs && lastAttrs && !attrs->Equal(lastAttrs)) {
-      // The attributes change here. If we're moving forward, we want to
-      // return this point. If we're moving backward, we've now moved before
-      // the start of the attrs run containing the origin, so return that start
-      // point; i.e. the start of the last Accessible we hit.
-      if (aDirection == eDirPrevious) {
-        point = lastPoint;
-        point.mOffset = 0;
+      // The attributes change here. If we're moving forward, we want to return
+      // this point.
+      if (aDirection == eDirNext) {
+        return point;
       }
-      if (!aIncludeOrigin && point == *this) {
-        MOZ_ASSERT(aDirection == eDirPrevious);
-        // The origin is the start of an attrs run, but the caller doesn't want
-        // the origin included.
-        continue;
+
+      // Otherwise, we're moving backward and we've now moved before the start
+      // point of the current text attributes run.
+      const auto attrsStart = TextLeafPoint(lastPoint.mAcc, 0);
+
+      // Return the current text attributes run start point if:
+      //   1. The caller wants this function to include the origin in the
+      //   search (aIncludeOrigin implies that we must return the first text
+      //   attributes run start point that we find, even if that point is the
+      //   origin)
+      //   2. Our search did not begin on the text attributes run start point
+      if (aIncludeOrigin || attrsStart != *this) {
+        return attrsStart;
       }
-      return point;
+
+      // Otherwise, the origin was the attributes run start point and the caller
+      // wants this function to ignore it in its search. Keep searching.
     }
     lastPoint = point;
     if (aDirection == eDirPrevious) {
@@ -1907,12 +1943,22 @@ TextLeafPoint TextLeafPoint::FindTextAttrsStart(nsDirection aDirection,
     }
     lastAttrs = attrs;
   }
-  // We couldn't move any further. Use the start/end.
+
+  // We couldn't move any further in this container.
+  if (aDirection == eDirPrevious) {
+    // Treat the start of a container as a format boundary.
+    return TextLeafPoint(lastPoint.mAcc, 0);
+  }
+  // If we're at the end of the container then we have to use the start of the
+  // next leaf.
+  Accessible* nextLeaf = NextLeaf(lastPoint.mAcc);
+  if (nextLeaf) {
+    return TextLeafPoint(nextLeaf, 0);
+  }
+  // If there's no next leaf, then fall back to the end of the last point.
   return TextLeafPoint(
       lastPoint.mAcc,
-      aDirection == eDirPrevious
-          ? 0
-          : static_cast<int32_t>(nsAccUtils::TextLength(lastPoint.mAcc)));
+      static_cast<int32_t>(nsAccUtils::TextLength(lastPoint.mAcc)));
 }
 
 LayoutDeviceIntRect TextLeafPoint::CharBounds() {
@@ -1961,6 +2007,9 @@ LayoutDeviceIntRect TextLeafPoint::CharBounds() {
     return bounds;
   }
 
+  if (RequestDomainsIfInactive(CacheDomain::TextBounds)) {
+    return LayoutDeviceIntRect();
+  }
   RemoteAccessible* remote = mAcc->AsRemote();
   nsRect charBounds = remote->GetCachedCharRect(mOffset);
   if (!charBounds.IsEmpty()) {
@@ -2008,40 +2057,62 @@ bool TextLeafRange::Crop(Accessible* aContainer) {
 }
 
 LayoutDeviceIntRect TextLeafRange::Bounds() const {
-  if (mEnd == mStart || mEnd < mStart) {
-    return LayoutDeviceIntRect();
+  // Walk all the lines and union them into the result rectangle.
+  LayoutDeviceIntRect result = TextLeafPoint{mStart}.CharBounds();
+  const bool succeeded =
+      WalkLineRects([&result](LayoutDeviceIntRect aLineRect) {
+        result.UnionRect(result, aLineRect);
+      });
+
+  if (!succeeded) {
+    return {};
   }
-
-  bool locatedFinalLine = false;
-  TextLeafPoint currPoint = mStart;
-  LayoutDeviceIntRect result = currPoint.CharBounds();
-
-  // Union the first and last chars of each line to create a line rect. Then,
-  // union the lines together.
-  while (!locatedFinalLine) {
-    // Fetch the last point in the current line by getting the
-    // start of the next line and going back one char. We don't
-    // use BOUNDARY_LINE_END here because it is equivalent to LINE_START when
-    // the line doesn't end with a line feed character.
-    TextLeafPoint lineStartPoint = currPoint.FindBoundary(
-        nsIAccessibleText::BOUNDARY_LINE_START, eDirNext);
-    TextLeafPoint lastPointInLine = lineStartPoint.FindBoundary(
-        nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
-    // If currPoint is the end of the document, lineStartPoint will be equal
-    // to currPoint and we would be in an endless loop.
-    if (lineStartPoint == currPoint || mEnd <= lastPointInLine) {
-      lastPointInLine = mEnd;
-      locatedFinalLine = true;
-    }
-
-    LayoutDeviceIntRect currLine = currPoint.CharBounds();
-    currLine.UnionRect(currLine, lastPointInLine.CharBounds());
-    result.UnionRect(result, currLine);
-
-    currPoint = lineStartPoint;
-  }
-
   return result;
+}
+
+nsTArray<LayoutDeviceIntRect> TextLeafRange::LineRects() const {
+  // Get the bounds of the content so we can restrict our lines to just the
+  // text visible within the bounds of the document.
+  Maybe<LayoutDeviceIntRect> contentBounds;
+  if (Accessible* doc = nsAccUtils::DocumentFor(mStart.mAcc)) {
+    contentBounds.emplace(doc->Bounds());
+  }
+
+  nsTArray<LayoutDeviceIntRect> lineRects;
+  WalkLineRects([&lineRects, &contentBounds](LayoutDeviceIntRect aLineRect) {
+    // Clip the bounds to the bounds of the content area.
+    bool boundsVisible = true;
+    if (contentBounds.isSome()) {
+      boundsVisible = aLineRect.IntersectRect(aLineRect, *contentBounds);
+    }
+    if (boundsVisible) {
+      lineRects.AppendElement(aLineRect);
+    }
+  });
+
+  return lineRects;
+}
+
+TextLeafPoint TextLeafRange::TextLeafPointAtScreenPoint(int32_t aX,
+                                                        int32_t aY) const {
+  // Step backwards one character to make the endPoint inclusive. This means we
+  // can use operator!= when comparing against endPoint below (which is very
+  // fast), rather than operator< (which might be significantly slower).
+  const TextLeafPoint endPoint =
+      mEnd.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
+
+  // If there are no characters in this container, we might have moved endPoint
+  // before mStart. In that case, we shouldn't try to move farther forward, as
+  // that might result in an infinite loop.
+  TextLeafPoint point = mStart;
+  if (mStart <= endPoint) {
+    for (; !point.ContainsPoint(aX, aY) && point != endPoint;
+         point =
+             point.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirNext)) {
+    }
+  }
+
+  return point;
 }
 
 bool TextLeafRange::SetSelection(int32_t aSelectionNum) const {
@@ -2167,6 +2238,40 @@ void TextLeafRange::ScrollIntoView(uint32_t aScrollType) const {
 
   nsCoreUtils::ScrollSubstringTo(mStart.mAcc->AsLocal()->GetFrame(), domRange,
                                  aScrollType);
+}
+
+bool TextLeafRange::WalkLineRects(LineRectCallback aCallback) const {
+  if (mEnd <= mStart) {
+    return false;
+  }
+
+  bool locatedFinalLine = false;
+  TextLeafPoint currPoint = mStart;
+
+  // Union the first and last chars of each line to create a line rect.
+  while (!locatedFinalLine) {
+    // Fetch the last point in the current line by getting the
+    // start of the next line and going back one char. We don't
+    // use BOUNDARY_LINE_END here because it is equivalent to LINE_START when
+    // the line doesn't end with a line feed character.
+    TextLeafPoint lineStartPoint = currPoint.FindBoundary(
+        nsIAccessibleText::BOUNDARY_LINE_START, eDirNext);
+    TextLeafPoint lastPointInLine = lineStartPoint.FindBoundary(
+        nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
+    // If currPoint is the end of the document, lineStartPoint will be equal
+    // to currPoint and we would be in an endless loop.
+    if (lineStartPoint == currPoint || mEnd <= lastPointInLine) {
+      lastPointInLine = mEnd;
+      locatedFinalLine = true;
+    }
+
+    LayoutDeviceIntRect currLine = currPoint.CharBounds();
+    currLine.UnionRect(currLine, lastPointInLine.CharBounds());
+    aCallback(currLine);
+
+    currPoint = lineStartPoint;
+  }
+  return true;
 }
 
 TextLeafRange::Iterator TextLeafRange::Iterator::BeginIterator(

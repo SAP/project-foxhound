@@ -11,8 +11,7 @@ from datetime import datetime, timedelta
 
 import requests
 from redo import retry
-from taskgraph.parameters import Parameters
-from taskgraph.target_tasks import get_method, register_target_task
+from taskgraph.target_tasks import register_target_task
 from taskgraph.util.taskcluster import find_task_id, parse_time
 
 from gecko_taskgraph import GECKO, try_option_syntax
@@ -45,7 +44,7 @@ UNCOMMON_TRY_TASK_LABELS = [
     r"linux-",  # hide all linux32 tasks by default - bug 1599197
     r"linux1804-32",  # hide linux32 tests - bug 1599197
     # Test tasks
-    r"web-platform-tests(?!-webgpu).*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
+    r"web-platform-tests.*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
     r"-ccov",
     r"-profiling-",  # talos/raptor profiling jobs are run too often
     r"-32-.*-webgpu",  # webgpu gets little benefit from these tests.
@@ -257,12 +256,9 @@ def accept_raptor_android_build(platform):
         return False
     if "p6" in platform and "aarch64" in platform:
         return True
-    if "s21" in platform and "aarch64" in platform:
+    if "s24" in platform and "aarch64" in platform:
         return True
-    # Bug 1910111 temporarily disable a55
-    # if "a55" in platform and "aarch64" in platform:
-    #     return True
-    if "a51" in platform:
+    if "a55" in platform and "aarch64" in platform:
         return True
     return False
 
@@ -306,6 +302,63 @@ def filter_out_shippable(task):
     return not task.attributes.get("shippable", False)
 
 
+def _try_task_os_integration(full_task_graph):
+    matched_tasks = []
+
+    # add source tests: mozperftest, mozbase, mozbuild, mozharness, mozlint
+    matched_tasks.extend(
+        [x for x in full_task_graph.graph.nodes if "source-test-python" in x]
+    )
+
+    # add perf tests: talos xperf/other/webgl, perftest-*, browsertime: amazon, sp3, rdt-post-*, ytp-widevine-*
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if ("talos-xperf" in x or "talos-other" in x or "talos-webgl" in x)
+            and ("swr" not in x and "profiling" not in x)
+        ]
+    )
+
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if "perftest-" in x and ("service-worker" in x or "startup-geckoview" in x)
+        ]
+    )
+
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if "browsertime-" in x
+            and "firefox" in x
+            and "nightlyasrelease" not in x
+            and ("amazon" in x or "billgates-ama" in x or "playback-widevine-" in x)
+            and (
+                "bytecode" not in x
+                and "profiling" not in x
+                and "live" not in x
+                and "webextensions" not in x
+            )
+        ]
+    )
+
+    matched_tasks.extend(
+        [
+            x
+            for x in full_task_graph.graph.nodes
+            if "browsertime-" in x
+            and "speedometer3" in x
+            and "nightlyasrelease" not in x
+            and ("firefox" in x or "safari" in x or "chrome" in x or "custom-car" in x)
+            and ("bytecode" not in x and "profiling" not in x)
+        ]
+    )
+    return matched_tasks
+
+
 def _try_task_config(full_task_graph, parameters, graph_config):
     requested_tasks = parameters["try_task_config"]["tasks"]
     pattern_tasks = [x for x in requested_tasks if x.endswith("-*")]
@@ -328,6 +381,13 @@ def _try_task_config(full_task_graph, parameters, graph_config):
 
         if "MOZHARNESS_TEST_TAG" in parameters["try_task_config"].get("env", {}):
             matched_tasks = [x for x in matched_tasks if x.endswith("-1")]
+
+    if "MOZHARNESS_TEST_TAG" in parameters["try_task_config"].get("env", {}):
+        if (
+            "os_integration"
+            in parameters["try_task_config"]["env"]["MOZHARNESS_TEST_TAG"]
+        ):
+            matched_tasks.extend(_try_task_os_integration(full_task_graph))
 
     selected_tasks = set(tasks) | set(matched_tasks)
     missing.update(selected_tasks - set(full_task_graph.tasks))
@@ -414,69 +474,6 @@ def target_tasks_try(full_task_graph, parameters, graph_config):
     # With no try mode, we schedule nothing, allowing the user to add tasks
     # later via treeherder.
     return []
-
-
-@register_target_task("try_select_tasks")
-def target_tasks_try_select(full_task_graph, parameters, graph_config):
-    tasks = target_tasks_try_select_uncommon(full_task_graph, parameters, graph_config)
-    return [l for l in tasks if filter_by_uncommon_try_tasks(l)]
-
-
-@register_target_task("try_select_tasks_uncommon")
-def target_tasks_try_select_uncommon(full_task_graph, parameters, graph_config):
-    from gecko_taskgraph.decision import PER_PROJECT_PARAMETERS
-
-    projects = ("autoland", "mozilla-central")
-    if parameters["project"] not in projects:
-        projects = (parameters["project"],)
-
-    tasks = set()
-    for project in projects:
-        params = dict(parameters)
-        params["project"] = project
-        parameters = Parameters(**params)
-
-        try:
-            target_tasks_method = PER_PROJECT_PARAMETERS[project]["target_tasks_method"]
-        except KeyError:
-            target_tasks_method = "default"
-
-        tasks.update(
-            get_method(target_tasks_method)(full_task_graph, parameters, graph_config)
-        )
-
-    return sorted(tasks)
-
-
-@register_target_task("try_auto")
-def target_tasks_try_auto(full_task_graph, parameters, graph_config):
-    """Target the tasks which have indicated they should be run on autoland
-    (rather than try) via the `run_on_projects` attributes.
-
-    Should do the same thing as the `default` target tasks method.
-    """
-    params = dict(parameters)
-    params["project"] = "autoland"
-    parameters = Parameters(**params)
-
-    regex_filters = parameters["try_task_config"].get("tasks-regex")
-    include_regexes = exclude_regexes = []
-    if regex_filters:
-        include_regexes = [re.compile(r) for r in regex_filters.get("include", [])]
-        exclude_regexes = [re.compile(r) for r in regex_filters.get("exclude", [])]
-
-    return [
-        l
-        for l, t in full_task_graph.tasks.items()
-        if standard_filter(t, parameters)
-        and filter_out_shipping_phase(t, parameters)
-        and filter_out_devedition(t, parameters)
-        and filter_by_uncommon_try_tasks(t.label)
-        and filter_by_regex(t.label, include_regexes, mode="include")
-        and filter_by_regex(t.label, exclude_regexes, mode="exclude")
-        and filter_unsupported_artifact_builds(t, parameters)
-        and filter_out_shippable(t)
-    ]
 
 
 @register_target_task("default")
@@ -804,7 +801,14 @@ def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_conf
             if "browsertime" in try_name and (
                 "custom-car" in try_name or "cstm-car-m" in try_name
             ):
-                if "hw-s21" in platform and "speedometer3" not in try_name:
+                if "hw-s24" in platform and "speedometer3" not in try_name:
+                    return False
+                if "network-bench" in try_name:
+                    return False
+                # Bug 1898514: avoid tp6m or non-essential tp6 jobs in cron
+                if (
+                    "tp6" in try_name and "essential" not in try_name
+                ) or "tp6m" in try_name:
                     return False
                 return True
         return False
@@ -836,6 +840,9 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         if "live" in try_name and "sheriffed" not in try_name:
             return False
 
+        if "network-bench" in try_name:
+            return False
+
         # Desktop selection
         if accept_raptor_desktop_build(platform):
             # Select some browsertime tasks as desktop smoke-tests
@@ -862,10 +869,12 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     return True
         # Android selection
         elif accept_raptor_android_build(platform):
-            if "hw-s21" in platform and "speedometer3" not in try_name:
+            if "hw-s24" in platform and "speedometer3" not in try_name:
                 return False
             if "chrome-m" in try_name and "essential" in try_name:
                 return True
+            if "chrome-m" in try_name and "-nofis" not in try_name:
+                return False
             if "chrome-m" in try_name and (
                 ("ebay" in try_name and "live" not in try_name)
                 or (
@@ -877,24 +886,15 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
             # Ignore all fennec tests here, we run those weekly
             if "fennec" in try_name:
                 return False
-            # Only run webrender tests
-            if "chrome-m" not in try_name and "-qr" not in platform:
-                return False
             # Select live site tests
             if "-live" in try_name:
                 return True
             # Select fenix resource usage tests
             if "fenix" in try_name:
-                # Bug 1816421 disable fission perf tests
-                if "-fis" in try_name:
-                    return False
                 if "-power" in try_name:
                     return True
             # Select geckoview resource usage tests
             if "geckoview" in try_name:
-                # Bug 1816421 disable fission perf tests
-                if "-fis" in try_name:
-                    return False
                 # Run cpu+memory, and power tests
                 cpu_n_memory_task = "-cpu" in try_name and "-memory" in try_name
                 power_task = "-power" in try_name
@@ -953,7 +953,7 @@ def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
             platform
         ):
             try_name = attributes.get("raptor_try_name")
-            if "hw-s21" in platform and "speedometer3" not in try_name:
+            if "hw-s24" in platform and "speedometer3" not in try_name:
                 return False
             if (
                 "browsertime" in try_name
@@ -1127,7 +1127,7 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
         "searchfox-macosx64-searchfox/debug",
         "searchfox-macosx64-aarch64-searchfox/debug",
         "searchfox-win64-searchfox/debug",
-        "searchfox-android-armv7-searchfox/debug",
+        "searchfox-android-aarch64-searchfox/debug",
         "searchfox-ios-searchfox/debug",
         "source-test-file-metadata-bugzilla-components",
         "source-test-file-metadata-test-info-all",
@@ -1711,3 +1711,26 @@ def target_tasks_android_l10n_import(full_task_graph, parameters, graph_config):
 @register_target_task("android-l10n-sync")
 def target_tasks_android_l10n_sync(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if l == "android-l10n-sync"]
+
+
+@register_target_task("os-integration")
+def target_tasks_os_integration(full_task_graph, parameters, graph_config):
+    labels = []
+
+    for label, task in full_task_graph.tasks.items():
+        if task.attributes.get("unittest_variant") != "os-integration":
+            continue
+
+        index = label.index("-osint")
+        base_label = label[:index]
+        if base_label not in full_task_graph.tasks:
+            base_label += "-1"
+        base_task = full_task_graph.tasks[base_label]
+
+        if (
+            filter_for_project(base_task, parameters)
+            and filter_for_hg_branch(base_task, parameters)
+            and filter_tests_without_manifests(base_task, parameters)
+        ):
+            labels.append(label)
+    return labels

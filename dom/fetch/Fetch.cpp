@@ -46,6 +46,7 @@
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/URLSearchParams.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/net/CookieJarSettings.h"
 
 #include "BodyExtractor.h"
@@ -699,6 +700,8 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
     actor->DoFetchOp(ipcArgs);
 
+    mozilla::glean::networking::fetch_keepalive_request_count.Get("main"_ns)
+        .Add(1);
     return p.forget();
   } else {
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
@@ -712,6 +715,22 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     // Dispatch fetch to the parent process main thread directly for that case.
     // For child process, dispatch fetch op to the parent.
     if (StaticPrefs::dom_workers_pFetch_enabled() && !XRE_IsParentProcess()) {
+      if (internalRequest->GetKeepalive()) {
+        uint64_t bodyLength = internalRequest->BodyLength() > 0
+                                  ? internalRequest->BodyLength()
+                                  : 0;
+
+        // We differ from the fetch spec and main thread fetch here.
+        // We do not limit the keepalive size per loadgroup(but instead per
+        // request). This is due to the fact that loadgroup is not accessible on
+        // the worker thread and we dont want to introduce async to introduce
+        // this check.
+        if (bodyLength > FETCH_KEEPALIVE_MAX_SIZE) {
+          p->MaybeRejectWithTypeError<MSG_FETCH_FAILED>();
+          return p.forget();
+        }
+      }
+
       RefPtr<FetchChild> actor =
           FetchChild::CreateForWorker(worker, p, signalImpl, observer);
       if (!actor) {
@@ -768,6 +787,12 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       ipcArgs.isWorkerRequest() = true;
 
       actor->DoFetchOp(ipcArgs);
+
+      if (internalRequest->GetKeepalive()) {
+        mozilla::glean::networking::fetch_keepalive_request_count
+            .Get("worker"_ns)
+            .Add(1);
+      }
 
       return p.forget();
     }

@@ -160,6 +160,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_IMETHOD GetNavigationStartTimeStamp(TimeStamp* aTimeStamp) override;
   NS_IMETHOD SetNavigationStartTimeStamp(TimeStamp aTimeStamp) override;
   NS_IMETHOD CancelByURLClassifier(nsresult aErrorCode) override;
+  NS_IMETHOD GetLastTransportStatus(nsresult* aLastTransportStatus) override;
   // nsISupportsPriority
   NS_IMETHOD SetPriority(int32_t value) override;
   // nsIClassOfService
@@ -209,6 +210,8 @@ class nsHttpChannel final : public HttpBaseChannel,
       WebTransportSessionEventListener* aListener) override;
   NS_IMETHOD SetResponseOverride(
       nsIReplacedHttpResponse* aReplacedHttpResponse) override;
+  NS_IMETHOD SetResponseStatus(uint32_t aStatus,
+                               const nsACString& aStatusText) override;
 
   void SetWarningReporter(HttpChannelSecurityWarningReporter* aReporter);
   HttpChannelSecurityWarningReporter* GetWarningReporter();
@@ -306,23 +309,11 @@ class nsHttpChannel final : public HttpBaseChannel,
   // Connections will only be established in this function.
   // (including DNS prefetch and speculative connection.)
   void MaybeResolveProxyAndBeginConnect();
-  nsresult MaybeStartDNSPrefetch();
-
-  // Tells the channel to resolve the origin of the end server we are connecting
-  // to.
-  static uint16_t const DNS_PREFETCH_ORIGIN = 1 << 0;
-  // Tells the channel to resolve the host name of the proxy.
-  static uint16_t const DNS_PREFETCH_PROXY = 1 << 1;
-  // Will be set if the current channel uses an HTTP/HTTPS proxy.
-  static uint16_t const DNS_PROXY_IS_HTTP = 1 << 2;
-  // Tells the channel to wait for the result of the origin server resolution
-  // before any connection attempts are made.
-  static uint16_t const DNS_BLOCK_ON_ORIGIN_RESOLVE = 1 << 3;
+  void MaybeStartDNSPrefetch();
 
   // Based on the proxy configuration determine the strategy for resolving the
   // end server host name.
-  // Returns a combination of the above flags.
-  uint16_t GetProxyDNSStrategy();
+  ProxyDNSStrategy GetProxyDNSStrategy();
 
   // We might synchronously or asynchronously call BeginConnect,
   // which includes DNS prefetch and speculative connection, according to
@@ -331,6 +322,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   // will be called when callback. See Bug 1325054 for more information.
   nsresult BeginConnect();
   [[nodiscard]] nsresult PrepareToConnect();
+  [[nodiscard]] nsresult ContinuePrepareToConnect();
   [[nodiscard]] nsresult OnBeforeConnect();
   [[nodiscard]] nsresult ContinueOnBeforeConnect(
       bool aShouldUpgrade, nsresult aStatus, bool aUpgradeWithHTTPSRR = false);
@@ -495,10 +487,8 @@ class nsHttpChannel final : public HttpBaseChannel,
            rv == NS_ERROR_PORT_ACCESS_NOT_ALLOWED;
   }
 
-  // Report net vs cache time telemetry
-  void ReportNetVSCacheTelemetry();
-  int64_t ComputeTelemetryBucketNumber(int64_t difftime_ms);
-
+  // Report telemetry for system principal request success rate
+  void ReportSystemChannelTelemetry(nsresult status);
   // Report telemetry and stats to about:networking
   void ReportRcwnStats(bool isFromNet);
 
@@ -603,6 +593,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   nsCOMPtr<nsITransportSecurityInfo> mCachedSecurityInfo;
   uint32_t mPostID{0};
   uint32_t mRequestTime{0};
+  nsresult mLastTransportStatus{NS_OK};
 
   nsTArray<StreamFilterRequest> mStreamFilterRequests;
 
@@ -618,6 +609,8 @@ class nsHttpChannel final : public HttpBaseChannel,
   // This is true when one end marker is output, so that we never output more
   // than one.
   bool mEndMarkerAdded = false;
+  // Is set to true when the NEL report is queued.
+  bool mReportedNEL = false;
 
   // Total time the channel spent suspended. This value is reported to
   // telemetry in nsHttpChannel::OnStartRequest().
@@ -827,6 +820,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   // SetupTransaction removed conditional headers and decisions made in
   // OnCacheEntryCheck are no longer valid.
   bool mIgnoreCacheEntry{false};
+  bool mAllowRCWN{true};
   // Lock preventing SetupTransaction/MaybeCreateCacheEntryWhenRCWN and
   // OnCacheEntryCheck being called at the same time.
   mozilla::Mutex mRCWNLock MOZ_UNANNOTATED{"nsHttpChannel.mRCWNLock"};

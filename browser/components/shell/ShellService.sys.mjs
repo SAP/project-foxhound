@@ -121,10 +121,13 @@ let ShellServiceInternal = {
    * is possible.
    */
   _userChoiceImpossibleTelemetryResult() {
-    if (!ShellService.checkAllProgIDsExist()) {
+    let winShellService = this.shellService.QueryInterface(
+      Ci.nsIWindowsShellService
+    );
+    if (!winShellService.checkAllProgIDsExist()) {
       return "ErrProgID";
     }
-    if (!ShellService.checkBrowserUserChoiceHashes()) {
+    if (!winShellService.checkBrowserUserChoiceHashes()) {
       return "ErrHash";
     }
     return null;
@@ -431,6 +434,16 @@ let ShellServiceInternal = {
       return false;
     }
 
+    // Bug 1758770: Pinning private browsing on MSIX is currently
+    // not possible.
+    if (
+      privateBrowsing &&
+      AppConstants.platform === "win" &&
+      Services.sysinfo.getProperty("hasWinPackageId")
+    ) {
+      return false;
+    }
+
     // Currently this only works on certain Windows versions.
     try {
       // First check if we can even pin the app where an exception means no.
@@ -571,9 +584,33 @@ let ShellServiceInternal = {
   },
 };
 
+// Functions may be present or absent dependent on whether the `nsIShellService`
+// has been queried for the interface implementing it, as querying the interface
+// adds it's functions to the queried JS object. Coincidental querying is more
+// likely to occur for Firefox Desktop than a Firefox Background Task. To force
+// consistent behavior, we query the native shell interface inheriting from
+// `nsIShellService` on setup.
+let shellInterface;
+switch (AppConstants.platform) {
+  case "win":
+    shellInterface = "nsIWindowsShellService";
+    break;
+  case "macosx":
+    shellInterface = "nsIMacShellService";
+    break;
+  case "linux":
+    shellInterface = "nsIGNOMEShellService";
+    break;
+  default:
+    lazy.log.warn(
+      `No platform native shell service interface for ${AppConstants.platform} queried, add for new platforms.`
+    );
+    shellInterface = "nsIShellService";
+}
+
 XPCOMUtils.defineLazyServiceGetters(ShellServiceInternal, {
   defaultAgent: ["@mozilla.org/default-agent;1", "nsIDefaultAgent"],
-  shellService: ["@mozilla.org/browser/shell-service;1", "nsIShellService"],
+  shellService: ["@mozilla.org/browser/shell-service;1", shellInterface],
   macDockSupport: ["@mozilla.org/widget/macdocksupport;1", "nsIMacDockSupport"],
 });
 
@@ -585,11 +622,13 @@ export var ShellService = new Proxy(ShellServiceInternal, {
     if (name in target) {
       return target[name];
     }
-    if (target.shellService) {
+    // n.b. If a native shell interface member is not present on `shellService`,
+    // it may be necessary to query the native interface.
+    if (target.shellService && name in target.shellService) {
       return target.shellService[name];
     }
-    Services.console.logStringMessage(
-      `${name} not found in ShellService: ${target.shellService}`
+    lazy.log.warn(
+      `${name.toString()} not found in ShellService: ${target.shellService}`
     );
     return undefined;
   },

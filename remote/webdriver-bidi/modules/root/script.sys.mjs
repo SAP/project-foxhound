@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys.mjs";
+import { RootBiDiModule } from "chrome://remote/content/webdriver-bidi/modules/RootBiDiModule.sys.mjs";
 
 const lazy = {};
 
@@ -41,7 +41,7 @@ const ScriptEvaluateResultType = {
   Success: "success",
 };
 
-class ScriptModule extends Module {
+class ScriptModule extends RootBiDiModule {
   #preloadScriptMap;
   #subscribedEvents;
 
@@ -361,14 +361,10 @@ class ScriptModule extends Module {
     const context = await this.#getContextFromTarget({ contextId, realmId });
     const serializationOptionsWithDefaults =
       lazy.setDefaultAndAssertSerializationOptions(serializationOptions);
-    const evaluationResult = await this.messageHandler.forwardCommand({
-      moduleName: "script",
-      commandName: "callFunctionDeclaration",
-      destination: {
-        type: lazy.WindowGlobalMessageHandler.type,
-        id: context.id,
-      },
-      params: {
+    const evaluationResult = await this._forwardToWindowGlobal(
+      "callFunctionDeclaration",
+      context.id,
+      {
         awaitPromise,
         commandArguments,
         functionDeclaration,
@@ -378,8 +374,8 @@ class ScriptModule extends Module {
         serializationOptions: serializationOptionsWithDefaults,
         thisParameter,
         userActivation,
-      },
-    });
+      }
+    );
 
     return this.#buildReturnValue(evaluationResult);
   }
@@ -412,18 +408,10 @@ class ScriptModule extends Module {
 
     const { contextId, realmId, sandbox } = this.#assertTarget(target);
     const context = await this.#getContextFromTarget({ contextId, realmId });
-    await this.messageHandler.forwardCommand({
-      moduleName: "script",
-      commandName: "disownHandles",
-      destination: {
-        type: lazy.WindowGlobalMessageHandler.type,
-        id: context.id,
-      },
-      params: {
-        handles,
-        realmId,
-        sandbox,
-      },
+    await this._forwardToWindowGlobal("disownHandles", context.id, {
+      handles,
+      realmId,
+      sandbox,
     });
   }
 
@@ -488,14 +476,10 @@ class ScriptModule extends Module {
     const context = await this.#getContextFromTarget({ contextId, realmId });
     const serializationOptionsWithDefaults =
       lazy.setDefaultAndAssertSerializationOptions(serializationOptions);
-    const evaluationResult = await this.messageHandler.forwardCommand({
-      moduleName: "script",
-      commandName: "evaluateExpression",
-      destination: {
-        type: lazy.WindowGlobalMessageHandler.type,
-        id: context.id,
-      },
-      params: {
+    const evaluationResult = await this._forwardToWindowGlobal(
+      "evaluateExpression",
+      context.id,
+      {
         awaitPromise,
         expression: source,
         realmId,
@@ -503,8 +487,8 @@ class ScriptModule extends Module {
         sandbox,
         serializationOptions: serializationOptionsWithDefaults,
         userActivation,
-      },
-    });
+      }
+    );
 
     return this.#buildReturnValue(evaluationResult);
   }
@@ -825,6 +809,7 @@ class ScriptModule extends Module {
         type: lazy.WindowGlobalMessageHandler.type,
         ...destination,
       },
+      retryOnAbort: true,
     });
 
     const isBroadcast = !!destination.contextDescriptor;
@@ -843,36 +828,27 @@ class ScriptModule extends Module {
   }
 
   #onRealmCreated = (eventName, { realmInfo }) => {
-    // This event is emitted from the parent process but for a given browsing
-    // context. Set the event's contextInfo to the message handler corresponding
-    // to this browsing context.
-    const contextInfo = {
-      contextId: realmInfo.context.id,
-      type: lazy.WindowGlobalMessageHandler.type,
-    };
-
     // Resolve browsing context to a TabManager id.
     const context = lazy.TabManager.getIdForBrowsingContext(realmInfo.context);
+    const browsingContextId = realmInfo.context.id;
 
-    // Don not emit the event, if the browsing context is gone.
+    // Do not emit the event, if the browsing context is gone.
     if (context === null) {
       return;
     }
 
     realmInfo.context = context;
-    this.emitEvent("script.realmCreated", realmInfo, contextInfo);
+    this._emitEventForBrowsingContext(
+      browsingContextId,
+      "script.realmCreated",
+      realmInfo
+    );
   };
 
   #onRealmDestroyed = (eventName, { realm, context }) => {
-    // This event is emitted from the parent process but for a given browsing
-    // context. Set the event's contextInfo to the message handler corresponding
-    // to this browsing context.
-    const contextInfo = {
-      contextId: context.id,
-      type: lazy.WindowGlobalMessageHandler.type,
-    };
-
-    this.emitEvent("script.realmDestroyed", { realm }, contextInfo);
+    this._emitEventForBrowsingContext(context.id, "script.realmDestroyed", {
+      realm,
+    });
   };
 
   #startListingOnRealmCreated() {

@@ -357,6 +357,21 @@ impl Zoom {
         self == Self::ONE
     }
 
+    /// Returns whether we're the `document` keyword.
+    #[inline]
+    pub fn is_document(self) -> bool {
+        self == Self::DOCUMENT
+    }
+
+    /// Returns the inverse of our value.
+    #[inline]
+    pub fn inverted(&self) -> Option<Self> {
+        if self.0.value == 0 {
+            return None;
+        }
+        Some(Self(Self::ONE.0 / self.0))
+    }
+
     /// Returns the value as a float.
     #[inline]
     pub fn value(&self) -> f32 {
@@ -389,7 +404,8 @@ impl Zoom {
     /// Returns the un-zoomed value.
     #[inline]
     pub fn unzoom(self, value: f32) -> f32 {
-        if self == Self::ONE {
+        // Avoid division by zero if our effective zoom computation ends up being zero.
+        if self == Self::ONE || self.0.value == 0 {
             return value;
         }
         value / self.value()

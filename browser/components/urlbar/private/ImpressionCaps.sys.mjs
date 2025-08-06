@@ -16,21 +16,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 const IMPRESSION_COUNTERS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
-// This object maps impression stats object keys to their corresponding keys in
-// the `extra` object of impression cap telemetry events. The main reason this
-// is necessary is because the keys of the `extra` object are limited to 15
-// characters in length, which some stats object keys exceed. It also forces us
-// to be deliberate about keys we add to the `extra` object, since the `extra`
-// object is limited to 10 keys.
-const TELEMETRY_IMPRESSION_CAP_EXTRA_KEYS = {
-  // stats object key -> `extra` telemetry event object key
-  intervalSeconds: "intervalSeconds",
-  startDateMs: "startDate",
-  count: "count",
-  maxCount: "maxCount",
-  impressionDateMs: "impressionDate",
-};
-
 /**
  * Impression caps and stats for quick suggest suggestions.
  */
@@ -64,14 +49,11 @@ export class ImpressionCaps extends BaseFeature {
    *   The suggestion type, one of: "sponsored", "nonsponsored"
    */
   updateStats(type) {
-    this.logger.info("Starting impression stats update");
-    this.logger.debug(
-      JSON.stringify({
-        type,
-        currentStats: this.#stats,
-        impression_caps: lazy.QuickSuggest.jsBackend.config.impression_caps,
-      })
-    );
+    this.logger.debug("Starting impression stats update", {
+      type,
+      currentStats: this.#stats,
+      impression_caps: lazy.QuickSuggest.jsBackend.config.impression_caps,
+    });
 
     // Don't bother recording anything if caps are disabled.
     let isSponsored = type == "sponsored";
@@ -81,7 +63,7 @@ export class ImpressionCaps extends BaseFeature {
       (!isSponsored &&
         !lazy.UrlbarPrefs.get("quickSuggestImpressionCapsNonSponsoredEnabled"))
     ) {
-      this.logger.info("Impression caps disabled, skipping update");
+      this.logger.debug("Impression caps disabled, skipping update");
       return;
     }
 
@@ -90,7 +72,7 @@ export class ImpressionCaps extends BaseFeature {
     // anything in that case.
     let stats = this.#stats[type];
     if (!stats) {
-      this.logger.info("Impression caps undefined, skipping update");
+      this.logger.debug("Impression caps undefined, skipping update");
       return;
     }
 
@@ -101,13 +83,7 @@ export class ImpressionCaps extends BaseFeature {
 
       // Record a telemetry event for each newly hit cap.
       if (stat.count == stat.maxCount) {
-        this.logger.info(`'${type}' impression cap hit`);
-        this.logger.debug(JSON.stringify({ type, hitStat: stat }));
-        this.#recordCapEvent({
-          stat,
-          eventType: "hit",
-          suggestionType: type,
-        });
+        this.logger.debug("Impression cap hit", { type, hitStat: stat });
       }
     }
 
@@ -122,8 +98,9 @@ export class ImpressionCaps extends BaseFeature {
       this.#updatingStats = false;
     }
 
-    this.logger.info("Finished impression stats update");
-    this.logger.debug(JSON.stringify({ newStats: this.#stats }));
+    this.logger.debug("Finished impression stats update", {
+      newStats: this.#stats,
+    });
   }
 
   /**
@@ -160,7 +137,7 @@ export class ImpressionCaps extends BaseFeature {
     switch (pref) {
       case "quicksuggest.impressionCaps.stats":
         if (!this.#updatingStats) {
-          this.logger.info(
+          this.logger.debug(
             "browser.urlbar.quicksuggest.impressionCaps.stats changed"
           );
           this.#loadStats();
@@ -232,13 +209,10 @@ export class ImpressionCaps extends BaseFeature {
   #validateStats() {
     let { impression_caps } = lazy.QuickSuggest.jsBackend.config;
 
-    this.logger.info("Validating impression stats");
-    this.logger.debug(
-      JSON.stringify({
-        impression_caps,
-        currentStats: this.#stats,
-      })
-    );
+    this.logger.debug("Validating impression stats", {
+      impression_caps,
+      currentStats: this.#stats,
+    });
 
     if (!this.#stats || typeof this.#stats != "object") {
       this.#stats = {};
@@ -340,20 +314,19 @@ export class ImpressionCaps extends BaseFeature {
       stats.sort((a, b) => a.intervalSeconds - b.intervalSeconds);
     }
 
-    this.logger.debug(JSON.stringify({ newStats: this.#stats }));
+    this.logger.debug("Finished validating impression stats", {
+      newStats: this.#stats,
+    });
   }
 
   /**
    * Resets the counters of impression stats whose intervals have elapased.
    */
   #resetElapsedCounters() {
-    this.logger.info("Checking for elapsed impression cap intervals");
-    this.logger.debug(
-      JSON.stringify({
-        currentStats: this.#stats,
-        impression_caps: lazy.QuickSuggest.jsBackend.config.impression_caps,
-      })
-    );
+    this.logger.debug("Checking for elapsed impression cap intervals", {
+      currentStats: this.#stats,
+      impression_caps: lazy.QuickSuggest.jsBackend.config.impression_caps,
+    });
 
     let now = Date.now();
     for (let [type, stats] of Object.entries(this.#stats)) {
@@ -362,50 +335,17 @@ export class ImpressionCaps extends BaseFeature {
         let intervalMs = 1000 * stat.intervalSeconds;
         let elapsedIntervalCount = Math.floor(elapsedMs / intervalMs);
         if (elapsedIntervalCount) {
-          // At least one interval period elapsed for the stat, so reset it. We
-          // may also need to record a telemetry event for the reset.
-          this.logger.info(
-            `Resetting impression counter for interval ${stat.intervalSeconds}s`
-          );
-          this.logger.debug(
-            JSON.stringify({ type, stat, elapsedMs, elapsedIntervalCount })
-          );
+          // At least one interval period elapsed for the stat, so reset it.
+          this.logger.debug("Resetting impression counter", {
+            type,
+            stat,
+            elapsedMs,
+            elapsedIntervalCount,
+            intervalSecs: stat.intervalSeconds,
+          });
 
           let newStartDateMs =
             stat.startDateMs + elapsedIntervalCount * intervalMs;
-
-          // Compute the portion of `elapsedIntervalCount` that happened after
-          // startup. This will be the interval count we report in the telemetry
-          // event. By design we don't report intervals that elapsed while the
-          // app wasn't running. For example, if the user stopped using Firefox
-          // for a year, we don't want to report a year's worth of intervals.
-          //
-          // First, compute the count of intervals that elapsed before startup.
-          // This is the same arithmetic used above except here it's based on
-          // the startup date instead of `now`. Keep in mind that startup may be
-          // before the stat's start date. Then subtract that count from
-          // `elapsedIntervalCount` to get the portion after startup.
-          let startupDateMs = this._getStartupDateMs();
-          let elapsedIntervalCountBeforeStartup = Math.floor(
-            Math.max(0, startupDateMs - stat.startDateMs) / intervalMs
-          );
-          let elapsedIntervalCountAfterStartup =
-            elapsedIntervalCount - elapsedIntervalCountBeforeStartup;
-
-          if (elapsedIntervalCountAfterStartup) {
-            this.#recordCapEvent({
-              eventType: "reset",
-              suggestionType: type,
-              eventDateMs: newStartDateMs,
-              eventCount: elapsedIntervalCountAfterStartup,
-              stat: {
-                ...stat,
-                startDateMs:
-                  stat.startDateMs +
-                  elapsedIntervalCountBeforeStartup * intervalMs,
-              },
-            });
-          }
 
           // Reset the stat.
           stat.startDateMs = newStartDateMs;
@@ -414,55 +354,9 @@ export class ImpressionCaps extends BaseFeature {
       }
     }
 
-    this.logger.debug(JSON.stringify({ newStats: this.#stats }));
-  }
-
-  /**
-   * Records an impression cap telemetry event.
-   *
-   * @param {object} options
-   *   Options object
-   * @param {"hit" | "reset"} options.eventType
-   *   One of: "hit", "reset"
-   * @param {string} options.suggestionType
-   *   One of: "sponsored", "nonsponsored"
-   * @param {object} options.stat
-   *   The stats object whose max count was hit or whose counter was reset.
-   * @param {number} options.eventCount
-   *   The number of intervals that elapsed since the last event.
-   * @param {number} options.eventDateMs
-   *   The `eventDate` that should be recorded in the event's `extra` object.
-   *   We include this in `extra` even though events are timestamped because
-   *   "reset" events are batched during periods where the user doesn't perform
-   *   any searches and therefore impression counters are not reset.
-   */
-  #recordCapEvent({
-    eventType,
-    suggestionType,
-    stat,
-    eventCount = 1,
-    eventDateMs = Date.now(),
-  }) {
-    // All `extra` object values must be strings.
-    let extra = {
-      type: suggestionType,
-      eventDate: String(eventDateMs),
-      eventCount: String(eventCount),
-    };
-    for (let [statKey, value] of Object.entries(stat)) {
-      let extraKey = TELEMETRY_IMPRESSION_CAP_EXTRA_KEYS[statKey];
-      if (!extraKey) {
-        throw new Error("Unrecognized stats object key: " + statKey);
-      }
-      extra[extraKey] = String(value);
-    }
-    Services.telemetry.recordEvent(
-      lazy.QuickSuggest.TELEMETRY_EVENT_CATEGORY,
-      "impression_cap",
-      eventType,
-      "",
-      extra
-    );
+    this.logger.debug("Finished checking elapsed impression cap intervals", {
+      newStats: this.#stats,
+    });
   }
 
   /**

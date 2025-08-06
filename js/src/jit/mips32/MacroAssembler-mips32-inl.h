@@ -654,20 +654,22 @@ void MacroAssembler::cmp64Set(Condition cond, Address lhs, Imm64 rhs,
 // ===============================================================
 // Bit counting functions
 
-void MacroAssembler::clz64(Register64 src, Register dest) {
+void MacroAssembler::clz64(Register64 src, Register64 dest) {
   as_clz(ScratchRegister, src.high);
   as_clz(SecondScratchReg, src.low);
   as_movn(SecondScratchReg, zero, src.high);
-  as_addu(dest, ScratchRegister, SecondScratchReg);
+  as_addu(dest.low, ScratchRegister, SecondScratchReg);
+  ma_move(dest.high, zero);
 }
 
-void MacroAssembler::ctz64(Register64 src, Register dest) {
+void MacroAssembler::ctz64(Register64 src, Register64 dest) {
   as_movz(SecondScratchReg, src.high, src.low);
   as_movn(SecondScratchReg, src.low, src.low);
   ma_ctz(SecondScratchReg, SecondScratchReg);
   ma_li(ScratchRegister, Imm32(0x20));
   as_movn(ScratchRegister, zero, src.low);
-  as_addu(dest, SecondScratchReg, ScratchRegister);
+  as_addu(dest.low, SecondScratchReg, ScratchRegister);
+  ma_move(dest.high, zero);
 }
 
 void MacroAssembler::popcnt64(Register64 src, Register64 dest, Register tmp) {
@@ -706,25 +708,25 @@ void MacroAssembler::popcnt64(Register64 src, Register64 dest, Register tmp) {
 // Branch functions
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs, Imm64 val,
-                              Label* label) {
+                              Label* success, Label* fail) {
   MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal,
              "other condition codes not supported");
 
   Label done;
 
   if (cond == Assembler::Equal) {
-    branch32(Assembler::NotEqual, lhs, val.firstHalf(), &done);
+    branch32(Assembler::NotEqual, lhs, val.low(), &done);
   } else {
-    branch32(Assembler::NotEqual, lhs, val.firstHalf(), label);
+    branch32(Assembler::NotEqual, lhs, val.low(), label);
   }
-  branch32(cond, Address(lhs.base, lhs.offset + sizeof(uint32_t)),
-           val.secondHalf(), label);
+  branch32(cond, Address(lhs.base, lhs.offset + sizeof(uint32_t)), val.hi(),
+           label);
 
   bind(&done);
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs,
-                              Register64 rhs, Label* label) {
+                              Register64 rhs, Label* success, Label* fail) {
   MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal,
              "other condition codes not supported");
 
@@ -825,9 +827,9 @@ void MacroAssembler::branchPrivatePtr(Condition cond, const Address& lhs,
   branchPtr(cond, lhs, rhs, label);
 }
 
-template <class L>
 void MacroAssembler::branchTest64(Condition cond, Register64 lhs,
-                                  Register64 rhs, Register temp, L label) {
+                                  Register64 rhs, Register temp, Label* success,
+                                  Label* fail) {
   if (cond == Assembler::Zero || cond == Assembler::NonZero) {
     MOZ_ASSERT(lhs.low == rhs.low);
     MOZ_ASSERT(lhs.high == rhs.high);
@@ -941,9 +943,8 @@ void MacroAssembler::branchTestPrimitive(Condition cond,
   branchTestPrimitive(cond, value.typeReg(), label);
 }
 
-template <class L>
 void MacroAssembler::branchTestMagic(Condition cond, const ValueOperand& value,
-                                     L label) {
+                                     Label* label) {
   ma_b(value.typeReg(), ImmTag(JSVAL_TAG_MAGIC), label, cond);
 }
 

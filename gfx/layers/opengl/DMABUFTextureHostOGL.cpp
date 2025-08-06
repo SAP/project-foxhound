@@ -98,7 +98,8 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       // XXX Add RGBA handling. Temporary hack to avoid crash
       // With BGRA format setting, rendering works without problem.
       wr::ImageDescriptor descriptor(GetSize(), mSurface->GetFormat());
-      (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
+      (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0,
+                           /* aNormalizedUvs */ false);
       break;
     }
     case gfx::SurfaceFormat::NV12: {
@@ -110,11 +111,13 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       wr::ImageDescriptor descriptor1(
           gfx::IntSize(mSurface->GetWidth(1), mSurface->GetHeight(1)),
           gfx::SurfaceFormat::R8G8);
-      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0);
-      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1);
+      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0,
+                           /* aNormalizedUvs */ false);
+      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1,
+                           /* aNormalizedUvs */ false);
       break;
     }
-    case gfx::SurfaceFormat::YUV: {
+    case gfx::SurfaceFormat::YUV420: {
       MOZ_ASSERT(aImageKeys.length() == 3);
       MOZ_ASSERT(mSurface->GetTextureCount() == 3);
       wr::ImageDescriptor descriptor0(
@@ -123,9 +126,12 @@ void DMABUFTextureHostOGL::PushResourceUpdates(
       wr::ImageDescriptor descriptor1(
           gfx::IntSize(mSurface->GetWidth(1), mSurface->GetHeight(1)),
           gfx::SurfaceFormat::A8);
-      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0);
-      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1);
-      (aResources.*method)(aImageKeys[2], descriptor1, aExtID, imageType, 2);
+      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0,
+                           /* aNormalizedUvs */ false);
+      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1,
+                           /* aNormalizedUvs */ false);
+      (aResources.*method)(aImageKeys[2], descriptor1, aExtID, imageType, 2,
+                           /* aNormalizedUvs */ false);
       break;
     }
     default: {
@@ -167,7 +173,7 @@ void DMABUFTextureHostOGL::PushDisplayItems(
                              preferCompositorSurface);
       break;
     }
-    case gfx::SurfaceFormat::YUV: {
+    case gfx::SurfaceFormat::YUV420: {
       MOZ_ASSERT(aImageKeys.length() == 3);
       MOZ_ASSERT(mSurface->GetTextureCount() == 3);
       // Those images can only be generated at present by the VAAPI vp8 decoder

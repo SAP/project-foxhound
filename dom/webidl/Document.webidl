@@ -501,6 +501,16 @@ partial interface Document {
    */
   [ChromeOnly]
   sequence<ShadowRoot> getConnectedShadowRoots();
+
+  /**
+   * By default, we don't send resizes to inactive top browsers.
+   * Some callers (as of this writing the window sizing code and puppeteer)
+   * need to trigger these resizes.
+   *
+   * @param aIncludeInactive whether to include background tabs.
+   */
+  [ChromeOnly]
+  undefined synchronouslyUpdateRemoteBrowserDimensions(optional boolean aIncludeInactive = false);
 };
 
 dictionary BlockParsingOptions {
@@ -761,3 +771,12 @@ partial interface Document {
     [Pref="dom.text_fragments.enabled", SameObject]
     readonly attribute FragmentDirective fragmentDirective;
 };
+
+// https://drafts.csswg.org/css-view-transitions-1/#additions-to-document-api
+partial interface Document {
+  [Pref="dom.viewTransitions.enabled"]
+  ViewTransition startViewTransition(optional ViewTransitionUpdateCallback updateCallback);
+};
+
+// https://github.com/w3c/csswg-drafts/pull/10767 for the name divergence in the spec
+callback ViewTransitionUpdateCallback = Promise<any> ();

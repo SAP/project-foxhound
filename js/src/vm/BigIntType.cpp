@@ -79,6 +79,7 @@
 #include "vm/BigIntType.h"
 
 #include "mozilla/Casting.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
@@ -87,6 +88,7 @@
 #include "mozilla/Range.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Span.h"  // mozilla::Span
+#include "mozilla/TextUtils.h"
 #include "mozilla/Try.h"
 #include "mozilla/WrappingOperations.h"
 
@@ -117,7 +119,6 @@ using namespace js;
 using JS::AutoStableStringChars;
 using mozilla::Abs;
 using mozilla::AssertedCast;
-using mozilla::BitwiseCast;
 using mozilla::Maybe;
 using mozilla::NegativeInfinity;
 using mozilla::Nothing;
@@ -214,9 +215,10 @@ BigInt* BigInt::zero(JSContext* cx, gc::Heap heap) {
   return createUninitialized(cx, 0, false, heap);
 }
 
-BigInt* BigInt::createFromDigit(JSContext* cx, Digit d, bool isNegative) {
+BigInt* BigInt::createFromDigit(JSContext* cx, Digit d, bool isNegative,
+                                gc::Heap heap) {
   MOZ_ASSERT(d != 0);
-  BigInt* res = createUninitialized(cx, 1, isNegative);
+  BigInt* res = createUninitialized(cx, 1, isNegative, heap);
   if (!res) {
     return nullptr;
   }
@@ -1645,35 +1647,6 @@ BigInt* BigInt::parseLiteral(JSContext* cx, const Range<const CharT> chars,
                             haveParseError, heap);
 }
 
-// trim and remove radix selection prefix.
-template <typename CharT>
-bool BigInt::literalIsZero(const Range<const CharT> chars) {
-  RangedPtr<const CharT> start = chars.begin();
-  const RangedPtr<const CharT> end = chars.end();
-
-  MOZ_ASSERT(chars.length());
-
-  // Skip over radix selector.
-  if (end - start > 2 && start[0] == '0') {
-    if (start[1] == 'b' || start[1] == 'B' || start[1] == 'x' ||
-        start[1] == 'X' || start[1] == 'o' || start[1] == 'O') {
-      start += 2;
-    }
-  }
-
-  // Skipping leading zeroes.
-  while (start[0] == '0') {
-    start++;
-    if (start == end) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-template bool BigInt::literalIsZero(const Range<const char16_t> chars);
-
 BigInt* BigInt::createFromDouble(JSContext* cx, double d) {
   MOZ_ASSERT(IsInteger(d), "Only integer-valued doubles can convert to BigInt");
 
@@ -1751,9 +1724,9 @@ BigInt* BigInt::createFromDouble(JSContext* cx, double d) {
   return result;
 }
 
-BigInt* BigInt::createFromUint64(JSContext* cx, uint64_t n) {
+BigInt* BigInt::createFromUint64(JSContext* cx, uint64_t n, gc::Heap heap) {
   if (n == 0) {
-    return zero(cx);
+    return zero(cx, heap);
   }
 
   const bool isNegative = false;
@@ -1763,7 +1736,7 @@ BigInt* BigInt::createFromUint64(JSContext* cx, uint64_t n) {
     Digit high = n >> 32;
     size_t length = high ? 2 : 1;
 
-    BigInt* res = createUninitialized(cx, length, isNegative);
+    BigInt* res = createUninitialized(cx, length, isNegative, heap);
     if (!res) {
       return nullptr;
     }
@@ -1774,11 +1747,11 @@ BigInt* BigInt::createFromUint64(JSContext* cx, uint64_t n) {
     return res;
   }
 
-  return createFromDigit(cx, n, isNegative);
+  return createFromDigit(cx, n, isNegative, heap);
 }
 
-BigInt* BigInt::createFromInt64(JSContext* cx, int64_t n) {
-  BigInt* res = createFromUint64(cx, Abs(n));
+BigInt* BigInt::createFromInt64(JSContext* cx, int64_t n, gc::Heap heap) {
+  BigInt* res = createFromUint64(cx, Abs(n), heap);
   if (!res) {
     return nullptr;
   }
@@ -1789,6 +1762,15 @@ BigInt* BigInt::createFromInt64(JSContext* cx, int64_t n) {
   MOZ_ASSERT(res->isNegative() == (n < 0));
 
   return res;
+}
+
+BigInt* BigInt::createFromIntPtr(JSContext* cx, intptr_t n) {
+  static_assert(sizeof(intptr_t) == sizeof(BigInt::Digit));
+
+  if (n == 0) {
+    return BigInt::zero(cx);
+  }
+  return BigInt::createFromDigit(cx, BigInt::Digit(Abs(n)), n < 0);
 }
 
 // BigInt proposal section 5.1.2
@@ -2149,8 +2131,9 @@ BigInt* BigInt::pow(JSContext* cx, HandleBigInt x, HandleBigInt y) {
     return nullptr;
   }
 
-  static_assert(MaxBitLength <= std::numeric_limits<int>::max(),
-                "unexpectedly large MaxBitLength");
+  static_assert(
+      MaxBitLength <= static_cast<unsigned>(std::numeric_limits<int>::max()),
+      "unexpectedly large MaxBitLength");
   int n = static_cast<int>(exponent);
   bool isOddPower = n & 1;
 
@@ -2242,6 +2225,49 @@ BigInt* BigInt::pow(JSContext* cx, HandleBigInt x, HandleBigInt y) {
     n /= 2;
     if (n == 0) {
       return result;
+    }
+  }
+}
+
+bool BigInt::powIntPtr(intptr_t x, intptr_t y, intptr_t* result) {
+  if (y < 0) {
+    return false;
+  }
+  uintptr_t n = uintptr_t(y);
+
+  // x^y where x == 1 returns 1 for any y.
+  if (x == 1) {
+    *result = 1;
+    return true;
+  }
+
+  // x^y where x == -1 returns 1 for even y, and -1 for odd y.
+  if (x == -1) {
+    *result = (y & 1) ? -1 : 1;
+    return true;
+  }
+
+  using CheckedIntPtr = mozilla::CheckedInt<intptr_t>;
+
+  CheckedIntPtr runningSquare = x;
+  CheckedIntPtr res = 1;
+  while (true) {
+    if ((n & 1) != 0) {
+      res *= runningSquare;
+      if (!res.isValid()) {
+        return false;
+      }
+    }
+
+    n >>= 1;
+    if (n == 0) {
+      *result = res.value();
+      return true;
+    }
+
+    runningSquare *= runningSquare;
+    if (!runningSquare.isValid()) {
+      return false;
     }
   }
 }
@@ -2560,6 +2586,22 @@ uint64_t BigInt::toUint64(const BigInt* x) {
   return digit;
 }
 
+bool BigInt::isInt32(const BigInt* x, int32_t* result) {
+  MOZ_MAKE_MEM_UNDEFINED(result, sizeof(*result));
+
+  int64_t r;
+  if (!BigInt::isInt64(x, &r)) {
+    return false;
+  }
+
+  if (std::numeric_limits<int32_t>::min() <= r &&
+      r <= std::numeric_limits<int32_t>::max()) {
+    *result = AssertedCast<int32_t>(r);
+    return true;
+  }
+  return false;
+}
+
 bool BigInt::isInt64(const BigInt* x, int64_t* result) {
   MOZ_MAKE_MEM_UNDEFINED(result, sizeof(*result));
 
@@ -2607,6 +2649,41 @@ bool BigInt::isUint64(const BigInt* x, uint64_t* result) {
 
   *result = x->uint64FromAbsNonZero();
   return true;
+}
+
+bool BigInt::isIntPtr(const BigInt* x, intptr_t* result) {
+  MOZ_MAKE_MEM_UNDEFINED(result, sizeof(*result));
+
+  static_assert(sizeof(intptr_t) == sizeof(BigInt::Digit));
+
+  if (x->digitLength() > 1) {
+    return false;
+  }
+
+  if (x->isZero()) {
+    *result = 0;
+    return true;
+  }
+
+  uintptr_t magnitude = x->digit(0);
+
+  if (x->isNegative()) {
+    constexpr uintptr_t IntPtrMinMagnitude = uintptr_t(1) << (DigitBits - 1);
+    if (magnitude <= IntPtrMinMagnitude) {
+      *result = magnitude == IntPtrMinMagnitude
+                    ? std::numeric_limits<intptr_t>::min()
+                    : -AssertedCast<intptr_t>(magnitude);
+      return true;
+    }
+  } else {
+    if (magnitude <=
+        static_cast<uintptr_t>(std::numeric_limits<intptr_t>::max())) {
+      *result = AssertedCast<intptr_t>(magnitude);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 bool BigInt::isNumber(const BigInt* x, double* result) {
@@ -3750,10 +3827,57 @@ BigInt* js::ParseBigIntLiteral(JSContext* cx,
   return res;
 }
 
-// Check a already validated numeric literal for a non-zero value. Used by
-// the parsers node folder in deferred mode.
-bool js::BigIntLiteralIsZero(const mozilla::Range<const char16_t>& chars) {
-  return BigInt::literalIsZero(chars);
+mozilla::Maybe<int64_t> js::ParseBigInt64Literal(
+    mozilla::Range<const char16_t> chars) {
+  size_t length = chars.length();
+  MOZ_ASSERT(length > 0);
+
+  int32_t radix = 10;
+  if (length > 2 && chars[0] == '0') {
+    if (chars[1] == 'b' || chars[1] == 'B') {
+      // StringNumericLiteral ::: BinaryIntegerLiteral
+      radix = 2;
+    } else if (chars[1] == 'x' || chars[1] == 'X') {
+      // StringNumericLiteral ::: HexIntegerLiteral
+      radix = 16;
+    } else if (chars[1] == 'o' || chars[1] == 'O') {
+      // StringNumericLiteral ::: OctalIntegerLiteral
+      radix = 8;
+    }
+  }
+
+  auto start = chars.begin();
+  const auto end = chars.end();
+
+  // Skip over prefix.
+  if (radix != 10) {
+    start += 2;
+  }
+
+  // Skipping leading zeroes.
+  while (*start == '0') {
+    start++;
+    if (start == end) {
+      return mozilla::Some(0);
+    }
+  }
+
+  mozilla::CheckedInt<int64_t> r = 0;
+  while (start < end) {
+    char16_t c = *start++;
+    MOZ_ASSERT(mozilla::IsAsciiAlphanumeric(c));
+
+    int32_t digit = mozilla::AsciiAlphanumericToNumber(c);
+    MOZ_ASSERT(digit < radix);
+
+    r *= radix;
+    r += digit;
+    if (!r.isValid()) {
+      return mozilla::Nothing();
+    }
+  }
+
+  return mozilla::Some(r.value());
 }
 
 template <js::AllowGC allowGC>

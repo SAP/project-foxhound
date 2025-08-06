@@ -26,6 +26,7 @@
 #include "nsIBaseWindow.h"
 #include "nsIAppWindow.h"
 #include "nsTextControlFrame.h"
+#include "nsThreadUtils.h"
 #include "nsViewManager.h"
 #include "nsFrameSelection.h"
 #include "mozilla/dom/Selection.h"
@@ -588,13 +589,20 @@ nsFocusManager::ClearFocus(mozIDOMWindowProxy* aWindow) {
 
   if (IsSameOrAncestor(window, GetFocusedBrowsingContext())) {
     RefPtr<BrowsingContext> bc = window->GetBrowsingContext();
-    bool isAncestor = (GetFocusedBrowsingContext() != bc);
-    uint64_t actionId = GenerateFocusActionId();
-    if (Blur(bc, nullptr, isAncestor, true, false, actionId)) {
+    RefPtr<BrowsingContext> focusedBC = GetFocusedBrowsingContext();
+    const bool isAncestor = (focusedBC != bc);
+    RefPtr<BrowsingContext> ancestorBC = isAncestor ? bc : nullptr;
+    if (Blur(focusedBC, ancestorBC, isAncestor, true, false,
+             GenerateFocusActionId())) {
       // if we are clearing the focus on an ancestor of the focused window,
       // the ancestor will become the new focused window, so focus it
       if (isAncestor) {
-        Focus(window, nullptr, 0, true, false, false, true, actionId);
+        // Intentionally use a new actionId here because the above
+        // Blur() will clear the focus of the ancestors of focusedBC, and
+        // this Focus() call might need to update the focus of those ancestors,
+        // so it needs to have a newer actionId to make that happen.
+        Focus(window, nullptr, 0, true, false, false, true,
+              GenerateFocusActionId());
       }
     }
   } else {
@@ -938,13 +946,20 @@ nsresult nsFocusManager::ContentRemoved(Document* aDocument,
 
   // Notify the editor in case we removed its ancestor limiter.
   if (previousFocusedElement->IsEditable()) {
-    if (nsCOMPtr<nsIDocShell> docShell = aDocument->GetDocShell()) {
-      if (RefPtr<HTMLEditor> htmlEditor = docShell->GetHTMLEditor()) {
-        RefPtr<Selection> selection = htmlEditor->GetSelection();
+    if (nsIDocShell* const docShell = aDocument->GetDocShell()) {
+      if (HTMLEditor* const htmlEditor = docShell->GetHTMLEditor()) {
+        Selection* const selection = htmlEditor->GetSelection();
         if (selection && selection->GetFrameSelection() &&
             previousFocusedElement ==
                 selection->GetFrameSelection()->GetAncestorLimiter()) {
-          htmlEditor->FinalizeSelection();
+          // The editing host may be being removed right now.  So, it's already
+          // removed from the child chain of the parent node, but it still know
+          // the parent node.  This could cause unexpected result at scheduling
+          // paint of the caret.  Therefore, we should call FinalizeSelection
+          // after unblocking to run the script.
+          nsContentUtils::AddScriptRunner(
+              NewRunnableMethod("HTMLEditor::FinalizeSelection", htmlEditor,
+                                &HTMLEditor::FinalizeSelection));
         }
       }
     }
@@ -2175,7 +2190,7 @@ Element* nsFocusManager::FlushAndCheckIfFocusable(Element* aElement,
       // called during reflow, calling GetBrowsingContext() could cause frame
       // loader initialization at a time when it isn't safe.
       if (BrowsingContext* bc = flo->GetExtantBrowsingContext()) {
-        // This call may create a contentViewer-created about:blank.
+        // This call may create a documentViewer-created about:blank.
         // That's intentional, so we can move focus there.
         Unused << bc->GetDocument();
       }
@@ -3227,8 +3242,6 @@ nsresult nsFocusManager::SetCaretVisible(PresShell* aPresShell, bool aVisible,
       // SetCaretDOMSelection
       aPresShell->SetCaretEnabled(false);
 
-      // Caret must blink on non-editable elements
-      caret->SetIgnoreUserModify(true);
       // Tell the caret which selection to use
       caret->SetSelection(domSelection);
 
@@ -5054,7 +5067,7 @@ void nsFocusManager::GetFocusInSelection(nsPIDOMWindowOuter* aWindow,
 
 static void MaybeUnlockPointer(BrowsingContext* aCurrentFocusedContext) {
   if (!PointerLockManager::IsInLockContext(aCurrentFocusedContext)) {
-    PointerLockManager::Unlock();
+    PointerLockManager::Unlock("FocusChange");
   }
 }
 

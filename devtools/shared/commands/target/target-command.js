@@ -196,9 +196,7 @@ class TargetCommand extends EventEmitter {
       return;
     }
 
-    // Handle top level target switching
-    // Note that, for now, `_onTargetAvailable` isn't called for the *initial* top level target.
-    // i.e. the one that is passed to TargetCommand constructor.
+    // Handle top level target switching (when debugging a tab, navigation of the tab to a new document)
     if (targetFront.isTopLevel) {
       // First report that all existing targets are destroyed
       if (!isFirstTarget) {
@@ -208,7 +206,12 @@ class TargetCommand extends EventEmitter {
       // Update the reference to the memoized top level target
       this.targetFront = targetFront;
       this.descriptorFront.setTarget(targetFront);
-      this.#selectedTargetFront = null;
+
+      // When reloading a Web Extension, the fallback document, which is the top level may be notified *after* the background page.
+      // So avoid resetting it being selected on late arrival of the fallback document.
+      if (!this.descriptorFront.isWebExtensionDescriptor) {
+        this.#selectedTargetFront = null;
+      }
 
       if (isFirstTarget && this.isServerTargetSwitchingEnabled()) {
         this._gotFirstTopLevelTarget = true;
@@ -257,6 +260,19 @@ class TargetCommand extends EventEmitter {
 
     if (isTargetSwitching) {
       this.emit("switched-target", targetFront);
+    }
+
+    const autoSelectTarget =
+      // When we navigate to a new top level document, automatically select that new document's target,
+      // so that tools can start selecting and displaying this new document.
+      isTargetSwitching ||
+      // When debugging Web Extension, workaround the fallback document by automatically selected any incoming target
+      // as soon as we are currently selecting that fallback document.
+      (this.descriptorFront.isWebExtensionDescriptor &&
+      this.#selectedTargetFront?.isFallbackExtensionDocument);
+
+    if (autoSelectTarget) {
+      await this.selectTarget(targetFront);
     }
   }
 
@@ -355,7 +371,18 @@ class TargetCommand extends EventEmitter {
         this.#selectedTargetFront = null;
       } else {
         // Otherwise we want to select the top level target
-        this.selectTarget(this.targetFront);
+        let fallbackTarget = this.targetFront;
+
+        // When debugging Web Extension we don't want to immediately fallback to the top level target, which is the fallback document.
+        // Instead, try to lookup for the background page.
+        if (this.descriptorFront.isWebExtensionDescriptor) {
+          const backgroundPageTargetFront = [...this._targets].find(target => !target.isFallbackExtensionDocument);
+          if (backgroundPageTargetFront) {
+            fallbackTarget = backgroundPageTargetFront;
+          }
+        }
+
+        this.selectTarget(fallbackTarget);
       }
     }
 
@@ -539,6 +566,11 @@ class TargetCommand extends EventEmitter {
       this.hasTargetWatcherSupport(TargetCommand.TYPES.FRAME)
     ) {
       types = [TargetCommand.TYPES.FRAME];
+    } else if (
+      this.descriptorFront.isWebExtensionDescriptor &&
+      this.descriptorFront.isServerTargetSwitchingEnabled()
+    ) {
+      types = [TargetCommand.TYPES.FRAME];
     } else if (this.descriptorFront.isBrowserProcessDescriptor) {
       const browserToolboxScope = Services.prefs.getCharPref(
         BROWSERTOOLBOX_SCOPE_PREF
@@ -710,7 +742,9 @@ class TargetCommand extends EventEmitter {
    *        Optional callback fired in case of target front destruction.
    *        The function is called with the same arguments than onAvailable.
    * @param {Function} options.onSelected
-   *        Optional callback fired when a given target is selected from the iframe picker
+   *        Optional callback fired for any new top level target (on startup and navigations),
+   *        as well as when the user select a new target from the console context selector,
+   *        debugger threads list and toolbox iframe dropdown.
    *        The function is called with a single object argument containing the following properties:
    *        - {TargetFront} targetFront: The target Front
    */
@@ -809,6 +843,22 @@ class TargetCommand extends EventEmitter {
 
     await Promise.all(promises);
     this._pendingWatchTargetInitialization.delete(onAvailable);
+
+    try {
+      if (onSelected && this.selectedTargetFront && types.includes(this.selectedTargetFront.targetType)) {
+        await onSelected({
+          targetFront: this.selectedTargetFront,
+        });
+      }
+    } catch (e) {
+      // Prevent throwing when onSelected handler throws on one target
+      // (this may make test to fail when closing the toolbox quickly after opening)
+      console.error(
+        "Exception when calling onSelected handler",
+        e.message,
+        e
+      );
+    }
   }
 
   /**

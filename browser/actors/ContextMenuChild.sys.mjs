@@ -113,18 +113,11 @@ export class ContextMenuChild extends JSWindowActorChild {
                 }
                 break;
               case "pictureinpicture":
-                if (!media.isCloningElementVisually) {
-                  Services.telemetry.keyedScalarAdd(
-                    "pictureinpicture.opened_method",
-                    "contextmenu",
-                    1
-                  );
-                }
                 let event = new this.contentWindow.CustomEvent(
                   "MozTogglePictureInPicture",
                   {
                     bubbles: true,
-                    detail: { reason: "contextMenu" },
+                    detail: { reason: "ContextMenu" },
                   },
                   this.contentWindow
                 );
@@ -950,7 +943,6 @@ export class ContextMenuChild extends JSWindowActorChild {
           ? undefined
           : context.target.title || context.target.alt,
       };
-      const { SVGAnimatedLength } = context.target.ownerGlobal;
       if (SVGAnimatedLength.isInstance(context.imageInfo.height)) {
         context.imageInfo.height = context.imageInfo.height.animVal.value;
       }

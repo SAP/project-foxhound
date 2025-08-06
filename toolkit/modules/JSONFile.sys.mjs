@@ -51,12 +51,6 @@ const FileInputStream = Components.Constructor(
  */
 const kSaveDelayMs = 1500;
 
-/**
- * Cleansed basenames of the filenames that telemetry can be recorded for.
- * Keep synchronized with 'objects' from Events.yaml.
- */
-const TELEMETRY_BASENAMES = new Set(["logins", "autofillprofiles"]);
-
 // JSONFile
 
 /**
@@ -128,8 +122,6 @@ export function JSONFile(config) {
     this._finalizeInternalBound,
     () => ({ sanitizedBasename: this.sanitizedBasename })
   );
-
-  Services.telemetry.setEventRecordingEnabled("jsonfile", true);
 }
 
 JSONFile.prototype = {
@@ -224,7 +216,7 @@ JSONFile.prototype = {
       // we store it as a .corrupt file for debugging purposes.
 
       let errorNo = ex.winLastError || ex.unixErrno;
-      this._recordTelemetry("load", errorNo ? errorNo.toString() : "");
+      this._recordTelemetry(errorNo ? errorNo.toString() : "");
       if (!(DOMException.isInstance(ex) && ex.name == "NotFoundError")) {
         console.error(ex);
 
@@ -236,7 +228,7 @@ JSONFile.prototype = {
             0o600
           );
           await IOUtils.move(this.path, uniquePath);
-          this._recordTelemetry("load", "invalid_json");
+          this._recordTelemetry("invalid_json");
         } catch (e2) {
           console.error(e2);
         }
@@ -266,7 +258,7 @@ JSONFile.prototype = {
           if (this.dataReady) {
             return;
           }
-          this._recordTelemetry("load", "used_backup");
+          this._recordTelemetry("used_backup");
         } catch (e3) {
           if (!(DOMException.isInstance(e3) && e3.name == "NotFoundError")) {
             console.error(e3);
@@ -445,18 +437,18 @@ JSONFile.prototype = {
     this.data = this._dataPostProcessor ? this._dataPostProcessor(data) : data;
   },
 
-  _recordTelemetry(method, value) {
-    if (!TELEMETRY_BASENAMES.has(this.sanitizedBasename)) {
-      // Avoid recording so we don't log an error in the console.
-      return;
-    }
+  _recordTelemetry(value) {
+    switch (this.sanitizedBasename) {
+      case "logins":
+        Glean.jsonfile.loadLogins.record({ value });
+        break;
+      case "autofillprofiles":
+        Glean.jsonfile.loadAutofillprofiles.record({ value });
+        break;
 
-    Services.telemetry.recordEvent(
-      "jsonfile",
-      method,
-      this.sanitizedBasename,
-      value
-    );
+      default:
+      // Avoid recording cases telemetry does not know about.
+    }
   },
 
   /**

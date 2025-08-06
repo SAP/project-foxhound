@@ -40,26 +40,22 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "LoadInfo.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Telemetry.h"
-#include "mozilla/TelemetryComms.h"
-#include "mozilla/TelemetryEventEnums.h"
 #include "nsIConsoleService.h"
 #include "nsIStringBundle.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
-using namespace mozilla::Telemetry;
 
 extern mozilla::LazyLogModule sCSMLog;
 extern Atomic<bool, mozilla::Relaxed> sJSHacksChecked;
 extern Atomic<bool, mozilla::Relaxed> sJSHacksPresent;
 extern Atomic<bool, mozilla::Relaxed> sCSSHacksChecked;
 extern Atomic<bool, mozilla::Relaxed> sCSSHacksPresent;
-extern Atomic<bool, mozilla::Relaxed> sTelemetryEventEnabled;
 
 // Helper function for IsConsideredSameOriginForUIR which makes
 // Principals of scheme 'http' return Principals of scheme 'https'.
@@ -371,7 +367,7 @@ FilenameTypeAndDetails nsContentSecurityUtils::FilenameToFilenameType(
                            ? kMozillaExtensionFile
                            : kOtherExtensionFile;
       const auto& extensionNameAndPath =
-          Substring(regexResults[0], ArrayLength("extensions/") - 1);
+          Substring(regexResults[0], std::size("extensions/") - 1);
       return FilenameTypeAndDetails(
           type, Some(OptimizeFileName(extensionNameAndPath)));
     }
@@ -743,26 +739,23 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
                                              uint64_t aWindowID,
                                              uint32_t aLineNumber,
                                              uint32_t aColumnNumber) {
-  // Send Telemetry
-  Telemetry::EventID eventType =
-      aIsSystemPrincipal ? Telemetry::EventID::Security_Evalusage_Systemcontext
-                         : Telemetry::EventID::Security_Evalusage_Parentprocess;
-
   FilenameTypeAndDetails fileNameTypeAndDetails =
       FilenameToFilenameType(aFileName, false);
-  mozilla::Maybe<nsTArray<EventExtraEntry>> extra;
-  if (fileNameTypeAndDetails.second.isSome()) {
-    extra = Some<nsTArray<EventExtraEntry>>({EventExtraEntry{
-        "fileinfo"_ns, fileNameTypeAndDetails.second.value()}});
+  auto fileinfo = fileNameTypeAndDetails.second;
+  auto value = Some(fileNameTypeAndDetails.first);
+  if (aIsSystemPrincipal) {
+    glean::security::EvalUsageSystemContextExtra extra = {
+        .fileinfo = fileinfo,
+        .value = value,
+    };
+    glean::security::eval_usage_system_context.Record(Some(extra));
   } else {
-    extra = Nothing();
+    glean::security::EvalUsageParentProcessExtra extra = {
+        .fileinfo = fileinfo,
+        .value = value,
+    };
+    glean::security::eval_usage_parent_process.Record(Some(extra));
   }
-  if (!sTelemetryEventEnabled.exchange(true)) {
-    sTelemetryEventEnabled = true;
-    Telemetry::SetEventRecordingEnabled("security"_ns, true);
-  }
-  Telemetry::RecordEvent(eventType, mozilla::Some(fileNameTypeAndDetails.first),
-                         extra);
 
   // Report an error to console
   nsCOMPtr<nsIConsoleService> console(
@@ -875,62 +868,21 @@ void nsContentSecurityUtils::DetectJsHacks() {
     return;
   }
 
-  // The content process code is probably safe to use for both, but
-  // this hack detection and related efforts has been very fragile so
-  // I'm being extra conservative.
-  if (XRE_IsParentProcess()) {
-    // This preference is a file used for autoconfiguration of Firefox
-    // by administrators. It has also been (ab)used by the userChromeJS
-    // project to run legacy-style 'extensions', some of which use eval,
-    // all of which run in the System Principal context.
-    nsAutoString jsConfigPref;
-    rv = Preferences::GetString("general.config.filename", jsConfigPref,
-                                PrefValueKind::Default);
-    if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
-      sJSHacksPresent = true;
-      return;
-    }
-    rv = Preferences::GetString("general.config.filename", jsConfigPref,
-                                PrefValueKind::User);
-    if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
-      sJSHacksPresent = true;
-      return;
-    }
-
-    // These preferences are for autoconfiguration of Firefox by admins.
-    // The first will load a file over the network; the second will
-    // fall back to a local file if the network is unavailable
-    nsAutoString configUrlPref;
-    rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
-                                PrefValueKind::Default);
-    if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
-      sJSHacksPresent = true;
-      return;
-    }
-    rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
-                                PrefValueKind::User);
-    if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
-      sJSHacksPresent = true;
-      return;
-    }
-
-  } else {
-    if (Preferences::HasDefaultValue("general.config.filename")) {
-      sJSHacksPresent = true;
-      return;
-    }
-    if (Preferences::HasUserValue("general.config.filename")) {
-      sJSHacksPresent = true;
-      return;
-    }
-    if (Preferences::HasDefaultValue("autoadmin.global_config_url")) {
-      sJSHacksPresent = true;
-      return;
-    }
-    if (Preferences::HasUserValue("autoadmin.global_config_url")) {
-      sJSHacksPresent = true;
-      return;
-    }
+  if (Preferences::HasDefaultValue("general.config.filename")) {
+    sJSHacksPresent = true;
+    return;
+  }
+  if (Preferences::HasUserValue("general.config.filename")) {
+    sJSHacksPresent = true;
+    return;
+  }
+  if (Preferences::HasDefaultValue("autoadmin.global_config_url")) {
+    sJSHacksPresent = true;
+    return;
+  }
+  if (Preferences::HasUserValue("autoadmin.global_config_url")) {
+    sJSHacksPresent = true;
+    return;
   }
 
   bool failOverToCache;
@@ -1571,27 +1523,14 @@ bool nsContentSecurityUtils::ValidateScriptFilename(JSContext* cx,
   MOZ_LOG(sCSMLog, LogLevel::Error,
           ("ValidateScriptFilename Failed: %s\n", aFilename));
 
-  // Send Telemetry
   FilenameTypeAndDetails fileNameTypeAndDetails =
       FilenameToFilenameType(filename, true);
 
-  Telemetry::EventID eventType =
-      Telemetry::EventID::Security_Javascriptload_Parentprocess;
-
-  mozilla::Maybe<nsTArray<EventExtraEntry>> extra;
-  if (fileNameTypeAndDetails.second.isSome()) {
-    extra = Some<nsTArray<EventExtraEntry>>({EventExtraEntry{
-        "fileinfo"_ns, fileNameTypeAndDetails.second.value()}});
-  } else {
-    extra = Nothing();
-  }
-
-  if (!sTelemetryEventEnabled.exchange(true)) {
-    sTelemetryEventEnabled = true;
-    Telemetry::SetEventRecordingEnabled("security"_ns, true);
-  }
-  Telemetry::RecordEvent(eventType, mozilla::Some(fileNameTypeAndDetails.first),
-                         extra);
+  glean::security::JavascriptLoadParentProcessExtra extra = {
+      .fileinfo = fileNameTypeAndDetails.second,
+      .value = Some(fileNameTypeAndDetails.first),
+  };
+  glean::security::javascript_load_parent_process.Record(Some(extra));
 
 #if defined(DEBUG) || defined(FUZZING)
   auto crashString = nsContentSecurityUtils::SmartFormatCrashString(
@@ -1690,8 +1629,6 @@ long nsContentSecurityUtils::ClassifyDownload(
                                     false,             //  aReportError
                                     &decission         // aDecision
   );
-  Telemetry::Accumulate(mozilla::Telemetry::MIXED_CONTENT_DOWNLOADS,
-                        decission != nsIContentPolicy::ACCEPT);
 
   if (StaticPrefs::dom_block_download_insecure() &&
       decission != nsIContentPolicy::ACCEPT) {

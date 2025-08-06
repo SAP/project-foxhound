@@ -39,37 +39,6 @@ static NS_DEFINE_CID(kPrefServiceCID, NS_PREFSERVICE_CID);
 static const char kCookiesPermissions[] = "network.cookie.cookieBehavior";
 static const char kCookiesMaxPerHost[] = "network.cookie.maxPerHost";
 
-#define OFFSET_ONE_WEEK int64_t(604800) * PR_USEC_PER_SEC
-#define OFFSET_ONE_DAY int64_t(86400) * PR_USEC_PER_SEC
-
-// Set server time or expiry time
-void SetTime(PRTime offsetTime, nsAutoCString& serverString,
-             nsAutoCString& cookieString, bool expiry) {
-  char timeStringPreset[40];
-  PRTime CurrentTime = PR_Now();
-  PRTime SetCookieTime = CurrentTime + offsetTime;
-  PRTime SetExpiryTime;
-  if (expiry) {
-    SetExpiryTime = SetCookieTime - OFFSET_ONE_DAY;
-  } else {
-    SetExpiryTime = SetCookieTime + OFFSET_ONE_DAY;
-  }
-
-  // Set server time string
-  PRExplodedTime explodedTime;
-  PR_ExplodeTime(SetCookieTime, PR_GMTParameters, &explodedTime);
-  PR_FormatTimeUSEnglish(timeStringPreset, 40, "%c GMT", &explodedTime);
-  serverString.Assign(timeStringPreset);
-
-  // Set cookie string
-  PR_ExplodeTime(SetExpiryTime, PR_GMTParameters, &explodedTime);
-  PR_FormatTimeUSEnglish(timeStringPreset, 40, "%c GMT", &explodedTime);
-  cookieString.ReplaceLiteral(
-      0, strlen("test=expiry; expires=") + strlen(timeStringPreset) + 1,
-      "test=expiry; expires=");
-  cookieString.Append(timeStringPreset);
-}
-
 void SetACookieInternal(nsICookieService* aCookieService, const char* aSpec,
                         const char* aCookieString, bool aAllowed) {
   nsCOMPtr<nsIURI> uri;
@@ -154,7 +123,12 @@ void GetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
                                   DocumentFlavorHTML);
   Unused << NS_WARN_IF(NS_FAILED(rv));
 
-  Unused << aCookieService->GetCookieStringFromDocument(document, aCookie);
+  nsAutoString cookie;
+  ErrorResult err;
+  document->GetCookie(cookie, err);
+  EXPECT_TRUE(!err.Failed());
+
+  CopyUTF16toUTF8(cookie, aCookie);
 }
 
 // some #defines for comparison rules
@@ -208,6 +182,9 @@ void InitPrefs(nsIPrefBranch* aPrefBranch) {
   Preferences::SetBool("network.cookieJarSettings.unblocked_for_testing", true);
   Preferences::SetBool("dom.securecontext.allowlist_onions", false);
   Preferences::SetBool("network.cookie.sameSite.schemeful", false);
+
+  // Disable a few security checks for document.cookie
+  Preferences::SetBool("dom.cookie.testing.enabled", true);
 }
 
 TEST(TestCookie, TestCookieMain)
@@ -473,15 +450,16 @@ TEST(TestCookie, TestCookieMain)
   // the following cookie includes a tab in the name
   SetACookie(cookieService, "http://pathwithtab.net/", "test\ttabs=tab");
   GetACookie(cookieService, "http://pathwithtab.net/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test\ttabs=tab"));
   // the following cookie includes a tab in the value - allowed
   SetACookie(cookieService, "http://pathwithtab.net/", "test=tab\ttest");
   GetACookie(cookieService, "http://pathwithtab.net/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test=tab\ttest"));
+  EXPECT_TRUE(
+      CheckResult(cookie.get(), MUST_EQUAL, "test\ttabs=tab; test=tab\ttest"));
   SetACookie(cookieService, "http://pathwithtab.net/",
              "test=tab\ttest; max-age=-1");
   GetACookie(cookieService, "http://pathwithtab.net/", cookie);
-  EXPECT_TRUE(CheckResult(cookie.get(), MUST_BE_NULL));
+  EXPECT_TRUE(CheckResult(cookie.get(), MUST_EQUAL, "test\ttabs=tab"));
 
   // *** expiry & deletion tests
   // XXX add server time str parsing tests here
@@ -769,7 +747,10 @@ TEST(TestCookie, TestCookieMain)
                                                  INT64_MAX,  // expiry time
                                                  &attrs,     // originAttributes
                                                  nsICookie::SAMESITE_NONE,
-                                                 nsICookie::SCHEME_HTTPS)));
+                                                 nsICookie::SCHEME_HTTPS,
+                                                 false,   // is partitioned
+                                                 nullptr  // operation ID
+                                                 )));
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->AddNative(
       "cookiemgr.test"_ns,             // domain
       "/foo"_ns,                       // path
@@ -780,7 +761,10 @@ TEST(TestCookie, TestCookieMain)
       true,                            // is session
       PR_Now() / PR_USEC_PER_SEC + 2,  // expiry time
       &attrs,                          // originAttributes
-      nsICookie::SAMESITE_NONE, nsICookie::SCHEME_HTTPS)));
+      nsICookie::SAMESITE_NONE, nsICookie::SCHEME_HTTPS,
+      false,   // is partitioned
+      nullptr  // operation ID
+      )));
   EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->AddNative("new.domain"_ns,  // domain
                                                  "/rabbit"_ns,     // path
                                                  "test3"_ns,       // name
@@ -791,7 +775,10 @@ TEST(TestCookie, TestCookieMain)
                                                  INT64_MAX,  // expiry time
                                                  &attrs,     // originAttributes
                                                  nsICookie::SAMESITE_NONE,
-                                                 nsICookie::SCHEME_HTTPS)));
+                                                 nsICookie::SCHEME_HTTPS,
+                                                 false,   // is partitioned
+                                                 nullptr  // operation ID
+                                                 )));
   // confirm using enumerator
   nsTArray<RefPtr<nsICookie>> cookies;
   EXPECT_NS_SUCCEEDED(cookieMgr->GetCookies(cookies));

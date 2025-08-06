@@ -87,8 +87,11 @@ add_task(async function test_telemetry_new_alt_text_settings() {
 
       await telemetryPromise;
       await Services.fog.testFlushAllChildren();
-      const value = Glean.pdfjsImage.altTextEdit.ai_generation.testGetValue();
+      let value = Glean.pdfjsImage.altTextEdit.ai_generation.testGetValue();
       Assert.ok(value, "Should have ai_generation enabled");
+
+      value = Glean.pdfjsImage.altTextEdit.ask_to_edit.testGetValue();
+      Assert.ok(value, "Should have ask_to_edit enabled");
 
       // We test the telemetry for the settings dialog.
       await clickOn(browser, "#secondaryToolbarToggle");
@@ -264,6 +267,7 @@ add_task(async function test_telemetry_new_alt_text_dialog() {
         [
           {
             alt_text_modal: "true",
+            alt_text_type: "present",
           },
         ],
         false
@@ -437,7 +441,20 @@ add_task(async function test_telemetry_new_alt_text_count() {
       });
       Services.fog.testResetFOG();
 
+      telemetryPromise = getPromise("alt_text_edit");
+      const aiGenCheckPromise = getPromise("ai_generation_check");
       await clickOn(browser, "#newAltTextCreateAutomaticallyButton");
+      await telemetryPromise;
+
+      await Services.fog.testFlushAllChildren();
+      let value = Glean.pdfjsImage.altTextEdit.ai_generation.testGetValue();
+      Assert.ok(!value, "Should have ai_generation disabled");
+
+      await aiGenCheckPromise;
+      await testTelemetryEventExtra(Glean.pdfjsImageAltText.aiGenerationCheck, [
+        { status: "false" },
+      ]);
+
       await clickOn(browser, "#newAltTextNotNow");
 
       // Delete the editor and create a new one but without AI.
@@ -456,13 +473,13 @@ add_task(async function test_telemetry_new_alt_text_count() {
         await clickOn(browser, `#newAltTextSave`);
       }
 
-      await clickOn(browser, "#print");
+      await clickOn(browser, "#printButton");
 
       await waitForPreviewVisible();
       await hitKey(browser, "VK_ESCAPE");
 
       await Services.fog.testFlushAllChildren();
-      let value = Glean.pdfjsImage.added.with_alt_text.testGetValue();
+      value = Glean.pdfjsImage.added.with_alt_text.testGetValue();
       Assert.equal(value, 2, "Should have 2 images with alt text");
 
       value = Glean.pdfjsImage.added.with_no_alt_text.testGetValue();

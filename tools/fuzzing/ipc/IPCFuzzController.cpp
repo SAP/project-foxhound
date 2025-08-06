@@ -79,6 +79,9 @@ IPCFuzzController::IPCFuzzController()
   portNameToIndex["PCanvasManager"] = 8;
   portNameToIndex["PRemoteLazyInputStream"] = 9;
   portNameToIndex["PRemoteWorkerService"] = 10;
+  portNameToIndex["PBackgroundLSDatabase"] = 11;
+  portNameToIndex["PRemoteWorkerNonLifeCycleOpController"] = 12;
+  portNameToIndex["PNotification"] = 13;
 
   // Used to select the n-th trigger message as a starting point for fuzzing
   // in single message mode. A value of 1 will skip the first matching message
@@ -1268,7 +1271,7 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
         std::move(msg));
 #else
     // For asynchronous injection, we have to post to the I/O thread instead.
-    XRE_GetIOMessageLoop()->PostTask(NS_NewRunnableFunction(
+    XRE_GetAsyncIOEventTarget()->Dispatch(NS_NewRunnableFunction(
         "NodeChannel::OnMessageReceived",
         [msg = std::move(msg),
          nodeChannel =
@@ -1392,7 +1395,7 @@ void IPCFuzzController::SynchronizeOnMessageExecution(
       MOZ_FUZZING_NYX_PRINT(
           "ERROR: ======== END OF ITERATION (TIMEOUT) ========\n");
       if (!!getenv("MOZ_FUZZ_CRASH_ON_TIMEOUT")) {
-        MOZ_DIAGNOSTIC_ASSERT(false, "IPCFuzzController Timeout");
+        MOZ_DIAGNOSTIC_CRASH("IPCFuzzController Timeout");
       }
       Nyx::instance().release(
           IPCFuzzController::instance().getMessageStopCount());

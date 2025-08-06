@@ -31,15 +31,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "SUPPORT_URL",
-  "app.support.baseURL",
-  "",
-  null,
-  val => Services.urlFormatter.formatURL(val)
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
   "XPINSTALL_ENABLED",
   "xpinstall.enabled",
   true
@@ -248,22 +239,24 @@ function isInState(install, state) {
   return install.state == AddonManager["STATE_" + state.toUpperCase()];
 }
 
-async function getAddonMessageInfo(addon) {
+async function getAddonMessageInfo(
+  addon,
+  { isCardExpanded, isInDisabledSection }
+) {
   const { name } = addon;
   const { STATE_BLOCKED, STATE_SOFTBLOCKED } = Ci.nsIBlocklistService;
 
   if (addon.blocklistState === STATE_BLOCKED) {
+    let typeSuffix = addon.type === "extension" ? "extension" : "other";
     return {
       linkUrl: await addon.getBlocklistURL(),
-      linkId: "details-notification-blocked-link",
-      messageId: "details-notification-blocked2",
-      messageArgs: { name },
+      linkId: "details-notification-blocked-link2",
+      messageId: `details-notification-hard-blocked-${typeSuffix}`,
       type: "error",
     };
   } else if (isDisabledUnsigned(addon)) {
     return {
-      linkUrl: SUPPORT_URL + "unsigned-addons",
-      linkId: "details-notification-unsigned-and-disabled-link",
+      linkSumoPage: "unsigned-addons",
       messageId: "details-notification-unsigned-and-disabled2",
       messageArgs: { name },
       type: "error",
@@ -274,24 +267,38 @@ async function getAddonMessageInfo(addon) {
       addon.blocklistState !== STATE_SOFTBLOCKED)
   ) {
     return {
+      // TODO: (Bug 1921870) consider adding a SUMO page.
+      // NOTE: this messagebar is customized by Thunderbird to include
+      // a non-SUMO link (see Bug 1921870 comment 0).
       messageId: "details-notification-incompatible2",
       messageArgs: { name, version: Services.appinfo.version },
       type: "error",
     };
   } else if (!isCorrectlySigned(addon)) {
     return {
-      linkUrl: SUPPORT_URL + "unsigned-addons",
-      linkId: "details-notification-unsigned-link",
+      linkSumoPage: "unsigned-addons",
       messageId: "details-notification-unsigned2",
       messageArgs: { name },
       type: "warning",
     };
   } else if (addon.blocklistState === STATE_SOFTBLOCKED) {
+    const fluentBaseId = "details-notification-soft-blocked";
+    let typeSuffix = addon.type === "extension" ? "extension" : "other";
+    let stateSuffix;
+    // If the Addon Card is not expanded, delay changing the messagebar
+    // string to when the Addon card is refreshed as part of moving
+    // it between the enabled and disabled sections.
+    if (isCardExpanded) {
+      stateSuffix = addon.isActive ? "enabled" : "disabled";
+    } else {
+      stateSuffix = !isInDisabledSection ? "enabled" : "disabled";
+    }
+    let messageId = `${fluentBaseId}-${typeSuffix}-${stateSuffix}`;
+
     return {
       linkUrl: await addon.getBlocklistURL(),
-      linkId: "details-notification-softblocked-link",
-      messageId: "details-notification-softblocked2",
-      messageArgs: { name },
+      linkId: "details-notification-softblocked-link2",
+      messageId,
       type: "warning",
     };
   } else if (addon.isGMPlugin && !addon.isInstalled && addon.isActive) {
@@ -2817,25 +2824,45 @@ class AddonCard extends HTMLElement {
     const {
       linkUrl,
       linkId,
+      linkSumoPage,
       messageId,
       messageArgs,
       type = "",
-    } = await getAddonMessageInfo(this.addon);
+    } = await getAddonMessageInfo(this.addon, {
+      isCardExpanded: this.expanded,
+      isInDisabledSection:
+        !this.expanded &&
+        !!this.closest(`section.${this.addon.type}-disabled-section`),
+    });
 
     if (messageId) {
       document.l10n.pauseObserving();
       document.l10n.setAttributes(messageBar, messageId, messageArgs);
       messageBar.setAttribute("data-l10n-attrs", "message");
 
-      const link = messageBar.querySelector("button");
+      messageBar.innerHTML = "";
       if (linkUrl) {
-        document.l10n.setAttributes(link, linkId);
-        link.setAttribute("url", linkUrl);
-        link.setAttribute("slot", "actions");
-        link.hidden = false;
-      } else {
-        link.removeAttribute("slot");
-        link.hidden = true;
+        const linkButton = document.createElement("button");
+        document.l10n.setAttributes(linkButton, linkId);
+        linkButton.setAttribute("action", "link");
+        linkButton.setAttribute("url", linkUrl);
+        linkButton.setAttribute("slot", "actions");
+        messageBar.append(linkButton);
+      }
+
+      if (linkSumoPage) {
+        const sumoLinkEl = document.createElement("a", {
+          is: "moz-support-link",
+        });
+        sumoLinkEl.setAttribute("support-page", linkSumoPage);
+        sumoLinkEl.setAttribute("slot", "support-link");
+        // Set a custom fluent id for the learn more if there
+        // is one (otherwise moz-support-link custom element
+        // will use the default "Learn more" localized string).
+        if (linkId) {
+          document.l10n.setAttributes(sumoLinkEl, linkId);
+        }
+        messageBar.append(sumoLinkEl);
       }
 
       document.l10n.resumeObserving();

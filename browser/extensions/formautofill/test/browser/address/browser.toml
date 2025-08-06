@@ -15,11 +15,18 @@ support-files = [
 
 ["browser_address_capture_form_removal.js"]
 
+["browser_address_capture_housenumber.js"]
+
 ["browser_address_capture_page_navigation.js"]
 
 ["browser_address_capture_trimmed_data.js"]
 
 ["browser_address_doorhanger_confirmation_popup.js"]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1890182
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1890182
+  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && opt", # Bug 1890182
+]
 
 ["browser_address_doorhanger_display.js"]
 
@@ -30,6 +37,8 @@ support-files = [
 ["browser_address_doorhanger_non_mergeable_fields.js"]
 
 ["browser_address_doorhanger_not_shown.js"]
+
+["browser_address_doorhanger_postalcode.js"]
 
 ["browser_address_doorhanger_required_fields.js"]
 
@@ -42,6 +51,8 @@ support-files = [
 ["browser_address_doorhanger_ui_lines.js"]
 
 ["browser_address_doorhanger_unsupported_region.js"]
+
+["browser_address_heuristics_autofill_name.js"]
 
 ["browser_address_telemetry.js"]
 

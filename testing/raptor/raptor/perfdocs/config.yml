@@ -6,6 +6,11 @@ name: raptor
 manifest: testing/raptor/raptor/raptor.toml
 static-only: False
 metrics:
+    "cpu Time":
+        aliases:
+            - cpuTime
+        description: >
+            Specifies cumulative CPU usage in milliseconds across all threads of the process since the process start.
     "First Paint":
         aliases:
             - fcp
@@ -178,10 +183,6 @@ suites:
             matrix-react-bench: ""
             motionmark-1-3: ""
             motionmark-htmlsuite-1-3: ""
-            motionmark-animometer: ""
-            motionmark-animometer-ramp: ""
-            motionmark-htmlsuite: ""
-            motionmark-htmlsuite-ramp: ""
             speedometer: ""
             speedometer3: ""
             stylebench: ""
@@ -218,7 +219,7 @@ suites:
     custom:
         description: "Browsertime tests that use a custom pageload test script. These use the pageload type, but may have other intentions."
         tests:
-            browsertime: "Used to run vanilla browsertime tests through raptor. For example: `./mach raptor --browsertime -t browsertime --browsertime-arg url=https://www.sitespeed.io --browsertime-arg iterations=3`"
+            browsertime: "Used to run vanilla browsertime tests through raptor. For example: `./mach raptor -t browsertime --browsertime-arg url=https://www.sitespeed.io --browsertime-arg iterations=3`"
             process-switch: "Measures process switch time"
             welcome: "Measures pageload metrics for the first-install about:welcome page"
             addMab1: "Use add API to send many small ArrayBuffers to IndexedDB in one transaction"
@@ -235,8 +236,10 @@ suites:
             addkBLN: "Use add API to send a couple of large Blobs to IndexedDB independently"
             constant-regression: "Generates a constant value that can be changed to induce a regression."
             getkeyrng: "Measures the speed of key-range based reads of IndexedDB"
-            upload: "Measures http/2 file upload throughput"
-            upload-h3: "Measures http/3 file upload throughput"
+            upload: "Measures HTTP/2 file upload throughput with a remote server"
+            upload-h3: "Measures HTTP/3 file upload throughput with a remote server"
+            h3-upload: "Measures HTTP/3 file upload throughput with a local server"
+            h3-download: "Measures HTTP/3 download throughput with a local server"
             throttled: "Pageload test using a throttled network environment"
             sample-python-support: "A sample test that uses a python support file to modify the test command."
             connect: "Verifies that connection time on a pageload is zero when a speculative connection has first been made"

@@ -12,10 +12,13 @@
 
 #include <algorithm>  // std::min
 #include <memory>
+#include <optional>
 
-#include "absl/types/optional.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
+#include "api/units/timestamp.h"
 #include "modules/audio_coding/codecs/cng/audio_encoder_cng.h"
 #include "modules/audio_coding/include/audio_coding_module.h"
 #include "modules/audio_coding/neteq/tools/rtp_generator.h"
@@ -45,7 +48,7 @@ class AcmReceiverTestOldApi : public AudioPacketizationCallback,
 
   void SetUp() override {
     acm_ = AudioCodingModule::Create();
-    receiver_.reset(new AcmReceiver(config_));
+    receiver_ = std::make_unique<AcmReceiver>(env_, config_);
     ASSERT_TRUE(receiver_.get() != NULL);
     ASSERT_TRUE(acm_.get() != NULL);
     acm_->RegisterTransportCallback(this);
@@ -64,11 +67,11 @@ class AcmReceiverTestOldApi : public AudioPacketizationCallback,
                             const SdpAudioFormat& format,
                             const std::map<int, int> cng_payload_types = {}) {
     // Create the speech encoder.
-    absl::optional<AudioCodecInfo> info =
+    std::optional<AudioCodecInfo> info =
         encoder_factory_->QueryAudioEncoder(format);
     RTC_CHECK(info.has_value());
     std::unique_ptr<AudioEncoder> enc =
-        encoder_factory_->MakeAudioEncoder(payload_type, format, absl::nullopt);
+        encoder_factory_->Create(env_, format, {.payload_type = payload_type});
 
     // If we have a compatible CN specification, stack a CNG on top.
     auto it = cng_payload_types.find(info->sample_rate_hz);
@@ -119,7 +122,8 @@ class AcmReceiverTestOldApi : public AudioPacketizationCallback,
 
     int ret_val = receiver_->InsertPacket(
         rtp_header_,
-        rtc::ArrayView<const uint8_t>(payload_data, payload_len_bytes));
+        rtc::ArrayView<const uint8_t>(payload_data, payload_len_bytes),
+        Timestamp::MinusInfinity());
     if (ret_val < 0) {
       RTC_DCHECK_NOTREACHED();
       return -1;
@@ -130,6 +134,7 @@ class AcmReceiverTestOldApi : public AudioPacketizationCallback,
     return 0;
   }
 
+  const Environment env_ = CreateEnvironment();
   const rtc::scoped_refptr<AudioEncoderFactory> encoder_factory_ =
       CreateBuiltinAudioEncoderFactory();
   const rtc::scoped_refptr<AudioDecoderFactory> decoder_factory_ =
@@ -259,7 +264,7 @@ TEST_F(AcmReceiverTestOldApi, MAYBE_LastAudioCodec) {
   }
 
   // No audio payload is received.
-  EXPECT_EQ(absl::nullopt, receiver_->LastDecoder());
+  EXPECT_EQ(std::nullopt, receiver_->LastDecoder());
 
   // Start with sending DTX.
   packet_sent_ = false;
@@ -270,8 +275,8 @@ TEST_F(AcmReceiverTestOldApi, MAYBE_LastAudioCodec) {
   EXPECT_EQ(AudioFrameType::kAudioFrameCN, last_frame_type_);
 
   // Has received, only, DTX. Last Audio codec is undefined.
-  EXPECT_EQ(absl::nullopt, receiver_->LastDecoder());
-  EXPECT_EQ(absl::nullopt, receiver_->last_packet_sample_rate_hz());
+  EXPECT_EQ(std::nullopt, receiver_->LastDecoder());
+  EXPECT_EQ(std::nullopt, receiver_->last_packet_sample_rate_hz());
 
   for (size_t i = 0; i < codecs.size(); ++i) {
     // Set DTX off to send audio payload.
@@ -373,7 +378,8 @@ TEST_F(AcmReceiverTestOldApi, MAYBE_NetEqCalls) {
 
   for (int num_calls = 0; num_calls < kNumNormalCalls; ++num_calls) {
     const uint8_t kPayload[kPayloadSizeBytes] = {0};
-    ASSERT_EQ(0, receiver_->InsertPacket(rtp_header, kPayload));
+    ASSERT_EQ(0, receiver_->InsertPacket(rtp_header, kPayload,
+                                         Timestamp::MinusInfinity()));
     ++rtp_header.sequenceNumber;
     rtp_header.timestamp += kFrameSizeSamples;
     ASSERT_EQ(0, receiver_->GetAudio(-1, &audio_frame, &muted));

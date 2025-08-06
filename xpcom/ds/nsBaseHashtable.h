@@ -175,7 +175,8 @@ class nsBaseHashtableValueRange {
 };
 
 template <typename EntryType>
-auto RangeSize(const detail::nsBaseHashtableValueRange<EntryType>& aRange) {
+size_t RangeSizeEstimate(
+    const detail::nsBaseHashtableValueRange<EntryType>& aRange) {
   return aRange.Count();
 }
 
@@ -192,6 +193,7 @@ class nsDefaultConverter {
    * Maps the storage DataType to the exposed UserDataType.
    */
   static UserDataType Unwrap(DataType& src) { return UserDataType(src); }
+  static UserDataType Unwrap(const DataType& src) { return UserDataType(src); }
 
   /**
    * Const ref variant used for example with nsCOMPtr wrappers.
@@ -280,6 +282,11 @@ class nsBaseHashtable
     : protected nsTHashtable<nsBaseHashtableET<KeyClass, DataType>> {
   using Base = nsTHashtable<nsBaseHashtableET<KeyClass, DataType>>;
   typedef mozilla::fallible_t fallible_t;
+  template <typename KC, typename DT, typename UDT, typename C>
+  friend inline void ::ImplCycleCollectionTraverse(
+      nsCycleCollectionTraversalCallback&,
+      const nsBaseHashtable<KC, DT, UDT, C>&, const char* aName,
+      uint32_t aFlags);
 
  public:
   typedef typename KeyClass::KeyType KeyType;
@@ -866,16 +873,12 @@ class nsBaseHashtable
         : mBaseIterator(&aTable->mTable) {}
     ~ConstIterator() = default;
 
-    KeyType Key() const {
-      return static_cast<EntryType*>(mBaseIterator.Get())->GetKey();
+    const EntryType* Entry() const {
+      return static_cast<EntryType*>(mBaseIterator.Get());
     }
-    UserDataType UserData() const {
-      return Converter::Unwrap(
-          static_cast<EntryType*>(mBaseIterator.Get())->mData);
-    }
-    const DataType& Data() const {
-      return static_cast<EntryType*>(mBaseIterator.Get())->mData;
-    }
+    KeyType Key() const { return Entry()->GetKey(); }
+    UserDataType UserData() const { return Converter::Unwrap(Entry()->mData); }
+    const DataType& Data() const { return Entry()->mData; }
 
     bool Done() const { return mBaseIterator.Done(); }
     void Next() { mBaseIterator.Next(); }
@@ -1025,5 +1028,33 @@ template <typename... Args>
 nsBaseHashtableET<KeyClass, DataType>::nsBaseHashtableET(KeyTypePointer aKey,
                                                          Args&&... aArgs)
     : KeyClass(aKey), mData(std::forward<Args>(aArgs)...) {}
+
+template <class KeyClass, class DataType, class UserDataType, class Converter>
+inline void ImplCycleCollectionUnlink(
+    nsBaseHashtable<KeyClass, DataType, UserDataType, Converter>& aField) {
+  aField.Clear();
+}
+
+template <class KeyClass, class DataType, class UserDataType, class Converter>
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    const nsBaseHashtable<KeyClass, DataType, UserDataType, Converter>& aField,
+    const char* aName, uint32_t aFlags = 0) {
+  ImplCycleCollectionTraverse(
+      aCallback,
+      static_cast<const nsTHashtable<nsBaseHashtableET<KeyClass, DataType>>&>(
+          aField),
+      aName, aFlags);
+}
+
+template <typename KeyClass, typename DataType>
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    const nsBaseHashtableET<KeyClass, DataType>& aField, const char* aName,
+    uint32_t aFlags = 0) {
+  ImplCycleCollectionTraverse(aCallback, static_cast<const KeyClass&>(aField),
+                              aName, aFlags);
+  ImplCycleCollectionTraverse(aCallback, aField.GetData(), aName, aFlags);
+}
 
 #endif  // nsBaseHashtable_h__

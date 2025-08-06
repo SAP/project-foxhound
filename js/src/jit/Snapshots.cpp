@@ -113,6 +113,20 @@ using namespace js::jit;
 //           instruction results.  The second payload is the index in the
 //           constant pool.
 //
+//         INTPTR_CST [INDEX]:          (32-bit platform)
+//         INTPTR_CST [INDEX] [INDEX]:  (64-bit platform)
+//           Unpacked IntPtr value stored in intptr_t. Split into either one or
+//           two int32_t values, whose indices into the constant pool is stored
+//           in the payloads.
+//
+//         INTPTR_REG [GPR_REG]:
+//           Unpacked IntPtr value stored in intptr_t. Payload is stored in a
+//           register.
+//
+//         INTPTR_STACK [STACK_OFFSET]:
+//           Unpacked IntPtr value stored in intptr_t. Payload is stored at an
+//           offset on the stack.
+//
 //         TYPED_REG [PACKED_TAG, GPR_REG]:
 //           Value with statically known type, which payload is stored in a
 //           register.
@@ -120,6 +134,21 @@ using namespace js::jit;
 //         TYPED_STACK [PACKED_TAG, STACK_OFFSET]:
 //           Value with statically known type, which payload is stored at an
 //           offset on the stack.
+//
+//         INT64_CST [INDEX] [INDEX]:
+//           Unpacked Int64 value stored in int64_t. Split into two int32_t
+//           values, whose indices into the constant pool is stored in the
+//           payloads.
+//
+//         INT64_REG    [GPR_REG]:
+//         INT64_STACK  [STACK_OFFSET]:
+//         INT64_REG_REG      [GPR_REG,      GPR_REG]
+//         INT64_REG_STACK    [GPR_REG,      STACK_OFFSET]
+//         INT64_STACK_REG    [STACK_OFFSET, GPR_REG]
+//         INT64_STACK_STACK  [STACK_OFFSET, STACK_OFFSET]
+//           Unpacked Int64 value. On 32 bits architecture, the first
+//           register/stack-offset correspond to the low 32-bits, and the
+//           second correspond to the high 32-bits.
 //
 
 const RValueAllocation::Layout& RValueAllocation::layoutFromMode(Mode mode) {
@@ -200,6 +229,76 @@ const RValueAllocation::Layout& RValueAllocation::layoutFromMode(Mode mode) {
           PAYLOAD_INDEX, PAYLOAD_INDEX, "instruction with default"};
       return layout;
     }
+
+    case INTPTR_CST: {
+#if !defined(JS_64BIT)
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_INDEX, PAYLOAD_NONE, "unpacked intptr constant"};
+      static_assert(sizeof(int32_t) == sizeof(intptr_t));
+#else
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_INDEX, PAYLOAD_INDEX, "unpacked intptr constant"};
+      static_assert(2 * sizeof(int32_t) == sizeof(intptr_t));
+#endif
+      return layout;
+    }
+
+    case INTPTR_REG: {
+      static const RValueAllocation::Layout layout = {PAYLOAD_GPR, PAYLOAD_NONE,
+                                                      "unpacked intptr"};
+      return layout;
+    }
+
+    case INTPTR_STACK: {
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_STACK_OFFSET, PAYLOAD_NONE, "unpacked intptr"};
+      return layout;
+    }
+
+    case INT64_CST: {
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_INDEX, PAYLOAD_INDEX, "unpacked int64 constant"};
+      static_assert(2 * sizeof(int32_t) == sizeof(int64_t));
+      return layout;
+    }
+
+#if defined(JS_NUNBOX32)
+    case INT64_REG_REG: {
+      static const RValueAllocation::Layout layout = {PAYLOAD_GPR, PAYLOAD_GPR,
+                                                      "unpacked int64"};
+      return layout;
+    }
+
+    case INT64_REG_STACK: {
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_GPR, PAYLOAD_STACK_OFFSET, "unpacked int64"};
+      return layout;
+    }
+
+    case INT64_STACK_REG: {
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_STACK_OFFSET, PAYLOAD_GPR, "unpacked int64"};
+      return layout;
+    }
+
+    case INT64_STACK_STACK: {
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_STACK_OFFSET, PAYLOAD_STACK_OFFSET, "unpacked int64"};
+      return layout;
+    }
+#elif defined(JS_PUNBOX64)
+    case INT64_REG: {
+      static const RValueAllocation::Layout layout = {PAYLOAD_GPR, PAYLOAD_NONE,
+                                                      "unpacked int64"};
+      return layout;
+    }
+
+    case INT64_STACK: {
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_STACK_OFFSET, PAYLOAD_NONE, "unpacked int64"};
+      return layout;
+    }
+#endif
 
     default: {
       static const RValueAllocation::Layout regLayout = {

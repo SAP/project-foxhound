@@ -57,7 +57,7 @@ add_task(async function () {
   checkRuleViewContent(view, [
     { selector: "element", ancestorRulesData: null, declarations: [] },
     {
-      selector: `&`,
+      selector: ``,
       // prettier-ignore
       ancestorRulesData: [
         `body {`,

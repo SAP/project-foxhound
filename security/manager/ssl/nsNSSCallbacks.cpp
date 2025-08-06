@@ -21,6 +21,7 @@
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/intl/Localization.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -149,7 +150,6 @@ nsresult OCSPRequest::DispatchToMainThreadAndWait() {
     lock.Wait();
   }
 
-  TimeStamp endTime = TimeStamp::Now();
   // CERT_VALIDATION_HTTP_REQUEST_RESULT:
   // 0: request timed out
   // 1: request succeeded
@@ -161,19 +161,16 @@ nsresult OCSPRequest::DispatchToMainThreadAndWait() {
     Telemetry::Accumulate(Telemetry::CERT_VALIDATION_HTTP_REQUEST_RESULT, 3);
   } else if (mResponseResult == NS_ERROR_NET_TIMEOUT) {
     Telemetry::Accumulate(Telemetry::CERT_VALIDATION_HTTP_REQUEST_RESULT, 0);
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::CERT_VALIDATION_HTTP_REQUEST_CANCELED_TIME, mStartTime,
-        endTime);
+    mozilla::glean::ocsp_request_time::cancel.AccumulateRawDuration(
+        TimeStamp::Now() - mStartTime);
   } else if (NS_SUCCEEDED(mResponseResult)) {
     Telemetry::Accumulate(Telemetry::CERT_VALIDATION_HTTP_REQUEST_RESULT, 1);
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::CERT_VALIDATION_HTTP_REQUEST_SUCCEEDED_TIME, mStartTime,
-        endTime);
+    mozilla::glean::ocsp_request_time::success.AccumulateRawDuration(
+        TimeStamp::Now() - mStartTime);
   } else {
     Telemetry::Accumulate(Telemetry::CERT_VALIDATION_HTTP_REQUEST_RESULT, 2);
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::CERT_VALIDATION_HTTP_REQUEST_FAILED_TIME, mStartTime,
-        endTime);
+    mozilla::glean::ocsp_request_time::failure.AccumulateRawDuration(
+        TimeStamp::Now() - mStartTime);
   }
   return rv;
 }
@@ -659,6 +656,9 @@ nsCString getKeaGroupName(uint32_t aKeaGroup) {
     case ssl_grp_kem_xyber768d00:
       groupName = "xyber768d00"_ns;
       break;
+    case ssl_grp_kem_mlkem768x25519:
+      groupName = "mlkem768x25519"_ns;
+      break;
     case ssl_grp_ffdhe_2048:
       groupName = "FF 2048"_ns;
       break;
@@ -764,7 +764,7 @@ static void PreliminaryHandshakeDone(PRFileDesc* fd) {
   unsigned int npnlen;
 
   if (SSL_GetNextProto(fd, &state, npnbuf, &npnlen,
-                       AssertedCast<unsigned int>(ArrayLength(npnbuf))) ==
+                       AssertedCast<unsigned int>(std::size(npnbuf))) ==
       SECSuccess) {
     if (state == SSL_NEXT_PROTO_NEGOTIATED ||
         state == SSL_NEXT_PROTO_SELECTED) {
@@ -1041,7 +1041,6 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
                            channelInfo.keaKeyBits);
         break;
       case ssl_kea_ecdh_hybrid:
-        // Bug 1874963: Add probes for Xyber768d00
         break;
       default:
         MOZ_CRASH("impossible KEA");
@@ -1142,7 +1141,8 @@ void SecretCallback(PRFileDesc* fd, PRUint16 epoch, SSLSecretDirection dir,
   if (epoch == 2 && dir == ssl_secret_read) {
     // |secret| is the server_handshake_traffic_secret. Set a flag to indicate
     // that the Server Hello has been processed successfully. We use this when
-    // deciding whether to retry a connection in which a Xyber share was sent.
+    // deciding whether to retry a connection in which an mlkem768x25519 share
+    // was sent.
     infoObject->SetHasTls13HandshakeSecrets();
   }
 }

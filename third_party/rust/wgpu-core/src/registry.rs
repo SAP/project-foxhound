@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
-use wgt::Backend;
+use std::{mem::size_of, sync::Arc};
 
 use crate::{
     id::Id,
     identity::IdentityManager,
     lock::{rank, RwLock, RwLockReadGuard, RwLockWriteGuard},
-    storage::{Element, InvalidId, Storage, StorageItem},
+    storage::{Element, Storage, StorageItem},
 };
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
@@ -14,7 +12,6 @@ pub struct RegistryReport {
     pub num_allocated: usize,
     pub num_kept_from_user: usize,
     pub num_released_from_user: usize,
-    pub num_error: usize,
     pub element_size: usize,
 }
 
@@ -40,20 +37,14 @@ pub(crate) struct Registry<T: StorageItem> {
     // Must only contain an id which has either never been used or has been released from `storage`
     identity: Arc<IdentityManager<T::Marker>>,
     storage: RwLock<Storage<T>>,
-    backend: Backend,
 }
 
 impl<T: StorageItem> Registry<T> {
-    pub(crate) fn new(backend: Backend) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             identity: Arc::new(IdentityManager::new()),
             storage: RwLock::new(rank::REGISTRY_STORAGE, Storage::new()),
-            backend,
         }
-    }
-
-    pub(crate) fn without_backend() -> Self {
-        Self::new(Backend::Empty)
     }
 }
 
@@ -64,26 +55,16 @@ pub(crate) struct FutureId<'a, T: StorageItem> {
 }
 
 impl<T: StorageItem> FutureId<'_, T> {
-    #[allow(dead_code)]
     pub fn id(&self) -> Id<T::Marker> {
-        self.id
-    }
-
-    pub fn into_id(self) -> Id<T::Marker> {
         self.id
     }
 
     /// Assign a new resource to this ID.
     ///
     /// Registers it with the registry.
-    pub fn assign(self, value: Arc<T>) -> Id<T::Marker> {
+    pub fn assign(self, value: T) -> Id<T::Marker> {
         let mut data = self.data.write();
         data.insert(self.id, value);
-        self.id
-    }
-
-    pub fn assign_error(self) -> Id<T::Marker> {
-        self.data.write().insert_error(self.id);
         self.id
     }
 }
@@ -96,27 +77,21 @@ impl<T: StorageItem> Registry<T> {
                     self.identity.mark_as_used(id_in);
                     id_in
                 }
-                None => self.identity.process(self.backend),
+                None => self.identity.process(),
             },
             data: &self.storage,
         }
     }
 
-    pub(crate) fn get(&self, id: Id<T::Marker>) -> Result<Arc<T>, InvalidId> {
-        self.read().get_owned(id)
-    }
+    #[track_caller]
     pub(crate) fn read<'a>(&'a self) -> RwLockReadGuard<'a, Storage<T>> {
         self.storage.read()
     }
+    #[track_caller]
     pub(crate) fn write<'a>(&'a self) -> RwLockWriteGuard<'a, Storage<T>> {
         self.storage.write()
     }
-    pub(crate) fn force_replace_with_error(&self, id: Id<T::Marker>) {
-        let mut storage = self.storage.write();
-        storage.remove(id);
-        storage.insert_error(id);
-    }
-    pub(crate) fn unregister(&self, id: Id<T::Marker>) -> Option<Arc<T>> {
+    pub(crate) fn remove(&self, id: Id<T::Marker>) -> T {
         let value = self.storage.write().remove(id);
         // This needs to happen *after* removing it from the storage, to maintain the
         // invariant that `self.identity` only contains ids which are actually available
@@ -129,7 +104,7 @@ impl<T: StorageItem> Registry<T> {
     pub(crate) fn generate_report(&self) -> RegistryReport {
         let storage = self.storage.read();
         let mut report = RegistryReport {
-            element_size: std::mem::size_of::<T>(),
+            element_size: size_of::<T>(),
             ..Default::default()
         };
         report.num_allocated = self.identity.values.lock().count();
@@ -137,10 +112,15 @@ impl<T: StorageItem> Registry<T> {
             match *element {
                 Element::Occupied(..) => report.num_kept_from_user += 1,
                 Element::Vacant => report.num_released_from_user += 1,
-                Element::Error(_) => report.num_error += 1,
             }
         }
         report
+    }
+}
+
+impl<T: StorageItem + Clone> Registry<T> {
+    pub(crate) fn get(&self, id: Id<T::Marker>) -> T {
+        self.read().get(id)
     }
 }
 
@@ -164,7 +144,7 @@ mod tests {
 
     #[test]
     fn simultaneous_registration() {
-        let registry = Registry::without_backend();
+        let registry = Registry::new();
         std::thread::scope(|s| {
             for _ in 0..5 {
                 s.spawn(|| {
@@ -172,7 +152,7 @@ mod tests {
                         let value = Arc::new(TestData);
                         let new_id = registry.prepare(None);
                         let id = new_id.assign(value);
-                        registry.unregister(id);
+                        registry.remove(id);
                     }
                 });
             }

@@ -1479,12 +1479,12 @@ describe("ASRouter", () => {
       assert.isEmpty(Router.state.messages.filter(Router.isUnblockedMessage));
     });
     it("should be able to add multiple items to the messageBlockList", async () => {
-      await await Router.blockMessageById(FAKE_BUNDLE.map(b => b.id));
+      await Router.blockMessageById(FAKE_BUNDLE.map(b => b.id));
       assert.isTrue(Router.state.messageBlockList.includes(FAKE_BUNDLE[0].id));
       assert.isTrue(Router.state.messageBlockList.includes(FAKE_BUNDLE[1].id));
     });
     it("should save the messageBlockList", async () => {
-      await await Router.blockMessageById(FAKE_BUNDLE.map(b => b.id));
+      await Router.blockMessageById(FAKE_BUNDLE.map(b => b.id));
       assert.calledWithExactly(Router._storage.set, "messageBlockList", [
         FAKE_BUNDLE[0].id,
         FAKE_BUNDLE[1].id,
@@ -1710,7 +1710,7 @@ describe("ASRouter", () => {
         },
       ];
       sandbox.stub(Router, "handleMessageRequest").resolves(messages);
-      sandbox.spy(Services.telemetry, "recordEvent");
+      sandbox.spy(Glean.messagingExperiments.reachCfr, "record");
 
       await Router.sendTriggerMessage({
         tabId: 0,
@@ -1718,7 +1718,7 @@ describe("ASRouter", () => {
         id: "foo",
       });
 
-      assert.calledTwice(Services.telemetry.recordEvent);
+      assert.calledTwice(Glean.messagingExperiments.reachCfr.record);
     });
     it("should not record the Reach event if it's already sent", async () => {
       let messages = [
@@ -1733,14 +1733,14 @@ describe("ASRouter", () => {
         },
       ];
       sandbox.stub(Router, "handleMessageRequest").resolves(messages);
-      sandbox.spy(Services.telemetry, "recordEvent");
+      sandbox.spy(Glean.messagingExperiments.reachCfr, "record");
 
       await Router.sendTriggerMessage({
         tabId: 0,
         browser: {},
         id: "foo",
       });
-      assert.notCalled(Services.telemetry.recordEvent);
+      assert.notCalled(Glean.messagingExperiments.reachCfr.record);
     });
     it("should record the Exposure event for each valid feature", async () => {
       ["cfr_doorhanger", "update_action", "infobar", "spotlight"].forEach(

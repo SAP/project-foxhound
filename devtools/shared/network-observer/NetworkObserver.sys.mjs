@@ -67,6 +67,7 @@ const HTTP_TRANSACTION_CODES = {
   0x5004: "RESPONSE_HEADER",
   0x5005: "RESPONSE_COMPLETE",
   0x5006: "TRANSACTION_CLOSE",
+  0x500c: "EARLYHINT_RESPONSE_HEADER",
 
   0x4b0003: "STATUS_RESOLVING",
   0x4b000b: "STATUS_RESOLVED",
@@ -83,6 +84,7 @@ const HTTP_DOWNLOAD_ACTIVITIES = [
   gActivityDistributor.ACTIVITY_SUBTYPE_RESPONSE_START,
   gActivityDistributor.ACTIVITY_SUBTYPE_RESPONSE_HEADER,
   gActivityDistributor.ACTIVITY_SUBTYPE_PROXY_RESPONSE_HEADER,
+  gActivityDistributor.ACTIVITY_SUBTYPE_EARLYHINT_RESPONSE_HEADER,
   gActivityDistributor.ACTIVITY_SUBTYPE_RESPONSE_COMPLETE,
   gActivityDistributor.ACTIVITY_SUBTYPE_TRANSACTION_CLOSE,
 ];
@@ -490,6 +492,8 @@ export class NetworkObserver {
           fromServiceWorker: httpActivity.fromServiceWorker,
           rawHeaders: httpActivity.responseRawHeaders,
           proxyResponseRawHeaders: httpActivity.proxyResponseRawHeaders,
+          earlyHintsResponseRawHeaders:
+            httpActivity.earlyHintsResponseRawHeaders,
         });
       }
     }
@@ -701,6 +705,10 @@ export class NetworkObserver {
         break;
       case gActivityDistributor.ACTIVITY_SUBTYPE_PROXY_RESPONSE_HEADER:
         httpActivity.proxyResponseRawHeaders = extraStringData;
+        break;
+      case gActivityDistributor.ACTIVITY_SUBTYPE_EARLYHINT_RESPONSE_HEADER:
+        httpActivity.earlyHintsResponseRawHeaders = extraStringData;
+        httpActivity.headersSize = extraStringData.length;
         break;
       case gActivityDistributor.ACTIVITY_SUBTYPE_TRANSACTION_CLOSE:
         this.#onTransactionClose(httpActivity);

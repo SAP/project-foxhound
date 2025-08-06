@@ -17,6 +17,7 @@
 #include "mozilla/dom/Report.h"
 #include "mozilla/dom/ReportingObserver.h"
 #include "mozilla/dom/ServiceWorker.h"
+#include "mozilla/dom/ServiceWorkerContainer.h"
 #include "mozilla/dom/ServiceWorkerRegistration.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsContentUtils.h"
@@ -39,9 +40,11 @@ using mozilla::MicroTaskRunnable;
 using mozilla::dom::BlobURLProtocolHandler;
 using mozilla::dom::CallerType;
 using mozilla::dom::ClientInfo;
+using mozilla::dom::ClientState;
 using mozilla::dom::Report;
 using mozilla::dom::ReportingObserver;
 using mozilla::dom::ServiceWorker;
+using mozilla::dom::ServiceWorkerContainer;
 using mozilla::dom::ServiceWorkerDescriptor;
 using mozilla::dom::ServiceWorkerRegistration;
 using mozilla::dom::ServiceWorkerRegistrationDescriptor;
@@ -275,10 +278,18 @@ void nsIGlobalObject::NotifyGlobalThawed() {
       });
 }
 
+nsIURI* nsIGlobalObject::GetBaseURI() const { return nullptr; }
+
 Maybe<ClientInfo> nsIGlobalObject::GetClientInfo() const {
   // By default globals do not expose themselves as a client.  Only real
   // window and worker globals are currently considered clients.
   return Maybe<ClientInfo>();
+}
+
+Maybe<ClientState> nsIGlobalObject::GetClientState() const {
+  // By default globals do not expose themselves as a client.  Only real
+  // window and worker globals are currently considered clients.
+  return Maybe<ClientState>();
 }
 
 Maybe<nsID> nsIGlobalObject::GetAgentClusterId() const {
@@ -295,18 +306,21 @@ Maybe<ServiceWorkerDescriptor> nsIGlobalObject::GetController() const {
   return Maybe<ServiceWorkerDescriptor>();
 }
 
+already_AddRefed<ServiceWorkerContainer>
+nsIGlobalObject::GetServiceWorkerContainer() {
+  return nullptr;
+}
+
 RefPtr<ServiceWorker> nsIGlobalObject::GetOrCreateServiceWorker(
     const ServiceWorkerDescriptor& aDescriptor) {
-  MOZ_DIAGNOSTIC_ASSERT(false,
-                        "this global should not have any service workers");
+  MOZ_DIAGNOSTIC_CRASH("this global should not have any service workers");
   return nullptr;
 }
 
 RefPtr<ServiceWorkerRegistration> nsIGlobalObject::GetServiceWorkerRegistration(
     const mozilla::dom::ServiceWorkerRegistrationDescriptor& aDescriptor)
     const {
-  MOZ_DIAGNOSTIC_ASSERT(false,
-                        "this global should not have any service workers");
+  MOZ_DIAGNOSTIC_CRASH("this global should not have any service workers");
   return nullptr;
 }
 
@@ -320,6 +334,10 @@ nsIGlobalObject::GetOrCreateServiceWorkerRegistration(
 
 mozilla::StorageAccess nsIGlobalObject::GetStorageAccess() {
   return mozilla::StorageAccess::eDeny;
+}
+
+nsICookieJarSettings* nsIGlobalObject::GetCookieJarSettings() {
+  return nullptr;
 }
 
 nsPIDOMWindowInner* nsIGlobalObject::GetAsInnerWindow() {
@@ -480,4 +498,16 @@ bool nsIGlobalObject::ShouldResistFingerprinting(CallerType aCallerType,
                                                  RFPTarget aTarget) const {
   return aCallerType != CallerType::System &&
          ShouldResistFingerprinting(aTarget);
+}
+
+void nsIGlobalObject::ReportToConsole(
+    uint32_t aErrorFlags, const nsCString& aCategory,
+    nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
+    const nsTArray<nsString>& aParams,
+    const mozilla::SourceLocation& aLocation) {
+  // We pass nullptr for the document because nsGlobalWindowInner handles the
+  // case where it should be non-null.  We also expect the worker impl to
+  // override.
+  nsContentUtils::ReportToConsole(aErrorFlags, aCategory, nullptr, aFile,
+                                  aMessageName.get(), aParams, aLocation);
 }

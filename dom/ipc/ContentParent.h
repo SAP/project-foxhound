@@ -22,9 +22,11 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/ipc/InputStreamUtils.h"
+#include "mozilla/ipc/SharedMemory.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/HalTypes.h"
+#include "mozilla/IdleTaskRunner.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReportingProcess.h"
@@ -398,14 +400,17 @@ class ContentParent final : public PContentParent,
    * shutdown process.  Automatically called whenever a KeepAlive is removed, or
    * a BrowserParent is removed.
    *
-   * Returns `true` if shutdown for the process has been started, and `false`
-   * otherwise.
+   * By default when a process becomes unused, it will be kept alive for a short
+   * time, potentially allowing the process to be re-used.
    *
+   * @param aImmediate If true, immediately begins shutdown if the process is
+   *                   eligible, without any grace period for process re-use.
    * @param aIgnoreKeepAlivePref If true, the dom.ipc.keepProcessesAlive.*
    *                             preferences will be ignored, for clean-up of
-   *                             cached processes.
+   *                             cached processes. Requires aImmediate.
    */
-  bool MaybeBeginShutDown(bool aIgnoreKeepAlivePref = false);
+  void MaybeBeginShutDown(bool aImmediate = false,
+                          bool aIgnoreKeepAlivePref = false);
 
   TestShellParent* CreateTestShell();
 
@@ -464,6 +469,13 @@ class ContentParent final : public PContentParent,
    */
   void KillHard(const char* aReason);
 
+  /**
+   * Get a unique identifier for this child process. This ID is unique across
+   * all types of child processes.
+   *
+   * NOTE: The `ContentParentId` wrapper type is a historical artifact from when
+   * the ID was only specific to content processes.
+   */
   ContentParentId ChildID() const { return mChildID; }
 
   /**
@@ -622,6 +634,12 @@ class ContentParent final : public PContentParent,
   // to this content process forever.
   void TransmitBlobURLsForPrincipal(nsIPrincipal* aPrincipal);
 
+  // Update a cache list of allowed domains to store cookies for the current
+  // process. This method is called when PCookieServiceParent actor is not
+  // available yet.
+  void AddPrincipalToCookieInProcessCache(nsIPrincipal* aPrincipal);
+  void TakeCookieInProcessCache(nsTArray<nsCOMPtr<nsIPrincipal>>& aList);
+
   nsresult TransmitPermissionsForPrincipal(nsIPrincipal* aPrincipal);
 
   // Whenever receiving a Principal we need to validate that Principal case
@@ -653,8 +671,6 @@ class ContentParent final : public PContentParent,
   // Control the priority of the IPC messages for input events.
   void SetInputPriorityEventEnabled(bool aEnabled);
   bool IsInputPriorityEventEnabled() { return mIsInputPriorityEventEnabled; }
-
-  static bool IsInputEventQueueSupported();
 
   mozilla::ipc::IPCResult RecvCreateBrowsingContext(
       uint64_t aGroupId, BrowsingContext::IPCInitializer&& aInit);
@@ -906,8 +922,7 @@ class ContentParent final : public PContentParent,
       const uint32_t& aContentDispositionHint,
       const nsAString& aContentDispositionFilename, const bool& aForceSave,
       const int64_t& aContentLength, const bool& aWasFileChannel,
-      nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext,
-      const bool& aShouldCloseWindow);
+      nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext);
 
   mozilla::ipc::IPCResult RecvPExternalHelperAppConstructor(
       PExternalHelperAppParent* actor, nsIURI* uri,
@@ -916,8 +931,8 @@ class ContentParent final : public PContentParent,
       const uint32_t& aContentDispositionHint,
       const nsAString& aContentDispositionFilename, const bool& aForceSave,
       const int64_t& aContentLength, const bool& aWasFileChannel,
-      nsIURI* aReferrer, const MaybeDiscarded<BrowsingContext>& aContext,
-      const bool& aShouldCloseWindow) override;
+      nsIURI* aReferrer,
+      const MaybeDiscarded<BrowsingContext>& aContext) override;
 
   already_AddRefed<PHandlerServiceParent> AllocPHandlerServiceParent();
 
@@ -985,19 +1000,6 @@ class ContentParent final : public PContentParent,
       const nsTArray<RefPtr<nsIURI>>&);
 
   mozilla::ipc::IPCResult RecvSetURITitle(nsIURI* uri, const nsAString& title);
-
-  mozilla::ipc::IPCResult RecvShowAlert(nsIAlertNotification* aAlert);
-
-  mozilla::ipc::IPCResult RecvCloseAlert(const nsAString& aName,
-                                         bool aContextClosed);
-
-  mozilla::ipc::IPCResult RecvDisableNotifications(nsIPrincipal* aPrincipal);
-
-  mozilla::ipc::IPCResult RecvOpenNotificationSettings(
-      nsIPrincipal* aPrincipal);
-
-  mozilla::ipc::IPCResult RecvNotificationEvent(
-      const nsAString& aType, const NotificationEventData& aData);
 
   mozilla::ipc::IPCResult RecvLoadURIExternal(
       nsIURI* uri, nsIPrincipal* triggeringPrincipal,
@@ -1113,7 +1115,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvGetFontListShmBlock(
       const uint32_t& aGeneration, const uint32_t& aIndex,
-      base::SharedMemoryHandle* aOut);
+      mozilla::ipc::SharedMemory::Handle* aOut);
 
   mozilla::ipc::IPCResult RecvInitializeFamily(const uint32_t& aGeneration,
                                                const uint32_t& aFamilyIndex,
@@ -1136,9 +1138,9 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvStartCmapLoading(const uint32_t& aGeneration,
                                                const uint32_t& aStartIndex);
 
-  mozilla::ipc::IPCResult RecvGetHyphDict(nsIURI* aURIParams,
-                                          base::SharedMemoryHandle* aOutHandle,
-                                          uint32_t* aOutSize);
+  mozilla::ipc::IPCResult RecvGetHyphDict(
+      nsIURI* aURIParams, mozilla::ipc::SharedMemory::Handle* aOutHandle,
+      uint32_t* aOutSize);
 
   mozilla::ipc::IPCResult RecvNotifyBenchmarkResult(const nsAString& aCodecName,
                                                     const uint32_t& aDecodeFPS);
@@ -1381,6 +1383,14 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvGetSystemIcon(nsIURI* aURI,
                                             GetSystemIconResolver&& aResolver);
 
+  mozilla::ipc::IPCResult RecvGetSystemGeolocationPermissionBehavior(
+      GetSystemGeolocationPermissionBehaviorResolver&& aResolver);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult
+  RecvRequestGeolocationPermissionFromUser(
+      const MaybeDiscardedBrowsingContext& aBrowsingContext,
+      RequestGeolocationPermissionFromUserResolver&& aResolver);
+
 #ifdef FUZZING_SNAPSHOT
   mozilla::ipc::IPCResult RecvSignalFuzzingReady();
 #endif
@@ -1555,6 +1565,8 @@ class ContentParent final : public PContentParent,
 
   nsTArray<nsCString> mBlobURLs;
 
+  nsTArray<nsCOMPtr<nsIPrincipal>> mCookieInContentListCache;
+
   // This is intended to be a memory and time efficient means of determining
   // whether an origin has ever existed in a process so that Blob URL broadcast
   // doesn't need to transmit every Blob URL to every content process. False
@@ -1594,6 +1606,8 @@ class ContentParent final : public PContentParent,
   // A preference serializer used to share preferences with the process.
   // Cleared once startup is complete.
   UniquePtr<mozilla::ipc::SharedPreferenceSerializer> mPrefSerializer;
+
+  RefPtr<IdleTaskRunner> mMaybeBeginShutdownRunner;
 
   static uint32_t sMaxContentProcesses;
   static uint32_t sPageLoadEventCounter;

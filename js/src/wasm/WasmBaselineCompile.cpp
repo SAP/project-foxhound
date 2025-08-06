@@ -61,6 +61,86 @@
  * - "Larger" code generating functions make their own rules.
  */
 
+/*
+ * [SMDOC] WebAssembly baseline compiler -- Lazy Tier-Up mechanism
+ *
+ * For baseline functions, we compile in code to monitor the function's
+ * "hotness" and request tier-up once that hotness crosses a threshold.
+ *
+ * (1) Each function has an associated int32_t counter,
+ *     FuncDefInstanceData::hotnessCounter.  These are stored in an array in
+ *     the Instance.  Hence access to them is fast and thread-local.
+ *
+ * (2) On instantiation, the counters are set to some positive number
+ *     (Instance::init, Instance::computeInitialHotnessCounter), which is a
+ *     very crude estimate of the cost of Ion compilation of the function.
+ *
+ * (3) In baseline compilation, a function decrements its counter at every
+ *     entry (BaseCompiler::beginFunction) and at the start of every loop
+ *     iteration (BaseCompiler::emitLoop).  The decrement code is created by
+ *     BaseCompiler::addHotnessCheck.
+ *
+ * (4) The decrement is by some value in the range 1 .. 127, as computed from
+ *     the function or loop-body size, by BlockSizeToDownwardsStep.
+ *
+ * (5) For loops, the body size is known only at the end of the loop, but the
+ *     check is required at the start of the body.  Hence the value is patched
+ *     in at the end (BaseCompiler::emitEnd, case LabelKind::Loop).
+ *
+ * (6) BaseCompiler::addHotnessCheck creates the shortest possible
+ *     decrement/check code, to minimise both time and code-space overhead.  On
+ *     Intel it is only two instructions.  The counter has the value from (4)
+ *     subtracted from it.  If the result is negative, we jump to OOL code
+ *     (class OutOfLineRequestTierUp) which requests tier up; control then
+ *     continues immediately after the check.
+ *
+ * (7) The OOL tier-up request code calls the stub pointed to by
+ *     Instance::requestTierUpStub_.  This always points to the stub created by
+ *     GenerateRequestTierUpStub.  This saves all registers and calls onwards
+ *     to WasmHandleRequestTierUp in C++-land.
+ *
+ * (8) WasmHandleRequestTierUp figures out which function in which Instance is
+ *     requesting tier-up.  It sets the function's counter (1) to the largest
+ *     possible value, which is 2^31-1.  It then calls onwards to
+ *     Code::requestTierUp, which requests off-thread Ion compilation of the
+ *     function, then immediately returns.
+ *
+ * (9) It is important that (8) sets the counter to 2^31-1 (as close to
+ *     infinity as possible).  This is because it may be arbitrarily long
+ *     before the optimised code becomes available.  In the meantime the
+ *     baseline version of the function will continue to run.  We do not want
+ *     it to make frequent duplicate requests for tier-up.  Although a request
+ *     for tier-up is relatively cheap (a few hundred instructions), it is
+ *     still way more expensive than the fast-case for a hotness check (2 insns
+ *     on Intel), and performance of the baseline code will be badly affected
+ *     if it makes many duplicate requests.
+ *
+ * (10) Of course it is impossible to *guarantee* that a baseline function will
+ *      not make a duplicate request, because the Ion compilation of the
+ *      function could take arbitrarily long, or even fail completely (eg OOM).
+ *      Hence it is necessary for WasmCode::requestTierUp (8) to detect and
+ *      ignore duplicate requests.
+ *
+ * (11) Each Instance of a Module runs in its own thread and has its own array
+ *      of counters.  This makes the counter updating thread-local and cheap.
+ *      But it means that, if a Module has multiple threads (Instances), it
+ *      could be that a function never gets hot enough to request tier up,
+ *      because it is not hot enough in any single thread, even though the
+ *      total hotness summed across all threads is enough to request tier up.
+ *      Whether this inaccuracy is a problem in practice remains to be seen.
+ *
+ * (12) Code::requestTierUp (8) creates a PartialTier2CompileTask and queues it
+ *      for execution.  It does not do the compilation itself.
+ *
+ * (13) A PartialTier2CompileTask's runHelperThreadTask (running on a helper
+ *      thread) calls CompilePartialTier2.  This compiles the function with Ion
+ *      and racily updates the tiering table entry for the function, which
+ *      lives in Code::jumpTables_::tiering_.
+ *
+ * (14) Subsequent calls to the function's baseline entry points will then jump
+ *      to the Ion version of the function.  Hence lazy tier-up is achieved.
+ */
+
 #include "wasm/WasmBaselineCompile.h"
 
 #include "wasm/WasmAnyRef.h"
@@ -82,6 +162,10 @@ namespace js {
 namespace wasm {
 
 using namespace js::jit;
+
+using mozilla::Maybe;
+using mozilla::Nothing;
+using mozilla::Some;
 
 ////////////////////////////////////////////////////////////
 //
@@ -361,6 +445,18 @@ void BaseCompiler::unstashI64(RegPtr regForInstance, RegI64 r) {
 }
 #endif
 
+// Given the bytecode size of a block (a complete function body, or a loop
+// body), return the required downwards step for the associated hotness
+// counter.  Returned value will be in 1 .. 127 inclusive.
+static uint32_t BlockSizeToDownwardsStep(size_t blockBytecodeSize) {
+  MOZ_RELEASE_ASSERT(blockBytecodeSize <= size_t(MaxFunctionBytes));
+  const uint32_t BYTECODES_PER_STEP = 20;  // tunable parameter
+  size_t step = blockBytecodeSize / BYTECODES_PER_STEP;
+  step = std::max<uint32_t>(step, 1);
+  step = std::min<uint32_t>(step, 127);
+  return uint32_t(step);
+}
+
 //////////////////////////////////////////////////////////////////////////////
 //
 // Function entry and exit
@@ -507,7 +603,7 @@ bool BaseCompiler::beginFunction() {
         fr.storeLocalI64(RegI64(i->gpr64()), l);
         break;
       case MIRType::WasmAnyRef: {
-        DebugOnly<uint32_t> offs = fr.localOffsetFromSp(l);
+        mozilla::DebugOnly<uint32_t> offs = fr.localOffsetFromSp(l);
         MOZ_ASSERT(0 == (offs % sizeof(void*)));
         fr.storeLocalRef(RegRef(i->gpr()), l);
         // We should have just visited this local in the preceding loop.
@@ -547,7 +643,20 @@ bool BaseCompiler::beginFunction() {
   MOZ_ASSERT(stackMapGenerator_.framePushedAtEntryToBody.isNothing());
   stackMapGenerator_.framePushedAtEntryToBody.emplace(masm.framePushed());
 
-  return addHotnessCheck();
+  if (compilerEnv_.mode() == CompileMode::LazyTiering) {
+    size_t funcBytecodeSize = func_.end - func_.begin;
+    uint32_t step = BlockSizeToDownwardsStep(funcBytecodeSize);
+
+    // Create a patchable hotness check and patch it immediately (only because
+    // there's no way to directly create a non-patchable check directly).
+    Maybe<CodeOffset> ctrDecOffset = addHotnessCheck();
+    if (ctrDecOffset.isNothing()) {
+      return false;
+    }
+    patchHotnessCheck(ctrDecOffset.value(), step);
+  }
+
+  return true;
 }
 
 bool BaseCompiler::endFunction() {
@@ -942,11 +1051,11 @@ void BaseCompiler::restoreRegisterReturnValues(const ResultType& resultType) {
 
 class OutOfLineRequestTierUp : public OutOfLineCode {
   Register instance_;  // points at the instance at entry; must remain unchanged
-  RegI32 scratch_;     // dead at entry; can be used as scratch if needed
+  Maybe<RegI32> scratch_;    // only provided on arm32
   size_t lastOpcodeOffset_;  // a bytecode offset
 
  public:
-  OutOfLineRequestTierUp(Register instance, RegI32 scratch,
+  OutOfLineRequestTierUp(Register instance, Maybe<RegI32> scratch,
                          size_t lastOpcodeOffset)
       : instance_(instance),
         scratch_(scratch),
@@ -970,10 +1079,10 @@ class OutOfLineRequestTierUp : public OutOfLineCode {
       // On x86_32 this is easy.
       masm->xchgl(instance_, InstanceReg);
 #  elif JS_CODEGEN_ARM
-      // Use `scratch_` to do the swap, since it's now dead, but still reserved.
-      masm->mov(instance_, scratch_);  // note, destination is second arg
+      masm->mov(instance_,
+                scratch_.value());  // note, destination is second arg
       masm->mov(InstanceReg, instance_);
-      masm->mov(scratch_, InstanceReg);
+      masm->mov(scratch_.value(), InstanceReg);
 #  else
       MOZ_CRASH("BaseCompiler::OutOfLineRequestTierUp #1");
 #  endif
@@ -989,9 +1098,9 @@ class OutOfLineRequestTierUp : public OutOfLineCode {
 #  ifdef JS_CODEGEN_X86
       masm->xchgl(instance_, InstanceReg);
 #  elif JS_CODEGEN_ARM
-      masm->mov(instance_, scratch_);
+      masm->mov(instance_, scratch_.value());
       masm->mov(InstanceReg, instance_);
-      masm->mov(scratch_, InstanceReg);
+      masm->mov(scratch_.value(), InstanceReg);
 #  else
       MOZ_CRASH("BaseCompiler::OutOfLineRequestTierUp #2");
 #  endif
@@ -1002,23 +1111,28 @@ class OutOfLineRequestTierUp : public OutOfLineCode {
   }
 };
 
-bool BaseCompiler::addHotnessCheck() {
-  if (compilerEnv_.mode() != CompileMode::LazyTiering) {
-    return true;
-  }
-
+Maybe<CodeOffset> BaseCompiler::addHotnessCheck() {
   // Here's an example of what we'll create.  The path that almost always
   // happens, where the counter doesn't go negative, has just one branch.
   //
-  //   movl       0x160(%r14), %eax
-  //   subl       $1, %eax
+  //   subl       $to_be_filled_in_later, 0x170(%r14)
   //   js         oolCode // almost never taken
-  //   movl       %eax, 0x160(%r14)
   // rejoin:
   // ----------------
   // oolCode: // we get here when the counter is negative, viz, almost never
-  //   call       *0x158(%r14) // RequestTierUpStub
+  //   call       *0x160(%r14) // RequestTierUpStub
   //   jmp        rejoin
+  //
+  // Note that the counter is updated regardless of whether or not it has gone
+  // negative.  That means that, at entry to RequestTierUpStub, we know the
+  // counter must be negative, and not merely zero.
+  //
+  // Non-Intel targets will have to generate a load / subtract-and-set-flags /
+  // store / jcond sequence.
+  //
+  // To ensure the shortest possible encoding, `to_be_filled_in_later` must be
+  // a value in the range 1 .. 127 inclusive.  This is good enough for
+  // hotness-counting purposes.
 
   AutoCreatedBy acb(masm, "BC::addHotnessCheck");
 
@@ -1034,23 +1148,38 @@ bool BaseCompiler::addHotnessCheck() {
       instance, wasm::Instance::offsetInData(
                     codeMeta_.offsetOfFuncDefInstanceData(func_.index)));
 
-  RegI32 counter = needI32();
+#if JS_CODEGEN_ARM
+  Maybe<RegI32> scratch = Some(needI32());
+#else
+  Maybe<RegI32> scratch = Nothing();
+#endif
 
   OutOfLineCode* ool = addOutOfLineCode(new (alloc_) OutOfLineRequestTierUp(
-      instance, counter, iter_.lastOpcodeOffset()));
+      instance, scratch, iter_.lastOpcodeOffset()));
   if (!ool) {
-    return false;
+    return Nothing();
   }
 
-  masm.load32(addressOfCounter, counter);
-  masm.branchSub32(Assembler::Signed,  // almost never taken
-                   Imm32(1), counter, ool->entry());
-  masm.store32(counter, addressOfCounter);
+  // Because of the Intel arch instruction formats, `patchPoint` points to the
+  // byte immediately following the last byte of the instruction to patch.
+  CodeOffset patchPoint = masm.sub32FromMemAndBranchIfNegativeWithPatch(
+      addressOfCounter, ool->entry());
 
   masm.bind(ool->rejoin());
 
-  freeI32(counter);
-  return true;
+  if (scratch.isSome()) {
+    freeI32(scratch.value());
+  }
+
+  // `patchPoint` might be invalid if the assembler OOMd at some point.
+  return masm.oom() ? Nothing() : Some(patchPoint);
+}
+
+void BaseCompiler::patchHotnessCheck(CodeOffset offset, uint32_t step) {
+  // Zero makes the hotness check pointless.  Above 127 is not representable in
+  // the short-form Intel encoding.
+  MOZ_RELEASE_ASSERT(step > 0 && step <= 127);
+  masm.patchSub32FromMemAndBranchIfNegative(offset, Imm32(step));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1750,14 +1879,12 @@ class OutOfLineAbortingTrap : public OutOfLineCode {
   }
 };
 
-#ifdef ENABLE_WASM_TAIL_CALLS
 static ReturnCallAdjustmentInfo BuildReturnCallAdjustmentInfo(
     const FuncType& callerType, const FuncType& calleeType) {
   return ReturnCallAdjustmentInfo(
       StackArgAreaSizeUnaligned(ArgTypeVector(calleeType)),
       StackArgAreaSizeUnaligned(ArgTypeVector(callerType)));
 }
-#endif
 
 bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
                                 const Stk& indexVal, const FunctionCall& call,
@@ -1792,43 +1919,138 @@ bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
     masm.wasmCallIndirect(desc, callee, oob->entry(), nullCheckFailed,
                           mozilla::Nothing(), fastCallOffset, slowCallOffset);
   } else {
-#ifdef ENABLE_WASM_TAIL_CALLS
     ReturnCallAdjustmentInfo retCallInfo = BuildReturnCallAdjustmentInfo(
         this->funcType(), (*codeMeta_.types)[funcTypeIndex].funcType());
     masm.wasmReturnCallIndirect(desc, callee, oob->entry(), nullCheckFailed,
                                 mozilla::Nothing(), retCallInfo);
-#else
-    MOZ_CRASH("not available");
-#endif
   }
   return true;
 }
 
-#ifdef ENABLE_WASM_GC
-void BaseCompiler::callRef(const Stk& calleeRef, const FunctionCall& call,
+class OutOfLineUpdateCallRefMetrics : public OutOfLineCode {
+ public:
+  virtual void generate(MacroAssembler* masm) override {
+    // Call the stub pointed to by Instance::updateCallRefMetricsStub, then
+    // rejoin.  See "Register management" in BaseCompiler::updateCallRefMetrics
+    // for details of register management.
+    //
+    // The monitored call may or may not be cross-instance.  The stub will only
+    // modify `regMetrics`, `regFuncRef`, `regScratch` and `regMetrics*` (that
+    // is, the pointed-at CallRefMetrics) and cannot fail or trap.
+    masm->call(
+        Address(InstanceReg, Instance::offsetOfUpdateCallRefMetricsStub()));
+    masm->jump(rejoin());
+  }
+};
+
+// Generate code that updates the `callRefIndex`th CallRefMetrics attached to
+// the current Instance, to reflect the fact that this call site is just about
+// to make a call to the funcref to which WasmCallRefReg currently points.
+bool BaseCompiler::updateCallRefMetrics(size_t callRefIndex) {
+  AutoCreatedBy acb(masm, "BC::updateCallRefMetrics");
+
+  // See declaration of CallRefMetrics for comments about assignments of
+  // funcrefs to `CallRefMetrics::targets[]` fields.
+
+  // Register management: we will use three regs, `regMetrics`, `regFuncRef`,
+  // `regScratch` as detailed below.  All of them may be trashed.  But
+  // WasmCallRefReg needs to be unchanged across the update, so copy it into
+  // `regFuncRef` and use that instead of the original.
+  //
+  // At entry here, at entry to the OOL code, and at entry to the stub it
+  // calls, InstanceReg must be pointing at a valid Instance.
+  const Register regMetrics = WasmCallRefCallScratchReg0;  // CallRefMetrics*
+  const Register regFuncRef = WasmCallRefCallScratchReg1;  // FuncExtended*
+  const Register regScratch = WasmCallRefCallScratchReg2;  // scratch
+
+  OutOfLineCode* ool =
+      addOutOfLineCode(new (alloc_) OutOfLineUpdateCallRefMetrics());
+  if (!ool) {
+    return false;
+  }
+
+  // We only need one Rejoin label, so use ool->rejoin() for that.
+
+  // if (target == nullptr) goto Rejoin
+  masm.branchWasmAnyRefIsNull(/*isNull=*/true, WasmCallRefReg, ool->rejoin());
+
+  // regFuncRef = target (make a copy of WasmCallRefReg)
+  masm.mov(WasmCallRefReg, regFuncRef);
+
+  // regMetrics = thisInstance::callRefMetrics_ + <imm>
+  //
+  // Emit a patchable mov32 which will load the offset of the `CallRefMetrics`
+  // stored inside the `Instance::callRefMetrics_` array
+  const CodeOffset offsetOfCallRefOffset = masm.move32WithPatch(regScratch);
+  masm.callRefMetricsPatches()[callRefIndex].setOffset(
+      offsetOfCallRefOffset.offset());
+  // Get a pointer to the `CallRefMetrics` for this call_ref
+  masm.loadPtr(Address(InstanceReg, wasm::Instance::offsetOfCallRefMetrics()),
+               regMetrics);
+  masm.addPtr(regScratch, regMetrics);
+
+  // At this point, regFuncRef = the FuncExtended*, regMetrics = the
+  // CallRefMetrics* and we know regFuncRef is not null.
+  //
+  // if (target->instance != thisInstance) goto Out-Of-Line
+  const size_t instanceSlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_INSTANCE_SLOT);
+  masm.loadPtr(Address(regFuncRef, instanceSlotOffset), regScratch);
+  masm.branchPtr(Assembler::NotEqual, InstanceReg, regScratch, ool->entry());
+
+  // At this point, regFuncRef = the FuncExtended*, regMetrics = the
+  // CallRefMetrics*, we know regFuncRef is not null and it's a same-instance
+  // call.
+  //
+  // if (target != metrics->targets[0]) goto Out-Of-Line
+  const size_t offsetOfTarget0 = CallRefMetrics::offsetOfTarget(0);
+  masm.loadPtr(Address(regMetrics, offsetOfTarget0), regScratch);
+  masm.branchPtr(Assembler::NotEqual, regScratch, regFuncRef, ool->entry());
+
+  // At this point, regFuncRef = the FuncExtended*, regMetrics = the
+  // CallRefMetrics*, we know regFuncRef is not null, it's a same-instance
+  // call, and it is to the destination `regMetrics->targets[0]`.
+  //
+  // metrics->count0++
+  const size_t offsetOfCount0 = CallRefMetrics::offsetOfCount(0);
+  masm.load32(Address(regMetrics, offsetOfCount0), regScratch);
+  masm.add32(Imm32(1), regScratch);
+  masm.store32(regScratch, Address(regMetrics, offsetOfCount0));
+
+  masm.bind(ool->rejoin());
+  return true;
+}
+
+bool BaseCompiler::callRef(const Stk& calleeRef, const FunctionCall& call,
+                           mozilla::Maybe<size_t> callRefIndex,
                            CodeOffset* fastCallOffset,
                            CodeOffset* slowCallOffset) {
   CallSiteDesc desc(bytecodeOffset(), CallSiteDesc::FuncRef);
   CalleeDesc callee = CalleeDesc::wasmFuncRef();
 
   loadRef(calleeRef, RegRef(WasmCallRefReg));
+  if (compilerEnv_.mode() == CompileMode::LazyTiering) {
+    if (!updateCallRefMetrics(*callRefIndex)) {
+      return false;
+    }
+  } else {
+    MOZ_ASSERT(callRefIndex.isNothing());
+  }
+
   masm.wasmCallRef(desc, callee, fastCallOffset, slowCallOffset);
+  return true;
 }
 
-#  ifdef ENABLE_WASM_TAIL_CALLS
 void BaseCompiler::returnCallRef(const Stk& calleeRef, const FunctionCall& call,
-                                 const FuncType* funcType) {
+                                 const FuncType& funcType) {
   CallSiteDesc desc(bytecodeOffset(), CallSiteDesc::FuncRef);
   CalleeDesc callee = CalleeDesc::wasmFuncRef();
 
   loadRef(calleeRef, RegRef(WasmCallRefReg));
   ReturnCallAdjustmentInfo retCallInfo =
-      BuildReturnCallAdjustmentInfo(this->funcType(), *funcType);
+      BuildReturnCallAdjustmentInfo(this->funcType(), funcType);
   masm.wasmReturnCallRef(desc, callee, retCallInfo);
 }
-#  endif
-
-#endif
 
 // Precondition: sync()
 
@@ -2622,15 +2844,9 @@ static void XorImmI64(MacroAssembler& masm, int64_t c, RegI64 rsd) {
   masm.xor64(Imm64(c), rsd);
 }
 
-static void ClzI64(BaseCompiler& bc, RegI64 rsd) {
-  bc.masm.clz64(rsd, bc.lowPart(rsd));
-  bc.maybeClearHighPart(rsd);
-}
+static void ClzI64(BaseCompiler& bc, RegI64 rsd) { bc.masm.clz64(rsd, rsd); }
 
-static void CtzI64(BaseCompiler& bc, RegI64 rsd) {
-  bc.masm.ctz64(rsd, bc.lowPart(rsd));
-  bc.maybeClearHighPart(rsd);
-}
+static void CtzI64(BaseCompiler& bc, RegI64 rsd) { bc.masm.ctz64(rsd, rsd); }
 
 static void PopcntI64(BaseCompiler& bc, RegI64 rsd, RegI32 temp) {
   bc.masm.popcnt64(rsd, rsd, temp);
@@ -3005,8 +3221,7 @@ void BaseCompiler::emitQuotientI64() {
     if (power != 0) {
       RegI64 r = popI64();
       Label positive;
-      masm.branchTest64(Assembler::NotSigned, r, r, RegI32::Invalid(),
-                        &positive);
+      masm.branchTest64(Assembler::NotSigned, r, r, &positive);
       masm.add64(Imm64(c - 1), r);
       masm.bind(&positive);
 
@@ -3055,8 +3270,7 @@ void BaseCompiler::emitRemainderI64() {
     moveI64(r, temp);
 
     Label positive;
-    masm.branchTest64(Assembler::NotSigned, temp, temp, RegI32::Invalid(),
-                      &positive);
+    masm.branchTest64(Assembler::NotSigned, temp, temp, &positive);
     masm.add64(Imm64(c - 1), temp);
     masm.bind(&positive);
 
@@ -3377,7 +3591,6 @@ bool BaseCompiler::jumpConditionalWithResults(BranchState* b, Cond cond,
   return true;
 }
 
-#ifdef ENABLE_WASM_GC
 bool BaseCompiler::jumpConditionalWithResults(BranchState* b, RegRef object,
                                               RefType sourceType,
                                               RefType destType,
@@ -3419,7 +3632,6 @@ bool BaseCompiler::jumpConditionalWithResults(BranchState* b, RegRef object,
   freeRegistersForBranchIfRefSubtype(regs);
   return true;
 }
-#endif
 
 // sniffConditionalControl{Cmp,Eqz} may modify the latentWhatever_ state in
 // the BaseCompiler so that a subsequent conditional branch can be compiled
@@ -3701,8 +3913,20 @@ bool BaseCompiler::emitLoop() {
     masm.bind(&controlItem(0).label);
     // The interrupt check barfs if there are live registers.
     sync();
-    if (!addInterruptCheck() || !addHotnessCheck()) {
+    if (!addInterruptCheck()) {
       return false;
+    }
+
+    if (compilerEnv_.mode() == CompileMode::LazyTiering) {
+      // Create an unpatched hotness check and stash enough information that we
+      // can patch it with a value related to the loop's size when we get to
+      // the corresponding `end` opcode.
+      Maybe<CodeOffset> ctrDecOffset = addHotnessCheck();
+      if (ctrDecOffset.isNothing()) {
+        return false;
+      }
+      controlItem().loopBytecodeStart = iter_.lastOpcodeOffset();
+      controlItem().offsetOfCtrDec = ctrDecOffset.value();
     }
   }
 
@@ -3936,11 +4160,28 @@ bool BaseCompiler::emitEnd() {
       }
       iter_.popEnd();
       break;
-    case LabelKind::Loop:
+    case LabelKind::Loop: {
+      if (compilerEnv_.mode() == CompileMode::LazyTiering) {
+        // These are set (or not set) together.
+        MOZ_ASSERT((controlItem().loopBytecodeStart != UINTPTR_MAX) ==
+                   (controlItem().offsetOfCtrDec.bound()));
+        if (controlItem().loopBytecodeStart != UINTPTR_MAX) {
+          // If the above condition is false, the loop was in dead code and so
+          // there is no loop-head hotness check that needs to be patched.  See
+          // ::emitLoop.
+          MOZ_ASSERT(controlItem().loopBytecodeStart <=
+                     iter_.lastOpcodeOffset());
+          size_t loopBytecodeSize =
+              iter_.lastOpcodeOffset() - controlItem().loopBytecodeStart;
+          uint32_t step = BlockSizeToDownwardsStep(loopBytecodeSize);
+          patchHotnessCheck(controlItem().offsetOfCtrDec, step);
+        }
+      }
       // The end of a loop isn't a branch target, so we can just leave its
       // results on the expression stack to be consumed by the outer block.
       iter_.popEnd();
       break;
+    }
     case LabelKind::Then:
       if (!endIfThen(type)) {
         return false;
@@ -4026,7 +4267,6 @@ bool BaseCompiler::emitBrIf() {
   return emitBranchPerform(&b);
 }
 
-#ifdef ENABLE_WASM_GC
 bool BaseCompiler::emitBrOnNull() {
   MOZ_ASSERT(!hasLatentOp());
 
@@ -4111,7 +4351,6 @@ bool BaseCompiler::emitBrOnNonNull() {
 
   return true;
 }
-#endif
 
 bool BaseCompiler::emitBrTable() {
   Uint32Vector depths;
@@ -5210,7 +5449,6 @@ bool BaseCompiler::emitCall() {
   return pushCallResults(baselineCall, resultType, results);
 }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
 bool BaseCompiler::emitReturnCall() {
   uint32_t funcIndex;
   BaseNothingVector args_{};
@@ -5263,7 +5501,6 @@ bool BaseCompiler::emitReturnCall() {
   deadCode_ = true;
   return true;
 }
-#endif
 
 bool BaseCompiler::emitCallIndirect() {
   uint32_t funcTypeIndex;
@@ -5280,7 +5517,8 @@ bool BaseCompiler::emitCallIndirect() {
 
   // Stack: ... arg1 .. argn callee
 
-  replaceTableIndexWithClampedInt32(codeMeta_.tables[tableIndex].indexType());
+  replaceTableAddressWithClampedInt32(
+      codeMeta_.tables[tableIndex].addressType());
 
   sync();
 
@@ -5329,7 +5567,6 @@ bool BaseCompiler::emitCallIndirect() {
   return pushCallResults(baselineCall, resultType, results);
 }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
 bool BaseCompiler::emitReturnCallIndirect() {
   uint32_t funcTypeIndex;
   uint32_t tableIndex;
@@ -5346,7 +5583,8 @@ bool BaseCompiler::emitReturnCallIndirect() {
 
   // Stack: ... arg1 .. argn callee
 
-  replaceTableIndexWithClampedInt32(codeMeta_.tables[tableIndex].indexType());
+  replaceTableAddressWithClampedInt32(
+      codeMeta_.tables[tableIndex].addressType());
 
   sync();
   if (!insertDebugCollapseFrame()) {
@@ -5383,29 +5621,40 @@ bool BaseCompiler::emitReturnCallIndirect() {
   deadCode_ = true;
   return true;
 }
-#endif
 
-#ifdef ENABLE_WASM_GC
 bool BaseCompiler::emitCallRef() {
-  const FuncType* funcType;
+  uint32_t funcTypeIndex;
   Nothing unused_callee;
   BaseNothingVector unused_args{};
-  if (!iter_.readCallRef(&funcType, &unused_callee, &unused_args)) {
+  if (!iter_.readCallRef(&funcTypeIndex, &unused_callee, &unused_args)) {
     return false;
+  }
+
+  // Add a metrics entry to track this call_ref site. Do this even if we're in
+  // 'dead code' to have easy consistency with ion, which consumes these.
+  Maybe<size_t> callRefIndex;
+  if (compilerEnv_.mode() == CompileMode::LazyTiering) {
+    masm.append(wasm::CallRefMetricsPatch());
+    if (masm.oom()) {
+      return false;
+    }
+    callRefIndex = Some(masm.callRefMetricsPatches().length() - 1);
   }
 
   if (deadCode_) {
     return true;
   }
 
+  const FuncType& funcType = codeMeta_.types->type(funcTypeIndex).funcType();
+
   sync();
 
   // Stack: ... arg1 .. argn callee
 
-  uint32_t numArgs = funcType->args().length() + 1;
+  uint32_t numArgs = funcType.args().length() + 1;
   size_t stackArgBytes = stackConsumed(numArgs);
 
-  ResultType resultType(ResultType::Vector(funcType->results()));
+  ResultType resultType(ResultType::Vector(funcType.results()));
   StackResultsLoc results;
   if (!pushStackResultsForCall(resultType, RegPtr(ABINonArgReg0), &results)) {
     return false;
@@ -5416,7 +5665,7 @@ bool BaseCompiler::emitCallRef() {
   // MacroAssembler::wasmCallRef).
   beginCall(baselineCall, UseABI::Wasm, RestoreRegisterStateAndRealm::False);
 
-  if (!emitCallArgs(funcType->args(), NormalCallResults(results), &baselineCall,
+  if (!emitCallArgs(funcType.args(), NormalCallResults(results), &baselineCall,
                     CalleeOnStack::True)) {
     return false;
   }
@@ -5424,7 +5673,10 @@ bool BaseCompiler::emitCallRef() {
   const Stk& callee = peek(results.count());
   CodeOffset fastCallOffset;
   CodeOffset slowCallOffset;
-  callRef(callee, baselineCall, &fastCallOffset, &slowCallOffset);
+  if (!callRef(callee, baselineCall, callRefIndex, &fastCallOffset,
+               &slowCallOffset)) {
+    return false;
+  }
   if (!createStackMap("emitCallRef", fastCallOffset)) {
     return false;
   }
@@ -5442,12 +5694,11 @@ bool BaseCompiler::emitCallRef() {
   return pushCallResults(baselineCall, resultType, results);
 }
 
-#  ifdef ENABLE_WASM_TAIL_CALLS
 bool BaseCompiler::emitReturnCallRef() {
-  const FuncType* funcType;
+  uint32_t funcTypeIndex;
   Nothing unused_callee;
   BaseNothingVector unused_args{};
-  if (!iter_.readReturnCallRef(&funcType, &unused_callee, &unused_args)) {
+  if (!iter_.readReturnCallRef(&funcTypeIndex, &unused_callee, &unused_args)) {
     return false;
   }
 
@@ -5455,21 +5706,24 @@ bool BaseCompiler::emitReturnCallRef() {
     return true;
   }
 
+  const FuncType& funcType = codeMeta_.types->type(funcTypeIndex).funcType();
+
   sync();
+
   if (!insertDebugCollapseFrame()) {
     return false;
   }
 
   // Stack: ... arg1 .. argn callee
 
-  uint32_t numArgs = funcType->args().length() + 1;
+  uint32_t numArgs = funcType.args().length() + 1;
 
   FunctionCall baselineCall{};
   // State and realm are restored as needed by by callRef (really by
   // MacroAssembler::wasmCallRef).
   beginCall(baselineCall, UseABI::Wasm, RestoreRegisterStateAndRealm::False);
 
-  if (!emitCallArgs(funcType->args(), TailCallResults(*funcType), &baselineCall,
+  if (!emitCallArgs(funcType.args(), TailCallResults(funcType), &baselineCall,
                     CalleeOnStack::True)) {
     return false;
   }
@@ -5485,9 +5739,6 @@ bool BaseCompiler::emitReturnCallRef() {
   deadCode_ = true;
   return true;
 }
-#  endif
-
-#endif
 
 void BaseCompiler::emitRound(RoundingMode roundingMode, ValType operandType) {
   if (operandType == ValType::F32) {
@@ -5701,7 +5952,7 @@ bool BaseCompiler::emitConvertFloatingToInt64Callout(SymbolicAddress callee,
 
 bool BaseCompiler::emitGetLocal() {
   uint32_t slot;
-  if (!iter_.readGetLocal(locals_, &slot)) {
+  if (!iter_.readGetLocal(&slot)) {
     return false;
   }
 
@@ -5827,7 +6078,7 @@ bool BaseCompiler::emitSetOrTeeLocal(uint32_t slot) {
 bool BaseCompiler::emitSetLocal() {
   uint32_t slot;
   Nothing unused_value;
-  if (!iter_.readSetLocal(locals_, &slot, &unused_value)) {
+  if (!iter_.readSetLocal(&slot, &unused_value)) {
     return false;
   }
   return emitSetOrTeeLocal<true>(slot);
@@ -5836,7 +6087,7 @@ bool BaseCompiler::emitSetLocal() {
 bool BaseCompiler::emitTeeLocal() {
   uint32_t slot;
   Nothing unused_value;
-  if (!iter_.readTeeLocal(locals_, &slot, &unused_value)) {
+  if (!iter_.readTeeLocal(&slot, &unused_value)) {
     return false;
   }
   return emitSetOrTeeLocal<false>(slot);
@@ -6382,7 +6633,6 @@ bool BaseCompiler::emitRefIsNull() {
   return true;
 }
 
-#ifdef ENABLE_WASM_GC
 bool BaseCompiler::emitRefAsNonNull() {
   Nothing nothing;
   if (!iter_.readRefAsNonNull(&nothing)) {
@@ -6402,7 +6652,6 @@ bool BaseCompiler::emitRefAsNonNull() {
 
   return true;
 }
-#endif
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -6508,10 +6757,10 @@ bool BaseCompiler::emitWait(ValType type, uint32_t byteSize) {
   return atomicWait(type, &access);
 }
 
-bool BaseCompiler::emitWake() {
+bool BaseCompiler::emitNotify() {
   Nothing nothing;
   LinearMemoryAddress<Nothing> addr;
-  if (!iter_.readWake(&addr, &nothing)) {
+  if (!iter_.readNotify(&addr, &nothing)) {
     return false;
   }
   if (deadCode_) {
@@ -6520,7 +6769,7 @@ bool BaseCompiler::emitWake() {
   MemoryAccessDesc access(addr.memoryIndex, Scalar::Int32, addr.align,
                           addr.offset, bytecodeOffset(),
                           hugeMemoryEnabled(addr.memoryIndex));
-  return atomicWake(&access);
+  return atomicNotify(&access);
 }
 
 bool BaseCompiler::emitFence() {
@@ -6604,14 +6853,14 @@ bool BaseCompiler::memCopyCall(uint32_t dstMemIndex, uint32_t srcMemIndex) {
 
   // Do the general-purpose fallback for copying between any combination of
   // memories. This works by moving everything to the lowest-common denominator.
-  // i32 indices are promoted to i64, and non-shared memories are treated as
+  // i32 addresses are promoted to i64, and non-shared memories are treated as
   // shared.
-  IndexType dstIndexType = codeMeta_.memories[dstMemIndex].indexType();
-  IndexType srcIndexType = codeMeta_.memories[srcMemIndex].indexType();
-  IndexType lenIndexType = MinIndexType(dstIndexType, srcIndexType);
+  AddressType dstAddressType = codeMeta_.memories[dstMemIndex].addressType();
+  AddressType srcAddressType = codeMeta_.memories[srcMemIndex].addressType();
+  AddressType lenAddressType = MinAddressType(dstAddressType, srcAddressType);
 
   // Pop the operands off of the stack and widen them
-  RegI64 len = popIndexToInt64(lenIndexType);
+  RegI64 len = popAddressToInt64(lenAddressType);
 #ifdef JS_CODEGEN_X86
   {
     // Stash the length value to prevent running out of registers
@@ -6620,8 +6869,8 @@ bool BaseCompiler::memCopyCall(uint32_t dstMemIndex, uint32_t srcMemIndex) {
     freeI64(len);
   }
 #endif
-  RegI64 srcIndex = popIndexToInt64(srcIndexType);
-  RegI64 dstIndex = popIndexToInt64(dstIndexType);
+  RegI64 srcIndex = popAddressToInt64(srcAddressType);
+  RegI64 dstIndex = popAddressToInt64(dstAddressType);
 
   pushI64(dstIndex);
   pushI64(srcIndex);
@@ -6705,15 +6954,15 @@ bool BaseCompiler::emitTableCopy() {
     return true;
   }
 
-  IndexType dstIndexType = codeMeta_.tables[dstTable].indexType();
-  IndexType srcIndexType = codeMeta_.tables[srcTable].indexType();
-  IndexType lenIndexType = MinIndexType(dstIndexType, srcIndexType);
+  AddressType dstAddressType = codeMeta_.tables[dstTable].addressType();
+  AddressType srcAddressType = codeMeta_.tables[srcTable].addressType();
+  AddressType lenAddressType = MinAddressType(dstAddressType, srcAddressType);
 
   // Instance::tableCopy(dstOffset:u32, srcOffset:u32, len:u32, dstTable:u32,
   // srcTable:u32)
-  RegI32 len = popTableIndexToClampedInt32(lenIndexType);
-  RegI32 src = popTableIndexToClampedInt32(srcIndexType);
-  replaceTableIndexWithClampedInt32(dstIndexType);
+  RegI32 len = popTableAddressToClampedInt32(lenAddressType);
+  RegI32 src = popTableAddressToClampedInt32(srcAddressType);
+  replaceTableAddressWithClampedInt32(dstAddressType);
   pushI32(src);
   pushI32(len);
   pushI32(dstTable);
@@ -6737,7 +6986,7 @@ bool BaseCompiler::emitTableInit() {
   // Instance::tableInit(dst:u32, src:u32, len:u32, seg:u32, table:u32)
   RegI32 len = popI32();
   RegI32 src = popI32();
-  replaceTableIndexWithClampedInt32(codeMeta_.tables[dstTable].indexType());
+  replaceTableAddressWithClampedInt32(codeMeta_.tables[dstTable].addressType());
   pushI32(src);
   pushI32(len);
   pushI32(segIndex);
@@ -6755,12 +7004,12 @@ bool BaseCompiler::emitTableFill() {
     return true;
   }
 
-  IndexType indexType = codeMeta_.tables[tableIndex].indexType();
+  AddressType addressType = codeMeta_.tables[tableIndex].addressType();
 
   // Instance::tableFill(start:u32, val:ref, len:u32, table:u32) -> void
-  RegI32 len = popTableIndexToClampedInt32(indexType);
+  RegI32 len = popTableAddressToClampedInt32(addressType);
   AnyReg val = popAny();
-  replaceTableIndexWithClampedInt32(indexType);
+  replaceTableAddressWithClampedInt32(addressType);
   pushAny(val);
   pushI32(len);
   pushI32(tableIndex);
@@ -6795,7 +7044,8 @@ bool BaseCompiler::emitTableGet() {
     return true;
   }
 
-  replaceTableIndexWithClampedInt32(codeMeta_.tables[tableIndex].indexType());
+  replaceTableAddressWithClampedInt32(
+      codeMeta_.tables[tableIndex].addressType());
   if (codeMeta_.tables[tableIndex].elemType.tableRepr() == TableRepr::Ref) {
     return emitTableGetAnyRef(tableIndex);
   }
@@ -6814,16 +7064,16 @@ bool BaseCompiler::emitTableGrow() {
     return true;
   }
 
-  IndexType indexType = codeMeta_.tables[tableIndex].indexType();
+  AddressType addressType = codeMeta_.tables[tableIndex].addressType();
 
   // Instance::tableGrow(initValue:anyref, delta:u32, table:u32) -> u32
-  replaceTableIndexWithClampedInt32(indexType);
+  replaceTableAddressWithClampedInt32(addressType);
   pushI32(tableIndex);
   if (!emitInstanceCall(SASigTableGrow)) {
     return false;
   }
 
-  if (indexType == IndexType::I64) {
+  if (addressType == AddressType::I64) {
     RegI64 r;
     popI32ForSignExtendI64(&r);
     masm.move32To64SignExtend(lowPart(r), r);
@@ -6842,16 +7092,16 @@ bool BaseCompiler::emitTableSet() {
   if (deadCode_) {
     return true;
   }
-  if (codeMeta_.tables[tableIndex].indexType() == IndexType::I64) {
+  if (codeMeta_.tables[tableIndex].addressType() == AddressType::I64) {
     AnyReg value = popAny();
-    replaceTableIndexWithClampedInt32(IndexType::I64);
+    replaceTableAddressWithClampedInt32(AddressType::I64);
     pushAny(value);
   }
   if (codeMeta_.tables[tableIndex].elemType.tableRepr() == TableRepr::Ref) {
     return emitTableSetAnyRef(tableIndex);
   }
   pushI32(tableIndex);
-  // Instance::tableSet(index:u32, value:ref, table:u32) -> void
+  // Instance::tableSet(address:u32, value:ref, table:u32) -> void
   return emitInstanceCall(SASigTableSet);
 }
 
@@ -6870,7 +7120,7 @@ bool BaseCompiler::emitTableSize() {
   fr.loadInstancePtr(instance);
   loadTableLength(tableIndex, instance, length);
 
-  if (codeMeta_.tables[tableIndex].indexType() == IndexType::I64) {
+  if (codeMeta_.tables[tableIndex].addressType() == AddressType::I64) {
     pushU32AsI64(length);
   } else {
     pushI32(length);
@@ -6879,11 +7129,11 @@ bool BaseCompiler::emitTableSize() {
   return true;
 }
 
-void BaseCompiler::emitTableBoundsCheck(uint32_t tableIndex, RegI32 index,
+void BaseCompiler::emitTableBoundsCheck(uint32_t tableIndex, RegI32 address,
                                         RegPtr instance) {
   Label ok;
   masm.wasmBoundsCheck32(
-      Assembler::Condition::Below, index,
+      Assembler::Condition::Below, address,
       addressOfTableField(tableIndex, offsetof(TableInstanceData, length),
                           instance),
       &ok);
@@ -6894,15 +7144,15 @@ void BaseCompiler::emitTableBoundsCheck(uint32_t tableIndex, RegI32 index,
 bool BaseCompiler::emitTableGetAnyRef(uint32_t tableIndex) {
   RegPtr instance = needPtr();
   RegPtr elements = needPtr();
-  RegI32 index = popI32();
+  RegI32 address = popI32();
 
   fr.loadInstancePtr(instance);
-  emitTableBoundsCheck(tableIndex, index, instance);
+  emitTableBoundsCheck(tableIndex, address, instance);
   loadTableElements(tableIndex, instance, elements);
-  masm.loadPtr(BaseIndex(elements, index, ScalePointer), elements);
+  masm.loadPtr(BaseIndex(elements, address, ScalePointer), elements);
 
   pushRef(RegRef(elements));
-  freeI32(index);
+  freeI32(address);
   freePtr(instance);
 
   return true;
@@ -6917,7 +7167,7 @@ bool BaseCompiler::emitTableSetAnyRef(uint32_t tableIndex) {
   RegPtr instance = needPtr();
   RegPtr elements = needPtr();
   RegRef value = popRef();
-  RegI32 index = popI32();
+  RegI32 address = popI32();
 
   // x86 is one register too short for this operation, shuffle `value` back
   // onto the stack until it is needed.
@@ -6926,12 +7176,12 @@ bool BaseCompiler::emitTableSetAnyRef(uint32_t tableIndex) {
 #endif
 
   fr.loadInstancePtr(instance);
-  emitTableBoundsCheck(tableIndex, index, instance);
+  emitTableBoundsCheck(tableIndex, address, instance);
   loadTableElements(tableIndex, instance, elements);
-  masm.computeEffectiveAddress(BaseIndex(elements, index, ScalePointer),
+  masm.computeEffectiveAddress(BaseIndex(elements, address, ScalePointer),
                                valueAddr);
 
-  freeI32(index);
+  freeI32(address);
   freePtr(elements);
   freePtr(instance);
 
@@ -7095,18 +7345,16 @@ void BaseCompiler::emitBarrieredClear(RegPtr valueAddr) {
 //
 // GC proposal.
 
-#ifdef ENABLE_WASM_GC
-
 RegPtr BaseCompiler::loadTypeDefInstanceData(uint32_t typeIndex) {
   RegPtr rp = needPtr();
   RegPtr instance;
-#  ifndef RABALDR_PIN_INSTANCE
+#ifndef RABALDR_PIN_INSTANCE
   instance = rp;
   fr.loadInstancePtr(instance);
-#  else
+#else
   // We can use the pinned instance register.
   instance = RegPtr(InstanceReg);
-#  endif
+#endif
   masm.computeEffectiveAddress(
       Address(instance, Instance::offsetInData(
                             codeMeta_.offsetOfTypeDefInstanceData(typeIndex))),
@@ -7117,15 +7365,15 @@ RegPtr BaseCompiler::loadTypeDefInstanceData(uint32_t typeIndex) {
 RegPtr BaseCompiler::loadSuperTypeVector(uint32_t typeIndex) {
   RegPtr rp = needPtr();
   RegPtr instance;
-#  ifndef RABALDR_PIN_INSTANCE
+#ifndef RABALDR_PIN_INSTANCE
   // We need to load the instance register, but can use the destination
   // register as a temporary.
   instance = rp;
   fr.loadInstancePtr(rp);
-#  else
+#else
   // We can use the pinned instance register.
   instance = RegPtr(InstanceReg);
-#  endif
+#endif
   masm.loadPtr(
       Address(instance, Instance::offsetInData(
                             codeMeta_.offsetOfSuperTypeVector(typeIndex))),
@@ -7223,14 +7471,14 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
     case StorageType::I64: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegI64 r = needI64();
-#  ifdef JS_64BIT
+#ifdef JS_64BIT
       FaultingCodeOffset fco = masm.load64(src, r);
       NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Load64);
-#  else
+#else
       FaultingCodeOffsetPair fcop = masm.load64(src, r);
       NullCheckPolicy::emitTrapSite(this, fcop.first, TrapMachineInsn::Load32);
       NullCheckPolicy::emitTrapSite(this, fcop.second, TrapMachineInsn::Load32);
-#  endif
+#endif
       pushI64(r);
       break;
     }
@@ -7250,7 +7498,7 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
       pushF64(r);
       break;
     }
-#  ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_WASM_SIMD
     case StorageType::V128: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegV128 r = needV128();
@@ -7259,7 +7507,7 @@ void BaseCompiler::emitGcGet(StorageType type, FieldWideningOp wideningOp,
       pushV128(r);
       break;
     }
-#  endif
+#endif
     case StorageType::Ref: {
       MOZ_ASSERT(wideningOp == FieldWideningOp::None);
       RegRef r = needRef();
@@ -7294,15 +7542,15 @@ void BaseCompiler::emitGcSetScalar(const T& dst, StorageType type,
       break;
     }
     case StorageType::I64: {
-#  ifdef JS_64BIT
+#ifdef JS_64BIT
       FaultingCodeOffset fco = masm.store64(value.i64(), dst);
       NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store64);
-#  else
+#else
       FaultingCodeOffsetPair fcop = masm.store64(value.i64(), dst);
       NullCheckPolicy::emitTrapSite(this, fcop.first, TrapMachineInsn::Store32);
       NullCheckPolicy::emitTrapSite(this, fcop.second,
                                     TrapMachineInsn::Store32);
-#  endif
+#endif
       break;
     }
     case StorageType::F32: {
@@ -7315,13 +7563,13 @@ void BaseCompiler::emitGcSetScalar(const T& dst, StorageType type,
       NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store64);
       break;
     }
-#  ifdef ENABLE_WASM_SIMD
+#ifdef ENABLE_WASM_SIMD
     case StorageType::V128: {
       FaultingCodeOffset fco = masm.storeUnalignedSimd128(value.v128(), dst);
       NullCheckPolicy::emitTrapSite(this, fco, TrapMachineInsn::Store128);
       break;
     }
-#  endif
+#endif
     default: {
       MOZ_CRASH("Unexpected field type");
     }
@@ -7444,14 +7692,14 @@ bool BaseCompiler::emitStructAlloc(uint32_t typeIndex, RegRef* object,
     RegPtr instance;
     *object = RegRef(ReturnReg);
     needRef(*object);
-#  ifndef RABALDR_PIN_INSTANCE
+#ifndef RABALDR_PIN_INSTANCE
     // We reuse the result register for the instance.
     instance = RegPtr(ReturnReg);
     fr.loadInstancePtr(instance);
-#  else
+#else
     // We can use the pinned instance register.
     instance = RegPtr(InstanceReg);
-#  endif
+#endif
 
     RegPtr typeDefData = loadTypeDefInstanceData(typeIndex);
     RegPtr temp1 = needPtr();
@@ -7719,15 +7967,15 @@ bool BaseCompiler::emitArrayAlloc(uint32_t typeIndex, RegRef object,
   sync();
 
   RegPtr instance;
-#  ifndef RABALDR_PIN_INSTANCE
+#ifndef RABALDR_PIN_INSTANCE
   // We reuse the object register for the instance. This is ok because object is
   // not live until instance is dead.
   instance = RegPtr(object);
   fr.loadInstancePtr(instance);
-#  else
+#else
   // We can use the pinned instance register.
   instance = RegPtr(InstanceReg);
-#  endif
+#endif
 
   RegPtr typeDefData = loadTypeDefInstanceData(typeIndex);
   RegPtr temp = needPtr();
@@ -7784,15 +8032,15 @@ bool BaseCompiler::emitArrayAllocFixed(uint32_t typeIndex, RegRef object,
   sync();
 
   RegPtr instance;
-#  ifndef RABALDR_PIN_INSTANCE
+#ifndef RABALDR_PIN_INSTANCE
   // We reuse the object register for the instance. This is ok because object is
   // not live until instance is dead.
   instance = RegPtr(object);
   fr.loadInstancePtr(instance);
-#  else
+#else
   // We can use the pinned instance register.
   instance = RegPtr(InstanceReg);
-#  endif
+#endif
 
   RegPtr typeDefData = loadTypeDefInstanceData(typeIndex);
   RegPtr temp1 = needPtr();
@@ -8022,9 +8270,9 @@ bool BaseCompiler::emitArrayNewElem() {
 }
 
 bool BaseCompiler::emitArrayInitData() {
-  uint32_t typeIndex, segIndex;
+  uint32_t unusedTypeIndex, segIndex;
   Nothing nothing;
-  if (!iter_.readArrayInitData(&typeIndex, &segIndex, &nothing, &nothing,
+  if (!iter_.readArrayInitData(&unusedTypeIndex, &segIndex, &nothing, &nothing,
                                &nothing, &nothing)) {
     return false;
   }
@@ -8033,12 +8281,12 @@ bool BaseCompiler::emitArrayInitData() {
     return true;
   }
 
-  pushPtr(loadTypeDefInstanceData(typeIndex));
   pushI32(int32_t(segIndex));
 
-  // The call removes 6 items from the stack: the array, array index, segment
+  // The call removes 5 items from the stack: the array, array index, segment
   // byte offset, and number of elements (operands to array.init_data), and the
-  // type data and seg index as pushed above.
+  // seg index as pushed above. TypeDefInstanceData is not necessary for this
+  // call because the array object has a reference to its type.
   return emitInstanceCall(SASigArrayInitData);
 }
 
@@ -8184,17 +8432,23 @@ bool BaseCompiler::emitArrayLen() {
 }
 
 bool BaseCompiler::emitArrayCopy() {
-  int32_t elemSize;
-  bool elemsAreRefTyped;
+  uint32_t dstArrayTypeIndex;
+  uint32_t srcArrayTypeIndex;
   Nothing nothing;
-  if (!iter_.readArrayCopy(&elemSize, &elemsAreRefTyped, &nothing, &nothing,
-                           &nothing, &nothing, &nothing)) {
+  if (!iter_.readArrayCopy(&dstArrayTypeIndex, &srcArrayTypeIndex, &nothing,
+                           &nothing, &nothing, &nothing, &nothing)) {
     return false;
   }
 
   if (deadCode_) {
     return true;
   }
+
+  const ArrayType& dstArrayType =
+      codeMeta_.types->type(dstArrayTypeIndex).arrayType();
+  StorageType dstElemType = dstArrayType.elementType();
+  int32_t elemSize = int32_t(dstElemType.size());
+  bool elemsAreRefTyped = dstElemType.isRefType();
 
   // The helper needs to know the element size. If copying ref values, the size
   // is negated to signal to the helper that it needs to do GC barriers and
@@ -8260,7 +8514,7 @@ bool BaseCompiler::emitArrayFill() {
   // - .. to spill/reload from a spill slot, we need a register to point at
   //   the instance.  That makes it even worse on x86 since there's no
   //   reserved instance reg; hence we have to use one of our 3 for it.  This
-  //   is indicated explictly in the code below.
+  //   is indicated explicitly in the code below.
   //
   // There are many comment lines indicating the current disposition of the 3
   // regs.
@@ -8281,12 +8535,12 @@ bool BaseCompiler::emitArrayFill() {
   }
 
   // Set up a pointer to the Instance, so we can do manual spills/reloads
-#  ifdef RABALDR_PIN_INSTANCE
+#ifdef RABALDR_PIN_INSTANCE
   RegPtr instancePtr = RegPtr(InstanceReg);
-#  else
+#else
   RegPtr instancePtr = needPtr();
   fr.loadInstancePtr(instancePtr);
-#  endif
+#endif
 
   // Pull operands off the instance stack and stash the non-Any ones
   RegI32 numElements = popI32();
@@ -8320,11 +8574,11 @@ bool BaseCompiler::emitArrayFill() {
   // 3: instancePtr arrayNumElements index
 
   // Reload numElements into the reg that currently holds instancePtr
-#  ifdef RABALDR_PIN_INSTANCE
+#ifdef RABALDR_PIN_INSTANCE
   numElements = needI32();
-#  else
+#else
   numElements = RegI32(instancePtr);
-#  endif
+#endif
   unstashWord(instancePtr, 0, RegPtr(numElements));
   instancePtr = RegPtr::Invalid();
   // 3: arrayNumElements index numElements
@@ -8349,12 +8603,12 @@ bool BaseCompiler::emitArrayFill() {
   // 1: index
 
   // Re-set-up the instance pointer; we had to ditch it earlier.
-#  ifdef RABALDR_PIN_INSTANCE
+#ifdef RABALDR_PIN_INSTANCE
   instancePtr = RegPtr(InstanceReg);
-#  else
+#else
   instancePtr = needPtr();
   fr.loadInstancePtr(instancePtr);
-#  endif
+#endif
   // 2: index instancePtr
 
   // Reload rp
@@ -8363,12 +8617,12 @@ bool BaseCompiler::emitArrayFill() {
   // 3: index instancePtr rp
 
   // Drop instancePtr
-#  ifdef RABALDR_PIN_INSTANCE
+#ifdef RABALDR_PIN_INSTANCE
   instancePtr = RegPtr::Invalid();
-#  else
+#else
   freePtr(instancePtr);
   instancePtr = RegPtr::Invalid();
-#  endif
+#endif
   // 2: index rp
 
   // Acquire the data pointer from the object
@@ -8383,9 +8637,9 @@ bool BaseCompiler::emitArrayFill() {
     masm.lshift32(Imm32(shift), index);
     // `index` is a 32 bit value, so we must zero-extend it to 64 bits before
     // adding it on to `rdata`.
-#  ifdef JS_64BIT
+#ifdef JS_64BIT
     masm.move32To64ZeroExtend(index, widenI32(index));
-#  endif
+#endif
   }
   masm.addPtr(index, rdata);
   // `index` is not used after this point.
@@ -8401,24 +8655,24 @@ bool BaseCompiler::emitArrayFill() {
   // 2: rp rdata
 
   // Re-re-set-up the instance pointer; we had to ditch it earlier.
-#  ifdef RABALDR_PIN_INSTANCE
+#ifdef RABALDR_PIN_INSTANCE
   instancePtr = RegPtr(InstanceReg);
-#  else
+#else
   instancePtr = needPtr();
   fr.loadInstancePtr(instancePtr);
-#  endif
+#endif
   // 3: rp rdata instancePtr
 
   // And reload numElements.
-#  ifdef RABALDR_PIN_INSTANCE
+#ifdef RABALDR_PIN_INSTANCE
   numElements = needI32();
   unstashWord(instancePtr, 0, RegPtr(numElements));
   instancePtr = RegPtr::Invalid();
-#  else
+#else
   numElements = RegI32(instancePtr);
   unstashWord(instancePtr, 0, RegPtr(numElements));
   instancePtr = RegPtr::Invalid();
-#  endif
+#endif
   // 3: numElements rp rdata
 
   // Free the barrier reg after we've allocated all registers
@@ -8671,8 +8925,6 @@ bool BaseCompiler::emitExternConvertAny() {
   Nothing nothing;
   return iter_.readRefConversion(RefType::any(), RefType::extern_(), &nothing);
 }
-
-#endif  // ENABLE_WASM_GC
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -9951,7 +10203,7 @@ bool BaseCompiler::emitBody() {
 
   MOZ_ASSERT(stackMapGenerator_.framePushedAtEntryToBody.isSome());
 
-  if (!iter_.startFunction(func_.index, locals_)) {
+  if (!iter_.startFunction(func_.index)) {
     return false;
   }
 
@@ -10190,32 +10442,14 @@ bool BaseCompiler::emitBody() {
         CHECK_NEXT(emitCall());
       case uint16_t(Op::CallIndirect):
         CHECK_NEXT(emitCallIndirect());
-#ifdef ENABLE_WASM_TAIL_CALLS
       case uint16_t(Op::ReturnCall):
-        if (!codeMeta_.tailCallsEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitReturnCall());
       case uint16_t(Op::ReturnCallIndirect):
-        if (!codeMeta_.tailCallsEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitReturnCallIndirect());
-#endif
-#ifdef ENABLE_WASM_GC
       case uint16_t(Op::CallRef):
-        if (!codeMeta_.gcEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitCallRef());
-#  ifdef ENABLE_WASM_TAIL_CALLS
       case uint16_t(Op::ReturnCallRef):
-        if (!codeMeta_.gcEnabled() || !codeMeta_.tailCallsEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitReturnCallRef());
-#  endif
-#endif
 
       // Locals and globals
       case uint16_t(Op::LocalGet):
@@ -10747,31 +10981,15 @@ bool BaseCompiler::emitBody() {
       case uint16_t(Op::MemorySize):
         CHECK_NEXT(emitMemorySize());
 
-#ifdef ENABLE_WASM_GC
       case uint16_t(Op::RefAsNonNull):
-        if (!codeMeta_.gcEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitRefAsNonNull());
       case uint16_t(Op::BrOnNull):
-        if (!codeMeta_.gcEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitBrOnNull());
       case uint16_t(Op::BrOnNonNull):
-        if (!codeMeta_.gcEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(emitBrOnNonNull());
-#endif
-#ifdef ENABLE_WASM_GC
       case uint16_t(Op::RefEq):
-        if (!codeMeta_.gcEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         CHECK_NEXT(dispatchComparison0(emitCompareRef, RefType::eq(),
                                        Assembler::Equal));
-#endif
       case uint16_t(Op::RefFunc):
         CHECK_NEXT(emitRefFunc());
         break;
@@ -10782,12 +11000,8 @@ bool BaseCompiler::emitBody() {
         CHECK_NEXT(emitRefIsNull());
         break;
 
-#ifdef ENABLE_WASM_GC
       // "GC" operations
       case uint16_t(Op::GcPrefix): {
-        if (!codeMeta_.gcEnabled()) {
-          return iter_.unrecognizedOpcode(&op);
-        }
         switch (op.b1) {
           case uint32_t(GcOp::StructNew):
             CHECK_NEXT(emitStructNew());
@@ -10856,7 +11070,6 @@ bool BaseCompiler::emitBody() {
         }  // switch (op.b1)
         return iter_.unrecognizedOpcode(&op);
       }
-#endif
 
 #ifdef ENABLE_WASM_SIMD
       // SIMD operations
@@ -11580,8 +11793,8 @@ bool BaseCompiler::emitBody() {
           return iter_.unrecognizedOpcode(&op);
         }
         switch (op.b1) {
-          case uint32_t(ThreadOp::Wake):
-            CHECK_NEXT(emitWake());
+          case uint32_t(ThreadOp::Notify):
+            CHECK_NEXT(emitNotify());
 
           case uint32_t(ThreadOp::I32Wait):
             CHECK_NEXT(emitWait(ValType::I32, 4));
@@ -11984,7 +12197,7 @@ BaseCompiler::BaseCompiler(const CodeMetadata& codeMeta,
       masm(*masm),
       // Compilation state
       decoder_(decoder),
-      iter_(codeMeta, decoder),
+      iter_(codeMeta, decoder, locals),
       fr(*masm),
       stackMapGenerator_(stackMaps, trapExitLayout, trapExitLayoutNumWords,
                          *masm),
@@ -12124,6 +12337,7 @@ bool js::wasm::BaselineCompileFunctions(const CodeMetadata& codeMeta,
     }
 
     size_t unwindInfoBefore = masm.codeRangeUnwindInfos().length();
+    size_t callRefMetricsBefore = masm.callRefMetricsPatches().length();
 
     // One-pass baseline compilation.
 
@@ -12139,6 +12353,8 @@ bool js::wasm::BaselineCompileFunctions(const CodeMetadata& codeMeta,
     FuncOffsets offsets(f.finish());
     bool hasUnwindInfo =
         unwindInfoBefore != masm.codeRangeUnwindInfos().length();
+    size_t callRefMetricsAfter = masm.callRefMetricsPatches().length();
+    size_t callRefMetricsLength = callRefMetricsAfter - callRefMetricsBefore;
 
     // Record this function's code range
     if (!code->codeRanges.emplaceBack(func.index, offsets, hasUnwindInfo)) {
@@ -12146,7 +12362,9 @@ bool js::wasm::BaselineCompileFunctions(const CodeMetadata& codeMeta,
     }
 
     // Record this function's specific feature usage
-    if (!code->funcs.emplaceBack(func.index, f.iter_.featureUsage())) {
+    if (!code->funcs.emplaceBack(
+            func.index, f.iter_.featureUsage(),
+            CallRefMetricsRange(callRefMetricsBefore, callRefMetricsLength))) {
       return false;
     }
 

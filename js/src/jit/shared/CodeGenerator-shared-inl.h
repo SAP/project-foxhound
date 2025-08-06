@@ -52,6 +52,20 @@ static inline int32_t ToInt32(const LAllocation* a) {
   MOZ_CRASH("this is not a constant!");
 }
 
+static inline intptr_t ToIntPtr(const LAllocation* a) {
+  if (a->isConstantValue()) {
+    const MConstant* cst = a->toConstant();
+    if (cst->type() == MIRType::Int32) {
+      return cst->toInt32();
+    }
+    return cst->toIntPtr();
+  }
+  if (a->isConstantIndex()) {
+    return a->toConstantIndex()->index();
+  }
+  MOZ_CRASH("this is not a constant!");
+}
+
 static inline int64_t ToInt64(const LAllocation* a) {
   if (a->isConstantValue()) {
     return a->toConstant()->toInt64();
@@ -109,6 +123,15 @@ static inline Register64 ToOutRegister64(LInstruction* ins) {
   return Register64(hiReg, loReg);
 #else
   return Register64(ToRegister(ins->getDef(0)));
+#endif
+}
+
+static inline bool IsRegister64(const LInt64Allocation& a) {
+#if JS_BITS_PER_WORD == 32
+  MOZ_ASSERT(a.low().isRegister() == a.high().isRegister());
+  return a.low().isRegister();
+#else
+  return a.value().isRegister();
 #endif
 }
 
@@ -278,6 +301,17 @@ Address CodeGeneratorShared::ToAddress(const LAllocation& a) const {
 template <BaseRegForAddress Base>
 Address CodeGeneratorShared::ToAddress(const LAllocation* a) const {
   return ToAddress<Base>(*a);
+}
+
+template <BaseRegForAddress Base>
+Address CodeGeneratorShared::ToAddress(const LInt64Allocation& a) const {
+#if JS_BITS_PER_WORD == 32
+  Address low = ToAddress<Base>(a.low());
+  MOZ_ASSERT(HighWord(low) == ToAddress<Base>(a.high()));
+  return low;
+#else
+  return ToAddress<Base>(a.value());
+#endif
 }
 
 // static

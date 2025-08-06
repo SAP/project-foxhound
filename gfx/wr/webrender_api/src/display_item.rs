@@ -6,7 +6,7 @@ use euclid::{SideOffsets2D, Angle};
 use peek_poke::PeekPoke;
 use std::ops::Not;
 // local imports
-use crate::font;
+use crate::{font, SnapshotImageKey};
 use crate::{APZScrollGeneration, HasScrollLinkedEffect, PipelineId, PropertyBinding};
 use crate::serde::{Serialize, Deserialize};
 use crate::color::ColorF;
@@ -877,9 +877,16 @@ pub struct ReferenceFrame {
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
+pub struct SnapshotInfo {
+    pub key: SnapshotImageKey,
+    pub area: LayoutRect,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct PushStackingContextDisplayItem {
     pub origin: LayoutPoint,
     pub spatial_id: SpatialId,
+    pub snapshot: Option<SnapshotInfo>,
     pub prim_flags: PrimitiveFlags,
     pub ref_frame_offset: LayoutVector2D,
     pub stacking_context: StackingContext,
@@ -1077,10 +1084,10 @@ pub struct FloodPrimitive {
 
 impl FloodPrimitive {
     pub fn sanitize(&mut self) {
-        self.color.r = self.color.r.min(1.0).max(0.0);
-        self.color.g = self.color.g.min(1.0).max(0.0);
-        self.color.b = self.color.b.min(1.0).max(0.0);
-        self.color.a = self.color.a.min(1.0).max(0.0);
+        self.color.r = self.color.r.clamp(0.0, 1.0);
+        self.color.g = self.color.g.clamp(0.0, 1.0);
+        self.color.b = self.color.b.clamp(0.0, 1.0);
+        self.color.a = self.color.a.clamp(0.0, 1.0);
     }
 }
 
@@ -1101,7 +1108,7 @@ pub struct OpacityPrimitive {
 
 impl OpacityPrimitive {
     pub fn sanitize(&mut self) {
-        self.opacity = self.opacity.min(1.0).max(0.0);
+        self.opacity = self.opacity.clamp(0.0, 1.0);
     }
 }
 
@@ -1242,6 +1249,12 @@ pub struct FilterOpGraphNode {
     /// rect this node will render into, in filter space
     pub subregion: LayoutRect,
 }
+
+/// Maximum number of SVGFE filters in one graph, this is constant size to avoid
+/// allocating anything, and the SVG spec allows us to drop all filters on an
+/// item if the graph is excessively complex - a graph this large will never be
+/// a good user experience, performance-wise.
+pub const SVGFE_GRAPH_MAX: usize = 256;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PeekPoke)]
@@ -1928,6 +1941,7 @@ impl YuvColorSpace {
 pub enum YuvData {
     NV12(ImageKey, ImageKey), // (Y channel, CbCr interleaved channel)
     P010(ImageKey, ImageKey), // (Y channel, CbCr interleaved channel)
+    NV16(ImageKey, ImageKey), // (Y channel, CbCr interleaved channel)
     PlanarYCbCr(ImageKey, ImageKey, ImageKey), // (Y channel, Cb channel, Cr Channel)
     InterleavedYCbCr(ImageKey), // (YCbCr interleaved channel)
 }
@@ -1937,6 +1951,7 @@ impl YuvData {
         match *self {
             YuvData::NV12(..) => YuvFormat::NV12,
             YuvData::P010(..) => YuvFormat::P010,
+            YuvData::NV16(..) => YuvFormat::NV16,
             YuvData::PlanarYCbCr(..) => YuvFormat::PlanarYCbCr,
             YuvData::InterleavedYCbCr(..) => YuvFormat::InterleavedYCbCr,
         }
@@ -1945,16 +1960,18 @@ impl YuvData {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub enum YuvFormat {
+    // These enum values need to be kept in sync with yuv.glsl.
     NV12 = 0,
     P010 = 1,
-    PlanarYCbCr = 2,
-    InterleavedYCbCr = 3,
+    NV16 = 2,
+    PlanarYCbCr = 3,
+    InterleavedYCbCr = 4,
 }
 
 impl YuvFormat {
     pub fn get_plane_num(self) -> usize {
         match self {
-            YuvFormat::NV12 | YuvFormat::P010 => 2,
+            YuvFormat::NV12 | YuvFormat::P010 | YuvFormat::NV16 => 2,
             YuvFormat::PlanarYCbCr => 3,
             YuvFormat::InterleavedYCbCr => 1,
         }

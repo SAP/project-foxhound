@@ -35,10 +35,6 @@ using std::vector;
 using mozilla::gmp::GMPProcessParent;
 using mozilla::ipc::GeckoChildProcessHost;
 
-#ifdef MOZ_WIDGET_ANDROID
-static const int kInvalidFd = -1;
-#endif
-
 namespace mozilla::gmp {
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
@@ -129,7 +125,7 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   };
 
   nsresult rv;
-  vector<string> args;
+  geckoargs::ChildProcessArgs args;
   UniquePtr<ipc::SharedPreferenceSerializer> prefSerializer;
 
   ipc::ProcessChild::AddPlatformBuildID(args);
@@ -158,9 +154,8 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
     prefSerializer->AddSharedPrefCmdLineArgs(*this, args);
   }
 
-  if (StaticPrefs::media_gmp_use_native_event_processing()) {
-    geckoargs::sPluginNativeEvent.Put(args);
-  }
+  geckoargs::sPluginNativeEvent.Put(
+      StaticPrefs::media_gmp_use_native_event_processing(), args);
 
 #ifdef ALLOW_GECKO_CHILD_PROCESS_ARCH
   GMP_LOG_DEBUG("GMPProcessParent::Launch() mLaunchArch: %d", mLaunchArch);
@@ -234,27 +229,20 @@ bool GMPProcessParent::Launch(int32_t aTimeoutMs) {
   }
 #endif
 
-#ifdef MOZ_WIDGET_ANDROID
-  // Add dummy values for pref and pref map to the file descriptors remapping
-  // table. See bug 1440207 and 1481139.
-  AddFdToRemap(kInvalidFd, kInvalidFd);
-  AddFdToRemap(kInvalidFd, kInvalidFd);
-#endif
-
   // We need to wait until OnChannelConnected to clear the pref serializer, but
   // SyncLaunch will block until that is called, so we don't actually need to do
   // any overriding, and it only lives on the stack.
-  return SyncLaunch(args, aTimeoutMs);
+  return SyncLaunch(std::move(args), aTimeoutMs);
 }
 
 void GMPProcessParent::Delete(nsCOMPtr<nsIRunnable> aCallback) {
   mDeletedCallback = aCallback;
-  XRE_GetIOMessageLoop()->PostTask(NewNonOwningRunnableMethod(
+  XRE_GetAsyncIOEventTarget()->Dispatch(NewNonOwningRunnableMethod(
       "gmp::GMPProcessParent::DoDelete", this, &GMPProcessParent::DoDelete));
 }
 
 void GMPProcessParent::DoDelete() {
-  MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
+  MOZ_ASSERT(XRE_GetAsyncIOEventTarget()->IsOnCurrentThread());
 
   if (mDeletedCallback) {
     mDeletedCallback->Run();
@@ -289,7 +277,7 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
       "plugin dir path: %s",
       mGMPPath.c_str());
   nsCOMPtr<nsIFile> pluginDir;
-  nsresult rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(mGMPPath.c_str()), true,
+  nsresult rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(mGMPPath.c_str()),
                                 getter_AddRefs(pluginDir));
   if (NS_FAILED(rv)) {
     GMP_LOG_DEBUG(
@@ -359,8 +347,8 @@ bool GMPProcessParent::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
 nsresult GMPProcessParent::NormalizePath(const char* aPath,
                                          PathString& aNormalizedPath) {
   nsCOMPtr<nsIFile> fileOrDir;
-  nsresult rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(aPath), true,
-                                getter_AddRefs(fileOrDir));
+  nsresult rv =
+      NS_NewLocalFile(NS_ConvertUTF8toUTF16(aPath), getter_AddRefs(fileOrDir));
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = fileOrDir->Normalize();

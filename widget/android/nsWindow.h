@@ -71,11 +71,20 @@ class nsWindow final : public nsBaseWidget {
       bool aIsTopLevel);
 
  private:
+  nsCOMPtr<nsIUserIdleServiceInternal> mIdleService;
+  mozilla::ScreenIntCoord mDynamicToolbarMaxHeight{0};
+  mozilla::LayoutDeviceIntMargin mSafeAreaInsets;
+  mozilla::widget::PlatformCompositorWidgetDelegate* mCompositorWidgetDelegate =
+      nullptr;
+  mozilla::Mutex mDestroyMutex{"nsWindow::mDestroyMutex"};
+
   // Unique ID given to each widget, used to map Surfaces to widgets
   // in the CompositorSurfaceManager.
   int32_t mWidgetId;
+  nsSizeMode mSizeMode = nsSizeMode_Normal;
+  bool mIsFullScreen = false;
+  bool mIsVisible = false;
 
- private:
   RefPtr<mozilla::widget::AndroidView> mAndroidView;
 
   // Object that implements native LayerView calls.
@@ -129,8 +138,10 @@ class nsWindow final : public nsBaseWidget {
   void ShowDynamicToolbar();
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void OnDragEvent(
-      int32_t aAction, int64_t aTime, float aX, float aY,
-      mozilla::jni::Object::Param aDropData);
+      int32_t aAction, float aX, float aY,
+      mozilla::jni::Object::Param aDropData,
+      const mozilla::layers::APZEventResult& aApzResult,
+      const mozilla::MouseInput& aInput);
   void StartDragAndDrop(mozilla::java::sdk::Bitmap::LocalRef aBitmap);
   void UpdateDragImage(mozilla::java::sdk::Bitmap::LocalRef aBitmap);
 
@@ -144,12 +155,10 @@ class nsWindow final : public nsBaseWidget {
 
   using nsBaseWidget::Create;  // for Create signature not overridden here
   [[nodiscard]] nsresult Create(nsIWidget* aParent,
-                                nsNativeWidget aNativeParent,
                                 const LayoutDeviceIntRect& aRect,
                                 InitData* aInitData) override;
   void Destroy() override;
-  void SetParent(nsIWidget* aNewParent) override;
-  nsIWidget* GetParent(void) override;
+  void DidChangeParent(nsIWidget* aNewParent) override;
   float GetDPI() override;
   double GetDefaultScaleInternal() override;
   void Show(bool aState) override;
@@ -242,8 +251,10 @@ class nsWindow final : public nsBaseWidget {
 
   void UpdateDynamicToolbarOffset(mozilla::ScreenIntCoord aOffset);
 
-  mozilla::ScreenIntMargin GetSafeAreaInsets() const override;
-  void UpdateSafeAreaInsets(const mozilla::ScreenIntMargin& aSafeAreaInsets);
+  mozilla::LayoutDeviceIntMargin GetSafeAreaInsets() const override;
+  void UpdateSafeAreaInsets(const mozilla::LayoutDeviceIntMargin&);
+
+  void KeyboardHeightChanged(mozilla::ScreenIntCoord aHeight);
 
   mozilla::jni::NativeWeakPtr<mozilla::widget::NPZCSupport>
   GetNPZCSupportWeakPtr();
@@ -259,24 +270,12 @@ class nsWindow final : public nsBaseWidget {
   already_AddRefed<GeckoContentController> CreateRootContentController()
       override;
 
-  bool mIsVisible;
-  nsTArray<nsWindow*> mChildren;
-  nsWindow* mParent;
-
-  nsCOMPtr<nsIUserIdleServiceInternal> mIdleService;
-  mozilla::ScreenIntCoord mDynamicToolbarMaxHeight;
-  mozilla::ScreenIntMargin mSafeAreaInsets;
-
-  nsSizeMode mSizeMode;
-  bool mIsFullScreen;
-
   bool UseExternalCompositingSurface() const override { return true; }
 
   static void DumpWindows();
   static void DumpWindows(const nsTArray<nsWindow*>& wins, int indent = 0);
   static void LogWindow(nsWindow* win, int index, int indent);
 
- private:
   void CreateLayerManager();
   void RedrawAll();
 
@@ -285,10 +284,6 @@ class nsWindow final : public nsBaseWidget {
   mozilla::layers::LayersId GetRootLayerId() const;
   RefPtr<mozilla::layers::UiCompositorControllerChild>
   GetUiCompositorControllerChild();
-
-  mozilla::widget::PlatformCompositorWidgetDelegate* mCompositorWidgetDelegate;
-
-  mozilla::Mutex mDestroyMutex;
 
   friend class mozilla::widget::GeckoViewSupport;
   friend class mozilla::widget::LayerViewSupport;

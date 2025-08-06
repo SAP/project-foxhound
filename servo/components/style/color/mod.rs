@@ -5,17 +5,16 @@
 //! Color support functions.
 
 /// cbindgen:ignore
-mod color_function;
-
-/// cbindgen:ignore
 pub mod convert;
 
+mod color_function;
 pub mod component;
 pub mod mix;
 pub mod parsing;
 mod to_css;
 
 use self::parsing::ChannelKeyword;
+pub use color_function::*;
 use component::ColorComponent;
 use cssparser::color::PredefinedColorSpace;
 
@@ -171,6 +170,7 @@ impl ColorSpace {
 
 /// Flags used when serializing colors.
 #[derive(Clone, Copy, Debug, Default, MallocSizeOf, PartialEq, ToShmem)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 #[repr(C)]
 pub struct ColorFlags(u8);
 bitflags! {

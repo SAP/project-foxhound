@@ -57,6 +57,10 @@ WINDOWS_WORKER_TYPES = {
         "virtual": "win11-64-2009",
         "virtual-with-gpu": "win11-64-2009-gpu",
     },
+    "windows11-a64-2009-shippable": {
+        "virtual": "win11-a64-24h2",
+        "virtual-with-gpu": "win11-a64-24h2",
+    },
     "windows11-64-2009": {
         "virtual": "win11-64-2009",
         "virtual-with-gpu": "win11-64-2009-gpu",
@@ -173,16 +177,11 @@ def set_worker_type(config, tasks):
                 task["worker-type"] = "t-bitbar-gw-unit-p6"
             else:
                 task["worker-type"] = "t-bitbar-gw-perf-p6"
-        elif test_platform.startswith("android-hw-s21"):
+        elif test_platform.startswith("android-hw-s24"):
             if task["suite"] != "raptor":
-                task["worker-type"] = "t-bitbar-gw-unit-s21"
+                task["worker-type"] = "t-bitbar-gw-unit-s24"
             else:
-                task["worker-type"] = "t-bitbar-gw-perf-s21"
-        elif test_platform.startswith("android-hw-a51"):
-            if task["suite"] != "raptor":
-                task["worker-type"] = "t-bitbar-gw-unit-a51"
-            else:
-                task["worker-type"] = "t-bitbar-gw-perf-a51"
+                task["worker-type"] = "t-bitbar-gw-perf-s24"
         elif test_platform.startswith("android-hw-a55"):
             if task["suite"] != "raptor":
                 task["worker-type"] = "t-bitbar-gw-unit-a55"
@@ -199,7 +198,10 @@ def set_worker_type(config, tasks):
             elif task.get("suite", "") in ["talos", "raptor"] and not task[
                 "build-platform"
             ].startswith("linux64-ccov"):
-                task["worker-type"] = "t-linux-talos-1804"
+                if "browsertime-network-bench" in task.get("test-name"):
+                    task["worker-type"] = "t-linux-netperf-1804"
+                else:
+                    task["worker-type"] = "t-linux-talos-1804"
             else:
                 task["worker-type"] = LINUX_WORKER_TYPES[task["instance-size"]]
         else:

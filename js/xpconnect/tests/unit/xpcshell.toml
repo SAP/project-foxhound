@@ -303,9 +303,6 @@ skip-if = [
 prefs = [
   "javascript.options.experimental.json_parse_with_source=true",
 ]
-skip-if = [
-  "!nightly_build",
-]
 
 ["test_loadedESModules.js"]
 
@@ -363,6 +360,8 @@ head = "head_ongc.js"
 ["test_sandbox_DOMException.js"]
 
 ["test_sandbox_atob.js"]
+
+["test_sandbox_csp.js"]
 
 ["test_sandbox_metadata.js"]
 

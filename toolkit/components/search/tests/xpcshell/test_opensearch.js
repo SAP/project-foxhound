@@ -45,7 +45,7 @@ const tests = [
     file: "mozilla-ns.xml",
     name: "mozilla-ns",
     description: "An engine using mozilla namespace",
-    // mozilla-ns.xml also specifies a MozParam. However, they are only
+    // mozilla-ns.xml also specifies a MozParam. However, they were only
     // valid for app-provided engines, and hence the param should not show
     // here.
     searchUrl: "https://example.com/search?q=foo",
@@ -54,7 +54,7 @@ const tests = [
 
 add_setup(async function () {
   Services.fog.initializeFOG();
-  useHttpServer("opensearch");
+  useHttpServer();
   await Services.search.init();
 });
 
@@ -66,7 +66,7 @@ for (const test of tests) {
       SearchUtils.TOPIC_ENGINE_MODIFIED
     );
     let engine = await SearchTestUtils.installOpenSearchEngine({
-      url: gDataUrl + test.file,
+      url: `${gHttpURL}/opensearch/${test.file}`,
     });
     await promiseEngineAdded;
     Assert.ok(engine, "Should have installed the engine.");

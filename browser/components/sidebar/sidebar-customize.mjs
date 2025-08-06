@@ -11,6 +11,7 @@ import "chrome://global/content/elements/moz-radio-group.mjs";
 
 const l10nMap = new Map([
   ["viewGenaiChatSidebar", "sidebar-menu-genai-chat-label"],
+  ["viewReviewCheckerSidebar", "sidebar-menu-review-checker-label"],
   ["viewHistorySidebar", "sidebar-menu-history-label"],
   ["viewTabsSidebar", "sidebar-menu-synced-tabs-label"],
   ["viewBookmarksSidebar", "sidebar-menu-bookmarks-label"],
@@ -76,6 +77,28 @@ export class SidebarCustomize extends SidebarPage {
   async onToggleInput(e) {
     e.preventDefault();
     this.getWindow().SidebarController.toggleTool(e.target.id);
+    switch (e.target.id) {
+      case "viewGenaiChatSidebar":
+        Glean.sidebarCustomize.chatbotEnabled.record({
+          checked: e.target.checked,
+        });
+        break;
+      case "viewTabsSidebar":
+        Glean.sidebarCustomize.syncedTabsEnabled.record({
+          checked: e.target.checked,
+        });
+        break;
+      case "viewHistorySidebar":
+        Glean.sidebarCustomize.historyEnabled.record({
+          checked: e.target.checked,
+        });
+        break;
+      case "viewBookmarksSidebar":
+        Glean.sidebarCustomize.bookmarksEnabled.record({
+          checked: e.target.checked,
+        });
+        break;
+    }
   }
 
   getInputL10nId(view) {
@@ -86,6 +109,7 @@ export class SidebarCustomize extends SidebarPage {
     if (e.type == "click" || (e.type == "keydown" && e.code == "Enter")) {
       e.preventDefault();
       this.getWindow().openPreferences();
+      Glean.sidebarCustomize.firefoxSettingsClicked.record();
     }
   }
 
@@ -111,15 +135,16 @@ export class SidebarCustomize extends SidebarPage {
       extensionId,
       "unifiedExtensions"
     );
+    Glean.sidebarCustomize.extensionsClicked.record();
   }
 
   handleKeydown(e) {
     if (e.code == "ArrowUp") {
-      if (this.activeExtIndex >= 0) {
+      if (this.activeExtIndex > 0) {
         this.focusIndex(this.activeExtIndex - 1);
       }
     } else if (e.code == "ArrowDown") {
-      if (this.activeExtIndex < this.extensionLinks.length) {
+      if (this.activeExtIndex < this.extensionLinks.length - 1) {
         this.focusIndex(this.activeExtIndex + 1);
       }
     } else if (
@@ -139,24 +164,29 @@ export class SidebarCustomize extends SidebarPage {
   }
 
   reversePosition() {
-    const SidebarController = this.getWindow().SidebarController;
-    SidebarController.reversePosition.apply(SidebarController);
+    const { SidebarController } = this.getWindow();
+    SidebarController.reversePosition();
+    Glean.sidebarCustomize.sidebarPosition.record({
+      position:
+        SidebarController._positionStart !== this.getWindow().RTL_UI
+          ? "left"
+          : "right",
+    });
   }
 
   extensionTemplate(extension, index) {
     return html` <div class="extension-item">
       <img src=${extension.iconUrl} class="icon" role="presentation" />
       <div
-        class="extension-link"
         extensionId=${extension.extensionId}
-        tabindex=${index === this.activeExtIndex ? 0 : -1}
-        role="list-item"
+        role="listitem"
         @click=${() => this.manageAddon(extension.extensionId)}
         @keydown=${this.handleKeydown}
       >
         <a
           href="about:addons"
-          tabindex="-1"
+          class="extension-link"
+          tabindex=${index === this.activeExtIndex ? 0 : -1}
           target="_blank"
           @click=${e => e.preventDefault()}
           >${extension.tooltiptext}
@@ -196,26 +226,29 @@ export class SidebarCustomize extends SidebarPage {
           <moz-radio-group
             @change=${this.#handleVisibilityChange}
             name="visibility"
-            data-l10n-id="sidebar-customize-settings-header"
+            data-l10n-id="sidebar-customize-button-header"
           >
             <moz-radio
               class="visibility-setting"
               value="always-show"
               ?checked=${this.visibility === "always-show"}
               iconsrc="chrome://browser/skin/sidebar-expanded.svg"
-              data-l10n-id="sidebar-visibility-always-show"
+              data-l10n-id="sidebar-visibility-setting-always-show"
             ></moz-radio>
             <moz-radio
               class="visibility-setting"
               value="hide-sidebar"
               ?checked=${this.visibility === "hide-sidebar"}
             iconsrc="chrome://browser/skin/sidebar-hidden.svg"
-              data-l10n-id="sidebar-visibility-hide-sidebar"
+              data-l10n-id="sidebar-visibility-setting-hide-sidebar"
             ></moz-radio>
           </moz-radio-group>
+        </div>
+        <div class="customize-group">
           <moz-radio-group
               @change=${this.reversePosition}
-              name="position">
+              name="position"
+              data-l10n-id="sidebar-customize-position-header">
             <moz-radio
               class="position-setting"
               id="position-left"
@@ -237,7 +270,7 @@ export class SidebarCustomize extends SidebarPage {
                   ? this.getWindow().SidebarController._positionStart
                   : !this.getWindow().SidebarController._positionStart
               }
-              iconsrc="chrome://browser/skin/sidebar-right.svg"
+              iconsrc="chrome://browser/skin/sidebar-expanded-right.svg"
               data-l10n-id="sidebar-position-right"
             ></moz-radio>
           </moz-radio-group>
@@ -287,10 +320,17 @@ export class SidebarCustomize extends SidebarPage {
   #handleVisibilityChange({ target: { value } }) {
     this.visibility = value;
     Services.prefs.setStringPref(VISIBILITY_SETTING_PREF, value);
+    Glean.sidebarCustomize.sidebarDisplay.record({
+      preference: value === "always-show" ? "always" : "hide",
+    });
   }
 
   #handleTabDirectionChange({ target: { value } }) {
-    Services.prefs.setBoolPref(TAB_DIRECTION_SETTING_PREF, value == "true");
+    const verticalTabsEnabled = value === "true";
+    Services.prefs.setBoolPref(TAB_DIRECTION_SETTING_PREF, verticalTabsEnabled);
+    Glean.sidebarCustomize.tabsLayout.record({
+      orientation: verticalTabsEnabled ? "vertical" : "horizontal",
+    });
   }
 }
 

@@ -12,6 +12,14 @@ const { Management } = ChromeUtils.importESModule(
   "resource://gre/modules/Extension.sys.mjs"
 );
 
+const lazy = {};
+ChromeUtils.defineLazyGetter(lazy, "l10n", function () {
+  return new Localization(
+    ["browser/addonNotifications.ftl", "branding/brand.ftl"],
+    true
+  );
+});
+
 const SECUREROOT =
   "https://example.com/browser/toolkit/mozapps/extensions/test/xpinstall/";
 const PROGRESS_NOTIFICATION = "addon-progress";
@@ -19,6 +27,23 @@ const PROGRESS_NOTIFICATION = "addon-progress";
 const CHROMEROOT = extractChromeRoot(gTestPath);
 
 AddonTestUtils.initMochitest(this);
+
+let needsCleanupBlocklist = true;
+
+const cleanupBlocklist = async () => {
+  if (!needsCleanupBlocklist) {
+    return;
+  }
+  await AddonTestUtils.loadBlocklistRawData({
+    extensionsMLBF: [
+      {
+        stash: { blocked: [], unblocked: [] },
+        stash_time: 0,
+      },
+    ],
+  });
+  needsCleanupBlocklist = false;
+};
 
 function waitForTick() {
   return new Promise(resolve => executeSoon(resolve));
@@ -32,6 +57,8 @@ function getObserverTopic(aNotificationId) {
     topic = "addon-install-started";
   } else if (topic == "addon-installed") {
     topic = "webextension-install-notify";
+  } else if (topic == "addon-install-failed-blocklist") {
+    topic = "addon-install-failed";
   }
   return topic;
 }
@@ -142,10 +169,17 @@ function testInstallDialogIncognitoCheckbox(
     // SUMO link should always be visible if the incognito checkbox is expected to be
     // shown too (even when there are no other permissions being granted as part of the
     // same install dialog).
+    let permsLearnMore = installDialog.querySelector(
+      ".popup-notification-learnmore-link"
+    );
+    is(
+      permsLearnMore.href,
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "extension-permissions",
+      "Learn more link has desired URL"
+    );
     ok(
-      BrowserTestUtils.isVisible(
-        installDialog.querySelector("#addon-webext-perm-info")
-      ),
+      BrowserTestUtils.isVisible(permsLearnMore),
       "SUMO link expected to be visible"
     );
   } else {
@@ -938,6 +972,142 @@ var TESTS = [
     await removeTabAndWaitForNotificationClose();
   },
 
+  async function test_blocklisted() {
+    let addonName = "XPI Test";
+    let id = "amosigned-xpi@tests.mozilla.org";
+    let version = "2.2";
+
+    const {
+      BlocklistPrivate: { ExtensionBlocklistMLBF },
+    } = ChromeUtils.importESModule("resource://gre/modules/Blocklist.sys.mjs");
+
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "extensions.blocklist.addonItemURL",
+          "https://example.com/blocked-addon/%addonID%/%addonVersion%/",
+        ],
+      ],
+    });
+
+    const blocklistURL = ExtensionBlocklistMLBF.createBlocklistURL(id, version);
+
+    info("Verify addon-install-failed on hard-blocked addon");
+    await testBlocklistedAddon({
+      stash: { blocked: [`${id}:${version}`], unblocked: [] },
+      expected: {
+        fluentId: "addon-install-error-hard-blocked",
+        blocklistURL,
+      },
+    });
+
+    info("Verify addon-install-failed on soft-blocked blocked addon");
+    await SpecialPowers.pushPrefEnv({
+      set: [["extensions.blocklist.softblock.enabled", true]],
+    });
+    await testBlocklistedAddon({
+      stash: { softblocked: [`${id}:${version}`], blocked: [], unblocked: [] },
+      expected: {
+        fluentId: "addon-install-error-soft-blocked",
+        blocklistURL,
+      },
+    });
+    // Clear extensions.blocklist.softblock.enabled pref.
+    await SpecialPowers.popPrefEnv();
+    // Clear extensions.blocklist.addonItemURL pref.
+    await SpecialPowers.popPrefEnv();
+
+    async function testBlocklistedAddon({ stash, expected }) {
+      await AddonTestUtils.loadBlocklistRawData({
+        extensionsMLBF: [{ stash, stash_time: 0 }],
+      });
+      needsCleanupBlocklist = true;
+      registerCleanupFunction(cleanupBlocklist);
+
+      PermissionTestUtils.add(
+        "http://example.com/",
+        "install",
+        Services.perms.ALLOW_ACTION
+      );
+
+      let progressPromise = waitForProgressNotification();
+      let failPromise = waitForNotification("addon-install-failed-blocklist");
+      let triggers = encodeURIComponent(
+        JSON.stringify({
+          XPI: "amosigned.xpi",
+        })
+      );
+      BrowserTestUtils.openNewForegroundTab(
+        gBrowser,
+        TESTROOT + "installtrigger.html?" + triggers
+      );
+      await progressPromise;
+      info("Wait for addon-install-failed notification");
+
+      let panel = await failPromise;
+
+      let notification = panel.childNodes[0];
+      let message = lazy.l10n.formatValueSync(expected.fluentId, { addonName });
+      is(
+        notification.getAttribute("label"),
+        message,
+        "Should have seen the right message"
+      );
+
+      await BrowserTestUtils.waitForCondition(
+        () => panel.state === "open",
+        "Wait for the panel to reach the open state"
+      );
+      let blocklistURLEl = panel.querySelector(
+        "#addon-install-failed-blocklist-info"
+      );
+      ok(
+        BrowserTestUtils.isVisible(blocklistURLEl),
+        "Expect blocklist info link to be visible"
+      );
+      is(
+        blocklistURLEl.getAttribute("href"),
+        expected.blocklistURL,
+        "Blocklist info link href should be set to the expected url"
+      );
+      is(
+        blocklistURLEl.textContent,
+        await panel.ownerDocument.l10n.formatValue(
+          "popup-notification-xpinstall-prompt-block-url"
+        ),
+        "Blocklist info link should have the expected localized string"
+      );
+
+      // Clicking on the the blocklistURL link is expected to dismiss the
+      // popup.
+      let closePromise = waitForNotificationClose();
+
+      let newTabPromise = BrowserTestUtils.waitForNewTab(
+        gBrowser,
+        expected.blocklistURL,
+        true
+      );
+      info(
+        `Click on the blocklist "See details" link ${expected.blocklistURL}`
+      );
+      blocklistURLEl.click();
+      const newTab = await newTabPromise;
+
+      is(
+        newTab,
+        gBrowser.selectedTab,
+        "Blocklist info tab is currrently selected"
+      );
+      BrowserTestUtils.removeTab(newTab);
+
+      await cleanupBlocklist();
+      PermissionTestUtils.remove("http://example.com/", "install");
+
+      BrowserTestUtils.removeTab(gBrowser.selectedTab);
+      await closePromise;
+    }
+  },
+
   async function test_localFile() {
     let cr = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(
       Ci.nsIChromeRegistry
@@ -1548,7 +1718,7 @@ const runTestCases = async () => {
     let installs = await AddonManager.getAllInstalls();
 
     is(installs.length, 0, "Should be no active installs");
-    info("Running " + TESTS[i].name);
+    info("===== Running test case: " + TESTS[i].name);
     gTestStart = Date.now();
     await TESTS[i]();
   }

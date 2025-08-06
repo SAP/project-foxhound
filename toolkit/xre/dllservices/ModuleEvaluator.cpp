@@ -42,7 +42,7 @@ static Vector<nsString> GetKeyboardLayoutDlls() {
   DWORD iKey = 0;
   wchar_t strTemp[MAX_PATH] = {};
   while (true) {
-    DWORD strTempSize = ArrayLength(strTemp);
+    DWORD strTempSize = std::size(strTemp);
     if (RegEnumKeyExW(rawKey, iKey, strTemp, &strTempSize, nullptr, nullptr,
                       nullptr, nullptr) != ERROR_SUCCESS) {
       // ERROR_NO_MORE_ITEMS or a real error: bail with what we have.
@@ -83,7 +83,7 @@ bool ModuleEvaluator::ResolveKnownFolder(REFKNOWNFOLDERID aFolderId,
 
   ShellStringUniquePtr path(rawPath);
 
-  nsresult rv = NS_NewLocalFile(nsDependentString(path.get()), false, aOutFile);
+  nsresult rv = NS_NewLocalFile(nsDependentString(path.get()), aOutFile);
   return NS_SUCCEEDED(rv);
 }
 

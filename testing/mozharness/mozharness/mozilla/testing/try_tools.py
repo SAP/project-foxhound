@@ -1,9 +1,7 @@
 #!/usr/bin/env python
-# ***** BEGIN LICENSE BLOCK *****
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-# ***** END LICENSE BLOCK *****
 
 import argparse
 import os
@@ -31,6 +29,7 @@ test_flavors = {
     "browser-chrome": {},
     "browser-a11y": {},
     "browser-media": {},
+    "browser-translations": {},
     "chrome": {},
     "devtools-chrome": {},
     "mochitest": {},
@@ -67,6 +66,7 @@ class TryToolsMixin(TransferMixin):
                 "browser-chrome",
                 "browser-a11y",
                 "browser-media",
+                "browser-translations",
                 "chrome",
                 "devtools-chrome",
                 "marionette",

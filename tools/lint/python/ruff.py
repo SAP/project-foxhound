@@ -125,7 +125,7 @@ def lint(paths, config, log, **lintargs):
 
     args = ["ruff", "check", "--force-exclude"] + paths + non_py_files
 
-    if config["exclude"]:
+    if config.get("exclude"):
         args.append(f"--extend-exclude={','.join(config['exclude'])}")
 
     process_kwargs = {"processStderrLine": lambda line: log.debug(line)}
@@ -135,17 +135,20 @@ def lint(paths, config, log, **lintargs):
         # Do a first pass with --fix-only as the json format doesn't return the
         # number of fixed issues.
         fix_args = args + ["--fix-only"]
+        if not lintargs.get("warning"):
+            # Don't fix warnings to limit unrelated changes sneaking into patches.
+            # except when  --fix -W  is passed
+            fix_args.append(f"--extend-ignore={','.join(warning_rules)}")
 
-        # Don't fix warnings to limit unrelated changes sneaking into patches.
-        fix_args.append(f"--extend-ignore={','.join(warning_rules)}")
+        log.debug(f"Running --fix: {fix_args}")
         output = run_process(config, fix_args, **process_kwargs)
         matches = re.match(r"Fixed (\d+) errors?.", output)
         if matches:
             fixed = int(matches[1])
-
+    args += ["--output-format=json"]
     log.debug(f"Running with args: {args}")
 
-    output = run_process(config, args + ["--format=json"], **process_kwargs)
+    output = run_process(config, args, **process_kwargs)
     if not output:
         return []
 

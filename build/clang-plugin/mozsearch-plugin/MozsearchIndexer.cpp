@@ -31,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <stack>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -153,6 +154,38 @@ struct RAIITracer {
 };
 
 #define TRACEFUNC RAIITracer tracer(__FUNCTION__);
+
+// Sets variable to value on creation then resets variable to its original
+// value on destruction
+template<typename T>
+class ValueRollback {
+public:
+  template<typename U = T>
+  ValueRollback(T &variable, U &&value)
+    : mVariable{&variable}
+    , mSavedValue{std::exchange(variable, std::forward<U>(value))}
+  {
+  }
+
+  ValueRollback(ValueRollback &&other) noexcept
+    : mVariable{std::exchange(other.mVariable, nullptr)}
+    , mSavedValue{std::move(other.mSavedValue)}
+  {
+  }
+
+  ValueRollback(const ValueRollback &) = delete;
+  ValueRollback &operator=(ValueRollback &&) = delete;
+  ValueRollback &operator=(const ValueRollback &) = delete;
+
+  ~ValueRollback() {
+    if (mVariable)
+      *mVariable = std::move(mSavedValue);
+  }
+
+private:
+  T *mVariable;
+  T mSavedValue;
+};
 
 class IndexConsumer;
 
@@ -847,6 +880,7 @@ public:
     // the definition inside the scope of the template or else we won't properly
     // handle member access on the templated type.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseFunctionDecl(D);
@@ -856,6 +890,7 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXMethodDecl(D);
@@ -865,6 +900,7 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXConstructorDecl(D);
@@ -874,6 +910,7 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXConversionDecl(D);
@@ -883,9 +920,15 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXDestructorDecl(D);
+  }
+
+  bool TraverseLambdaExpr(LambdaExpr *E) {
+    AutoSetContext Asc(this, nullptr, true);
+    return Super::TraverseLambdaExpr(E);
   }
 
   // Used to keep track of the context in which a token appears.
@@ -917,8 +960,12 @@ public:
       return Context();
     }
 
-    if (CurDeclContext) {
-      return translateContext(CurDeclContext->Decl);
+    AutoSetContext *Ctxt = CurDeclContext;
+    while (Ctxt) {
+      if (Ctxt->Decl) {
+        return translateContext(Ctxt->Decl);
+      }
+      Ctxt = Ctxt->Prev;
     }
     return Context();
   }
@@ -935,12 +982,26 @@ public:
 
     AutoSetContext *Ctxt = CurDeclContext;
     while (Ctxt) {
-      if (Ctxt->Decl != D) {
+      if (Ctxt->Decl && Ctxt->Decl != D) {
         return translateContext(Ctxt->Decl);
       }
       Ctxt = Ctxt->Prev;
     }
     return Context();
+  }
+
+  // Searches for the closest CurDeclContext parent that is a function template instantiation
+  const FunctionDecl *getCurrentFunctionTemplateInstantiation() {
+    const auto *Ctxt = CurDeclContext;
+    while (Ctxt) {
+      if (Ctxt->Decl && isa<FunctionDecl>(Ctxt->Decl)) {
+        const auto *F = Ctxt->Decl->getAsFunction();
+        if (F->isTemplateInstantiation())
+          return F;
+      }
+      Ctxt = Ctxt->Prev;
+    }
+    return nullptr;
   }
 
   // Analyzing template code is tricky. Suppose we have this code:
@@ -1057,6 +1118,9 @@ public:
   };
 
   AutoTemplateContext *TemplateStack;
+
+  std::unordered_multimap<const FunctionDecl *, const Stmt *> ForwardingTemplates;
+  std::unordered_set<unsigned> ForwardedTemplateLocations;
 
   bool shouldVisitTemplateInstantiations() const {
     if (TemplateStack) {
@@ -2048,12 +2112,25 @@ public:
     return true;
   }
 
-  bool VisitCXXConstructExpr(CXXConstructExpr *E) {
+  bool VisitCXXConstructExpr(const CXXConstructExpr *E) {
     SourceLocation Loc = E->getBeginLoc();
     if (!isInterestingLocation(Loc)) {
       return true;
     }
 
+    // If we are in a template and find a Stmt that was registed in ForwardedTemplateLocations,
+    // convert the location to an actual Stmt* in ForwardingTemplates
+    if (TemplateStack && !TemplateStack->inGatherMode()) {
+      if (ForwardedTemplateLocations.find(E->getBeginLoc().getRawEncoding()) != ForwardedTemplateLocations.end()) {
+        ForwardingTemplates.insert({getCurrentFunctionTemplateInstantiation(), E});
+        return true;
+      }
+    }
+
+    return VisitCXXConstructExpr(E, Loc);
+  }
+
+  bool VisitCXXConstructExpr(const CXXConstructExpr *E, SourceLocation Loc) {
     SourceLocation SpellingLoc = SM.getSpellingLoc(Loc);
 
     FunctionDecl *Ctor = E->getConstructor();
@@ -2066,6 +2143,19 @@ public:
 
     visitIdentifier("use", "constructor", getQualifiedName(Ctor), Loc, Mangled,
                     QualType(), getContext(SpellingLoc));
+
+    return true;
+  }
+
+  bool VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
+    // If we are in a template and the callee is type-dependent, register it in ForwardedTemplateLocations
+    // to forward its uses to the surrounding template call site
+    if (TemplateStack && TemplateStack->inGatherMode()) {
+      if (E->isTypeDependent()) {
+        TemplateStack->visitDependent(E->getBeginLoc());
+        ForwardedTemplateLocations.insert(E->getBeginLoc().getRawEncoding());
+      }
+    }
 
     return true;
   }
@@ -2205,10 +2295,20 @@ public:
     return true;
   }
 
-  bool VisitDeclRefExpr(DeclRefExpr *E) {
+  bool VisitDeclRefExpr(const DeclRefExpr *E) {
     SourceLocation Loc = E->getExprLoc();
     if (!isInterestingLocation(Loc)) {
       return true;
+    }
+
+    // If we are in a template and find a Stmt that was registed in ForwardedTemplateLocations,
+    // convert the location to an actual Stmt* in ForwardingTemplates
+    if (TemplateStack && !TemplateStack->inGatherMode()) {
+      const auto IsForwarded = ForwardedTemplateLocations.find(E->getBeginLoc().getRawEncoding()) != ForwardedTemplateLocations.end();
+      if (IsForwarded) {
+        ForwardingTemplates.insert({getCurrentFunctionTemplateInstantiation(), E});
+        return true;
+      }
     }
 
     SourceLocation SpellingLoc = SM.getSpellingLoc(Loc);
@@ -2218,7 +2318,7 @@ public:
       SpellingLoc = SM.getSpellingLoc(Loc);
     }
 
-    NamedDecl *Decl = E->getDecl();
+    const NamedDecl *Decl = E->getDecl();
     if (const VarDecl *D2 = dyn_cast<VarDecl>(Decl)) {
       int Flags = 0;
       if (D2->isLocalVarDeclOrParm()) {
@@ -2231,6 +2331,35 @@ public:
       const FunctionDecl *F = dyn_cast<FunctionDecl>(Decl);
       if (F->isTemplateInstantiation()) {
         Decl = F->getTemplateInstantiationPattern();
+
+        // If this is a forwarding template (eg MakeUnique), visit the forwarded statements
+        auto todo = std::stack{std::vector<const Stmt *>{E}};
+        auto seen = std::unordered_set<const Stmt *>{};
+        while (!todo.empty()) {
+          const auto forwarded = std::move(todo.top());
+          todo.pop();
+          if (seen.find(forwarded) != seen.end())
+            continue;
+          seen.insert(forwarded);
+
+          if (const auto *C = dyn_cast<CXXConstructExpr>(forwarded))
+            VisitCXXConstructExpr(C, Loc);
+
+          if (const auto *D = dyn_cast<DeclRefExpr>(forwarded)) {
+            const auto *Decl = D->getDecl();
+            if (!Decl)
+              continue;
+            const auto *F = Decl->getAsFunction();
+            if (!F)
+              continue;
+            if (!F->isTemplateInstantiation())
+              continue;
+            const auto [ForwardedBegin, ForwardedEnd] = ForwardingTemplates.equal_range(F);
+            for (auto ForwardedIt = ForwardedBegin; ForwardedIt != ForwardedEnd; ++ForwardedIt)
+              if (seen.find(ForwardedIt->second) == seen.end())
+                todo.push(ForwardedIt->second);
+          }
+        }
       }
 
       std::string Mangled = getMangledName(CurMangleContext, Decl);
@@ -2264,8 +2393,13 @@ public:
 
       FieldDecl *Member = Ci->getMember();
       std::string Mangled = getMangledName(CurMangleContext, Member);
+      // We want the constructor to be the context of the field use and
+      // `getContext(D)` would skip the current context.  An alternate approach
+      // would be `getContext(Loc)` but the heuristic to omit a context if we're
+      // in a macro body expansion seems incorrect for field initializations; if
+      // code is using macros to initialize the fields, we still care.
       visitIdentifier("use", "field", getQualifiedName(Member), Loc, Mangled,
-                      Member->getType(), getContext(D));
+                      Member->getType(), translateContext(D));
     }
 
     return true;
@@ -2358,6 +2492,26 @@ public:
     // gather more accurate results from them.
     if (TemplateStack) {
       TemplateStack->visitDependent(Loc);
+    }
+    return true;
+  }
+
+  bool VisitCXXNewExpr(CXXNewExpr *N) {
+    SourceLocation Loc = N->getExprLoc();
+    normalizeLocation(&Loc);
+    if (!isInterestingLocation(Loc)) {
+      return true;
+    }
+
+    // If we are in a template and the new is type-dependent, register it in ForwardedTemplateLocations
+    // to forward its uses to the surrounding template call site
+    if (TemplateStack && TemplateStack->inGatherMode()) {
+      const auto *TypeInfo = N->getAllocatedTypeSourceInfo();
+      const auto ConstructExprLoc = TypeInfo->getTypeLoc().getBeginLoc();
+      if (N->isTypeDependent()) {
+        TemplateStack->visitDependent(ConstructExprLoc);
+        ForwardedTemplateLocations.insert(ConstructExprLoc.getRawEncoding());
+      }
     }
     return true;
   }
@@ -2534,17 +2688,37 @@ public:
   }
 
   void endMacroExpansion() {
-    const auto replacements = clang::format::reformat(
-      clang::format::getMozillaStyle(),
-      MacroExpansionState->Expansion,
-      {tooling::Range(0, MacroExpansionState->Expansion.length())}
-    );
-    auto formatted = clang::tooling::applyAllReplacements(MacroExpansionState->Expansion, replacements);
-    if (formatted) {
-      for (auto &[k, v] : MacroExpansionState->TokenLocations) {
-        v = replacements.getShiftedCodePosition(v);
+    // large macros are too slow to reformat, don't reformat macros larger than those arbitrary thresholds
+    static constexpr auto includedFileExpansionReformatThreshold = 20'000;
+    static constexpr auto mainFileExpansionReformatThreshold = 200'000;
+
+    const auto expansionLocation = SM.getExpansionLoc(MacroExpansionState->MacroNameToken.getLocation());
+    const auto expansionFilename = SM.getFilename(expansionLocation);
+    const auto includedExtensions = std::array{".h", ".hpp", ".hxx", ".inc", ".def"};
+    const auto isIncludedFile = std::any_of(includedExtensions.begin(), includedExtensions.end(), [&](const auto *extension) {
+      return expansionFilename.ends_with_insensitive(extension);
+    });
+    const auto expansionReformatThreshold = isIncludedFile ? includedFileExpansionReformatThreshold : mainFileExpansionReformatThreshold;
+
+    if (MacroExpansionState->Expansion.length() < expansionReformatThreshold) {
+      // large macros are too memory-hungry to reformat with ColumnLimit != 0
+      // see https://github.com/llvm/llvm-project/issues/107434
+      auto style = clang::format::getMozillaStyle();
+      if (MacroExpansionState->Expansion.length() > includedFileExpansionReformatThreshold)
+        style.ColumnLimit = 0;
+
+      const auto replacements = clang::format::reformat(
+        style,
+        MacroExpansionState->Expansion,
+        {tooling::Range(0, MacroExpansionState->Expansion.length())}
+      );
+      auto formatted = clang::tooling::applyAllReplacements(MacroExpansionState->Expansion, replacements);
+      if (formatted) {
+        for (auto &[k, v] : MacroExpansionState->TokenLocations) {
+          v = replacements.getShiftedCodePosition(v);
+        }
+        MacroExpansionState->Expansion = std::move(formatted.get());
       }
-      MacroExpansionState->Expansion = std::move(formatted.get());
     }
 
     IdentifierInfo *Ident = MacroExpansionState->MacroNameToken.getIdentifierInfo();

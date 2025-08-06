@@ -52,58 +52,51 @@ dictionary WebGLContextAttributes {
     GLboolean preserveDrawingBuffer = false;
     GLboolean failIfMajorPerformanceCaveat = false;
     WebGLPowerPreference powerPreference = "default";
+
+    [Func="nsRFPService::IsSystemPrincipalOrAboutFingerprintingProtection"]
+    GLboolean forceSoftwareRendering = false;
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLBuffer {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLFramebuffer {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLProgram {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLRenderbuffer {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLShader {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLTexture {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLUniformLocation {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLVertexArrayObject {
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLActiveInfo {
     readonly attribute GLint size;
     readonly attribute GLenum type;
     readonly attribute DOMString name;
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLShaderPrecisionFormat {
     readonly attribute GLint rangeMin;
     readonly attribute GLint rangeMax;
@@ -544,9 +537,9 @@ interface mixin WebGLRenderingContextBase {
 
     /* Upon context creation, drawingBufferColorSpace and unpackColorSpace both
        default to the value "srgb". */
-    [Pref="webgl.colorspaces.prototype"]
+    [Pref="webgl.drawing_buffer_color_space"]
     attribute PredefinedColorSpace drawingBufferColorSpace;
-    //attribute PredefinedColorSpace unpackColorSpace;
+    attribute PredefinedColorSpace unpackColorSpace;
 
     [WebGLHandlesContextLoss] WebGLContextAttributes? getContextAttributes();
     [WebGLHandlesContextLoss] boolean isContextLost();
@@ -722,8 +715,7 @@ interface mixin WebGLRenderingContextBase {
     undefined viewport(GLint x, GLint y, GLsizei width, GLsizei height);
 };
 
-[Exposed=(Window,Worker),
- Func="mozilla::dom::OffscreenCanvas::PrefEnabledOnWorkerThread"]
+[Exposed=(Window,Worker)]
 interface WebGLRenderingContext {
     // bufferData has WebGL2 overloads.
     undefined bufferData(GLenum target, GLsizeiptr size, GLenum usage);
@@ -1173,6 +1165,7 @@ interface MOZ_debug {
     const GLenum WSI_INFO   = 0x10000;
     const GLenum UNPACK_REQUIRE_FASTPATH = 0x10001;
     const GLenum DOES_INDEX_VALIDATION   = 0x10002;
+    const GLenum CONTEXT_TYPE   = 0x10003;
 
     [Throws]
     any getParameter(GLenum pname);

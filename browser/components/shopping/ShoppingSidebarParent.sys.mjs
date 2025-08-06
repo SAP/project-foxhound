@@ -34,6 +34,8 @@ export class ShoppingSidebarParent extends JSWindowActorParent {
     "browser.shopping.experience2023.sidebarClosedCount";
   static SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF =
     "browser.shopping.experience2023.showKeepSidebarClosedMessage";
+  static INTEGRATED_SIDEBAR_PANEL_PREF =
+    "browser.shopping.experience2023.integratedSidebar";
 
   updateProductURL(uri, flags) {
     this.sendAsyncMessage("ShoppingSidebar:UpdateProductURL", {
@@ -72,10 +74,6 @@ export class ShoppingSidebarParent extends JSWindowActorParent {
    * Called when the user clicks the URL bar button.
    */
   static async urlbarButtonClick(event) {
-    if (event.button > 0) {
-      return;
-    }
-
     if (
       lazy.AUTO_OPEN_SIDEBAR_ENABLED &&
       lazy.AUTO_OPEN_SIDEBAR_USER_ENABLED &&
@@ -198,6 +196,13 @@ class ShoppingSidebarManagerClass {
       true,
       this.updateSidebarVisibility
     );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "isIntegratedSidebarPanel",
+      ShoppingSidebarParent.INTEGRATED_SIDEBAR_PANEL_PREF,
+      false,
+      this.updateSidebarVisibility
+    );
     this.updateSidebarVisibility();
 
     lazy.EveryWindow.registerCallback(
@@ -226,8 +231,9 @@ class ShoppingSidebarManagerClass {
   }
 
   updateSidebarVisibility() {
-    this.enabled = lazy.NimbusFeatures.shopping2023.getVariable("enabled");
-
+    this.enabled =
+      lazy.NimbusFeatures.shopping2023.getVariable("enabled") &&
+      !this.isIntegratedSidebarPanel;
     for (let window of lazy.BrowserWindowTracker.orderedWindows) {
       let isPBM = lazy.PrivateBrowsingUtils.isWindowPrivate(window);
       if (isPBM) {
@@ -275,6 +281,13 @@ class ShoppingSidebarManagerClass {
         .forEach(splitter => {
           splitter.remove();
         });
+      let button = document.getElementById("shopping-sidebar-button");
+      if (button) {
+        button.hidden = true;
+        // Reset attributes to defaults.
+        button.setAttribute("shoppingsidebaropen", false);
+        document.l10n.setAttributes(button, "shopping-sidebar-open-button2");
+      }
       return;
     }
 

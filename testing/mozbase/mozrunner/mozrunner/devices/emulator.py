@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import tempfile
 import time
-from telnetlib import Telnet
 
 from mozdevice import ADBHost
 from mozprocess import ProcessHandler
@@ -18,6 +17,11 @@ from .base import Device
 from .emulator_battery import EmulatorBattery
 from .emulator_geo import EmulatorGeo
 from .emulator_screen import EmulatorScreen
+
+try:
+    from telnetlib import Telnet
+except ImportError:  # telnetlib was removed in Python 3.13
+    from .telnetlib import Telnet
 
 
 class ArchContext(object):

@@ -522,55 +522,6 @@ void ScalarSet(mozilla::Telemetry::ScalarID aId, const nsAString& aKey,
 void ScalarSetMaximum(mozilla::Telemetry::ScalarID aId, const nsAString& aKey,
                       uint32_t aValue);
 
-template <ScalarID id>
-class MOZ_RAII AutoScalarTimer {
- public:
-  explicit AutoScalarTimer(TimeStamp aStart = TimeStamp::Now())
-      : start(aStart) {}
-
-  explicit AutoScalarTimer(const nsAString& aKey,
-                           TimeStamp aStart = TimeStamp::Now())
-      : start(aStart), key(aKey) {
-    MOZ_ASSERT(!aKey.IsEmpty(), "The key must not be empty.");
-  }
-
-  ~AutoScalarTimer() {
-    TimeStamp end = TimeStamp::Now();
-    uint32_t delta = static_cast<uint32_t>((end - start).ToMilliseconds());
-    if (key.IsEmpty()) {
-      mozilla::Telemetry::ScalarSet(id, delta);
-    } else {
-      mozilla::Telemetry::ScalarSet(id, key, delta);
-    }
-  }
-
- private:
-  const TimeStamp start;
-  const nsString key;
-};
-
-/**
- * Records an event. See the Event documentation for more information:
- * https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/collection/events.html
- *
- * @param aId The event enum id.
- * @param aValue Optional. The event value.
- * @param aExtra Optional. The event's extra key/value pairs.
- */
-void RecordEvent(mozilla::Telemetry::EventID aId,
-                 const mozilla::Maybe<nsCString>& aValue,
-                 const mozilla::Maybe<CopyableTArray<EventExtraEntry>>& aExtra);
-
-/**
- * Enables recording of events in a category.
- * Events default to recording disabled.
- * This toggles recording for all events in the specified category.
- *
- * @param aCategory The category name.
- * @param aEnabled Whether recording should be enabled or disabled.
- */
-void SetEventRecordingEnabled(const nsACString& aCategory, bool aEnabled);
-
 }  // namespace Telemetry
 }  // namespace mozilla
 

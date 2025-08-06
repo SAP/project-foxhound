@@ -34,7 +34,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/layout/LayoutTelemetryTools.h"
 #include "mozilla/dom/MediaQueryList.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DisplayPortUtils.h"
@@ -768,8 +767,6 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
       uint32_t sample = (uint32_t)vsyncLatency.ToMilliseconds();
       Telemetry::Accumulate(Telemetry::FX_REFRESH_DRIVER_CHROME_FRAME_DELAY_MS,
                             sample);
-      Telemetry::Accumulate(
-          Telemetry::FX_REFRESH_DRIVER_SYNC_SCROLL_FRAME_DELAY_MS, sample);
     } else if (mVsyncRate != TimeDuration::Forever()) {
       TimeDuration contentDelay =
           (TimeStamp::Now() - mLastTickStart) - mVsyncRate;
@@ -782,8 +779,6 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
       uint32_t sample = (uint32_t)contentDelay.ToMilliseconds();
       Telemetry::Accumulate(Telemetry::FX_REFRESH_DRIVER_CONTENT_FRAME_DELAY_MS,
                             sample);
-      Telemetry::Accumulate(
-          Telemetry::FX_REFRESH_DRIVER_SYNC_SCROLL_FRAME_DELAY_MS, sample);
     } else {
       // Request the vsync rate which VsyncChild stored the last time it got a
       // vsync notification.
@@ -896,7 +891,7 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
       // If we're giving extra time for tasks outside a tick, try to
       // ensure the next vsync after that period is handled, so subtract
       // a grace period.
-      TimeDuration timeForOutsideTick = clamped(
+      TimeDuration timeForOutsideTick = std::clamp(
           tickStart - mLastTickEnd - gracePeriod, gracePeriod, rate * 4);
       mSuspendVsyncPriorityTicksUntil = tickEnd + timeForOutsideTick;
     } else if (ShouldGiveNonVsyncTasksMoreTime(true)) {
@@ -1241,7 +1236,9 @@ static uint32_t GetFirstFrameDelay(imgIRequest* req) {
 
   // If this image isn't animated, there isn't a first frame delay.
   int32_t delay = container->GetFirstFrameDelay();
-  if (delay < 0) return 0;
+  if (delay < 0) {
+    return 0;
+  }
 
   return static_cast<uint32_t>(delay);
 }
@@ -1363,9 +1360,9 @@ nsRefreshDriver::nsRefreshDriver(nsPresContext* aPresContext)
       mWaitingForTransaction(false),
       mSkippedPaints(false),
       mResizeSuppressed(false),
-      mNotifyDOMContentFlushed(false),
       mNeedToUpdateIntersectionObservations(false),
       mNeedToUpdateResizeObservers(false),
+      mNeedToUpdateViewTransitions(false),
       mNeedToRunFrameRequestCallbacks(false),
       mNeedToUpdateAnimations(false),
       mMightNeedMediaQueryListenerUpdate(false),
@@ -1638,21 +1635,6 @@ void nsRefreshDriver::RemoveImageRequest(imgIRequest* aRequest) {
   }
 }
 
-void nsRefreshDriver::NotifyDOMContentLoaded() {
-  // If the refresh driver is going to tick, we mark the timestamp after
-  // everything is flushed in the next tick. If it isn't, mark ourselves as
-  // flushed now.
-  if (!HasReasonsToTick()) {
-    if (nsPresContext* pc = GetPresContext()) {
-      pc->NotifyDOMContentFlushed();
-    }
-    // else, we don't have a nsPresContext, so our doc is probably being
-    // destroyed and this notification doesn't need sending anyway.
-  } else {
-    mNotifyDOMContentFlushed = true;
-  }
-}
-
 void nsRefreshDriver::RegisterCompositionPayload(
     const mozilla::layers::CompositionPayload& aPayload) {
   mCompositionPayloads.AppendElement(aPayload);
@@ -1760,7 +1742,9 @@ void nsRefreshDriver::EnsureTimerStarted(EnsureTimerStartedFlags aFlags) {
              "EnsureTimerStarted should be called only when we are not "
              "in servo traversal or on the main-thread");
 
-  if (mTestControllingRefreshes) return;
+  if (mTestControllingRefreshes) {
+    return;
+  }
 
   if (!mRefreshTimerStartedCause) {
     mRefreshTimerStartedCause = profiler_capture_backtrace();
@@ -1815,7 +1799,9 @@ void nsRefreshDriver::EnsureTimerStarted(EnsureTimerStartedFlags aFlags) {
   // prehaps removing it from a previously-set one.
   RefreshDriverTimer* newTimer = ChooseTimer();
   if (newTimer != mActiveTimer) {
-    if (mActiveTimer) mActiveTimer->RemoveRefreshDriver(this);
+    if (mActiveTimer) {
+      mActiveTimer->RemoveRefreshDriver(this);
+    }
     mActiveTimer = newTimer;
     mActiveTimer->AddRefreshDriver(this);
 
@@ -1881,7 +1867,9 @@ void nsRefreshDriver::EnsureTimerStarted(EnsureTimerStartedFlags aFlags) {
 }
 
 void nsRefreshDriver::StopTimer() {
-  if (!mActiveTimer) return;
+  if (!mActiveTimer) {
+    return;
+  }
 
   mActiveTimer->RemoveRefreshDriver(this);
   mActiveTimer = nullptr;
@@ -1982,6 +1970,9 @@ auto nsRefreshDriver::GetReasonsToTick() const -> TickReasons {
   if (mNeedToUpdateResizeObservers) {
     reasons |= TickReasons::eNeedsToNotifyResizeObservers;
   }
+  if (mNeedToUpdateViewTransitions) {
+    reasons |= TickReasons::eNeedsToUpdateViewTransitions;
+  }
   if (mNeedToUpdateAnimations) {
     reasons |= TickReasons::eNeedsToUpdateAnimations;
   }
@@ -2030,6 +2021,9 @@ void nsRefreshDriver::AppendTickReasonsToString(TickReasons aReasons,
   }
   if (aReasons & TickReasons::eNeedsToNotifyResizeObservers) {
     aStr.AppendLiteral(" NeedsToNotifyResizeObservers");
+  }
+  if (aReasons & TickReasons::eNeedsToUpdateViewTransitions) {
+    aStr.AppendLiteral(" NeedsToUpdateViewTransitions");
   }
   if (aReasons & TickReasons::eNeedsToUpdateAnimations) {
     aStr.AppendLiteral(" NeedsToUpdateAnimations");
@@ -2253,10 +2247,23 @@ void nsRefreshDriver::RunFullscreenSteps() {
   }
 }
 
+void nsRefreshDriver::PerformPendingViewTransitionOperations() {
+  if (!mNeedToUpdateViewTransitions) {
+    return;
+  }
+  mNeedToUpdateViewTransitions = false;
+  AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("View Transitions", LAYOUT);
+  mPresContext->Document()->PerformPendingViewTransitionOperations();
+}
+
 void nsRefreshDriver::UpdateIntersectionObservations(TimeStamp aNowTime) {
   AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Compute intersections", LAYOUT);
   mPresContext->Document()->UpdateIntersections(aNowTime);
   mNeedToUpdateIntersectionObservations = false;
+}
+
+void nsRefreshDriver::UpdateRemoteFrameEffects() {
+  mPresContext->Document()->UpdateRemoteFrameEffects();
 }
 
 void nsRefreshDriver::UpdateRelevancyOfContentVisibilityAutoFrames() {
@@ -2312,8 +2319,10 @@ void nsRefreshDriver::DetermineProximityToViewportAndNotifyResizeObservers() {
 }
 
 static CallState UpdateAndReduceAnimations(Document& aDocument) {
-  for (DocumentTimeline* timeline : aDocument.Timelines()) {
-    timeline->WillRefresh();
+  for (DocumentTimeline* tl :
+       ToTArray<AutoTArray<RefPtr<DocumentTimeline>, 32>>(
+           aDocument.Timelines())) {
+    tl->WillRefresh();
   }
 
   if (nsPresContext* pc = aDocument.GetPresContext()) {
@@ -2343,7 +2352,8 @@ void nsRefreshDriver::UpdateAnimationsAndSendEvents() {
     // [1]:
     // https://drafts.csswg.org/web-animations-1/#update-animations-and-send-events
     nsAutoMicroTask mt;
-    UpdateAndReduceAnimations(*mPresContext->Document());
+    RefPtr doc = mPresContext->Document();
+    UpdateAndReduceAnimations(*doc);
   }
 
   // Hold all AnimationEventDispatcher in mAnimationEventFlushObservers as
@@ -2448,7 +2458,6 @@ void nsRefreshDriver::RunFrameRequestCallbacks(
     AUTO_PROFILER_TRACING_MARKER_INNERWINDOWID(
         "Paint", "requestAnimationFrame callbacks", GRAPHICS,
         doc->InnerWindowID());
-    const TimeStamp startTime = TimeStamp::Now();
     for (const auto& callback : callbacks) {
       if (doc->IsCanceledFrameRequestCallback(callback.mHandle)) {
         continue;
@@ -2462,14 +2471,6 @@ void nsRefreshDriver::RunFrameRequestCallbacks(
       // mutated by the call.
       LogFrameRequestCallback::Run run(callback.mCallback);
       MOZ_KnownLive(callback.mCallback)->Call(timeStamp);
-    }
-
-    if (doc->GetReadyStateEnum() == Document::READYSTATE_COMPLETE) {
-      glean::performance_responsiveness::req_anim_frame_callback
-          .AccumulateRawDuration(TimeStamp::Now() - startTime);
-    } else {
-      glean::performance_pageload::req_anim_frame_callback
-          .AccumulateRawDuration(TimeStamp::Now() - startTime);
     }
   }
 }
@@ -2562,7 +2563,7 @@ void nsRefreshDriver::CancelIdleTask(Task* aTask) {
 }
 
 bool nsRefreshDriver::TickObserverArray(uint32_t aIdx, TimeStamp aNowTime) {
-  MOZ_ASSERT(aIdx < ArrayLength(mObservers));
+  MOZ_ASSERT(aIdx < std::size(mObservers));
   for (RefPtr<nsARefreshObserver> obs : mObservers[aIdx].EndLimitedRange()) {
     obs->WillRefresh(aNowTime);
 
@@ -2816,7 +2817,13 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
     return StopTimer();
   }
 
-  // Step 17. For each doc of docs, run the update intersection observations
+  // TODO(emilio): Step 17, focus fix-up should happen here.
+
+  // Step 18: For each doc of docs, perform pending transition operations for
+  // doc.
+  PerformPendingViewTransitionOperations();
+
+  // Step 19. For each doc of docs, run the update intersection observations
   // steps for doc.
   UpdateIntersectionObservations(aNowTime);
 
@@ -2826,8 +2833,6 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
   }
 
   UpdateAnimatedImages(previousRefresh, aNowTime);
-
-  layout_telemetry::PingPerTickTelemetry();
 
   bool dispatchTasksAfterTick = false;
   if (mViewManagerFlushIsPending && !mThrottled) {
@@ -2883,16 +2888,15 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
     mCompositionPayloads.Clear();
   }
 
+  // This needs to happen after DL building since we rely on the raster scales
+  // being stored in nsSubDocumentFrame.
+  UpdateRemoteFrameEffects();
+
 #ifndef ANDROID /* bug 1142079 */
   double totalMs = (TimeStamp::Now() - mTickStart).ToMilliseconds();
   mozilla::Telemetry::Accumulate(mozilla::Telemetry::REFRESH_DRIVER_TICK,
                                  static_cast<uint32_t>(totalMs));
 #endif
-
-  if (mNotifyDOMContentFlushed) {
-    mNotifyDOMContentFlushed = false;
-    mPresContext->NotifyDOMContentFlushed();
-  }
 
   for (nsAPostRefreshObserver* observer :
        mPostRefreshObservers.ForwardRange()) {

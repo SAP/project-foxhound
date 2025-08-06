@@ -298,6 +298,7 @@ def install_requirements_file(
 _TRY_MAPPING = {
     Path("netwerk"): Path("xpcshell", "tests", "netwerk"),
     Path("dom"): Path("mochitest", "tests", "dom"),
+    Path("toolkit"): Path("mochitest", "browser", "toolkit"),
 }
 
 
@@ -313,6 +314,10 @@ def build_test_list(tests):
         tests = [tests]
     res = []
     for test in tests:
+        if test.isdigit():
+            res.append(str(test))
+            continue
+
         if test.startswith("http"):
             if temp_dir is None:
                 temp_dir = tempfile.mkdtemp()

@@ -53,7 +53,9 @@ class AddonTest {
                 "tabHide",
                 "tabs",
                 "topSites",
+                "trialML",
                 "unlimitedStorage",
+                "userScripts",
                 "webNavigation",
                 "devtools",
             ),
@@ -85,7 +87,9 @@ class AddonTest {
             R.string.mozac_feature_addons_permissions_tab_hide_description,
             R.string.mozac_feature_addons_permissions_tabs_description,
             R.string.mozac_feature_addons_permissions_top_sites_description,
+            R.string.mozac_feature_addons_permissions_trial_ml_description,
             R.string.mozac_feature_addons_permissions_unlimited_storage_description,
+            R.string.mozac_feature_addons_permissions_user_scripts_description,
             R.string.mozac_feature_addons_permissions_web_navigation_description,
             R.string.mozac_feature_addons_permissions_devtools_description,
         ).map { testContext.getString(it) }
@@ -540,5 +544,21 @@ class AddonTest {
         assertNull(addonWithInstalledStateIcon.icon)
         assertNotNull(addonWithInstalledStateIcon.installedState?.icon)
         assertNotNull(addonWithInstalledStateIcon.provideIcon())
+    }
+
+    @Test
+    fun `isSoftBlocked - true if installed state disabled status equals to SOFT_BLOCKED and otherwise false`() {
+        val addon = Addon(id = "id")
+        val softBlockedAddon = addon.copy(
+            installedState = Addon.InstalledState(
+                id = "id",
+                version = "1.0",
+                optionsPageUrl = "",
+                disabledReason = Addon.DisabledReason.SOFT_BLOCKED,
+            ),
+        )
+
+        assertFalse(addon.isSoftBlocked())
+        assertTrue(softBlockedAddon.isSoftBlocked())
     }
 }

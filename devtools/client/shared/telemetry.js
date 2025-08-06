@@ -19,8 +19,6 @@ const { TelemetryEnvironment } = ChromeUtils.importESModule(
 );
 const WeakMapMap = require("resource://devtools/client/shared/WeakMapMap.js");
 
-const CATEGORY = "devtools.main";
-
 // Object to be shared among all instances.
 const PENDING_EVENT_PROPERTIES = new WeakMapMap();
 const PENDING_EVENTS = new WeakMapMap();
@@ -45,12 +43,7 @@ class Telemetry {
     this.msSystemNow = this.msSystemNow.bind(this);
     this.getHistogramById = this.getHistogramById.bind(this);
     this.getKeyedHistogramById = this.getKeyedHistogramById.bind(this);
-    this.scalarSet = this.scalarSet.bind(this);
-    this.scalarAdd = this.scalarAdd.bind(this);
-    this.keyedScalarAdd = this.keyedScalarAdd.bind(this);
-    this.keyedScalarSet = this.keyedScalarSet.bind(this);
     this.recordEvent = this.recordEvent.bind(this);
-    this.setEventRecordingEnabled = this.setEventRecordingEnabled.bind(this);
     this.preparePendingEvent = this.preparePendingEvent.bind(this);
     this.addEventProperty = this.addEventProperty.bind(this);
     this.addEventProperties = this.addEventProperties.bind(this);
@@ -247,157 +240,6 @@ class Telemetry {
         add: () => {},
       }
     );
-  }
-
-  /**
-   * Log a value to a scalar.
-   *
-   * @param  {String} scalarId
-   *         Scalar in which the data is to be stored.
-   * @param  value
-   *         Value to store.
-   */
-  scalarSet(scalarId, value) {
-    if (!scalarId) {
-      return;
-    }
-
-    try {
-      if (isNaN(value) && typeof value !== "boolean") {
-        dump(
-          `Warning: An attempt was made to write a non-numeric and ` +
-            `non-boolean value ${value} to the ${scalarId} scalar. Only ` +
-            `numeric and boolean values are allowed.\n` +
-            `CALLER: ${getCaller()}`
-        );
-
-        return;
-      }
-      Services.telemetry.scalarSet(scalarId, value);
-    } catch (e) {
-      dump(
-        `Warning: An attempt was made to write to the ${scalarId} ` +
-          `scalar, which is not defined in Scalars.yaml\n` +
-          `CALLER: ${getCaller()}`
-      );
-    }
-  }
-
-  /**
-   * Log a value to a count scalar.
-   *
-   * @param  {String} scalarId
-   *         Scalar in which the data is to be stored.
-   * @param  value
-   *         Value to store.
-   */
-  scalarAdd(scalarId, value) {
-    if (!scalarId) {
-      return;
-    }
-
-    try {
-      if (isNaN(value)) {
-        dump(
-          `Warning: An attempt was made to write a non-numeric value ` +
-            `${value} to the ${scalarId} scalar. Only numeric values are ` +
-            `allowed.\n` +
-            `CALLER: ${getCaller()}`
-        );
-
-        return;
-      }
-      Services.telemetry.scalarAdd(scalarId, value);
-    } catch (e) {
-      dump(
-        `Warning: An attempt was made to write to the ${scalarId} ` +
-          `scalar, which is not defined in Scalars.yaml\n` +
-          `CALLER: ${getCaller()}`
-      );
-    }
-  }
-
-  /**
-   * Log a value to a keyed scalar.
-   *
-   * @param  {String} scalarId
-   *         Scalar in which the data is to be stored.
-   * @param  {String} key
-   *         The key within the  scalar.
-   * @param  value
-   *         Value to store.
-   */
-  keyedScalarSet(scalarId, key, value) {
-    if (!scalarId) {
-      return;
-    }
-
-    try {
-      if (isNaN(value) && typeof value !== "boolean") {
-        dump(
-          `Warning: An attempt was made to write a non-numeric and ` +
-            `non-boolean value ${value} to the ${scalarId} scalar. Only ` +
-            `numeric and boolean values are allowed.\n` +
-            `CALLER: ${getCaller()}`
-        );
-
-        return;
-      }
-      Services.telemetry.keyedScalarSet(scalarId, key, value);
-    } catch (e) {
-      dump(
-        `Warning: An attempt was made to write to the ${scalarId} ` +
-          `scalar, which is not defined in Scalars.yaml\n` +
-          `CALLER: ${getCaller()}`
-      );
-    }
-  }
-
-  /**
-   * Log a value to a keyed count scalar.
-   *
-   * @param  {String} scalarId
-   *         Scalar in which the data is to be stored.
-   * @param  {String} key
-   *         The key within the  scalar.
-   * @param  value
-   *         Value to store.
-   */
-  keyedScalarAdd(scalarId, key, value) {
-    if (!scalarId) {
-      return;
-    }
-
-    try {
-      if (isNaN(value)) {
-        dump(
-          `Warning: An attempt was made to write a non-numeric value ` +
-            `${value} to the ${scalarId} scalar. Only numeric values are ` +
-            `allowed.\n` +
-            `CALLER: ${getCaller()}`
-        );
-
-        return;
-      }
-      Services.telemetry.keyedScalarAdd(scalarId, key, value);
-    } catch (e) {
-      dump(
-        `Warning: An attempt was made to write to the ${scalarId} ` +
-          `scalar, which is not defined in Scalars.yaml\n` +
-          `CALLER: ${getCaller()}`
-      );
-    }
-  }
-
-  /**
-   * Event telemetry is disabled by default. Use this method to enable or
-   * disable it.
-   *
-   * @param {Boolean} enabled
-   *        Enabled: true or false.
-   */
-  setEventRecordingEnabled(enabled) {
-    return Services.telemetry.setEventRecordingEnabled(CATEGORY, enabled);
   }
 
   /**
@@ -633,8 +475,16 @@ class Telemetry {
       extra = {};
     }
     extra.session_id = this.sessionId;
+    if (value !== null) {
+      extra.value = value;
+    }
 
-    Services.telemetry.recordEvent(CATEGORY, method, object, value, extra);
+    // Using the Glean API directly insteade of doing string manipulations
+    // would be better. See bug 1921793.
+    const eventName = `${method}_${object}`.replace(/(_[a-z])/g, c =>
+      c[1].toUpperCase()
+    );
+    Glean.devtoolsMain[eventName]?.record(extra);
   }
 
   /**
@@ -678,8 +528,8 @@ class Telemetry {
     if (charts.countHist) {
       this.getHistogramById(charts.countHist).add(true);
     }
-    if (charts.countScalar) {
-      this.scalarAdd(charts.countScalar, 1);
+    if (charts.gleanCounter) {
+      charts.gleanCounter.add(1);
     }
   }
 
@@ -734,12 +584,10 @@ function getChartsFromToolId(id) {
     return null;
   }
 
-  const lowerCaseId = id.toLowerCase();
-
   let useTimedEvent = null;
   let timerHist = null;
   let countHist = null;
-  let countScalar = null;
+  let gleanCounter = null;
 
   id = id.toUpperCase();
 
@@ -767,18 +615,17 @@ function getChartsFromToolId(id) {
       countHist = `DEVTOOLS_${id}_OPENED_COUNT`;
       break;
     case "ACCESSIBILITY":
-    case "APPLICATION":
       timerHist = `DEVTOOLS_${id}_TIME_ACTIVE_SECONDS`;
-      countScalar = `devtools.${lowerCaseId}.opened_count`;
+      gleanCounter = Glean.devtoolsAccessibility.openedCount;
       break;
     case "ACCESSIBILITY_PICKER":
       timerHist = `DEVTOOLS_${id}_TIME_ACTIVE_SECONDS`;
-      countScalar = `devtools.accessibility.picker_used_count`;
+      gleanCounter = Glean.devtoolsAccessibility.pickerUsedCount;
       break;
     case "CHANGESVIEW":
       useTimedEvent = true;
       timerHist = `DEVTOOLS_${id}_TIME_ACTIVE_SECONDS`;
-      countScalar = `devtools.${lowerCaseId}.opened_count`;
+      gleanCounter = Glean.devtoolsChangesview.openedCount;
       break;
     case "ANIMATIONINSPECTOR":
     case "COMPATIBILITYVIEW":
@@ -803,7 +650,7 @@ function getChartsFromToolId(id) {
     useTimedEvent,
     timerHist,
     countHist,
-    countScalar,
+    gleanCounter,
   };
 }
 

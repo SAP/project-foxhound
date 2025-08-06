@@ -318,8 +318,8 @@ let Player = {
     this.resizeDebouncer = new DeferredTask(() => {
       this.alignEndControlsButtonTooltips();
       this.recordEvent("resize", {
-        width: window.outerWidth.toString(),
-        height: window.outerHeight.toString(),
+        width: window.outerWidth,
+        height: window.outerHeight,
       });
     }, RESIZE_DEBOUNCE_RATE_MS);
 
@@ -496,7 +496,7 @@ let Player = {
       }
 
       case "oop-browser-crashed": {
-        this.closePipWindow({ reason: "browser-crash" });
+        this.closePipWindow({ reason: "BrowserCrash" });
         break;
       }
 
@@ -703,7 +703,7 @@ let Player = {
       case "fullscreen": {
         this.fullscreenModeToggle();
         this.recordEvent("fullscreen", {
-          enter: (!this.isFullscreen).toString(),
+          enter: !this.isFullscreen,
         });
         break;
       }
@@ -769,12 +769,12 @@ let Player = {
     this.actor.sendAsyncMessage("PictureInPicture:Pause", {
       reason: "pip-closed",
     });
-    this.closePipWindow({ reason: "closeButton" });
+    this.closePipWindow({ reason: "CloseButton" });
   },
 
   closeFromForeground() {
     PictureInPicture.closeSinglePipWindow({
-      reason: "foregrounded",
+      reason: "Foregrounded",
       actorRef: this.actor,
     });
   },
@@ -786,8 +786,8 @@ let Player = {
       this.deferredResize = {
         left: window.screenX,
         top: window.screenY,
-        width: window.innerWidth,
-        height: window.innerHeight,
+        width: window.outerWidth,
+        height: window.outerHeight,
       };
       document.body.requestFullscreen();
     }
@@ -915,8 +915,8 @@ let Player = {
    */
   determineCurrentQuadrant() {
     // Determine center coordinates of window.
-    let windowCenterX = window.screenX + window.innerWidth / 2;
-    let windowCenterY = window.screenY + window.innerHeight / 2;
+    let windowCenterX = window.screenX + window.outerWidth / 2;
+    let windowCenterY = window.screenY + window.outerHeight / 2;
     let quadrant = null;
     let halfWidth = window.screen.availLeft + window.screen.availWidth / 2;
     let halfHeight = window.screen.availTop + window.screen.availHeight / 2;
@@ -1168,7 +1168,7 @@ let Player = {
    *  Event context data object
    */
   onCommand() {
-    this.closePipWindow({ reason: "shortcut" });
+    this.closePipWindow({ reason: "Shortcut" });
   },
 
   get controls() {
@@ -1299,13 +1299,8 @@ let Player = {
    *   The data to pass to telemetry when the event is recorded.
    */
   recordEvent(type, args) {
-    Services.telemetry.recordEvent(
-      "pictureinpicture",
-      type,
-      "player",
-      this.id,
-      args
-    );
+    args.value = this.id;
+    Glean.pictureinpicture[type + "Player"].record(args);
   },
 
   /**

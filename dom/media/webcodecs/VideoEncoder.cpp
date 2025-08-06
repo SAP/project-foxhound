@@ -228,7 +228,8 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
     } else {
       format = H264BitStreamFormat::AVC;
     }
-    if (ExtractH264CodecDetails(mCodec, profile, constraints, level)) {
+    if (ExtractH264CodecDetails(mCodec, profile, constraints, level,
+                                H264CodecStringStrictness::Strict)) {
       if (profile == H264_PROFILE_BASE || profile == H264_PROFILE_MAIN ||
           profile == H264_PROFILE_EXTENDED || profile == H264_PROFILE_HIGH) {
         specific.emplace(
@@ -275,7 +276,8 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
         ));
   }
   return EncoderConfig(codecType, {mWidth, mHeight}, usage,
-                       ImageBitmapFormat::RGBA32, ImageBitmapFormat::RGBA32,
+                       // Gecko favors BGRA
+                       ImageBitmapFormat::BGRA32, ImageBitmapFormat::BGRA32,
                        AssertedCast<uint8_t>(mFramerate.refOr(0.f)), 0,
                        mBitrate.refOr(0), 0, 0,
                        mBitrateMode == VideoEncoderBitrateMode::Constant

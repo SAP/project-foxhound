@@ -15,7 +15,7 @@
 // ascii hex encoded serial numbers. The program crlite_key.py in this directory
 // can generate these values for you.
 //
-// The test filter was generated as follows:
+// The test filters were generated as follows:
 //
 // $ ./crlite_key.py test_crlite_filters/issuer.pem test_crlite_filters/valid.pem
 // 8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8=
@@ -28,10 +28,48 @@
 // $ mkdir known revoked
 // $ echo "00da4f392bfd8bcea8" > known/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
 // $ echo "2d35ca6503fb1ba3" >> known/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
-// $ echo "2d35ca6503fb1ba3" > revoked/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
+// $ echo "002d35ca6503fb1ba3" > revoked/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
 //
-// $ rust-create-cascade --known ./known/ --revoked ./revoked/
+// (the 00 prefix on the serial number in the revoked directory denotes an "unspecified"
+// reason code)
 //
+// $ cat > ct-logs.json
+// [{
+//    "LogID": "9lyUL9F3MCIUVBgIMJRWjuNNExkzv98MLyALzE7xZOM=",
+//    "MinTimestamp": 0,
+//    "MaxTimestamp": 9999999999999,
+//    "MMD": 86400,
+//    "MinEntry": 0
+//  },
+//  {
+//    "LogID": "pLkJkLQYWBSHuxOizGdwCjw1mAT5G9+443fNDsgN3BA=",
+//    "MinTimestamp": 0,
+//    "MaxTimestamp": 9999999999999,
+//    "MMD": 86400,
+//    "MinEntry": 0
+//  }]
+//
+// $ rust-create-cascade --filter-type cascade --known ./known/ --revoked ./revoked --outdir ./cascade
+// $ rust-create-cascade --filter-type clubcard --ct-logs-json ./ct-logs.json --known ./known/ --revoked ./revoked --outdir ./clubcard
+//
+// Additional revoked certificates were then added to the /known/ and /revoked/
+// files before creating the delta updates:
+//
+// $ ./crlite_key.py test_crlite_filters/issuer.pem test_crlite_filters/revoked-in-stash.pem
+// 8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8=
+// 009796e3b017a29f0d
+//
+// $ ./crlite_key.py test_crlite_filters/issuer.pem test_crlite_filters/revoked-in-stash-2.pem
+// 8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8=
+// 167d2818a75ab5d8
+//
+// $ echo "009796e3b017a29f0d" >> known/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
+// $ echo "00009796e3b017a29f0d" >> revoked/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
+// $ rust-create-cascade --filter-type clubcard --ct-logs-json ./ct-logs.json --known ./known/ --revoked ./revoked --prev-revset ./clubcard/revset.bin --outdir ./clubcard-delta-1
+//
+// $ echo "167d2818a75ab5d8" >> known/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
+// $ echo "00167d2818a75ab5d8" >> revoked/8Rw90Ej3Ttt8RRkrg-WYDS9n7IS03bk5bjP_UXPtaY8\=
+// $ rust-create-cascade --filter-type clubcard --ct-logs-json ./ct-logs.json --known ./known/ --revoked ./revoked --prev-revset ./clubcard-delta-1/revset.bin --outdir ./clubcard-delta-2
 
 "use strict";
 do_get_profile(); // must be called before getting nsIX509CertDB
@@ -80,11 +118,20 @@ function getHash(aStr) {
 // Get the name of the file in the test directory to serve as the attachment
 // for the given filter.
 function getFilenameForFilter(filter) {
-  if (filter.type == "full") {
+  if (filter.type == "clubcard") {
+    return "20201017-0-clubcard-filter";
+  }
+  if (filter.type == "cascade") {
     return "20201017-0-filter";
   }
   if (filter.id == "0001") {
     return "20201017-1-filter.stash";
+  }
+  if (filter.id == "1000") {
+    return "20201017-1-filter.delta";
+  }
+  if (filter.id == "2000") {
+    return "20201201-3-filter.delta";
   }
   // The addition of another stash file was written more than a month after
   // other parts of this test. As such, the second stash file for October 17th,
@@ -102,16 +149,23 @@ function getFilenameForFilter(filter) {
  * @param {boolean} clear Whether or not to clear the local DB first. Defaults
  *                        to true.
  */
-async function syncAndDownload(filters, clear = true, channel = "specified") {
+async function syncAndDownload(filters, clear = true, channel = undefined) {
   const localDB = await CRLiteFiltersClient.client.db;
   if (clear) {
     await localDB.clear();
   }
 
+  channel =
+    typeof channel === "undefined"
+      ? Services.prefs.getStringPref(CRLITE_FILTER_CHANNEL_PREF)
+      : channel;
+
   for (let filter of filters) {
     const filename = getFilenameForFilter(filter);
     const file = do_get_file(`test_crlite_filters/${filename}`);
     const fileBytes = readFile(file);
+
+    const incremental = filter.type == "diff";
 
     const record = {
       details: {
@@ -124,13 +178,12 @@ async function syncAndDownload(filters, clear = true, channel = "specified") {
         location: `security-state-workspace/cert-revocations/test_crlite_filters/${filename}`,
         mimetype: "application/octet-stream",
       },
-      incremental: filter.type == "diff",
+      incremental,
       effectiveTimestamp: new Date(filter.timestamp).getTime(),
-      parent: filter.type == "diff" ? filter.parent : undefined,
+      parent: incremental ? filter.parent : undefined,
       id: filter.id,
-      coverage: filter.type == "full" ? filter.coverage : undefined,
-      enrolledIssuers:
-        filter.type == "full" ? filter.enrolledIssuers : undefined,
+      coverage: !incremental ? filter.coverage : undefined,
+      enrolledIssuers: !incremental ? filter.enrolledIssuers : undefined,
       channel: `${channel}`,
       filter_expression: `'${channel}' == '${CRLITE_FILTER_CHANNEL_PREF}'|preferenceValue('none')`,
     };
@@ -164,7 +217,7 @@ add_task(async function test_crlite_filters_disabled() {
   let result = await syncAndDownload([
     {
       timestamp: "2019-01-01T00:00:00Z",
-      type: "full",
+      type: "cascade",
       id: "0000",
       coverage: [
         {
@@ -176,6 +229,8 @@ add_task(async function test_crlite_filters_disabled() {
     },
   ]);
   equal(result, "disabled", "CRLite filter download should not have run");
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_no_filters() {
@@ -187,13 +242,15 @@ add_task(async function test_crlite_no_filters() {
     "unavailable",
     "CRLite filter download should have run, but nothing was available"
   );
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_no_filters_in_channel() {
   Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
 
   let result = await syncAndDownload(
-    [{ timestamp: "2019-01-01T00:00:00Z", type: "full", id: "0000" }],
+    [{ timestamp: "2019-01-01T00:00:00Z", type: "cascade", id: "0000" }],
     true,
     "other"
   );
@@ -202,6 +259,8 @@ add_task(async function test_crlite_no_filters_in_channel() {
     "unavailable",
     "CRLite filter download should have run, but nothing was available"
   );
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_only_incremental_filters() {
@@ -232,13 +291,15 @@ add_task(async function test_crlite_only_incremental_filters() {
     "unavailable",
     "CRLite filter download should have run, but no full filters were available"
   );
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_incremental_filters_with_wrong_parent() {
   Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
 
   let result = await syncAndDownload([
-    { timestamp: "2019-01-01T00:00:00Z", type: "full", id: "0000" },
+    { timestamp: "2019-01-01T00:00:00Z", type: "cascade", id: "0000" },
     {
       timestamp: "2019-01-01T06:00:00Z",
       type: "diff",
@@ -259,16 +320,18 @@ add_task(async function test_crlite_incremental_filters_with_wrong_parent() {
     },
   ]);
   expectDownloads(result, [
-    "2019-01-01T00:00:00Z-full",
+    "2019-01-01T00:00:00Z-cascade",
     "2019-01-01T06:00:00Z-diff",
   ]);
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_incremental_filter_too_early() {
   Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
 
   let result = await syncAndDownload([
-    { timestamp: "2019-01-02T00:00:00Z", type: "full", id: "0000" },
+    { timestamp: "2019-01-02T00:00:00Z", type: "cascade", id: "0000" },
     {
       timestamp: "2019-01-01T00:00:00Z",
       type: "diff",
@@ -278,33 +341,37 @@ add_task(async function test_crlite_incremental_filter_too_early() {
   ]);
   equal(
     result,
-    "finished;2019-01-02T00:00:00Z-full",
+    "finished;2019-01-02T00:00:00Z-cascade",
     "CRLite filter download should have run"
   );
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_filters_basic() {
   Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
 
   let result = await syncAndDownload([
-    { timestamp: "2019-01-01T00:00:00Z", type: "full", id: "0000" },
+    { timestamp: "2019-01-01T00:00:00Z", type: "cascade", id: "0000" },
   ]);
   equal(
     result,
-    "finished;2019-01-01T00:00:00Z-full",
+    "finished;2019-01-01T00:00:00Z-cascade",
     "CRLite filter download should have run"
   );
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_filters_not_cached() {
   Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
   let filters = [
-    { timestamp: "2019-01-01T00:00:00Z", type: "full", id: "0000" },
+    { timestamp: "2019-01-01T00:00:00Z", type: "cascade", id: "0000" },
   ];
   let result = await syncAndDownload(filters);
   equal(
     result,
-    "finished;2019-01-01T00:00:00Z-full",
+    "finished;2019-01-01T00:00:00Z-cascade",
     "CRLite filter download should have run"
   );
 
@@ -317,6 +384,8 @@ add_task(async function test_crlite_filters_not_cached() {
   );
   equal(attachment._source, "remote_match");
   await CRLiteFiltersClient.client.attachments.deleteDownloaded(records[0]);
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_filters_full_and_incremental() {
@@ -330,7 +399,7 @@ add_task(async function test_crlite_filters_full_and_incremental() {
       id: "0001",
       parent: "0000",
     },
-    { timestamp: "2019-01-01T00:00:00Z", type: "full", id: "0000" },
+    { timestamp: "2019-01-01T00:00:00Z", type: "cascade", id: "0000" },
     {
       timestamp: "2019-01-01T18:00:00Z",
       type: "diff",
@@ -345,11 +414,13 @@ add_task(async function test_crlite_filters_full_and_incremental() {
     },
   ]);
   expectDownloads(result, [
-    "2019-01-01T00:00:00Z-full",
+    "2019-01-01T00:00:00Z-cascade",
     "2019-01-01T06:00:00Z-diff",
     "2019-01-01T12:00:00Z-diff",
     "2019-01-01T18:00:00Z-diff",
   ]);
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_filters_multiple_days() {
@@ -387,8 +458,8 @@ add_task(async function test_crlite_filters_multiple_days() {
       id: "0013",
       parent: "0012",
     },
-    { timestamp: "2019-01-02T00:00:00Z", type: "full", id: "0010" },
-    { timestamp: "2019-01-03T00:00:00Z", type: "full", id: "0020" },
+    { timestamp: "2019-01-02T00:00:00Z", type: "cascade", id: "0010" },
+    { timestamp: "2019-01-03T00:00:00Z", type: "cascade", id: "0020" },
     {
       timestamp: "2019-01-01T06:00:00Z",
       type: "diff",
@@ -407,7 +478,7 @@ add_task(async function test_crlite_filters_multiple_days() {
       id: "0002",
       parent: "0001",
     },
-    { timestamp: "2019-01-01T00:00:00Z", type: "full", id: "0000" },
+    { timestamp: "2019-01-01T00:00:00Z", type: "cascade", id: "0000" },
     {
       timestamp: "2019-01-03T06:00:00Z",
       type: "diff",
@@ -416,11 +487,13 @@ add_task(async function test_crlite_filters_multiple_days() {
     },
   ]);
   expectDownloads(result, [
-    "2019-01-03T00:00:00Z-full",
+    "2019-01-03T00:00:00Z-cascade",
     "2019-01-03T06:00:00Z-diff",
     "2019-01-03T12:00:00Z-diff",
     "2019-01-03T18:00:00Z-diff",
   ]);
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_confirm_revocations_mode() {
@@ -440,7 +513,7 @@ add_task(async function test_crlite_confirm_revocations_mode() {
   let result = await syncAndDownload([
     {
       timestamp: "2020-10-17T00:00:00Z",
-      type: "full",
+      type: "cascade",
       id: "0000",
       coverage: [
         {
@@ -459,7 +532,7 @@ add_task(async function test_crlite_confirm_revocations_mode() {
   ]);
   equal(
     result,
-    "finished;2020-10-17T00:00:00Z-full",
+    "finished;2020-10-17T00:00:00Z-cascade",
     "CRLite filter download should have run"
   );
 
@@ -496,7 +569,7 @@ add_task(async function test_crlite_confirm_revocations_mode() {
   result = await syncAndDownload([
     {
       timestamp: "2020-10-17T00:00:00Z",
-      type: "full",
+      type: "cascade",
       id: "0000",
       coverage: [],
       enrolledIssuers: [],
@@ -504,7 +577,7 @@ add_task(async function test_crlite_confirm_revocations_mode() {
   ]);
   equal(
     result,
-    "finished;2020-10-17T00:00:00Z-full",
+    "finished;2020-10-17T00:00:00Z-cascade",
     "CRLite filter download should have run"
   );
 
@@ -520,9 +593,11 @@ add_task(async function test_crlite_confirm_revocations_mode() {
     "us-datarecovery.com",
     Ci.nsIX509CertDB.FLAG_LOCAL_ONLY
   );
+
+  await syncAndDownload([], true);
 });
 
-add_task(async function test_crlite_filters_and_check_revocation() {
+async function test_crlite_filters_and_check_revocation(filter_type) {
   Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
   Services.prefs.setIntPref(
     "security.pki.crlite_mode",
@@ -539,26 +614,32 @@ add_task(async function test_crlite_filters_and_check_revocation() {
   let result = await syncAndDownload([
     {
       timestamp: "2020-10-17T00:00:00Z",
-      type: "full",
+      type: filter_type,
       id: "0000",
-      coverage: [
-        {
-          logID: "9lyUL9F3MCIUVBgIMJRWjuNNExkzv98MLyALzE7xZOM=",
-          minTimestamp: 0,
-          maxTimestamp: 9999999999999,
-        },
-        {
-          logID: "pLkJkLQYWBSHuxOizGdwCjw1mAT5G9+443fNDsgN3BA=",
-          minTimestamp: 0,
-          maxTimestamp: 9999999999999,
-        },
-      ],
-      enrolledIssuers: [ISSUER_PEM_UID, NO_SCT_ISSUER_PEM_UID],
+      coverage:
+        filter_type == "clubcard"
+          ? undefined
+          : [
+              {
+                logID: "9lyUL9F3MCIUVBgIMJRWjuNNExkzv98MLyALzE7xZOM=",
+                minTimestamp: 0,
+                maxTimestamp: 9999999999999,
+              },
+              {
+                logID: "pLkJkLQYWBSHuxOizGdwCjw1mAT5G9+443fNDsgN3BA=",
+                minTimestamp: 0,
+                maxTimestamp: 9999999999999,
+              },
+            ],
+      enrolledIssuers:
+        filter_type == "clubcard"
+          ? undefined
+          : [ISSUER_PEM_UID, NO_SCT_ISSUER_PEM_UID],
     },
   ]);
   equal(
     result,
-    "finished;2020-10-17T00:00:00Z-full",
+    `finished;2020-10-17T00:00:00Z-${filter_type}`,
     "CRLite filter download should have run"
   );
 
@@ -611,7 +692,7 @@ add_task(async function test_crlite_filters_and_check_revocation() {
       {
         timestamp: "2020-10-17T03:00:00Z",
         type: "diff",
-        id: "0001",
+        id: filter_type == "clubcard" ? "1000" : "0001",
         parent: "0000",
       },
     ],
@@ -655,8 +736,8 @@ add_task(async function test_crlite_filters_and_check_revocation() {
       {
         timestamp: "2020-10-17T06:00:00Z",
         type: "diff",
-        id: "0002",
-        parent: "0001",
+        id: filter_type == "clubcard" ? "2000" : "0002",
+        parent: filter_type == "clubcard" ? "1000" : "0001",
       },
     ],
     false
@@ -713,18 +794,22 @@ add_task(async function test_crlite_filters_and_check_revocation() {
     0
   );
 
+  // NB: this will cause an OCSP request to be sent to localhost:80, but
+  // since an OCSP responder shouldn't be running on that port, this should
+  // fail safely.
+  Services.prefs.setCharPref("network.dns.localDomains", [
+    "ocsp.digicert.com",
+    "ocsp.godaddy.com",
+  ]);
+  Services.prefs.setBoolPref("security.OCSP.require", true);
+  Services.prefs.setIntPref("security.OCSP.enabled", 1);
+
   // This certificate has no embedded SCTs, so it is not guaranteed to be in
   // CT, so CRLite can't be guaranteed to give the correct answer, so it is
   // not consulted, and the implementation falls back to OCSP. Since the real
   // OCSP responder can't be reached, this results in a
   // SEC_ERROR_OCSP_SERVER_ERROR.
   let noSCTCert = constructCertFromFile("test_crlite_filters/no-sct.pem");
-  // NB: this will cause an OCSP request to be sent to localhost:80, but
-  // since an OCSP responder shouldn't be running on that port, this should
-  // fail safely.
-  Services.prefs.setCharPref("network.dns.localDomains", "ocsp.digicert.com");
-  Services.prefs.setBoolPref("security.OCSP.require", true);
-  Services.prefs.setIntPref("security.OCSP.enabled", 1);
   await checkCertErrorGenericAtTime(
     certdb,
     noSCTCert,
@@ -735,6 +820,22 @@ add_task(async function test_crlite_filters_and_check_revocation() {
     "mail233.messagelabs.com",
     0
   );
+
+  // If we increase the number of timestamps required for coverage then
+  // even the valid certificate will fallback to OCSP.
+  Services.prefs.setIntPref("security.pki.crlite_timestamps_for_coverage", 100);
+  await checkCertErrorGenericAtTime(
+    certdb,
+    validCert,
+    SEC_ERROR_OCSP_SERVER_ERROR,
+    certificateUsageSSLServer,
+    new Date("2020-10-20T00:00:00Z").getTime() / 1000,
+    false,
+    "vpn.worldofspeed.org",
+    0
+  );
+  Services.prefs.clearUserPref("security.pki.crlite_timestamps_for_coverage");
+
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref("security.OCSP.require");
   Services.prefs.clearUserPref("security.OCSP.enabled");
@@ -748,7 +849,7 @@ add_task(async function test_crlite_filters_and_check_revocation() {
   result = await syncAndDownload([
     {
       timestamp: "2020-10-17T00:00:00Z",
-      type: "full",
+      type: "cascade",
       id: "0000",
       coverage: [
         {
@@ -767,7 +868,7 @@ add_task(async function test_crlite_filters_and_check_revocation() {
   ]);
   equal(
     result,
-    "finished;2020-10-17T00:00:00Z-full",
+    "finished;2020-10-17T00:00:00Z-cascade",
     "CRLite filter download should have run"
   );
   await checkCertErrorGenericAtTime(
@@ -780,6 +881,83 @@ add_task(async function test_crlite_filters_and_check_revocation() {
     "us-datarecovery.com",
     Ci.nsIX509CertDB.FLAG_LOCAL_ONLY
   );
+
+  await syncAndDownload([], true);
+}
+
+add_task(async function test_crlite_cascade_filter() {
+  await test_crlite_filters_and_check_revocation("cascade");
+});
+
+add_task(async function test_crlite_clubcard_filter() {
+  await test_crlite_filters_and_check_revocation("clubcard");
+});
+
+add_task(async function test_crlite_clubcard_bad_coverage_in_remote_settings() {
+  Services.prefs.setBoolPref(CRLITE_FILTERS_ENABLED_PREF, true);
+  Services.prefs.setIntPref(
+    "security.pki.crlite_mode",
+    CRLiteModeEnforcePrefValue
+  );
+  Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
+
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
+  addCertFromFile(certdb, "test_crlite_filters/issuer.pem", ",,");
+  addCertFromFile(certdb, "test_crlite_filters/no-sct-issuer.pem", ",,");
+
+  let result = await syncAndDownload([
+    {
+      timestamp: "2020-10-17T00:00:00Z",
+      type: "clubcard",
+      id: "0000",
+      coverage: [
+        {
+          logID: "9lyUL9F3MCIUVBgIMJRWjuNNExkzv98MLyALzE7xZOM=",
+          minTimestamp: 0,
+          maxTimestamp: 0,
+        },
+        {
+          logID: "pLkJkLQYWBSHuxOizGdwCjw1mAT5G9+443fNDsgN3BA=",
+          minTimestamp: 0,
+          maxTimestamp: 0,
+        },
+      ],
+      enrolledIssuers: [],
+    },
+  ]);
+  equal(
+    result,
+    `finished;2020-10-17T00:00:00Z-clubcard`,
+    "CRLite filter download should have run"
+  );
+
+  let validCert = constructCertFromFile("test_crlite_filters/valid.pem");
+  await checkCertErrorGenericAtTime(
+    certdb,
+    validCert,
+    PRErrorCodeSuccess,
+    certificateUsageSSLServer,
+    new Date("2020-10-20T00:00:00Z").getTime() / 1000,
+    false,
+    "vpn.worldofspeed.org",
+    0
+  );
+
+  let revokedCert = constructCertFromFile("test_crlite_filters/revoked.pem");
+  await checkCertErrorGenericAtTime(
+    certdb,
+    revokedCert,
+    SEC_ERROR_REVOKED_CERTIFICATE,
+    certificateUsageSSLServer,
+    new Date("2020-10-20T00:00:00Z").getTime() / 1000,
+    false,
+    "us-datarecovery.com",
+    0
+  );
+
+  await syncAndDownload([], true);
 });
 
 add_task(async function test_crlite_filters_avoid_reprocessing_filters() {
@@ -788,7 +966,7 @@ add_task(async function test_crlite_filters_avoid_reprocessing_filters() {
   let result = await syncAndDownload([
     {
       timestamp: "2019-01-01T00:00:00Z",
-      type: "full",
+      type: "cascade",
       id: "0000",
       coverage: [
         {
@@ -819,7 +997,7 @@ add_task(async function test_crlite_filters_avoid_reprocessing_filters() {
     },
   ]);
   expectDownloads(result, [
-    "2019-01-01T00:00:00Z-full",
+    "2019-01-01T00:00:00Z-cascade",
     "2019-01-01T06:00:00Z-diff",
     "2019-01-01T12:00:00Z-diff",
     "2019-01-01T18:00:00Z-diff",
@@ -842,6 +1020,8 @@ add_task(async function test_crlite_filters_avoid_reprocessing_filters() {
     false
   );
   equal(result, "finished;2019-01-02T00:00:00Z-diff");
+
+  await syncAndDownload([], true);
 });
 
 add_task(
@@ -858,7 +1038,7 @@ add_task(
       [
         {
           timestamp: "2019-01-01T00:00:00Z",
-          type: "full",
+          type: "cascade",
           id: "0000",
           coverage: [
             {
@@ -880,7 +1060,7 @@ add_task(
       "specified"
     );
     expectDownloads(result, [
-      "2019-01-01T00:00:00Z-full",
+      "2019-01-01T00:00:00Z-cascade",
       "2019-01-01T06:00:00Z-diff",
     ]);
 
@@ -890,7 +1070,7 @@ add_task(
       [
         {
           timestamp: "2020-01-01T00:00:00Z",
-          type: "full",
+          type: "cascade",
           id: "0002",
           coverage: [
             {
@@ -919,7 +1099,7 @@ add_task(
     Services.prefs.setStringPref(CRLITE_FILTER_CHANNEL_PREF, "priority");
     result = await syncAndDownload([], false);
     expectDownloads(result, [
-      "2020-01-01T00:00:00Z-full",
+      "2020-01-01T00:00:00Z-cascade",
       "2020-01-01T06:00:00Z-diff",
     ]);
 
@@ -928,9 +1108,11 @@ add_task(
     Services.prefs.setStringPref(CRLITE_FILTER_CHANNEL_PREF, "specified");
     result = await syncAndDownload([], false);
     expectDownloads(result, [
-      "2019-01-01T00:00:00Z-full",
+      "2019-01-01T00:00:00Z-cascade",
       "2019-01-01T06:00:00Z-diff",
     ]);
+
+    await syncAndDownload([], true);
   }
 );
 

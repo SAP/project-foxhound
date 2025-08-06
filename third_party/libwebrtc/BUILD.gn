@@ -21,15 +21,15 @@
 # - visibility = [ ":*" ] - directory private.
 # As a general guideline, only targets in api/ should have public visibility.
 
-import("//build/config/linux/pkg_config.gni")
-import("//build/config/sanitizers/sanitizers.gni")
+import("//chromium/build/config/linux/pkg_config.gni")
+import("//chromium/build/config/sanitizers/sanitizers.gni")
 import("webrtc.gni")
 if (rtc_enable_protobuf) {
   import("//third_party/protobuf/proto_library.gni")
 }
 if (is_android) {
-  import("//build/config/android/config.gni")
-  import("//build/config/android/rules.gni")
+  import("//chromium/build/config/android/config.gni")
+  import("//chromium/build/config/android/rules.gni")
   import("//third_party/jni_zero/jni_zero.gni")
 }
 
@@ -79,6 +79,9 @@ if (!build_with_chromium && !build_with_mozilla) {
         "video:sv_loopback",
         "video:video_loopback",
       ]
+      if (use_libfuzzer) {
+        deps += [ "test/fuzzers" ]
+      }
       if (!is_asan) {
         # Do not build :webrtc_lib_link_test because lld complains on some OS
         # (e.g. when target_os = "mac") when is_asan=true. For more details,
@@ -138,10 +141,6 @@ config("common_inherited_config") {
   defines = []
   cflags = []
   ldflags = []
-
-  if (rtc_jni_generator_legacy_symbols) {
-    defines += [ "RTC_JNI_GENERATOR_LEGACY_SYMBOLS" ]
-  }
 
   if (rtc_objc_prefix != "") {
     defines += [ "RTC_OBJC_TYPE_PREFIX=${rtc_objc_prefix}" ]
@@ -380,10 +379,6 @@ config("common_config") {
     defines += [ "RTC_DISABLE_METRICS" ]
   }
 
-  if (rtc_exclude_transient_suppressor) {
-    defines += [ "WEBRTC_EXCLUDE_TRANSIENT_SUPPRESSOR" ]
-  }
-
   if (rtc_exclude_audio_processing_module) {
     defines += [ "WEBRTC_EXCLUDE_AUDIO_PROCESSING_MODULE" ]
   }
@@ -528,6 +523,18 @@ config("common_objc") {
 }
 }
 
+if (!rtc_build_ssl) {
+  config("external_ssl_library") {
+    if (rtc_ssl_root != "") {
+      include_dirs = [ rtc_ssl_root ]
+    }
+    libs = [
+      "crypto",
+      "ssl",
+    ]
+  }
+}
+
 if (!build_with_chromium) {
   # Target to build all the WebRTC production code.
   rtc_static_library("webrtc") {
@@ -539,7 +546,7 @@ if (!build_with_chromium) {
 
     sources = []
     complete_static_lib = true
-    suppressed_configs += [ "//build/config/compiler:thin_archive" ]
+    suppressed_configs += [ "//chromium/build/config/compiler:thin_archive" ]
     defines = []
 
     deps = [
@@ -548,6 +555,7 @@ if (!build_with_chromium) {
       "api:libjingle_peerconnection_api",
       "api:rtc_error",
       "api:transport_api",
+      "api/audio_codecs:opus_audio_decoder_factory",
       "api/crypto",
       "api/rtc_event_log:rtc_event_log_factory",
       "api/task_queue",
@@ -567,6 +575,7 @@ if (!build_with_chromium) {
       "call",
       "common_audio",
       "common_video",
+      ":dcsctp",
       "logging:rtc_event_log_api",
       "media",
       "modules",
@@ -732,7 +741,10 @@ if (rtc_include_tests && !build_with_chromium) {
     data = rtc_unittests_resources
 
     if (rtc_enable_protobuf) {
-      deps += [ "logging:rtc_event_log_tests" ]
+      deps += [
+        "api/test/network_emulation:network_config_schedule_proto",
+        "logging:rtc_event_log_tests",
+      ]
     }
 
     if (is_ios) {
@@ -881,10 +893,10 @@ if (rtc_include_tests && !build_with_chromium) {
 # Build target for standalone dcsctp
 rtc_static_library("dcsctp") {
   # Only the root target should depend on this.
-  visibility = [ "//:default" ]
+  visibility = [ "//:default", "//libwebrtc:webrtc" ]
   sources = []
   complete_static_lib = true
-  suppressed_configs += [ "//build/config/compiler:thin_archive" ]
+  suppressed_configs += [ "//chromium/build/config/compiler:thin_archive" ]
   defines = []
   deps = [
     "net/dcsctp/public:factory",

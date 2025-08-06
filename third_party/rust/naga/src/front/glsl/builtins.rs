@@ -292,6 +292,26 @@ pub fn inject_builtin(
                 f,
             )
         }
+        "textureQueryLevels" => {
+            let f = |kind, dim, arrayed, multi, shadow| {
+                let class = match shadow {
+                    true => ImageClass::Depth { multi },
+                    false => ImageClass::Sampled { kind, multi },
+                };
+
+                let image = TypeInner::Image {
+                    dim,
+                    arrayed,
+                    class,
+                };
+
+                declaration
+                    .overloads
+                    .push(module.add_builtin(vec![image], MacroCall::TextureQueryLevels))
+            };
+
+            texture_args_generator(TextureArgsOptions::SHADOW | variations.into(), f)
+        }
         "texelFetch" | "texelFetchOffset" => {
             let offset = "texelFetchOffset" == name;
             let f = |kind, dim, arrayed, multi, _shadow| {
@@ -646,8 +666,8 @@ fn inject_standard_builtins(
                 "bitfieldReverse" => MathFunction::ReverseBits,
                 "bitfieldExtract" => MathFunction::ExtractBits,
                 "bitfieldInsert" => MathFunction::InsertBits,
-                "findLSB" => MathFunction::FindLsb,
-                "findMSB" => MathFunction::FindMsb,
+                "findLSB" => MathFunction::FirstTrailingBit,
+                "findMSB" => MathFunction::FirstLeadingBit,
                 _ => unreachable!(),
             };
 
@@ -695,8 +715,12 @@ fn inject_standard_builtins(
                 // we need to cast the return type of findLsb / findMsb
                 let mc = if scalar.kind == Sk::Uint {
                     match mc {
-                        MacroCall::MathFunction(MathFunction::FindLsb) => MacroCall::FindLsbUint,
-                        MacroCall::MathFunction(MathFunction::FindMsb) => MacroCall::FindMsbUint,
+                        MacroCall::MathFunction(MathFunction::FirstTrailingBit) => {
+                            MacroCall::FindLsbUint
+                        }
+                        MacroCall::MathFunction(MathFunction::FirstLeadingBit) => {
+                            MacroCall::FindMsbUint
+                        }
                         mc => mc,
                     }
                 } else {
@@ -1511,6 +1535,7 @@ pub enum MacroCall {
     TextureSize {
         arrayed: bool,
     },
+    TextureQueryLevels,
     ImageLoad {
         multi: bool,
     },
@@ -1743,6 +1768,24 @@ impl MacroCall {
                     Span::default(),
                 )?
             }
+            MacroCall::TextureQueryLevels => {
+                let expr = ctx.add_expression(
+                    Expression::ImageQuery {
+                        image: args[0],
+                        query: ImageQuery::NumLevels,
+                    },
+                    Span::default(),
+                )?;
+
+                ctx.add_expression(
+                    Expression::As {
+                        expr,
+                        kind: Sk::Sint,
+                        convert: Some(4),
+                    },
+                    Span::default(),
+                )?
+            }
             MacroCall::ImageLoad { multi } => {
                 let comps = frontend.coordinate_components(ctx, args[0], args[1], None, meta)?;
                 let (sample, level) = match (multi, args.get(2)) {
@@ -1787,8 +1830,8 @@ impl MacroCall {
             )?,
             mc @ (MacroCall::FindLsbUint | MacroCall::FindMsbUint) => {
                 let fun = match mc {
-                    MacroCall::FindLsbUint => MathFunction::FindLsb,
-                    MacroCall::FindMsbUint => MathFunction::FindMsb,
+                    MacroCall::FindLsbUint => MathFunction::FirstTrailingBit,
+                    MacroCall::FindMsbUint => MathFunction::FirstLeadingBit,
                     _ => unreachable!(),
                 };
                 let res = ctx.add_expression(

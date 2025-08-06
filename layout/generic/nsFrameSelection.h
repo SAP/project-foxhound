@@ -893,20 +893,36 @@ class nsFrameSelection final {
   // Whether MoveCaret should use logical or visual movement,
   // or follow the bidi.edit.caret_movement_style preference.
   enum CaretMovementStyle { eLogical, eVisual, eUsePrefStyle };
+  enum class ExtendSelection : bool { No, Yes };
   MOZ_CAN_RUN_SCRIPT nsresult MoveCaret(nsDirection aDirection,
-                                        bool aContinueSelection,
+                                        ExtendSelection aExtendSelection,
                                         nsSelectionAmount aAmount,
                                         CaretMovementStyle aMovementStyle);
 
   /**
-   * PeekOffsetForCaretMove() only peek offset for caret move from the focus
-   * point of the normal selection.  I.e., won't change selection ranges nor
-   * bidi information.
+   * @brief Creates `PeekOffsetOptions` for caret move operations.
+   *
+   * @param aSelection       The selection object. Must be non-null
+   * @param aExtendSelection Whether the selection should be extended or not
+   * @param aMovementStyle   The `CaretMovementStyle` (logical or visual)
+   * @return mozilla::Result<mozilla::PeekOffsetOptions, nsresult>
    */
-  mozilla::Result<mozilla::PeekOffsetStruct, nsresult> PeekOffsetForCaretMove(
-      nsDirection aDirection, bool aContinueSelection,
-      const nsSelectionAmount aAmount, CaretMovementStyle aMovementStyle,
-      const nsPoint& aDesiredCaretPos) const;
+  mozilla::Result<mozilla::PeekOffsetOptions, nsresult>
+  CreatePeekOffsetOptionsForCaretMove(mozilla::dom::Selection* aSelection,
+                                      ExtendSelection aExtendSelection,
+                                      CaretMovementStyle aMovementStyle) const;
+
+  /**
+   * @brief Get the Ancestor Limiter for caret move operation.
+   *
+   * If the selection is an editor selection, the correct editing host is
+   * identified and chosen as limiting element.
+   *
+   * @param aSelection The selection object. Must be non-null
+   * @return The ancestor limiter, or nullptr.
+   */
+  mozilla::Result<mozilla::dom::Element*, nsresult>
+  GetAncestorLimiterForCaretMove(mozilla::dom::Selection* aSelection) const;
 
   /**
    * CreateRangeExtendedToSomewhere() is common method to implement
@@ -1083,7 +1099,7 @@ class nsFrameSelection final {
     CaretAssociationHint mHint = CaretAssociationHint::Before;
     mozilla::intl::BidiEmbeddingLevel mBidiLevel = BIDI_LEVEL_UNDEFINED;
 
-    bool IsVisualMovement(bool aContinueSelection,
+    bool IsVisualMovement(ExtendSelection aExtendSelection,
                           CaretMovementStyle aMovementStyle) const;
   };
 
@@ -1135,7 +1151,7 @@ class nsFrameSelection final {
 /**
  * Selection Batcher class that supports multiple FrameSelections.
  */
-class MOZ_STACK_CLASS AutoFrameSelectionBatcher {
+class MOZ_RAII AutoFrameSelectionBatcher final {
  public:
   explicit AutoFrameSelectionBatcher(const char* aFunctionName,
                                      size_t aEstimatedSize = 1)

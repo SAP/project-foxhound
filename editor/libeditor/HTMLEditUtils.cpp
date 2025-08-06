@@ -22,6 +22,7 @@
 #include "mozilla/RangeUtils.h"           // for RangeUtils
 #include "mozilla/dom/DocumentInlines.h"  // for GetBodyElement()
 #include "mozilla/dom/Element.h"          // for Element, nsINode
+#include "mozilla/dom/ElementInlines.h"  // for IsContentEditablePlainTextOnly()
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
@@ -230,8 +231,7 @@ bool HTMLEditUtils::IsBlockElement(const nsIContent& aContent,
   if (aContent.IsHTMLElement(nsGkAtoms::br)) {
     return false;
   }
-  if (!StaticPrefs::editor_block_inline_check_use_computed_style() ||
-      aBlockInlineCheck == BlockInlineCheck::UseHTMLDefaultStyle) {
+  if (aBlockInlineCheck == BlockInlineCheck::UseHTMLDefaultStyle) {
     return IsHTMLBlockElementByDefault(aContent);
   }
   // Let's treat the document element and the body element is a block to avoid
@@ -283,8 +283,7 @@ bool HTMLEditUtils::IsInlineContent(const nsIContent& aContent,
   if (aContent.IsHTMLElement(nsGkAtoms::br)) {
     return true;
   }
-  if (!StaticPrefs::editor_block_inline_check_use_computed_style() ||
-      aBlockInlineCheck == BlockInlineCheck::UseHTMLDefaultStyle) {
+  if (aBlockInlineCheck == BlockInlineCheck::UseHTMLDefaultStyle) {
     return !IsHTMLBlockElementByDefault(aContent);
   }
   // Let's treat the document element and the body element is a block to avoid
@@ -962,9 +961,6 @@ bool HTMLEditUtils::IsEmptyNode(nsPresContext* aPresContext,
 
   const auto [isListItem, isTableCell, hasAppearance] =
       [&]() MOZ_NEVER_INLINE_DEBUG -> std::tuple<bool, bool, bool> {
-    if (!StaticPrefs::editor_block_inline_check_use_computed_style()) {
-      return {IsListItem(&aNode), IsTableCell(&aNode), false};
-    }
     // Let's stop treating the document element and the <body> as a list item
     // nor a table cell to avoid tricky cases.
     if (aNode.OwnerDoc()->GetDocumentElement() == &aNode ||
@@ -1076,6 +1072,13 @@ bool HTMLEditUtils::ShouldInsertLinefeedCharacter(
 
   if (!aPointToInsert.IsInContentNode()) {
     return false;
+  }
+
+  // If in contenteditable=plaintext-only, we should use linefeed when it's
+  // preformatted.
+  if (aEditingHost.IsContentEditablePlainTextOnly()) {
+    return EditorUtils::IsNewLinePreformatted(
+        *aPointToInsert.ContainerAs<nsIContent>());
   }
 
   // closestEditableBlockElement can be nullptr if aEditingHost is an inline
@@ -1401,7 +1404,7 @@ bool HTMLEditUtils::CanNodeContain(nsHTMLTag aParentTagId,
         eHTMLTag_input, eHTMLTag_select,   eHTMLTag_textarea};
 
     uint32_t j;
-    for (j = 0; j < ArrayLength(kButtonExcludeKids); ++j) {
+    for (j = 0; j < std::size(kButtonExcludeKids); ++j) {
       if (kButtonExcludeKids[j] == aChildTagId) {
         return false;
       }

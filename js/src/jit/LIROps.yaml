@@ -262,6 +262,16 @@
   num_temps: 1
   mir_op: true
 
+- name: NewMapObject
+  result_type: WordSized
+  num_temps: 1
+  mir_op: true
+
+- name: NewSetObject
+  result_type: WordSized
+  num_temps: 1
+  mir_op: true
+
 - name: NewStringObject
   result_type: WordSized
   operands:
@@ -359,6 +369,7 @@
   mir_op: true
 
 - name: WasmStackSwitchToMain
+  result_type: WordSized
   operands:
     suspender: WordSized
     fn: WordSized
@@ -375,6 +386,7 @@
 - name: WasmStackContinueOnSuspendable
   operands:
     suspender: WordSized
+    result: WordSized
   call_instruction: true
 
 - name: WasmInterruptCheck
@@ -549,7 +561,6 @@
   result_type: BoxedValue
   operands:
     env: WordSized
-  call_instruction: true
   mir_op: true
 
 # Writes a typed argument for a function call to the frame's argument vector.
@@ -669,6 +680,9 @@
 - name: TestIAndBranch
   gen_boilerplate: false
 
+- name: TestIPtrAndBranch
+  gen_boilerplate: false
+
 - name: TestI64AndBranch
   gen_boilerplate: false
 
@@ -776,7 +790,13 @@
   call_instruction: true
   mir_op: Compare
 
+- name: CompareBigIntInt32AndBranch
+  gen_boilerplate: false
+
 - name: BitAndAndBranch
+  gen_boilerplate: false
+
+- name: BitAnd64AndBranch
   gen_boilerplate: false
 
 # Takes a value and tests whether it is null, undefined, or is an object that
@@ -838,6 +858,12 @@
 
 # Not operation on an integer.
 - name: NotI
+  result_type: WordSized
+  operands:
+    input: WordSized
+
+# Not operation on an intptr.
+- name: NotIPtr
   result_type: WordSized
   operands:
     input: WordSized
@@ -906,8 +932,13 @@
   result_type: WordSized
   operands:
     num: WordSized
-  arguments:
-    mode: MSignExtendInt32::Mode
+  mir_op: true
+
+- name: SignExtendIntPtr
+  result_type: WordSized
+  operands:
+    num: WordSized
+  mir_op: true
 
 - name: SignExtendInt64
   gen_boilerplate: false
@@ -1148,49 +1179,237 @@
   mir_op: true
 
 - name: BigIntAdd
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntSub
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntMul
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntDiv
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntMod
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntPow
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntBitAnd
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntBitOr
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntBitXor
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntLsh
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntRsh
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntIncrement
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    input: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntDecrement
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    input: WordSized
+  call_instruction: true
+  mir_op: true
 
 - name: BigIntNegate
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 1
+  mir_op: true
 
 - name: BigIntBitNot
-  gen_boilerplate: false
+  result_type: WordSized
+  operands:
+    input: WordSized
+  call_instruction: true
+  mir_op: true
+
+- name: BigIntToIntPtr
+  result_type: WordSized
+  operands:
+    input: WordSized
+  mir_op: true
+
+- name: IntPtrToBigInt
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 1
+  mir_op: true
+
+- name: BigIntPtrAdd
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  mir_op: true
+
+- name: BigIntPtrSub
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  mir_op: true
+
+- name: BigIntPtrMul
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  mir_op: true
+
+- name: BigIntPtrDiv
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  num_temps: 2
+  mir_op: true
+
+- name: BigIntPtrDivPowTwo
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+  arguments:
+    shift: int32_t
+    negativeDivisor: bool
+
+- name: BigIntPtrMod
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  num_temps: 2
+  mir_op: true
+
+- name: BigIntPtrModPowTwo
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+  arguments:
+    shift: int32_t
+  num_temps: 1
+
+- name: BigIntPtrPow
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  num_temps: 2
+  mir_op: true
+
+- name: BigIntPtrBitAnd
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  mir_op: true
+
+- name: BigIntPtrBitOr
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  mir_op: true
+
+- name: BigIntPtrBitXor
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  mir_op: true
+
+- name: BigIntPtrLsh
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  num_temps: 2
+  mir_op: true
+
+- name: BigIntPtrRsh
+  result_type: WordSized
+  operands:
+    lhs: WordSized
+    rhs: WordSized
+  num_temps: 2
+  mir_op: true
+
+- name: BigIntPtrBitNot
+  result_type: WordSized
+  operands:
+    input: WordSized
+  mir_op: true
 
 - name: Int32ToStringWithBase
   result_type: WordSized
@@ -1493,6 +1712,12 @@
   operands:
     input: WordSized
   num_temps: 1
+
+- name: DoubleToFloat32ToFloat16
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 2
 
 - name: Float32ToFloat16
   result_type: WordSized
@@ -2146,10 +2371,13 @@
   num_temps: 2
   mir_op: true
 
-- name: LoadUnboxedBigInt
+- name: LoadUnboxedInt64
   gen_boilerplate: false
 
 - name: LoadDataViewElement
+  gen_boilerplate: false
+
+- name: LoadDataViewElement64
   gen_boilerplate: false
 
 - name: LoadTypedArrayElementHole
@@ -2172,10 +2400,13 @@
   num_temps: 1
   mir_op: true
 
-- name: StoreUnboxedBigInt
+- name: StoreUnboxedInt64
   gen_boilerplate: false
 
 - name: StoreDataViewElement
+  gen_boilerplate: false
+
+- name: StoreDataViewElement64
   gen_boilerplate: false
 
 - name: StoreTypedArrayElementHole
@@ -2187,7 +2418,7 @@
   num_temps: 1
   mir_op: true
 
-- name: StoreTypedArrayElementHoleBigInt
+- name: StoreTypedArrayElementHoleInt64
   gen_boilerplate: false
 
 - name: AtomicIsLockFree
@@ -2755,11 +2986,28 @@
 
 # Create a new BigInt* from an unboxed int64.
 - name: Int64ToBigInt
+  gen_boilerplate: false
+
+# Create a new BigInt* from an unboxed uint64.
+- name: Uint64ToBigInt
   result_type: WordSized
   operands:
     input: Int64
   num_temps: 1
+  mir_op: Int64ToBigInt
+
+# Return intptr from an unboxed int64. Bails if the input exceeds intptr limits.
+- name: Int64ToIntPtr
+  result_type: WordSized
+  operands:
+    input: Int64
   mir_op: true
+
+# Return an int64 from an intptr.
+- name: IntPtrToInt64
+  result_type: Int64
+  operands:
+    input: WordSized
 
 # Generational write barrier used when writing an object to another object.
 - name: PostWriteBarrierO
@@ -3270,10 +3518,10 @@
     input: WordSized
   mir_op: true
 
-- name: WasmClampTable64Index
+- name: WasmClampTable64Address
   result_type: WordSized
   operands:
-    index: Int64
+    address: Int64
   mir_op: true
 
 - name: WasmAlignmentCheck
@@ -3859,12 +4107,6 @@
     input: WordSized
   call_instruction: true
 
-- name: BigIntAsIntN64
-  gen_boilerplate: false
-
-- name: BigIntAsIntN32
-  gen_boilerplate: false
-
 - name: GuardNonGCThing
   operands:
     input: BoxedValue
@@ -4006,14 +4248,6 @@
     hash: WordSized
   num_temps: 4
 
-- name: MapObjectGetValue
-  result_type: BoxedValue
-  operands:
-    mapObject: WordSized
-    input: BoxedValue
-    hash: WordSized
-  num_temps: 4
-
 - name: MapObjectGetValueVMCall
   result_type: BoxedValue
   call_instruction: true
@@ -4032,12 +4266,6 @@
     bits: WordSized
     input: WordSized
   call_instruction: true
-
-- name: BigIntAsUintN64
-  gen_boilerplate: false
-
-- name: BigIntAsUintN32
-  gen_boilerplate: false
 
 - name: IonToWasmCall
   gen_boilerplate: false
@@ -4063,6 +4291,25 @@
   result_type: WordSized
   operands:
     input: WordSized
+
+- name: WasmAnyRefIsJSString
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 1
+
+- name: WasmTrapIfAnyRefIsNotJSString
+  mir_op: true
+  operands:
+    input: WordSized
+  num_temps: 1
+
+- name: WasmAnyRefJSStringLength
+  mir_op: true
+  result_type: WordSized
+  operands:
+    input: WordSized
+  num_temps: 1
 
 - name: WasmNewI31Ref
   mir_op: true
@@ -4470,4 +4717,28 @@
 
 - name: FuzzilliHashStore
   gen_boilerplate: false
+#endif
+
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+- name: AddDisposableResource
+  operands:
+    environment: WordSized
+    resource: BoxedValue
+    method: BoxedValue
+    needsClosure: WordSized
+  arguments:
+    hint: uint8_t
+  call_instruction: true
+
+- name: TakeDisposeCapability
+  operands:
+    environment: WordSized
+  result_type: BoxedValue
+
+- name: CreateSuppressedError
+  operands:
+    error: BoxedValue
+    suppressed: BoxedValue
+  result_type: WordSized
+  call_instruction: true
 #endif

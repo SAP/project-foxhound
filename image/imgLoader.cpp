@@ -31,6 +31,8 @@
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/dom/CacheExpirationTime.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
@@ -836,6 +838,10 @@ static void AdjustPriorityForImages(nsIChannel* aChannel,
 
     supportsPriority->AdjustPriority(priority);
   }
+
+  if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(aChannel)) {
+    cos->SetFetchPriorityDOM(aFetchPriority);
+  }
 }
 
 static nsresult NewImageChannel(
@@ -1001,7 +1007,7 @@ imgCacheEntry::imgCacheEntry(imgLoader* loader, imgRequest* request,
       mDataSize(0),
       mTouchedTime(SecondsFromPRTime(PR_Now())),
       mLoadTime(SecondsFromPRTime(PR_Now())),
-      mExpiryTime(0),
+      mExpiryTime(CacheExpirationTime::Never()),
       mMustValidate(false),
       // We start off as evicted so we don't try to update the cache.
       // PutIntoCache will set this to false.
@@ -1397,49 +1403,74 @@ imgLoader::RemoveEntriesFromPrincipalInAllProcesses(nsIPrincipal* aPrincipal) {
     loader = imgLoader::NormalLoader();
   }
 
-  return loader->RemoveEntriesInternal(aPrincipal, nullptr);
+  return loader->RemoveEntriesInternal(Some(aPrincipal), Nothing(), Nothing());
 }
 
 NS_IMETHODIMP
-imgLoader::RemoveEntriesFromBaseDomainInAllProcesses(
-    const nsACString& aBaseDomain) {
+imgLoader::RemoveEntriesFromSiteInAllProcesses(
+    const nsACString& aSchemelessSite,
+    JS::Handle<JS::Value> aOriginAttributesPattern, JSContext* aCx) {
   if (!XRE_IsParentProcess()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-    Unused << cp->SendClearImageCacheFromBaseDomain(aBaseDomain);
+  OriginAttributesPattern pattern;
+  if (!aOriginAttributesPattern.isObject() ||
+      !pattern.Init(aCx, aOriginAttributesPattern)) {
+    return NS_ERROR_INVALID_ARG;
   }
 
-  return RemoveEntriesInternal(nullptr, &aBaseDomain);
+  for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
+    Unused << cp->SendClearImageCacheFromSite(aSchemelessSite, pattern);
+  }
+
+  return RemoveEntriesInternal(Nothing(), Some(nsCString(aSchemelessSite)),
+                               Some(pattern));
 }
 
-nsresult imgLoader::RemoveEntriesInternal(nsIPrincipal* aPrincipal,
-                                          const nsACString* aBaseDomain) {
-  // Can only clear by either principal or base domain.
-  if ((!aPrincipal && !aBaseDomain) || (aPrincipal && aBaseDomain)) {
+nsresult imgLoader::RemoveEntriesInternal(
+    const Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
+    const Maybe<nsCString>& aSchemelessSite,
+    const Maybe<OriginAttributesPattern>& aPattern) {
+  // Can only clear by either principal or site + pattern.
+  if ((!aPrincipal && !aSchemelessSite) || (aPrincipal && aSchemelessSite) ||
+      aSchemelessSite.isSome() != aPattern.isSome()) {
     return NS_ERROR_INVALID_ARG;
   }
 
   nsCOMPtr<nsIEffectiveTLDService> tldService;
   AutoTArray<RefPtr<imgCacheEntry>, 128> entriesToBeRemoved;
 
+  Maybe<OriginAttributesPattern> patternWithPartitionKey = Nothing();
+  if (aPattern) {
+    // Used for checking for cache entries partitioned under aSchemelessSite.
+    OriginAttributesPattern pattern(aPattern.ref());
+    pattern.mPartitionKeyPattern.Construct();
+    pattern.mPartitionKeyPattern.Value().mBaseDomain.Construct(
+        NS_ConvertUTF8toUTF16(aSchemelessSite.ref()));
+
+    patternWithPartitionKey.emplace(std::move(pattern));
+  }
+
   // For base domain we only clear the non-chrome cache.
   for (const auto& entry : mCache) {
     const auto& key = entry.GetKey();
 
     const bool shouldRemove = [&] {
+      // The isolation key is either just the site, or an origin suffix
+      // which contains the partitionKey holding the baseDomain.
+
       if (aPrincipal) {
         nsCOMPtr<nsIPrincipal> keyPrincipal =
             BasePrincipal::CreateContentPrincipal(key.URI(),
                                                   key.OriginAttributesRef());
-        return keyPrincipal->Equals(aPrincipal);
+        return keyPrincipal->Equals(aPrincipal.ref());
       }
 
-      if (!aBaseDomain) {
+      if (!aSchemelessSite) {
         return false;
       }
-      // Clear by baseDomain.
+      // Clear by site and pattern.
       nsAutoCString host;
       nsresult rv = key.URI()->GetHost(host);
       if (NS_FAILED(rv) || host.IsEmpty()) {
@@ -1454,31 +1485,43 @@ nsresult imgLoader::RemoveEntriesInternal(nsIPrincipal* aPrincipal,
       }
 
       bool hasRootDomain = false;
-      rv = tldService->HasRootDomain(host, *aBaseDomain, &hasRootDomain);
-      if (NS_SUCCEEDED(rv) && hasRootDomain) {
-        return true;
-      }
-
-      // If we don't get a direct base domain match, also check for cache of
-      // third parties partitioned under aBaseDomain.
-
-      // The isolation key is either just the base domain, or an origin suffix
-      // which contains the partitionKey holding the baseDomain.
-
-      if (key.IsolationKeyRef().Equals(*aBaseDomain)) {
-        return true;
-      }
-
-      // The isolation key does not match the given base domain. It may be an
-      // origin suffix. Parse it into origin attributes.
-      OriginAttributes attrs;
-      if (!attrs.PopulateFromSuffix(key.IsolationKeyRef())) {
-        // Key is not an origin suffix.
+      rv = tldService->HasRootDomain(host, aSchemelessSite.ref(),
+                                     &hasRootDomain);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
         return false;
       }
 
-      return StoragePrincipalHelper::PartitionKeyHasBaseDomain(
-          attrs.mPartitionKey, *aBaseDomain);
+      if (hasRootDomain && aPattern->Matches(key.OriginAttributesRef())) {
+        return true;
+      }
+
+      // Attempt to parse isolation key into origin attributes.
+      Maybe<OriginAttributes> originAttributesWithPartitionKey;
+      {
+        OriginAttributes attrs;
+        if (attrs.PopulateFromSuffix(key.IsolationKeyRef())) {
+          OriginAttributes attrsWithPartitionKey(key.OriginAttributesRef());
+          attrsWithPartitionKey.mPartitionKey = attrs.mPartitionKey;
+          originAttributesWithPartitionKey.emplace(
+              std::move(attrsWithPartitionKey));
+        }
+      }
+
+      // Match it against the pattern that contains the partition key and any
+      // fields set by the caller pattern.
+      if (originAttributesWithPartitionKey.isSome()) {
+        nsAutoCString oaSuffixForPrinting;
+        originAttributesWithPartitionKey->CreateSuffix(oaSuffixForPrinting);
+
+        nsAutoString patternForPrinting;
+        patternWithPartitionKey->ToJSON(patternForPrinting);
+
+        return patternWithPartitionKey.ref().Matches(
+            originAttributesWithPartitionKey.ref());
+      }
+
+      // The isolation key is the site.
+      return aSchemelessSite->Equals(key.IsolationKeyRef());
     }();
 
     if (shouldRemove) {
@@ -1862,7 +1905,7 @@ void imgLoader::NotifyObserversForCachedImage(
 
   nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
 
-  if (!obsService->HasObservers("http-on-image-cache-response")) {
+  if (!obsService->HasObservers("http-on-resource-cache-response")) {
     return;
   }
 
@@ -1881,13 +1924,13 @@ void imgLoader::NotifyObserversForCachedImage(
 
   RefPtr<HttpBaseChannel> httpBaseChannel = do_QueryObject(newChannel);
   if (httpBaseChannel) {
-    httpBaseChannel->SetDummyChannelForImageCache();
+    httpBaseChannel->SetDummyChannelForCachedResource();
     newChannel->SetContentType(nsDependentCString(request->GetMimeType()));
     RefPtr<mozilla::image::Image> image = request->GetImage();
     if (image) {
       newChannel->SetContentLength(aEntry->GetDataSize());
     }
-    obsService->NotifyObservers(newChannel, "http-on-image-cache-response",
+    obsService->NotifyObservers(newChannel, "http-on-resource-cache-response",
                                 nullptr);
   }
 }
@@ -1906,8 +1949,7 @@ bool imgLoader::ValidateEntry(
   // If the expiration time is zero, then the request has not gotten far enough
   // to know when it will expire, or we know it will never expire (see
   // nsContentUtils::GetSubresourceCacheValidationInfo).
-  uint32_t expiryTime = aEntry->GetExpiryTime();
-  bool hasExpired = expiryTime && expiryTime <= SecondsFromPRTime(PR_Now());
+  bool hasExpired = aEntry->GetExpiryTime().IsExpired();
 
   // Special treatment for file URLs - aEntry has expired if file has changed
   if (nsCOMPtr<nsIFileURL> fileUrl = do_QueryInterface(aURI)) {
@@ -2276,7 +2318,7 @@ nsresult imgLoader::LoadImage(
   bool isPrivate = false;
 
   if (aLoadingDocument) {
-    isPrivate = nsContentUtils::IsInPrivateBrowsing(aLoadingDocument);
+    isPrivate = aLoadingDocument->IsInPrivateBrowsing();
   } else if (aLoadGroup) {
     isPrivate = nsContentUtils::IsInPrivateBrowsing(aLoadGroup);
   }
@@ -2803,7 +2845,7 @@ bool imgLoader::SupportImageWithMimeType(const nsACString& aMimeType,
   ToLowerCase(mimeType);
 
   if (aAccept == AcceptedMimeTypes::IMAGES_AND_DOCUMENTS &&
-      mimeType.EqualsLiteral("image/svg+xml")) {
+      mimeType.EqualsLiteral(IMAGE_SVG_XML)) {
     return true;
   }
 

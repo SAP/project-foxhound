@@ -22,6 +22,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/dom/InternalRequest.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -647,6 +648,7 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mIsThirdPartyContext(rhs.mIsThirdPartyContext),
       mIsThirdPartyContextToTopWindow(rhs.mIsThirdPartyContextToTopWindow),
       mIsFormSubmission(rhs.mIsFormSubmission),
+      mIsGETRequest(rhs.mIsGETRequest),
       mSendCSPViolationEvents(rhs.mSendCSPViolationEvents),
       mOriginAttributes(rhs.mOriginAttributes),
       mRedirectChainIncludingInternalRedirects(
@@ -692,8 +694,9 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mInterceptionInfo(rhs.mInterceptionInfo),
       mHasInjectedCookieForCookieBannerHandling(
           rhs.mHasInjectedCookieForCookieBannerHandling),
-      mWasSchemelessInput(rhs.mWasSchemelessInput),
-      mHttpsUpgradeTelemetry(rhs.mHttpsUpgradeTelemetry) {
+      mSchemelessInput(rhs.mSchemelessInput),
+      mHttpsUpgradeTelemetry(rhs.mHttpsUpgradeTelemetry),
+      mIsNewWindowTarget(rhs.mIsNewWindowTarget) {
 }
 
 LoadInfo::LoadInfo(
@@ -719,7 +722,8 @@ LoadInfo::LoadInfo(
     uint64_t aBrowsingContextID, uint64_t aFrameBrowsingContextID,
     bool aInitialSecurityCheckDone, bool aIsThirdPartyContext,
     const Maybe<bool>& aIsThirdPartyContextToTopWindow, bool aIsFormSubmission,
-    bool aSendCSPViolationEvents, const OriginAttributes& aOriginAttributes,
+    bool aIsGETRequest, bool aSendCSPViolationEvents,
+    const OriginAttributes& aOriginAttributes,
     RedirectHistoryArray&& aRedirectChainIncludingInternalRedirects,
     RedirectHistoryArray&& aRedirectChain,
     nsTArray<nsCOMPtr<nsIPrincipal>>&& aAncestorPrincipals,
@@ -741,8 +745,10 @@ LoadInfo::LoadInfo(
     nsILoadInfo::CrossOriginEmbedderPolicy aLoadingEmbedderPolicy,
     bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel,
     nsIURI* aUnstrippedURI, nsIInterceptionInfo* aInterceptionInfo,
-    bool aHasInjectedCookieForCookieBannerHandling, bool aWasSchemelessInput,
-    nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry)
+    bool aHasInjectedCookieForCookieBannerHandling,
+    nsILoadInfo::SchemelessInputType aSchemelessInput,
+    nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry,
+    bool aIsNewWindowTarget)
     : mLoadingPrincipal(aLoadingPrincipal),
       mTriggeringPrincipal(aTriggeringPrincipal),
       mPrincipalToInherit(aPrincipalToInherit),
@@ -783,6 +789,7 @@ LoadInfo::LoadInfo(
       mIsThirdPartyContext(aIsThirdPartyContext),
       mIsThirdPartyContextToTopWindow(aIsThirdPartyContextToTopWindow),
       mIsFormSubmission(aIsFormSubmission),
+      mIsGETRequest(aIsGETRequest),
       mSendCSPViolationEvents(aSendCSPViolationEvents),
       mOriginAttributes(aOriginAttributes),
       mRedirectChainIncludingInternalRedirects(
@@ -822,8 +829,9 @@ LoadInfo::LoadInfo(
       mInterceptionInfo(aInterceptionInfo),
       mHasInjectedCookieForCookieBannerHandling(
           aHasInjectedCookieForCookieBannerHandling),
-      mWasSchemelessInput(aWasSchemelessInput),
-      mHttpsUpgradeTelemetry(aHttpsUpgradeTelemetry) {
+      mSchemelessInput(aSchemelessInput),
+      mHttpsUpgradeTelemetry(aHttpsUpgradeTelemetry),
+      mIsNewWindowTarget(aIsNewWindowTarget) {
   // Only top level TYPE_DOCUMENT loads can have a null loadingPrincipal
   MOZ_ASSERT(mLoadingPrincipal ||
              aContentPolicyType == nsIContentPolicy::TYPE_DOCUMENT);
@@ -1290,6 +1298,18 @@ LoadInfo::GetIsFormSubmission(bool* aResult) {
 NS_IMETHODIMP
 LoadInfo::SetIsFormSubmission(bool aValue) {
   mIsFormSubmission = aValue;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::GetIsGETRequest(bool* aResult) {
+  *aResult = mIsGETRequest;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetIsGETRequest(bool aValue) {
+  mIsGETRequest = aValue;
   return NS_OK;
 }
 
@@ -2209,7 +2229,7 @@ void LoadInfo::SetReservedClientInfo(const ClientInfo& aClientInfo) {
     if (mReservedClientInfo.ref() == aClientInfo) {
       return;
     }
-    MOZ_DIAGNOSTIC_ASSERT(false, "mReservedClientInfo already set");
+    MOZ_DIAGNOSTIC_CRASH("mReservedClientInfo already set");
     mReservedClientInfo.reset();
   }
   mReservedClientInfo.emplace(aClientInfo);
@@ -2303,6 +2323,14 @@ LoadInfo::SetCspEventListener(nsICSPEventListener* aCSPEventListener) {
 NS_IMETHODIMP
 LoadInfo::GetInternalContentPolicyType(nsContentPolicyType* aResult) {
   *aResult = mInternalContentPolicyType;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::GetFetchDestination(nsACString& aDestination) {
+  aDestination.Assign(
+      GetEnumString(InternalRequest::MapContentPolicyTypeToRequestDestination(
+          mInternalContentPolicyType)));
   return NS_OK;
 }
 
@@ -2436,14 +2464,16 @@ LoadInfo::SetHasInjectedCookieForCookieBannerHandling(
 }
 
 NS_IMETHODIMP
-LoadInfo::GetWasSchemelessInput(bool* aWasSchemelessInput) {
-  *aWasSchemelessInput = mWasSchemelessInput;
+LoadInfo::GetSchemelessInput(
+    nsILoadInfo::SchemelessInputType* aSchemelessInput) {
+  *aSchemelessInput = mSchemelessInput;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-LoadInfo::SetWasSchemelessInput(bool aWasSchemelessInput) {
-  mWasSchemelessInput = aWasSchemelessInput;
+LoadInfo::SetSchemelessInput(
+    nsILoadInfo::SchemelessInputType aSchemelessInput) {
+  mSchemelessInput = aSchemelessInput;
   return NS_OK;
 }
 
@@ -2458,6 +2488,30 @@ NS_IMETHODIMP
 LoadInfo::SetHttpsUpgradeTelemetry(
     nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry) {
   mHttpsUpgradeTelemetry = aHttpsUpgradeTelemetry;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::GetIsNewWindowTarget(bool* aIsNewWindowTarget) {
+  *aIsNewWindowTarget = mIsNewWindowTarget;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetIsNewWindowTarget(bool aIsNewWindowTarget) {
+  mIsNewWindowTarget = aIsNewWindowTarget;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::GetSkipHTTPSUpgrade(bool* aSkipHTTPSUpgrade) {
+  *aSkipHTTPSUpgrade = mSkipHTTPSUpgrade;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetSkipHTTPSUpgrade(bool aSkipHTTPSUpgrade) {
+  mSkipHTTPSUpgrade = aSkipHTTPSUpgrade;
   return NS_OK;
 }
 

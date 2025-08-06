@@ -71,7 +71,8 @@
     <!-- Browser Toolbar -->
     <dimen name="browser_toolbar_height">56dp</dimen>
     <dimen name="browser_navbar_height">48dp</dimen>
-    <dimen name="tab_strip_height">48dp</dimen>
+    <dimen name="browser_navbar_divider_height">1dp</dimen>
+    <dimen name="tab_strip_height">56dp</dimen>
     <dimen name="browser_microsurvey_height">131dp</dimen>
     <dimen name="toolbar_horizontal_margin">16dp</dimen>
     <dimen name="toolbar_horizontal_margin_end">8dp</dimen>
@@ -94,8 +95,11 @@
     <dimen name="browser_fragment_toolbar_elevation">16dp</dimen>
     <!-- The download dialogs are shown above the toolbar so they need a bigger elevation. -->
     <dimen name="browser_fragment_download_dialog_elevation">17dp</dimen>
+
+    <!-- Display Toolbar -->
     <!-- The size of padding for the display toolbar. -->
-    <dimen name="browser_fragment_display_toolbar_padding">16dp</dimen>
+    <dimen name="browser_fragment_display_toolbar_padding" tools:ignore="UnusedResources">16dp</dimen>
+    <dimen name="mozac_browser_toolbar_button_width" tools:ignore="UnusedResources">48dp</dimen>
 
     <!-- Search Fragment -->
     <dimen name="search_fragment_clipboard_item_height">56dp</dimen>
@@ -189,4 +193,9 @@
     <dimen name="accessibility_min_height">48dp</dimen>
     <dimen name="tap_increase_16">16dp</dimen>
     <dimen name="tap_increase_2">2dp</dimen>
+
+    <!-- Browser Menu -->
+    <dimen name="browser_menu_max_width">640dp</dimen>
+    <dimen name="browser_menu_padding">56dp</dimen>
+
 </resources>

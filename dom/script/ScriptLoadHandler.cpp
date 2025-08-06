@@ -24,9 +24,11 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/SharedSubResourceCache.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/Vector.h"
+#include "mozilla/dom/CacheExpirationTime.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SRICheck.h"
 #include "mozilla/dom/ScriptDecoding.h"
@@ -137,21 +139,11 @@ ScriptLoadHandler::~ScriptLoadHandler() = default;
 NS_IMPL_ISUPPORTS(ScriptLoadHandler, nsIIncrementalStreamLoaderObserver,
                   nsIChannelEventSink, nsIInterfaceRequestor)
 
-static uint32_t CalculateExpirationTime(nsIRequest* aRequest, nsIURI* aURI) {
-  auto info = nsContentUtils::GetSubresourceCacheValidationInfo(aRequest, aURI);
-
-  // For now, we never cache entries that we have to revalidate, or whose
-  // channel don't support caching.
-  if (info.mMustRevalidate || !info.mExpirationTime) {
-    return nsContentUtils::SecondsFromPRTime(PR_Now()) - 1;
-  }
-  return *info.mExpirationTime;
-}
-
 NS_IMETHODIMP
 ScriptLoadHandler::OnStartRequest(nsIRequest* aRequest) {
   mRequest->SetMinimumExpirationTime(
-      CalculateExpirationTime(aRequest, mRequest->mURI));
+      nsContentUtils::GetSubresourceCacheExpirationTime(aRequest,
+                                                        mRequest->mURI));
 
   return NS_OK;
 }
@@ -404,6 +396,9 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
   nsCOMPtr<nsIRequest> channelRequest;
   aLoader->GetRequest(getter_AddRefs(channelRequest));
 
+  mRequest->mNetworkMetadata =
+      new SubResourceNetworkMetadataHolder(channelRequest);
+
   {
     nsCOMPtr<nsIChannel> channel = do_QueryInterface(channelRequest);
     channel->SetNotificationCallbacks(nullptr);
@@ -456,8 +451,8 @@ ScriptLoadHandler::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
       LOG(("ScriptLoadRequest (%p): Bytecode length = %u", mRequest.get(),
            unsigned(bytecode.length())));
 
-      // If we abort while decoding the SRI, we fallback on explictly requesting
-      // the source. Thus, we should not continue in
+      // If we abort while decoding the SRI, we fallback on explicitly
+      // requesting the source. Thus, we should not continue in
       // ScriptLoader::OnStreamComplete, which removes the request from the
       // waiting lists.
       //
@@ -524,7 +519,7 @@ nsresult ScriptLoadHandler::AsyncOnChannelRedirect(
     nsIChannel* aOld, nsIChannel* aNew, uint32_t aFlags,
     nsIAsyncVerifyRedirectCallback* aCallback) {
   mRequest->SetMinimumExpirationTime(
-      CalculateExpirationTime(aOld, mRequest->mURI));
+      nsContentUtils::GetSubresourceCacheExpirationTime(aOld, mRequest->mURI));
 
   aCallback->OnRedirectVerifyCallback(NS_OK);
 

@@ -279,6 +279,11 @@ class EditorDOMPointBase final {
   }
 
   /**
+   * Returns true if the container node is an element node.
+   */
+  bool IsContainerElement() const { return mParent && mParent->IsElement(); }
+
+  /**
    * IsContainerHTMLElement() returns true if the container node is an HTML
    * element node and its node name is aTag.
    */
@@ -691,6 +696,14 @@ class EditorDOMPointBase final {
     auto result = this->template To<EditorDOMPointType>();
     result.AdvanceOffset();
     return result;
+  }
+  template <typename EditorDOMPointType = SelfType>
+  EditorDOMPointType NextPointOrAfterContainer() const {
+    MOZ_ASSERT(IsInContentNode());
+    if (!IsEndOfContainer()) {
+      return NextPoint<EditorDOMPointType>();
+    }
+    return EditorDOMPointType::After(*ContainerAs<nsIContent>());
   }
   template <typename EditorDOMPointType = SelfType>
   EditorDOMPointType PreviousPoint() const {

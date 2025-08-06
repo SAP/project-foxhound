@@ -77,7 +77,10 @@ const JSClassOps DebuggerScript::classOps_ = {
 };
 
 const JSClass DebuggerScript::class_ = {
-    "Script", JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS), &classOps_};
+    "Script",
+    JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS),
+    &classOps_,
+};
 
 void DebuggerScript::trace(JSTracer* trc) {
   // This comes from a private pointer, so no barrier needed.
@@ -1480,7 +1483,6 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::CanSkipAwait:
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSOp::AddDisposable:
-    case JSOp::DisposeDisposables:
 #endif
       return true;
 
@@ -1502,7 +1504,8 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::Throw:
     case JSOp::ThrowWithStack:
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-    case JSOp::ThrowWithStackWithoutJump:
+    case JSOp::TakeDisposeCapability:
+    case JSOp::CreateSuppressedError:
 #endif
     case JSOp::Goto:
     case JSOp::TableSwitch:
@@ -1599,8 +1602,9 @@ static bool BytecodeIsEffectful(JSScript* script, size_t offset) {
     case JSOp::GetName:
     case JSOp::GetIntrinsic:
     case JSOp::GetImport:
-    case JSOp::BindGName:
     case JSOp::BindName:
+    case JSOp::BindUnqualifiedName:
+    case JSOp::BindUnqualifiedGName:
     case JSOp::BindVar:
     case JSOp::Dup:
     case JSOp::Dup2:
@@ -2483,7 +2487,8 @@ const JSPropertySpec DebuggerScript::properties_[] = {
     JS_DEBUG_PSG("mainOffset", getMainOffset),
     JS_DEBUG_PSG("global", getGlobal),
     JS_DEBUG_PSG("format", getFormat),
-    JS_PS_END};
+    JS_PS_END,
+};
 
 const JSFunctionSpec DebuggerScript::methods_[] = {
     JS_DEBUG_FN("getChildScripts", getChildScripts, 0),
@@ -2505,4 +2510,6 @@ const JSFunctionSpec DebuggerScript::methods_[] = {
     JS_DEBUG_FN("getAllOffsets", getAllOffsets, 0),
     JS_DEBUG_FN("getAllColumnOffsets", getAllColumnOffsets, 0),
     JS_DEBUG_FN("getLineOffsets", getLineOffsets, 1),
-    JS_DEBUG_FN("getOffsetLocation", getOffsetLocation, 0), JS_FS_END};
+    JS_DEBUG_FN("getOffsetLocation", getOffsetLocation, 0),
+    JS_FS_END,
+};

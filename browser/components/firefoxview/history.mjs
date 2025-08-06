@@ -139,13 +139,7 @@ class HistoryInView extends ViewPage {
   onPrimaryAction(e) {
     navigateToLink(e);
     // Record telemetry
-    Services.telemetry.recordEvent(
-      "firefoxview_next",
-      "history",
-      "visits",
-      null,
-      {}
-    );
+    Glean.firefoxviewNext.historyVisits.record();
 
     if (this.controller.searchQuery) {
       const searchesHistogram = Services.telemetry.getKeyedHistogramById(
@@ -168,16 +162,10 @@ class HistoryInView extends ViewPage {
 
   onChangeSortOption(e) {
     this.controller.onChangeSortOption(e);
-    Services.telemetry.recordEvent(
-      "firefoxview_next",
-      "sort_history",
-      "tabs",
-      null,
-      {
-        sort_type: this.controller.sortOption,
-        search_start: this.controller.searchQuery ? "true" : "false",
-      }
-    );
+    Glean.firefoxviewNext.sortHistoryTabs.record({
+      sort_type: this.controller.sortOption,
+      search_start: this.controller.searchQuery ? "true" : "false",
+    });
   }
 
   onSearchQuery(e) {
@@ -189,13 +177,7 @@ class HistoryInView extends ViewPage {
 
   showAllHistory() {
     // Record telemetry
-    Services.telemetry.recordEvent(
-      "firefoxview_next",
-      "show_all_history",
-      "tabs",
-      null,
-      {}
-    );
+    Glean.firefoxviewNext.showAllHistoryTabs.record();
 
     // Open History view in Library window
     this.getWindow().PlacesCommandHook.showPlacesOrganizer("History");
@@ -349,10 +331,9 @@ class HistoryInView extends ViewPage {
     let descriptionLink;
     if (Services.prefs.getBoolPref(NEVER_REMEMBER_HISTORY_PREF, false)) {
       // History pref set to never remember history
-      descriptionHeader = "firefoxview-dont-remember-history-empty-header";
+      descriptionHeader = "firefoxview-dont-remember-history-empty-header-2";
       descriptionLabels = [
-        "firefoxview-dont-remember-history-empty-description",
-        "firefoxview-dont-remember-history-empty-description-two",
+        "firefoxview-dont-remember-history-empty-description-one",
       ];
       descriptionLink = {
         url: "about:preferences#privacy",

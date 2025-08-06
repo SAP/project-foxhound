@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     back::{self, Baked},
-    proc::{self, NameKey},
+    proc::{self, index, ExpressionKindTracker, NameKey},
     valid, Handle, Module, Scalar, ScalarKind, ShaderStage, TypeInner,
 };
 use std::{fmt, mem};
@@ -104,6 +104,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             entry_point_io: Vec::new(),
             named_expressions: crate::NamedExpressions::default(),
             wrapped: super::Wrapped::default(),
+            continue_ctx: back::continue_forward::ContinueCtx::default(),
             temp_access_chain: Vec::new(),
             need_bake_expressions: Default::default(),
         }
@@ -122,6 +123,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         self.entry_point_io.clear();
         self.named_expressions.clear();
         self.wrapped.clear();
+        self.continue_ctx.clear();
         self.need_bake_expressions.clear();
     }
 
@@ -344,6 +346,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 info,
                 expressions: &function.expressions,
                 named_expressions: &function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&function.expressions),
             };
             let name = self.names[&NameKey::Function(handle)].clone();
 
@@ -384,6 +387,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 info,
                 expressions: &ep.function.expressions,
                 named_expressions: &ep.function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
 
             self.write_wrapped_functions(module, &ctx)?;
@@ -961,7 +965,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         let constant = &module.constants[handle];
         self.write_type(module, constant.ty)?;
         let name = &self.names[&NameKey::Constant(handle)];
-        write!(self.out, " {}", name)?;
+        write!(self.out, " {name}")?;
         // Write size for array type
         if let TypeInner::Array { base, size, .. } = module.types[constant.ty].inner {
             self.write_array_size(module, base, size)?;
@@ -1439,6 +1443,151 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         self.write_barrier(crate::Barrier::WORK_GROUP, level)
     }
 
+    /// Helper method used to write switches
+    fn write_switch(
+        &mut self,
+        module: &Module,
+        func_ctx: &back::FunctionCtx<'_>,
+        level: back::Level,
+        selector: Handle<crate::Expression>,
+        cases: &[crate::SwitchCase],
+    ) -> BackendResult {
+        // Write all cases
+        let indent_level_1 = level.next();
+        let indent_level_2 = indent_level_1.next();
+
+        // See docs of `back::continue_forward` module.
+        if let Some(variable) = self.continue_ctx.enter_switch(&mut self.namer) {
+            writeln!(self.out, "{level}bool {variable} = false;",)?;
+        };
+
+        // Check if there is only one body, by seeing if all except the last case are fall through
+        // with empty bodies. FXC doesn't handle these switches correctly, so
+        // we generate a `do {} while(false);` loop instead. There must be a default case, so there
+        // is no need to check if one of the cases would have matched.
+        let one_body = cases
+            .iter()
+            .rev()
+            .skip(1)
+            .all(|case| case.fall_through && case.body.is_empty());
+        if one_body {
+            // Start the do-while
+            writeln!(self.out, "{level}do {{")?;
+            // Note: Expressions have no side-effects so we don't need to emit selector expression.
+
+            // Body
+            if let Some(case) = cases.last() {
+                for sta in case.body.iter() {
+                    self.write_stmt(module, sta, func_ctx, indent_level_1)?;
+                }
+            }
+            // End do-while
+            writeln!(self.out, "{level}}} while(false);")?;
+        } else {
+            // Start the switch
+            write!(self.out, "{level}")?;
+            write!(self.out, "switch(")?;
+            self.write_expr(module, selector, func_ctx)?;
+            writeln!(self.out, ") {{")?;
+
+            for (i, case) in cases.iter().enumerate() {
+                match case.value {
+                    crate::SwitchValue::I32(value) => {
+                        write!(self.out, "{indent_level_1}case {value}:")?
+                    }
+                    crate::SwitchValue::U32(value) => {
+                        write!(self.out, "{indent_level_1}case {value}u:")?
+                    }
+                    crate::SwitchValue::Default => write!(self.out, "{indent_level_1}default:")?,
+                }
+
+                // The new block is not only stylistic, it plays a role here:
+                // We might end up having to write the same case body
+                // multiple times due to FXC not supporting fallthrough.
+                // Therefore, some `Expression`s written by `Statement::Emit`
+                // will end up having the same name (`_expr<handle_index>`).
+                // So we need to put each case in its own scope.
+                let write_block_braces = !(case.fall_through && case.body.is_empty());
+                if write_block_braces {
+                    writeln!(self.out, " {{")?;
+                } else {
+                    writeln!(self.out)?;
+                }
+
+                // Although FXC does support a series of case clauses before
+                // a block[^yes], it does not support fallthrough from a
+                // non-empty case block to the next[^no]. If this case has a
+                // non-empty body with a fallthrough, emulate that by
+                // duplicating the bodies of all the cases it would fall
+                // into as extensions of this case's own body. This makes
+                // the HLSL output potentially quadratic in the size of the
+                // Naga IR.
+                //
+                // [^yes]: ```hlsl
+                // case 1:
+                // case 2: do_stuff()
+                // ```
+                // [^no]: ```hlsl
+                // case 1: do_this();
+                // case 2: do_that();
+                // ```
+                if case.fall_through && !case.body.is_empty() {
+                    let curr_len = i + 1;
+                    let end_case_idx = curr_len
+                        + cases
+                            .iter()
+                            .skip(curr_len)
+                            .position(|case| !case.fall_through)
+                            .unwrap();
+                    let indent_level_3 = indent_level_2.next();
+                    for case in &cases[i..=end_case_idx] {
+                        writeln!(self.out, "{indent_level_2}{{")?;
+                        let prev_len = self.named_expressions.len();
+                        for sta in case.body.iter() {
+                            self.write_stmt(module, sta, func_ctx, indent_level_3)?;
+                        }
+                        // Clear all named expressions that were previously inserted by the statements in the block
+                        self.named_expressions.truncate(prev_len);
+                        writeln!(self.out, "{indent_level_2}}}")?;
+                    }
+
+                    let last_case = &cases[end_case_idx];
+                    if last_case.body.last().map_or(true, |s| !s.is_terminator()) {
+                        writeln!(self.out, "{indent_level_2}break;")?;
+                    }
+                } else {
+                    for sta in case.body.iter() {
+                        self.write_stmt(module, sta, func_ctx, indent_level_2)?;
+                    }
+                    if !case.fall_through && case.body.last().map_or(true, |s| !s.is_terminator()) {
+                        writeln!(self.out, "{indent_level_2}break;")?;
+                    }
+                }
+
+                if write_block_braces {
+                    writeln!(self.out, "{indent_level_1}}}")?;
+                }
+            }
+
+            writeln!(self.out, "{level}}}")?;
+        }
+
+        // Handle any forwarded continue statements.
+        use back::continue_forward::ExitControlFlow;
+        let op = match self.continue_ctx.exit_switch() {
+            ExitControlFlow::None => None,
+            ExitControlFlow::Continue { variable } => Some(("continue", variable)),
+            ExitControlFlow::Break { variable } => Some(("break", variable)),
+        };
+        if let Some((control_flow, variable)) = op {
+            writeln!(self.out, "{level}if ({variable}) {{")?;
+            writeln!(self.out, "{indent_level_1}{control_flow};")?;
+            writeln!(self.out, "{level}}}")?;
+        }
+
+        Ok(())
+    }
+
     /// Helper method used to write statements
     ///
     /// # Notes
@@ -1882,6 +2031,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 ref continuing,
                 break_if,
             } => {
+                self.continue_ctx.enter_loop();
                 let l2 = level.next();
                 if !continuing.is_empty() || break_if.is_some() {
                     let gate_name = self.namer.call("loop_init");
@@ -1908,10 +2058,18 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 for sta in body.iter() {
                     self.write_stmt(module, sta, func_ctx, l2)?;
                 }
-                writeln!(self.out, "{level}}}")?
+                writeln!(self.out, "{level}}}")?;
+                self.continue_ctx.exit_loop();
             }
             Statement::Break => writeln!(self.out, "{level}break;")?,
-            Statement::Continue => writeln!(self.out, "{level}continue;")?,
+            Statement::Continue => {
+                if let Some(variable) = self.continue_ctx.continue_encountered() {
+                    writeln!(self.out, "{level}{variable} = true;")?;
+                    writeln!(self.out, "{level}break;")?
+                } else {
+                    writeln!(self.out, "{level}continue;")?
+                }
+            }
             Statement::Barrier(barrier) => {
                 self.write_barrier(barrier, level)?;
             }
@@ -2063,100 +2221,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 selector,
                 ref cases,
             } => {
-                // Start the switch
-                write!(self.out, "{level}")?;
-                write!(self.out, "switch(")?;
-                self.write_expr(module, selector, func_ctx)?;
-                writeln!(self.out, ") {{")?;
-
-                // Write all cases
-                let indent_level_1 = level.next();
-                let indent_level_2 = indent_level_1.next();
-
-                for (i, case) in cases.iter().enumerate() {
-                    match case.value {
-                        crate::SwitchValue::I32(value) => {
-                            write!(self.out, "{indent_level_1}case {value}:")?
-                        }
-                        crate::SwitchValue::U32(value) => {
-                            write!(self.out, "{indent_level_1}case {value}u:")?
-                        }
-                        crate::SwitchValue::Default => {
-                            write!(self.out, "{indent_level_1}default:")?
-                        }
-                    }
-
-                    // The new block is not only stylistic, it plays a role here:
-                    // We might end up having to write the same case body
-                    // multiple times due to FXC not supporting fallthrough.
-                    // Therefore, some `Expression`s written by `Statement::Emit`
-                    // will end up having the same name (`_expr<handle_index>`).
-                    // So we need to put each case in its own scope.
-                    let write_block_braces = !(case.fall_through && case.body.is_empty());
-                    if write_block_braces {
-                        writeln!(self.out, " {{")?;
-                    } else {
-                        writeln!(self.out)?;
-                    }
-
-                    // Although FXC does support a series of case clauses before
-                    // a block[^yes], it does not support fallthrough from a
-                    // non-empty case block to the next[^no]. If this case has a
-                    // non-empty body with a fallthrough, emulate that by
-                    // duplicating the bodies of all the cases it would fall
-                    // into as extensions of this case's own body. This makes
-                    // the HLSL output potentially quadratic in the size of the
-                    // Naga IR.
-                    //
-                    // [^yes]: ```hlsl
-                    // case 1:
-                    // case 2: do_stuff()
-                    // ```
-                    // [^no]: ```hlsl
-                    // case 1: do_this();
-                    // case 2: do_that();
-                    // ```
-                    if case.fall_through && !case.body.is_empty() {
-                        let curr_len = i + 1;
-                        let end_case_idx = curr_len
-                            + cases
-                                .iter()
-                                .skip(curr_len)
-                                .position(|case| !case.fall_through)
-                                .unwrap();
-                        let indent_level_3 = indent_level_2.next();
-                        for case in &cases[i..=end_case_idx] {
-                            writeln!(self.out, "{indent_level_2}{{")?;
-                            let prev_len = self.named_expressions.len();
-                            for sta in case.body.iter() {
-                                self.write_stmt(module, sta, func_ctx, indent_level_3)?;
-                            }
-                            // Clear all named expressions that were previously inserted by the statements in the block
-                            self.named_expressions.truncate(prev_len);
-                            writeln!(self.out, "{indent_level_2}}}")?;
-                        }
-
-                        let last_case = &cases[end_case_idx];
-                        if last_case.body.last().map_or(true, |s| !s.is_terminator()) {
-                            writeln!(self.out, "{indent_level_2}break;")?;
-                        }
-                    } else {
-                        for sta in case.body.iter() {
-                            self.write_stmt(module, sta, func_ctx, indent_level_2)?;
-                        }
-                        if !case.fall_through
-                            && case.body.last().map_or(true, |s| !s.is_terminator())
-                        {
-                            writeln!(self.out, "{indent_level_2}break;")?;
-                        }
-                    }
-
-                    if write_block_braces {
-                        writeln!(self.out, "{indent_level_1}}}")?;
-                    }
-                }
-
-                writeln!(self.out, "{level}}}")?
+                self.write_switch(module, func_ctx, level, selector, cases)?;
             }
             Statement::RayQuery { .. } => unreachable!(),
             Statement::SubgroupBallot { result, predicate } => {
@@ -2318,11 +2383,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 // decimal part even it's zero
                 crate::Literal::F64(value) => write!(self.out, "{value:?}L")?,
                 crate::Literal::F32(value) => write!(self.out, "{value:?}")?,
-                crate::Literal::U32(value) => write!(self.out, "{}u", value)?,
-                crate::Literal::I32(value) => write!(self.out, "{}", value)?,
-                crate::Literal::U64(value) => write!(self.out, "{}uL", value)?,
-                crate::Literal::I64(value) => write!(self.out, "{}L", value)?,
-                crate::Literal::Bool(value) => write!(self.out, "{}", value)?,
+                crate::Literal::U32(value) => write!(self.out, "{value}u")?,
+                crate::Literal::I32(value) => write!(self.out, "{value}")?,
+                crate::Literal::U64(value) => write!(self.out, "{value}uL")?,
+                crate::Literal::I64(value) => write!(self.out, "{value}L")?,
+                crate::Literal::Bool(value) => write!(self.out, "{value}")?,
                 crate::Literal::AbstractInt(_) | crate::Literal::AbstractFloat(_) => {
                     return Err(Error::Custom(
                         "Abstract types should not appear in IR presented to backends".into(),
@@ -2522,24 +2587,66 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
 
                     let resolved = func_ctx.resolve_type(base, &module.types);
 
-                    let non_uniform_qualifier = match *resolved {
+                    let (indexing_binding_array, non_uniform_qualifier) = match *resolved {
                         TypeInner::BindingArray { .. } => {
                             let uniformity = &func_ctx.info[index].uniformity;
 
-                            uniformity.non_uniform_result.is_some()
+                            (true, uniformity.non_uniform_result.is_some())
                         }
-                        _ => false,
+                        _ => (false, false),
                     };
 
                     self.write_expr(module, base, func_ctx)?;
                     write!(self.out, "[")?;
-                    if non_uniform_qualifier {
-                        write!(self.out, "NonUniformResourceIndex(")?;
-                    }
-                    self.write_expr(module, index, func_ctx)?;
-                    if non_uniform_qualifier {
+
+                    let needs_bound_check = self.options.restrict_indexing
+                        && !indexing_binding_array
+                        && match resolved.pointer_space() {
+                            Some(
+                                crate::AddressSpace::Function
+                                | crate::AddressSpace::Private
+                                | crate::AddressSpace::WorkGroup
+                                | crate::AddressSpace::PushConstant,
+                            )
+                            | None => true,
+                            Some(crate::AddressSpace::Uniform) => false, // TODO: needs checks for dynamic uniform buffers, see https://github.com/gfx-rs/wgpu/issues/4483
+                            Some(
+                                crate::AddressSpace::Handle | crate::AddressSpace::Storage { .. },
+                            ) => unreachable!(),
+                        };
+                    // Decide whether this index needs to be clamped to fall within range.
+                    let restriction_needed = if needs_bound_check {
+                        index::access_needs_check(
+                            base,
+                            index::GuardedIndex::Expression(index),
+                            module,
+                            func_ctx.expressions,
+                            func_ctx.info,
+                        )
+                    } else {
+                        None
+                    };
+                    if let Some(limit) = restriction_needed {
+                        write!(self.out, "min(uint(")?;
+                        self.write_expr(module, index, func_ctx)?;
+                        write!(self.out, "), ")?;
+                        match limit {
+                            index::IndexableLength::Known(limit) => {
+                                write!(self.out, "{}u", limit - 1)?;
+                            }
+                            index::IndexableLength::Dynamic => unreachable!(),
+                        }
                         write!(self.out, ")")?;
+                    } else {
+                        if non_uniform_qualifier {
+                            write!(self.out, "NonUniformResourceIndex(")?;
+                        }
+                        self.write_expr(module, index, func_ctx)?;
+                        if non_uniform_qualifier {
+                            write!(self.out, ")")?;
+                        }
                     }
+
                     write!(self.out, "]")?;
                 }
             }
@@ -3000,8 +3107,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     Mf::CountLeadingZeros => Function::CountLeadingZeros,
                     Mf::CountOneBits => Function::MissingIntOverload("countbits"),
                     Mf::ReverseBits => Function::MissingIntOverload("reversebits"),
-                    Mf::FindLsb => Function::MissingIntReturnType("firstbitlow"),
-                    Mf::FindMsb => Function::MissingIntReturnType("firstbithigh"),
+                    Mf::FirstTrailingBit => Function::MissingIntReturnType("firstbitlow"),
+                    Mf::FirstLeadingBit => Function::MissingIntReturnType("firstbithigh"),
                     Mf::ExtractBits => Function::Regular(EXTRACT_BITS_FUNCTION),
                     Mf::InsertBits => Function::Regular(INSERT_BITS_FUNCTION),
                     // Data Packing

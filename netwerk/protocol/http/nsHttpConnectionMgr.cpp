@@ -905,7 +905,7 @@ void nsHttpConnectionMgr::UpdateCoalescingForNewConn(
              "could have served H2 newConn graceful close of newConn=%p to "
              "migrate to existingConn %p\n",
              newConn, existingConn));
-        existingConn->SetCloseReason(
+        newConn->SetCloseReason(
             ConnectionCloseReason::CLOSE_NEW_CONN_FOR_COALESCING);
         newConn->DontReuse();
         return;
@@ -916,7 +916,7 @@ void nsHttpConnectionMgr::UpdateCoalescingForNewConn(
            "have served newConn "
            "graceful close of newConn=%p to migrate to existingConn %p\n",
            newConn, existingConn));
-      existingConn->SetCloseReason(
+      newConn->SetCloseReason(
           ConnectionCloseReason::CLOSE_NEW_CONN_FOR_COALESCING);
       newConn->DontReuse();
       return;
@@ -1679,7 +1679,8 @@ nsresult nsHttpConnectionMgr::DispatchTransaction(ConnectionEntry* ent,
 
   PROFILER_MARKER(
       "DispatchTransaction", NETWORK,
-      MarkerOptions(MarkerTiming::Interval(trans->GetPendingTime(), now)),
+      MarkerOptions(MarkerThreadId::MainThread(),
+                    MarkerTiming::Interval(trans->GetPendingTime(), now)),
       UrlMarker, trans->GetUrl(), elapsed, trans->ChannelId());
 
   nsAutoCString httpVersionkey("h1"_ns);
@@ -1789,8 +1790,9 @@ nsresult nsHttpConnectionMgr::ProcessNewTransaction(nsHttpTransaction* trans) {
 
   trans->SetPendingTime();
 
-  PROFILER_MARKER("ProcessNewTransaction", NETWORK, {}, UrlMarker,
-                  trans->GetUrl(), TimeDuration::Zero(), trans->ChannelId());
+  PROFILER_MARKER("ProcessNewTransaction", NETWORK,
+                  MarkerThreadId::MainThread(), UrlMarker, trans->GetUrl(),
+                  TimeDuration::Zero(), trans->ChannelId());
 
   RefPtr<Http2PushedStreamWrapper> pushedStreamWrapper =
       trans->GetPushedStream();
@@ -2431,6 +2433,7 @@ void nsHttpConnectionMgr::OnMsgVerifyTraffic(int32_t, ARefBase*) {
 
   // Mark connections for traffic verification
   for (const auto& entry : mCT.Values()) {
+    entry->ResetIPFamilyPreference();
     entry->VerifyTraffic();
   }
 
@@ -3573,9 +3576,15 @@ void nsHttpConnectionMgr::DoSpeculativeConnectionInternal(
     return;
   }
 
-  if (aFetchHTTPSRR && NS_SUCCEEDED(aTrans->FetchHTTPSRR())) {
-    // nsHttpConnectionMgr::DoSpeculativeConnection will be called again when
-    // HTTPS RR is available.
+  ProxyDNSStrategy strategy = GetProxyDNSStrategyHelper(
+      aEnt->mConnInfo->ProxyType(), aEnt->mConnInfo->ProxyFlag());
+  // Speculative connections can be triggered by non-Necko consumers,
+  // so add an extra check to ensure HTTPS RR isn't fetched when a proxy is
+  // used.
+  if (aFetchHTTPSRR && strategy == ProxyDNSStrategy::ORIGIN &&
+      NS_SUCCEEDED(aTrans->FetchHTTPSRR())) {
+    // nsHttpConnectionMgr::DoSpeculativeConnection will be called again
+    // when HTTPS RR is available.
     return;
   }
 

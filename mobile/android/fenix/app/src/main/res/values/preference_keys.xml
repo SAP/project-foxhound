@@ -62,7 +62,7 @@
     <string name="pref_key_leakcanary" translatable="false">pref_key_leakcanary</string>
     <string name="pref_key_remote_debugging" translatable="false">pref_key_remote_debugging</string>
     <string name="pref_key_studies_section" translatable="false">pref_key_studies_section</string>
-    <string name="pref_key_experimentation" translatable="false">pref_key_experimentation</string>
+    <string name="pref_key_experimentation_v2" translatable="false">pref_key_experimentation_v2</string>
     <string name="pref_key_showed_private_mode_cfr" translatable="false">pref_key_showed_private_mode_cfr</string>
     <string name="pref_key_private_mode_opened" translatable="false">pref_key_private_mode_opened</string>
     <string name="pref_key_open_in_app_opened" translatable="false">pref_key_open_in_app_opened</string>
@@ -145,10 +145,15 @@
     <string name="pref_key_toolbar_top" translatable="false">pref_key_toolbar_top</string>
     <string name="pref_key_toolbar_bottom" translatable="false">pref_key_toolbar_bottom</string>
     <string name="pref_key_should_navbar_cfr">pref_key_should_show_navbar_cfr</string>
+    <string name="pref_key_toolbar_tab_swipe_cfr">pref_key_should_show_tab_swipe_cfr</string>
+    <string name="pref_key_toolbar_has_shown_tab_swipe_cfr">pref_key_has_shown_tab_swipe_cfr</string>
 
     <!-- Navigation Toolbar -->
     <string name="pref_key_toolbar_show_navigation_toolbar" translatable="false">pref_key_toolbar_use_redesign_incomplete</string>
     <string name="pref_key_toolbar_navigation_cfr" translatable="false">pref_key_toolbar_navigation_cfr</string>
+
+    <!-- Menu -->
+    <string name="pref_key_menu_cfr" translatable="false">pref_key_menu_cfr</string>
 
     <!-- Privacy Pop Window -->
     <string name="pref_key_privacy_pop_window" translatable="false">pref_key_privacy_pop_window</string>
@@ -286,14 +291,10 @@
     <string name="pref_key_should_show_inactive_tabs_popup" translatable="false">pref_key_should_show_inactive_tabs_popup</string>
     <!-- A value  of `true` means the Inactive tabs auto close dialog has been dismissed by the user -->
     <string name="pref_key_has_inactive_tabs_auto_close_dialog_dismissed" translatable="false">pref_key_has_inactive_tabs_auto_close_dialog_dismissed</string>
-    <!-- A value  of `true` means the jump back in onboarding popup has not been shown yet -->
-    <string name="pref_key_should_show_jump_back_in_tabs_popup" translatable="false">pref_key_should_show_jump_back_in_tabs_popup</string>
     <!-- A value  of `true` means the onboarding sync CFR have not been shown yet -->
     <string name="pref_key_should_show_sync_cfr" translatable="false">pref_key_should_show_sync_cfr</string>
     <!-- A value  of `true` means the home onboarding dialog have not been shown yet -->
     <string name="pref_key_should_show_home_onboarding_dialog" translatable="false">pref_key_should_show_home_onboarding_dialog</string>
-    <!-- A value  of `true` means the total cookie protection popup has not been shown yet -->
-    <string name="pref_key_should_show_total_cookie_protection_popup" translatable="false">pref_key_should_show_total_cookie_protection_popup</string>
     <!-- A value  of `true` means the erase action popup has not been shown yet -->
     <string name="pref_key_should_show_erase_action_popup" translatable="false">pref_key_should_show_erase_action_popup</string>
     <!-- A value  of `true` means that we will enable felt privacy features -->
@@ -302,6 +303,9 @@
     <string name="pref_key_should_show_cookie_banners_action_popup" translatable="false">pref_key_should_show_cookie_banners_action_popup</string>
 
     <string name="pref_key_debug_settings" translatable="false">pref_key_debug_settings</string>
+
+    <!-- Whether the debug menu (secret settings, secret debug info, nimbus experiments, etc.) should be enabled persistently -->
+    <string name="pref_key_persistent_debug_menu" translatable="false">pref_key_persistent_debug_menu</string>
 
     <string name="pref_key_open_tabs_count" translatable="false">pref_key_open_tabs_count</string>
     <string name="pref_key_open_private_tabs_count" translatable="false">pref_key_open_private_tabs_count</string>
@@ -353,12 +357,11 @@
 
     <string name="pref_key_return_to_browser" translatable="false">pref_key_return_to_browser</string>
 
-    <string name="pref_key_open_next_tab_desktop_mode" translatable="false">pref_key_open_next_tab_desktop_mode</string>
-
     <!-- Pocket -->
     <string name="pref_key_pocket_homescreen_recommendations" translatable="false">pref_key_pocket_homescreen_recommendations</string>
     <string name="pref_key_pocket_sponsored_stories" translatable="false">pref_key_pocket_sponsored_stories</string>
     <string name="pref_key_pocket_sponsored_stories_profile" translatable="false">pref_key_pocket_sponsored_stories_profile</string>
+    <string name="pref_key_pocket_content_recommendations" translatable="false">pref_key_pocket_content_recommendations</string>
 
     <!-- Secret Info Setting Keys -->
     <string name="pref_key_secret_debug_info" translatable="false">pref_key_secret_debug_info</string>
@@ -369,7 +372,6 @@
     <string name="pref_key_nimbus_experiments" translatable="false">pref_key_nimbus_experiments</string>
     <string name="pref_key_nimbus_use_preview" translatable="false">pref_key_nimbus_use_preview</string>
     <string name="pref_key_history_metadata_feature" translatable="false">pref_key_history_metadata_feature</string>
-    <string name="pref_key_show_unified_search_2" translatable="false">pref_key_show_unified_search_2</string>
     <string name="pref_key_custom_glean_server_url" translatable="false">pref_key_custom_glean_server_url</string>
     <string name="pref_key_custom_sponsored_stories_parameters" translatable="false">pref_key_custom_sponsored_stories_parameters</string>
     <string name="pref_key_custom_sponsored_stories_parameters_enabled" translatable="false">pref_key_custom_sponsored_stories_parameters_enabled</string>
@@ -394,10 +396,7 @@
     <!--Shopping -->
     <string name="pref_key_is_review_quality_check_enabled">pref_key_is_review_quality_check_enabled</string>
     <string name="pref_key_is_review_quality_check_product_recommendations_enabled">pref_key_is_review_quality_check_product_recommendations_enabled</string>
-    <string name="pref_key_should_show_review_quality_cfr">pref_key_should_show_review_quality_cfr</string>
     <string name="pref_key_should_show_review_quality_opt_in_time">pref_key_should_show_review_quality_opt_in_time</string>
-    <string name="pref_key_should_show_review_quality_cfr_displayed_time">pref_key_should_show_review_quality_cfr_displayed_time</string>
-    <string name="pref_key_review_quality_cfr_shown_counter">pref_key_review_quality_cfr_shown_counter</string>
 
     <!--Translations -->
     <string name="pref_key_ignore_translations_data_saver_warning" translatable="false">pref_key_ignore_translations_data_saver_warning</string>
@@ -408,4 +407,22 @@
 
     <!--ApplicationExitInfo-->
     <string name="pref_key_application_exit_info_last_handled_time" translatable="false">pref_key_application_exit_info_last_handled_time</string>
+
+    <!-- Set as default browser prompt for existing users -->
+    <string name="pref_key_set_as_default_browser_prompt_enabled" translatable="false">pref_key_set_as_default_browser_prompt_enabled</string>
+    <string name="pref_key_last_set_as_default_prompt_shown_time" translatable="false">pref_key_last_set_as_default_prompt_shown_time</string>
+    <string name="pref_key_number_of_set_as_default_prompt_shown_times" translatable="false">pref_key_number_of_set_as_default_prompt_shown_times</string>
+    <string name="pref_key_app_cold_start_count" translatable="false">pref_key_app_cold_start_count</string>
+
+    <string name="pref_key_desktop_browsing" translatable="false">pref_key_desktop_browsing</string>
+    <string name="pref_key_category_content" translatable="false">pref_key_category_content</string>
+    <string name="pref_key_site_permissions_preference_screen" translatable="false">pref_key_site_permissions_preference_screen</string>
+
+    <!-- Crash reporting -->
+    <string name="pref_key_crash_reporting_deferred_until" translatable="false">pref_key_crash_reporting_deferred_until</string>
+    <string name="pref_key_crash_reporting_always_report" translatable="false">pref_key_crash_reporting_always_report</string>
+    <string name="pref_key_use_new_crash_reporter" translatable="false">pref_key_use_new_crash_reporter</string>
+
+    <!-- Bookmarks -->
+    <string name="pref_key_use_new_bookmarks_ui" translatable="false">pref_key_use_new_bookmarks_ui</string>
 </resources>

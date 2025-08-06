@@ -1,0 +1,30 @@
+[DEFAULT]
+support-files = ["head.js"]
+
+prefs = ["browser.profiles.enabled=true"]
+
+["browser_activate.js"]
+run-if = [
+  "os != 'linux'",
+] # This seems to mess up focus on Linux for some reason.
+
+["browser_appmenu_menuitem_updates.js"]
+head = "../unit/head.js head.js"
+
+["browser_create_profile_page_test.js"]
+
+["browser_delete_profile_page_test.js"]
+
+["browser_edit_profile_test.js"]
+
+["browser_menubar_profiles.js"]
+head = "../unit/head.js head.js"
+
+["browser_notify_changes.js"]
+run-if = ["os != 'linux'"] # Linux clients cannot remote themselves.
+
+["browser_test_db_lazily_created.js"]
+
+["browser_test_profile_selector.js"]
+
+["browser_update_profile_on_window_switch.js"]

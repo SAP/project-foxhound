@@ -130,6 +130,11 @@ interface nsIContentSecurityPolicy : nsISerializable
                     in boolean reportOnly,
                     in boolean deliveredViaMetaTag);
 
+  /**
+   * Whether a policy with a RequireTrustedTypes was appended
+   */
+  [infallible] readonly attribute boolean hasPolicyWithRequireTrustedTypesForDirective;
+
   /*
    * Whether this policy allows inline script or style.
    * @param aContentPolicyType Either SCRIPT_SRC_(ELEM|ATTR)_DIRECTIVE or
@@ -241,12 +246,14 @@ interface nsIContentSecurityPolicy : nsISerializable
   const unsigned short VIOLATION_TYPE_WASM_EVAL              = 2;
 
   /**
-   * Log violation details for the Trusted Types directive. No check happens
-   * that the policy is indeed violated. Requires the Trusted Types directive to
-   * belong to the policy referrenced by aCSPViolationData.
+   * Log violation details for aCSPViolationData's directive. The directive is
+   * required to:
+   * - be one of the CSP directives corresponding to Trusted Types.
+   * - belong to the policy referrenced by aCSPViolationData.
+   * No check happens that the policy is indeed violated.
    *
-   * Notifies observers, logs on the error console, sends a report to the
-   * directive's report-uris and may fire a violation event.
+   * Notifies observers, logs on the error console, sends a report (with a code-
+   * sample) to the directive's report-uris and may fire a violation event.
    *
    * @param aCSPEventListener Should be null for Windows
    *                          (https://html.spec.whatwg.org/multipage/nav-history-apis.html#window),
@@ -254,6 +261,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    */
   [noscript] void logTrustedTypesViolationDetailsUnchecked(
     in CSPViolationData aCSPViolationData,
+    in AString aObserverSubject,
     in nsICSPEventListener aCSPEventListener);
 
   /**

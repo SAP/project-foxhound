@@ -135,10 +135,26 @@ function assertVisibilityScalars(expected) {
     expected.push("menubar-items_pinned_menu-bar");
   }
 
+  // FIXME(bug 1883857): object metric type not available in artefact builds.
+  const widgetPositions = Glean.browserUi.toolbarWidgets?.testGetValue();
+  Services.fog.testResetFOG();
+
   let keys = new Set(expected.concat(Object.keys(scalars)));
   for (let key of keys) {
     Assert.ok(expected.includes(key), `Scalar key ${key} was unexpected.`);
     Assert.ok(scalars[key], `Expected to see see scalar key ${key} be true.`);
+    // FIXME(bug 1883857): object metric type not available in artefact builds.
+    if ("toolbarWidgets" in Glean.browserUi) {
+      const [widgetId, position] = key.split("_pinned_");
+      Assert.ok(
+        widgetPositions.some(
+          widgetPosition =>
+            widgetPosition.position == position &&
+            widgetPosition.widgetId == widgetId
+        ),
+        `widget ${widgetId} expected at ${position}.`
+      );
+    }
   }
 }
 
@@ -187,6 +203,7 @@ add_task(async function widgetPositions() {
       "stop-reload-button",
       "tabbrowser-tabs",
       "personal-bookmarks",
+      "alltabs-button",
     ],
 
     "nav-bar": [
@@ -233,7 +250,7 @@ add_task(async function customizeMode() {
   organizeToolbars({
     PersonalToolbar: ["personal-bookmarks"],
 
-    TabsToolbar: ["tabbrowser-tabs", "new-tab-button"],
+    TabsToolbar: ["tabbrowser-tabs", "new-tab-button", "alltabs-button"],
 
     "nav-bar": [
       "back-button",
@@ -328,7 +345,7 @@ add_task(async function contextMenus() {
   organizeToolbars({
     PersonalToolbar: ["personal-bookmarks"],
 
-    TabsToolbar: ["tabbrowser-tabs", "new-tab-button"],
+    TabsToolbar: ["tabbrowser-tabs", "new-tab-button", "alltabs-button"],
 
     "nav-bar": [
       "back-button",

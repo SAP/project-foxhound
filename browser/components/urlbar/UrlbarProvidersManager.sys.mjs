@@ -31,6 +31,10 @@ ChromeUtils.defineLazyGetter(lazy, "logger", () =>
 var localProviderModules = {
   UrlbarProviderAboutPages:
     "resource:///modules/UrlbarProviderAboutPages.sys.mjs",
+  UrlbarProviderActionsSearchMode:
+    "resource:///modules/UrlbarProviderActionsSearchMode.sys.mjs",
+  UrlbarProviderGlobalActions:
+    "resource:///modules/UrlbarProviderGlobalActions.sys.mjs",
   UrlbarProviderAliasEngines:
     "resource:///modules/UrlbarProviderAliasEngines.sys.mjs",
   UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.sys.mjs",
@@ -62,6 +66,8 @@ var localProviderModules = {
     "resource:///modules/UrlbarProviderRemoteTabs.sys.mjs",
   UrlbarProviderRestrictKeywords:
     "resource:///modules/UrlbarProviderRestrictKeywords.sys.mjs",
+  UrlbarProviderRestrictKeywordsAutofill:
+    "resource:///modules/UrlbarProviderRestrictKeywordsAutofill.sys.mjs",
   UrlbarProviderSearchTips:
     "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
   UrlbarProviderSearchSuggestions:
@@ -73,7 +79,6 @@ var localProviderModules = {
   UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
   UrlbarProviderUnitConversion:
     "resource:///modules/UrlbarProviderUnitConversion.sys.mjs",
-  UrlbarProviderWeather: "resource:///modules/UrlbarProviderWeather.sys.mjs",
 };
 
 // List of available local muxers, each is implemented in its own jsm module.
@@ -81,14 +86,6 @@ var localMuxerModules = {
   UrlbarMuxerUnifiedComplete:
     "resource:///modules/UrlbarMuxerUnifiedComplete.sys.mjs",
 };
-
-import { ActionsProviderQuickActions } from "resource:///modules/ActionsProviderQuickActions.sys.mjs";
-import { ActionsProviderContextualSearch } from "resource:///modules/ActionsProviderContextualSearch.sys.mjs";
-
-let globalActionsProviders = [
-  ActionsProviderContextualSearch,
-  ActionsProviderQuickActions,
-];
 
 const DEFAULT_MUXER = "UnifiedComplete";
 
@@ -107,7 +104,6 @@ class ProvidersManager {
       onImpression: new Set(),
       onAbandonment: new Set(),
       onSearchSessionEnd: new Set(),
-      onLegacyEngagement: new Set(),
     };
     for (let [symbol, module] of Object.entries(localProviderModules)) {
       let { [symbol]: provider } = ChromeUtils.importESModule(module);
@@ -202,17 +198,6 @@ class ProvidersManager {
    */
   getProvider(name) {
     return this.providers.find(p => p.name == name);
-  }
-
-  /**
-   * Returns the provider with the given name.
-   *
-   * @param {string} name
-   *   The provider name.
-   * @returns {UrlbarProvider} The provider.
-   */
-  getActionProvider(name) {
-    return globalActionsProviders.find(p => p.name == name);
   }
 
   /**
@@ -320,14 +305,6 @@ class ProvidersManager {
       // We continue anyway, because we want the user to be able to search their
       // history and bookmarks even if search engines are not available.
     }
-
-    // All current global actions are currently memory lookups so it is safe to
-    // wait on them.
-    this.#globalAction = lazy.UrlbarPrefs.getScotchBonnetPref(
-      "secondaryActions.featureGate"
-    )
-      ? await this.pickGlobalAction(queryContext, controller)
-      : null;
 
     if (query.canceled) {
       return;
@@ -442,17 +419,10 @@ class ProvidersManager {
       this.#notifySearchSessionEnd(
         this.providersByNotificationType.onSearchSessionEnd,
         queryContext,
-        controller
+        controller,
+        details
       );
     }
-
-    this.#notifyLegacyEngagement(
-      this.providersByNotificationType.onLegacyEngagement,
-      state,
-      queryContext,
-      details,
-      controller
-    );
   }
 
   #notifyEngagement(engagementProviders, queryContext, controller, details) {
@@ -500,47 +470,20 @@ class ProvidersManager {
     }
   }
 
-  #notifySearchSessionEnd(searchSessionEndProviders, queryContext, controller) {
-    for (const provider of searchSessionEndProviders) {
-      provider.tryMethod("onSearchSessionEnd", queryContext, controller);
-    }
-  }
-
-  #notifyLegacyEngagement(
-    legacyEngagementProviders,
-    state,
+  #notifySearchSessionEnd(
+    searchSessionEndProviders,
     queryContext,
-    details,
-    controller
+    controller,
+    details
   ) {
-    for (const provider of legacyEngagementProviders) {
+    for (const provider of searchSessionEndProviders) {
       provider.tryMethod(
-        "onLegacyEngagement",
-        state,
+        "onSearchSessionEnd",
         queryContext,
-        details,
-        controller
+        controller,
+        details
       );
     }
-  }
-
-  #globalAction = null;
-
-  async pickGlobalAction(queryContext, controller) {
-    for (let provider of globalActionsProviders) {
-      if (provider.isActive(queryContext)) {
-        let action = await provider.queryAction(queryContext, controller);
-        if (action) {
-          action.providerName = provider.name;
-          return action;
-        }
-      }
-    }
-    return null;
-  }
-
-  getGlobalAction() {
-    return this.#globalAction;
   }
 }
 

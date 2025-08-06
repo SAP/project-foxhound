@@ -10,25 +10,43 @@
 
 #include "api/video_codecs/libaom_av1_encoder_factory.h"
 
-#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
-#include <utility>
+#include <type_traits>
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/cleanup/cleanup.h"
+#include "absl/types/variant.h"
+#include "api/array_view.h"
+#include "api/scoped_refptr.h"
+#include "api/units/data_rate.h"
+#include "api/units/data_size.h"
+#include "api/units/time_delta.h"
+#include "api/video/resolution.h"
+#include "api/video/video_frame_buffer.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder_factory_interface.h"
 #include "api/video_codecs/video_encoder_interface.h"
+#include "api/video_codecs/video_encoding_general.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/numerics/rational.h"
 #include "rtc_base/strings/string_builder.h"
 #include "third_party/libaom/source/libaom/aom/aom_codec.h"
 #include "third_party/libaom/source/libaom/aom/aom_encoder.h"
+#include "third_party/libaom/source/libaom/aom/aom_image.h"
 #include "third_party/libaom/source/libaom/aom/aomcx.h"
 
-#define SET_OR_DO_ERROR_CALLBACK_AND_RETURN(param_id, param_value)    \
+#define SET_OR_RETURN(param_id, param_value)                          \
   do {                                                                \
     if (!SetEncoderControlParameters(&ctx_, param_id, param_value)) { \
-      DoErrorCallback(frame_settings);                                \
       return;                                                         \
     }                                                                 \
   } while (0)
@@ -64,8 +82,8 @@ constexpr std::array<VideoFrameBuffer::Type, 2> kSupportedInputFormats = {
 constexpr std::array<Rational, 7> kSupportedScalingFactors = {
     {{8, 1}, {4, 1}, {2, 1}, {1, 1}, {1, 2}, {1, 4}, {1, 8}}};
 
-absl::optional<Rational> GetScalingFactor(const Resolution& from,
-                                          const Resolution& to) {
+std::optional<Rational> GetScalingFactor(const Resolution& from,
+                                         const Resolution& to) {
   auto it = absl::c_find_if(kSupportedScalingFactors, [&](const Rational& r) {
     return (from.width * r.numerator / r.denominator) == to.width &&
            (from.height * r.numerator / r.denominator) == to.height;
@@ -96,10 +114,10 @@ class LibaomAv1Encoder : public VideoEncoderInterface {
   aom_codec_ctx_t ctx_;
   aom_codec_enc_cfg_t cfg_;
 
-  absl::optional<VideoCodecMode> current_content_type_;
-  absl::optional<int> current_effort_level_;
+  std::optional<VideoCodecMode> current_content_type_;
+  std::array<std::optional<int>, kMaxSpatialLayersWtf> current_effort_level_;
   int max_number_of_threads_;
-  std::array<absl::optional<Resolution>, 8> last_resolution_in_buffer_;
+  std::array<std::optional<Resolution>, 8> last_resolution_in_buffer_;
 };
 
 template <typename T>
@@ -255,7 +273,7 @@ bool ValidateEncodeParams(
     const VideoEncoderInterface::TemporalUnitSettings& tu_settings,
     const std::vector<VideoEncoderInterface::FrameEncodeSettings>&
         frame_settings,
-    const std::array<absl::optional<Resolution>, 8>& last_resolution_in_buffer,
+    const std::array<std::optional<Resolution>, 8>& last_resolution_in_buffer,
     aom_rc_mode rc_mode) {
   if (frame_settings.empty()) {
     RTC_LOG(LS_ERROR) << "No frame settings provided.";
@@ -266,19 +284,18 @@ bool ValidateEncodeParams(
     return low <= val && val < high;
   };
 
-  if (!in_range(kMinEffortLevel, kMaxEffortLevel + 1,
-                tu_settings.effort_level)) {
-    RTC_LOG(LS_ERROR) << "Unsupported effort level "
-                      << tu_settings.effort_level;
-    return false;
-  }
-
   for (size_t i = 0; i < frame_settings.size(); ++i) {
     const VideoEncoderInterface::FrameEncodeSettings& settings =
         frame_settings[i];
 
-    if (!settings.result_callback) {
-      RTC_LOG(LS_ERROR) << "No result callback function provided.";
+    if (!settings.frame_output) {
+      RTC_LOG(LS_ERROR) << "No frame output provided.";
+      return false;
+    }
+
+    if (!in_range(kMinEffortLevel, kMaxEffortLevel + 1,
+                  settings.effort_level)) {
+      RTC_LOG(LS_ERROR) << "Unsupported effort level " << settings.effort_level;
       return false;
     }
 
@@ -326,7 +343,7 @@ bool ValidateEncodeParams(
 
       // Figure out which frame resolution a certain buffer will hold when the
       // frame described by `settings` is encoded.
-      absl::optional<Resolution> referenced_resolution;
+      std::optional<Resolution> referenced_resolution;
       bool keyframe_on_previous_layer = false;
 
       // Will some other frame in this temporal unit update the buffer?
@@ -543,7 +560,7 @@ aom_svc_params_t GetSvcParams(
 
   for (const VideoEncoderInterface::FrameEncodeSettings& settings :
        frame_settings) {
-    absl::optional<Rational> scaling_factor = GetScalingFactor(
+    std::optional<Rational> scaling_factor = GetScalingFactor(
         {frame_buffer.width(), frame_buffer.height()}, settings.resolution);
     RTC_CHECK(scaling_factor);
     svc_params.scaling_factor_num[settings.spatial_id] =
@@ -617,44 +634,33 @@ aom_svc_params_t GetSvcParams(
   return svc_params;
 }
 
-void DoErrorCallback(std::vector<FrameEncodeSettings>& frame_settings) {
-  for (FrameEncodeSettings& settings : frame_settings) {
-    if (settings.result_callback) {
-      std::move(settings.result_callback)({});
-      // To avoid invoking any callback more than once.
-      settings.result_callback = {};
-    }
-  }
-}
-
 void LibaomAv1Encoder::Encode(
     rtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_buffer,
     const TemporalUnitSettings& tu_settings,
     std::vector<FrameEncodeSettings> frame_settings) {
+  absl::Cleanup on_return = [&] {
+    // On return call `EncodeComplete` with EncodingError result unless they
+    // were already called with an EncodedData result.
+    for (FrameEncodeSettings& settings : frame_settings) {
+      if (settings.frame_output) {
+        settings.frame_output->EncodeComplete(EncodingError());
+      }
+    }
+  };
+
   if (!ValidateEncodeParams(*frame_buffer, tu_settings, frame_settings,
                             last_resolution_in_buffer_, cfg_.rc_end_usage)) {
-    DoErrorCallback(frame_settings);
     return;
-  }
-
-  if (tu_settings.effort_level != current_effort_level_) {
-    // For RTC we use speed level 6 to 10, with 8 being the default. Note that
-    // low effort means higher speed.
-    SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AOME_SET_CPUUSED,
-                                        8 - tu_settings.effort_level);
-    current_effort_level_ = tu_settings.effort_level;
   }
 
   if (current_content_type_ != tu_settings.content_hint) {
     if (tu_settings.content_hint == VideoCodecMode::kScreensharing) {
       // TD: Set speed 11?
-      SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_TUNE_CONTENT,
-                                          AOM_CONTENT_SCREEN);
-      SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_ENABLE_PALETTE, 1);
+      SET_OR_RETURN(AV1E_SET_TUNE_CONTENT, AOM_CONTENT_SCREEN);
+      SET_OR_RETURN(AV1E_SET_ENABLE_PALETTE, 1);
     } else {
-      SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_TUNE_CONTENT,
-                                          AOM_CONTENT_DEFAULT);
-      SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_ENABLE_PALETTE, 0);
+      SET_OR_RETURN(AV1E_SET_TUNE_CONTENT, AOM_CONTENT_DEFAULT);
+      SET_OR_RETURN(AV1E_SET_ENABLE_PALETTE, 0);
     }
     current_content_type_ = tu_settings.content_hint;
   }
@@ -677,12 +683,9 @@ void LibaomAv1Encoder::Encode(
                         << frame_buffer->height();
     ThreadTilesAndSuperblockSizeInfo ttsbi = GetThreadingTilesAndSuperblockSize(
         frame_buffer->width(), frame_buffer->height(), max_number_of_threads_);
-    SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_SUPERBLOCK_SIZE,
-                                        ttsbi.superblock_size);
-    SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_TILE_ROWS,
-                                        ttsbi.exp_tile_rows);
-    SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_TILE_COLUMNS,
-                                        ttsbi.exp_tile_colums);
+    SET_OR_RETURN(AV1E_SET_SUPERBLOCK_SIZE, ttsbi.superblock_size);
+    SET_OR_RETURN(AV1E_SET_TILE_ROWS, ttsbi.exp_tile_rows);
+    SET_OR_RETURN(AV1E_SET_TILE_COLUMNS, ttsbi.exp_tile_colums);
     cfg_.g_threads = ttsbi.num_threads;
     cfg_.g_w = frame_buffer->width();
     cfg_.g_h = frame_buffer->height();
@@ -696,11 +699,10 @@ void LibaomAv1Encoder::Encode(
   if (aom_codec_err_t ret = aom_codec_enc_config_set(&ctx_, &cfg_);
       ret != AOM_CODEC_OK) {
     RTC_LOG(LS_ERROR) << "aom_codec_enc_config_set returned " << ret;
-    DoErrorCallback(frame_settings);
     return;
   }
   aom_svc_params_t svc_params = GetSvcParams(*frame_buffer, frame_settings);
-  SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_SVC_PARAMS, &svc_params);
+  SET_OR_RETURN(AV1E_SET_SVC_PARAMS, &svc_params);
 
   // The libaom AV1 encoder requires that `aom_codec_encode` is called for
   // every spatial layer, even if no frame should be encoded for that layer.
@@ -723,10 +725,9 @@ void LibaomAv1Encoder::Encode(
         .spatial_layer_id = sid,
         .temporal_layer_id = settings.temporal_id,
     };
-    SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_SVC_LAYER_ID, &layer_id);
+    SET_OR_RETURN(AV1E_SET_SVC_LAYER_ID, &layer_id);
     aom_svc_ref_frame_config_t ref_config = GetSvcRefFrameConfig(settings);
-    SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AV1E_SET_SVC_REF_FRAME_CONFIG,
-                                        &ref_config);
+    SET_OR_RETURN(AV1E_SET_SVC_REF_FRAME_CONFIG, &ref_config);
 
     // TD: Duration can't be zero, what does it matter when the layer is
     // not being encoded?
@@ -737,6 +738,13 @@ void LibaomAv1Encoder::Encode(
       } else {
         // TD: What should duration be when Cqp is used?
         duration = TimeDelta::Millis(1);
+      }
+
+      if (settings.effort_level != current_effort_level_[settings.spatial_id]) {
+        // For RTC we use speed level 6 to 10, with 8 being the default. Note
+        // that low effort means higher speed.
+        SET_OR_RETURN(AOME_SET_CPUUSED, 8 - settings.effort_level);
+        current_effort_level_[settings.spatial_id] = settings.effort_level;
       }
     }
 
@@ -752,7 +760,6 @@ void LibaomAv1Encoder::Encode(
         settings.frame_type == FrameType::kKeyframe ? AOM_EFLAG_FORCE_KF : 0);
     if (ret != AOM_CODEC_OK) {
       RTC_LOG(LS_WARNING) << "aom_codec_encode returned " << ret;
-      DoErrorCallback(frame_settings);
       return;
     }
 
@@ -770,28 +777,33 @@ void LibaomAv1Encoder::Encode(
 
     EncodedData result;
     aom_codec_iter_t iter = nullptr;
+    bool bitstream_produced = false;
     while (const aom_codec_cx_pkt_t* pkt =
                aom_codec_get_cx_data(&ctx_, &iter)) {
       if (pkt->kind == AOM_CODEC_CX_FRAME_PKT && pkt->data.frame.sz > 0) {
-        SET_OR_DO_ERROR_CALLBACK_AND_RETURN(AOME_GET_LAST_QUANTIZER_64,
-                                            &result.encoded_qp);
+        SET_OR_RETURN(AOME_GET_LAST_QUANTIZER_64, &result.encoded_qp);
         result.frame_type = pkt->data.frame.flags & AOM_EFLAG_FORCE_KF
                                 ? FrameType::kKeyframe
                                 : FrameType::kDeltaFrame;
-        result.bitstream_data = EncodedImageBuffer::Create(
-            static_cast<uint8_t*>(pkt->data.frame.buf), pkt->data.frame.sz);
+        rtc::ArrayView<uint8_t> output_buffer =
+            settings.frame_output->GetBitstreamOutputBuffer(
+                DataSize::Bytes(pkt->data.frame.sz));
+        if (output_buffer.size() != pkt->data.frame.sz) {
+          return;
+        }
+        memcpy(output_buffer.data(), pkt->data.frame.buf, pkt->data.frame.sz);
+        bitstream_produced = true;
         break;
       }
     }
 
-    if (result.bitstream_data == nullptr) {
-      DoErrorCallback(frame_settings);
+    if (!bitstream_produced) {
       return;
     } else {
-      RTC_CHECK(settings.result_callback);
-      std::move(settings.result_callback)(result);
+      RTC_CHECK(settings.frame_output);
+      settings.frame_output->EncodeComplete(result);
       // To avoid invoking any callback more than once.
-      settings.result_callback = {};
+      settings.frame_output = nullptr;
     }
   }
 }
@@ -810,11 +822,13 @@ std::map<std::string, std::string> LibaomAv1EncoderFactory::CodecSpecifics()
   return {};
 }
 
+// clang-format off
+// The formater and cpplint have conflicting ideas.
 VideoEncoderFactoryInterface::Capabilities
 LibaomAv1EncoderFactory::GetEncoderCapabilities() const {
   return {
-      .prediction_constraints =
-          {.num_buffers = kNumBuffers,
+      .prediction_constraints = {
+           .num_buffers = kNumBuffers,
            .max_references = kMaxReferences,
            .max_temporal_layers = kMaxTemporalLayers,
            .buffer_space_type = VideoEncoderFactoryInterface::Capabilities::
@@ -834,14 +848,16 @@ LibaomAv1EncoderFactory::GetEncoderCapabilities() const {
           },
       .encoding_formats = {{.sub_sampling = EncodingFormat::k420,
                             .bit_depth = 8}},
-      .rate_control =
-          {.qp_range = {0, kMaxQp},
+      .rate_control = {
+           .qp_range = {0, kMaxQp},
            .rc_modes = {VideoEncoderFactoryInterface::RateControlMode::kCbr,
                         VideoEncoderFactoryInterface::RateControlMode::kCqp}},
-      .performance = {.min_max_effort_level = {kMinEffortLevel,
+      .performance = {.encode_on_calling_thread = true,
+                      .min_max_effort_level = {kMinEffortLevel,
                                                kMaxEffortLevel}},
   };
 }
+// clang-format on
 
 std::unique_ptr<VideoEncoderInterface> LibaomAv1EncoderFactory::CreateEncoder(
     const StaticEncoderSettings& settings,

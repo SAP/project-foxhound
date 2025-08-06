@@ -9,6 +9,7 @@
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "mozilla/GeckoArgs.h"
+#include "mozilla/ipc/ProcessChild.h"
 #include "nsIFile.h"
 #include "nsZipArchive.h"
 #include "nsNetUtil.h"
@@ -104,7 +105,7 @@ nsresult Omnijar::InitOne(nsIFile* aPath, Type aType) {
   return NS_OK;
 }
 
-nsresult Omnijar::Init(nsIFile* aGrePath, nsIFile* aAppPath) {
+nsresult Omnijar::FallibleInit(nsIFile* aGrePath, nsIFile* aAppPath) {
   // Even on error we do not want to come here again.
   sInitialized = true;
 
@@ -116,6 +117,14 @@ nsresult Omnijar::Init(nsIFile* aGrePath, nsIFile* aAppPath) {
   MOZ_TRY(rvAPP);
 
   return NS_OK;
+}
+
+void Omnijar::Init(nsIFile* aGrePath, nsIFile* aAppPath) {
+  nsresult rv = FallibleInit(aGrePath, aAppPath);
+  if (NS_FAILED(rv)) {
+    MOZ_CRASH_UNSAFE_PRINTF("Omnijar::Init failed: %s",
+                            mozilla::GetStaticErrorName(rv));
+  }
 }
 
 void Omnijar::CleanUp() {
@@ -210,14 +219,29 @@ nsresult Omnijar::GetURIString(Type aType, nsACString& aResult) {
   return NS_OK;
 }
 
+#if defined(MOZ_WIDGET_ANDROID) && defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
+#  define ANDROID_DIAGNOSTIC_CRASH_OR_EXIT(_msg) MOZ_CRASH(_msg)
+#elif defined(MOZ_WIDGET_ANDROID)
+#  define ANDROID_DIAGNOSTIC_CRASH_OR_EXIT(_msg) ipc::ProcessChild::QuickExit()
+#else
+#  define ANDROID_DIAGNOSTIC_CRASH_OR_EXIT(_msg)
+#endif
+
 void Omnijar::ChildProcessInit(int& aArgc, char** aArgv) {
   nsCOMPtr<nsIFile> greOmni, appOmni;
 
+  // Android builds are always packaged, so if we can't find anything for
+  // greOmni, then this content process is useless, so kill it immediately.
+  // On release, we do this via QuickExit() because the crash volume is so
+  // high. See bug 1915788.
   if (auto greOmniStr = geckoargs::sGREOmni.Get(aArgc, aArgv)) {
     if (NS_WARN_IF(NS_FAILED(
             XRE_GetFileFromPath(*greOmniStr, getter_AddRefs(greOmni))))) {
+      ANDROID_DIAGNOSTIC_CRASH_OR_EXIT("XRE_GetFileFromPath failed");
       greOmni = nullptr;
     }
+  } else {
+    ANDROID_DIAGNOSTIC_CRASH_OR_EXIT("sGREOmni.Get failed");
   }
   if (auto appOmniStr = geckoargs::sAppOmni.Get(aArgc, aArgv)) {
     if (NS_WARN_IF(NS_FAILED(
@@ -241,5 +265,7 @@ void Omnijar::ChildProcessInit(int& aArgc, char** aArgv) {
     MOZ_ASSERT(!appOmni);
   }
 }
+
+#undef ANDROID_DIAGNOSTIC_CRASH_OR_EXIT
 
 } /* namespace mozilla */

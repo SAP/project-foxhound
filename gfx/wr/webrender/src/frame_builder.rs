@@ -20,18 +20,18 @@ use crate::internal_types::{FastHashMap, PlaneSplitter, FrameId, FrameStamp};
 use crate::picture::{DirtyRegion, SliceId, TileCacheInstance};
 use crate::picture::{SurfaceInfo, SurfaceIndex};
 use crate::picture::{SubpixelMode, RasterConfig, PictureCompositeMode};
-use crate::prepare::{prepare_primitives};
+use crate::prepare::prepare_primitives;
 use crate::prim_store::{PictureIndex, PrimitiveScratchBuffer};
 use crate::prim_store::{DeferredResolve, PrimitiveInstance};
 use crate::profiler::{self, TransactionProfile};
 use crate::render_backend::{DataStores, ScratchBuffer};
 use crate::renderer::{GpuBufferF, GpuBufferBuilderF, GpuBufferI, GpuBufferBuilderI, GpuBufferBuilder};
-use crate::render_target::{RenderTarget, PictureCacheTarget, TextureCacheRenderTarget, PictureCacheTargetKind};
-use crate::render_target::{RenderTargetContext, RenderTargetKind, AlphaRenderTarget, ColorRenderTarget};
+use crate::render_target::{PictureCacheTarget, PictureCacheTargetKind};
+use crate::render_target::{RenderTargetContext, RenderTargetKind, RenderTarget};
 use crate::render_task_graph::{RenderTaskGraph, Pass, SubPassSurface};
 use crate::render_task_graph::{RenderPass, RenderTaskGraphBuilder};
 use crate::render_task::{RenderTaskKind, StaticRenderTaskSurface};
-use crate::resource_cache::{ResourceCache};
+use crate::resource_cache::ResourceCache;
 use crate::scene::{BuiltScene, SceneProperties};
 use crate::space::SpaceMapper;
 use crate::segment::SegmentBuilder;
@@ -39,6 +39,7 @@ use crate::surface::SurfaceBuilder;
 use std::{f32, mem};
 use crate::util::{VecHelper, Preallocator};
 use crate::visibility::{update_prim_visibility, FrameVisibilityState, FrameVisibilityContext};
+use crate::internal_types::{FrameVec, FrameMemory};
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -519,10 +520,13 @@ impl FrameBuilder {
         spatial_tree: &mut SpatialTree,
         dirty_rects_are_valid: bool,
         profile: &mut TransactionProfile,
-        minimap_data: FastHashMap<ExternalScrollId, MinimapData>
+        minimap_data: FastHashMap<ExternalScrollId, MinimapData>,
+        mut frame_memory: FrameMemory,
     ) -> Frame {
         profile_scope!("build");
         profile_marker!("BuildFrame");
+
+        frame_memory.begin_frame(stamp.frame_id());
 
         profile.set(profiler::PRIMITIVES, scene.prim_instances.len());
         profile.set(profiler::PICTURE_CACHE_SLICES, scene.tile_cache_config.picture_cache_slice_count);
@@ -537,7 +541,7 @@ impl FrameBuilder {
         self.globals.update(gpu_cache);
 
         spatial_tree.update_tree(scene_properties);
-        let mut transform_palette = spatial_tree.build_transform_palette();
+        let mut transform_palette = spatial_tree.build_transform_palette(&frame_memory);
         scene.clip_store.begin_frame(&mut scratch.clip_store);
 
         rg_builder.begin_frame(stamp.frame_id());
@@ -553,6 +557,7 @@ impl FrameBuilder {
             scene.config.max_depth_ids,
             dirty_rects_are_valid,
             scene.config.low_quality_pinch_zoom,
+            &frame_memory,
         );
 
         self.composite_state_prealloc.preallocate(&mut composite_state);
@@ -561,8 +566,8 @@ impl FrameBuilder {
 
         // TODO(gw): Recycle backing vec buffers for gpu buffer builder between frames
         let mut gpu_buffer_builder = GpuBufferBuilder {
-            f32: GpuBufferBuilderF::new(),
-            i32: GpuBufferBuilderI::new(),
+            f32: GpuBufferBuilderF::new(&frame_memory),
+            i32: GpuBufferBuilderI::new(&frame_memory),
         };
 
         self.build_layer_screen_rects_and_cull_layers(
@@ -589,7 +594,7 @@ impl FrameBuilder {
 
         profile.start_time(profiler::FRAME_BATCHING_TIME);
 
-        let mut deferred_resolves = vec![];
+        let mut deferred_resolves = frame_memory.new_vec();
 
         // Finish creating the frame graph and build it.
         let render_tasks = rg_builder.end_frame(
@@ -597,13 +602,14 @@ impl FrameBuilder {
             gpu_cache,
             &mut deferred_resolves,
             scene.config.max_shared_surface_size,
+            &frame_memory,
         );
 
-        let mut passes = Vec::new();
+        let mut passes = frame_memory.new_vec();
         let mut has_texture_cache_tasks = false;
-        let mut prim_headers = PrimitiveHeaders::new();
-        self.prim_headers_prealloc.preallocate_vec(&mut prim_headers.headers_int);
-        self.prim_headers_prealloc.preallocate_vec(&mut prim_headers.headers_float);
+        let mut prim_headers = PrimitiveHeaders::new(&frame_memory);
+        self.prim_headers_prealloc.preallocate_framevec(&mut prim_headers.headers_int);
+        self.prim_headers_prealloc.preallocate_framevec(&mut prim_headers.headers_float);
 
         {
             profile_marker!("Batching");
@@ -630,6 +636,7 @@ impl FrameBuilder {
                     globals: &self.globals,
                     tile_caches,
                     root_spatial_node_index: spatial_tree.root_reference_frame_index(),
+                    frame_memory: &mut frame_memory,
                 };
 
                 let pass = build_render_pass(
@@ -671,6 +678,7 @@ impl FrameBuilder {
                 globals: &self.globals,
                 tile_caches,
                 root_spatial_node_index: spatial_tree.root_reference_frame_index(),
+                frame_memory: &mut frame_memory,
             };
 
             self.build_composite_pass(
@@ -688,7 +696,7 @@ impl FrameBuilder {
 
         resource_cache.end_frame(profile);
 
-        self.prim_headers_prealloc.record_vec(&mut prim_headers.headers_int);
+        self.prim_headers_prealloc.record_vec(&prim_headers.headers_int);
         self.composite_state_prealloc.record(&composite_state);
 
         composite_state.end_frame();
@@ -715,6 +723,7 @@ impl FrameBuilder {
             composite_state,
             gpu_buffer_f,
             gpu_buffer_i,
+            allocator_memory: frame_memory,
         }
     }
 
@@ -728,7 +737,7 @@ impl FrameBuilder {
         return
       }
 
-      // In our main walk over the spatial tree (below), for nodes inside a 
+      // In our main walk over the spatial tree (below), for nodes inside a
       // subtree rooted at a root-content node, we need some information from
       // that enclosing root-content node. To collect this information, do an
       // preliminary walk over the spatial tree now and collect the root-content
@@ -791,7 +800,7 @@ impl FrameBuilder {
             let world_transform = spatial_tree
                 .get_world_viewport_transform(index)
                 .into_transform();
-            let mut local_to_root_content = 
+            let mut local_to_root_content =
                 world_transform.with_destination::<LayoutPixel>();
             let mut root_content_to_world = LayoutToWorldTransform::default();
             let mut root_content_clip = None;
@@ -835,7 +844,7 @@ impl FrameBuilder {
                     world_rect.min + WorldVector2D::new(STROKE_WIDTH, STROKE_WIDTH),
                     world_rect.max - WorldVector2D::new(STROKE_WIDTH, STROKE_WIDTH)
                 );
-                scratch.push_debug_rect(interior_world_rect * DevicePixelScale::new(1.0), border, fill_color);
+                scratch.push_debug_rect(interior_world_rect * DevicePixelScale::new(1.0), 1, border, fill_color);
               }
 
               Some(())
@@ -859,7 +868,7 @@ impl FrameBuilder {
         scene: &BuiltScene,
         ctx: &RenderTargetContext,
         gpu_cache: &mut GpuCache,
-        deferred_resolves: &mut Vec<DeferredResolve>,
+        deferred_resolves: &mut FrameVec<DeferredResolve>,
         composite_state: &mut CompositeState,
     ) {
         for pic_index in &scene.tile_cache_pictures {
@@ -924,18 +933,21 @@ pub fn build_render_pass(
     //           build_render_pass code as closely as possible, to make the review
     //           simpler and reduce chance of regressions. However, future work should
     //           include refactoring this to more closely match the built frame graph.
-    let mut pass = RenderPass::new(src_pass);
+    let mut pass = RenderPass::new(src_pass, ctx.frame_memory);
 
     for sub_pass in &src_pass.sub_passes {
         match sub_pass.surface {
             SubPassSurface::Dynamic { target_kind, texture_id, used_rect } => {
                 match target_kind {
                     RenderTargetKind::Color => {
-                        let mut target = ColorRenderTarget::new(
+                        let mut target = RenderTarget::new(
+                            RenderTargetKind::Color,
+                            false,
                             texture_id,
                             screen_size,
                             gpu_supports_fast_clears,
-                            used_rect,
+                            Some(used_rect),
+                            &ctx.frame_memory,
                         );
 
                         for task_id in &sub_pass.task_ids {
@@ -953,11 +965,14 @@ pub fn build_render_pass(
                         pass.color.targets.push(target);
                     }
                     RenderTargetKind::Alpha => {
-                        let mut target = AlphaRenderTarget::new(
+                        let mut target = RenderTarget::new(
+                            RenderTargetKind::Alpha,
+                            false,
                             texture_id,
                             screen_size,
                             gpu_supports_fast_clears,
-                            used_rect,
+                            Some(used_rect),
+                            &ctx.frame_memory,
                         );
 
                         for task_id in &sub_pass.task_ids {
@@ -994,6 +1009,7 @@ pub fn build_render_pass(
                             ctx.batch_lookback_count,
                             task_id,
                             task_id.into(),
+                            &ctx.frame_memory,
                         );
 
                         let mut batch_builder = BatchBuilder::new(batcher);
@@ -1018,8 +1034,11 @@ pub fn build_render_pass(
 
                         let batcher = batch_builder.finalize();
 
-                        let mut batch_containers = Vec::new();
-                        let mut alpha_batch_container = AlphaBatchContainer::new(Some(scissor_rect));
+                        let mut batch_containers = ctx.frame_memory.new_vec();
+                        let mut alpha_batch_container = AlphaBatchContainer::new(
+                            Some(scissor_rect),
+                            &ctx.frame_memory
+                        );
 
                         batcher.build(
                             &mut batch_containers,
@@ -1064,10 +1083,26 @@ pub fn build_render_pass(
                 let texture = pass.texture_cache
                     .entry(texture)
                     .or_insert_with(||
-                        TextureCacheRenderTarget::new(target_kind)
+                        RenderTarget::new(
+                            target_kind,
+                            true,
+                            texture,
+                            screen_size,
+                            gpu_supports_fast_clears,
+                            None,
+                            &ctx.frame_memory
+                        )
                     );
                 for task_id in &sub_pass.task_ids {
-                    texture.add_task(*task_id, render_tasks);
+                    texture.add_task(
+                        *task_id,
+                        ctx,
+                        gpu_cache,
+                        gpu_buffer_builder,
+                        render_tasks,
+                        clip_store,
+                        transforms,
+                    );
                 }
             }
             SubPassSurface::Persistent { surface: StaticRenderTaskSurface::ReadOnly { .. } } => {
@@ -1099,19 +1134,38 @@ pub fn build_render_pass(
         gpu_buffer_builder,
     );
 
+    for target in &mut pass.texture_cache.values_mut() {
+        target.build(
+            ctx,
+            gpu_cache,
+            render_tasks,
+            prim_headers,
+            transforms,
+            z_generator,
+            prim_instances,
+            cmd_buffers,
+            gpu_buffer_builder,
+        );
+    }
+
     pass
 }
 
 /// A rendering-oriented representation of the frame built by the render backend
 /// and presented to the renderer.
+///
+/// # Safety
+///
+/// The frame's allocator memory must be dropped after all of the frame's containers.
+/// This is handled in the renderer and in `RenderedDocument`'s Drop implementation.
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct Frame {
     /// The rectangle to show the frame in, on screen.
     pub device_rect: DeviceIntRect,
-    pub passes: Vec<RenderPass>,
+    pub passes: FrameVec<RenderPass>,
 
-    pub transform_palette: Vec<TransformData>,
+    pub transform_palette: FrameVec<TransformData>,
     pub render_tasks: RenderTaskGraph,
     pub prim_headers: PrimitiveHeaders,
 
@@ -1122,7 +1176,7 @@ pub struct Frame {
     /// from the backend thread. The render thread
     /// will use a callback to resolve these and
     /// patch the data structures.
-    pub deferred_resolves: Vec<DeferredResolve>,
+    pub deferred_resolves: FrameVec<DeferredResolve>,
 
     /// True if this frame contains any render tasks
     /// that write to the texture cache.
@@ -1144,6 +1198,19 @@ pub struct Frame {
     /// pass for primitives that were visible and dirty.
     pub gpu_buffer_f: GpuBufferF,
     pub gpu_buffer_i: GpuBufferI,
+
+    /// The backing store for the frame's allocator.
+    ///
+    /// # Safety
+    ///
+    /// Must not be dropped while frame allocations are alive.
+    ///
+    /// Rust has deterministic drop order [1]. We rely on `allocator_memory`
+    /// being the last member of the `Frame` struct so that it is dropped
+    /// after the frame's containers.
+    ///
+    /// [1]: https://doc.rust-lang.org/reference/destructors.html
+    pub allocator_memory: FrameMemory,
 }
 
 impl Frame {

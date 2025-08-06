@@ -2,12 +2,14 @@
 subsuite = "media-bc"
 prefs = ["gfx.font_loader.delay=0"]
 support-files = [
+  "decode_error_vp9.webm",
   "head.js",
   "file_empty_page.html",
   "file_media.html",
   "../av1.mp4",
   "../bipbop_short_vp8.webm",
   "../bunny_hd_5s.mp4",
+  "../bogus.wav",
   "../eme_standalone.js",
   "../gizmo.mp4",
   "../gizmo.webm",
@@ -21,13 +23,14 @@ support-files = [
 ]
 
 ["browser_encrypted_play_time_telemetry.js"]
-skip-if = ["apple_silicon"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+tags = "bleedover"
 
 ["browser_glean_first_frame_loaded_time.js"]
 tags = "os_integration"
-skip-if = [
-  "os == 'mac' && os_version == '14.40'",  # Bug 1909908
-]
+skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"]  # Bug 1909908
+
+["browser_glean_media_error.js"]
 
 ["browser_tab_visibility_and_play_time.js"]
 

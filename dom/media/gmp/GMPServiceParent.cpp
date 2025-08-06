@@ -618,20 +618,6 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities(
   typedef mozilla::dom::GMPAPITags GMPAPITags;
   typedef mozilla::dom::ContentParent ContentParent;
 
-  const uint32_t NO_H264 = 0;
-  const uint32_t HAS_H264 = 1;
-  const uint32_t NO_H264_1_DIR = 2;
-  const uint32_t NO_H264_2_PLUS_DIRS = 3;
-  const uint32_t NO_H264_DIR_IN_PROGRESS = 4;
-  uint32_t hasH264 = NO_H264;
-  if (mDirectoriesAdded == 1) {
-    hasH264 = NO_H264_1_DIR;
-  } else if (mDirectoriesAdded > 1) {
-    hasH264 = NO_H264_2_PLUS_DIRS;
-  }
-  if (mDirectoriesInProgress) {
-    hasH264 = NO_H264_DIR_IN_PROGRESS;
-  }
   nsTArray<GMPCapabilityData> caps;
   {
     MutexAutoLock lock(mMutex);
@@ -655,10 +641,6 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities(
       x.version() = gmp->GetVersion();
       for (const GMPCapability& tag : gmp->GetCapabilities()) {
         x.capabilities().AppendElement(GMPAPITags(tag.mAPIName, tag.mAPITags));
-        if (tag.mAPIName == nsLiteralCString(GMP_API_VIDEO_ENCODER) &&
-            tag.mAPITags.Contains("h264"_ns)) {
-          hasH264 = HAS_H264;
-        }
       }
 #ifdef MOZ_WMF_CDM
       if (name.Equals("gmp-widevinecdm-l1")) {
@@ -669,9 +651,6 @@ void GeckoMediaPluginServiceParent::UpdateContentProcessGMPCapabilities(
       caps.AppendElement(std::move(x));
     }
   }
-
-  Telemetry::Accumulate(Telemetry::MEDIA_GMP_UPDATE_CONTENT_PROCESS_HAS_H264,
-                        hasH264);
 
   if (aContentProcess) {
     Unused << aContentProcess->SendGMPsChanged(caps);
@@ -1089,7 +1068,7 @@ RefPtr<GenericPromise> GeckoMediaPluginServiceParent::AddOnGMPThread(
   GMP_LOG_DEBUG("%s::%s: %s", __CLASS__, __FUNCTION__, dir.get());
 
   nsCOMPtr<nsIFile> directory;
-  nsresult rv = NS_NewLocalFile(aDirectory, false, getter_AddRefs(directory));
+  nsresult rv = NS_NewLocalFile(aDirectory, getter_AddRefs(directory));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     GMP_LOG_DEBUG("%s::%s: failed to create nsIFile for dir=%s rv=%" PRIx32,
                   __CLASS__, __FUNCTION__, dir.get(),
@@ -1131,7 +1110,7 @@ void GeckoMediaPluginServiceParent::RemoveOnGMPThread(
                 NS_LossyConvertUTF16toASCII(aDirectory).get());
 
   nsCOMPtr<nsIFile> directory;
-  nsresult rv = NS_NewLocalFile(aDirectory, false, getter_AddRefs(directory));
+  nsresult rv = NS_NewLocalFile(aDirectory, getter_AddRefs(directory));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -2004,7 +1983,8 @@ mozilla::ipc::IPCResult GMPServiceParent::RecvLaunchGMP(
 
   Endpoint<PGMPContentParent> parent;
   Endpoint<PGMPContentChild> child;
-  rv = PGMPContent::CreateEndpoints(OtherPid(), result.pid(), &parent, &child);
+  rv = PGMPContent::CreateEndpoints(
+      OtherEndpointProcInfo(), gmp->OtherEndpointProcInfo(), &parent, &child);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     result.result() = rv;
     result.errorDescription() = "PGMPContent::CreateEndpoints failed."_ns;

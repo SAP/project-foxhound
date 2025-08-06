@@ -1014,6 +1014,10 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   readonly attribute boolean isMozAfterPaintPending;
 
+  readonly attribute boolean isWindowFullyOccluded;
+
+  readonly attribute boolean isCompositorPaused;
+
   /**
    * Returns true if the InputTaskManager is suspended.
    */
@@ -1776,6 +1780,11 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute AString focusedAutocapitalize;
 
   /**
+   * Get the autocorrect of the currently focused editing host, if any.
+   */
+  readonly attribute boolean focusedAutocorrect;
+
+  /**
    * Find the view ID for a given element. This is the reverse of
    * findElementWithViewId().
    */
@@ -2119,6 +2128,11 @@ interface nsIDOMWindowUtils : nsISupports {
     * Returns the GPU process pid, or -1 if there is no GPU process.
     */
   readonly attribute int32_t gpuProcessPid;
+
+  /**
+    * Returns the RDD process pid, or -1 if there is no RDD process.
+    */
+  readonly attribute int32_t rddProcessPid;
 
   /**
    * Returns usage data for a given storage object.

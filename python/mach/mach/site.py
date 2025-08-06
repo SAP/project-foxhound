@@ -17,6 +17,7 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Optional
@@ -168,7 +169,7 @@ class MozSiteMetadata:
 
     def __eq__(self, other):
         return (
-            type(self) == type(other)
+            type(self) is type(other)
             and self.hex_version == other.hex_version
             and self.site_name == other.site_name
             and self.mach_site_packages_source == other.mach_site_packages_source
@@ -368,9 +369,11 @@ class MachSiteManager:
 
         self.ensure()
         with self._metadata.update_current_site(
-            self._virtualenv().python_path
-            if self._site_packages_source == SitePackagesSource.VENV
-            else sys.executable,
+            (
+                self._virtualenv().python_path
+                if self._site_packages_source == SitePackagesSource.VENV
+                else sys.executable
+            ),
         ):
             # Reset the sys.path to insulate ourselves from the environment.
             # This should be safe to do, since activation of the Mach site happens so
@@ -817,33 +820,75 @@ class PythonVirtualenv:
     """Calculates paths of interest for general python virtual environments"""
 
     def __init__(self, prefix):
-        if _is_windows:
-            self.bin_path = os.path.join(prefix, "Scripts")
-            self.python_path = os.path.join(self.bin_path, "python.exe")
-        else:
-            self.bin_path = os.path.join(prefix, "bin")
-            self.python_path = os.path.join(self.bin_path, "python")
         self.prefix = os.path.realpath(prefix)
+        self.paths = self._get_sysconfig_paths(self.prefix)
 
-    @functools.lru_cache(maxsize=None)
-    def resolve_sysconfig_packages_path(self, sysconfig_path):
-        # macOS uses a different default sysconfig scheme based on whether it's using the
-        # system Python or running in a virtualenv.
-        # Manually define the scheme (following the implementation in
-        # "sysconfig._get_default_scheme()") so that we're always following the
-        # code path for a virtualenv directory structure.
-        if os.name == "posix":
-            scheme = "posix_prefix"
+        # Name of the Python executable to use in virtual environments.
+        # An executable with the same name as sys.executable might not exist in
+        # virtual environments. An executable with 'python' as the steam —
+        # without version numbers or ABI flags — will always be present in
+        # virtual environments, so we use that.
+        python_exe_name = "python" + sysconfig.get_config_var("EXE")
+
+        self.bin_path = self.paths["scripts"]
+        self.python_path = os.path.join(self.bin_path, python_exe_name)
+
+    @staticmethod
+    def _get_sysconfig_paths(prefix):
+        """Calculate the sysconfig paths of a virtual environment in the given prefix.
+
+        The virtual environment MUST be using the same Python distribution as us.
+        """
+        # Determine the sysconfig scheme used in virtual environments
+        if "venv" in sysconfig.get_scheme_names():
+            # A 'venv' scheme was added in Python 3.11 to allow users to
+            # calculate the paths for a virtual environment, since the default
+            # scheme may not always be the same as used on virtual environments.
+            # Some common examples are the system Python distributed by macOS,
+            # Debian, and Fedora.
+            # For more information, see https://github.com/python/cpython/issues/89576
+            venv_scheme = "venv"
+        elif os.name == "nt":
+            # We know that before the 'venv' scheme was added, on Windows,
+            # the 'nt' scheme was used in virtual environments.
+            venv_scheme = "nt"
+        elif os.name == "posix":
+            # We know that before the 'venv' scheme was added, on POSIX,
+            # the 'posix_prefix' scheme was used in virtual environments.
+            venv_scheme = "posix_prefix"
         else:
-            scheme = os.name
+            # This should never happen with upstream Python, as the 'venv'
+            # scheme should always be available on >=3.11, and no other
+            # platforms are supported by the upstream on older Python versions.
+            #
+            # Since the 'venv' scheme isn't available, and we have no knowledge
+            # of this platform/distribution, fallback to the default scheme.
+            #
+            # Hitting this will likely be the result of running a custom Python
+            # distribution targetting a platform that is not supported by the
+            # upstream.
+            # In this case, unless the Python vendor patched the Python
+            # distribution in such a way as the default scheme may not always be
+            # the same scheme, using the default scheme should be correct.
+            # If the vendor did patch Python as such, to work around this issue,
+            # I would recommend them to define a 'venv' scheme that matches
+            # the layout used on virtual environments in their Python distribution.
+            # (rec. signed Filipe Laíns — upstream sysconfig maintainer)
+            venv_scheme = sysconfig.get_default_scheme()
+            warnings.warn(
+                f"Unknown platform '{os.name}', using the default install scheme '{venv_scheme}'. "
+                "If this is incorrect, please ask your Python vendor to add a 'venv' sysconfig scheme "
+                "(see https://github.com/python/cpython/issues/89576, or check the code comment).",
+                stacklevel=2,
+            )
+        # Build the sysconfig config_vars dictionary for the virtual environment.
+        venv_vars = sysconfig.get_config_vars().copy()
+        venv_vars["base"] = venv_vars["platbase"] = prefix
+        # Get sysconfig paths for the virtual environment.
+        return sysconfig.get_paths(venv_scheme, vars=venv_vars)
 
-        sysconfig_paths = sysconfig.get_paths(scheme)
-        data_path = Path(sysconfig_paths["data"])
-        path = Path(sysconfig_paths[sysconfig_path])
-        relative_path = path.relative_to(data_path)
-
-        # Path to virtualenv's "site-packages" directory for provided sysconfig path
-        return os.path.normpath(os.path.normcase(Path(self.prefix) / relative_path))
+    def resolve_sysconfig_packages_path(self, sysconfig_path):
+        return self.paths[sysconfig_path]
 
     def site_packages_dirs(self):
         dirs = []
@@ -1254,9 +1299,11 @@ def _deprioritize_venv_packages(virtualenv, populate_virtualenv):
             (
                 "import sys; sys.path = [p for p in sys.path if "
                 f"p.lower() != {repr(site_packages_dir)}.lower()]",
-                f"import sys; sys.path.append({repr(site_packages_dir)})"
-                if populate_virtualenv
-                else None,
+                (
+                    f"import sys; sys.path.append({repr(site_packages_dir)})"
+                    if populate_virtualenv
+                    else None
+                ),
             ),
         )
     ]
@@ -1284,6 +1331,8 @@ def _create_venv_with_pthfile(
     )
 
     if process.returncode != 0:
+        # Clean up what we've made on failure so that we're not in an incomplete state
+        shutil.rmtree(virtualenv_root)
         if "No module named venv" in process.stderr:
             raise VenvModuleNotFoundException()
         else:
@@ -1321,11 +1370,15 @@ def _is_venv_up_to_date(
     if not os.path.exists(target_venv.prefix):
         return SiteUpToDateResult(False, f'"{target_venv.prefix}" does not exist')
 
-    # Modifications to any of the requirements manifest files mean the virtualenv should
-    # be rebuilt:
-    metadata_mtime = os.path.getmtime(
-        os.path.join(target_venv.prefix, METADATA_FILENAME)
-    )
+    metadata_file = os.path.join(target_venv.prefix, METADATA_FILENAME)
+
+    if not os.path.exists(metadata_file):
+        return SiteUpToDateResult(
+            False, f'"{METADATA_FILENAME}" does not exist for "{target_venv.prefix}".'
+        )
+
+    # Modifications to any of the requirements manifest files mean the virtualenv should be rebuilt:
+    metadata_mtime = os.path.getmtime(metadata_file)
     for dep_file in requirements.requirements_paths:
         if os.path.getmtime(dep_file) > metadata_mtime:
             return SiteUpToDateResult(

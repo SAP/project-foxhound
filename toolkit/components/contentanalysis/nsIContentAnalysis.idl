@@ -6,6 +6,8 @@
 #include "nsISupports.idl"
 
 interface nsIURI;
+webidl BrowsingContext;
+webidl DragEvent;
 webidl WindowGlobalParent;
 
 [scriptable, uuid(06e6a60f-3a2b-41fa-a63b-fea7a7f71649)]
@@ -57,6 +59,7 @@ interface nsIContentAnalysisResponse : nsISupports
     eNoAgent = 1,
     eInvalidAgentSignature = 2,
     eErrorOther = 3,
+    eOtherRequestInGroupCancelled = 4
   };
 
   readonly attribute nsIContentAnalysisResponse_Action action;
@@ -67,6 +70,11 @@ interface nsIContentAnalysisResponse : nsISupports
 
   // Identifier for the corresponding nsIContentAnalysisRequest
   readonly attribute ACString requestToken;
+
+  // Whether this is a cached result that wasn't actually sent to the DLP agent.
+  // This indicates that the request was a duplicate of a previously sent one,
+  // so any dialogs (for block/warn) should not be shown.
+  readonly attribute boolean isCachedResponse;
 
   /**
    * Acknowledge receipt of an analysis response.
@@ -213,6 +221,13 @@ interface nsIContentAnalysis : nsISupports
    */
   readonly attribute boolean mightBeActive;
 
+  %{C++
+  /**
+   * Static way to get the mightBeActive property.
+   */
+  static bool MightBeActive();
+  %}
+
   /**
    * True if content-analysis activation was determined by enterprise policy,
    * as opposed to enabled with the `allow-content-analysis` command-line
@@ -290,4 +305,50 @@ interface nsIContentAnalysis : nsISupports
    */
   [implicit_jscontext]
   Promise getDiagnosticInfo();
+
+  /**
+   * Gets the URI to use for the passed-in browsing context. This correctly
+   * handles iframes.
+   */
+  nsIURI getURIForBrowsingContext(in BrowsingContext aBrowsingContext);
+
+  /**
+   * Gets the URI to use for the passed-in drop event. This correctly
+   * handles iframes.
+   */
+  nsIURI getURIForDropEvent(in DragEvent aEvent);
+
+  /**
+   * Sets the cached response from analyzing the whole clipboard.
+   *
+   * @param aURI
+   *        The URI of the page that requested the clipboard.
+   * @param aSequenceNumber
+   *        The native sequence number of the clipboard.
+   * @param aFlavors
+   *        The flavors requested for analysis. (note that some of these
+   *        may not be present in the actual clipboard data)
+   * @param aAction
+   *        The Content Analysis result from analyzing the clipboard data.
+   */
+  void setCachedResponse(in nsIURI aURI, in int32_t aSequenceNumber, in Array<ACString> aFlavors,
+    in nsIContentAnalysisResponse_Action aAction);
+
+  /**
+   * Gets the cached response from analyzing the whole clipboard.
+   *
+   * @param aURI
+   *        The URI of the page that requested the clipboard.
+   * @param aSequenceNumber
+   *        The native sequence number of the clipboard.
+   * @param aFlavors
+   *        The flavors requested for analysis. (note that some of these
+   *        may not be present in the actual clipboard data)
+   * @param aAction
+   *        The Content Analysis result from analyzing the clipboard data.
+   * @param aIsValid
+   *        Whether aAction is valid. (i.e. whether we have cached data)
+   */
+  void getCachedResponse(in nsIURI aURI, in int32_t aSequenceNumber, in Array<ACString> aFlavors,
+    out nsIContentAnalysisResponse_Action aAction, out boolean aIsValid);
 };

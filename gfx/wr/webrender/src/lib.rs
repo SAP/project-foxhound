@@ -132,6 +132,8 @@ mod image_tiling;
 mod image_source;
 mod rectangle_occlusion;
 mod picture_textures;
+mod frame_allocator;
+mod bump_allocator;
 
 ///
 pub mod intern;
@@ -164,6 +166,7 @@ pub extern crate api;
 extern crate webrender_build;
 
 #[doc(hidden)]
+pub use crate::composite::{Compositor2, CompositorInputConfig, CompositorOutputConfig};
 pub use crate::composite::{CompositorConfig, Compositor, CompositorCapabilities, CompositorSurfaceTransform};
 pub use crate::composite::{NativeSurfaceId, NativeTileId, NativeSurfaceInfo, PartialPresentCompositor};
 pub use crate::composite::{MappableCompositor, MappedTileInfo, SWGLCompositeSurfaceInfo, WindowVisibility};
@@ -191,6 +194,7 @@ pub use crate::intern::ItemUid;
 pub use crate::render_api::*;
 pub use crate::tile_cache::{PictureCacheDebugInfo, DirtyTileDebugInfo, TileDebugInfo, SliceDebugInfo};
 pub use glyph_rasterizer;
+pub use bump_allocator::ChunkPool;
 
 #[cfg(feature = "sw_compositor")]
 pub use crate::compositor::sw_compositor;

@@ -1,0 +1,459 @@
+@mixin section-card-small {
+  grid-row: span 1;
+  grid-column: span 1;
+  display: flex;
+  flex-direction: row;
+  position: relative;
+  align-items: center;
+  gap: var(--space-medium);
+  padding: var(--space-large);
+
+  .stp-context-menu {
+    display: block;
+  }
+
+  .card-stp-thumbs-buttons-wrapper {
+    display: none;
+  }
+
+  .img-wrapper {
+    width: 120px;
+    flex-shrink: 0;
+    flex-grow: 0;
+    aspect-ratio: 1/1;
+
+    .ds-image.img {
+      width: 100%;
+      height: 100%;
+      padding-top: 0;
+      min-width: 100%;
+    }
+
+    .ds-image.img img {
+      width: 100%;
+      height: 100%;
+      border-radius: var(--border-radius-medium) var(--border-radius-medium);
+      object-fit: cover;
+    }
+  }
+
+  &:not(.placeholder) {
+    .img-wrapper>.ds-image.img>img {
+      width: 100%;
+      border-radius: var(--border-radius-medium) var(--border-radius-medium);
+    }
+  }
+
+  .ds-card-link {
+    inset-inline-end: 0;
+  }
+
+  .meta {
+    padding: var(--space-xsmall) 0;
+    align-self: flex-start;
+
+    .info-wrap .title {
+      font-size: var(--font-size-small);
+      margin-block: var(--space-xsmall) 0;
+      -webkit-line-clamp: 3;
+    }
+
+    .info-wrap .excerpt {
+      display: none;
+    }
+
+    .sections-card-footer {
+      margin-block-start: var(--space-small);
+    }
+  }
+
+  .card-stp-button-hover-background {
+    padding-block-start: unset;
+  }
+
+  .card-stp-button-position-wrapper {
+    inset-inline-end: 28px;
+
+    .card-stp-button {
+      display: none;
+    }
+  }
+}
+
+@mixin section-card-medium {
+  grid-row: span 2;
+  grid-column: span 1;
+  flex-direction: column;
+  padding: 0;
+  align-items: initial;
+  gap: initial;
+
+  .stp-context-menu {
+    display: none;
+  }
+
+  .card-stp-button-position-wrapper {
+    inset-inline-end: 10px;
+
+    .card-stp-button {
+      display: block;
+    }
+  }
+
+  .card-stp-thumbs-buttons-wrapper {
+    display: block;
+  }
+
+  .img-wrapper {
+    width: 100%;
+    position: relative;
+    // reset values inherited from small card mixin
+    flex-grow: initial;
+    flex-shrink: initial;
+    aspect-ratio: initial;
+  }
+
+  &:not(.placeholder) {
+    .img-wrapper>.ds-image.img>img {
+      border-radius: var(--border-radius-large) var(--border-radius-large) 0 0;
+    }
+  }
+
+  .meta {
+    padding: var(--space-medium) var(--space-large);
+
+    .info-wrap {
+      .title {
+        -webkit-line-clamp: 3;
+        font-size: var(--font-size-root);
+        margin-block: 0 var(--space-small);
+      }
+
+      .excerpt {
+        display: block;
+        -webkit-line-clamp: 3;
+      }
+    }
+  }
+}
+
+// DS Large Card
+@mixin section-card-large {
+  grid-row: span 2;
+  grid-column: span 2;
+
+  &.ds-card.sections-card-ui {
+    @media (min-width: $break-point-layout-variant ) and (max-width: $break-point-widest ),
+      (min-width: $break-point-sections-variant ) {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: var(--space-xlarge);
+      padding: var(--space-xxlarge);
+      align-items: center;
+
+      .img-wrapper {
+        width: 220px;
+        height: 220px;
+      }
+
+      .ds-image.img {
+        // Square ratio
+        aspect-ratio: 1/1;
+
+        img {
+          border-radius: var(--border-radius-medium);
+        }
+      }
+
+      .meta {
+        padding: 0;
+        // match height of image for large cards
+        min-height: 220px;
+
+        .title {
+          -webkit-line-clamp: 3;
+          font-size: var(--font-size-large);
+          font-weight: var(--font-weight-bold);
+          margin-block: 0 var(--space-small);
+        }
+
+        .excerpt {
+          -webkit-line-clamp: 4;
+          font-size: var(--font-size-root);
+        }
+      }
+    }
+  }
+}
+
+// Bug 1930974 - Override parent wrapper width for topsites container
+// Use (almost all) default wrapper widths with the sections-grid breakpoints
+.has-sections-grid .ds-outer-wrapper-breakpoint-override {
+  .ds-layout-topsites {
+    width: 100vw;
+    margin-inline-start: 50%;
+    transform: translate3d(-50%, 0, 0);
+
+    > div {
+      width: 266px;
+      margin-inline: auto;
+
+      @media (min-width: $break-point-medium) {
+        width: 266px;
+      }
+
+      @media (min-width: $break-point-layout-variant) {
+        width: 510px;
+      }
+
+      @media (min-width: $break-point-widest) {
+        width: 986px;
+      }
+    }
+  }
+
+  // Note this breakpoint doesn't use set the same default width (746px).
+  // The sections layout uses a different $break-point-layout-variant
+  // but not $break-point-large. This rule below maintains
+  // the topsites layout to stack two rows x four tiles
+  // when the sections grid changes to a two column layout
+  @media (min-width: $break-point-large) {
+    .ds-layout-topsites .hide-for-narrow {
+      display: inline-block;
+    }
+  }
+}
+
+// Bug 1930974 - Override parent wrapper width for topsites container
+// Use the variant a/b wrapper widths
+.has-sections-grid.layout-variant-a .ds-outer-wrapper-breakpoint-override,
+.has-sections-grid.layout-variant-b .ds-outer-wrapper-breakpoint-override {
+  .ds-layout-topsites {
+    width: 100vw;
+    margin-inline-start: 50%;
+    transform: translate3d(-50%, 0, 0);
+
+    > div {
+      margin-inline: auto;
+      width: 346px;
+
+      @media (min-width: $break-point-medium) {
+        width: 346px;
+      }
+
+      @media (min-width: $break-point-layout-variant) {
+        width: 659px;
+      }
+
+      @media (min-width: $break-point-widest) {
+        width: 989px;
+      }
+
+      @media (min-width: $break-point-sections-variant) {
+        width: 1311px;
+      }
+    }
+
+    .hide-for-narrow {
+      display: none;
+
+      @media (min-width: $break-point-large) {
+        display: none;
+      }
+
+      @media (min-width: $break-point-widest) {
+        display: inline-block;
+      }
+    }
+  }
+}
+
+.has-sections-grid {
+  .ds-outer-wrapper-breakpoint-override main {
+    width: auto;
+
+    .ds-card {
+      // card should take up availible space in grid
+      width: 100%;
+      height: 100%;
+    }
+
+    .body-wrapper {
+      width: 346px;
+      margin: 0 auto;
+    }
+
+    @media (min-width: $break-point-medium) {
+      width: auto;
+
+      .body-wrapper {
+        width: 346px;
+      }
+    }
+
+    @media (min-width: $break-point-layout-variant) {
+      width: auto;
+
+      .body-wrapper {
+        width: 659px;
+      }
+    }
+
+    @media (min-width: $break-point-widest) {
+      width: auto;
+
+      .body-wrapper {
+        width: 989px;
+      }
+    }
+
+    @media (min-width: $break-point-sections-variant) {
+      width: auto;
+
+      .body-wrapper {
+        display: flex;
+        flex-direction: column;
+        width: 1311px;
+      }
+
+      .ds-highlights .card-outer {
+        min-width: 216px;
+      }
+    }
+  }
+}
+
+.ds-section-wrapper {
+  padding-inline: 0;
+
+  .ds-section {
+    padding-block-end: var(--space-xxlarge);
+
+    &:last-child {
+      padding-block-end: 0;
+    }
+
+    .section-heading {
+      margin-block: var(--space-small) var(--space-medium);
+    }
+
+    .section-title {
+      @include wallpaper-contrast-fix;
+
+      font-weight: var(--font-weight-bold);
+      font-size: var(--font-size-xlarge);
+      color: var(--newtab-contextual-text-primary-color);
+      margin-block: 0;
+
+      @media (min-width: $break-point-layout-variant) {
+        font-size: var(--font-size-xxlarge);
+      }
+    }
+
+    .section-subtitle {
+      @include wallpaper-contrast-fix;
+
+      color: var(--newtab-contextual-text-primary-color);
+      margin-block: var(--space-xsmall) 0;
+      font-size: var(--font-size-root);
+
+      @media (min-width: $break-point-widest) {
+        font-size: 1rem // 16px
+      }
+    }
+
+  }
+}
+
+.ds-section-grid.ds-card-grid {
+  grid-gap: var(--space-large);
+  grid-template-columns: repeat(1, 300px);
+
+  @media (min-width: $break-point-medium) {
+    @for $i from 0 through 6 {
+      .col-1-position-#{$i} {
+        order: $i;
+      }
+    }
+
+    .col-1-small {
+      @include section-card-small;
+    }
+
+    .col-1-medium {
+      @include section-card-medium;
+    }
+
+    .col-1-large {
+      @include section-card-large;
+    }
+  }
+
+  @media (min-width: $break-point-layout-variant) {
+    grid-template-columns: repeat(2, 300px);
+
+    @for $i from 0 through 6 {
+      .col-2-position-#{$i} {
+        order: $i;
+      }
+    }
+
+    .col-2-small {
+      @include section-card-small;
+    }
+
+    .col-2-medium {
+      @include section-card-medium;
+    }
+
+    .col-2-large {
+      @include section-card-large;
+    }
+  }
+
+  @media (min-width: $break-point-widest) {
+    grid-template-columns: repeat(3, 300px);
+    gap: var(--space-large);
+
+    @for $i from 0 through 6 {
+      .col-3-position-#{$i} {
+        order: $i;
+      }
+    }
+
+    .col-3-small {
+      @include section-card-small;
+    }
+
+    .col-3-medium {
+      @include section-card-medium;
+    }
+
+    .col-3-large {
+      @include section-card-large;
+    }
+  }
+
+
+  @media (min-width: $break-point-sections-variant) {
+    grid-template-columns: repeat(4, 300px);
+
+    @for $i from 0 through 6 {
+      .col-4-position-#{$i} {
+        order: $i;
+      }
+    }
+
+    .col-4-small {
+      @include section-card-small;
+    }
+
+    .col-4-medium {
+      @include section-card-medium;
+    }
+
+    .col-4-large {
+      @include section-card-large;
+    }
+  }
+}

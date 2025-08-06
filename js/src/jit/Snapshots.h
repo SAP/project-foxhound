@@ -56,6 +56,11 @@ class RValueAllocation {
     RECOVER_INSTRUCTION = 0x0a,
     RI_WITH_DEFAULT_CST = 0x0b,
 
+    // IntPtr value.
+    INTPTR_CST = 0x0c,
+    INTPTR_REG = 0x0d,
+    INTPTR_STACK = 0x0e,
+
     // The JSValueType is packed in the Mode.
     TYPED_REG_MIN = 0x10,
     TYPED_REG_MAX = 0x1f,
@@ -65,6 +70,18 @@ class RValueAllocation {
     TYPED_STACK_MIN = 0x20,
     TYPED_STACK_MAX = 0x2f,
     TYPED_STACK = TYPED_STACK_MIN,
+
+    // Int64 value.
+    INT64_CST = 0x30,
+#if defined(JS_NUNBOX32)
+    INT64_REG_REG = 0x31,
+    INT64_REG_STACK = 0x32,
+    INT64_STACK_REG = 0x33,
+    INT64_STACK_STACK = 0x34,
+#elif defined(JS_PUNBOX64)
+    INT64_REG = 0x31,
+    INT64_STACK = 0x32,
+#endif
 
     // This mask can be used with any other valid mode. When this flag is
     // set on the mode, this inform the snapshot iterator that even if the
@@ -270,6 +287,64 @@ class RValueAllocation {
     return RValueAllocation(RI_WITH_DEFAULT_CST, payloadOfIndex(riIndex),
                             payloadOfIndex(cstIndex));
   }
+
+  // IntPtr
+#if !defined(JS_64BIT)
+  static RValueAllocation IntPtrConstant(uint32_t index) {
+    return RValueAllocation(INTPTR_CST, payloadOfIndex(index));
+  }
+#else
+  static RValueAllocation IntPtrConstant(uint32_t lowIndex,
+                                         uint32_t highIndex) {
+    return RValueAllocation(INTPTR_CST, payloadOfIndex(lowIndex),
+                            payloadOfIndex(highIndex));
+  }
+#endif
+  static RValueAllocation IntPtr(Register reg) {
+    return RValueAllocation(INTPTR_REG, payloadOfRegister(reg));
+  }
+  static RValueAllocation IntPtr(int32_t offset) {
+    return RValueAllocation(INTPTR_STACK, payloadOfStackOffset(offset));
+  }
+
+  // Int64
+  static RValueAllocation Int64Constant(uint32_t lowIndex, uint32_t highIndex) {
+    return RValueAllocation(INT64_CST, payloadOfIndex(lowIndex),
+                            payloadOfIndex(highIndex));
+  }
+#if defined(JS_NUNBOX32)
+  static RValueAllocation Int64(Register low, Register high) {
+    return RValueAllocation(INT64_REG_REG, payloadOfRegister(low),
+                            payloadOfRegister(high));
+  }
+
+  static RValueAllocation Int64(Register low, int32_t highStackOffset) {
+    return RValueAllocation(INT64_REG_STACK, payloadOfRegister(low),
+                            payloadOfStackOffset(highStackOffset));
+  }
+
+  static RValueAllocation Int64(int32_t lowStackOffset, Register high) {
+    return RValueAllocation(INT64_STACK_REG,
+                            payloadOfStackOffset(lowStackOffset),
+                            payloadOfRegister(high));
+  }
+
+  static RValueAllocation Int64(int32_t lowStackOffset,
+                                int32_t highStackOffset) {
+    return RValueAllocation(INT64_STACK_STACK,
+                            payloadOfStackOffset(lowStackOffset),
+                            payloadOfStackOffset(highStackOffset));
+  }
+
+#elif defined(JS_PUNBOX64)
+  static RValueAllocation Int64(Register reg) {
+    return RValueAllocation(INT64_REG, payloadOfRegister(reg));
+  }
+
+  static RValueAllocation Int64(int32_t stackOffset) {
+    return RValueAllocation(INT64_STACK, payloadOfStackOffset(stackOffset));
+  }
+#endif
 
   void setNeedSideEffect() {
     MOZ_ASSERT(!needSideEffect() && mode_ != INVALID);

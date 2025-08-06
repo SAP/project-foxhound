@@ -65,6 +65,15 @@ document.addEventListener(
           case "cmd_closeWindow":
             BrowserCommands.tryToCloseWindow(event);
             break;
+          case "cmd_minimizeWindow":
+            window.minimize();
+            break;
+          case "cmd_maximizeWindow":
+            window.maximize();
+            break;
+          case "cmd_restoreWindow":
+            window.fullScreen ? BrowserCommands.fullScreen() : window.restore();
+            break;
           case "cmd_toggleMute":
             gBrowser.toggleMuteAudioOnMultiSelectedTabs(gBrowser.selectedTab);
             break;
@@ -196,6 +205,12 @@ document.addEventListener(
           case "Browser:OpenAboutContainers":
             openPreferences("paneContainers");
             break;
+          // deliberate fallthrough
+          case "Profiles:CreateProfile":
+          case "Profiles:ManageProfiles":
+          case "Profiles:LaunchProfile":
+            gProfiles.handleCommand(event);
+            break;
           case "Tools:Search":
             BrowserSearch.webSearch();
             break;
@@ -212,7 +227,7 @@ document.addEventListener(
             OpenBrowserWindow({ private: true });
             break;
           case "Browser:Screenshot":
-            ScreenshotsUtils.notify(window, "shortcut");
+            ScreenshotsUtils.notify(window, "Shortcut");
             break;
           // TODO: <observes>
           // "History:UndoCloseTab": function () {
@@ -235,9 +250,6 @@ document.addEventListener(
             break;
           case "windowRecordingCmd":
             gGfxUtils.toggleWindowRecording();
-            break;
-          case "minimizeWindow":
-            window.minimize();
             break;
           case "zoomWindow":
             zoomWindow();

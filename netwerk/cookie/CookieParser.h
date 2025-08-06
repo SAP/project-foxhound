@@ -47,7 +47,8 @@ class CookieParser final {
   nsIURI* HostURI() const { return mHostURI; }
 
   bool Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
-             CookieStatus aStatus, nsCString& aCookieHeader, bool aFromHttp,
+             CookieStatus aStatus, nsCString& aCookieHeader,
+             const nsACString& aDateHeader, bool aFromHttp,
              bool aIsForeignAndNotAddon, bool aPartitionedOnly,
              bool aIsInPrivateBrowsing);
 
@@ -62,6 +63,8 @@ class CookieParser final {
     MOZ_ASSERT(ContainsCookie());
     return mCookieData;
   }
+
+  void GetCookieString(nsACString& aCookieString) const;
 
   // Public for testing
   bool ParseMaxAgeAttribute(const nsACString& aMaxage, int64_t* aValue);
@@ -78,7 +81,7 @@ class CookieParser final {
 
   bool GetExpiry(CookieStruct& aCookieData, const nsACString& aExpires,
                  const nsACString& aMaxage, int64_t aCurrentTime,
-                 bool aFromHttp);
+                 const nsACString& aDateHeader, bool aFromHttp);
 
   bool CheckPath();
   bool CheckAttributeSize(const nsACString& currentValue,
@@ -112,6 +115,7 @@ class CookieParser final {
   } mWarnings;
 
   CookieStruct mCookieData;
+  nsCString mCookieString;
 };
 
 }  // namespace net

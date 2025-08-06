@@ -71,6 +71,9 @@ async function clear_state() {
     set: async (id, obj) => {
       downloader.cache[id] = obj;
     },
+    setMultiple: async idsObjs => {
+      idsObjs.forEach(([id, obj]) => (downloader.cache[id] = obj));
+    },
     delete: async id => {
       delete downloader.cache[id];
     },
@@ -100,37 +103,12 @@ async function clear_state() {
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
     response.setStatusLine(null, 200, "OK");
   });
+
+  // For tests that use a real client and DB cache, clear the local DB too.
+  const client = RemoteSettings("some-collection");
+  await client.db.clear();
+  await client.db.pruneAttachments([]);
 }
-
-add_task(clear_state);
-
-add_task(async function test_base_attachment_url_depends_on_server() {
-  const before = await downloader._baseAttachmentsURL();
-
-  Services.prefs.setStringPref(
-    "services.settings.server",
-    `http://localhost:${server.identity.primaryPort}/v2`
-  );
-
-  server.registerPathHandler("/v2/", (request, response) => {
-    response.write(
-      JSON.stringify({
-        capabilities: {
-          attachments: {
-            base_url: "http://some-cdn-url.org",
-          },
-        },
-      })
-    );
-    response.setHeader("Content-Type", "application/json; charset=UTF-8");
-    response.setStatusLine(null, 200, "OK");
-  });
-
-  const after = await downloader._baseAttachmentsURL();
-
-  Assert.notEqual(before, after, "base URL was changed");
-  Assert.equal(after, "http://some-cdn-url.org/", "A trailing slash is added");
-});
 add_task(clear_state);
 
 add_task(
@@ -859,14 +837,6 @@ add_task(async function test_cacheAll_happy_path() {
     "Attachments cacheAll succesfully downloaded a bundle and saved all attachments"
   );
 
-  // verify no temp zip file is left behind
-  const tempFiles = await IOUtils.getChildren(PathUtils.tempDir);
-  Assert.equal(
-    tempFiles.find(x => x.endsWith(".zip")),
-    undefined,
-    "No zip file is left behind."
-  );
-
   // verify accuracy of attachments downloaded
   Assert.equal(
     downloader.cache["1"].record.title,
@@ -889,6 +859,30 @@ add_task(async function test_cacheAll_happy_path() {
     "Test file 2 content is accurate."
   );
 });
+
+add_task(async function test_cacheAll_using_real_db() {
+  const client = RemoteSettings("some-collection");
+
+  const allSuccess = await client.attachments.cacheAll();
+
+  Assert.ok(
+    allSuccess,
+    "Attachments cacheAll succesfully downloaded a bundle and saved all attachments"
+  );
+
+  Assert.equal(
+    (await client.attachments.cacheImpl.get("2")).record.title,
+    "test2",
+    "Test record 2 meta content appears accurate."
+  );
+  Assert.equal(
+    await (await client.attachments.cacheImpl.get("2")).blob.text(),
+    "test2\n",
+    "Test file 2 content is accurate."
+  );
+});
+
+add_task(clear_state);
 
 add_task(async function test_cacheAll_skips_with_existing_data() {
   downloader.cache = {
@@ -938,14 +932,26 @@ add_task(async function test_cacheAll_failed_unzip() {
     false,
     "Attachments cacheAll request failed to extract a bundle and returned false"
   );
+});
 
-  // verify no temp zip file is left behind
-  const tempFiles = await IOUtils.getChildren(PathUtils.tempDir);
+add_task(clear_state);
+
+add_task(async function test_cacheAll_failed_save() {
+  const client = RemoteSettings("some-collection");
+
+  const backup = client.db.saveAttachments;
+  client.db.saveAttachments = () => {
+    throw new Error("boom");
+  };
+
+  const allSuccess = await client.attachments.cacheAll();
+
   Assert.equal(
-    tempFiles.find(x => x.endsWith(".zip")),
-    undefined,
-    "No zip file is left behind."
+    allSuccess,
+    false,
+    "Attachments cacheAll failed to save entries in DB and returned false"
   );
+  client.db.saveAttachments = backup;
 });
 
 add_task(clear_state);

@@ -268,6 +268,9 @@ typedef gfx::ScaleFactors2D<ParentLayerPixel, ParentLayerPixel>
 typedef gfx::ScaleFactors2D<gfx::UnknownUnits, gfx::UnknownUnits> Scale2D;
 
 typedef gfx::Matrix4x4Typed<CSSPixel, CSSPixel> CSSToCSSMatrix4x4;
+typedef gfx::Matrix4x4TypedFlagged<CSSPixel, CSSPixel> CSSToCSSMatrix4x4Flagged;
+typedef gfx::Matrix4x4TypedFlagged<LayoutDevicePixel, LayoutDevicePixel>
+    LayoutDeviceToLayoutDeviceMatrix4x4Flagged;
 typedef gfx::Matrix4x4Typed<LayoutDevicePixel, LayoutDevicePixel>
     LayoutDeviceToLayoutDeviceMatrix4x4;
 typedef gfx::Matrix4x4Typed<LayoutDevicePixel, ParentLayerPixel>
@@ -887,8 +890,8 @@ template <class Src, class Dst>
 gfx::MarginTyped<Dst> operator/(const gfx::MarginTyped<Src>& aMargin,
                                 const gfx::ScaleFactor<Dst, Src>& aScale) {
   return gfx::MarginTyped<Dst>(
-      aMargin.top / aScale.scale, aMargin.right / aScale.scale,
-      aMargin.bottom / aScale.scale, aMargin.left / aScale.scale);
+      aMargin.top.value / aScale.scale, aMargin.right.value / aScale.scale,
+      aMargin.bottom.value / aScale.scale, aMargin.left.value / aScale.scale);
 }
 
 template <class Src, class Dst, class F>

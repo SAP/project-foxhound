@@ -15,11 +15,12 @@
 #include "SVGGeometryProperty.h"
 #include "SVGPathElement.h"
 #include "SVGRectElement.h"
+#include "nsStyleTransformMatrix.h"
 #include "mozilla/dom/DOMPointBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/StaticPrefs_layout.h"
+#include "nsLayoutUtils.h"
 #include "mozilla/SVGContentUtils.h"
 
 using namespace mozilla::gfx;
@@ -201,14 +202,12 @@ bool SVGGeometryElement::IsPointInStroke(const DOMPointInit& aPoint) {
   SVGGeometryProperty::DoForComputedStyle(this, [&](const ComputedStyle* s) {
     // Per spec, we should take vector-effect into account.
     if (s->StyleSVGReset()->HasNonScalingStroke()) {
-      auto mat = SVGContentUtils::GetOuterViewportCTM(this);
+      auto mat = SVGContentUtils::GetNonScalingStrokeCTM(this);
       if (mat.HasNonTranslation()) {
         // We have non-scaling-stroke as well as a non-translation transform.
         // We should transform the path first then apply the stroke on the
         // transformed path to preserve the stroke-width.
-        RefPtr<PathBuilder> builder = path->TransformedCopyToBuilder(mat);
-
-        path = builder->Finish();
+        Path::Transform(path, mat);
         point = mat.TransformPoint(point);
       }
     }
@@ -239,7 +238,28 @@ already_AddRefed<DOMSVGPoint> SVGGeometryElement::GetPointAtLength(
   }
 
   return do_AddRef(new DOMSVGPoint(path->ComputePointAtLength(
-      clamped(distance, 0.f, path->ComputeLength()))));
+      std::clamp(distance, 0.f, path->ComputeLength()))));
+}
+
+gfx::Matrix SVGGeometryElement::LocalTransform() const {
+  gfx::Matrix result;
+  nsIFrame* f = GetPrimaryFrame();
+  if (!f || !f->IsTransformed()) {
+    return result;
+  }
+  nsStyleTransformMatrix::TransformReferenceBox refBox(f);
+  const float a2css = AppUnitsPerCSSPixel();
+  nsDisplayTransform::FrameTransformProperties props(f, refBox, a2css);
+  if (!props.HasTransform()) {
+    return result;
+  }
+  auto matrix = nsStyleTransformMatrix::ReadTransforms(
+      props.mTranslate, props.mRotate, props.mScale,
+      props.mMotion.ptrOr(nullptr), props.mTransform, refBox, a2css);
+  if (!matrix.IsIdentity()) {
+    std::ignore = matrix.CanDraw2D(&result);
+  }
+  return result;
 }
 
 float SVGGeometryElement::GetPathLengthScale(PathLengthScaleForType aFor) {
@@ -257,11 +277,9 @@ float SVGGeometryElement::GetPathLengthScale(PathLengthScaleForType aFor) {
         // For textPath, a transform on the referenced path affects the
         // textPath layout, so when calculating the actual path length
         // we need to take that into account.
-        gfxMatrix matrix = PrependLocalTransformsTo(gfxMatrix());
+        auto matrix = LocalTransform();
         if (!matrix.IsIdentity()) {
-          RefPtr<PathBuilder> builder =
-              path->TransformedCopyToBuilder(ToMatrix(matrix));
-          path = builder->Finish();
+          Path::Transform(path, matrix);
         }
       }
       return path->ComputeLength() / authorsPathLengthEstimate;

@@ -5,12 +5,19 @@ It is possible to collect performance profiles of the SpiderMonkey JIT using per
 
 ![](img/annotation.png)
 
+## Profiling with samply
+
+[Samply](https://github.com/mstange/samply) is another profiling tool available that can help simplify a lot of the command line steps required to assemble the jitdump and perf profile output files.
+Samply also has the capability of displaying the profile using the Firefox Profiler front-end.  Further installation and usage instructions can be found at [https://github.com/mstange/samply](https://github.com/mstange/samply).
+
 ## Build setup
 
-To enable JIT profiling with perf jitdump, you must build Firefox or the JS shell with the following flag:
+JIT profiling with perf jitdump is **enabled by default for nightly builds** in the shell and browser.
+
+If you wish to disable jitdump support in your build, then you can include the following build flag:
 
 ```
-ac_add_options --enable-perf
+ac_add_options --disable-jitdump
 ```
 
 ## Environment Variables
@@ -73,7 +80,7 @@ export MOZ_DISABLE_CONTENT_SANDBOX=1
 
 Run the Firefox browser
 ```
-~/mozilla-central/obj-opt64/dist/bin/firefox -no-remote -profile ~/mozilla-central/obj-opt64/tmp/profile-default &
+~/mozilla-central/obj-opt64/dist/bin/firefox -profile ~/mozilla-central/obj-opt64/tmp/profile-default &
 ```
 
 Navigate to the test case, but do not start it yet.  Then hover over the tab to get the content process PID.

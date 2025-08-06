@@ -155,6 +155,9 @@ export class PdfJsTelemetry {
       case "info":
         Glean.pdfjsImageAltText.info.record(data);
         break;
+      case "ai_generation_check":
+        Glean.pdfjsImageAltText.aiGenerationCheck.record(data);
+        break;
       case "settings_displayed":
         Glean.pdfjsImageAltText.settingsDisplayed.record(data);
         break;
@@ -214,7 +217,8 @@ export class PdfJsTelemetry {
         break;
       }
       case "alt_text_edit":
-        Glean.pdfjsImage.altTextEdit.ai_generation.set(data.guessAltText);
+        Glean.pdfjsImage.altTextEdit.ask_to_edit.set(data.ask_to_edit);
+        Glean.pdfjsImage.altTextEdit.ai_generation.set(data.ai_generation);
         break;
     }
   }

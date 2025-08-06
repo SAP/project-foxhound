@@ -24,6 +24,12 @@ use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Debug};
 use std::iter::Rev;
 use std::slice;
+use bitflags::bitflags;
+use cssparser::match_ignore_ascii_case;
+use debug_unreachable::debug_unreachable;
+
+#[cfg(feature = "to_shmem")]
+use to_shmem_derive::ToShmem;
 
 /// A trait that represents a pseudo-element.
 pub trait PseudoElement: Sized + ToCss {
@@ -38,6 +44,18 @@ pub trait PseudoElement: Sized + ToCss {
 
     /// Whether this pseudo-element is valid after a ::slotted(..) pseudo.
     fn valid_after_slotted(&self) -> bool {
+        false
+    }
+
+    /// The count we contribute to the specificity from this pseudo-element.
+    fn specificity_count(&self) -> u32 {
+        1
+    }
+
+    /// Whether this pseudo-element is in a pseudo-element tree (excluding the pseudo-element
+    /// root).
+    /// https://drafts.csswg.org/css-view-transitions-1/#pseudo-root
+    fn is_in_pseudo_element_tree(&self) -> bool {
         false
     }
 }
@@ -78,7 +96,7 @@ fn to_ascii_lowercase(s: &str) -> Cow<str> {
 bitflags! {
     /// Flags that indicate at which point of parsing a selector are we.
     #[derive(Copy, Clone)]
-    struct SelectorParsingState: u8 {
+    struct SelectorParsingState: u16 {
         /// Whether we should avoid adding default namespaces to selectors that
         /// aren't type or universal selectors.
         const SKIP_DEFAULT_NAMESPACE = 1 << 0;
@@ -117,6 +135,10 @@ bitflags! {
 
         /// Whether we explicitly disallow relative selectors (i.e. `:has()`).
         const DISALLOW_RELATIVE_SELECTOR = 1 << 7;
+
+        /// Whether we've parsed a pseudo-element which is in a pseudo-element tree (i.e. it is a
+        /// descendant pseudo of a pseudo-element root).
+        const IN_PSEUDO_ELEMENT_TREE = 1 << 8;
     }
 }
 
@@ -144,12 +166,17 @@ impl SelectorParsingState {
 
     #[inline]
     fn allows_tree_structural_pseudo_classes(self) -> bool {
-        !self.intersects(Self::AFTER_PSEUDO)
+        !self.intersects(Self::AFTER_PSEUDO) || self.intersects(Self::IN_PSEUDO_ELEMENT_TREE)
     }
 
     #[inline]
     fn allows_combinators(self) -> bool {
         !self.intersects(Self::DISALLOW_COMBINATORS)
+    }
+
+    #[inline]
+    fn allows_only_child_pseudo_class_only(self) -> bool {
+        self.intersects(Self::IN_PSEUDO_ELEMENT_TREE)
     }
 }
 
@@ -251,7 +278,7 @@ pub trait Parser<'i> {
         false
     }
 
-    /// Whether to parse the `:where` pseudo-class.
+    /// Whether to parse `:is` and `:where` pseudo-classes.
     fn parse_is_and_where(&self) -> bool {
         false
     }
@@ -346,13 +373,23 @@ pub trait Parser<'i> {
 
 /// A selector list is a tagged pointer with either a single selector, or a ThinArc<()> of multiple
 /// selectors.
-#[derive(Clone, Eq, Debug, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Clone, Eq, Debug, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 pub struct SelectorList<Impl: SelectorImpl>(
-    #[shmem(field_bound)] ThinArcUnion<SpecificityAndFlags, Component<Impl>, (), Selector<Impl>>,
+    #[cfg_attr(feature = "to_shmem", shmem(field_bound))]
+    ThinArcUnion<SpecificityAndFlags, Component<Impl>, (), Selector<Impl>>,
 );
 
 impl<Impl: SelectorImpl> SelectorList<Impl> {
+    /// See Arc::mark_as_intentionally_leaked
+    pub fn mark_as_intentionally_leaked(&self) {
+        if let ArcUnionBorrow::Second(ref list) = self.0.borrow() {
+            list.with_arc(|list| list.mark_as_intentionally_leaked())
+        }
+        self.slice().iter().for_each(|s| s.mark_as_intentionally_leaked())
+    }
+
     pub fn from_one(selector: Selector<Impl>) -> Self {
         #[cfg(debug_assertions)]
         let selector_repr = unsafe { *(&selector as *const _ as *const usize) };
@@ -446,14 +483,13 @@ pub enum ParseRelative {
 }
 
 impl<Impl: SelectorImpl> SelectorList<Impl> {
-    /// Returns a selector list with a single `&`
-    pub fn ampersand() -> Self {
-        Self::from_one(Selector::ampersand())
-    }
-
-    /// Returns a selector list with a single `:scope`
+    /// Returns a selector list with a single `:scope` selector (with specificity)
     pub fn scope() -> Self {
         Self::from_one(Selector::scope())
+    }
+    /// Returns a selector list with a single implicit `:scope` selector (no specificity)
+    pub fn implicit_scope() -> Self {
+        Self::from_one(Selector::implicit_scope())
     }
 
     /// Parse a comma-separated list of Selectors.
@@ -472,6 +508,24 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
             parser,
             input,
             SelectorParsingState::empty(),
+            ForgivingParsing::No,
+            parse_relative,
+        )
+    }
+
+    /// Same as `parse`, but disallow parsing of pseudo-elements.
+    pub fn parse_disallow_pseudo<'i, 't, P>(
+        parser: &P,
+        input: &mut CssParser<'i, 't>,
+        parse_relative: ParseRelative,
+    ) -> Result<Self, ParseError<'i, P::Error>>
+    where
+        P: Parser<'i, Impl = Impl>,
+    {
+        Self::parse_with_state(
+            parser,
+            input,
+            SelectorParsingState::DISALLOW_PSEUDOS,
             ForgivingParsing::No,
             parse_relative,
         )
@@ -761,25 +815,18 @@ impl FeaturelessHostMatches {
 ///
 /// This reordering doesn't change the semantics of selector matching, and we
 /// handle it in to_css to make it invisible to serialization.
-#[derive(Clone, Eq, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 #[repr(transparent)]
-pub struct Selector<Impl: SelectorImpl>(#[shmem(field_bound)] SelectorData<Impl>);
+pub struct Selector<Impl: SelectorImpl>(
+    #[cfg_attr(feature = "to_shmem", shmem(field_bound))] SelectorData<Impl>,
+);
 
 impl<Impl: SelectorImpl> Selector<Impl> {
     /// See Arc::mark_as_intentionally_leaked
     pub fn mark_as_intentionally_leaked(&self) {
         self.0.mark_as_intentionally_leaked()
-    }
-
-    fn ampersand() -> Self {
-        Self(ThinArc::from_header_and_iter(
-            SpecificityAndFlags {
-                specificity: 0,
-                flags: SelectorFlags::HAS_PARENT,
-            },
-            std::iter::once(Component::ParentSelector),
-        ))
     }
 
     fn scope() -> Self {
@@ -789,6 +836,17 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                 flags: SelectorFlags::HAS_SCOPE,
             },
             std::iter::once(Component::Scope),
+        ))
+    }
+
+    /// An implicit scope selector, much like :where(:scope).
+    fn implicit_scope() -> Self {
+        Self(ThinArc::from_header_and_iter(
+            SpecificityAndFlags {
+                specificity: 0,
+                flags: SelectorFlags::HAS_SCOPE,
+            },
+            std::iter::once(Component::ImplicitScope),
         ))
     }
 
@@ -1526,7 +1584,8 @@ impl<'a, Impl: SelectorImpl> Iterator for AncestorIter<'a, Impl> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ToShmem)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
 pub enum Combinator {
     Child,        //  >
     Descendant,   // space
@@ -1574,8 +1633,9 @@ impl Combinator {
 }
 
 /// An enum for the different types of :nth- pseudoclasses
-#[derive(Copy, Clone, Eq, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 pub enum NthType {
     Child,
     LastChild,
@@ -1602,8 +1662,9 @@ impl NthType {
 /// The properties that comprise an :nth- pseudoclass as of Selectors 3 (e.g.,
 /// nth-child(An+B)).
 /// https://www.w3.org/TR/selectors-3/#nth-child-pseudo
-#[derive(Copy, Clone, Eq, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 pub struct NthSelectorData {
     pub ty: NthType,
     pub is_function: bool,
@@ -1702,10 +1763,11 @@ impl NthSelectorData {
 /// The properties that comprise an :nth- pseudoclass as of Selectors 4 (e.g.,
 /// nth-child(An+B [of S]?)).
 /// https://www.w3.org/TR/selectors-4/#nth-child-pseudo
-#[derive(Clone, Eq, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 pub struct NthOfSelectorData<Impl: SelectorImpl>(
-    #[shmem(field_bound)] ThinArc<NthSelectorData, Selector<Impl>>,
+    #[cfg_attr(feature = "to_shmem", shmem(field_bound))] ThinArc<NthSelectorData, Selector<Impl>>,
 );
 
 impl<Impl: SelectorImpl> NthOfSelectorData<Impl> {
@@ -1732,7 +1794,8 @@ impl<Impl: SelectorImpl> NthOfSelectorData<Impl> {
 }
 
 /// Flag indicating where a given relative selector's match would be contained.
-#[derive(Clone, Copy, Eq, PartialEq, ToShmem)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
 pub enum RelativeSelectorMatchHint {
     /// Within this element's subtree.
     InSubtree,
@@ -1861,13 +1924,14 @@ impl RelativeSelectorCombinatorCount {
 }
 
 /// Storage for a relative selector.
-#[derive(Clone, Eq, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 pub struct RelativeSelector<Impl: SelectorImpl> {
     /// Match space constraining hint.
     pub match_hint: RelativeSelectorMatchHint,
     /// The selector. Guaranteed to contain `RelativeSelectorAnchor` and the relative combinator in parse order.
-    #[shmem(field_bound)]
+    #[cfg_attr(feature = "to_shmem", shmem(field_bound))]
     pub selector: Selector<Impl>,
 }
 
@@ -1905,7 +1969,7 @@ impl CombinatorComposition {
 
 impl<Impl: SelectorImpl> RelativeSelector<Impl> {
     fn from_selector_list(selector_list: SelectorList<Impl>) -> Box<[Self]> {
-        let vec: Vec<Self> = selector_list
+        selector_list
             .slice()
             .iter()
             .map(|selector| {
@@ -1937,8 +2001,7 @@ impl<Impl: SelectorImpl> RelativeSelector<Impl> {
                     selector: selector.clone(),
                 }
             })
-            .collect();
-        vec.into_boxed_slice()
+            .collect()
     }
 }
 
@@ -1946,16 +2009,17 @@ impl<Impl: SelectorImpl> RelativeSelector<Impl> {
 /// optimal packing and cache performance, see [1].
 ///
 /// [1] https://bugzilla.mozilla.org/show_bug.cgi?id=1357973
-#[derive(Clone, Eq, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 pub enum Component<Impl: SelectorImpl> {
     LocalName(LocalName<Impl>),
 
-    ID(#[shmem(field_bound)] Impl::Identifier),
-    Class(#[shmem(field_bound)] Impl::Identifier),
+    ID(#[cfg_attr(feature = "to_shmem", shmem(field_bound))] Impl::Identifier),
+    Class(#[cfg_attr(feature = "to_shmem", shmem(field_bound))] Impl::Identifier),
 
     AttributeInNoNamespaceExists {
-        #[shmem(field_bound)]
+        #[cfg_attr(feature = "to_shmem", shmem(field_bound))]
         local_name: Impl::LocalName,
         local_name_lower: Impl::LocalName,
     },
@@ -1963,7 +2027,7 @@ pub enum Component<Impl: SelectorImpl> {
     AttributeInNoNamespace {
         local_name: Impl::LocalName,
         operator: AttrSelectorOperator,
-        #[shmem(field_bound)]
+        #[cfg_attr(feature = "to_shmem", shmem(field_bound))]
         value: Impl::AttrValue,
         case_sensitivity: ParsedCaseSensitivity,
     },
@@ -1974,10 +2038,10 @@ pub enum Component<Impl: SelectorImpl> {
     ExplicitAnyNamespace,
 
     ExplicitNoNamespace,
-    DefaultNamespace(#[shmem(field_bound)] Impl::NamespaceUrl),
+    DefaultNamespace(#[cfg_attr(feature = "to_shmem", shmem(field_bound))] Impl::NamespaceUrl),
     Namespace(
-        #[shmem(field_bound)] Impl::NamespacePrefix,
-        #[shmem(field_bound)] Impl::NamespaceUrl,
+        #[cfg_attr(feature = "to_shmem", shmem(field_bound))] Impl::NamespacePrefix,
+        #[cfg_attr(feature = "to_shmem", shmem(field_bound))] Impl::NamespaceUrl,
     ),
 
     /// Pseudo-classes
@@ -1996,7 +2060,7 @@ pub enum Component<Impl: SelectorImpl> {
     ParentSelector,
     Nth(NthSelectorData),
     NthOf(NthOfSelectorData<Impl>),
-    NonTSPseudoClass(#[shmem(field_bound)] Impl::NonTSPseudoClass),
+    NonTSPseudoClass(#[cfg_attr(feature = "to_shmem", shmem(field_bound))] Impl::NonTSPseudoClass),
     /// The ::slotted() pseudo-element:
     ///
     /// https://drafts.csswg.org/css-scoping/#slotted-pseudo
@@ -2011,7 +2075,7 @@ pub enum Component<Impl: SelectorImpl> {
     Slotted(Selector<Impl>),
     /// The `::part` pseudo-element.
     ///   https://drafts.csswg.org/css-shadow-parts/#part
-    Part(#[shmem(field_bound)] Box<[Impl::Identifier]>),
+    Part(#[cfg_attr(feature = "to_shmem", shmem(field_bound))] Box<[Impl::Identifier]>),
     /// The `:host` pseudo-class:
     ///
     /// https://drafts.csswg.org/css-scoping/#host-selector
@@ -2044,7 +2108,7 @@ pub enum Component<Impl: SelectorImpl> {
     /// An invalid selector inside :is() / :where().
     Invalid(Arc<String>),
     /// An implementation-dependent pseudo-element selector.
-    PseudoElement(#[shmem(field_bound)] Impl::PseudoElement),
+    PseudoElement(#[cfg_attr(feature = "to_shmem", shmem(field_bound))] Impl::PseudoElement),
 
     Combinator(Combinator),
 
@@ -2235,10 +2299,11 @@ impl<Impl: SelectorImpl> Component<Impl> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, ToShmem)]
-#[shmem(no_bounds)]
+#[derive(Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
 pub struct LocalName<Impl: SelectorImpl> {
-    #[shmem(field_bound)]
+    #[cfg_attr(feature = "to_shmem", shmem(field_bound))]
     pub name: Impl::LocalName,
     pub lower_name: Impl::LocalName,
 }
@@ -3256,6 +3321,9 @@ where
                 if !p.accepts_state_pseudo_classes() {
                     state.insert(SelectorParsingState::AFTER_NON_STATEFUL_PSEUDO_ELEMENT);
                 }
+                if p.is_in_pseudo_element_tree() {
+                    state.insert(SelectorParsingState::IN_PSEUDO_ELEMENT_TREE);
+                }
                 builder.push_combinator(Combinator::PseudoElement);
                 builder.push_simple_selector(Component::PseudoElement(p));
             },
@@ -3569,6 +3637,20 @@ where
     }
 
     if state.allows_tree_structural_pseudo_classes() {
+        // If a descendant pseudo of a pseudo-element root has no other siblings, then :only-child
+        // matches that pseudo. Note that we don't accept other tree structural pseudo classes in
+        // this case (to match other browsers). And the spec mentions only `:only-child` as well.
+        // https://drafts.csswg.org/css-view-transitions-1/#pseudo-root
+        if state.allows_only_child_pseudo_class_only() {
+            if name.eq_ignore_ascii_case("only-child") {
+                return Ok(Component::Nth(NthSelectorData::only(/* of_type = */ false)));
+            }
+            // Other non-functional pseudo classes are not allowed.
+            // FIXME: Perhaps we can refactor this, e.g. distinguish tree-structural pseudo classes
+            // from other non-ts pseudo classes. Otherwise, this special case looks weird.
+            return Err(location.new_custom_error(SelectorParseErrorKind::InvalidState));
+        }
+
         match_ignore_ascii_case! { &name,
             "first-child" => return Ok(Component::Nth(NthSelectorData::first(/* of_type = */ false))),
             "last-child" => return Ok(Component::Nth(NthSelectorData::last(/* of_type = */ false))),

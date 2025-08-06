@@ -3980,14 +3980,6 @@ var gCSSProperties = {
     other_values: ["none"],
     invalid_values: [],
   },
-  "-moz-user-modify": {
-    domProp: "MozUserModify",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["read-only"],
-    other_values: ["read-write", "write-only"],
-    invalid_values: [],
-  },
   "-moz-user-select": {
     domProp: "MozUserSelect",
     inherited: false,
@@ -6340,16 +6332,19 @@ var gCSSProperties = {
     applies_to_first_letter: true,
     applies_to_first_line: true,
     applies_to_placeholder: true,
-    initial_values: ["normal", "0", "0px", "calc(0px)"],
+    initial_values: ["normal", "0", "0px", "calc(0px)", "0%"],
     other_values: [
       "1em",
       "2px",
       "-3px",
+      "50%",
+      "-120%",
       "calc(1em)",
       "calc(1em + 3px)",
       "calc(15px / 2)",
       "calc(15px/2)",
       "calc(-3px)",
+      "calc(-10%/2 - 1em)",
     ],
     invalid_values: [],
     quirks_values: { 5: "5px" },
@@ -8262,8 +8257,11 @@ var gCSSProperties = {
     domProp: "textEmphasisPosition",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["over right", "right over", "over"],
+    initial_values: ["auto"],
     other_values: [
+      "over right",
+      "right over",
+      "over",
       "over left",
       "left over",
       "under left",
@@ -8273,6 +8271,12 @@ var gCSSProperties = {
       "under",
     ],
     invalid_values: [
+      "auto auto",
+      "auto over",
+      "auto right",
+      "left auto",
+      "left right",
+      "over under right",
       "over over",
       "left left",
       "over right left",
@@ -8777,14 +8781,7 @@ var gCSSProperties = {
     applies_to_cue: true,
     applies_to_marker: true,
     initial_values: ["normal"],
-    other_values: [
-      "pre",
-      "nowrap",
-      "pre-wrap",
-      "pre-line",
-      "-moz-pre-space",
-      "break-spaces",
-    ],
+    other_values: ["pre", "nowrap", "pre-wrap", "pre-line", "break-spaces"],
     invalid_values: [],
   },
   "white-space-collapse": {
@@ -8800,6 +8797,7 @@ var gCSSProperties = {
       "preserve-breaks",
       "preserve-spaces",
       "break-spaces",
+      "-moz-pre-space",
     ],
     invalid_values: ["normal", "auto"],
   },
@@ -13355,8 +13353,17 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
     ],
   };
 
-  gCSSProperties["inset-area"] = {
-    domProp: "insetArea",
+  gCSSProperties["position-anchor"] = {
+    domProp: "positionAnchor",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: ["--foo"],
+    invalid_values: ["none", "--foo, auto", "auto, --bar", "foo"],
+  };
+
+  gCSSProperties["position-area"] = {
+    domProp: "positionArea",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["none"],
@@ -13427,23 +13434,13 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
       "left self-top",
       "right block-end",
       "top self-end",
-      "y-self-end x-end",
       "inline-start self-block-end",
       "span-self-inline-start start",
       "end span-self-start",
     ],
   };
 
-  gCSSProperties["position-anchor"] = {
-    domProp: "positionAnchor",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["--foo"],
-    invalid_values: ["none", "--foo, auto", "auto, --bar", "foo"],
-  };
-
-  gCSSProperties["position-try-options"] = {
+  gCSSProperties["position-try-fallbacks"] = {
     domProp: "positionTryFallbacks",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
@@ -13460,12 +13457,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
       "end span-start",
       "center span-all",
     ],
-    invalid_values: [
-      "foo",
-      "none none",
-      "span-y-start self-block-end",
-      "flip-block flip-start",
-    ],
+    invalid_values: ["foo", "none none", "span-y-start self-block-end"],
   };
 
   gCSSProperties["position-try-order"] = {
@@ -13475,7 +13467,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
     initial_values: ["normal"],
     other_values: [
       "most-width",
-      "most-heigh",
+      "most-height",
       "most-block-size",
       "most-inline-size",
     ],
@@ -13493,6 +13485,71 @@ if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
       "auto",
       "always anchors-valid",
       "anchors-visible always",
+    ],
+  };
+
+  gCSSProperties["position-try"] = {
+    domProp: "positionTry",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    subproperties: ["position-try-order", "position-try-fallbacks"],
+    initial_values: ["none"],
+    other_values: [
+      "--foo",
+      "flip-block",
+      "flip-inline",
+      "flip-start",
+      "left",
+      "span-y-start",
+      "span-block-start inline-end",
+      "span-all self-block-end",
+      "end span-start",
+      "center span-all",
+      "most-width --foo",
+      "most-width flip-block",
+      "most-width flip-inline",
+      "most-width flip-start",
+      "most-width left",
+      "most-width span-y-start",
+      "most-width span-block-start inline-end",
+      "most-width span-all self-block-end",
+      "most-width end span-start",
+      "most-width center span-all",
+      "most-height --foo",
+      "most-height flip-block",
+      "most-height flip-inline",
+      "most-height flip-start",
+      "most-height left",
+      "most-height span-y-start",
+      "most-height span-block-start inline-end",
+      "most-height span-all self-block-end",
+      "most-height end span-start",
+      "most-height center span-all",
+      "most-block-size --foo",
+      "most-block-size flip-block",
+      "most-block-size flip-inline",
+      "most-block-size flip-start",
+      "most-block-size left",
+      "most-block-size span-y-start",
+      "most-block-size span-block-start inline-end",
+      "most-block-size span-all self-block-end",
+      "most-block-size end span-start",
+      "most-block-size center span-all",
+      "most-inline-size --foo",
+      "most-inline-size flip-block",
+      "most-inline-size flip-inline",
+      "most-inline-size flip-start",
+      "most-inline-size left",
+      "most-inline-size span-y-start",
+      "most-inline-size span-block-start inline-end",
+      "most-inline-size span-all self-block-end",
+      "most-inline-size end span-start",
+      "most-inline-size center span-all",
+    ],
+    invalid_values: [
+      "foo",
+      "--foo none none",
+      "--foo span-y-start self-block-end",
     ],
   };
 }
@@ -13836,16 +13893,14 @@ gCSSProperties["math-style"] = {
   invalid_values: [],
 };
 
-if (IsCSSPropertyPrefEnabled("layout.css.forced-color-adjust.enabled")) {
-  gCSSProperties["forced-color-adjust"] = {
-    domProp: "forcedColorAdjust",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["none"],
-    invalid_values: [],
-  };
-}
+gCSSProperties["forced-color-adjust"] = {
+  domProp: "forcedColorAdjust",
+  inherited: true,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["auto"],
+  other_values: ["none"],
+  invalid_values: [],
+};
 
 if (IsCSSPropertyPrefEnabled("layout.css.animation-composition.enabled")) {
   gCSSProperties["animation-composition"] = {
@@ -13957,6 +14012,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-driven-animations.enabled")) {
   gCSSProperties["animation"].subproperties.push("animation-timeline");
   gCSSProperties["-moz-animation"].subproperties.push("animation-timeline");
   gCSSProperties["-webkit-animation"].subproperties.push("animation-timeline");
+
+  gCSSProperties["animation-duration"].initial_values.push("auto");
 
   gCSSProperties["animation-timeline"] = {
     domProp: "animationTimeline",
@@ -14306,6 +14363,32 @@ if (IsCSSPropertyPrefEnabled("layout.css.field-sizing.enabled")) {
       initial_values: ["fixed"],
       other_values: ["content"],
       invalid_values: ["none", "auto"],
+    },
+  });
+}
+
+if (IsCSSPropertyPrefEnabled("dom.viewTransitions.enabled")) {
+  Object.assign(gCSSProperties, {
+    "view-transition-name": {
+      domProp: "viewTransitionName",
+      inherited: false,
+      type: CSS_TYPE_LONGHAND,
+      initial_values: ["none"],
+      other_values: [
+        "all",
+        "ball",
+        "mall",
+        "color",
+        "foobar",
+        "\\32bounce",
+        "-bounce",
+        "-\\32bounce",
+        "\\32 0bounce",
+        "-\\32 0bounce",
+        "\\2bounce",
+        "-\\2bounce",
+      ],
+      invalid_values: ["auto", "abc --bounce", "10px", "rgb(1, 2, 3)"],
     },
   });
 }

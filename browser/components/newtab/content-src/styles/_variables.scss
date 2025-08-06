@@ -58,6 +58,10 @@ $in-content-page-background-dark: #2B2A33;
 $newtab-background-secondary: #FFF;
 $newtab-background-secondary-dark: rgb(66, 65, 77);
 
+// Mirrors $newtab-background-secondary with 20% opacity
+$newtab-background-card: rgba(255, 255, 255, 80%);
+$newtab-background-card-dark: rgb(66, 65, 77, 80%);
+
 // Photon transitions from http://design.firefox.com/photon/motion/duration-and-easing.html
 $photon-easing: cubic-bezier(0.07, 0.95, 0, 1);
 
@@ -78,16 +82,17 @@ $icon-size: 16px;
 $smaller-icon-size: 12px;
 $larger-icon-size: 32px;
 
-$searchbar-width-small: ($grid-unit * 2 + $base-gutter * 1) - 24px;
-$searchbar-width-medium: ($grid-unit * 4 + $base-gutter * 3) - 120px;
-$searchbar-width-large: ($grid-unit * 6 + $base-gutter * 5) - 136px;
-$searchbar-width-largest: ($grid-unit * 6 + $base-gutter * 5) - 16px;
+$searchbar-width-small: ($grid-unit * 2 + $base-gutter * 1) - 24px; // 200px
+$searchbar-width-medium: ($grid-unit * 4 + $base-gutter * 3) - 120px; // 360px
+$searchbar-width-large: ($grid-unit * 6 + $base-gutter * 5) - 136px; // 600px
+$searchbar-width-largest: ($grid-unit * 6 + $base-gutter * 5) - 16px; // 720px
 
 $wrapper-default-width: $grid-unit * 2 + $base-gutter * 1 + $section-horizontal-padding * 2; // 2 top sites
 $wrapper-max-width-medium: $grid-unit * 4 + $base-gutter * 3 + $section-horizontal-padding * 2; // 4 top sites
 $wrapper-max-width-large: $grid-unit * 6 + $base-gutter * 5 + $section-horizontal-padding * 2; // 6 top sites
 $wrapper-max-width-widest: $grid-unit * 8 + $base-gutter * 7 + $section-horizontal-padding * 2; // 8 top sites
 $wrapper-max-width-weather: $grid-unit * 12 + $base-gutter * 7 + $section-horizontal-padding * 2; // Weather visible
+$wrapper-max-width-ultra-wide: $grid-unit * 14 + $base-gutter * 7 + $section-horizontal-padding * 2; // 8 top sites 4 stories
 // For the breakpoints, we need to add space for the scrollbar to avoid weird
 // layout issues when the scrollbar is visible. 16px is wide enough to cover all
 // OSes and keeps it simpler than a per-OS value.
@@ -96,10 +101,16 @@ $scrollbar-width: 16px;
 // Breakpoints
 // If updating these breakpoints, don't forget to update uses of DSImage, which
 // might choose the right image src to use depending on the viewport size.
+$break-point-small: 510px;
 $break-point-medium: $wrapper-max-width-medium + $base-gutter * 2 + $scrollbar-width; // 610px
+// A temporary breakpoint for a new layout experiment.
+$break-point-layout-variant: 724px;
 $break-point-large: $wrapper-max-width-large + $base-gutter * 2 + $scrollbar-width; // 866px
 $break-point-widest: $wrapper-max-width-widest + $base-gutter * 2 + $scrollbar-width; // 1122px
-$break-point-weather: $wrapper-max-width-weather + $base-gutter * 2 + $scrollbar-width; // 1122px
+// temporary breakpoint for sections experiment
+$break-point-sections-variant: 1310px + $base-gutter * 2 + $scrollbar-width;
+$break-point-weather: $wrapper-max-width-weather + $base-gutter * 2 + $scrollbar-width; // 1506px
+$break-point-ultra-wide: $wrapper-max-width-ultra-wide + $base-gutter * 2 + $scrollbar-width; // 1698px
 
 $section-title-font-size: 17px;
 
@@ -152,8 +163,7 @@ $customize-menu-border-tint: 1px solid rgba(0, 0, 0, 15%);
 
 @mixin ds-focus {
   border: 0;
-  outline: 0;
-  box-shadow: 0 0 0 3px var(--newtab-primary-action-background-dimmed), 0 0 0 1px var(--newtab-primary-action-background);
+  outline: var(--focus-outline);
 }
 
 @mixin context-menu-button {
@@ -166,7 +176,6 @@ $customize-menu-border-tint: 1px solid rgba(0, 0, 0, 15%);
     outline: $border-primary;
     outline-width: 0;
     border-radius: 100%;
-    box-shadow: $context-menu-button-boxshadow;
     cursor: pointer;
     color: var(--button-text-color);
     fill: var(--newtab-button-text);

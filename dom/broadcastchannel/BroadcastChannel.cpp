@@ -169,14 +169,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
       return nullptr;
     }
 
-    nsCOMPtr<nsIGlobalObject> incumbent = mozilla::dom::GetIncumbentGlobal();
-
-    if (!incumbent) {
-      aRv.Throw(NS_ERROR_FAILURE);
-      return nullptr;
-    }
-
-    nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(incumbent);
+    nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(global);
     if (NS_WARN_IF(!sop)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return nullptr;
@@ -271,21 +264,17 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
 void BroadcastChannel::PostMessage(JSContext* aCx,
                                    JS::Handle<JS::Value> aMessage,
                                    ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  if (!global || !global->IsEligibleForMessaging()) {
+    return;
+  }
+
   if (mState != StateActive) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
 
-  Maybe<nsID> agentClusterId;
-  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
-  MOZ_ASSERT(global);
-  if (global) {
-    agentClusterId = global->GetAgentClusterId();
-  }
-
-  if (!global->IsEligibleForMessaging()) {
-    return;
-  }
+  Maybe<nsID> agentClusterId = global->GetAgentClusterId();
 
   RefPtr<SharedMessageBody> data = new SharedMessageBody(
       StructuredCloneHolder::TransferringNotSupported, agentClusterId);
@@ -366,6 +355,11 @@ void BroadcastChannel::DisconnectFromOwner() {
 void BroadcastChannel::MessageReceived(const MessageData& aData) {
   if (NS_FAILED(CheckCurrentGlobalCorrectness())) {
     RemoveDocFromBFCache();
+    return;
+  }
+
+  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  if (!global || !global->IsEligibleForMessaging()) {
     return;
   }
 

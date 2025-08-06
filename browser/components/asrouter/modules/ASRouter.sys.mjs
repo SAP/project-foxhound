@@ -43,6 +43,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   InfoBar: "resource:///modules/asrouter/InfoBar.sys.mjs",
   KintoHttpClient: "resource://services-common/kinto-http-client.sys.mjs",
   MacAttribution: "resource:///modules/MacAttribution.sys.mjs",
+  MenuMessage: "resource:///modules/asrouter/MenuMessage.sys.mjs",
   MomentsPageHub: "resource:///modules/asrouter/MomentsPageHub.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PanelTestProvider: "resource:///modules/asrouter/PanelTestProvider.sys.mjs",
@@ -106,8 +107,6 @@ const TOPIC_EXPERIMENT_ENROLLMENT_CHANGED = "nimbus:enrollments-updated";
 const USE_REMOTE_L10N_PREF =
   "browser.newtabpage.activity-stream.asrouter.useRemoteL10n";
 
-const REACH_EVENT_CATEGORY = "messaging_experiments";
-const REACH_EVENT_METHOD = "reach";
 // Reach for the pbNewtab feature will be added in bug 1755401
 const NO_REACH_EVENT_GROUPS = ["pbNewtab"];
 
@@ -691,7 +690,6 @@ export class _ASRouter {
     this._onExperimentEnrollmentsUpdated =
       this._onExperimentEnrollmentsUpdated.bind(this);
     this.forcePBWindow = this.forcePBWindow.bind(this);
-    Services.telemetry.setEventRecordingEnabled(REACH_EVENT_CATEGORY, true);
     this.messagesEnabledInAutomation = [];
   }
 
@@ -1481,6 +1479,9 @@ export class _ASRouter {
       case "bookmarks_bar_button":
         lazy.BookmarksBarButton.showBookmarksBarButton(browser, message);
         break;
+      case "menu_message":
+        lazy.MenuMessage.showMenuMessage(browser, message, trigger, force);
+        break;
     }
 
     return { message };
@@ -1982,16 +1983,19 @@ export class _ASRouter {
 
   _recordReachEvent(message) {
     const messageGroup = message.forReachEvent.group;
-    // Events telemetry only accepts understores for the event `object`
-    const underscored = messageGroup.split("-").join("_");
-    const extra = { branches: message.branchSlug };
-    Services.telemetry.recordEvent(
-      REACH_EVENT_CATEGORY,
-      REACH_EVENT_METHOD,
-      underscored,
-      message.experimentSlug,
-      extra
-    );
+    // Keeping parity with legacy event telemetry values that only accepted
+    // underscores in featureID passed to event telemetry.
+    // Glean expects the metric name in camelCase.
+    const name = messageGroup
+      .replace(/-/g, "_")
+      .split("_")
+      .map(word => word[0].toUpperCase() + word.slice(1))
+      .join("");
+    const extra = {
+      value: message.experimentSlug,
+      branches: message.branchSlug,
+    };
+    Glean.messagingExperiments[`reach${name}`].record(extra);
   }
 
   /**

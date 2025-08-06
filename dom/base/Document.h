@@ -101,7 +101,6 @@
 #include "nsTObserverArray.h"
 #include "nsThreadUtils.h"
 #include "nsURIHashKey.h"
-#include "nsViewportInfo.h"
 #include "nsWeakReference.h"
 #include "nsWindowSizes.h"
 #include "nsXULElement.h"
@@ -181,6 +180,7 @@ class nsRange;
 class nsSimpleContentList;
 class nsTextNode;
 class nsViewManager;
+class nsViewportInfo;
 class nsXULPrototypeDocument;
 struct JSContext;
 struct nsFont;
@@ -246,7 +246,6 @@ class FeaturePolicy;
 class FontFaceSet;
 class FragmentDirective;
 class FrameRequestCallback;
-class ImageTracker;
 class HighlightRegistry;
 class HTMLAllCollection;
 class HTMLBodyElement;
@@ -256,6 +255,8 @@ class HTMLDialogElement;
 class HTMLSharedElement;
 class HTMLVideoElement;
 class HTMLImageElement;
+class ImageTracker;
+enum class InteractiveWidget : uint8_t;
 struct LifecycleCallbackArgs;
 class Link;
 class Location;
@@ -280,6 +281,8 @@ class Touch;
 class TouchList;
 class TreeWalker;
 enum class ViewportFitType : uint8_t;
+class ViewTransition;
+class ViewTransitionUpdateCallback;
 class WakeLockSentinel;
 class WindowContext;
 class WindowGlobalChild;
@@ -1095,6 +1098,8 @@ class Document : public nsINode,
    */
   void DisableCookieAccess() { mDisableCookieAccess = true; }
 
+  bool CookieAccessDisabled() const { return mDisableCookieAccess; }
+
   void SetLinkHandlingEnabled(bool aValue) { mLinksEnabled = aValue; }
   bool LinkHandlingEnabled() { return mLinksEnabled; }
 
@@ -1871,6 +1876,12 @@ class Document : public nsINode,
    */
   MOZ_CAN_RUN_SCRIPT void HandleEscKey();
 
+  /**
+   * Process any active CloseWatchers in the document, such
+   * as fullscreen elements, popovers, dialogs.
+   */
+  MOZ_CAN_RUN_SCRIPT void ProcessCloseRequest();
+
   void AddModalDialog(HTMLDialogElement&);
   void RemoveModalDialog(HTMLDialogElement&);
 
@@ -2028,11 +2039,11 @@ class Document : public nsINode,
 
   // Observation hooks for style data to propagate notifications
   // to document observers
-  void RuleChanged(StyleSheet&, css::Rule*, StyleRuleChangeKind);
+  void RuleChanged(StyleSheet&, css::Rule*, const StyleRuleChange&);
   void RuleAdded(StyleSheet&, css::Rule&);
   void RuleRemoved(StyleSheet&, css::Rule&);
   void SheetCloned(StyleSheet&) {}
-  void ImportRuleLoaded(CSSImportRule&, StyleSheet&);
+  void ImportRuleLoaded(StyleSheet&);
 
   /**
    * Flush notifications for this document and its parent documents
@@ -2327,14 +2338,14 @@ class Document : public nsINode,
                         nsIPrincipal* aPartitionedPrincipal);
 
   /**
-   * Notify the document that its associated ContentViewer is being destroyed.
+   * Notify the document that its associated DocumentViewer is being destroyed.
    * This releases circular references so that the document can go away.
    * Destroy() is only called on documents that have a content viewer.
    */
   virtual void Destroy();
 
   /**
-   * Notify the document that its associated ContentViewer is no longer
+   * Notify the document that its associated DocumentViewer is no longer
    * the current viewer for the docshell. The document might still
    * be rendered in "zombie state" until the next document is ready.
    * The document should save form control state.
@@ -3005,7 +3016,6 @@ class Document : public nsINode,
     NotMedia,
     Video,
     Image,
-    Plugin,
   };
 
   virtual enum MediaDocumentKind MediaDocumentKind() const {
@@ -3135,6 +3145,9 @@ class Document : public nsINode,
   // WebIDL method for chrome code.
   void GetConnectedShadowRoots(nsTArray<RefPtr<ShadowRoot>>&) const;
 
+  void SynchronouslyUpdateRemoteBrowserDimensions(
+      bool aIncludeInactive = false);
+
   // Notifies any responsive content added by AddResponsiveContent upon media
   // features values changing.
   void NotifyMediaFeatureValuesChanged();
@@ -3144,6 +3157,10 @@ class Document : public nsINode,
   nsDOMNavigationTiming* GetNavigationTiming() const { return mTiming; }
 
   void SetNavigationTiming(nsDOMNavigationTiming* aTiming);
+
+  inline void SetPageloadEventFeature(uint32_t aFeature) {
+    mPageloadEventFeatures |= aFeature;
+  }
 
   nsContentList* ImageMapList();
 
@@ -3347,6 +3364,7 @@ class Document : public nsINode,
   void SetDesignMode(const nsAString& aDesignMode,
                      const mozilla::Maybe<nsIPrincipal*>& aSubjectPrincipal,
                      mozilla::ErrorResult& rv);
+  void SetDocumentEditableFlag(bool);
   MOZ_CAN_RUN_SCRIPT
   bool ExecCommand(const nsAString& aHTMLCommandName, bool aShowUI,
                    const nsAString& aValue, nsIPrincipal& aSubjectPrincipal,
@@ -3419,7 +3437,9 @@ class Document : public nsINode,
   Element* GetUnretargetedFullscreenElement() const;
   bool Fullscreen() const { return !!GetUnretargetedFullscreenElement(); }
   already_AddRefed<Promise> ExitFullscreen(ErrorResult&);
-  void ExitPointerLock() { PointerLockManager::Unlock(this); }
+  void ExitPointerLock() {
+    PointerLockManager::Unlock("Document::ExitPointerLock", this);
+  }
   void GetFgColor(nsAString& aFgColor);
   void SetFgColor(const nsAString& aFgColor);
   void GetLinkColor(nsAString& aLinkColor);
@@ -3550,8 +3570,6 @@ class Document : public nsINode,
   }
   void SetDevToolsWatchingDOMMutations(bool aValue);
 
-  void MaybeWarnAboutZoom();
-
   // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
   void EvaluateMediaQueriesAndReportChanges(bool aRecurse);
 
@@ -3653,6 +3671,20 @@ class Document : public nsINode,
   bool FireMutationEvents() const { return mFireMutationEvents; }
   void SetFireMutationEvents(bool aFire) { mFireMutationEvents = aFire; }
 
+  // https://w3c.github.io/trusted-types/dist/spec/#require-trusted-types-for-csp-directive
+  bool HasPolicyWithRequireTrustedTypesForDirective() const {
+    return mHasPolicyWithRequireTrustedTypesForDirective;
+  }
+  void SetHasPolicyWithRequireTrustedTypesForDirective(
+      bool aHasPolicyWithRequireTrustedTypesForDirective) {
+    mHasPolicyWithRequireTrustedTypesForDirective =
+        aHasPolicyWithRequireTrustedTypesForDirective;
+  }
+
+  // Even if mutation events are disabled by default,
+  // dom.mutation_events.forceEnable can be used to enable them per site.
+  bool MutationEventsEnabled();
+
   // This should be called when this document receives events which are likely
   // to be user interaction with the document, rather than the byproduct of
   // interaction with the browser (i.e. a keypress to scroll the view port,
@@ -3746,6 +3778,8 @@ class Document : public nsINode,
   // Update intersection observers in this document and all
   // same-process subdocuments.
   void UpdateIntersections(TimeStamp aNowTime);
+  // Update the EffectsInfo of remote browsers.
+  void UpdateRemoteFrameEffects(bool aIncludeInactive = false);
   MOZ_CAN_RUN_SCRIPT void NotifyIntersectionObservers();
 
   DOMIntersectionObserver* GetLazyLoadObserver() { return mLazyLoadObserver; }
@@ -3810,6 +3844,14 @@ class Document : public nsINode,
    */
   MOZ_CAN_RUN_SCRIPT void
   DetermineProximityToViewportAndNotifyResizeObservers();
+
+  already_AddRefed<ViewTransition> StartViewTransition(
+      const Optional<OwningNonNull<ViewTransitionUpdateCallback>>&);
+  ViewTransition* GetActiveViewTransition() const {
+    return mActiveViewTransition;
+  }
+  void ClearActiveViewTransition();
+  void PerformPendingViewTransitionOperations();
 
   // Getter for PermissionDelegateHandler. Performs lazy initialization.
   PermissionDelegateHandler* GetPermissionDelegateHandler();
@@ -3957,6 +3999,10 @@ class Document : public nsINode,
 
  public:
   const OriginTrials& Trials() const { return mTrials; }
+
+  dom::InteractiveWidget InteractiveWidget() const {
+    return mInteractiveWidgetMode;
+  }
 
  private:
   void DoCacheAllKnownLangPrefs();
@@ -4213,8 +4259,8 @@ class Document : public nsINode,
     // FIXME(emilio): Can SVG documents be in quirks mode anyway?
     return mCompatMode == eCompatibility_NavQuirks && !IsSVGDocument();
   }
-  void AddContentEditableStyleSheetsToStyleSet(bool aDesignMode);
-  void RemoveContentEditableStyleSheets();
+  void AddContentEditableStyleSheetToStyleSet();
+  void RemoveContentEditableStyleSheet();
   void AddStyleSheetToStyleSets(StyleSheet&);
   void RemoveStyleSheetFromStyleSets(StyleSheet&);
   void NotifyStyleSheetApplicableStateChanged();
@@ -4770,9 +4816,6 @@ class Document : public nsINode,
   // Whether we have a contenteditable.css stylesheet in the style set.
   bool mContentEditableSheetAdded : 1;
 
-  // Whether we have a designmode.css stylesheet in the style set.
-  bool mDesignModeSheetAdded : 1;
-
   // True if this document has ever had an HTML or SVG <title> element
   // bound to it
   bool mMayHaveTitleElement : 1;
@@ -4854,12 +4897,6 @@ class Document : public nsINode,
   // eDesignMode or eContentEditable.
   bool mHasBeenEditable : 1;
 
-  // Whether we've warned about the CSS zoom property.
-  //
-  // We don't use the general deprecated operation mechanism for this because we
-  // also record this as a `CountedUnknownProperty`.
-  bool mHasWarnedAboutZoom : 1;
-
   // While we're handling an execCommand call by web app, set
   // to true.
   bool mIsRunningExecCommandByContent : 1;
@@ -4913,6 +4950,11 @@ class Document : public nsINode,
   bool mForceLoadAtTop : 1;
 
   bool mFireMutationEvents : 1;
+
+  // Whether the document's CSP contains a require-trusted-types-for directive.
+  bool mHasPolicyWithRequireTrustedTypesForDirective : 1;
+
+  Maybe<bool> mMutationEventsEnabled;
 
   // The fingerprinting protections overrides for this document. The value will
   // override the default enabled fingerprinting protections for this document.
@@ -5173,6 +5215,9 @@ class Document : public nsINode,
   // https://drafts.csswg.org/css-round-display/#viewport-fit-descriptor
   ViewportFitType mViewportFit;
 
+  // https://drafts.csswg.org/css-viewport/#interactive-widget-section
+  dom::InteractiveWidget mInteractiveWidgetMode;
+
   // XXXdholbert This should really be modernized to a nsTHashMap or similar,
   // though note that the modernization will need to take care to also convert
   // the special hash_table_ops logic (e.g. how SubDocClearEntry clears the
@@ -5340,6 +5385,9 @@ class Document : public nsINode,
 
   RefPtr<HTMLAllCollection> mAll;
 
+  // https://drafts.csswg.org/css-view-transitions-1/#document-active-view-transition
+  RefPtr<ViewTransition> mActiveViewTransition;
+
   nsTHashSet<RefPtr<WorkerDocumentListener>> mWorkerListeners;
 
   // Pres shell resolution saved before entering fullscreen mode.
@@ -5384,6 +5432,10 @@ class Document : public nsINode,
 
   // See SetNotifyFormOrPasswordRemoved and ShouldNotifyFormOrPasswordRemoved.
   bool mShouldNotifyFormOrPasswordRemoved;
+
+  // Bitfield to be collected in the pageload event, recording relevant features
+  // used in the document
+  uint32_t mPageloadEventFeatures = 0;
 
   // Record page load telemetry
   void RecordPageLoadEventTelemetry(

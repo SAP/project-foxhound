@@ -18,10 +18,10 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <string>
 
 #include "absl/strings/match.h"
-#include "absl/types/optional.h"
 #include "api/video/video_codec_constants.h"
 #include "api/video_codecs/scalability_mode.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
@@ -58,7 +58,7 @@ enum H264EncoderImplEvent {
   kH264EncoderEventMax = 16,
 };
 
-int NumberOfThreads(absl::optional<int> encoder_thread_limit,
+int NumberOfThreads(std::optional<int> encoder_thread_limit,
                     int width,
                     int height,
                     int number_of_cores) {
@@ -102,7 +102,7 @@ VideoFrameType ConvertToVideoFrameType(EVideoFrameType type) {
   return VideoFrameType::kEmptyFrame;
 }
 
-absl::optional<ScalabilityMode> ScalabilityModeFromTemporalLayers(
+std::optional<ScalabilityMode> ScalabilityModeFromTemporalLayers(
     int num_temporal_layers) {
   switch (num_temporal_layers) {
     case 0:
@@ -116,7 +116,7 @@ absl::optional<ScalabilityMode> ScalabilityModeFromTemporalLayers(
     default:
       RTC_DCHECK_NOTREACHED();
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 }  // namespace
@@ -174,7 +174,8 @@ static void RtpFragmentize(EncodedImage* encoded_image, SFrameBSInfo* info) {
 
 H264EncoderImpl::H264EncoderImpl(const Environment& env,
                                  H264EncoderSettings settings)
-    : packetization_mode_(settings.packetization_mode),
+    : env_(env),
+      packetization_mode_(settings.packetization_mode),
       max_payload_size_(0),
       number_of_cores_(0),
       encoded_image_callback_(nullptr),
@@ -326,7 +327,7 @@ int32_t H264EncoderImpl::InitEncode(const VideoCodec* inst,
     }
   }
 
-  SimulcastRateAllocator init_allocator(codec_);
+  SimulcastRateAllocator init_allocator(env_, codec_);
   VideoBitrateAllocation allocation =
       init_allocator.Allocate(VideoBitrateAllocationParameters(
           DataRate::KilobitsPerSec(codec_.startBitrate), codec_.maxFramerate));

@@ -29,17 +29,17 @@ const SETTINGS_FILENAME = "search.json.mozlz4";
  * @type {Map<string, string>}
  */
 const ENGINE_ID_TO_OLD_NAME_MAP = new Map([
-  ["wikipedia@search.mozilla.orghy", "Wikipedia (hy)"],
-  ["wikipedia@search.mozilla.orgkn", "Wikipedia (kn)"],
-  ["wikipedia@search.mozilla.orglv", "Vikipēdija"],
-  ["wikipedia@search.mozilla.orgNO", "Wikipedia (no)"],
-  ["wikipedia@search.mozilla.orgel", "Wikipedia (el)"],
-  ["wikipedia@search.mozilla.orglt", "Wikipedia (lt)"],
-  ["wikipedia@search.mozilla.orgmy", "Wikipedia (my)"],
-  ["wikipedia@search.mozilla.orgpa", "Wikipedia (pa)"],
-  ["wikipedia@search.mozilla.orgpt", "Wikipedia (pt)"],
-  ["wikipedia@search.mozilla.orgsi", "Wikipedia (si)"],
-  ["wikipedia@search.mozilla.orgtr", "Wikipedia (tr)"],
+  ["wikipedia-hy", "Wikipedia (hy)"],
+  ["wikipedia-kn", "Wikipedia (kn)"],
+  ["wikipedia-lv", "Vikipēdija"],
+  ["wikipedia-NO", "Wikipedia (no)"],
+  ["wikipedia-el", "Wikipedia (el)"],
+  ["wikipedia-lt", "Wikipedia (lt)"],
+  ["wikipedia-my", "Wikipedia (my)"],
+  ["wikipedia-pa", "Wikipedia (pa)"],
+  ["wikipedia-pt", "Wikipedia (pt)"],
+  ["wikipedia-si", "Wikipedia (si)"],
+  ["wikipedia-tr", "Wikipedia (tr)"],
 ]);
 
 /**
@@ -207,6 +207,63 @@ export class SearchSettings {
         );
       }
       Services.prefs.clearUserPref("browser.search.hiddenOneOffs");
+    }
+
+    // Migration for new AppProvidedSearchEngine ID format
+    if (
+      this.#settings.version > 6 &&
+      this.#settings.version < 10 &&
+      this.#settings.engines
+    ) {
+      let changedEngines = new Map();
+      for (let engine of this.#settings.engines) {
+        if (engine._isAppProvided && engine.id) {
+          let oldId = engine.id;
+          engine.id = engine.id
+            .replace("@search.mozilla.orgdefault", "")
+            .replace("@search.mozilla.org", "-");
+          changedEngines.set(oldId, engine.id);
+        }
+      }
+
+      const PROPERTIES_CONTAINING_IDS = [
+        "privateDefaultEngineId",
+        "appDefaultEngineId",
+        "defaultEngineId",
+      ];
+
+      for (let prop of PROPERTIES_CONTAINING_IDS) {
+        if (changedEngines.has(this.#settings.metaData[prop])) {
+          this.#settings.metaData[prop] = changedEngines.get(
+            this.#settings.metaData[prop]
+          );
+        }
+      }
+    }
+
+    // Migration for _iconMapObj
+    if (this.#settings.version < 11 && this.#settings.engines) {
+      for (let engine of this.#settings.engines) {
+        if (!engine._iconMapObj) {
+          continue;
+        }
+        let oldIconMap = engine._iconMapObj;
+        engine._iconMapObj = {};
+
+        for (let [sizeStr, icon] of Object.entries(oldIconMap)) {
+          let sizeObj = {};
+          try {
+            sizeObj = JSON.parse(sizeStr);
+          } catch {}
+          if (
+            "width" in sizeObj &&
+            parseInt(sizeObj.width) > 0 &&
+            sizeObj.width == sizeObj.height
+          ) {
+            engine._iconMapObj[sizeObj.width] = icon;
+          }
+        }
+      }
     }
 
     return structuredClone(json);
@@ -388,7 +445,6 @@ export class SearchSettings {
    *
    * @returns {*}
    *   A copy of the settings metadata object.
-   *
    */
   getSettingsMetaData() {
     return { ...this.#settings.metaData };
@@ -406,7 +462,6 @@ export class SearchSettings {
    *   The value of the attribute.
    *   We return undefined if the value of the attribute is not known or does
    *   not match the verification hash.
-   *
    */
   getVerifiedMetaDataAttribute(name, isAppProvided) {
     let attribute = this.getMetaDataAttribute(name);
@@ -444,7 +499,7 @@ export class SearchSettings {
    */
   setEngineMetaDataAttribute(engineName, property, value) {
     let engines = [...this.#searchService._engines.values()];
-    let engine = engines.find(engine => engine._name == engineName);
+    let engine = engines.find(e => e._name == engineName);
     if (engine) {
       engine._metaData[property] = value;
       this._delayedWrite();
@@ -462,9 +517,7 @@ export class SearchSettings {
    *   The value of the attribute, or undefined if not known.
    */
   getEngineMetaDataAttribute(engineName, property) {
-    let engine = this.#settings.engines.find(
-      engine => engine._name == engineName
-    );
+    let engine = this.#settings.engines.find(e => e._name == engineName);
     return engine._metaData[property] ?? undefined;
   }
 

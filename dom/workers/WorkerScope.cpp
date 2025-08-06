@@ -48,6 +48,7 @@
 #include "mozilla/dom/ClientSource.h"
 #include "mozilla/dom/Clients.h"
 #include "mozilla/dom/Console.h"
+#include "mozilla/dom/CookieStore.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/DebuggerNotification.h"
 #include "mozilla/dom/DebuggerNotificationBinding.h"
@@ -68,6 +69,7 @@
 #include "mozilla/dom/WebTaskSchedulerWorker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
+#include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
@@ -244,6 +246,10 @@ WorkerGlobalScopeBase::WorkerGlobalScopeBase(
     : mWorkerPrivate(aWorkerPrivate),
       mClientSource(std::move(aClientSource)),
       mSerialEventTarget(aWorkerPrivate->HybridEventTarget()) {
+  if (StaticPrefs::dom_workers_throttling_enabled() && XRE_IsContentProcess()) {
+    mTimeoutManager =
+        MakeUnique<dom::TimeoutManager>(*this, /* not used on workers */ 0);
+  }
   LOG(("WorkerGlobalScopeBase::WorkerGlobalScopeBase [%p]", this));
   MOZ_ASSERT(mWorkerPrivate);
 #ifdef DEBUG
@@ -294,8 +300,27 @@ StorageAccess WorkerGlobalScopeBase::GetStorageAccess() {
   return mWorkerPrivate->StorageAccess();
 }
 
+nsICookieJarSettings* WorkerGlobalScopeBase::GetCookieJarSettings() {
+  AssertIsOnWorkerThread();
+  return mWorkerPrivate->CookieJarSettings();
+}
+
+nsIURI* WorkerGlobalScopeBase::GetBaseURI() const {
+  return mWorkerPrivate->GetBaseURI();
+}
+
 Maybe<ClientInfo> WorkerGlobalScopeBase::GetClientInfo() const {
   return Some(mClientSource->Info());
+}
+
+Maybe<ClientState> WorkerGlobalScopeBase::GetClientState() const {
+  Result<ClientState, ErrorResult> res = mClientSource->SnapshotState();
+  if (res.isOk()) {
+    return Some(res.unwrap());
+  }
+
+  res.unwrapErr().SuppressException();
+  return Nothing();
 }
 
 Maybe<ServiceWorkerDescriptor> WorkerGlobalScopeBase::GetController() const {
@@ -828,6 +853,32 @@ WorkerGlobalScope::GetDebuggerNotificationType() const {
   return Some(EventCallbackDebuggerNotificationType::Global);
 }
 
+already_AddRefed<ServiceWorkerContainer>
+WorkerGlobalScope::GetServiceWorkerContainer() {
+  return RefPtr(Navigator())->ServiceWorker();
+}
+
+RefPtr<ServiceWorker> WorkerGlobalScope::GetOrCreateServiceWorker(
+    const ServiceWorkerDescriptor& aDescriptor) {
+  RefPtr<ServiceWorker> ref;
+  ForEachGlobalTeardownObserver(
+      [&](GlobalTeardownObserver* aObserver, bool* aDoneOut) {
+        RefPtr<ServiceWorker> sw = do_QueryObject(aObserver);
+        if (!sw || !sw->Descriptor().Matches(aDescriptor)) {
+          return;
+        }
+
+        ref = std::move(sw);
+        *aDoneOut = true;
+      });
+
+  if (!ref) {
+    ref = ServiceWorker::Create(this, aDescriptor);
+  }
+
+  return ref;
+}
+
 RefPtr<ServiceWorkerRegistration>
 WorkerGlobalScope::GetServiceWorkerRegistration(
     const ServiceWorkerRegistrationDescriptor& aDescriptor) const {
@@ -869,6 +920,16 @@ mozilla::dom::StorageManager* WorkerGlobalScope::GetStorageManager() {
 bool WorkerGlobalScope::IsEligibleForMessaging() {
   return mIsEligibleForMessaging;
 }
+
+void WorkerGlobalScope::ReportToConsole(
+    uint32_t aErrorFlags, const nsCString& aCategory,
+    nsContentUtils::PropertiesFile aFile, const nsCString& aMessageName,
+    const nsTArray<nsString>& aParams,
+    const mozilla::SourceLocation& aLocation) {
+  WorkerPrivate::ReportErrorToConsole(aErrorFlags, aCategory, aFile,
+                                      aMessageName, aParams, aLocation);
+}
+
 void WorkerGlobalScope::StorageAccessPermissionGranted() {
   // Reset the IndexedDB factory.
   mIndexedDB = nullptr;
@@ -1099,7 +1160,8 @@ void SharedWorkerGlobalScope::Close() {
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ServiceWorkerGlobalScope, WorkerGlobalScope,
-                                   mClients, mExtensionBrowser, mRegistration)
+                                   mClients, mExtensionBrowser, mRegistration,
+                                   mCookieStore)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ServiceWorkerGlobalScope)
 NS_INTERFACE_MAP_END_INHERITING(WorkerGlobalScope)
 
@@ -1244,6 +1306,14 @@ ServiceWorkerGlobalScope::AcquireExtensionBrowser() {
   }
 
   return mExtensionBrowser.clonePtr();
+}
+
+already_AddRefed<CookieStore> ServiceWorkerGlobalScope::CookieStore() {
+  if (!mCookieStore) {
+    mCookieStore = CookieStore::Create(this);
+  }
+
+  return do_AddRef(mCookieStore);
 }
 
 bool WorkerDebuggerGlobalScope::WrapGlobalObject(

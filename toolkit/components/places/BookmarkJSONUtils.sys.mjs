@@ -289,12 +289,9 @@ BookmarkImporter.prototype = {
       bookmarkCount += bookmarks.filter(
         bookmark => bookmark.type == PlacesUtils.bookmarks.TYPE_BOOKMARK
       ).length;
+
       // Now add any favicons.
-      try {
-        insertFaviconsForTree(node);
-      } catch (ex) {
-        console.error("Failed to insert favicons:", ex);
-      }
+      insertFaviconsForTree(node);
     }
     return bookmarkCount;
   },
@@ -502,34 +499,28 @@ function translateTreeTypes(node) {
  * @param {Object} node The bookmark node for icons to be inserted.
  */
 function insertFaviconForNode(node) {
-  if (node.icon) {
-    try {
-      PlacesUtils.favicons.setFaviconForPage(
-        Services.io.newURI(node.url),
-        // Create a fake faviconURI to use (FIXME: bug 523932)
-        Services.io.newURI("fake-favicon-uri:" + node.url),
-        Services.io.newURI(node.icon)
-      );
-    } catch (ex) {
-      console.error("Failed to import favicon data:", ex);
-    }
-  }
-
-  if (!node.iconUri) {
+  if (!node.icon && !node.iconUri) {
+    // No favicon information.
     return;
   }
 
   try {
-    PlacesUtils.favicons.setAndFetchFaviconForPage(
-      Services.io.newURI(node.url),
-      Services.io.newURI(node.iconUri),
-      false,
-      PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-      null,
-      Services.scriptSecurityManager.getSystemPrincipal()
-    );
+    // If icon is not specified, suppose iconUri may contain a data uri.
+    let faviconDataURI = Services.io.newURI(node.icon || node.iconUri);
+    if (!faviconDataURI.schemeIs("data")) {
+      return;
+    }
+
+    PlacesUtils.favicons
+      .setFaviconForPage(
+        Services.io.newURI(node.url),
+        // Use iconUri otherwise create a fake favicon URI to use (FIXME: bug 523932)
+        Services.io.newURI(node.iconUri ?? "fake-favicon-uri:" + node.url),
+        faviconDataURI
+      )
+      .catch(console.error);
   } catch (ex) {
-    console.error("Failed to import favicon URI:" + ex);
+    console.error("Failed to import favicon data:", ex);
   }
 }
 

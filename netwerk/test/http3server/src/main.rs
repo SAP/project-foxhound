@@ -179,7 +179,7 @@ impl Http3TestServer {
 }
 
 impl HttpServer for Http3TestServer {
-    fn process(&mut self, dgram: Option<&Datagram>, now: Instant) -> Output {
+    fn process(&mut self, dgram: Option<Datagram>, now: Instant) -> Output {
         let output = self.server.process(dgram, now);
 
         let output = if self.sessions_to_close.is_empty() {
@@ -637,7 +637,7 @@ impl ::std::fmt::Display for Server {
 }
 
 impl HttpServer for Server {
-    fn process(&mut self, dgram: Option<&Datagram>, now: Instant) -> Output {
+    fn process(&mut self, dgram: Option<Datagram>, now: Instant) -> Output {
         self.0.process(dgram, now)
     }
 
@@ -882,7 +882,7 @@ impl Http3ProxyServer {
 }
 
 impl HttpServer for Http3ProxyServer {
-    fn process(&mut self, dgram: Option<&Datagram>, now: Instant) -> Output {
+    fn process(&mut self, dgram: Option<Datagram>, now: Instant) -> Output {
         let output = self.server.process(dgram, now);
 
         #[cfg(not(target_os = "android"))]
@@ -1015,7 +1015,7 @@ impl ::std::fmt::Display for NonRespondingServer {
 }
 
 impl HttpServer for NonRespondingServer {
-    fn process(&mut self, _dgram: Option<&Datagram>, _now: Instant) -> Output {
+    fn process(&mut self, _dgram: Option<Datagram>, _now: Instant) -> Output {
         Output::None
     }
 
@@ -1225,3 +1225,9 @@ extern "C" fn __tsan_default_suppressions() -> *const std::os::raw::c_char {
     // https://github.com/rust-lang/rust/issues/128769
     "race:tokio::runtime::io::registration_set::RegistrationSet::allocate\0".as_ptr() as *const _
 }
+
+// Work around until we can use raw-dylibs.
+#[cfg_attr(target_os = "windows", link(name = "runtimeobject"))]
+extern "C" {}
+#[cfg_attr(target_os = "windows", link(name = "propsys"))]
+extern "C" {}

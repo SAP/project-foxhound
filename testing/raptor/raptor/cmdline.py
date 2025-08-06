@@ -348,8 +348,8 @@ def create_parser(mach_interface=False):
             help="This contains the path to mozbuild.",
         )
     add_arg(
-        "--noinstall",
-        dest="noinstall",
+        "--no-install",
+        dest="no_install",
         default=False,
         action="store_true",
         help="Flag which indicates if Raptor should not offer to install Android APK.",
@@ -633,9 +633,6 @@ def verify_options(parser, args):
         if args.post_startup_delay < 0:
             parser.error("--post-startup-delay must be a positive integer (in ms).")
 
-    if args.power_test and args.app not in FIREFOX_ANDROID_APPS + CHROME_ANDROID_APPS:
-        parser.error("--power-test is only available with Android apps.")
-
 
 def parse_args(argv=None):
     parser = create_parser()
@@ -736,7 +733,7 @@ class _PrintTests(_StopAction):
         # exit Raptor
         parser.exit()
 
-    def filter_app(self, tests, values):
+    def filter_app(self, tests, values, strict=True):
         for test in tests:
             if values["app"] in test["apps"]:
                 yield test

@@ -9,21 +9,12 @@
 
 # TODO: Upgrade the TOML crate and switch to array of tables syntax.
 
-[sync15]
-crate_name = "sync15"
-udl_file = "third_party/rust/sync15/src/sync15.udl"
 
-[tabs]
-crate_name = "tabs"
-udl_file = "third_party/rust/tabs/src/tabs.udl"
-
-[suggest]
-crate_name = "suggest"
-udl_file = "third_party/rust/suggest/src/suggest.udl"
-
-[suggest.receiver_thread]
-default = "worker"
-main = [
+[suggest.async_wrappers]
+# All functions/methods are wrapped to be async by default and must be `await`ed.
+enable = true
+# These are exceptions to the async wrapping.  These functions must not be `await`ed.
+main_thread = [
   "raw_suggestion_url_matches",
   "SuggestStore",
   "SuggestStore.interrupt",
@@ -35,81 +26,56 @@ main = [
   "SuggestStoreBuilder.build",
 ]
 
-[relevancy]
-crate_name = "relevancy"
-udl_file = "third_party/rust/relevancy/src/relevancy.udl"
-
-[relevancy.receiver_thread]
-default = "worker"
-main = [
+[relevancy.async_wrappers]
+# All functions/methods are wrapped to be async by default and must be `await`ed.
+enable = true
+# These are exceptions to the async wrapping.  These functions must not be `await`ed.
+main_thread = [
   "RelevancyStore",
   "RelevancyStore.close",
   "RelevancyStore.interrupt",
+  "score",
 ]
 
-[remote_settings]
-crate_name = "remote_settings"
-udl_file = "third_party/rust/remote_settings/src/remote_settings.udl"
-
-[remote_settings.receiver_thread]
-default = "worker"
-main = [
+[remote_settings.async_wrappers]
+# All functions/methods are wrapped to be async by default and must be `await`ed.
+enable = true
+# These are exceptions to the async wrapping.  These functions must not be `await`ed.
+main_thread = [
   "RemoteSettings",
 ]
 
-[geometry]
-crate_name = "uniffi_geometry"
-udl_file = "toolkit/components/uniffi-fixtures/geometry/src/geometry.udl"
-fixture = true
+[error_support.async_wrappers]
+# All functions/methods are wrapped to be async by default and must be `await`ed.
+enable = true
 
-[arithmetic]
-crate_name = "arithmetical"
-udl_file = "toolkit/components/uniffi-fixtures/arithmetic/src/arithmetic.udl"
-fixture = true
+[tabs.async_wrappers]
+# All functions/methods are wrapped to be async by default and must be `await`ed.
+enable = true
 
-[rondpoint]
-crate_name = "uniffi_rondpoint"
-udl_file = "toolkit/components/uniffi-fixtures/rondpoint/src/rondpoint.udl"
-fixture = true
+[arithmetical.async_wrappers]
+enable = true
 
-[sprites]
-crate_name = "uniffi_sprites"
-udl_file = "toolkit/components/uniffi-fixtures/sprites/src/sprites.udl"
-fixture = true
+[uniffi_custom_types.async_wrappers]
+enable = true
 
-[todolist]
-crate_name = "uniffi_todolist"
-udl_file = "toolkit/components/uniffi-fixtures/todolist/src/todolist.udl"
-fixture = true
+[uniffi_fixture_callbacks.async_wrappers]
+enable = true
+main_thread = [
+  "log_even_numbers_main_thread",
+]
 
-[fixture_refcounts]
-crate_name = "uniffi_fixture_refcounts"
-udl_file = "toolkit/components/uniffi-fixtures/refcounts/src/refcounts.udl"
-fixture = true
+[uniffi_fixture_external_types.async_wrappers]
+enable = true
 
-[fixture_refcounts.receiver_thread]
-default = "main"
+[uniffi_geometry.async_wrappers]
+enable = true
 
-# Temporarily disabled until we can re-enable callback support
-#
-# I think this can be done when we implement https://bugzilla.mozilla.org/show_bug.cgi?id=1888668
-# [fixture_callbacks]
-# crate_name = "uniffi_fixture_callbacks"
-# udl_file = "toolkit/components/uniffi-fixture-callbacks/src/callbacks.udl"
-# fixture = true
-#
-# [fixture_callbacks.receiver_thread]
-# default = "worker"
-# main = [
-#   "log_even_numbers_main_thread",
-# ]
+[uniffi_rondpoint.async_wrappers]
+enable = true
 
-[custom_types]
-crate_name = "uniffi_custom_types"
-udl_file = "toolkit/components/uniffi-fixtures/custom-types/src/custom-types.udl"
-fixture = true
+[uniffi_sprites.async_wrappers]
+enable = true
 
-[external_types]
-crate_name = "uniffi_fixture_external_types"
-udl_file = "toolkit/components/uniffi-fixtures/external-types/src/external-types.udl"
-fixture = true
+[uniffi_todolist.async_wrappers]
+enable = true

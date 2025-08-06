@@ -116,7 +116,7 @@ int32_t nsIWidget::sPointerIdCounter = 0;
 // Some statics from nsIWidget.h
 /*static*/
 uint64_t AutoObserverNotifier::sObserverId = 0;
-/*static*/ nsTHashMap<uint64_t, nsCOMPtr<nsIObserver>>
+MOZ_RUNINIT /*static*/ nsTHashMap<uint64_t, nsCOMPtr<nsIObserver>>
     AutoObserverNotifier::sSavedObservers;
 
 // The maximum amount of time to let the EnableDragDrop runnable wait in the
@@ -420,8 +420,29 @@ void nsBaseWidget::BaseCreate(nsIWidget* aParent, widget::InitData* aInitData) {
     mIsPIPWindow = aInitData->mPIPWindow;
   }
 
-  if (aParent) {
-    aParent->AddChild(this);
+  mParent = aParent;
+  if (mParent) {
+    mParent->AddToChildList(this);
+  }
+}
+
+void nsIWidget::SetParent(nsIWidget* aNewParent) {
+  nsCOMPtr<nsIWidget> kungFuDeathGrip = this;
+  nsCOMPtr<nsIWidget> oldParent = mParent;
+  if (mParent) {
+    mParent->RemoveFromChildList(this);
+  }
+  mParent = aNewParent;
+  if (mParent) {
+    mParent->AddToChildList(this);
+  }
+  DidChangeParent(oldParent);
+}
+
+void nsIWidget::RemoveAllChildren() {
+  while (nsCOMPtr<nsIWidget> kid = mLastChild) {
+    kid->SetParent(nullptr);
+    MOZ_ASSERT(kid != mLastChild);
   }
 }
 
@@ -440,37 +461,42 @@ void nsBaseWidget::SetWidgetListener(nsIWidgetListener* aWidgetListener) {
 }
 
 already_AddRefed<nsIWidget> nsBaseWidget::CreateChild(
-    const LayoutDeviceIntRect& aRect, widget::InitData* aInitData,
-    bool aForceUseIWidgetParent) {
-  nsIWidget* parent = this;
-  nsNativeWidget nativeParent = nullptr;
-
-  if (!aForceUseIWidgetParent) {
-    // Use only either parent or nativeParent, not both, to match
-    // existing code.  Eventually Create() should be divested of its
-    // nativeWidget parameter.
-    nativeParent = parent ? parent->GetNativeData(NS_NATIVE_WIDGET) : nullptr;
-    parent = nativeParent ? nullptr : parent;
-    MOZ_ASSERT(!parent || !nativeParent, "messed up logic");
-  }
-
+    const LayoutDeviceIntRect& aRect, widget::InitData& aInitData) {
   nsCOMPtr<nsIWidget> widget;
-  if (aInitData && aInitData->mWindowType == WindowType::Popup) {
-    widget = AllocateChildPopupWidget();
-  } else {
-    widget = nsIWidget::CreateChildWindow();
+  switch (mWidgetType) {
+    case WidgetType::Native: {
+      if (aInitData.mWindowType == WindowType::Popup) {
+        widget = AllocateChildPopupWidget();
+      } else {
+        widget = nsIWidget::CreateChildWindow();
+      }
+      break;
+    }
+    case WidgetType::Headless:
+      widget = nsIWidget::CreateHeadlessWidget();
+      break;
+    case WidgetType::Puppet: {
+      // This really only should happen in crashtests that have menupopups.
+      MOZ_ASSERT(aInitData.mWindowType == WindowType::Popup,
+                 "Creating non-popup puppet widget?");
+      widget = nsIWidget::CreatePuppetWidget(nullptr);
+      break;
+    }
   }
 
-  if (widget && mNeedFastSnaphot) {
+  if (!widget) {
+    return nullptr;
+  }
+
+  if (mNeedFastSnaphot) {
     widget->SetNeedFastSnaphot();
   }
 
-  if (widget &&
-      NS_SUCCEEDED(widget->Create(parent, nativeParent, aRect, aInitData))) {
-    return widget.forget();
+  if (NS_FAILED(widget->Create(this, aRect, &aInitData))) {
+    return nullptr;
   }
 
-  return nullptr;
+  return widget.forget();
 }
 
 // Attach a view to our widget which we'll send events to.
@@ -512,39 +538,26 @@ void nsBaseWidget::Destroy() {
   // Just in case our parent is the only ref to us
   nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
   // disconnect from the parent
-  nsIWidget* parent = GetParent();
-  if (parent) {
-    parent->RemoveChild(this);
+  if (mParent) {
+    mParent->RemoveFromChildList(this);
   }
+  mParent = nullptr;
 }
 
-//-------------------------------------------------------------------------
-//
-// Get this nsBaseWidget parent
-//
-//-------------------------------------------------------------------------
-nsIWidget* nsBaseWidget::GetParent(void) { return nullptr; }
-
-//-------------------------------------------------------------------------
-//
-// Get this nsBaseWidget top level widget
-//
-//-------------------------------------------------------------------------
-nsIWidget* nsBaseWidget::GetTopLevelWidget() {
-  nsIWidget *topLevelWidget = nullptr, *widget = this;
-  while (widget) {
-    topLevelWidget = widget;
-    widget = widget->GetParent();
+nsIWidget* nsIWidget::GetTopLevelWidget() {
+  auto* cur = this;
+  while (true) {
+    if (cur->IsTopLevelWidget()) {
+      break;
+    }
+    nsIWidget* parent = cur->GetParent();
+    if (!parent) {
+      break;
+    }
+    cur = parent;
   }
-  return topLevelWidget;
+  return cur;
 }
-
-//-------------------------------------------------------------------------
-//
-// Get this nsBaseWidget's top (non-sheet) parent (if it's a sheet)
-//
-//-------------------------------------------------------------------------
-nsIWidget* nsBaseWidget::GetSheetWindowParent(void) { return nullptr; }
 
 float nsBaseWidget::GetDPI() { return 96.0f; }
 
@@ -592,7 +605,7 @@ RefPtr<mozilla::VsyncDispatcher> nsIWidget::GetVsyncDispatcher() {
 // Add a child to the list of children
 //
 //-------------------------------------------------------------------------
-void nsBaseWidget::AddChild(nsIWidget* aChild) {
+void nsIWidget::AddToChildList(nsIWidget* aChild) {
   MOZ_ASSERT(!aChild->GetNextSibling() && !aChild->GetPrevSibling(),
              "aChild not properly removed from its old child list");
 
@@ -613,17 +626,8 @@ void nsBaseWidget::AddChild(nsIWidget* aChild) {
 // Remove a child from the list of children
 //
 //-------------------------------------------------------------------------
-void nsBaseWidget::RemoveChild(nsIWidget* aChild) {
-#ifdef DEBUG
-#  ifdef XP_MACOSX
-  // nsCocoaWindow doesn't implement GetParent, so in that case parent will be
-  // null and we'll just have to do without this assertion.
-  nsIWidget* parent = aChild->GetParent();
-  NS_ASSERTION(!parent || parent == this, "Not one of our kids!");
-#  else
-  MOZ_RELEASE_ASSERT(aChild->GetParent() == this, "Not one of our kids!");
-#  endif
-#endif
+void nsIWidget::RemoveFromChildList(nsIWidget* aChild) {
+  MOZ_ASSERT(aChild->GetParent() == this, "Not one of our kids!");
 
   if (mLastChild == aChild) {
     mLastChild = mLastChild->GetPrevSibling();
@@ -2345,7 +2349,7 @@ WidgetWheelEvent nsBaseWidget::MayStartSwipeForAPZ(
     return event;
   }
 
-  if (aPanInput.AllowsSwipe()) {
+  if (aPanInput.mHandledByAPZ && aPanInput.AllowsSwipe()) {
     SwipeInfo swipeInfo = SendMayStartSwipe(aPanInput);
     event.mCanTriggerSwipe = swipeInfo.wantsSwipe;
     if (swipeInfo.wantsSwipe) {
@@ -3356,7 +3360,7 @@ static PrefPair debug_PrefValues[] = {
 bool nsBaseWidget::debug_GetCachedBoolPref(const char* aPrefName) {
   NS_ASSERTION(nullptr != aPrefName, "cmon, pref name is null.");
 
-  for (uint32_t i = 0; i < ArrayLength(debug_PrefValues); i++) {
+  for (uint32_t i = 0; i < std::size(debug_PrefValues); i++) {
     if (strcmp(debug_PrefValues[i].name, aPrefName) == 0) {
       return debug_PrefValues[i].value;
     }
@@ -3368,7 +3372,7 @@ bool nsBaseWidget::debug_GetCachedBoolPref(const char* aPrefName) {
 static void debug_SetCachedBoolPref(const char* aPrefName, bool aValue) {
   NS_ASSERTION(nullptr != aPrefName, "cmon, pref name is null.");
 
-  for (uint32_t i = 0; i < ArrayLength(debug_PrefValues); i++) {
+  for (uint32_t i = 0; i < std::size(debug_PrefValues); i++) {
     if (strcmp(debug_PrefValues[i].name, aPrefName) == 0) {
       debug_PrefValues[i].value = aValue;
 
@@ -3411,7 +3415,7 @@ Debug_PrefObserver::Observe(nsISupports* subject, const char* topic,
   once = false;
 
   nsCOMPtr<nsIObserver> obs(new Debug_PrefObserver());
-  for (uint32_t i = 0; i < ArrayLength(debug_PrefValues); i++) {
+  for (uint32_t i = 0; i < std::size(debug_PrefValues); i++) {
     // Initialize the pref values
     debug_PrefValues[i].value =
         Preferences::GetBool(debug_PrefValues[i].name, false);

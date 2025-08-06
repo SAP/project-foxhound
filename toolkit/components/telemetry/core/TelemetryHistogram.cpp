@@ -215,7 +215,14 @@ class Histogram {
    */
   bool GetHistogram(const nsACString& store, base::Histogram** h);
 
-  bool IsExpired() const { return mIsExpired; }
+  bool IsExpired() const {
+    if (mIsExpired) {
+      PROFILER_MARKER_TEXT("HistogramError", TELEMETRY,
+                           mozilla::MarkerStack::Capture(),
+                           "accessing expired histogram");
+    }
+    return mIsExpired;
+  }
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
@@ -257,7 +264,14 @@ class KeyedHistogram {
 
   bool IsEmpty(const nsACString& aStore) const;
 
-  bool IsExpired() const { return mIsExpired; }
+  bool IsExpired() const {
+    if (mIsExpired) {
+      PROFILER_MARKER_TEXT("HistogramError", TELEMETRY,
+                           mozilla::MarkerStack::Capture(),
+                           "accessing expired histogram");
+    }
+    return mIsExpired;
+  }
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
@@ -322,14 +336,6 @@ bool gHistogramRecordingDisabled[HistogramCount] = {};
 // PRIVATE CONSTANTS
 
 namespace {
-
-// List of histogram IDs which should have recording disabled initially.
-const HistogramID kRecordingInitiallyDisabledIDs[] = {
-    mozilla::Telemetry::FX_REFRESH_DRIVER_SYNC_SCROLL_FRAME_DELAY_MS,
-
-    // The array must not be empty. Leave these item here.
-    mozilla::Telemetry::TELEMETRY_TEST_COUNT_INIT_NO_RECORD,
-    mozilla::Telemetry::TELEMETRY_TEST_KEYED_COUNT_INIT_NO_RECORD};
 
 const char* TEST_HISTOGRAM_PREFIX = "TELEMETRY_TEST_";
 
@@ -684,18 +690,24 @@ nsresult internal_HistogramAdd(const StaticMutexAutoLock& aLock,
                                Histogram& histogram, const HistogramID id,
                                uint32_t value, ProcessID aProcessType) {
   // Check if we are allowed to record the data.
-  bool canRecordDataset =
-      CanRecordDataset(gHistogramInfos[id].dataset, internal_CanRecordBase(),
-                       internal_CanRecordExtended());
+  const HistogramInfo& h = gHistogramInfos[id];
+  bool canRecordDataset = CanRecordDataset(h.dataset, internal_CanRecordBase(),
+                                           internal_CanRecordExtended());
+  if (!canRecordDataset) {
+    return NS_OK;
+  }
+
   // If `histogram` is a non-parent-process histogram, then recording-enabled
   // has been checked in its owner process.
-  if (!canRecordDataset ||
-      (aProcessType == ProcessID::Parent && !internal_IsRecordingEnabled(id))) {
+  if (aProcessType == ProcessID::Parent && !internal_IsRecordingEnabled(id)) {
+    PROFILER_MARKER_TEXT(
+        "HistogramError", TELEMETRY, mozilla::MarkerStack::Capture(),
+        nsPrintfCString("CannotRecordInProcess: %s", h.name()));
     return NS_OK;
   }
 
   // Don't record if the current platform is not enabled
-  if (!CanRecordProduct(gHistogramInfos[id].products)) {
+  if (!CanRecordProduct(h.products)) {
     return NS_OK;
   }
 
@@ -705,7 +717,7 @@ nsresult internal_HistogramAdd(const StaticMutexAutoLock& aLock,
   if (value > INT_MAX) {
     TelemetryScalar::Add(
         mozilla::Telemetry::ScalarID::TELEMETRY_ACCUMULATE_CLAMPED_VALUES,
-        NS_ConvertASCIItoUTF16(gHistogramInfos[id].name()), 1);
+        NS_ConvertASCIItoUTF16(h.name()), 1);
     value = INT_MAX;
   }
 
@@ -1485,6 +1497,42 @@ nsresult internal_GetKeyedHistogramsSnapshot(
 
 }  // namespace
 
+namespace geckoprofiler::markers {
+
+struct HistogramMarker {
+  static constexpr mozilla::Span<const char> MarkerTypeName() {
+    return mozilla::MakeStringSpan("Hist");
+  }
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      mozilla::Telemetry::HistogramID aId, const nsCString& key,
+      uint32_t aSample) {
+    aWriter.UniqueStringProperty(
+        "id", mozilla::MakeStringSpan(GetHistogramName(aId)));
+    if (!key.IsEmpty()) {
+      aWriter.StringProperty("key", key);
+    }
+    aWriter.IntProperty("val", aSample);
+  }
+  using MS = mozilla::MarkerSchema;
+  static MS MarkerTypeDisplay() {
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.AddKeyLabelFormatSearchable("id", "Histogram Name",
+                                       MS::Format::UniqueString,
+                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("key", "Key", MS::Format::String);
+    schema.AddKeyLabelFormat("val", "Sample", MS::Format::Integer);
+    schema.SetTooltipLabel(
+        "{marker.data.id}[{marker.data.key}] {marker.data.val}");
+    schema.SetTableLabel(
+        "{marker.name} - {marker.data.id}[{marker.data.key}]: "
+        "{marker.data.val}");
+    return schema;
+  }
+};
+
+}  // namespace geckoprofiler::markers
+
 ////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////
 //
@@ -1502,6 +1550,8 @@ bool internal_RemoteAccumulate(const StaticMutexAutoLock& aLock,
     return true;
   }
 
+  PROFILER_MARKER("Histogram::Add", TELEMETRY, {}, HistogramMarker, aId,
+                  EmptyCString(), aSample);
   TelemetryIPCAccumulator::AccumulateChildHistogram(aId, aSample);
   return true;
 }
@@ -1517,6 +1567,8 @@ bool internal_RemoteAccumulate(const StaticMutexAutoLock& aLock,
     return true;
   }
 
+  PROFILER_MARKER("Histogram::Add", TELEMETRY, {}, HistogramMarker, aId, aKey,
+                  aSample);
   TelemetryIPCAccumulator::AccumulateChildKeyedHistogram(aId, aKey, aSample);
   return true;
 }
@@ -1528,6 +1580,8 @@ void internal_Accumulate(const StaticMutexAutoLock& aLock, HistogramID aId,
     return;
   }
 
+  PROFILER_MARKER("Histogram::Add", TELEMETRY, {}, HistogramMarker, aId,
+                  EmptyCString(), aSample);
   Histogram* w = internal_GetHistogramById(aLock, aId, ProcessID::Parent);
   MOZ_ASSERT(w);
   internal_HistogramAdd(aLock, *w, aId, aSample, ProcessID::Parent);
@@ -1540,6 +1594,8 @@ void internal_Accumulate(const StaticMutexAutoLock& aLock, HistogramID aId,
     return;
   }
 
+  PROFILER_MARKER("Histogram::Add", TELEMETRY, {}, HistogramMarker, aId, aKey,
+                  aSample);
   KeyedHistogram* keyed =
       internal_GetKeyedHistogramById(aId, ProcessID::Parent);
   MOZ_ASSERT(keyed);
@@ -1553,6 +1609,8 @@ void internal_AccumulateChild(const StaticMutexAutoLock& aLock,
     return;
   }
 
+  PROFILER_MARKER("ChildHistogram::Add", TELEMETRY, {}, HistogramMarker, aId,
+                  EmptyCString(), aSample);
   Histogram* w = internal_GetHistogramById(aLock, aId, aProcessType);
   if (w == nullptr) {
     NS_WARNING("Failed GetHistogramById for CHILD");
@@ -1568,6 +1626,8 @@ void internal_AccumulateChildKeyed(const StaticMutexAutoLock& aLock,
     return;
   }
 
+  PROFILER_MARKER("ChildHistogram::Add", TELEMETRY, {}, HistogramMarker, aId,
+                  aKey, aSample);
   KeyedHistogram* keyed = internal_GetKeyedHistogramById(aId, aProcessType);
   MOZ_ASSERT(keyed);
   keyed->Add(aKey, aSample, aProcessType);
@@ -2503,48 +2563,6 @@ void TelemetryHistogram::InitHistogramRecordingEnabled() {
         CanRecordInProcess(h.record_in_processes, processType);
     internal_SetHistogramRecordingEnabled(locker, id, canRecordInProcess);
   }
-
-  for (auto recordingInitiallyDisabledID : kRecordingInitiallyDisabledIDs) {
-    internal_SetHistogramRecordingEnabled(locker, recordingInitiallyDisabledID,
-                                          false);
-  }
-}
-
-void TelemetryHistogram::SetHistogramRecordingEnabled(HistogramID aID,
-                                                      bool aEnabled) {
-  if (NS_WARN_IF(!internal_IsHistogramEnumId(aID))) {
-    MOZ_ASSERT_UNREACHABLE("Histogram usage requires valid ids.");
-    return;
-  }
-
-  const HistogramInfo& h = gHistogramInfos[aID];
-  if (!CanRecordInProcess(h.record_in_processes, XRE_GetProcessType())) {
-    // Don't permit record_in_process-disabled recording to be re-enabled.
-    return;
-  }
-
-  if (!CanRecordProduct(h.products)) {
-    // Don't permit products-disabled recording to be re-enabled.
-    return;
-  }
-
-  StaticMutexAutoLock locker(gTelemetryHistogramMutex);
-  internal_SetHistogramRecordingEnabled(locker, aID, aEnabled);
-}
-
-nsresult TelemetryHistogram::SetHistogramRecordingEnabled(
-    const nsACString& name, bool aEnabled) {
-  StaticMutexAutoLock locker(gTelemetryHistogramMutex);
-  HistogramID id;
-  if (NS_FAILED(internal_GetHistogramIdByName(locker, name, &id))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  const HistogramInfo& hi = gHistogramInfos[id];
-  if (CanRecordInProcess(hi.record_in_processes, XRE_GetProcessType())) {
-    internal_SetHistogramRecordingEnabled(locker, id, aEnabled);
-  }
-  return NS_OK;
 }
 
 void TelemetryHistogram::Accumulate(HistogramID aID, uint32_t aSample) {
@@ -2856,7 +2874,6 @@ const char* TelemetryHistogram::GetHistogramName(HistogramID id) {
     return nullptr;
   }
 
-  StaticMutexAutoLock locker(gTelemetryHistogramMutex);
   const HistogramInfo& h = gHistogramInfos[id];
   return h.name();
 }

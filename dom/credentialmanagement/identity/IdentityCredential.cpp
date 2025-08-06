@@ -4,14 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "js/MapAndSet.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/IdentityCredential.h"
 #include "mozilla/dom/IdentityNetworkHelpers.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/Components.h"
@@ -77,6 +75,9 @@ void IdentityCredential::CopyValuesFrom(const IPCIdentityCredential& aOther) {
     creationOptions.mEffectiveOrigins.Construct(
         Sequence(aOther.effectiveOrigins().Clone()));
   }
+  if (aOther.effectiveType().isSome()) {
+    creationOptions.mEffectiveType.Construct(aOther.effectiveType().value());
+  }
   creationOptions.mId = aOther.id();
   IdentityCredentialUserData userData;
   if (aOther.name().isSome()) {
@@ -113,6 +114,10 @@ IPCIdentityCredential IdentityCredential::MakeIPCIdentityCredential() const {
     if (this->mCreationOptions->mEffectiveOrigins.WasPassed()) {
       result.effectiveOrigins() =
           this->mCreationOptions->mEffectiveOrigins.Value();
+    }
+    if (this->mCreationOptions->mEffectiveType.WasPassed()) {
+      result.effectiveType() =
+          Some(this->mCreationOptions->mEffectiveType.Value());
     }
     if (this->mCreationOptions->mUiHint.WasPassed() &&
         !this->mCreationOptions->mUiHint.Value().mIconURL.IsEmpty()) {
@@ -215,7 +220,7 @@ void IdentityCredential::GetCredential(nsPIDOMWindowInner* aParent,
               return;
             }
             if (maybeResult.isNothing()) {
-              aPromise->MaybeResolve(JS::NullValue());
+              aPromise->MaybeResolve(JS::NullHandleValue);
               return;
             }
             aPromise->MaybeResolve(
@@ -365,6 +370,15 @@ RefPtr<GenericPromise> IdentityCredential::AllowedToCollectCredential(
       }
     }
   }
+  if (aCredential.effectiveType().isSome() && aOptions.mProviders.WasPassed()) {
+    for (const auto& provider : aOptions.mProviders.Value()) {
+      if (provider.mEffectiveType.WasPassed() &&
+          provider.mEffectiveType.Value() ==
+              aCredential.effectiveType().value()) {
+        return GenericPromise::CreateAndResolve(true, __func__);
+      }
+    }
+  }
   if (aCredential.effectiveQueryURL().isSome()) {
     // Make the url to test, returning the default resolved to false promise if
     // it fails
@@ -479,30 +493,33 @@ IdentityCredential::CollectFromCredentialStoreInMainProcess(
     return IdentityCredential::GetIPCIdentityCredentialsPromise::
         CreateAndReject(rv, __func__);
   }
+
+  if (!aOptions.mProviders.WasPassed()) {
+    return IdentityCredential::GetIPCIdentityCredentialsPromise::
+        CreateAndResolve(CopyableTArray<mozilla::dom::IPCIdentityCredential>(),
+                         __func__);
+  }
+
   nsTArray<RefPtr<nsIPrincipal>> idpPrincipals;
-  if (aOptions.mProviders.WasPassed()) {
-    for (const auto& idpConfig : aOptions.mProviders.Value()) {
-      if (idpConfig.mOrigin.WasPassed()) {
-        RefPtr<nsIURI> idpURI;
-        rv = NS_NewURI(getter_AddRefs(idpURI), idpConfig.mOrigin.Value());
-        if (NS_FAILED(rv)) {
-          continue;
-        }
-        RefPtr<nsIPrincipal> idpPrincipal =
-            BasePrincipal::CreateContentPrincipal(
-                idpURI, aPrincipal->OriginAttributesRef());
-        idpPrincipals.AppendElement(idpPrincipal);
-      } else if (idpConfig.mLoginURL.WasPassed()) {
-        RefPtr<nsIURI> idpURI;
-        rv = NS_NewURI(getter_AddRefs(idpURI), idpConfig.mLoginURL.Value());
-        if (NS_FAILED(rv)) {
-          continue;
-        }
-        RefPtr<nsIPrincipal> idpPrincipal =
-            BasePrincipal::CreateContentPrincipal(
-                idpURI, aPrincipal->OriginAttributesRef());
-        idpPrincipals.AppendElement(idpPrincipal);
+  for (const auto& idpConfig : aOptions.mProviders.Value()) {
+    if (idpConfig.mOrigin.WasPassed()) {
+      RefPtr<nsIURI> idpURI;
+      rv = NS_NewURI(getter_AddRefs(idpURI), idpConfig.mOrigin.Value());
+      if (NS_FAILED(rv)) {
+        continue;
       }
+      RefPtr<nsIPrincipal> idpPrincipal = BasePrincipal::CreateContentPrincipal(
+          idpURI, aPrincipal->OriginAttributesRef());
+      idpPrincipals.AppendElement(idpPrincipal);
+    } else if (idpConfig.mLoginURL.WasPassed()) {
+      RefPtr<nsIURI> idpURI;
+      rv = NS_NewURI(getter_AddRefs(idpURI), idpConfig.mLoginURL.Value());
+      if (NS_FAILED(rv)) {
+        continue;
+      }
+      RefPtr<nsIPrincipal> idpPrincipal = BasePrincipal::CreateContentPrincipal(
+          idpURI, aPrincipal->OriginAttributesRef());
+      idpPrincipals.AppendElement(idpPrincipal);
     }
   }
 
@@ -510,6 +527,19 @@ IdentityCredential::CollectFromCredentialStoreInMainProcess(
   rv = icStorageService->GetIdentityCredentials(idpPrincipals, fromStore);
   if (NS_FAILED(rv)) {
     return GetIPCIdentityCredentialsPromise::CreateAndReject(rv, __func__);
+  }
+
+  for (const auto& idpConfig : aOptions.mProviders.Value()) {
+    if (idpConfig.mEffectiveType.WasPassed() &&
+        idpConfig.mEffectiveType.Value() != "") {
+      nsTArray<mozilla::dom::IPCIdentityCredential> typeMatches;
+      rv = icStorageService->GetIdentityCredentialsOfType(
+          idpConfig.mEffectiveType.Value(), typeMatches);
+      if (NS_FAILED(rv)) {
+        return GetIPCIdentityCredentialsPromise::CreateAndReject(rv, __func__);
+      }
+      fromStore.AppendElements(std::move(typeMatches));
+    }
   }
 
   RefPtr<GetIPCIdentityCredentialsPromise::Private> resultPromise =
@@ -723,12 +753,11 @@ nsresult OpenIdentityProviderDialog(
       aProviderConfig.mLoginTarget.Value() == IdentityLoginTargetType::Popup;
   RefPtr<BrowsingContext> newBC;
   if (popup) {
-    return outer->OpenJS(
-        NS_ConvertUTF8toUTF16(aProviderConfig.mLoginURL.Value()), u"_blank"_ns,
-        u"popup"_ns, getter_AddRefs(newBC));
+    return outer->OpenJS(aProviderConfig.mLoginURL.Value(), u"_blank"_ns,
+                         u"popup"_ns, getter_AddRefs(newBC));
   }
-  return outer->OpenJS(NS_ConvertUTF8toUTF16(aProviderConfig.mLoginURL.Value()),
-                       u"_top"_ns, u""_ns, getter_AddRefs(newBC));
+  return outer->OpenJS(aProviderConfig.mLoginURL.Value(), u"_top"_ns, u""_ns,
+                       getter_AddRefs(newBC));
 }
 
 // static
@@ -880,8 +909,7 @@ IdentityCredential::DiscoverLightweightFromExternalSourceInMainProcess(
       if (provider.mLoginURL.WasPassed()) {
         Unused << aBrowsingContext->GetCurrentWindowGlobal()
                       ->SendNavigateForIdentityCredentialDiscovery(
-                          NS_ConvertUTF8toUTF16(provider.mLoginURL.Value()),
-                          type);
+                          provider.mLoginURL.Value(), type);
       }
     }
   }

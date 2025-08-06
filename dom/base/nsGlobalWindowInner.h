@@ -56,6 +56,7 @@
 class nsIArray;
 class nsIBaseWindow;
 class nsIContent;
+class nsICookieJarSettings;
 class nsICSSDeclaration;
 class nsIDocShellTreeOwner;
 class nsIDOMWindowUtils;
@@ -104,6 +105,7 @@ struct ChannelPixelLayout;
 class Credential;
 class ClientSource;
 class Console;
+class CookieStore;
 class Crypto;
 class CustomElementRegistry;
 class DataTransfer;
@@ -256,6 +258,12 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   bool IsEligibleForMessaging() override;
 
+  void ReportToConsole(uint32_t aErrorFlags, const nsCString& aCategory,
+                       nsContentUtils::PropertiesFile aFile,
+                       const nsCString& aMessageName,
+                       const nsTArray<nsString>& aParams,
+                       const mozilla::SourceLocation& aLocation) override;
+
   void TraceGlobalJSObject(JSTracer* aTrc);
 
   virtual nsresult EnsureScriptEnvironment() override;
@@ -341,14 +349,19 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   mozilla::dom::DebuggerNotificationManager*
   GetExistingDebuggerNotificationManager() override;
 
+  nsIURI* GetBaseURI() const final;
+
   mozilla::Maybe<mozilla::dom::ClientInfo> GetClientInfo() const override;
-  mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const;
+  mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const final;
   mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor> GetController()
       const override;
 
   void SetCsp(nsIContentSecurityPolicy* aCsp);
   void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp);
   nsIContentSecurityPolicy* GetCsp();
+
+  virtual already_AddRefed<mozilla::dom::ServiceWorkerContainer>
+  GetServiceWorkerContainer() override;
 
   virtual RefPtr<mozilla::dom::ServiceWorker> GetOrCreateServiceWorker(
       const mozilla::dom::ServiceWorkerDescriptor& aDescriptor) override;
@@ -363,6 +376,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
       override;
 
   mozilla::StorageAccess GetStorageAccess() final;
+
+  nsICookieJarSettings* GetCookieJarSettings() final;
 
   void NoteCalledRegisterForServiceWorkerScope(const nsACString& aScope);
 
@@ -406,8 +421,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   static bool DeviceSensorsEnabled(JSContext*, JSObject*);
 
   static bool CachesEnabled(JSContext* aCx, JSObject*);
-
-  static bool IsSizeToContentEnabled(JSContext*, JSObject*);
 
   // WebIDL permission Func for whether Glean APIs are permitted.
   static bool IsGleanNeeded(JSContext*, JSObject*);
@@ -654,6 +667,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   already_AddRefed<mozilla::dom::Console> GetConsole(JSContext* aCx,
                                                      mozilla::ErrorResult& aRv);
 
+  already_AddRefed<mozilla::dom::CookieStore> CookieStore();
+
   // https://w3c.github.io/webappsec-secure-contexts/#dom-window-issecurecontext
   bool IsSecureContext() const;
 
@@ -843,10 +858,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   already_AddRefed<nsICSSDeclaration> GetDefaultComputedStyle(
       mozilla::dom::Element& aElt, const nsAString& aPseudoElt,
       mozilla::ErrorResult& aError);
-  void SizeToContent(mozilla::dom::CallerType aCallerType,
-                     mozilla::ErrorResult& aError);
-  void SizeToContentConstrained(const mozilla::dom::SizeToContentConstraints&,
-                                mozilla::ErrorResult&);
+  void SizeToContent(const mozilla::dom::SizeToContentConstraints&,
+                     mozilla::ErrorResult&);
   mozilla::dom::Crypto* GetCrypto(mozilla::ErrorResult& aError);
   nsIControllers* GetControllers(mozilla::ErrorResult& aError);
   nsresult GetControllers(nsIControllers** aControllers) override;
@@ -1374,6 +1387,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   RefPtr<mozilla::dom::Crypto> mCrypto;
   RefPtr<mozilla::dom::cache::CacheStorage> mCacheStorage;
   RefPtr<mozilla::dom::Console> mConsole;
+  RefPtr<mozilla::dom::CookieStore> mCookieStore;
   RefPtr<mozilla::dom::Worklet> mPaintWorklet;
   RefPtr<mozilla::dom::External> mExternal;
   RefPtr<mozilla::dom::InstallTriggerImpl> mInstallTrigger;

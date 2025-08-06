@@ -8,6 +8,7 @@
 #define NSSUBDOCUMENTFRAME_H_
 
 #include "mozilla/Attributes.h"
+#include "mozilla/gfx/Matrix.h"
 #include "nsDisplayList.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsIReflowCallback.h"
@@ -49,7 +50,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
 
   void Destroy(DestroyContext&) override;
 
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) override;
 
   mozilla::IntrinsicSize GetIntrinsicSize() override;
@@ -102,7 +103,9 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   mozilla::PresShell* GetSubdocumentPresShellForPainting(uint32_t aFlags);
   nsRect GetDestRect();
   nsRect GetDestRect(const nsRect& aConstraintRect);
-  mozilla::ScreenIntSize GetSubdocumentSize();
+  mozilla::LayoutDeviceIntSize GetSubdocumentSize();
+
+  bool ContentReactsToPointerEvents() const;
 
   // nsIReflowCallback
   bool ReflowFinished() override;
@@ -138,6 +141,15 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   RemoteFramePaintData GetRemotePaintData() const;
   bool HasRetainedPaintData() const { return mRetainedRemoteFrame.isSome(); }
 
+  const mozilla::gfx::MatrixScales& GetRasterScale() const {
+    return mRasterScale;
+  }
+  void SetRasterScale(const mozilla::gfx::MatrixScales& aScale) {
+    mRasterScale = aScale;
+  }
+  const Maybe<nsRect>& GetVisibleRect() const { return mVisibleRect; }
+  void SetVisibleRect(const Maybe<nsRect>& aRect) { mVisibleRect = aRect; }
+
  protected:
   friend class AsyncFrameInit;
 
@@ -155,6 +167,7 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
 
   nsView* GetViewInternal() const override { return mOuterView; }
   void SetViewInternal(nsView* aView) override { mOuterView = aView; }
+  void CreateView();
 
   mutable RefPtr<nsFrameLoader> mFrameLoader;
 
@@ -164,6 +177,11 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   // When process-switching a remote tab, we might temporarily paint the old
   // one.
   Maybe<RemoteFramePaintData> mRetainedRemoteFrame;
+
+  // The raster scale from our last paint.
+  mozilla::gfx::MatrixScales mRasterScale;
+  // The visible rect from our last paint.
+  Maybe<nsRect> mVisibleRect;
 
   bool mIsInline : 1;
   bool mPostedReflowCallback : 1;

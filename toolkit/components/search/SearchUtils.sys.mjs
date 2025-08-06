@@ -158,6 +158,7 @@ export var SearchUtils = {
     SEARCH: "text/html",
     OPENSEARCH: "application/opensearchdescription+xml",
     TRENDING_JSON: "application/x-trending+json",
+    SEARCH_FORM: "searchform",
   },
 
   ENGINES_URLS: {
@@ -183,37 +184,7 @@ export var SearchUtils = {
   // A tag to denote when we are using the "default_locale" of an engine.
   DEFAULT_TAG: "default",
 
-  // Query parameters can have the property "purpose", whose value
-  // indicates the context that initiated a search. This list contains
-  // defined search contexts.
-  PARAM_PURPOSES: {
-    CONTEXTMENU: "contextmenu",
-    HOMEPAGE: "homepage",
-    KEYWORD: "keyword",
-    NEWTAB: "newtab",
-    SEARCHBAR: "searchbar",
-  },
-
   LoadListener,
-
-  // This is a list of search engines that we currently consider to be "General"
-  // search, as opposed to a vertical search engine such as one used for
-  // shopping, book search, etc.
-  //
-  // Currently these are a list of hard-coded application provided ones. At some
-  // point in the future we expect to allow WebExtensions to specify by themselves,
-  // however this needs more definition on the "vertical" search terms, and the
-  // effects before we enable it.
-  GENERAL_SEARCH_ENGINE_IDS: new Set([
-    "google@search.mozilla.org",
-    "ddg@search.mozilla.org",
-    "bing@search.mozilla.org",
-    "baidu@search.mozilla.org",
-    "ecosia@search.mozilla.org",
-    "qwant@search.mozilla.org",
-    "yahoo-jp@search.mozilla.org",
-    "yandex@search.mozilla.org",
-  ]),
 
   /**
    * Notifies watchers of SEARCH_ENGINE_TOPIC about changes to an engine or to
@@ -295,7 +266,7 @@ export var SearchUtils = {
    *   The current settings version.
    */
   get SETTINGS_VERSION() {
-    return 9;
+    return 11;
   },
 
   /**

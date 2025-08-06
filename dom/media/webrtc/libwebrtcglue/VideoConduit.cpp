@@ -81,7 +81,7 @@
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/ReverseIterator.h"
 #include "mozilla/StateWatching.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/TelemetryHistogramEnums.h"
 #include "mozilla/TelemetryScalarEnums.h"
 #include "mozilla/Types.h"
@@ -989,10 +989,9 @@ void WebrtcVideoConduit::CreateSendStream() {
     return;
   }
 
-  nsAutoString codecName;
-  codecName.AssignASCII(mSendStreamConfig.rtp.payload_name.c_str());
-  Telemetry::ScalarAdd(Telemetry::ScalarID::WEBRTC_VIDEO_SEND_CODEC_USED,
-                       codecName, 1);
+  glean::webrtc_video::send_codec_used
+      .Get(nsDependentCString(mSendStreamConfig.rtp.payload_name.c_str()))
+      .Add(1);
 
   mSendStreamConfig.encoder_settings.encoder_factory = mEncoderFactory.get();
   mSendStreamConfig.encoder_settings.bitrate_allocator_factory =
@@ -1032,10 +1031,9 @@ void WebrtcVideoConduit::CreateRecvStream() {
   mRecvStreamConfig.renderer = this;
 
   for (auto& decoder : mRecvStreamConfig.decoders) {
-    nsAutoString codecName;
-    codecName.AssignASCII(decoder.video_format.name.c_str());
-    Telemetry::ScalarAdd(Telemetry::ScalarID::WEBRTC_VIDEO_RECV_CODEC_USED,
-                         codecName, 1);
+    glean::webrtc_video::recv_codec_used
+        .Get(nsDependentCString(decoder.video_format.name.c_str()))
+        .Add(1);
   }
 
   mRecvStreamConfig.decoder_factory = mDecoderFactory.get();
@@ -1856,7 +1854,7 @@ void WebrtcVideoConduit::OnFrame(const webrtc::VideoFrame& video_frame) {
   if (profiler_is_active()) {
     MutexAutoLock lock(mMutex);
     // The first frame has a delta of zero.
-    uint32_t rtpTimestamp = video_frame.timestamp();
+    uint32_t rtpTimestamp = video_frame.rtp_timestamp();
     uint32_t timestampDelta =
         mLastRTPTimestampReceive.isSome()
             ? rtpTimestamp - mLastRTPTimestampReceive.value()
@@ -1868,9 +1866,7 @@ void WebrtcVideoConduit::OnFrame(const webrtc::VideoFrame& video_frame) {
   }
 #endif
 
-  mRenderer->RenderVideoFrame(*video_frame.video_frame_buffer(),
-                              video_frame.timestamp(),
-                              video_frame.render_time_ms());
+  mRenderer->RenderVideoFrame(video_frame);
 }
 
 bool WebrtcVideoConduit::AddFrameHistory(

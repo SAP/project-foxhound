@@ -13,9 +13,6 @@
 
 #include "ds/Nestable.h"
 #include "frontend/AbstractScopePtr.h"
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  include "frontend/BytecodeOffset.h"
-#endif
 #include "frontend/NameAnalysisTypes.h"
 #include "frontend/NameCollections.h"
 #include "frontend/Stencil.h"
@@ -54,11 +51,10 @@ class EmitterScope : public Nestable<EmitterScope> {
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   mozilla::Maybe<UsingEmitter> usingEmitter_;
 
- public:
-  enum class IsSwitchBlock : uint8_t { No, Yes };
+  mozilla::Maybe<ForOfDisposalEmitter> forOfDisposalEmitter_;
 
  private:
-  IsSwitchBlock isSwitchBlock_ = IsSwitchBlock::No;
+  BlockKind blockKind_ = BlockKind::Other;
 #endif
 
   // The number of enclosing environments. Used for error checking.
@@ -134,11 +130,11 @@ class EmitterScope : public Nestable<EmitterScope> {
 
   void dump(BytecodeEmitter* bce);
 
-  [[nodiscard]] bool enterLexical(
-      BytecodeEmitter* bce, ScopeKind kind, LexicalScope::ParserData* bindings
+  [[nodiscard]] bool enterLexical(BytecodeEmitter* bce, ScopeKind kind,
+                                  LexicalScope::ParserData* bindings
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-      ,
-      IsSwitchBlock isSwitchBlock = IsSwitchBlock::No
+                                  ,
+                                  BlockKind blockKind = BlockKind::Other
 #endif
   );
   [[nodiscard]] bool enterClassBody(BytecodeEmitter* bce, ScopeKind kind,
@@ -193,11 +189,16 @@ class EmitterScope : public Nestable<EmitterScope> {
 
   [[nodiscard]] bool prepareForDisposableAssignment(UsingHint hint);
 
-  [[nodiscard]] bool prepareForForOfLoopIteration();
+  [[nodiscard]] bool prepareForForOfLoopIteration(BytecodeEmitter* bce,
+                                                  bool hasAwaitUsing);
 
   [[nodiscard]] bool prepareForForOfIteratorCloseOnThrow();
 
   bool hasDisposables() const { return usingEmitter_.isSome(); }
+
+  bool hasAsyncDisposables() const {
+    return hasDisposables() && usingEmitter_->hasAwaitUsing();
+  }
 #endif
 
   // The first frame slot used.

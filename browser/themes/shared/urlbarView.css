@@ -52,9 +52,8 @@
   --urlbarView-labeled-row-label-top: calc(-1.27em - 2px);
   --urlbarView-labeled-tip-margin-top-extra: 8px;
 
-  --urlbarView-action-button-background-color: light-dark(white, #1C1B22);
-  --urlbarView-action-button-hover-color: light-dark(#5B5B66, var(--buttons-destructive-color));
-  --urlbarView-action-button-selected-color: light-dark(#1C1B22, var(--urlbarView-action-button-background-color));
+  --urlbarView-action-button-background-color: color-mix(in srgb, var(--urlbarView-hover-background) 50%, transparent);
+  --urlbarView-action-button-hover-background-color: var(--urlbarView-hover-background);
 
   &:-moz-locale-dir(rtl) {
     --urlbarView-action-slide-in-distance: -200px;
@@ -392,7 +391,7 @@
 
 .urlbarView-button-menu {
   background-image: url("chrome://global/skin/icons/more.svg");
-  background-color: var(--button-bgcolor);
+  background-color: var(--button-background-color);
 
   .urlbarView-results:not([disable-resultmenu-autohide]) > .urlbarView-row:not(:hover, [selected]) > .urlbarView-row-inner + &:not([open]):empty {
     display: none;
@@ -437,21 +436,21 @@
   flex-shrink: 0;
 
   &:not(:hover) {
-    background-color: var(--button-bgcolor);
+    background-color: var(--button-background-color);
   }
 
   &:is([selected], [primary]) {
-    color: var(--button-primary-color);
-    background-color: var(--button-primary-bgcolor);
-    outline-color: var(--button-primary-bgcolor);
+    color: var(--button-text-color-primary);
+    background-color: var(--color-accent-primary);
+    outline-color: var(--color-accent-primary);
     outline-offset: var(--focus-outline-offset);
 
     &:hover {
-      background-color: var(--button-primary-hover-bgcolor);
+      background-color: var(--color-accent-primary-hover);
     }
 
     &:hover:active {
-      background-color: var(--button-primary-active-bgcolor);
+      background-color: var(--color-accent-primary-active);
     }
   }
 }
@@ -714,27 +713,59 @@
 }
 
 /* Switch-to-tab and Clipboard action text is styled as a chiclet. */
-.urlbarView-row:is([type=switchtab], [type=remotetab], [type=clipboard]) {
+.urlbarView-row[has-action]:is([type=switchtab], [type=remotetab], [type=clipboard]) {
   > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
-    color: var(--urlbar-box-text-color);
-    background-color: var(--urlbar-box-focus-bgcolor);
     border-radius: var(--toolbarbutton-border-radius);
     padding: 4px 8px;
     margin-block: -2px;
     margin-inline-start: 8px;
 
     :root[uidensity=compact] & {
-      padding: 3px 6px;
+      padding-block: 3px;
+
+      &.urlbarView-userContext {
+        border-block-start-width: 3px;
+      }
     }
 
-    &.urlbarView-userContext {
-      padding-top: 0;
+    /* stylelint-disable-next-line media-query-no-invalid */
+    @media not (-moz-bool-pref: "browser.urlbar.scotchBonnet.enableOverride") {
+      color: var(--urlbar-box-text-color);
+      background-color: var(--urlbar-box-focus-bgcolor);
+
+      &.urlbarView-userContext {
+        padding-top: 0;
+      }
+    }
+
+    /* stylelint-disable-next-line media-query-no-invalid */
+    @media (-moz-bool-pref: "browser.urlbar.scotchBonnet.enableOverride") {
+      -moz-context-properties: fill, fill-opacity;
+      color: var(--toolbar-field-focus-color);
+      padding-inline-start: calc(var(--urlbarView-favicon-width) + 8px);
+      background-image: url("chrome://browser/content/firefoxview/view-opentabs.svg");
+      background-repeat: no-repeat;
+      background-position: 4px center;
+      background-size: var(--urlbarView-favicon-width);
+
+      border-inline: 1px solid var(--urlbarView-separator-color);
+      border-block-end: 1px solid var(--urlbarView-separator-color);
+      &:not(.urlbarView-userContext) {
+        border-block-start: 1px solid var(--urlbarView-separator-color);
+      }
+
+      &:-moz-locale-dir(rtl) {
+        background-position-x: right 4px;
+      }
     }
   }
 
-  &:is([selected], :hover) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
-    color: var(--urlbarView-result-button-selected-color);
-    background-color: var(--urlbarView-result-button-selected-background-color);
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media not (-moz-bool-pref: "browser.urlbar.scotchBonnet.enableOverride") {
+    &:is([selected], :hover) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
+      color: var(--urlbarView-result-button-selected-color);
+      background-color: var(--urlbarView-result-button-selected-background-color);
+    }
   }
 }
 
@@ -908,6 +939,62 @@
   background-color: var(--urlbarView-result-button-selected-background-color);
 }
 
+/* Actions */
+.urlbarView-results[actionmode] {
+  white-space: wrap;
+}
+
+.urlbarView-row[dynamicType="actions"] {
+  display: inline-flex;
+}
+
+/* To align the label and action button */
+.urlbarView-row[secondary-action] {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.urlbarView-actions-container {
+  margin-inline-start: calc(var(--urlbarView-item-inline-padding) + var(--urlbarView-favicon-margin-start) + var(--urlbarView-favicon-width) + var(--urlbarView-icon-margin-end));
+  margin-block-end: var(--urlbarView-item-block-padding);
+}
+
+.urlbarView-action-btn {
+  font-size: smaller;
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--toolbarbutton-border-radius);
+  border: 1px solid transparent;
+  padding: .4em .6em;
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--urlbarView-action-button-background-color);
+  margin-inline-end: var(--space-large);
+
+  > img {
+    width: 16px;
+    height: 16px;
+    margin-inline-end: .4em;
+    -moz-context-properties: fill, fill-opacity;
+  }
+
+  &:hover {
+    background-color: var(--urlbarView-action-button-hover-background-color);
+  }
+
+  &[selected],
+  &:hover:active {
+    outline: var(--focus-outline);
+  }
+
+  &.urlbarView-userContext {
+    border-top-color: var(--identity-tab-color);
+  }
+
+  .urlbarView[action-override] &[data-action=tabswitch] {
+    display: none;
+  }
+}
+
 /* Search one-offs */
 
 #urlbar .search-one-offs:not([hidden]) {
@@ -1030,44 +1117,4 @@
 #PopupSearchAutoComplete .autocomplete-richlistitem[selected] {
   background: var(--urlbarView-highlight-background);
   color: var(--urlbarView-highlight-color);
-}
-
-.urlbarView-row:has(.urlbarView-actions-container:not(:empty)) {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.urlbarView-actions-container {
-  margin-inline-start: calc(var(--urlbarView-item-inline-padding) + var(--urlbarView-favicon-margin-start) + var(--urlbarView-favicon-width) + var(--urlbarView-icon-margin-end));
-  margin-block-end: var(--urlbarView-item-block-padding);
-}
-
-.urlbarView-action-btn {
-  font-size: smaller;
-  color: var(--toolbar-field-focus-color);
-  border-radius: var(--toolbarbutton-border-radius);
-  border: 1px solid transparent;
-  padding: .4em .6em;
-  display: inline-flex;
-  align-items: center;
-  background-color: var(--urlbarView-action-button-background-color);
-  box-shadow: 0 0px 4px rgba(0, 0, 0, 0.23);
-}
-
-.urlbarView-action-btn img {
-  width: 16px;
-  height: 16px;
-  margin-inline-end: .4em;
-  -moz-context-properties: fill, fill-opacity;
-}
-
-.urlbarView-action-btn:hover {
-  color: var(--urlbarView-result-button-hover-color);
-  background-color: var(--urlbarView-action-button-hover-color);
-}
-
-.urlbarView-action-btn[selected] {
-  color: light-dark(var(--urlbarView-result-button-hover-color), var(--toolbar-field-focus-color));
-  background-color: var(--urlbarView-action-button-selected-color);
-  border-color: light-dark(transparent, white);
 }

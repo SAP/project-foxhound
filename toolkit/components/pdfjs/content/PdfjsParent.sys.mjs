@@ -15,6 +15,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { PdfJsTelemetry } from "resource://pdf.js/PdfJsTelemetry.sys.mjs";
+import { playNotFoundSound } from "resource://gre/modules/FinderSound.sys.mjs";
 
 const lazy = {};
 
@@ -69,20 +70,9 @@ export class PdfjsParent extends JSWindowActorParent {
     super();
     this._boundToFindbar = null;
     this._findFailedString = null;
+    this._lastNotFoundStringLength = 0;
 
-    const guessAltText =
-      Services.prefs.getBoolPref("pdfjs.enableAltText", false) &&
-      Services.prefs.getBoolPref("pdfjs.enableGuessAltText", false) &&
-      Services.prefs.getBoolPref("pdfjs.enableAltTextModelDownload", false) &&
-      Services.prefs.getBoolPref("browser.ml.enable", false);
-    PdfJsTelemetry.report({
-      type: "editing",
-      data: {
-        type: "stamp",
-        action: "pdfjs.image.alt_text_edit",
-        data: { guessAltText },
-      },
-    });
+    this._updatedPreference();
   }
 
   didDestroy() {
@@ -111,6 +101,8 @@ export class PdfjsParent extends JSWindowActorParent {
         return this._loadAIEngine(aMsg);
       case "PDFJS:Parent:mlDelete":
         return this._mlDelete(aMsg);
+      case "PDFJS:Parent:updatedPreference":
+        return this._updatedPreference(aMsg);
     }
     return undefined;
   }
@@ -121,6 +113,32 @@ export class PdfjsParent extends JSWindowActorParent {
 
   get browser() {
     return this.browsingContext.top.embedderElement;
+  }
+
+  _updatedPreference() {
+    PdfJsTelemetry.report({
+      type: "editing",
+      data: {
+        type: "stamp",
+        action: "pdfjs.image.alt_text_edit",
+        data: {
+          ask_to_edit:
+            Services.prefs.getBoolPref("pdfjs.enableAltText", false) &&
+            Services.prefs.getBoolPref(
+              "pdfjs.enableNewAltTextWhenAddingImage",
+              false
+            ),
+          ai_generation:
+            Services.prefs.getBoolPref("pdfjs.enableAltText", false) &&
+            Services.prefs.getBoolPref("pdfjs.enableGuessAltText", false) &&
+            Services.prefs.getBoolPref(
+              "pdfjs.enableAltTextModelDownload",
+              false
+            ) &&
+            Services.prefs.getBoolPref("browser.ml.enable", false),
+        },
+      },
+    });
   }
 
   _setPreferences({ data }) {
@@ -396,6 +414,23 @@ export class PdfjsParent extends JSWindowActorParent {
       } else if (!this._findFailedString) {
         this._findFailedString = data.rawQuery;
         lazy.SetClipboardSearchString(data.rawQuery);
+      }
+
+      let searchLengthened;
+      switch (data.result) {
+        case Ci.nsITypeAheadFind.FIND_NOTFOUND:
+          searchLengthened =
+            data.rawQuery.length > this._lastNotFoundStringLength;
+          this._lastNotFoundStringLength = data.rawQuery.length;
+
+          if (searchLengthened && !data.entireWord) {
+            playNotFoundSound();
+          }
+          break;
+        case Ci.nsITypeAheadFind.FIND_PENDING:
+          break;
+        default:
+          this._lastNotFoundStringLength = 0;
       }
 
       const matchesCount = this._requestMatchesCount(data.matchesCount);

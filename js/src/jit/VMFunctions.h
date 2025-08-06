@@ -20,6 +20,7 @@
 #include "js/ScalarType.h"
 #include "js/TypeDecls.h"
 #include "vm/TypeofEqOperand.h"
+#include "vm/UsingHint.h"
 
 class JSJitInfo;
 class JSLinearString;
@@ -28,6 +29,7 @@ namespace js {
 
 class AbstractGeneratorObject;
 class ArrayObject;
+class DateObject;
 class GlobalObject;
 class InterpreterFrame;
 class LexicalScope;
@@ -612,6 +614,8 @@ void TraceCreateObject(JSObject* obj);
 
 bool DoStringToInt64(JSContext* cx, HandleString str, uint64_t* res);
 
+BigInt* CreateBigIntFromInt32(JSContext* cx, int32_t i32);
+
 #if JS_BITS_PER_WORD == 32
 BigInt* CreateBigIntFromInt64(JSContext* cx, uint32_t low, uint32_t high);
 BigInt* CreateBigIntFromUint64(JSContext* cx, uint32_t low, uint32_t high);
@@ -695,12 +699,27 @@ float RoundFloat16ToFloat32(double d);
 float Float16ToFloat32(int32_t value);
 int32_t Float32ToFloat16(float value);
 
+void DateFillLocalTimeSlots(DateObject* dateObj);
+
 JSAtom* AtomizeStringNoGC(JSContext* cx, JSString* str);
 
-bool SetObjectHas(JSContext* cx, HandleObject obj, HandleValue key, bool* rval);
-bool MapObjectHas(JSContext* cx, HandleObject obj, HandleValue key, bool* rval);
-bool MapObjectGet(JSContext* cx, HandleObject obj, HandleValue key,
+bool SetObjectHas(JSContext* cx, Handle<SetObject*> obj, HandleValue key,
+                  bool* rval);
+bool SetObjectDelete(JSContext* cx, Handle<SetObject*> obj, HandleValue key,
+                     bool* rval);
+bool SetObjectAdd(JSContext* cx, Handle<SetObject*> obj, HandleValue key);
+bool SetObjectAddFromIC(JSContext* cx, Handle<SetObject*> obj, HandleValue key,
+                        MutableHandleValue rval);
+bool MapObjectHas(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                  bool* rval);
+bool MapObjectGet(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
                   MutableHandleValue rval);
+bool MapObjectDelete(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                     bool* rval);
+bool MapObjectSet(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                  HandleValue val);
+bool MapObjectSetFromIC(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
+                        HandleValue val, MutableHandleValue rval);
 
 void AssertSetObjectHash(JSContext* cx, SetObject* obj, const Value* value,
                          mozilla::HashNumber actualHash);

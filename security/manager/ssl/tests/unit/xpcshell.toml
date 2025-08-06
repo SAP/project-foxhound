@@ -2,6 +2,9 @@
 head = "head_psm.js"
 tags = "psm condprof"
 firefox-appdir = "browser"
+prefs = [
+  "security.pki.certificate_transparency.mode=1",
+]
 skip-if = ["os == 'win' && msix"] # https://bugzilla.mozilla.org/show_bug.cgi?id=1809477
 support-files = [
   "corrupted_crlite_helper.js",
@@ -168,6 +171,11 @@ tags = "remote-settings psm"
 skip-if = ["!debug"]
 run-sequentially = "hardcoded ports"
 
+["test_ct_stapled.js"]
+# Requires hard-coded debug-only data
+skip-if = ["!debug"]
+run-sequentially = "hardcoded ports"
+
 ["test_data_storage.js"]
 
 ["test_db_format_pref_new.js"]
@@ -274,15 +282,16 @@ run-sequentially = "hardcoded ports"
 run-sequentially = "hardcoded ports"
 
 ["test_oskeystore.js"]
-skip-if = ["apple_silicon"] # bug 1729538
+skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # bug 1729538
+
 
 ["test_osreauthenticator.js"]
 # Reauthentication has been implemented on Windows and MacOS, so running this
 # test results in the OS popping up a dialog, which means we can't run it in
 # automation.
-skip-if = [
-  "os == 'win'",
-  "os == 'mac'"
+run-if = [
+  "os == 'android'",
+  "os == 'linux'",
 ]
 
 ["test_password_prompt.js"]

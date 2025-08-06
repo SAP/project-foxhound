@@ -56,6 +56,14 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   ma_sll(dest.reg, src, Imm32(0));
 }
 
+void MacroAssembler::move8SignExtendToPtr(Register src, Register dest) {
+  move8To64SignExtend(src, Register64(dest));
+}
+
+void MacroAssembler::move16SignExtendToPtr(Register src, Register dest) {
+  move16To64SignExtend(src, Register64(dest));
+}
+
 void MacroAssembler::move32SignExtendToPtr(Register src, Register dest) {
   ma_sll(dest, src, Imm32(0));
 }
@@ -198,7 +206,7 @@ void MacroAssembler::add64(Imm64 imm, Register64 dest) {
 
 CodeOffset MacroAssembler::sub32FromStackPtrWithPatch(Register dest) {
   CodeOffset offset = CodeOffset(currentOffset());
-  MacroAssemblerMIPSShared::ma_liPatchable(dest, Imm32(0));
+  ma_liPatchable(dest, Imm32(0));
   as_dsubu(dest, StackPointer, dest);
   return offset;
 }
@@ -315,6 +323,46 @@ void MacroAssembler::inc64(AbsoluteAddress dest) {
   as_sd(SecondScratchReg, ScratchRegister, 0);
 }
 
+void MacroAssembler::quotient64(Register rhs, Register srcDest,
+                                bool isUnsigned) {
+  if (isUnsigned) {
+#ifdef MIPSR6
+    as_ddivu(srcDest, srcDest, rhs);
+#else
+    as_ddivu(srcDest, rhs);
+#endif
+  } else {
+#ifdef MIPSR6
+    as_ddiv(srcDest, srcDest, rhs);
+#else
+    as_ddiv(srcDest, rhs);
+#endif
+  }
+#ifndef MIPSR6
+  as_mflo(srcDest);
+#endif
+}
+
+void MacroAssembler::remainder64(Register rhs, Register srcDest,
+                                 bool isUnsigned) {
+  if (isUnsigned) {
+#ifdef MIPSR6
+    as_dmodu(srcDest, srcDest, rhs);
+#else
+    as_ddivu(srcDest, rhs);
+#endif
+  } else {
+#ifdef MIPSR6
+    as_dmod(srcDest, srcDest, rhs);
+#else
+    as_ddiv(srcDest, rhs);
+#endif
+  }
+#ifndef MIPSR6
+  as_mfhi(srcDest);
+#endif
+}
+
 void MacroAssembler::neg64(Register64 reg) { as_dsubu(reg.reg, zero, reg.reg); }
 
 void MacroAssembler::negPtr(Register reg) { as_dsubu(reg, zero, reg); }
@@ -361,6 +409,10 @@ void MacroAssembler::rshift64(Register shift, Register64 dest) {
 void MacroAssembler::rshiftPtrArithmetic(Imm32 imm, Register dest) {
   MOZ_ASSERT(0 <= imm.value && imm.value < 64);
   ma_dsra(dest, dest, imm);
+}
+
+void MacroAssembler::rshiftPtrArithmetic(Register shift, Register dest) {
+  ma_dsra(dest, dest, shift);
 }
 
 void MacroAssembler::rshift64Arithmetic(Imm32 imm, Register64 dest) {
@@ -424,6 +476,21 @@ void MacroAssembler::cmp32Set(Condition cond, T1 lhs, T2 rhs, Register dest) {
   ma_cmp_set(dest, lhs, rhs, cond);
 }
 
+void MacroAssembler::cmp64Set(Condition cond, Register64 lhs, Register64 rhs,
+                              Register dest) {
+  ma_cmp_set(dest, lhs.reg, rhs.reg, cond);
+}
+
+void MacroAssembler::cmp64Set(Condition cond, Register64 lhs, Imm64 rhs,
+                              Register dest) {
+  ma_cmp_set(dest, lhs.reg, ImmWord(uint64_t(rhs.value)), cond);
+}
+
+void MacroAssembler::cmp64Set(Condition cond, Address lhs, Register64 rhs,
+                              Register dest) {
+  ma_cmp_set(dest, lhs, rhs.reg, cond);
+}
+
 void MacroAssembler::cmp64Set(Condition cond, Address lhs, Imm64 rhs,
                               Register dest) {
   ma_cmp_set(dest, lhs, ImmWord(uint64_t(rhs.value)), cond);
@@ -432,12 +499,12 @@ void MacroAssembler::cmp64Set(Condition cond, Address lhs, Imm64 rhs,
 // ===============================================================
 // Bit counting functions
 
-void MacroAssembler::clz64(Register64 src, Register dest) {
-  as_dclz(dest, src.reg);
+void MacroAssembler::clz64(Register64 src, Register64 dest) {
+  as_dclz(dest.reg, src.reg);
 }
 
-void MacroAssembler::ctz64(Register64 src, Register dest) {
-  ma_dctz(dest, src.reg);
+void MacroAssembler::ctz64(Register64 src, Register64 dest) {
+  ma_dctz(dest.reg, src.reg);
 }
 
 void MacroAssembler::popcnt64(Register64 input, Register64 output,
@@ -503,19 +570,25 @@ void MacroAssembler::branch64(Condition cond, Register64 lhs, Register64 rhs,
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs, Imm64 val,
-                              Label* label) {
+                              Label* success, Label* fail) {
   MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal,
              "other condition codes not supported");
 
-  branchPtr(cond, lhs, ImmWord(val.value), label);
+  branchPtr(cond, lhs, ImmWord(val.value), success);
+  if (fail) {
+    jump(fail);
+  }
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs,
-                              Register64 rhs, Label* label) {
+                              Register64 rhs, Label* success, Label* fail) {
   MOZ_ASSERT(cond == Assembler::NotEqual || cond == Assembler::Equal,
              "other condition codes not supported");
 
-  branchPtr(cond, lhs, rhs.reg, label);
+  branchPtr(cond, lhs, rhs.reg, success);
+  if (fail) {
+    jump(fail);
+  }
 }
 
 void MacroAssembler::branch64(Condition cond, const Address& lhs,
@@ -535,10 +608,21 @@ void MacroAssembler::branchPrivatePtr(Condition cond, const Address& lhs,
   branchPtr(cond, lhs, rhs, label);
 }
 
-template <class L>
 void MacroAssembler::branchTest64(Condition cond, Register64 lhs,
-                                  Register64 rhs, Register temp, L label) {
-  branchTestPtr(cond, lhs.reg, rhs.reg, label);
+                                  Register64 rhs, Register temp, Label* success,
+                                  Label* fail) {
+  branchTestPtr(cond, lhs.reg, rhs.reg, success);
+  if (fail) {
+    jump(fail);
+  }
+}
+
+void MacroAssembler::branchTest64(Condition cond, Register64 lhs, Imm64 rhs,
+                                  Label* success, Label* fail) {
+  branchTestPtr(cond, lhs.reg, ImmWord(rhs.value), success);
+  if (fail) {
+    jump(fail);
+  }
 }
 
 void MacroAssembler::branchTestUndefined(Condition cond,
@@ -666,9 +750,8 @@ void MacroAssembler::branchTestPrimitive(Condition cond,
   branchTestPrimitive(cond, scratch2, label);
 }
 
-template <class L>
 void MacroAssembler::branchTestMagic(Condition cond, const ValueOperand& value,
-                                     L label) {
+                                     Label* label) {
   SecondScratchRegisterScope scratch2(*this);
   splitTag(value, scratch2);
   ma_b(scratch2, ImmTag(JSVAL_TAG_MAGIC), label, cond);
@@ -731,6 +814,14 @@ void MacroAssembler::branchTruncateDoubleToInt32(FloatRegister src,
   // Fail on overflow cases, besides MIPS64R2 will also fail here on NaN cases.
   as_sll(scratch, dest, 0);
   ma_b(dest, scratch, fail, Assembler::NotEqual);
+}
+
+void MacroAssembler::branchInt64NotInPtrRange(Register64 src, Label* label) {
+  // No-op on 64-bit platforms.
+}
+
+void MacroAssembler::branchUInt64NotInPtrRange(Register64 src, Label* label) {
+  branchTest64(Assembler::Signed, src, src, label);
 }
 
 void MacroAssembler::fallibleUnboxPtr(const ValueOperand& src, Register dest,

@@ -49,6 +49,12 @@ const TEST_URI = `https://example.org/document-builder.sjs?html=${encodeURICompo
       initial-value: ${CSS_NOT_DEFINED_INITIAL_VALUE};
     }
 
+    @property --empty {
+      syntax: "*";
+      inherits: true;
+      initial-value: ;
+    }
+
     main {
       --js-no-inherit: ${JS_NO_INHERIT_MAIN_VALUE};
       --js-inherit: ${JS_INHERIT_MAIN_VALUE};
@@ -65,6 +71,7 @@ const TEST_URI = `https://example.org/document-builder.sjs?html=${encodeURICompo
       outline: 10px solid var(--constructed, green);
       text-decoration-color: var(--js-not-defined, blue);
       caret-color: var(--css-dynamic-registered, turquoise);
+      --test-empty: var(--empty);
     }
 
     aside {
@@ -127,6 +134,14 @@ add_task(async function () {
       ],
     },
     {
+      header: `--empty {`,
+      propertyDefinition: [
+        `  syntax: "*";`,
+        `  inherits: true;`,
+        `  initial-value: ;`,
+      ],
+    },
+    {
       header: `--js-inherit {`,
       propertyDefinition: [
         `  name: "--js-inherit",`,
@@ -150,21 +165,62 @@ add_task(async function () {
   info("Check that var() tooltips handle registered properties");
   await assertVariableTooltipForProperty(view, "h1", "background-color", {
     // The variable value is the initial value since the variable does not inherit
-    header: `--css-no-inherit = ${CSS_NO_INHERIT_INITIAL_VALUE}`,
-    registeredProperty: [
-      `syntax:"<color>"`,
-      `inherits:false`,
-      `initial-value:${CSS_NO_INHERIT_INITIAL_VALUE}`,
-    ],
+    header:
+      // prettier-ignore
+      '<span xmlns="http://www.w3.org/1999/xhtml" data-color="tomato" class="color-swatch-container">' +
+        '<span ' +
+          'class="inspector-swatch inspector-colorswatch" ' +
+          'style="background-color:tomato">' +
+        '</span>' +
+        `<span class="ruleview-color">${CSS_NO_INHERIT_INITIAL_VALUE}</span>` +
+      '</span>',
+    registeredProperty: {
+      syntax: `"&lt;color&gt;"`,
+      inherits: "false",
+      "initial-value":
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="tomato" class="color-swatch-container">' +
+          '<span ' +
+            'class="inspector-swatch inspector-colorswatch" ' +
+            'style="background-color:tomato">' +
+          '</span>' +
+          `<span class="ruleview-color">${CSS_NO_INHERIT_INITIAL_VALUE}</span>` +
+        '</span>',
+    },
   });
   await assertVariableTooltipForProperty(view, "h1", "color", {
     // The variable value is the value set in the main selector, since the variable does inherit
-    header: `--css-inherit = ${CSS_INHERIT_MAIN_VALUE}`,
-    registeredProperty: [
-      `syntax:"<color>"`,
-      `inherits:true`,
-      `initial-value:${CSS_INHERIT_INITIAL_VALUE}`,
-    ],
+    header:
+      // prettier-ignore
+      '<span xmlns="http://www.w3.org/1999/xhtml" data-color="#FF0000" class="color-swatch-container">' +
+        '<span ' +
+          'class="inspector-swatch inspector-colorswatch" ' +
+          'style="background-color:#FF0000">' +
+        '</span>' +
+        `<span class="ruleview-color">${CSS_INHERIT_MAIN_VALUE}</span>` +
+      '</span>',
+    computed:
+      // prettier-ignore
+      '<span xmlns="http://www.w3.org/1999/xhtml" data-color="rgb(255, 0, 0)" class="color-swatch-container">' +
+        '<span ' +
+          'class="inspector-swatch inspector-colorswatch" ' +
+          'style="background-color:rgb(255, 0, 0)">' +
+        '</span>' +
+        `<span class="ruleview-color">rgb(255, 0, 0)</span>` +
+      '</span>',
+    registeredProperty: {
+      syntax: `"&lt;color&gt;"`,
+      inherits: "true",
+      "initial-value":
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="gold" class="color-swatch-container">' +
+          '<span ' +
+            'class="inspector-swatch inspector-colorswatch" ' +
+            'style="background-color:gold">' +
+          '</span>' +
+          `<span class="ruleview-color">${CSS_INHERIT_INITIAL_VALUE}</span>` +
+        '</span>',
+    },
   });
   await assertVariableTooltipForProperty(
     view,
@@ -172,12 +228,28 @@ add_task(async function () {
     "border-color",
     // The variable value is the initial value since the variable is not set
     {
-      header: `--css-not-defined = ${CSS_NOT_DEFINED_INITIAL_VALUE}`,
-      registeredProperty: [
-        `syntax:"<color>"`,
-        `inherits:true`,
-        `initial-value:${CSS_NOT_DEFINED_INITIAL_VALUE}`,
-      ],
+      header:
+        // prettier-ignore
+        `<span xmlns="http://www.w3.org/1999/xhtml" data-color="purple" class="color-swatch-container">` +
+          `<span ` +
+            `class="inspector-swatch inspector-colorswatch" ` +
+            `style="background-color:purple">` +
+          `</span>` +
+          `<span class="ruleview-color">${CSS_NOT_DEFINED_INITIAL_VALUE}</span>` +
+        `</span>`,
+      registeredProperty: {
+        syntax: `"&lt;color&gt;"`,
+        inherits: "true",
+        "initial-value":
+          // prettier-ignore
+          `<span xmlns="http://www.w3.org/1999/xhtml" data-color="purple" class="color-swatch-container">` +
+            `<span ` +
+              `class="inspector-swatch inspector-colorswatch" ` +
+              `style="background-color:purple">` +
+            `</span>` +
+            `<span class="ruleview-color">${CSS_NOT_DEFINED_INITIAL_VALUE}</span>` +
+          `</span>`,
+      },
     }
   );
   await assertVariableTooltipForProperty(
@@ -186,12 +258,12 @@ add_task(async function () {
     "height",
     // The variable value is the initial value since the variable does not inherit
     {
-      header: `--js-no-inherit = ${JS_NO_INHERIT_INITIAL_VALUE}`,
-      registeredProperty: [
-        `syntax:"<length>"`,
-        `inherits:false`,
-        `initial-value:${JS_NO_INHERIT_INITIAL_VALUE}`,
-      ],
+      header: JS_NO_INHERIT_INITIAL_VALUE,
+      registeredProperty: {
+        syntax: `"&lt;length&gt;"`,
+        inherits: "false",
+        "initial-value": JS_NO_INHERIT_INITIAL_VALUE,
+      },
     }
   );
   await assertVariableTooltipForProperty(
@@ -200,10 +272,21 @@ add_task(async function () {
     "width",
     // The variable value is the value set in the main selector, since the variable does inherit
     {
-      header: `--js-inherit = ${JS_INHERIT_MAIN_VALUE}`,
-      registeredProperty: [`syntax:"*"`, `inherits:true`],
+      header: JS_INHERIT_MAIN_VALUE,
+      // Computed value isn't displayed when it's the same as we put in the header
+      computed: null,
+      registeredProperty: { syntax: `"*"`, inherits: "true" },
     }
   );
+  await assertVariableTooltipForProperty(view, "h1", "--test-empty", {
+    header: "&lt;empty&gt;",
+    headerClasses: ["empty-css-variable"],
+    registeredProperty: {
+      syntax: `"*"`,
+      inherits: "true",
+      "initial-value": "&lt;empty&gt;",
+    },
+  });
 
   info(
     "Check that registered properties from new regular stylesheets are displayed"
@@ -242,12 +325,28 @@ add_task(async function () {
 
   // The var() tooltip should show the initial value of the new property
   await assertVariableTooltipForProperty(view, "h1", "caret-color", {
-    header: `--css-dynamic-registered = orchid`,
-    registeredProperty: [
-      `syntax:"<color>"`,
-      `inherits:false`,
-      `initial-value:orchid`,
-    ],
+    header:
+      // prettier-ignore
+      `<span xmlns="http://www.w3.org/1999/xhtml" data-color="orchid" class="color-swatch-container">` +
+        `<span ` +
+          `class="inspector-swatch inspector-colorswatch" ` +
+          `style="background-color:orchid">` +
+        `</span>` +
+        `<span class="ruleview-color">orchid</span>` +
+      `</span>`,
+    registeredProperty: {
+      syntax: `"&lt;color&gt;"`,
+      inherits: "false",
+      "initial-value":
+        // prettier-ignore
+        `<span xmlns="http://www.w3.org/1999/xhtml" data-color="orchid" class="color-swatch-container">` +
+          `<span ` +
+            `class="inspector-swatch inspector-colorswatch" ` +
+            `style="background-color:orchid">` +
+          `</span>` +
+          `<span class="ruleview-color">orchid</span>` +
+        `</span>`,
+    },
   });
 
   info("Check that updating property does update rules view");
@@ -283,12 +382,28 @@ add_task(async function () {
 
   // The var() tooltip should show the new initial value of the updated property
   await assertVariableTooltipForProperty(view, "h1", "caret-color", {
-    header: `--css-dynamic-registered = purple`,
-    registeredProperty: [
-      `syntax:"<color>"`,
-      `inherits:true`,
-      `initial-value:purple`,
-    ],
+    header:
+      // prettier-ignore
+      `<span xmlns="http://www.w3.org/1999/xhtml" data-color="purple" class="color-swatch-container">` +
+        `<span ` +
+          `class="inspector-swatch inspector-colorswatch" ` +
+          `style="background-color:purple">` +
+        `</span>` +
+        `<span class="ruleview-color">purple</span>` +
+      `</span>`,
+    registeredProperty: {
+      syntax: `"&lt;color&gt;"`,
+      inherits: "true",
+      "initial-value":
+        // prettier-ignore
+        `<span xmlns="http://www.w3.org/1999/xhtml" data-color="purple" class="color-swatch-container">` +
+          `<span ` +
+            `class="inspector-swatch inspector-colorswatch" ` +
+            `style="background-color:purple">` +
+          `</span>` +
+          `<span class="ruleview-color">purple</span>` +
+        `</span>`,
+    },
   });
 
   info("Check that removing property does update rules view");
@@ -308,6 +423,8 @@ add_task(async function () {
   // The var() tooltip should indicate that the property isn't set anymore
   await assertVariableTooltipForProperty(view, "h1", "caret-color", {
     header: `--css-dynamic-registered is not set`,
+    headerClasses: [],
+    isMatched: false,
   });
 
   info(
@@ -315,7 +432,7 @@ add_task(async function () {
   );
   is(
     getRuleViewProperty(view, "h1", "outline").valueSpan.querySelector(
-      ".ruleview-unmatched"
+      ".inspector-unmatched"
     ).textContent,
     "--constructed",
     "The --constructed variable is set as unmatched since it's not defined nor registered"
@@ -353,12 +470,28 @@ add_task(async function () {
 
   // The `var()` tooltip should show the initial-value of the new property
   await assertVariableTooltipForProperty(view, "h1", "outline", {
-    header: `--constructed = aqua`,
-    registeredProperty: [
-      `syntax:"<color>"`,
-      `inherits:true`,
-      `initial-value:aqua`,
-    ],
+    header:
+      // prettier-ignore
+      `<span xmlns="http://www.w3.org/1999/xhtml" data-color="aqua" class="color-swatch-container">` +
+        `<span ` +
+          `class="inspector-swatch inspector-colorswatch" ` +
+          `style="background-color:aqua">` +
+        `</span>` +
+        `<span class="ruleview-color">aqua</span>` +
+      `</span>`,
+    registeredProperty: {
+      syntax: `"&lt;color&gt;"`,
+      inherits: "true",
+      "initial-value":
+        // prettier-ignore
+        `<span xmlns="http://www.w3.org/1999/xhtml" data-color="aqua" class="color-swatch-container">` +
+          `<span ` +
+            `class="inspector-swatch inspector-colorswatch" ` +
+            `style="background-color:aqua">` +
+          `</span>` +
+          `<span class="ruleview-color">aqua</span>` +
+        `</span>`,
+    },
   });
 
   info(

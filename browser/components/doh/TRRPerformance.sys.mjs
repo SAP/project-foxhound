@@ -15,11 +15,6 @@
  * usable network until a full set of results has been captured. We stop retrying
  * after 5 attempts.
  */
-Services.telemetry.setEventRecordingEnabled(
-  "security.doh.trrPerformance",
-  true
-);
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -206,21 +201,16 @@ export class LookupAggregator {
         return;
       }
 
-      Services.telemetry.recordEvent(
-        "security.doh.trrPerformance",
-        "resolved",
-        "record",
-        "success",
-        {
-          domain,
-          trr,
-          status: status.toString(),
-          time: time.toString(),
-          retryCount: retryCount.toString(),
-          networkUnstable: this.networkUnstable.toString(),
-          captivePortal: this.captivePortal.toString(),
-        }
-      );
+      Glean.securityDohTrrPerformance.resolvedRecord.record({
+        value: "success",
+        domain,
+        trr,
+        status,
+        time,
+        retryCount,
+        networkUnstable: this.networkUnstable,
+        captivePortal: this.captivePortal,
+      });
     }
 
     this.onCompleteCallback();

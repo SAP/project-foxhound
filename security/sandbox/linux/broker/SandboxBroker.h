@@ -70,7 +70,7 @@ class SandboxBroker final : private SandboxBrokerCommon,
     Policy(const Policy& aOther);
     ~Policy();
 
-    // Add permissions from AddDir/AddDynamic rules to any rules that
+    // Add permissions from AddTree/AddDynamic rules to any rules that
     // exist for their descendents, and remove any descendent rules
     // made redundant by this process.
     //
@@ -87,12 +87,9 @@ class SandboxBroker final : private SandboxBrokerCommon,
     // need to be whitelisted, but this allows adding entries for
     // them if they'll exist later.  See also the overload below.
     void AddPath(int aPerms, const char* aPath, AddCondition aCond);
-    // This adds all regular files (not directories) in the tree
-    // rooted at the given path.
-    void AddTree(int aPerms, const char* aPath);
     // A directory, and all files and directories under it, even those
     // added after creation (the dir itself must exist).
-    void AddDir(int aPerms, const char* aPath);
+    void AddTree(int aPerms, const char* aPath);
     // A directory, and all files and directories under it, even those
     // added after creation (the dir itself may not exist).
     void AddFutureDir(int aPerms, const char* aPath);
@@ -128,7 +125,7 @@ class SandboxBroker final : private SandboxBrokerCommon,
     // * No /../ path traversal
     bool ValidatePath(const char* path) const;
     void AddPrefixInternal(int aPerms, const nsACString& aPath);
-    void AddDirInternal(int aPerms, const char* aPath);
+    void AddTreeInternal(int aPerms, const char* aPath);
   };
 
   // Constructing a broker involves creating a socketpair and a
@@ -144,10 +141,6 @@ class SandboxBroker final : private SandboxBrokerCommon,
   int mFileDesc;
   const int mChildPid;
   const UniquePtr<const Policy> mPolicy;
-#if defined(MOZ_CONTENT_TEMP_DIR)
-  nsCString mTempPath;
-  nsCString mContentTempPath;
-#endif
 
   typedef nsTHashMap<nsCStringHashKey, nsCString> PathMap;
   PathMap mSymlinkMap;
@@ -161,10 +154,6 @@ class SandboxBroker final : private SandboxBrokerCommon,
   // Remap relative paths to absolute paths.
   size_t ConvertRelativePath(char* aPath, size_t aBufSize, size_t aPathLen);
   size_t RealPath(char* aPath, size_t aBufSize, size_t aPathLen);
-#if defined(MOZ_CONTENT_TEMP_DIR)
-  // Remap references to /tmp and friends to the content process tempdir
-  size_t RemapTempDirs(char* aPath, size_t aBufSize, size_t aPathLen);
-#endif
   nsCString ReverseSymlinks(const nsACString& aPath);
   // Retrieves permissions for the path the original symlink sits in.
   int SymlinkPermissions(const char* aPath, const size_t aPathLen);

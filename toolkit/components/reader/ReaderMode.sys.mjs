@@ -42,8 +42,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const gIsFirefoxDesktop =
   Services.appinfo.ID == "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
 
-Services.telemetry.setEventRecordingEnabled("readermode", true);
-
 export var ReaderMode = {
   DEBUG: 0,
 
@@ -58,7 +56,7 @@ export var ReaderMode = {
   enterReaderMode(docShell, win) {
     this.enterTime = Date.now();
 
-    Services.telemetry.recordEvent("readermode", "view", "on", null, {
+    Glean.readermode.viewOn.record({
       subcategory: "feature",
     });
 
@@ -99,7 +97,7 @@ export var ReaderMode = {
       ((win.scrollY + win.innerHeight) / win.document.body.clientHeight) * 100
     );
 
-    Services.telemetry.recordEvent("readermode", "view", "off", null, {
+    Glean.readermode.viewOff.record({
       subcategory: "feature",
       reader_time: `${timeSpentInReaderMode}`,
       scroll_position: `${scrollPosition}`,
@@ -407,6 +405,7 @@ export var ReaderMode = {
 
     let options = {
       classesToPreserve: CLASSES_TO_PRESERVE,
+      debug: Services.prefs.getBoolPref("reader.debug", false),
     };
 
     let article = null;

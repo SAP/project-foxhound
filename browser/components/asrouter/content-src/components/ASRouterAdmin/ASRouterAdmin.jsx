@@ -238,7 +238,7 @@ export class ASRouterAdminInner extends React.PureComponent {
   }
 
   onChangeTargetingParameters(event) {
-    const { name } = event.target;
+    const { name: eventName } = event.target;
     const { value } = event.target;
 
     let targetingParametersError = null;
@@ -246,14 +246,14 @@ export class ASRouterAdminInner extends React.PureComponent {
       JSON.parse(value);
       event.target.classList.remove("errorState");
     } catch (e) {
-      console.error(`Error parsing value of parameter ${name}`);
+      console.error(`Error parsing value of parameter ${eventName}`);
       event.target.classList.add("errorState");
-      targetingParametersError = { id: name };
+      targetingParametersError = { id: eventName };
     }
 
     this.setState(({ stringTargetingParameters }) => {
       const updatedParameters = { ...stringTargetingParameters };
-      updatedParameters[name] = value;
+      updatedParameters[eventName] = value;
 
       return {
         copiedToClipboard: false,
@@ -438,6 +438,7 @@ export class ASRouterAdminInner extends React.PureComponent {
       "spotlight",
       "cfr_doorhanger",
       "feature_callout",
+      "pb_newtab",
     ].includes(msg.template);
 
     let itemClassName = "message-item";
@@ -692,6 +693,7 @@ export class ASRouterAdminInner extends React.PureComponent {
                   {this.state.messages
                     .map(message => message.template)
                     .filter(
+                      // eslint-disable-next-line no-shadow
                       (value, index, self) => self.indexOf(value) === index
                     )
                     .map(template => (
@@ -1039,30 +1041,21 @@ export class ASRouterAdminInner extends React.PureComponent {
                 const errorState =
                   this.state.targetingParametersError &&
                   this.state.targetingParametersError.id === param;
-                const className = `monospace no-margins${
+                const largeEditor = value?.length > 30 || value?.match(/[\nR]/);
+                const className = `monospace no-margins targeting-editor${
                   errorState ? " errorState" : ""
-                }`;
-                const inputComp =
-                  (value && value.length) > 30 ? (
-                    <textarea
-                      name={param}
-                      className={className}
-                      value={value}
-                      rows="10"
-                      cols="60"
-                      onChange={this.onChangeTargetingParameters}
-                      spellCheck="false"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      size="30"
-                      name={param}
-                      className={className}
-                      value={value}
-                      onChange={this.onChangeTargetingParameters}
-                    />
-                  );
+                }${largeEditor ? " large" : " small"}`;
+                const inputComp = (
+                  <textarea
+                    name={param}
+                    className={className}
+                    value={value}
+                    rows={largeEditor ? "10" : "1"}
+                    cols={largeEditor ? "60" : "28"}
+                    onChange={this.onChangeTargetingParameters}
+                    spellCheck="false"
+                  />
+                );
 
                 return (
                   <tr key={i}>
@@ -1224,11 +1217,11 @@ export class ASRouterAdminInner extends React.PureComponent {
   }
 
   onChangeAttributionParameters(event) {
-    const { name, value } = event.target;
+    const { name: eventName, value } = event.target;
 
     this.setState(({ attributionParameters }) => {
       const updatedParameters = { ...attributionParameters };
-      updatedParameters[name] = value;
+      updatedParameters[eventName] = value;
 
       return { attributionParameters: updatedParameters };
     });

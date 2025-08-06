@@ -3,6 +3,10 @@
 
 "use strict";
 
+let bounceTrackingProtection = Cc[
+  "@mozilla.org/bounce-tracking-protection;1"
+].getService(Ci.nsIBounceTrackingProtection);
+
 function assertCounterNull() {
   is(
     Glean.bounceTrackingProtection.purgeCount.success.testGetValue(),
@@ -23,7 +27,14 @@ function assertCounterNull() {
 
 async function testPurgeCount(isDryRunMode) {
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.bounceTrackingProtection.enableDryRunMode", isDryRunMode]],
+    set: [
+      [
+        "privacy.bounceTrackingProtection.mode",
+        isDryRunMode
+          ? Ci.nsIBounceTrackingProtection.MODE_ENABLED_DRY_RUN
+          : Ci.nsIBounceTrackingProtection.MODE_ENABLED,
+      ],
+    ],
   });
 
   assertCounterNull();

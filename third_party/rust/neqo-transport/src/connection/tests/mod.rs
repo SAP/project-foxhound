@@ -17,7 +17,7 @@ use neqo_common::{event::Provider, qdebug, qtrace, Datagram, Decoder, Role};
 use neqo_crypto::{random, AllowZeroRtt, AuthenticationStatus, ResumptionToken};
 use test_fixture::{fixture_init, new_neqo_qlog, now, DEFAULT_ADDR};
 
-use super::{CloseReason, Connection, ConnectionId, Output, State};
+use super::{test_internal, CloseReason, Connection, ConnectionId, Output, State};
 use crate::{
     addr_valid::{AddressValidation, ValidateAddress},
     cc::CWND_INITIAL_PKTS,
@@ -28,8 +28,9 @@ use crate::{
     pmtud::Pmtud,
     recovery::ACK_ONLY_SIZE_LIMIT,
     stats::{FrameStats, Stats, MAX_PTO_COUNTS},
+    tparams::{DISABLE_MIGRATION, GREASE_QUIC_BIT},
     ConnectionIdDecoder, ConnectionIdGenerator, ConnectionParameters, Error, StreamId, StreamType,
-    Version,
+    Version, MIN_INITIAL_PACKET_SIZE,
 };
 
 // All the tests.
@@ -194,7 +195,6 @@ fn handshake_with_modifier(
     let mut did_ping = enum_map! {_ => false};
     while !is_done(a) {
         _ = maybe_authenticate(a);
-        let had_input = input.is_some();
         // Insert a PING frame into the first application data packet an endpoint sends,
         // in order to force the peer to ACK it. For the server, this is depending on the
         // client's connection state, which is accessible during the tests.
@@ -208,23 +208,18 @@ fn handshake_with_modifier(
         if should_ping {
             a.test_frame_writer = Some(Box::new(PingWriter {}));
         }
-        let output = a.process(input.as_ref(), now).dgram();
+        let output = a.process(input, now).dgram();
         if should_ping {
             a.test_frame_writer = None;
             did_ping[a.role()] = true;
         }
-        assert!(had_input || output.is_some());
-        if let Some(d) = output {
-            input = modifier(d);
-        } else {
-            input = output;
-        }
+        input = output.and_then(modifier);
         qtrace!("handshake: t += {:?}", rtt / 2);
         now += rtt / 2;
         mem::swap(&mut a, &mut b);
     }
     if let Some(d) = input {
-        a.process_input(&d, now);
+        a.process_input(d, now);
     }
     now
 }
@@ -304,7 +299,7 @@ fn exchange_ticket(
     server.send_ticket(now, &[]).expect("can send ticket");
     let ticket = server.process_output(now).dgram();
     assert!(ticket.is_some());
-    client.process_input(&ticket.unwrap(), now);
+    client.process_input(ticket.unwrap(), now);
     assert_eq!(*client.state(), State::Confirmed);
     get_tokens(client).pop().expect("should have token")
 }
@@ -402,7 +397,7 @@ fn fill_cwnd(c: &mut Connection, stream: StreamId, mut now: Instant) -> (Vec<Dat
 
     qtrace!(
         "fill_cwnd sent {} bytes",
-        total_dgrams.iter().map(|d| d.len()).sum::<usize>()
+        total_dgrams.iter().map(Datagram::len).sum::<usize>()
     );
     (total_dgrams, now)
 }
@@ -420,7 +415,7 @@ fn increase_cwnd(
         let pkt = sender.process_output(now);
         match pkt {
             Output::Datagram(dgram) => {
-                receiver.process_input(&dgram, now + DEFAULT_RTT / 2);
+                receiver.process_input(dgram, now + DEFAULT_RTT / 2);
             }
             Output::Callback(t) => {
                 if t < DEFAULT_RTT {
@@ -437,7 +432,7 @@ fn increase_cwnd(
     now += DEFAULT_RTT / 2;
     let ack = receiver.process_output(now).dgram();
     now += DEFAULT_RTT / 2;
-    sender.process_input(&ack.unwrap(), now);
+    sender.process_input(ack.unwrap(), now);
     now
 }
 
@@ -458,7 +453,7 @@ where
     let in_dgrams = in_dgrams.into_iter();
     qdebug!([dest], "ack_bytes {} datagrams", in_dgrams.len());
     for dgram in in_dgrams {
-        dest.process_input(&dgram, now);
+        dest.process_input(dgram, now);
     }
 
     loop {
@@ -529,7 +524,7 @@ fn induce_persistent_congestion(
 
     // An ACK for the third PTO causes persistent congestion.
     let s_ack = ack_bytes(server, stream, c_tx_dgrams, now);
-    client.process_input(&s_ack, now);
+    client.process_input(s_ack, now);
     assert_eq!(cwnd(client), cwnd_min(client));
     now
 }
@@ -592,10 +587,10 @@ fn send_something_paced_with_modifier(
                 .dgram()
                 .expect("send_something: should have something to send")
         }
-        Output::Datagram(d) => modifier(d).unwrap(),
+        Output::Datagram(d) => d,
         Output::None => panic!("send_something: got Output::None"),
     };
-    (dgram, now)
+    (modifier(dgram).unwrap(), now)
 }
 
 fn send_something_paced(
@@ -620,6 +615,29 @@ fn send_something(sender: &mut Connection, now: Instant) -> Datagram {
     send_something_with_modifier(sender, now, Some)
 }
 
+/// Send something, but add a little something extra into the output.
+fn send_with_extra<W>(sender: &mut Connection, writer: W, now: Instant) -> Datagram
+where
+    W: test_internal::FrameWriter + 'static,
+{
+    sender.test_frame_writer = Some(Box::new(writer));
+    let res = send_something_with_modifier(sender, now, Some);
+    sender.test_frame_writer = None;
+    res
+}
+
+/// Send something on a stream from `sender` through a modifier to `receiver`.
+/// Return any ACK that might result.
+fn send_with_modifier_and_receive(
+    sender: &mut Connection,
+    receiver: &mut Connection,
+    now: Instant,
+    modifier: fn(Datagram) -> Option<Datagram>,
+) -> Option<Datagram> {
+    let dgram = send_something_with_modifier(sender, now, modifier);
+    receiver.process(Some(dgram), now).dgram()
+}
+
 /// Send something on a stream from `sender` to `receiver`.
 /// Return any ACK that might result.
 fn send_and_receive(
@@ -627,8 +645,7 @@ fn send_and_receive(
     receiver: &mut Connection,
     now: Instant,
 ) -> Option<Datagram> {
-    let dgram = send_something(sender, now);
-    receiver.process(Some(&dgram), now).dgram()
+    send_with_modifier_and_receive(sender, receiver, now, Some)
 }
 
 fn get_tokens(client: &mut Connection) -> Vec<ResumptionToken> {
@@ -652,6 +669,27 @@ fn assert_default_stats(stats: &Stats) {
     assert_eq!(stats.frame_tx, dflt_frames);
 }
 
+fn assert_path_challenge_min_len(c: &Connection, d: &Datagram, now: Instant) {
+    let path = c.paths.find_path(
+        d.source(),
+        d.destination(),
+        c.conn_params.get_cc_algorithm(),
+        c.conn_params.pacing_enabled(),
+        now,
+    );
+    if path.borrow().amplification_limit() < path.borrow().plpmtu() {
+        // If the amplification limit is less than the PLPMTU, then the path
+        // challenge will not have been padded.
+        return;
+    }
+    assert!(
+        d.len() >= MIN_INITIAL_PACKET_SIZE,
+        "{} < {}",
+        d.len(),
+        MIN_INITIAL_PACKET_SIZE
+    );
+}
+
 #[test]
 fn create_client() {
     let client = default_client();
@@ -672,4 +710,22 @@ fn create_server() {
     assert_default_stats(&stats);
     // Server won't have a default path, so no RTT.
     assert_eq!(stats.rtt, Duration::from_secs(0));
+}
+
+#[test]
+fn tp_grease() {
+    for enable in [true, false] {
+        let client = new_client(ConnectionParameters::default().grease(enable));
+        let grease = client.tps.borrow_mut().local.get_empty(GREASE_QUIC_BIT);
+        assert_eq!(enable, grease);
+    }
+}
+
+#[test]
+fn tp_disable_migration() {
+    for disable in [true, false] {
+        let client = new_client(ConnectionParameters::default().disable_migration(disable));
+        let disable_migration = client.tps.borrow_mut().local.get_empty(DISABLE_MIGRATION);
+        assert_eq!(disable, disable_migration);
+    }
 }

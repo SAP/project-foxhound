@@ -25,13 +25,13 @@ use selectors::parser::{Component, LocalName, Selector};
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
 pub enum RuleChangeKind {
+    /// Some change in the rule which we don't know about, and could have made
+    /// the rule change in any way.
+    Generic = 0,
     /// The rule was inserted.
     Insertion,
     /// The rule was removed.
     Removal,
-    /// Some change in the rule which we don't know about, and could have made
-    /// the rule change in any way.
-    Generic,
     /// A change in the declarations of a style rule.
     StyleRuleDeclarations,
 }
@@ -597,6 +597,9 @@ impl StylesheetInvalidationSet {
                     }
                 }
             },
+            NestedDeclarations(..) => {
+                // Our containing style rule would handle invalidation for us.
+            },
             Namespace(..) => {
                 // It's not clear what handling changes for this correctly would
                 // look like.
@@ -640,6 +643,11 @@ impl StylesheetInvalidationSet {
             Scope(..) => {
                 // Addition/removal of @scope requires re-evaluation of scope proximity to properly
                 // figure out the styling order.
+                self.invalidate_fully();
+            },
+            PositionTry(..) => {
+                // Potential change in sizes/positions of anchored elements. TODO(dshin, bug 1910616):
+                // We should probably make an effort to see if this position-try is referenced.
                 self.invalidate_fully();
             },
         }
