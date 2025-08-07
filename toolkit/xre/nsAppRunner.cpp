@@ -5641,7 +5641,7 @@ nsresult XREMain::XRE_mainRun() {
     SaveToEnv("XRE_RESTARTED_BY_PROFILE_MANAGER=");
 
     if (!AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
-#ifdef XP_MACOSX
+#ifdef XP_MACOSX && MOZ_BACKGROUNDTASKS
       if (!BackgroundTasks::IsBackgroundTaskMode()) {
         rv = appStartup->CreateHiddenWindow();
         NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
