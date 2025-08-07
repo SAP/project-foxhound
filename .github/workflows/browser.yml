@@ -94,7 +94,7 @@ jobs:
 
   # Test complete build on Windows
   windows-build:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
 
