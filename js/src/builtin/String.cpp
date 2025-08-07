@@ -374,23 +374,6 @@ str_taint_setter(JSContext* cx, unsigned argc, Value* vp)
   return true;
 }
 
-static bool
-str_untaint(JSContext* cx, unsigned argc, Value* vp)
-{
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedString str(cx, ToString<CanGC>(cx, args.thisv()));
-  if (!str)
-    return false;
-
-  str->clearTaint();
-
-  args.rval().setUndefined();
-  return true;
-}
-
-
-
 /* ES5 B.2.1 */
 template <typename CharT>
 static bool Escape(JSContext* cx, const CharT* chars, uint32_t length,
@@ -3358,6 +3341,24 @@ static bool str_trimEnd(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "trimEnd");
   CallArgs args = CallArgsFromVp(argc, vp);
   return TrimString(cx, args, "trimEnd", false, true);
+}
+
+// Foxhound - move down here so we can call ToStringForStringFunction
+static bool
+str_untaint(JSContext* cx, unsigned argc, Value* vp)
+{
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  RootedString str(cx,
+                   ToStringForStringFunction(cx, "untaint", args.thisv()));
+  if (!str) {
+    return false;
+  }
+
+  str->clearTaint();
+
+  args.rval().setUndefined();
+  return true;
 }
 
 // Utility for building a rope (lazy concatenation) of strings.

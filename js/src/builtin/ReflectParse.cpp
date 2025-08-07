@@ -3901,7 +3901,7 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   Parser<FullParseHandler, char16_t> parser(&fc, options, chars.begin().get(),
-                                            chars.length(), EmptyTaint, compilationState,
+                                            chars.length(), linear->Taint(), compilationState,
                                             /* syntaxParser = */ nullptr);
   if (!parser.checkOptions()) {
     return false;
