@@ -199,7 +199,7 @@ _patch_foxhound() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
   if [ -z "$DRY_RUN" ]; then
     cp -r "${PLAYWRIGHT_DIR}/browser_patches/firefox/juggler" "juggler"
-    git apply --verbose --index --whitespace=nowarn --recount "${PLAYWRIGHT_DIR}/browser_patches/firefox/patches"/* || _die "Playwright patches failed to apply."
+    git apply --reject --verbose --index --whitespace=nowarn --recount "${PLAYWRIGHT_DIR}/browser_patches/firefox/patches"/* || _die "Playwright patches failed to apply."
   fi
   if [ -n "$MAKE_GIT_COMMIT" ]; then
     _status "Creating Git commit"
