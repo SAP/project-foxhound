@@ -14,10 +14,14 @@
         check_tainted(value);
         const op = value.taint[0].flow.slice(-1)[0];
         SimpleTest.is(op.operation, opName);
-        SimpleTest.is(op.location.filename, document.URL, "Unexpected value for location property of taint operation");
+        SimpleTest.is(
+          op.location.filename,
+          document.URL,
+          `Unexpected value for location property of taint operation: ${opName}`
+        );
       }
 
-      add_task(async function test_fetch_json_location() {
+      add_task(async function test_fetch_text() {
         const response = await fetch(
           `http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?text`
         );
@@ -25,7 +29,7 @@
         checkLocation(value, "fetch.text()");
       });
 
-      add_task(async function test_fetch_json_location() {
+      add_task(async function test_fetch_json() {
         const response = await fetch(
           `http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?json`
         );
@@ -34,7 +38,7 @@
         checkLocation(value, "fetch.json()");
       });
 
-      add_task(async function test_WebSocket_MessageEvent_data_location() {
+      add_task(async function test_WebSocket_MessageEvent_data() {
         const ws = new WebSocket(
           "ws://mochi.test:8888/tests/taint/test/mochitest/file_websocket"
         );
