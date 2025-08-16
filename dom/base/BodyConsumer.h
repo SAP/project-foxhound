@@ -66,7 +66,7 @@ class BodyConsumer final : public AbortFollower,
       const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
       const nsACString& aMixedCaseMimeType,
       MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
-      ErrorResult& aRv);
+      const nsACString& aInitialURL, ErrorResult& aRv);
 
   void ReleaseObject();
 
@@ -100,7 +100,8 @@ class BodyConsumer final : public AbortFollower,
                const nsACString& aBodyBlobURISpec,
                const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
                const nsACString& aMixedCaseMimeType,
-               MutableBlobStorage::MutableBlobStorageType aBlobStorageType);
+               MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
+               const nsACString& aInitialURL);
 
   ~BodyConsumer();
 
@@ -140,6 +141,8 @@ class BodyConsumer final : public AbortFollower,
   // Only ever set once, always on target thread.
   ConsumeType mConsumeType;
   RefPtr<Promise> mConsumePromise;
+
+  nsCString mInitialURL;
 
   // touched only on the target thread.
   bool mBodyConsumed;

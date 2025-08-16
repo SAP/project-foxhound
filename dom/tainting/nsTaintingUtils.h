@@ -64,6 +64,8 @@ nsresult MarkTaintSource(JSContext* aCx, JS::MutableHandle<JS::Value> aValue, co
 
 nsresult MarkTaintSource(JSContext* aCx, JSString* str, const char* name);
 
+nsresult MarkTaintSource(JSContext* aCx, JSString* str, const char* name, const nsAString &arg);
+
 nsresult MarkTaintSource(TaintFlow &flow, const char* name, const nsAString &arg);
 
 // Foxhound: Report taint flows into DOM related sinks.
@@ -78,7 +80,11 @@ nsresult ReportTaintSink(const nsACString &str, const char* name);
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg);
 
+nsresult ReportTaintSink(JSContext *cx, const nsACString &str, const char* name, const nsAString &arg);
+
 nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg);
+
+nsresult ReportTaintSink(const nsACString &str, const char* name, const nsAString &arg);
 
 nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name);
 

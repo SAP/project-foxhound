@@ -284,8 +284,17 @@ nsresult MarkTaintSource(JSContext* cx, JSString* str, const char* name)
   return NS_OK;
 }
 
-nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name)
-{
+nsresult MarkTaintSource(JSContext* aCx, JSString* str, const char* name, const nsAString &arg) {
+  if (isSourceActive(name)) {
+    TaintOperation op = GetTaintOperation(aCx, name, arg);
+    op.setSource();
+    op.set_native();
+    JS_MarkTaintSource(aCx, str, op);
+  }
+  return NS_OK;
+}
+
+nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name) {
   if (isSourceActive(name)) {
     TaintOperation op = GetTaintOperation(cx, name);
     op.setSource();
@@ -458,6 +467,37 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, 
   return NS_OK;
 }
 
+nsresult ReportTaintSink(JSContext *cx, const nsACString &str, const char* name, const nsAString &arg)
+{
+  if (!str.isTainted()) {
+    return NS_OK;
+  }
+
+  if (!cx) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!isSinkActive(name)) {
+    return NS_OK;
+  }
+
+  JS::Rooted<JS::Value> argval(cx);
+  if (!mozilla::dom::ToJSValue(cx, arg, &argval))
+    return NS_ERROR_FAILURE;
+
+  JS::Rooted<JS::Value> strval(cx);
+  if (!mozilla::dom::ToJSValue(cx, str, &strval))
+    return NS_ERROR_FAILURE;
+
+  JS_ReportTaintSink(cx, strval, name, argval);
+
+  return NS_OK;
+}
+
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
 {
   if (!str.isTainted()) {
@@ -515,6 +555,11 @@ nsresult ReportTaintSink(JSContext *cx, const nsACString &str, const char* name)
 }
 
 nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg)
+{
+  return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
+}
+
+nsresult ReportTaintSink(const nsACString &str, const char* name, const nsAString &arg)
 {
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
 }
