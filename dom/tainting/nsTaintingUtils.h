@@ -88,4 +88,6 @@ nsresult ReportTaintSink(const nsACString &str, const char* name, const nsAStrin
 
 nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name);
 
+nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name, const nsAString &arg);
+
 #endif /* nsTaintingUtils_h__ */
